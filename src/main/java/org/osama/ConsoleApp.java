@@ -2,12 +2,13 @@ package org.osama;
 
 import java.util.Scanner;
 
-public class Main {
-    static ListTaskRepository listTaskRepository = new ListTaskRepository();
-    static Scanner scanner = new Scanner(System.in);
+public class ConsoleApp {
+    final static ListTaskRepository listTaskRepository = new ListTaskRepository();
+    final static Scanner scanner = new Scanner(System.in);
 
     public static void main(String[] args) {
         System.out.println("Welcome to Productivity App!");
+        //noinspection ConditionalBreakInInfiniteLoop
         while (true) {
             String taskNameInput = getNameInput();
             String taskDiscInput = getDescriptionInput();

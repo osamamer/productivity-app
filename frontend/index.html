@@ -1,0 +1,14 @@
+<html>
+
+<head>
+    <title> Poop Application </title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+<h1> Hello! </h1>
+<h2 id="rec" onclick="console.log('hello')"> poop </h2>
+<h3 onclick="fetch('http://localhost:8080/api/v1/test/test1').then(async (value) => document.getElementById('rec').textContent = await value.text())"> CONNECT </h3>
+</body>
+
+</html>

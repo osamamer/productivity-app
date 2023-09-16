@@ -1,8 +1,11 @@
 package org.osama;
 
+import org.springframework.stereotype.Repository;
+
 import java.util.ArrayList;
 import java.util.List;
 
+@Repository
 public class ListTaskRepository implements TaskRepository {
     private final List<Task> taskList = new ArrayList<>();
     @Override
