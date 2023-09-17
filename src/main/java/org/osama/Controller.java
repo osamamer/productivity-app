@@ -1,5 +1,6 @@
 package org.osama;
 
+import lombok.Data;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -26,38 +27,20 @@ public class Controller {
         return newTask;
     }
     @DeleteMapping
-    public void removeTask(@RequestBody NewTaskRequest taskRequest) {
-        taskRepository.remove(taskRequest.getTaskId());
+    public void removeTask(@RequestBody DeleteTaskRequest deleteTaskRequest) {
+        taskRepository.remove(deleteTaskRequest.getTaskId());
     }
 
+    @Data
+    static class DeleteTaskRequest {
+        String taskId;
+
+    }
+
+    @Data
     static class NewTaskRequest {
         String taskName;
         String taskDescription;
-        String taskId;
-
-        public String getTaskId() {
-            return taskId;
-        }
-
-        public void setTaskId(String taskId) {
-            this.taskId = taskId;
-        }
-
-        public String getTaskName() {
-            return taskName;
-        }
-
-        public void setTaskName(String taskName) {
-            this.taskName = taskName;
-        }
-
-        public String getTaskDescription() {
-            return taskDescription;
-        }
-
-        public void setTaskDescription(String taskDescription) {
-            this.taskDescription = taskDescription;
-        }
     }
 
 }

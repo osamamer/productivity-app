@@ -4,7 +4,6 @@ import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
 import java.util.List;
-
 @Repository
 public class ListTaskRepository implements TaskRepository {
     private final List<Task> taskList = new ArrayList<>();
@@ -22,6 +21,9 @@ public class ListTaskRepository implements TaskRepository {
     public void remove(String taskId) {
         final int initialSize = taskList.size();
         attemptRemove(taskId);
+        //new Date();
+        //LocalDateTime.now();
+        //Duration.between();
         if (taskList.size() == initialSize) throw new IllegalArgumentException(String.format("Task ID [%s] does not exist", taskId));
     }
 
@@ -33,4 +35,5 @@ public class ListTaskRepository implements TaskRepository {
             }
         }
     }
+
 }

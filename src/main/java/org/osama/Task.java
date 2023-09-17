@@ -1,23 +1,17 @@
 package org.osama;
 
+import lombok.Data;
+
+import java.util.List;
 import java.util.UUID;
 
+@Data
 public class Task {
     private final String name;
     private final String description;
     private final String taskID;
+    private List<Session> sessions;
 
-    public String getName() {
-        return name;
-    }
-
-    public String getDescription() {
-        return description;
-    }
-
-    public String getTaskID() {
-        return taskID;
-    }
 
     public static Task createNewTask(String name, String description) {
         return new Task(name, description);
