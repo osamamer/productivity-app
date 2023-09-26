@@ -2,6 +2,7 @@ package org.osama;
 
 import lombok.Data;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -10,7 +11,9 @@ public class Task {
     private final String name;
     private final String description;
     private final String taskID;
-    private List<Session> sessions;
+    private final List<Session> sessions = new ArrayList<>();
+    private Session activeSession;
+    private long accumulatedTime;
 
 
     public static Task createNewTask(String name, String description) {

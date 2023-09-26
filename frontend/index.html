@@ -1,15 +1,23 @@
-<html lang="html">
-
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="keywords" content="HTML, CSS">
+    <meta name="description" content="A productivity app">
     <title> Productivity App </title>
     <link rel="stylesheet" href="styles.css">
+    <link rel=stylesheet href="https://s3-us-west-2.amazonaws.com/colors-css/2.2.0/colors.min.css">
 </head>
-
 <body>
-<h1> Hello! </h1>
-<img src="images/notebook.jpg" alt="Couldn't display image">
-<h2 id="rec" onclick="console.log('hello')"> poop </h2>
-<h3 onclick="fetch('http://localhost:8080/api/v1/test/test1').then(async (value) => document.getElementById('rec').textContent = await value.text())"> CONNECT </h3>
+    <div class="sidenav">Other</div>
+    <div class="main">
+        <div class="top"><p>What's on your mind?</p>
+            <label><input type="text"></label></div>
+        <div onload="fetchTasks()" class="box">
+            <p class="bulk-tasks" id="all-tasks-p"> </p>
+            <img src="images/white-plus.jpg" class="pointer" id="new-task-button" onclick="createNewTask()">
+        </div>
+    </div>
+    <script src="main.js"></script>
 </body>
-
 </html>

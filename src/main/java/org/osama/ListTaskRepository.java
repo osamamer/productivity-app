@@ -21,9 +21,6 @@ public class ListTaskRepository implements TaskRepository {
     public void remove(String taskId) {
         final int initialSize = taskList.size();
         attemptRemove(taskId);
-        //new Date();
-        //LocalDateTime.now();
-        //Duration.between();
         if (taskList.size() == initialSize) throw new IllegalArgumentException(String.format("Task ID [%s] does not exist", taskId));
     }
 
@@ -34,6 +31,15 @@ public class ListTaskRepository implements TaskRepository {
                 break;
             }
         }
+    }
+    @Override
+    public Task getTaskById(String taskId) {
+        for (Task currentTask : taskList) {
+            if (currentTask.getTaskID().equals(taskId)) {
+                return currentTask;
+            }
+        }
+        return null; // Should be an exception
     }
 
 }

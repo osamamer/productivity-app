@@ -1,9 +1,101 @@
 body {
-    background: green;
+    --navyblue: #161840;
+    background: var(--navyblue);
+}
+@font-face {
+    font-family: Raleway;
+    src: url(fonts/Raleway-VariableFont_wght.ttf);
+}
+* {
+    font-family: Raleway, serif;
 }
 img {
-    width: 100px;
-    border-radius: 50px;
+    width: 30px;
+    border-radius: 30px;
     float: left;
-    margin-right: 10px;
+    margin: 10px;
+    background-color: black;
+}
+p {
+    font-size: xx-large;
+    text-align: left;
+    color: honeydew;
+}
+input {
+    height: 5%;
+    width: 25%;
+    position: relative;
+    left: 31em;
+    --darkernavyblue: #0C0E24;
+    background-color: var(--darkernavyblue);
+    border: none;
+    border-radius: 6px;
+    caret-color: white;
+    outline: none;
+    color: honeydew;
+}
+em {
+    color: darkred;
+    font-style: italic;
+}
+.top {
+    margin-top: 2%;
+    margin-bottom: auto;
+
+}
+.main {
+    margin-left: 150px;
+}
+.sidenav {
+    margin-right: 200px;
+    height: 100%; /* Full-height: remove this if you want "auto" height */
+    width: 100px; /* Set the width of the sidebar */
+    position: fixed; /* Fixed Sidebar (stay in place on scroll) */
+    z-index: 1; /* Stay on top */
+    top: 0; /* Stay at the top */
+    left: 0;
+    --darkernavyblue: #0C0E24;
+    background-color: var(--darkernavyblue); /* Black */
+    overflow-x: hidden; /* Disable horizontal scroll */
+    padding-top: 10px;
+    padding-left: 15px;
+    color: honeydew;
+}
+.box {
+    display: flex;
+    flex-direction: column;
+    align-items: end;
+    color: blue;
+    width: 300px;
+    height: 500px;
+    padding-left: 10px;
+    padding-top: 5px;
+    padding-right: 10px;
+    --darkernavyblue: #0C0E24;
+    background-color: var(--darkernavyblue);
+    border: 3px solid black;
+    border-radius: 15px;
+
+
+    overflow: scroll;
+}
+.task {
+    color: cornflowerblue;
+    margin-left: 1px;
+    margin-right: auto;
+    font-size: 12px;
+    width: 20vw;
+}
+
+.bulk-tasks {
+    color: whitesmoke;
+    text-align: left;
+    font-size: 20px;
+    margin-right: auto;
+}
+#new-task-button {
+    margin: auto 1px 12px auto;
+}
+.pointer {
+    cursor: pointer;
 }
