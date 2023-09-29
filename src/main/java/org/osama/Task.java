@@ -13,6 +13,7 @@ public class Task {
     private final String taskID;
     private final List<Session> sessions = new ArrayList<>();
     private Session activeSession;
+    private boolean isActive;
     private long accumulatedTime;
 
 
@@ -28,6 +29,7 @@ public class Task {
         this.name = name;
         this.description = description;
         this.taskID = UUID.randomUUID().toString();
+        this.isActive = false;
     }
 
     private Task(String name, String description, String taskID) {

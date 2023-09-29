@@ -42,4 +42,15 @@ public class ListTaskRepository implements TaskRepository {
         return null; // Should be an exception
     }
 
+    @Override
+    public List<Task> getTasksByName(String taskName) {
+        List<Task> list = new ArrayList<>();
+        for (Task currentTask : taskList) {
+            if (currentTask.getName().equals(taskName)) {
+                list.add(currentTask);
+            }
+        }
+        return list;
+    }
+
 }

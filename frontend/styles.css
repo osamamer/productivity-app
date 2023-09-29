@@ -16,16 +16,27 @@ img {
     margin: 10px;
     background-color: black;
 }
-p {
+.wrapper {
+
+}
+.top {
+    display: grid;
+    grid-template-columns: 28% 20% 20% 20%;
+    margin-top: 0;
+    margin-left: 15px;
+    margin-bottom: auto;
+    position: relative;
+    left: 105px;
+}
+.head-question {
+    position: relative;
     font-size: xx-large;
     text-align: left;
     color: honeydew;
 }
-input {
-    height: 5%;
-    width: 25%;
-    position: relative;
-    left: 31em;
+#task-input-field {
+    height: 100%;
+    width: 100%;
     --darkernavyblue: #0C0E24;
     background-color: var(--darkernavyblue);
     border: none;
@@ -34,20 +45,19 @@ input {
     outline: none;
     color: honeydew;
 }
+.input-field-wrapper {
+    padding-top: 55px;
+    padding-bottom: 55px;
+}
 em {
     color: darkred;
     font-style: italic;
 }
-.top {
-    margin-top: 2%;
-    margin-bottom: auto;
 
-}
 .main {
     margin-left: 150px;
 }
 .sidenav {
-    margin-right: 200px;
     height: 100%; /* Full-height: remove this if you want "auto" height */
     width: 100px; /* Set the width of the sidebar */
     position: fixed; /* Fixed Sidebar (stay in place on scroll) */
@@ -59,6 +69,7 @@ em {
     overflow-x: hidden; /* Disable horizontal scroll */
     padding-top: 10px;
     padding-left: 15px;
+    margin-right: 5px;
     color: honeydew;
 }
 .box {
@@ -68,6 +79,7 @@ em {
     color: blue;
     width: 300px;
     height: 500px;
+    margin-top: 50px;
     padding-left: 10px;
     padding-top: 5px;
     padding-right: 10px;

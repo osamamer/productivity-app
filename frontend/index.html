@@ -10,12 +10,17 @@
 </head>
 <body>
     <div class="sidenav">Other</div>
-    <div class="main">
-        <div class="top"><p>What's on your mind?</p>
-            <label><input type="text"></label></div>
+    <div class="wrapper top">
+        <p class="head-question">What's on your mind?</p>
+        <div class="input-field-wrapper">
+            <form onsubmit="createNewTask();return false"><label for="task-input-field"></label><input type="text" id="task-input-field"></form></div>
+    </div>
+    <div class="wrapper main">
+
         <div onload="fetchTasks()" class="box">
             <p class="bulk-tasks" id="all-tasks-p"> </p>
-            <img src="images/white-plus.jpg" class="pointer" id="new-task-button" onclick="createNewTask()">
+            <img src="images/white-plus.jpg" class="pointer" id="new-task-button" onclick="createNewTaskButton()">
+            <button onclick="startTaskSession()">Start task</button>
         </div>
     </div>
     <script src="main.js"></script>

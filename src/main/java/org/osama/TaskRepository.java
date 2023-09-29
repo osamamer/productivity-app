@@ -7,6 +7,7 @@ public interface TaskRepository {
     void add(Task task);
     void remove(String taskId);
     Task getTaskById(String taskId);
+    List<Task> getTasksByName(String taskName);
 }
 
 
