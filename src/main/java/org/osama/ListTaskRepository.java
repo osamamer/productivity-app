@@ -26,7 +26,7 @@ public class ListTaskRepository implements TaskRepository {
 
     private void attemptRemove(String taskId) {
         for (int i = 0; i < taskList.size(); i++) {
-            if (taskList.get(i).getTaskID().equals(taskId)) {
+            if (taskList.get(i).getTaskId().equals(taskId)) {
                 taskList.remove(taskList.get(i));
                 break;
             }
@@ -35,7 +35,7 @@ public class ListTaskRepository implements TaskRepository {
     @Override
     public Task getTaskById(String taskId) {
         for (Task currentTask : taskList) {
-            if (currentTask.getTaskID().equals(taskId)) {
+            if (currentTask.getTaskId().equals(taskId)) {
                 return currentTask;
             }
         }

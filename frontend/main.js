@@ -1,24 +1,64 @@
-window.onload = function() {
-    fetchTasks();
-    displayTasks();
-}
-let taskText = "";
+const ROOT_URL = "http://localhost:8080";
+const TASK_URL = ROOT_URL.concat("/api/v1/task");
 
-// Without this it doesn't get called
+window.onload = async function() {
+    let taskElements = await fetchTasks();
+    displayTasks(taskElements);
+}
+
+function getStartSessionButtonId(taskId) {
+    return `start-session-button-${taskId}`
+}
+function getEndSessionButtonId(taskId) {
+    return `end-session-button-${taskId}`
+}
+
+function createStartSessionButton(taskJson) {
+    const button = document.createElement("button");
+    const taskId = taskJson["taskId"];
+    button.textContent = "Start session";
+    button.setAttribute("id", getStartSessionButtonId(taskId));
+    button.onclick = async (ev) => {
+        await startTaskSession(taskId);
+        button.setAttribute("style", "display: none");
+        document.getElementById(getEndSessionButtonId(taskId)).setAttribute("style", "display: block");
+    }
+    return button;
+}
+
+function createEndSessionButton(taskJson) {
+    const button = document.createElement("button");
+    button.setAttribute("style", "display: none");
+    button.textContent = "End session";
+    const taskId = taskJson["taskId"];
+    button.setAttribute("id", getEndSessionButtonId(taskId));
+    button.onclick = async (ev) => {
+        await endTaskSession(taskId);
+        button.setAttribute("style", "display: none");
+        document.getElementById(getStartSessionButtonId(taskId)).setAttribute("style", "display: block");
+    }
+    return button;
+}
+
+function createTaskElement(taskJson) {
+    const taskDiv =  document.createElement("div");
+    const taskHeader = document.createElement("h5");
+    taskHeader.textContent = taskJson["name"];
+    taskDiv.appendChild(taskHeader);
+    taskDiv.appendChild(createStartSessionButton(taskJson));
+    taskDiv.appendChild(createEndSessionButton(taskJson));
+    return taskDiv;
+}
+
 async function fetchTasks () {
     const response = await fetch('http://localhost:8080/api/v1/task');
-    taskText = "";
-    response.json().then((promiseJson) => {
-        const responseObject = promiseJson; // It's already a JSON. YOU don't need to parse it. You only parse it if it's not already a JSON, if it's a string, and you want to turn it into JSON.
-        for (let i = 0; i < responseObject.length; i++) {
-            let task = responseObject[i];
-            //taskText += `<li> ${task["name"]} </li>`; // `` makes something into a string
-            displayTask(task);
-            console.log(taskText);
-
-        }
-        displayTasks();
-    });
+    const responseJson = await response.json();
+    let taskElements = [];
+    for (let i = 0; i < responseJson.length; i++) {
+        let taskElement = createTaskElement(responseJson[i]);
+        taskElements.push(taskElement); // `` makes something into a string
+    }
+    return taskElements;
 }
 
  async function createNewTask (){
@@ -26,7 +66,7 @@ async function fetchTasks () {
     const userTaskName = document.getElementById("task-input-field").value;
      document.getElementById("task-input-field").value = "";
     console.log(userTaskName);
-    await fetch('http://localhost:8080/api/v1/task', {
+    await fetch(TASK_URL, {
         method: "POST",
         body: JSON.stringify({
             taskName: userTaskName,
@@ -37,14 +77,16 @@ async function fetchTasks () {
         }
     })
         .then(() => fetchTasks())
-        .then(() => displayTasks())
+        .then((tasksString) => displayTasks(tasksString))
 }
- function displayTasks () {
-    document.getElementById("all-tasks-p").innerHTML = taskText;
+ function displayTasks (taskElements) {
+     for (let i = 0; i < taskElements.length; i++) {
+         document.getElementById("all-tasks-div").appendChild(taskElements[i]);
+     }
 }
 
 async function createNewTaskButton (){
-    await fetch('http://localhost:8080/api/v1/task', {
+    await fetch(TASK_URL, {
         method: "POST",
         body: JSON.stringify({
             taskName: "userTaskName",
@@ -55,14 +97,18 @@ async function createNewTaskButton (){
         }
     })
         .then(() => fetchTasks())
-        .then(() => displayTasks())
-}
-async function startTaskSession(taskId) {
-    await fetch(`http://localhost:8080/api/v1/task"/start-session${taskId}`, {
-        method: "POST",
-    })
+        .then((tasksString) => displayTasks(tasksString))
 }
 
-function displayTask(task) {
-    
+async function startTaskSession(taskId) {
+    await performTaskAction(taskId, "start-session");
+}
+
+async function endTaskSession(taskId) {
+    await performTaskAction(taskId, "end-session");
+}
+async function performTaskAction(taskId, action) {
+    await fetch(TASK_URL.concat(`/${action}/${taskId}`), {
+        method: "POST",
+    })
 }

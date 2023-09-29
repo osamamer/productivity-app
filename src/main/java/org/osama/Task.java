@@ -10,7 +10,7 @@ import java.util.UUID;
 public class Task {
     private final String name;
     private final String description;
-    private final String taskID;
+    private final String taskId;
     private final List<Session> sessions = new ArrayList<>();
     private Session activeSession;
     private boolean isActive;
@@ -28,13 +28,13 @@ public class Task {
     private Task(String name, String description) {
         this.name = name;
         this.description = description;
-        this.taskID = UUID.randomUUID().toString();
+        this.taskId = UUID.randomUUID().toString();
         this.isActive = false;
     }
 
-    private Task(String name, String description, String taskID) {
+    private Task(String name, String description, String taskId) {
         this.name = name;
         this.description = description;
-        this.taskID = taskID;
+        this.taskId = taskId;
     }
 }

@@ -15,7 +15,7 @@ public class TaskService {
 
     public void startTaskSession(String taskId) {
         Task task = taskRepository.getTaskById(taskId);
-        if (task.isActive()) return;
+        if (task.isActive()) throw new IllegalArgumentException("Cannot start a session when the task is already active");
         task.setActive(true);
         Session newSession = new Session(LocalDateTime.now());
         task.getSessions().add(newSession);

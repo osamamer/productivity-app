@@ -16,7 +16,7 @@ public class CoreTest {
         Task rewrite = Task.createNewTask("Rewrite", "500 words");
         listTaskRepository.add(rewrite);
         assertEquals(3, listTaskRepository.getAll().size());
-        listTaskRepository.remove(read.getTaskID());
+        listTaskRepository.remove(read.getTaskId());
         assertEquals(2, listTaskRepository.getAll().size());
         assertThrows(IllegalArgumentException.class, () -> listTaskRepository.remove("1234"));
     }

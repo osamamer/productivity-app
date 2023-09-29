@@ -36,7 +36,7 @@ public class ConsoleApp {
         for (Task task :
                 listTaskRepository.getAll()) {
             System.out.printf("Task ID [%s] | Task name [%s] | Task Description [%s]%n",
-                    task.getTaskID(), task.getName(), task.getDescription());
+                    task.getTaskId(), task.getName(), task.getDescription());
         }
     }
 }

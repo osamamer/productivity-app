@@ -28,11 +28,11 @@ public class Controller {
         taskRepository.add(newTask);
         return newTask;
     }
-    @PostMapping("/start-session{taskId}")
+    @PostMapping("/start-session/{taskId}")
     public void startTaskSession(@PathVariable String taskId) {
         taskService.startTaskSession(taskId);
     }
-    @PostMapping("/end-session{taskId}")
+    @PostMapping("/end-session/{taskId}")
     public void endTaskSession(@PathVariable String taskId) {
         Task task = taskRepository.getTaskById(taskId);
         taskService.endTaskSession(taskId, task.getActiveSession());
@@ -44,7 +44,7 @@ public class Controller {
     @DeleteMapping
     public void removeAllTasks() {
         for (int i = 0; i < taskRepository.getAll().size(); i++) {
-            taskRepository.remove(taskRepository.getAll().get(i).getTaskID());
+            taskRepository.remove(taskRepository.getAll().get(i).getTaskId());
         }
     }
 
