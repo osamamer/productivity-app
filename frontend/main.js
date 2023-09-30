@@ -49,32 +49,25 @@ function createTaskElement(taskJson) {
     taskDiv.appendChild(createEndSessionButton(taskJson));
     return taskDiv;
 }
-
-function createStartSessionButton(taskJson) {
-    const button = document.createElement("img");
-    button.classList.add("start-task-button");
+function createSessionActionButton(action, taskJson, idSupplier, otherButtonIdSupplier, sessionFunction) {
+    const button = document.createElement("button");
+    button.classList.add(`${action}-task-button`);
     const taskId = taskJson["taskId"];
-    button.textContent = "Start session";
-    button.setAttribute("id", getStartSessionButtonId(taskId));
+    button.textContent = `${action} session`;
+    button.setAttribute("id", idSupplier(taskId));
     button.onclick = async (ev) => {
-        await startTaskSession(taskId);
+        await sessionFunction(taskId);
         button.setAttribute("style", "display: none");
-        document.getElementById(getEndSessionButtonId(taskId)).setAttribute("style", "display: block");
+        document.getElementById(otherButtonIdSupplier(taskId)).setAttribute("style", "display: block");
     }
     return button;
 }
+function createStartSessionButton(taskJson) {
+    return createSessionActionButton("start", taskJson, getStartSessionButtonId, getEndSessionButtonId, startTaskSession);
+}
 function createEndSessionButton(taskJson) {
-    const button = document.createElement("img");
-    button.classList.add("end-task-button");
+    let button = createSessionActionButton("end", taskJson, getEndSessionButtonId, getStartSessionButtonId, endTaskSession);
     button.setAttribute("style", "display: none");
-    button.textContent = "End session";
-    const taskId = taskJson["taskId"];
-    button.setAttribute("id", getEndSessionButtonId(taskId));
-    button.onclick = async (ev) => {
-        await endTaskSession(taskId);
-        button.setAttribute("style", "display: none");
-        document.getElementById(getStartSessionButtonId(taskId)).setAttribute("style", "display: block");
-    }
     return button;
 }
 function getStartSessionButtonId(taskId) {
@@ -97,7 +90,9 @@ async function endTaskSession(taskId) {
 }
 
 
-
+// Bugs to fix:
+// 1. Creating a new task switches a running task's button back to start.
+// 2. Can enter an empty task.
 
 
 

@@ -26,6 +26,11 @@ public class Controller {
     public Task createTask(@RequestBody NewTaskRequest taskRequest) {
         Task newTask = Task.createNewTask(taskRequest.taskName, taskRequest.taskDescription);
         taskRepository.add(newTask);
+// {
+// "start-session": "/start-session/task-id",
+// "end-session": "/end-session/task-id",
+// "start-session": "/start-session/task-id",
+
         return newTask;
     }
     @PostMapping("/start-session/{taskId}")
