@@ -1,7 +1,10 @@
 const ROOT_URL = "http://localhost:8080";
 const TASK_URL = ROOT_URL.concat("/api/v1/task");
-const PLAY_IMG = "images/play.jpg";
+const PLAY_IMG = "images/play.png";
 const PAUSE_IMG = "images/pause.png";
+const DELETE_IMG = "images/close.png";
+const DOTS_IMG = "images/dots.png";
+
 
 window.onload = async function() {
     let taskElements = await fetchTasks();
@@ -43,18 +46,21 @@ async function createNewTask (){
 }
 function createTaskElement(taskJson) {
     const taskDiv =  document.createElement("div");
-    taskDiv.classList.add("task-div");
     const taskHeader = document.createElement("p");
+    taskDiv.classList.add("task-div");
+    //document.getElementById("bulk-tasks").appendChild(taskDiv); // Makes everything disappear for some reason. Maybe because bulk-tasks is a class not an id, idiot.
     taskHeader.textContent = taskJson["name"];
     taskDiv.appendChild(taskHeader);
     taskDiv.appendChild(createStartSessionButton(taskJson));
     taskDiv.appendChild(createEndSessionButton(taskJson));
+    taskDiv.appendChild(createDeleteTaskButton(taskJson));
     return taskDiv;
 }
-function createSessionActionButton(action, taskJson, idSupplier, otherButtonIdSupplier, sessionFunction, buttonImage) {
+function createTaskActionButton(action, taskJson, idSupplier, otherButtonIdSupplier, sessionFunction, buttonImage) {
     const button = document.createElement("img");
     button.src = buttonImage;
     button.classList.add(`${action}-task-button`);
+    button.classList.add("pointer");
     const taskId = taskJson["taskId"];
     button.textContent = `${action} session`;
     button.setAttribute("id", idSupplier(taskId));
@@ -69,20 +75,31 @@ function createSessionActionButton(action, taskJson, idSupplier, otherButtonIdSu
 
 
 function createStartSessionButton(taskJson) {
-    return createSessionActionButton("start", taskJson, getStartSessionButtonId, getEndSessionButtonId, startTaskSession, PLAY_IMG);
+    return createTaskActionButton("start", taskJson, getStartSessionButtonId, getEndSessionButtonId, startTaskSession, PLAY_IMG);
 }
 
 
 function createEndSessionButton(taskJson) {
-    let button = createSessionActionButton("end", taskJson, getEndSessionButtonId, getStartSessionButtonId, endTaskSession, PAUSE_IMG);
+    let button = createTaskActionButton("end", taskJson, getEndSessionButtonId, getStartSessionButtonId, endTaskSession, PAUSE_IMG);
     button.setAttribute("style", "display: none");
     return button;
 }
+function createDeleteTaskButton(taskJson) {
+    return createTaskActionButton("delete", taskJson, getDeleteTaskButtonId, getDeleteTaskButtonId, deleteTask, DELETE_IMG);
+}
+function getButtonId(taskId, buttonAction) {
+    return `${buttonAction}-button-${taskId}`;
+}
+
 function getStartSessionButtonId(taskId) {
-    return `start-session-button-${taskId}`
+    return getButtonId(taskId, "start-session");
 }
 function getEndSessionButtonId(taskId) {
-    return `end-session-button-${taskId}`
+    return getButtonId(taskId, "end-session");
+}
+function getDeleteTaskButtonId(taskId) {
+    getButtonId(taskId, "delete-task");
+
 }
 async function performTaskAction(taskId, action) {
     await fetch(TASK_URL.concat(`/${action}/${taskId}`), { // `` makes something into a string
@@ -90,17 +107,27 @@ async function performTaskAction(taskId, action) {
     })
 }
 async function startTaskSession(taskId) {
+    console.log("Starting task session");
     await performTaskAction(taskId, "start-session");
 }
 
 async function endTaskSession(taskId) {
+    console.log("Ending task session");
+
     await performTaskAction(taskId, "end-session");
 }
-
+async function deleteTask(taskId) {
+    await fetch(TASK_URL.concat(`/${taskId}`), { // `` makes something into a string
+        method: "DELETE",
+    })
+        .then(() => fetchTasks())
+        .then((tasksString) => displayTasks(tasksString))
+}
 
 // Bugs to fix:
 // 1. Creating a new task switches a running task's button back to start.
 // 2. Can enter an empty task.
+// 3. When you delete all tasks, there is an exception.
 
 
 

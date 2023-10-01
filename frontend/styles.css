@@ -10,11 +10,14 @@ body {
     font-family: Raleway, serif;
 }
 img {
-    width: 30px;
-    border-radius: 30px;
+    width: auto;
+    height: auto;
+    max-width: 15px;
+    max-height: 15px;
     float: left;
     margin: 10px;
-    background-color: black;
+    background: transparent;
+    object-fit: cover;
 }
 .wrapper {
 
@@ -100,6 +103,8 @@ em {
 }
 
 .bulk-tasks {
+    height: 100%;
+    width: 100%;
     color: whitesmoke;
     text-align: left;
     font-size: 20px;
@@ -113,12 +118,18 @@ em {
 }
 
 .task-div {
+    display: grid;
+    grid-template-columns: 80% 10% 10%;
+    width: 100%;
 
 }
 .start-task-button {
-
+    margin-top: 25px;
 }
 .end-task-button {
-
+    margin-top: 25px;
+}
+.delete-task-button {
+    margin-top: 25px;
 }
 

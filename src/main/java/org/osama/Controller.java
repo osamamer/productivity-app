@@ -48,7 +48,7 @@ public class Controller {
         return task.isActive();
     }
 
-        @DeleteMapping("/{taskId}")
+    @DeleteMapping("/{taskId}")
     public void removeTask(@PathVariable String taskId) {
         taskRepository.remove(taskId);
     }
