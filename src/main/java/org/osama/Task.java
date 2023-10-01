@@ -15,6 +15,7 @@ public class Task {
     private Session activeSession;
     private boolean isActive;
     private long accumulatedTime;
+    private Day day;
 
 
     public static Task createNewTask(String name, String description) {

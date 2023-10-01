@@ -42,7 +42,13 @@ public class Controller {
         Task task = taskRepository.getTaskById(taskId);
         taskService.endTaskSession(taskId, task.getActiveSession());
     }
-    @DeleteMapping("/{taskId}")
+    @PostMapping("/get-task-running/{taskId}")
+    public boolean getTaskRunning(@PathVariable String taskId) {
+        Task task = taskRepository.getTaskById(taskId);
+        return task.isActive();
+    }
+
+        @DeleteMapping("/{taskId}")
     public void removeTask(@PathVariable String taskId) {
         taskRepository.remove(taskId);
     }
