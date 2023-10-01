@@ -28,6 +28,8 @@ public class TaskService {
         task.setActiveSession(null);
         task.setActive(false);
         session.setTimeElapsed(Duration.between(session.getStartTime(), session.getEndTime()));
+        task.setAccumulatedTime(task.getAccumulatedTime() + session.getTimeElapsed().getSeconds());
         return session.getTimeElapsed();
     }
+
 }

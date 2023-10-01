@@ -1,5 +1,7 @@
 const ROOT_URL = "http://localhost:8080";
 const TASK_URL = ROOT_URL.concat("/api/v1/task");
+const PLAY_IMG = "images/play.jpg";
+const PAUSE_IMG = "images/pause.png";
 
 window.onload = async function() {
     let taskElements = await fetchTasks();
@@ -30,7 +32,7 @@ async function createNewTask (){
         method: "POST",
         body: JSON.stringify({
             taskName: userTaskName,
-            taskDescription: "A user submitted task"
+            taskDescription: "A user-submitted task"
         }),
         headers: {
             "Content-type": "application/json; charset=UTF-8"
@@ -49,8 +51,9 @@ function createTaskElement(taskJson) {
     taskDiv.appendChild(createEndSessionButton(taskJson));
     return taskDiv;
 }
-function createSessionActionButton(action, taskJson, idSupplier, otherButtonIdSupplier, sessionFunction) {
-    const button = document.createElement("button");
+function createSessionActionButton(action, taskJson, idSupplier, otherButtonIdSupplier, sessionFunction, buttonImage) {
+    const button = document.createElement("img");
+    button.src = buttonImage;
     button.classList.add(`${action}-task-button`);
     const taskId = taskJson["taskId"];
     button.textContent = `${action} session`;
@@ -62,11 +65,16 @@ function createSessionActionButton(action, taskJson, idSupplier, otherButtonIdSu
     }
     return button;
 }
+
+
+
 function createStartSessionButton(taskJson) {
-    return createSessionActionButton("start", taskJson, getStartSessionButtonId, getEndSessionButtonId, startTaskSession);
+    return createSessionActionButton("start", taskJson, getStartSessionButtonId, getEndSessionButtonId, startTaskSession, PLAY_IMG);
 }
+
+
 function createEndSessionButton(taskJson) {
-    let button = createSessionActionButton("end", taskJson, getEndSessionButtonId, getStartSessionButtonId, endTaskSession);
+    let button = createSessionActionButton("end", taskJson, getEndSessionButtonId, getStartSessionButtonId, endTaskSession, PAUSE_IMG);
     button.setAttribute("style", "display: none");
     return button;
 }
