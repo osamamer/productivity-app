@@ -123,7 +123,7 @@ async function deleteTask(taskId) {
         .then(() => fetchTasks())
         .then((tasksString) => displayTasks(tasksString))
 }
-
+// TODO
 // Bugs to fix:
 // 1. Creating a new task switches a running task's button back to start.
 // 2. Can enter an empty task.
