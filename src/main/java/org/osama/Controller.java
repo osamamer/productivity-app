@@ -1,6 +1,9 @@
 package org.osama;
 
 import lombok.Data;
+import org.osama.task.Task;
+import org.osama.task.TaskRepository;
+import org.osama.task.TaskService;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;

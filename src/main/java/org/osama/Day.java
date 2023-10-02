@@ -1,6 +1,7 @@
 package org.osama;
 
 import lombok.Data;
+import org.osama.task.Task;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;

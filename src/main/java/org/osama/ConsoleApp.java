@@ -1,5 +1,8 @@
 package org.osama;
 
+import org.osama.task.ListTaskRepository;
+import org.osama.task.Task;
+
 import java.util.Scanner;
 
 public class ConsoleApp {

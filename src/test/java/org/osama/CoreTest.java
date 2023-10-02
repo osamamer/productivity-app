@@ -1,6 +1,8 @@
 package org.osama;
 
 import org.junit.jupiter.api.Test;
+import org.osama.task.ListTaskRepository;
+import org.osama.task.Task;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
