@@ -24,16 +24,14 @@ img {
 }
 .all {
     display: grid;
-    gap: 3rem;
-    grid-template-columns: 1fr ;
+    gap: 2rem;
+    grid-template-columns: repeat(4, 1fr);
+    margin-left: 150px;
+
 }
 .top {
     display: grid;
-    grid-template-columns: 28% 20% 20% 20%;
-    margin-top: 0;
-    margin-left: 15px;
-    margin-bottom: auto;
-    position: relative;
+    grid-template-columns: 40% 20% 20% 20%;
     left: 105px;
 }
 .head-question {
@@ -54,8 +52,8 @@ img {
     color: honeydew;
 }
 .input-field-wrapper {
-    padding-top: 55px;
-    padding-bottom: 55px;
+    padding-top: 45px;
+    padding-bottom: 45px;
 }
 em {
     color: darkred;
@@ -109,6 +107,8 @@ em {
 }
 
 .bulk-tasks {
+    display: flex;
+    flex-direction: column;
     height: 100%;
     width: 100%;
     color: honeydew;
@@ -125,7 +125,7 @@ em {
 
 .task-div {
     display: grid;
-    grid-template-columns: 70% 20% 10%;
+    grid-template-columns: 70% 15% 15%;
     width: 95%;
     background-color: #161840;
     text-align: justify;
@@ -133,18 +133,26 @@ em {
     margin: 10px 0 10px 0;
     border-radius: 5px;
 }
+.task-text {
+    padding-right: 15px;
+    margin-top: 5px;
+    margin-bottom: 5px;
+    vertical-align: middle;
+}
 .task-div:hover {
     background-color: #162E40;
 }
 .start-task-button {
-    margin-top: 25px;
-    margin-left: 15px;
-    margin-right: 50px;
+
+
 }
 .end-task-button {
-    margin-top: 25px;
 }
 .delete-task-button {
-    margin-top: 25px;
 }
-
+.grid-col-span-4 {
+    grid-column: span 4;
+}
+.task-button {
+    margin: auto;
+}

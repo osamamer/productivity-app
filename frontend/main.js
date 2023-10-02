@@ -48,6 +48,7 @@ function createTaskElement(taskJson) {
     const taskDiv =  document.createElement("div");
     const taskHeader = document.createElement("p");
     taskDiv.classList.add("task-div");
+    taskHeader.classList.add("task-text");
     //document.getElementById("bulk-tasks").appendChild(taskDiv); // Makes everything disappear for some reason. Maybe because bulk-tasks is a class not an id, idiot.
     taskHeader.textContent = taskJson["name"];
     taskDiv.appendChild(taskHeader);
@@ -61,6 +62,7 @@ function createTaskActionButton(action, taskJson, idSupplier, otherButtonIdSuppl
     button.src = buttonImage;
     button.classList.add(`${action}-task-button`);
     button.classList.add("pointer");
+    button.classList.add("task-button");
     const taskId = taskJson["taskId"];
     button.textContent = `${action} session`;
     button.setAttribute("id", idSupplier(taskId));
