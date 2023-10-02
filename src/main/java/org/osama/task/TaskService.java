@@ -1,5 +1,6 @@
-package org.osama;
+package org.osama.task;
 
+import org.osama.Session;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;

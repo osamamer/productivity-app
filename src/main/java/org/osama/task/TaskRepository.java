@@ -1,4 +1,4 @@
-package org.osama;
+package org.osama.task;
 
 import java.util.List;
 

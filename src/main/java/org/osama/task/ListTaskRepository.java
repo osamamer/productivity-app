@@ -1,10 +1,13 @@
-package org.osama;
+package org.osama.task;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
 import java.util.List;
+
 @Repository
+@ConditionalOnMissingBean(PersistentTaskRepository.class)
 public class ListTaskRepository implements TaskRepository {
     private final List<Task> taskList = new ArrayList<>();
     @Override
