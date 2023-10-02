@@ -1,8 +1,6 @@
 package org.osama.task;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
+import jakarta.persistence.*;
 import lombok.Data;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -26,11 +24,12 @@ public class Task {
     private boolean isActive;
     @Column
     private long accumulatedTime;
-    @JdbcTypeCode(SqlTypes.JSON)
+    @ElementCollection
+    @CollectionTable(name = "embedded_sessions")
     private List<Session> sessions;
-    @JdbcTypeCode(SqlTypes.JSON)
+    @Embedded
     private Session activeSession;
-    @JdbcTypeCode(SqlTypes.JSON)
+    @Embedded
     private Day day;
 
 

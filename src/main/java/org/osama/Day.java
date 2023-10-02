@@ -1,5 +1,6 @@
 package org.osama;
 
+import jakarta.persistence.Embeddable;
 import lombok.Data;
 import org.osama.task.Task;
 
@@ -8,12 +9,17 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Data
+@Embeddable
 public class Day {
-    private final List<Task> taskList = new ArrayList<>();
-    private final double dayRating;
-    private final String dayPlan;
-    private final String daySummary;
-    private final LocalDateTime date;
+    private List<Task> taskList = new ArrayList<>();
+    private double dayRating;
+    private String dayPlan;
+    private String daySummary;
+    private LocalDateTime date;
+
+    public Day() {
+
+    }
 
     public Day(double dayRating, String dayPlan, String daySummary, LocalDateTime date) {
         this.dayRating = dayRating;
@@ -21,6 +27,7 @@ public class Day {
         this.daySummary = daySummary;
         this.date = date;
     }
+
     public static Day createNewDay(LocalDateTime date) {
         return new Day(-1, "", "", date);
     }
