@@ -15,7 +15,7 @@ async function fetchTasks () {
     const responseJson = await response.json();
     let taskElements = [];
     for (let i = 0; i < responseJson.length; i++) {
-        let taskElement = createTaskElement(responseJson[i]);
+        let taskElement = await createTaskElement(responseJson[i]);
         taskElements.push(taskElement);
     }
     return taskElements;
@@ -29,6 +29,7 @@ function displayTasks (taskElements) {
 async function createNewTask (){
     //e.preventDefault();
     const userTaskName = document.getElementById("task-input-field").value;
+    if (userTaskName === "") return;
     document.getElementById("task-input-field").value = "";
     console.log(userTaskName);
     await fetch(TASK_URL, {
@@ -44,16 +45,18 @@ async function createNewTask (){
         .then(() => fetchTasks())
         .then((tasksString) => displayTasks(tasksString))
 }
-function createTaskElement(taskJson) {
-    const taskDiv =  document.createElement("div");
+async function createTaskElement(taskJson) {
+    const taskDiv = document.createElement("div");
     const taskHeader = document.createElement("p");
     taskDiv.classList.add("task-div");
     taskHeader.classList.add("task-text");
     //document.getElementById("bulk-tasks").appendChild(taskDiv); // Makes everything disappear for some reason. Maybe because bulk-tasks is a class not an id, idiot.
     taskHeader.textContent = taskJson["name"];
+    const startButton = await createStartSessionButton(taskJson);
+    const endButton = await createEndSessionButton(taskJson);
     taskDiv.appendChild(taskHeader);
-    taskDiv.appendChild(createStartSessionButton(taskJson));
-    taskDiv.appendChild(createEndSessionButton(taskJson));
+    taskDiv.appendChild(startButton);
+    taskDiv.appendChild(endButton);
     taskDiv.appendChild(createDeleteTaskButton(taskJson));
     return taskDiv;
 }
@@ -76,19 +79,28 @@ function createTaskActionButton(action, taskJson, idSupplier, otherButtonIdSuppl
 
 
 
-function createStartSessionButton(taskJson) {
-    return createTaskActionButton("start", taskJson, getStartSessionButtonId, getEndSessionButtonId, startTaskSession, PLAY_IMG);
-}
-
-
-function createEndSessionButton(taskJson) {
-    let button = createTaskActionButton("end", taskJson, getEndSessionButtonId, getStartSessionButtonId, endTaskSession, PAUSE_IMG);
-    button.setAttribute("style", "display: none");
+// Making this into an async function breaks everything. Because then you can't pass it into the append child method. It wants an HTMLImageElement NOT a promise of one. So I added await.
+async function createStartSessionButton(taskJson) {
+    let button = createTaskActionButton("start", taskJson, getStartSessionButtonId, getEndSessionButtonId, startTaskSession, PLAY_IMG);
+    if (await getTaskRunning(taskJson["taskId"].toString())) {
+        button.setAttribute("style", "display: none");
+    }
     return button;
 }
+
+
+ async function createEndSessionButton(taskJson) {
+    let button = createTaskActionButton("end", taskJson, getEndSessionButtonId, getStartSessionButtonId, endTaskSession, PAUSE_IMG);
+    if (!await getTaskRunning(taskJson["taskId"].toString())) {
+        button.setAttribute("style", "display: none");
+    }
+        return button;
+}
+
 function createDeleteTaskButton(taskJson) {
     return createTaskActionButton("delete", taskJson, getDeleteTaskButtonId, getDeleteTaskButtonId, deleteTask, DELETE_IMG);
 }
+
 function getButtonId(taskId, buttonAction) {
     return `${buttonAction}-button-${taskId}`;
 }
@@ -96,18 +108,22 @@ function getButtonId(taskId, buttonAction) {
 function getStartSessionButtonId(taskId) {
     return getButtonId(taskId, "start-session");
 }
+
 function getEndSessionButtonId(taskId) {
     return getButtonId(taskId, "end-session");
 }
+
 function getDeleteTaskButtonId(taskId) {
     getButtonId(taskId, "delete-task");
 
 }
+
 async function performTaskAction(taskId, action) {
-    await fetch(TASK_URL.concat(`/${action}/${taskId}`), { // `` makes something into a string
+     return await fetch(TASK_URL.concat(`/${action}/${taskId}`), { // `` makes something into a string
         method: "POST",
     })
 }
+
 async function startTaskSession(taskId) {
     console.log("Starting task session");
     await performTaskAction(taskId, "start-session");
@@ -118,6 +134,16 @@ async function endTaskSession(taskId) {
 
     await performTaskAction(taskId, "end-session");
 }
+
+async function getTaskRunning(taskId) {
+    let promise = await fetch(TASK_URL.concat(`/get-task-running/${taskId}`), { // `` makes something into a string
+        method: "POST",
+    })
+    let promiseResponse = await promise.json();
+    console.log("is active: " + promiseResponse);
+    return promiseResponse;
+}
+
 async function deleteTask(taskId) {
     await fetch(TASK_URL.concat(`/${taskId}`), { // `` makes something into a string
         method: "DELETE",
@@ -125,16 +151,17 @@ async function deleteTask(taskId) {
         .then(() => fetchTasks())
         .then((tasksString) => displayTasks(tasksString))
 }
+
 // TODO
 // Bugs to fix:
-// 1. Creating a new task switches a running task's button back to start.
-// 2. Can enter an empty task.
+// 1. Creating a new task switches a running task's button back to start. FIXED
+// 2. Can enter an empty task. FIXED
 // 3. When you delete all tasks, there is an exception.
-
+// 4. Accumulated Time is only updated when you end a session.
 
 
 // FUNCTIONS BELOW ARE DEPRECATED!
-async function createNewTaskButton (){
+async function createNewTaskButton() {
     await fetch(TASK_URL, {
         method: "POST",
         body: JSON.stringify({
@@ -148,5 +175,6 @@ async function createNewTaskButton (){
         .then(() => fetchTasks())
         .then((tasksString) => displayTasks(tasksString))
 }
+
 
 
