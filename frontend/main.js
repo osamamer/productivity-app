@@ -5,16 +5,23 @@ const PAUSE_IMG = "images/pause.png";
 const DELETE_IMG = "images/close.png";
 const DOTS_IMG = "images/dots.png";
 
-const inputField=document.getElementById("task-input-field");
-
-function stopFormSubmit(event) {
-    console.log("Trying to prevent default");
-    event.preventDefault();
-}
-inputField.addEventListener('submit', function (){
-    stopFormSubmit(event);
-    createNewTask();
+const inputForm=document.getElementById("task-input-form");
+document.addEventListener('click', function handleClickOutsideBox(event) {
+    const highlightBox = document.getElementById("highlighted-task-div");
+    const taskBox = document.getElementById("all-tasks-div");
+    if (!highlightBox.contains(event.target) && !taskBox.contains(event.target)) highlightBox.style.visibility = 'hidden';
 });
+// function stopFormSubmit(event) {
+//     console.log("Trying to prevent default");
+//     event.preventDefault();
+//     createNewTask();
+//     return false;
+// }
+inputForm.addEventListener('submit', function(e) {
+    console.log("Trying to submit eh?");
+    e.preventDefault();
+    createNewTask();
+}, false);
 
 window.onload = async function() {
     let taskElements = await fetchTasks();
@@ -57,19 +64,10 @@ async function createNewTask (){
         .then((tasksString) => displayTasks(tasksString))
 }
 
-function highlightTask(taskJson) {
-    const highlightedTaskDiv = document.getElementById("highlighted-task-div");
-    while (highlightedTaskDiv.firstChild) {
-        highlightedTaskDiv.removeChild(highlightedTaskDiv.lastChild);
-    }
-    highlightedTaskDiv.setAttribute("style", "display: block");
-    const highLightedTaskHeader = document.createElement("div");
-    highlightedTaskDiv.appendChild(highLightedTaskHeader);
-    highLightedTaskHeader.classList.add("task-text");
-    highLightedTaskHeader.textContent = taskJson["name"];
-}
+
 
 async function createTaskElement(taskJson) {
+    let stopwatchInterval; // to keep track of the interval
     const taskDiv = document.createElement("div");
     const taskHeader = document.createElement("p");
     taskDiv.classList.add("task-div");
@@ -78,14 +76,43 @@ async function createTaskElement(taskJson) {
     taskHeader.textContent = taskJson["name"];
     const startButton = await createStartSessionButton(taskJson);
     const endButton = await createEndSessionButton(taskJson);
+    const taskTimer = document.createElement("p");
     taskDiv.appendChild(taskHeader);
     taskDiv.appendChild(startButton);
     taskDiv.appendChild(endButton);
     taskDiv.appendChild(createDeleteTaskButton(taskJson));
+    //taskDiv.appendChild(taskTimer);
     taskDiv.addEventListener('click', function(){
         highlightTask(taskJson);
     });
-    return taskDiv;
+    // endButton.addEventListener('click', function() {
+    //    highlightTask(taskJson);
+    // });
+        return taskDiv;
+}
+async function highlightTask(taskJson) {
+    const highlightedTaskDiv = document.getElementById("highlighted-task-div");
+    while (highlightedTaskDiv.firstChild) {
+        highlightedTaskDiv.removeChild(highlightedTaskDiv.lastChild);
+    }
+    highlightedTaskDiv.setAttribute("style", "visibility: visible");
+    const taskHeader = document.createElement("p");
+    const taskDescription = document.createElement("p");
+    const accumulatedTimeDiv = document.createElement("p");
+    highlightedTaskDiv.appendChild(taskHeader);
+    highlightedTaskDiv.appendChild(taskDescription);
+    highlightedTaskDiv.appendChild(accumulatedTimeDiv);
+    taskHeader.classList.add("highlighted-task-text");
+    taskHeader.textContent = taskJson["name"];
+    taskDescription.classList.add("highlighted-task-desc");
+    taskDescription.textContent = taskJson["description"];
+    accumulatedTimeDiv.classList.add("highlighted-task-time");
+    accumulatedTimeDiv.textContent = await getAccumulatedTime(taskJson["taskId"]); // Should be a function for fancy displaying of time. 10s spent. 5mins spent. Based on how much time.
+
+    // const timerDiv = document.createElement("div");
+    // timerDiv.id = "stopwatch";
+    // timerDiv.textContent = updateStopwatch();
+    // highlightedTaskDiv.appendChild(timerDiv);
 }
 function createTaskActionButton(action, taskJson, idSupplier, otherButtonIdSupplier, sessionFunction, buttonImage) {
     const button = document.createElement("img");
@@ -144,8 +171,11 @@ function getDeleteTaskButtonId(taskId) {
     getButtonId(taskId, "delete-task");
 
 }
-
-async function performTaskAction(taskId, action) {
+async function getRequest(taskId, action) {
+    return await fetch(TASK_URL.concat(`/${action}/${taskId}`), { // `` makes something into a string
+    })
+}
+async function postRequest(taskId, action) {
      return await fetch(TASK_URL.concat(`/${action}/${taskId}`), { // `` makes something into a string
         method: "POST",
     })
@@ -153,18 +183,18 @@ async function performTaskAction(taskId, action) {
 
 async function startTaskSession(taskId) {
     console.log("Starting task session");
-    await performTaskAction(taskId, "start-session");
+    await postRequest(taskId, "start-session");
+    startStopwatch();
 }
 
 async function endTaskSession(taskId) {
     console.log("Ending task session");
-
-    await performTaskAction(taskId, "end-session");
+    await postRequest(taskId, "end-session");
+    //stopStopwatch(stopwatchInterval, startTime);
 }
 
 async function getTaskRunning(taskId) {
     let promise = await fetch(TASK_URL.concat(`/get-task-running/${taskId}`), { // `` makes something into a string
-        method: "POST",
     })
     return await promise.json();
 }
@@ -182,39 +212,44 @@ async function deleteTask(taskId) {
 // 1. Creating a new task switches a running task's button back to start. FIXED
 // 2. Can enter an empty task. FIXED
 // 3. When you delete all tasks, there is an exception.
-// 4. Accumulated Time is only updated when you end a session.
-// 5. onsubmit through JS doesn't work.
-// 6. Scrolling down to bottom of box crops last task a bit.
+// 4. Accumulated Time is only updated when you end a session. FIXED (because it's not a problem)
+// 5. onsubmit through JS doesn't work. FIXED
+// 6. Scrolling down to bottom of box crops last task a bit. FIXED
+// 7. Create a separate box for timer.
+// 8. Create a function for fancy display of accumulated time.
+// 9. Create a right click context menu for tasks.
+// 10. Pausing session doesn't update time immediately in highlight box. You have to highlight it again.
 
 
-// function timer() {
-//
-// }
-// let time = setInterval(updateStopwatch, 1000);
-//
-// let startTime; // to keep track of the start time
-// let stopwatchInterval; // to keep track of the interval
-// let elapsedPausedTime = 0;
-// function startStopwatch() {
-//     let startTime = Date.now();
-//     setInterval(updateStopwatch, 1000, startTime);
-// }
-// function stopStopwatch(stopwatchInterval, startTime) {
-//     clearInterval(stopwatchInterval); // stop the interval
-//     elapsedPausedTime = new Date().getTime() - startTime; // calculate elapsed paused time
-//     stopwatchInterval = null; // reset the interval variable
-// }
-// function updateStopwatch(startTime) {
-//     function pad(number) {
-//         // add a leading zero if the number is less than 10
-//         return (number < 10 ? "0" : "") + number;
-//     }
-//     const currentTime = new Date().getTime(); // get current time in milliseconds
-//     const elapsedTime = currentTime - startTime; // calculate elapsed time in milliseconds
-//     const seconds = Math.floor(elapsedTime / 1000) % 60; // calculate seconds
-//     const minutes = Math.floor(elapsedTime / 1000 / 60) % 60; // calculate minutes
-//     const hours = Math.floor(elapsedTime / 1000 / 60 / 60); // calculate hours
-//      // format display time
-//     document.getElementById("stopwatch").innerHTML = pad(hours) + ":" + pad(minutes) + ":" + pad(seconds); // update the display
-// }
 
+
+let startTime; // to keep track of the start time
+let elapsedPausedTime = 0;
+function startStopwatch(stopwatchInterval) {
+    let startTime = Date.now();
+    stopwatchInterval = setInterval(updateStopwatch, 1000, startTime, "stopwatch");
+}
+function stopStopwatch(stopwatchInterval, startTime) {
+    clearInterval(stopwatchInterval); // stop the interval
+    elapsedPausedTime = new Date().getTime() - startTime; // calculate elapsed paused time
+    stopwatchInterval = null; // reset the interval variable
+}
+function updateStopwatch(startTime, stopwatchId) {
+    function pad(number) {
+        // add a leading zero if the number is less than 10
+        return (number < 10 ? "0" : "") + number;
+    }
+
+    const currentTime = new Date().getTime(); // get current time in milliseconds
+    const elapsedTime = currentTime - startTime; // calculate elapsed time in milliseconds
+    const seconds = Math.floor(elapsedTime / 1000) % 60; // calculate seconds
+    const minutes = Math.floor(elapsedTime / 1000 / 60) % 60; // calculate minutes
+    const hours = Math.floor(elapsedTime / 1000 / 60 / 60); // calculate hours
+     // format display time
+    // document.getElementById(stopwatchId).textContent = pad(hours) + ":" + pad(minutes) + ":" + pad(seconds); // update the display
+}
+
+async function getAccumulatedTime(taskId){
+    let accTime =  await getRequest(taskId, "get-accumulated-time");
+    return accTime.json();
+}

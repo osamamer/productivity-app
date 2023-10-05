@@ -110,10 +110,20 @@ em {
 }
 #highlighted-task-div {
     color: honeydew;
-
-    display: none;
+    visibility: hidden;
     width: 240px;
     height: 150px;
+    padding: 15px;
+}
+#timer-div {
+    color: honeydew;
+    visibility: visible;
+    width: 80px;
+    height: 50px;
+    padding: 15px;
+}
+.highlighted-task-time {
+    text-align: center;
 }
 #new-task-button {
     margin: auto 1px 12px auto;
@@ -138,6 +148,20 @@ em {
     margin-bottom: 5px;
     vertical-align: middle;
 }
+.highlighted-task-text {
+    text-align: center;
+    font-size: 40px;
+    margin-bottom: 10px;
+    margin-top: 0;
+}
+.highlighted-task-desc {
+    text-align: center;
+    font-size: 20px;
+    margin-bottom: 10px;
+}
+#highlighted-task-div {
+    text-align: center;
+}
 .task-div:hover {
     background-color: #162E40;
 }
@@ -154,4 +178,9 @@ em {
 }
 .task-button {
     margin: auto;
+}
+
+#stopwatch {
+    text-align: center;
+    font-size: 20px;
 }
