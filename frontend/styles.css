@@ -184,3 +184,10 @@ em {
     text-align: center;
     font-size: 20px;
 }
+
+.context-menu {
+    visibility: hidden;
+    position: absolute;
+    width: 120px;
+    height: 160px;
+}

@@ -10,6 +10,7 @@ document.addEventListener('click', function handleClickOutsideBox(event) {
     const highlightBox = document.getElementById("highlighted-task-div");
     const taskBox = document.getElementById("all-tasks-div");
     if (!highlightBox.contains(event.target) && !taskBox.contains(event.target)) highlightBox.style.visibility = 'hidden';
+    if (!menuDiv.contains(event.target)) menuDiv.style.visibility = 'hidden';
 });
 // function stopFormSubmit(event) {
 //     console.log("Trying to prevent default");
@@ -17,6 +18,15 @@ document.addEventListener('click', function handleClickOutsideBox(event) {
 //     createNewTask();
 //     return false;
 // }
+const menuDiv = document.createElement("div");
+menuDiv.classList.add("box");
+menuDiv.classList.add("context-menu");
+menuDiv.setAttribute("id", "context-menu");
+menuDiv.textContent = "Context menu";
+const all = document.getElementById("all");
+all.appendChild(menuDiv);
+
+
 inputForm.addEventListener('submit', function(e) {
     console.log("Trying to submit eh?");
     e.preventDefault();
@@ -77,6 +87,7 @@ async function createTaskElement(taskJson) {
     const startButton = await createStartSessionButton(taskJson);
     const endButton = await createEndSessionButton(taskJson);
     const taskTimer = document.createElement("p");
+
     taskDiv.appendChild(taskHeader);
     taskDiv.appendChild(startButton);
     taskDiv.appendChild(endButton);
@@ -85,10 +96,19 @@ async function createTaskElement(taskJson) {
     taskDiv.addEventListener('click', function(){
         highlightTask(taskJson);
     });
+    taskDiv.addEventListener('contextmenu', openContextMenu, false);
     // endButton.addEventListener('click', function() {
     //    highlightTask(taskJson);
     // });
         return taskDiv;
+}
+function openContextMenu(e) {
+    console.log("Opened context menu");
+    e.preventDefault();
+    const menuDiv = document.getElementById("context-menu");
+    menuDiv.setAttribute("style", "visibility: visible");
+    menuDiv.style.left = e.pageX +"px";
+    menuDiv.style.top = e.pageY +"px";
 }
 async function highlightTask(taskJson) {
     const highlightedTaskDiv = document.getElementById("highlighted-task-div");
