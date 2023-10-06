@@ -1,0 +1,52 @@
+package org.osama;
+
+import org.junit.jupiter.api.Test;
+import org.osama.task.NewTaskRequest;
+import org.osama.task.Task;
+import org.osama.task.TaskRepository;
+import org.osama.task.TaskService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.InvalidDataAccessApiUsageException;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+
+@SpringBootTest
+public class EndToEndTest {
+    @Autowired
+    private TaskService taskService;
+    @Autowired
+    private TaskRepository taskRepository;
+    @Test
+    void createNewTask() {
+        Task task = createTask();
+        assertDoesNotThrow(() -> taskRepository.getTaskById(task.getTaskId()));
+        assertThrows(InvalidDataAccessApiUsageException.class, () -> taskRepository.getTaskById("INVALID_ID"));
+    }
+
+    @Test
+    void startAndEndSession() {
+        Task task = createTask();
+        assertDoesNotThrow(() -> taskService.startTaskSession(task.getTaskId()));
+        assertDoesNotThrow(() -> taskService.endTaskSession(task.getTaskId()));
+    }
+
+    @Test
+    void startAlreadyRunningSession() {
+        Task task = createTask();
+        taskService.startTaskSession(task.getTaskId());
+        assertThrows(IllegalStateException.class, () -> taskService.startTaskSession(task.getTaskId()));
+    }
+    @Test
+    void endNotRunningTask() {
+        Task task = createTask();
+        assertThrows(IllegalStateException.class, () -> taskService.endTaskSession(task.getTaskId()));
+    }
+    private Task createTask() {
+        NewTaskRequest taskRequest = new NewTaskRequest();
+        taskRequest.setTaskName("Do chores");
+        taskRequest.setTaskDescription("Vacuum nasty room");
+        return taskService.createNewTask(taskRequest);
+    }
+}

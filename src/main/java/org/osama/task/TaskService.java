@@ -1,7 +1,6 @@
 package org.osama.task;
 
 import lombok.extern.slf4j.Slf4j;
-import org.osama.Controller;
 import org.osama.Session;
 import org.osama.SessionRepository;
 import org.springframework.stereotype.Service;
@@ -48,7 +47,7 @@ public class TaskService {
     public void startTaskSession(String taskId) {
         Task task = taskRepository.getTaskById(taskId);
         Optional<Session> activeSession = sessionRepository.findSessionByTaskIdAndIsRunningIsTrue(task.getTaskId());
-        if (activeSession.isPresent()) throw new IllegalArgumentException("Cannot start a session when the task is already active");
+        if (activeSession.isPresent()) throw new IllegalStateException("Cannot start a session when the task is already active");
         endAllSessions();
         sessionRepository.save(createSession(task));
         log.info("Started task with ID [{}]", task.getTaskId());
@@ -57,7 +56,7 @@ public class TaskService {
     public Duration endTaskSession(String taskId) {
         Task task = taskRepository.getTaskById(taskId);
         Optional<Session> session = sessionRepository.findSessionByTaskIdAndIsRunningIsTrue(taskId);
-        Session activeSession = session.orElseThrow(() -> new IllegalArgumentException("Cannot end task session because it is not running"));
+        Session activeSession = session.orElseThrow(() -> new IllegalStateException("Cannot end task session because it is not running"));
         activeSession.setEndTime(LocalDateTime.now());
         activeSession.setRunning(false);
         sessionRepository.save(activeSession);
@@ -83,7 +82,7 @@ public class TaskService {
         });
     }
 
-    public Task createNewTask(Controller.NewTaskRequest taskRequest) {
+    public Task createNewTask(NewTaskRequest taskRequest) {
         Task newTask = new Task();
         newTask.setTaskId(UUID.randomUUID().toString());
         newTask.setName(taskRequest.getTaskName());

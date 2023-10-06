@@ -1,6 +1,7 @@
 package org.osama;
 
 import lombok.Data;
+import org.osama.task.NewTaskRequest;
 import org.osama.task.Task;
 import org.osama.task.TaskRepository;
 import org.osama.task.TaskService;
@@ -60,12 +61,6 @@ public class Controller {
     @Data
     static class DeleteTaskRequest {
         String taskId;
-    }
-
-    @Data
-    public static class NewTaskRequest {
-        String taskName;
-        String taskDescription;
     }
 
     @Data
