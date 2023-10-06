@@ -1,12 +1,10 @@
 package org.osama.task;
 
-import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
 
 @Repository
-@Profile({"test", "postgres"})
 public class PersistentTaskRepository implements TaskRepository {
     private final TaskJpaRepository taskJpaRepository;
 
@@ -38,5 +36,10 @@ public class PersistentTaskRepository implements TaskRepository {
     @Override
     public List<Task> getTasksByName(String taskName) {
         return taskJpaRepository.findAllByName(taskName);
+    }
+
+    @Override
+    public Task update(Task task) {
+        return taskJpaRepository.save(task);
     }
 }

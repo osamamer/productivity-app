@@ -1,23 +1,32 @@
 package org.osama;
 
-import jakarta.persistence.Embeddable;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.datatype.jsr310.deser.LocalDateTimeDeserializer;
+import com.fasterxml.jackson.datatype.jsr310.ser.LocalDateTimeSerializer;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
-import java.time.Duration;
 import java.time.LocalDateTime;
 @Data
-@Embeddable
+@NoArgsConstructor
+@Entity
 public class Session {
-    private LocalDateTime startTime;
-    private LocalDateTime endTime;
-    private Duration timeElapsed;
+    @Id
+    private String sessionId;
+    @Column(nullable = false)
+    private String taskId;
+    @Column(nullable = false)
     private boolean isRunning;
-    public Session(LocalDateTime startTime) {
-        this.startTime = startTime;
-        this.isRunning = true;
-    }
-
-    public Session() {
-
-    }
+    @Column
+    @JsonSerialize(using = LocalDateTimeSerializer.class)
+    @JsonDeserialize(using = LocalDateTimeDeserializer.class)
+    private LocalDateTime startTime;
+    @Column
+    @JsonSerialize(using = LocalDateTimeSerializer.class)
+    @JsonDeserialize(using = LocalDateTimeDeserializer.class)
+    private LocalDateTime endTime;
 }

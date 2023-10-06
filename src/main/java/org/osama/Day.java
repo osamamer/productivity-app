@@ -1,35 +1,22 @@
 package org.osama;
 
-import jakarta.persistence.Embeddable;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.datatype.jsr310.deser.LocalDateTimeDeserializer;
+import com.fasterxml.jackson.datatype.jsr310.ser.LocalDateTimeSerializer;
 import lombok.Data;
-import org.osama.task.Task;
+import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
 
 @Data
-@Embeddable
+@NoArgsConstructor
 public class Day {
-    private List<Task> taskList = new ArrayList<>();
     private double dayRating;
     private String dayPlan;
     private String daySummary;
+    @JsonSerialize(using = LocalDateTimeSerializer.class)
+    @JsonDeserialize(using = LocalDateTimeDeserializer.class)
     private LocalDateTime date;
-
-    public Day() {
-
-    }
-
-    public Day(double dayRating, String dayPlan, String daySummary, LocalDateTime date) {
-        this.dayRating = dayRating;
-        this.dayPlan = dayPlan;
-        this.daySummary = daySummary;
-        this.date = date;
-    }
-
-    public static Day createNewDay(LocalDateTime date) {
-        return new Day(-1, "", "", date);
-    }
 
 }

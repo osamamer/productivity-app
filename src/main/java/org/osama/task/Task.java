@@ -1,14 +1,15 @@
 package org.osama.task;
 
-import jakarta.persistence.*;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.datatype.jsr310.deser.LocalDateTimeDeserializer;
+import com.fasterxml.jackson.datatype.jsr310.ser.LocalDateTimeSerializer;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
 import lombok.Data;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
-import org.osama.Day;
-import org.osama.Session;
 
-import java.util.List;
-import java.util.UUID;
+import java.time.LocalDateTime;
 
 @Data
 @Entity
@@ -18,37 +19,10 @@ public class Task {
     private String taskId;
     @Column(nullable = false)
     private String name;
-    @Column
+    @Column(nullable = false)
     private String description;
-    @Column
-    private boolean isActive;
-    @Column
-    private long accumulatedTime;
-    @ElementCollection
-    @CollectionTable(name = "embedded_sessions")
-    private List<Session> sessions;
-    @Embedded
-    private Session activeSession;
-    @Embedded
-    private Day day;
-
-
-    public static Task createNewTask(String name, String description) {
-        Task task = new Task();
-        task.name = name;
-        task.description = description;
-        task.taskId = UUID.randomUUID().toString();
-        task.isActive = false;
-        return task;
-    }
-
-    public static Task reconstruct(String id, String name, String description) {
-        Task task = new Task();
-        task.taskId = id;
-        task.name = name;
-        task.description = description;
-        return task;
-    }
-
-
+    @Column(nullable = false)
+    @JsonSerialize(using = LocalDateTimeSerializer.class)
+    @JsonDeserialize(using = LocalDateTimeDeserializer.class)
+    private LocalDateTime creationDate;
 }

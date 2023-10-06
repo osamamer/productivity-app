@@ -27,14 +27,7 @@ public class Controller {
 
     @PostMapping
     public Task createTask(@RequestBody NewTaskRequest taskRequest) {
-        Task newTask = Task.createNewTask(taskRequest.taskName, taskRequest.taskDescription);
-        taskRepository.add(newTask);
-// {
-// "start-session": "/start-session/task-id",
-// "end-session": "/end-session/task-id",
-// "start-session": "/start-session/task-id",
-
-        return newTask;
+        return taskService.createNewTask(taskRequest);
     }
     @PostMapping("/start-session/{taskId}")
     public void startTaskSession(@PathVariable String taskId) {
@@ -42,18 +35,15 @@ public class Controller {
     }
     @PostMapping("/end-session/{taskId}")
     public void endTaskSession(@PathVariable String taskId) {
-        Task task = taskRepository.getTaskById(taskId);
-        taskService.endTaskSession(taskId, task.getActiveSession());
+        taskService.endTaskSession(taskId);
     }
     @GetMapping("/get-task-running/{taskId}")
     public boolean getTaskRunning(@PathVariable String taskId) {
-        Task task = taskRepository.getTaskById(taskId);
-        return task.isActive();
+        return taskService.isActive(taskId);
     }
     @GetMapping("/get-accumulated-time/{taskId}")
     public long getAccumulatedTime(@PathVariable String taskId) {
-        Task task = taskRepository.getTaskById(taskId);
-        return task.getAccumulatedTime();
+        return taskService.getAccumulatedTime(taskId).getSeconds();
     }
 
     @DeleteMapping("/{taskId}")
@@ -73,7 +63,7 @@ public class Controller {
     }
 
     @Data
-    static class NewTaskRequest {
+    public static class NewTaskRequest {
         String taskName;
         String taskDescription;
     }
