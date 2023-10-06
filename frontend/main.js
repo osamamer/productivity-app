@@ -5,19 +5,24 @@ const PAUSE_IMG = "images/pause.png";
 const DELETE_IMG = "images/close.png";
 const DOTS_IMG = "images/dots.png";
 
+window.onload = async function() {
+    let taskElements = await fetchTasks();
+    displayTasks(taskElements);
+}
+
 const inputForm=document.getElementById("task-input-form");
+inputForm.addEventListener('submit', function(e) {
+    console.log("Trying to submit eh?");
+    e.preventDefault();
+    createNewTask();
+}, false);
 document.addEventListener('click', function handleClickOutsideBox(event) {
     const highlightBox = document.getElementById("highlighted-task-div");
     const taskBox = document.getElementById("all-tasks-div");
     if (!highlightBox.contains(event.target) && !taskBox.contains(event.target)) highlightBox.style.visibility = 'hidden';
     if (!menuDiv.contains(event.target)) menuDiv.style.visibility = 'hidden';
 });
-// function stopFormSubmit(event) {
-//     console.log("Trying to prevent default");
-//     event.preventDefault();
-//     createNewTask();
-//     return false;
-// }
+
 const menuDiv = document.createElement("div");
 menuDiv.classList.add("box");
 menuDiv.classList.add("context-menu");
@@ -27,16 +32,6 @@ const all = document.getElementById("all");
 all.appendChild(menuDiv);
 
 
-inputForm.addEventListener('submit', function(e) {
-    console.log("Trying to submit eh?");
-    e.preventDefault();
-    createNewTask();
-}, false);
-
-window.onload = async function() {
-    let taskElements = await fetchTasks();
-    displayTasks(taskElements);
-}
 async function fetchTasks () {
     const response = await fetch('http://localhost:8080/api/v1/task');
     const responseJson = await response.json();
