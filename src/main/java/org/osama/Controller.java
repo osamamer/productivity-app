@@ -45,10 +45,15 @@ public class Controller {
         Task task = taskRepository.getTaskById(taskId);
         taskService.endTaskSession(taskId, task.getActiveSession());
     }
-    @PostMapping("/get-task-running/{taskId}")
+    @GetMapping("/get-task-running/{taskId}")
     public boolean getTaskRunning(@PathVariable String taskId) {
         Task task = taskRepository.getTaskById(taskId);
         return task.isActive();
+    }
+    @GetMapping("/get-accumulated-time/{taskId}")
+    public long getAccumulatedTime(@PathVariable String taskId) {
+        Task task = taskRepository.getTaskById(taskId);
+        return task.getAccumulatedTime();
     }
 
     @DeleteMapping("/{taskId}")
