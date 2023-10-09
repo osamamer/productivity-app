@@ -1,4 +1,4 @@
-package org.osama;
+package org.osama.day;
 
 import org.osama.task.TaskRepository;
 import org.springframework.stereotype.Service;

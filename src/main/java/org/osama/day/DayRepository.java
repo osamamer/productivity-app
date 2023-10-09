@@ -1,6 +1,4 @@
-package org.osama;
-
-import java.util.List;
+package org.osama.day;
 
 public interface DayRepository {
     void add(Day day);

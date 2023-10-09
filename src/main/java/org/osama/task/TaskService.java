@@ -1,8 +1,8 @@
 package org.osama.task;
 
 import lombok.extern.slf4j.Slf4j;
-import org.osama.Session;
-import org.osama.SessionRepository;
+import org.osama.session.Session;
+import org.osama.session.SessionRepository;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;

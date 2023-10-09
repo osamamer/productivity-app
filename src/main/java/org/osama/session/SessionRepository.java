@@ -1,4 +1,4 @@
-package org.osama;
+package org.osama.session;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 

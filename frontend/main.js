@@ -247,14 +247,15 @@ async function deleteTask(taskId) {
 // Bugs to fix:
 // 1. Creating a new task switches a running task's button back to start. FIXED
 // 2. Can enter an empty task. FIXED
-// 3. When you delete all tasks, there is an exception.
+// 3. When you delete all tasks, there is an exception. NOT FIXED. HOW? 
 // 4. Accumulated Time is only updated when you end a session. FIXED (because it's not a problem)
 // 5. onsubmit through JS doesn't work. FIXED
 // 6. Scrolling down to bottom of box crops last task a bit. FIXED
 // 7. Create a separate box for timer.
-// 8. Create a function for fancy display of accumulated time.
-// 9. Create a right click context menu for tasks.
-// 10. Pausing session doesn't update time immediately in highlight box. You have to highlight it again.
+// 8. Create a function for fancy display of accumulated time. DONE
+// 9. Create a right click context menu for tasks. DONE
+// 10. Pausing session doesn't update time immediately in highlight box. You have to highlight it again. FIXED
+// 11. Starting a task will end all other tasks in the backend. But in the front end, the button will still change. And thus you will get an error for stopping an already stopped task.
 
 
 

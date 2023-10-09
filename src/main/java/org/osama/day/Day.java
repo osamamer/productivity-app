@@ -1,4 +1,4 @@
-package org.osama;
+package org.osama.day;
 
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
