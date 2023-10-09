@@ -27,7 +27,6 @@ const menuDiv = document.createElement("div");
 menuDiv.classList.add("box");
 menuDiv.classList.add("context-menu");
 menuDiv.setAttribute("id", "context-menu");
-menuDiv.textContent = "Context menu";
 const all = document.getElementById("all");
 all.appendChild(menuDiv);
 
@@ -72,30 +71,35 @@ async function createNewTask (){
 
 
 async function createTaskElement(taskJson) {
-    let stopwatchInterval; // to keep track of the interval
     const taskDiv = document.createElement("div");
     const taskHeader = document.createElement("p");
     taskDiv.classList.add("task-div");
+    taskDiv.setAttribute("id", taskJson["taskId"]);
     taskHeader.classList.add("task-text");
-    //document.getElementById("bulk-tasks").appendChild(taskDiv); // Makes everything disappear for some reason. Maybe because bulk-tasks is a class not an id, idiot.
     taskHeader.textContent = taskJson["name"];
     const startButton = await createStartSessionButton(taskJson);
     const endButton = await createEndSessionButton(taskJson);
-    const taskTimer = document.createElement("p");
-
     taskDiv.appendChild(taskHeader);
     taskDiv.appendChild(startButton);
     taskDiv.appendChild(endButton);
     taskDiv.appendChild(createDeleteTaskButton(taskJson));
-    //taskDiv.appendChild(taskTimer);
     taskDiv.addEventListener('click', function(){
         highlightTask(taskJson);
     });
-    taskDiv.addEventListener('contextmenu', openContextMenu, false);
-    // endButton.addEventListener('click', function() {
-    //    highlightTask(taskJson);
-    // });
-        return taskDiv;
+    addRightClickHandler(taskDiv, taskJson);
+    return taskDiv;
+}
+function addRightClickHandler(taskDiv, taskJson) {
+    taskDiv.addEventListener('contextmenu', function(e) {
+        console.log("Opened context menu");
+        e.preventDefault();
+        const menuDiv = document.getElementById("context-menu");
+        menuDiv.setAttribute("style", "visibility: visible");
+        menuDiv.style.left = e.pageX +"px";
+        menuDiv.style.top = e.pageY - 25 +"px";
+        const taskId = taskJson["taskId"];
+        populateContextMenu(menuDiv, taskId);
+    }, false);
 }
 function openContextMenu(e) {
     console.log("Opened context menu");
@@ -103,7 +107,8 @@ function openContextMenu(e) {
     const menuDiv = document.getElementById("context-menu");
     menuDiv.setAttribute("style", "visibility: visible");
     menuDiv.style.left = e.pageX +"px";
-    menuDiv.style.top = e.pageY +"px";
+    menuDiv.style.top = e.pageY - 25 +"px";
+
 }
 async function highlightTask(taskJson) {
     const highlightedTaskDiv = document.getElementById("highlighted-task-div");
@@ -122,12 +127,7 @@ async function highlightTask(taskJson) {
     taskDescription.classList.add("highlighted-task-desc");
     taskDescription.textContent = taskJson["description"];
     accumulatedTimeDiv.classList.add("highlighted-task-time");
-    accumulatedTimeDiv.textContent = await getAccumulatedTime(taskJson["taskId"]); // Should be a function for fancy displaying of time. 10s spent. 5mins spent. Based on how much time.
-
-    // const timerDiv = document.createElement("div");
-    // timerDiv.id = "stopwatch";
-    // timerDiv.textContent = updateStopwatch();
-    // highlightedTaskDiv.appendChild(timerDiv);
+    accumulatedTimeDiv.textContent = await displayTaskTime(taskJson["taskId"]); // Should be a function for fancy displaying of time. 10s spent. 5mins spent. Based on how much time.
 }
 function createTaskActionButton(action, taskJson, idSupplier, otherButtonIdSupplier, sessionFunction, buttonImage) {
     const button = document.createElement("img");
@@ -138,6 +138,9 @@ function createTaskActionButton(action, taskJson, idSupplier, otherButtonIdSuppl
     const taskId = taskJson["taskId"];
     button.textContent = `${action} session`;
     button.setAttribute("id", idSupplier(taskId));
+    // let startButton = document.getElementById(getStartSessionButtonId(taskId));
+    // let pauseButton = document.getElementById(getEndSessionButtonId(taskId));
+    // setPlayPauseStatus(taskId, startButton, pauseButton);
     button.onclick = async () => {
         await sessionFunction(taskId);
         button.setAttribute("style", "display: none");
@@ -156,7 +159,18 @@ async function createStartSessionButton(taskJson) {
     }
     return button;
 }
-
+async function setPlayPauseStatus(taskId, startButton, pauseButton) {
+    if (await getTaskRunning(taskId)) {
+        console.log("Pause appears, play disappears");
+        startButton.setAttribute("style", "display: none");
+        pauseButton.setAttribute("style", "display: block");
+    }
+    if (!await getTaskRunning(taskId)) {
+        console.log("Play appears, pause disappears");
+        startButton.setAttribute("style", "display: block");
+        pauseButton.setAttribute("style", "display: none");
+    }
+}
 
  async function createEndSessionButton(taskJson) {
     let button = createTaskActionButton("end", taskJson, getEndSessionButtonId, getStartSessionButtonId, endTaskSession, PAUSE_IMG);
@@ -198,12 +212,19 @@ async function postRequest(taskId, action) {
 
 async function startTaskSession(taskId) {
     console.log("Starting task session");
+    console.log(getStartSessionButtonId(taskId));
+    // let startButton = document.getElementById(getStartSessionButtonId(taskId));
+    // let pauseButton = document.getElementById(getEndSessionButtonId(taskId));
+    // await setPlayPauseStatus(taskId, startButton, pauseButton);
     await postRequest(taskId, "start-session");
     startStopwatch();
 }
 
 async function endTaskSession(taskId) {
     console.log("Ending task session");
+    // let startButton = document.getElementById(getStartSessionButtonId(taskId));
+    // let pauseButton = document.getElementById(getEndSessionButtonId(taskId));
+    // await setPlayPauseStatus(taskId, startButton, pauseButton);
     await postRequest(taskId, "end-session");
     //stopStopwatch(stopwatchInterval, startTime);
 }
@@ -250,10 +271,7 @@ function stopStopwatch(stopwatchInterval, startTime) {
     stopwatchInterval = null; // reset the interval variable
 }
 function updateStopwatch(startTime, stopwatchId) {
-    function pad(number) {
-        // add a leading zero if the number is less than 10
-        return (number < 10 ? "0" : "") + number;
-    }
+
 
     const currentTime = new Date().getTime(); // get current time in milliseconds
     const elapsedTime = currentTime - startTime; // calculate elapsed time in milliseconds
@@ -267,4 +285,61 @@ function updateStopwatch(startTime, stopwatchId) {
 async function getAccumulatedTime(taskId){
     let accTime =  await getRequest(taskId, "get-accumulated-time");
     return accTime.json();
+}
+async function displayTaskTime(taskId) {
+    let accTime = await getAccumulatedTime(taskId);
+    const seconds = Math.floor(accTime) % 60; // calculate seconds
+    const minutes = Math.floor(accTime/ 60) % 60; // calculate minutes
+    const hours = Math.floor(accTime / 60 / 60); // calculate hours
+    return pad(hours) + ":" + pad(minutes) + ":" + pad(seconds);
+}
+function pad(number) {
+    // add a leading zero if the number is less than 10
+    return (number < 10 ? "0" : "") + number;
+}
+async function populateContextMenu(menuDiv, taskId) {
+    menuDiv.innerHTML = "";
+    const startDiv = document.createElement("div");
+    const endDiv = document.createElement("div");
+    const descDiv = document.createElement("div");
+    const deleteDiv = document.createElement("div");
+    startDiv.classList.add("menu-item", "pointer");
+    endDiv.classList.add("menu-item", "pointer");
+    descDiv.classList.add("menu-item", "pointer");
+    deleteDiv.classList.add("menu-item", "pointer");
+    const startButton = document.getElementById(getStartSessionButtonId(taskId));
+    const endButton = document.getElementById(getEndSessionButtonId(taskId));
+    if (await getTaskRunning(taskId)) {
+        startDiv.setAttribute("style", "display: none");
+    }
+    if (!await getTaskRunning(taskId)) {
+        endDiv.setAttribute("style", "display: none");
+    }
+    startDiv.addEventListener('click', function () {
+        startTaskSession(taskId);
+        startButton.setAttribute("style", "display: none");
+        endButton.setAttribute("style", "display: block");
+        menuDiv.setAttribute("style", "visibility: hidden");
+    })
+    endDiv.addEventListener('click', function () {
+        endTaskSession(taskId);
+        startButton.setAttribute("style", "display: block");
+        endButton.setAttribute("style", "display: none");
+        menuDiv.setAttribute("style", "visibility: hidden");
+    })
+    deleteDiv.addEventListener('click', function () {
+        deleteTask(taskId);
+        menuDiv.setAttribute("style", "visibility: hidden");
+    })
+
+    startDiv.textContent = "Start";
+    endDiv.textContent = "End";
+    descDiv.textContent = "Description";
+    deleteDiv.textContent = "Delete";
+    menuDiv.appendChild(startDiv);
+    menuDiv.appendChild(endDiv);
+    menuDiv.appendChild(descDiv);
+    menuDiv.appendChild(deleteDiv);
+
+
 }
