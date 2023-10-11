@@ -1,10 +1,7 @@
 package org.osama;
 
 import lombok.Data;
-import org.osama.task.NewTaskRequest;
-import org.osama.task.Task;
-import org.osama.task.TaskRepository;
-import org.osama.task.TaskService;
+import org.osama.task.*;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -25,7 +22,10 @@ public class Controller {
     public List<Task> getAll() {
         return taskRepository.getAll();
     }
-
+    @GetMapping("/get-task/{taskId}")
+    public Task getTaskById(@PathVariable String taskId) {
+        return taskRepository.getTaskById(taskId);
+    }
     @PostMapping
     public Task createTask(@RequestBody NewTaskRequest taskRequest) {
         return taskService.createNewTask(taskRequest);
@@ -37,6 +37,10 @@ public class Controller {
     @PostMapping("/end-session/{taskId}")
     public void endTaskSession(@PathVariable String taskId) {
         taskService.endTaskSession(taskId);
+    }
+    @PostMapping("/set-description")
+    public void setTaskDescription(@RequestBody ModifyTaskRequest taskRequest) {
+        taskService.setTaskDescription(taskRequest);
     }
     @GetMapping("/get-task-running/{taskId}")
     public boolean getTaskRunning(@PathVariable String taskId) {
@@ -63,9 +67,6 @@ public class Controller {
         String taskId;
     }
 
-    @Data
-    static class ModifyTaskRequest {
-        String taskId;
-    }
+
 
 }

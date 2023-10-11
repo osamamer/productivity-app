@@ -159,6 +159,7 @@ em {
     text-align: center;
     font-size: 20px;
     margin-bottom: 10px;
+    outline: 0 solid transparent;
 }
 #highlighted-task-div {
     text-align: center;
@@ -186,7 +187,7 @@ em {
 }
 
 .context-menu {
-    border-radius: 0;
+    border-radius: 10px;
     border-width: 1px;
     background-color: #161840;
     color: honeydew;

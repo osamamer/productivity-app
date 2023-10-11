@@ -1,6 +1,7 @@
 package org.osama.task;
 
 import lombok.extern.slf4j.Slf4j;
+import org.osama.Controller;
 import org.osama.session.Session;
 import org.osama.session.SessionRepository;
 import org.springframework.stereotype.Service;
@@ -30,6 +31,11 @@ public class TaskService {
             totalDuration = totalDuration.plus(duration);
         }
         return totalDuration;
+    }
+    public void setTaskDescription(ModifyTaskRequest taskRequest) {
+        Task task = taskRepository.getTaskById(taskRequest.taskId);
+        task.setDescription(taskRequest.taskDescription);
+        taskRepository.update(task);
     }
 
     private List<Duration> getDurations(String taskId) {

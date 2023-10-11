@@ -19,7 +19,7 @@ inputForm.addEventListener('submit', function(e) {
 document.addEventListener('click', function handleClickOutsideBox(event) {
     const highlightBox = document.getElementById("highlighted-task-div");
     const taskBox = document.getElementById("all-tasks-div");
-    if (!highlightBox.contains(event.target) && !taskBox.contains(event.target)) highlightBox.style.visibility = 'hidden';
+    if (!highlightBox.contains(event.target) && !taskBox.contains(event.target) && !menuDiv.contains(event.target)) highlightBox.style.visibility = 'hidden';
     if (!menuDiv.contains(event.target)) menuDiv.style.visibility = 'hidden';
 });
 
@@ -58,7 +58,7 @@ async function createNewTask (){
         method: "POST",
         body: JSON.stringify({
             taskName: userTaskName,
-            taskDescription: "A user-submitted task"
+            taskDescription: "Description"
         }),
         headers: {
             "Content-type": "application/json; charset=UTF-8"
@@ -110,6 +110,9 @@ function openContextMenu(e) {
     menuDiv.style.top = e.pageY - 25 +"px";
 
 }
+
+
+
 async function highlightTask(taskJson) {
     const highlightedTaskDiv = document.getElementById("highlighted-task-div");
     while (highlightedTaskDiv.firstChild) {
@@ -123,9 +126,16 @@ async function highlightTask(taskJson) {
     highlightedTaskDiv.appendChild(taskDescription);
     highlightedTaskDiv.appendChild(accumulatedTimeDiv);
     taskHeader.classList.add("highlighted-task-text");
-    taskHeader.textContent = taskJson["name"];
+    let task = await getTaskById(taskJson["taskId"]); // THIS HAD TO BE DONE BECAUSE WE ARE PASSING INTO IT THE JSON AT THE START. SO THE DESC WASN'T BEING UPDATED UNTIL IT WE ADDED A NEW TASK.
+    console.log(task);
+    taskHeader.textContent = task["name"];
     taskDescription.classList.add("highlighted-task-desc");
-    taskDescription.textContent = taskJson["description"];
+    taskDescription.textContent = task["description"];
+    taskDescription.setAttribute("contenteditable", "true");
+    taskDescription.addEventListener("input", function() {
+        console.log("Changing description");
+        submitDescription(task["taskId"], taskDescription.textContent);
+    }, false);
     accumulatedTimeDiv.classList.add("highlighted-task-time");
     accumulatedTimeDiv.textContent = await displayTaskTime(taskJson["taskId"]); // Should be a function for fancy displaying of time. 10s spent. 5mins spent. Based on how much time.
 }
@@ -207,8 +217,13 @@ async function getRequest(taskId, action) {
 async function postRequest(taskId, action) {
      return await fetch(TASK_URL.concat(`/${action}/${taskId}`), { // `` makes something into a string
         method: "POST",
+
     })
 }
+async function getTaskById(taskId) {
+    return (await getRequest(taskId, "get-task")).json();
+}
+
 
 async function startTaskSession(taskId) {
     console.log("Starting task session");
@@ -344,3 +359,26 @@ async function populateContextMenu(menuDiv, taskId) {
 
 
 }
+
+async function submitDescription(taskId, description) {
+    console.log(description);
+     return await fetch(TASK_URL.concat("/set-description"), { // `` makes something into a string
+        method: "POST",
+        body: JSON.stringify({
+            taskId: taskId,
+            taskDescription: description
+        }),
+        headers: {
+            "Content-type": "application/json; charset=UTF-8"
+        }
+    })
+
+}
+
+// let person = prompt("What does this task entail?", "");
+// let text;
+// if (person == null || person === "") {
+//     text = "User cancelled the prompt.";
+// } else {
+//     text = "Hello " + person + "! How are you today?";
+// }
