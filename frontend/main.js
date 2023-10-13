@@ -127,7 +127,6 @@ async function highlightTask(taskJson) {
     highlightedTaskDiv.appendChild(accumulatedTimeDiv);
     taskHeader.classList.add("highlighted-task-text");
     let task = await getTaskById(taskJson["taskId"]); // THIS HAD TO BE DONE BECAUSE WE ARE PASSING INTO IT THE JSON AT THE START. SO THE DESC WASN'T BEING UPDATED UNTIL IT WE ADDED A NEW TASK.
-    console.log(task);
     taskHeader.textContent = task["name"];
     taskDescription.classList.add("highlighted-task-desc");
     taskDescription.textContent = task["description"];
@@ -139,6 +138,14 @@ async function highlightTask(taskJson) {
     accumulatedTimeDiv.classList.add("highlighted-task-time");
     accumulatedTimeDiv.textContent = await displayTaskTime(taskJson["taskId"]); // Should be a function for fancy displaying of time. 10s spent. 5mins spent. Based on how much time.
 }
+
+function switchPlayPause(buttonId, otherButtonId, taskId) {
+    const button = document.getElementById(buttonId);
+    const otherButton = document.getElementById(otherButtonId);
+    button.setAttribute("style", "display: none");
+    otherButton.setAttribute("style", "display: block");
+}
+
 function createTaskActionButton(action, taskJson, idSupplier, otherButtonIdSupplier, sessionFunction, buttonImage) {
     const button = document.createElement("img");
     button.src = buttonImage;
@@ -153,8 +160,6 @@ function createTaskActionButton(action, taskJson, idSupplier, otherButtonIdSuppl
     // setPlayPauseStatus(taskId, startButton, pauseButton);
     button.onclick = async () => {
         await sessionFunction(taskId);
-        button.setAttribute("style", "display: none");
-        document.getElementById(otherButtonIdSupplier(taskId)).setAttribute("style", "display: block");
     }
     return button;
 }
@@ -168,18 +173,6 @@ async function createStartSessionButton(taskJson) {
         button.setAttribute("style", "display: none");
     }
     return button;
-}
-async function setPlayPauseStatus(taskId, startButton, pauseButton) {
-    if (await getTaskRunning(taskId)) {
-        console.log("Pause appears, play disappears");
-        startButton.setAttribute("style", "display: none");
-        pauseButton.setAttribute("style", "display: block");
-    }
-    if (!await getTaskRunning(taskId)) {
-        console.log("Play appears, pause disappears");
-        startButton.setAttribute("style", "display: block");
-        pauseButton.setAttribute("style", "display: none");
-    }
 }
 
  async function createEndSessionButton(taskJson) {
@@ -226,22 +219,35 @@ async function getTaskById(taskId) {
 
 
 async function startTaskSession(taskId) {
+    const tasks = await fetch('http://localhost:8080/api/v1/task');
+    const tasksResponse = await tasks.json();
+    for (let i = 0; i < tasksResponse.length; i++) {
+        if (tasksResponse[i]["taskId"] !== taskId && await getTaskRunning(tasksResponse[i]["taskId"])) {
+            console.log("Cannot start task because other task is running")
+            return;
+        }
+    }
     console.log("Starting task session");
-    console.log(getStartSessionButtonId(taskId));
+    const buttonId = getStartSessionButtonId(taskId);
+    const otherButtonId = getEndSessionButtonId(taskId);
     // let startButton = document.getElementById(getStartSessionButtonId(taskId));
     // let pauseButton = document.getElementById(getEndSessionButtonId(taskId));
     // await setPlayPauseStatus(taskId, startButton, pauseButton);
     await postRequest(taskId, "start-session");
+    switchPlayPause(buttonId, otherButtonId, taskId);
     startStopwatch();
 }
 
 async function endTaskSession(taskId) {
+    const buttonId = getEndSessionButtonId(taskId);
+    const otherButtonId = getStartSessionButtonId(taskId);
     console.log("Ending task session");
+    switchPlayPause(buttonId, otherButtonId, taskId);
     // let startButton = document.getElementById(getStartSessionButtonId(taskId));
     // let pauseButton = document.getElementById(getEndSessionButtonId(taskId));
     // await setPlayPauseStatus(taskId, startButton, pauseButton);
+    stopStopwatch(intervalId);
     await postRequest(taskId, "end-session");
-    //stopStopwatch(stopwatchInterval, startTime);
 }
 
 async function getTaskRunning(taskId) {
@@ -260,42 +266,32 @@ async function deleteTask(taskId) {
 
 // TODO
 // Bugs to fix:
-// 1. Creating a new task switches a running task's button back to start. FIXED
-// 2. Can enter an empty task. FIXED
-// 3. When you delete all tasks, there is an exception. NOT FIXED. HOW? 
-// 4. Accumulated Time is only updated when you end a session. FIXED (because it's not a problem)
-// 5. onsubmit through JS doesn't work. FIXED
-// 6. Scrolling down to bottom of box crops last task a bit. FIXED
-// 7. Create a separate box for timer.
-// 8. Create a function for fancy display of accumulated time. DONE
-// 9. Create a right click context menu for tasks. DONE
-// 10. Pausing session doesn't update time immediately in highlight box. You have to highlight it again. FIXED
-// 11. Starting a task will end all other tasks in the backend. But in the front end, the button will still change. And thus you will get an error for stopping an already stopped task.
+// 1. When you delete all tasks, there is an exception.
+// 2. Set up timer box with pause and play and stop, and separate for each task.
 
 
 
-
-let startTime; // to keep track of the start time
-let elapsedPausedTime = 0;
-function startStopwatch(stopwatchInterval) {
+let intervalId;
+let totalElapsedTime = 0;
+function startStopwatch() {
     let startTime = Date.now();
-    stopwatchInterval = setInterval(updateStopwatch, 1000, startTime, "stopwatch");
+    intervalId = setInterval(function () {
+        updateStopwatch(startTime);
+    }, 1000);
 }
-function stopStopwatch(stopwatchInterval, startTime) {
-    clearInterval(stopwatchInterval); // stop the interval
-    elapsedPausedTime = new Date().getTime() - startTime; // calculate elapsed paused time
-    stopwatchInterval = null; // reset the interval variable
+function stopStopwatch() {
+    console.log(intervalId)
+    clearInterval(intervalId); // stop the interval
+    // stopwatchInterval = null; // reset the interval variable
 }
-function updateStopwatch(startTime, stopwatchId) {
-
-
+function updateStopwatch(startTime) {
     const currentTime = new Date().getTime(); // get current time in milliseconds
     const elapsedTime = currentTime - startTime; // calculate elapsed time in milliseconds
-    const seconds = Math.floor(elapsedTime / 1000) % 60; // calculate seconds
-    const minutes = Math.floor(elapsedTime / 1000 / 60) % 60; // calculate minutes
-    const hours = Math.floor(elapsedTime / 1000 / 60 / 60); // calculate hours
-     // format display time
-    // document.getElementById(stopwatchId).textContent = pad(hours) + ":" + pad(minutes) + ":" + pad(seconds); // update the display
+    totalElapsedTime += 1000;
+    const seconds = Math.floor(totalElapsedTime / 1000) % 60; // calculate seconds
+    const minutes = Math.floor(totalElapsedTime / 1000 / 60) % 60; // calculate minutes
+    const hours = Math.floor(totalElapsedTime / 1000 / 60 / 60); // calculate hours
+    document.getElementById("timer-div").textContent = pad(hours) + ":" + pad(minutes) + ":" + pad(seconds); // update the display
 }
 
 async function getAccumulatedTime(taskId){
@@ -323,8 +319,6 @@ async function populateContextMenu(menuDiv, taskId) {
     endDiv.classList.add("menu-item", "pointer");
     descDiv.classList.add("menu-item", "pointer");
     deleteDiv.classList.add("menu-item", "pointer");
-    const startButton = document.getElementById(getStartSessionButtonId(taskId));
-    const endButton = document.getElementById(getEndSessionButtonId(taskId));
     if (await getTaskRunning(taskId)) {
         startDiv.setAttribute("style", "display: none");
     }
@@ -333,14 +327,10 @@ async function populateContextMenu(menuDiv, taskId) {
     }
     startDiv.addEventListener('click', function () {
         startTaskSession(taskId);
-        startButton.setAttribute("style", "display: none");
-        endButton.setAttribute("style", "display: block");
         menuDiv.setAttribute("style", "visibility: hidden");
     })
     endDiv.addEventListener('click', function () {
         endTaskSession(taskId);
-        startButton.setAttribute("style", "display: block");
-        endButton.setAttribute("style", "display: none");
         menuDiv.setAttribute("style", "visibility: hidden");
     })
     deleteDiv.addEventListener('click', function () {
@@ -359,7 +349,6 @@ async function populateContextMenu(menuDiv, taskId) {
 
 
 }
-
 async function submitDescription(taskId, description) {
     console.log(description);
      return await fetch(TASK_URL.concat("/set-description"), { // `` makes something into a string
@@ -372,13 +361,4 @@ async function submitDescription(taskId, description) {
             "Content-type": "application/json; charset=UTF-8"
         }
     })
-
 }
-
-// let person = prompt("What does this task entail?", "");
-// let text;
-// if (person == null || person === "") {
-//     text = "User cancelled the prompt.";
-// } else {
-//     text = "Hello " + person + "! How are you today?";
-// }

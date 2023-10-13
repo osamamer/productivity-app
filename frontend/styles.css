@@ -116,11 +116,13 @@ em {
     padding: 15px;
 }
 #timer-div {
-    visibility: hidden;
     color: honeydew;
     width: 80px;
     height: 50px;
     padding: 15px;
+}
+#timer {
+
 }
 .highlighted-task-time {
     text-align: center;
