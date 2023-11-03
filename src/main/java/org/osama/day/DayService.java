@@ -1,16 +1,27 @@
 package org.osama.day;
 
-import org.osama.task.TaskRepository;
 import org.springframework.stereotype.Service;
+
+import java.time.LocalDateTime;
+import java.util.Optional;
 
 @Service
 public class DayService {
-    private final TaskRepository taskRepository;
+    private final DayRepository dayRepository;
 
-    public DayService(TaskRepository taskRepository) {
-        this.taskRepository = taskRepository;
+    public DayService(DayRepository dayRepository) {
+        this.dayRepository = dayRepository;
     }
 
+
+    public Day createNewDay() {
+        Day newDay = new Day();
+        newDay.setDate(LocalDateTime.now());
+        return newDay;
+    }
+    public Optional<Day> getToday() {
+        return dayRepository.findDayByDate(LocalDateTime.now());
+    }
 
 
 

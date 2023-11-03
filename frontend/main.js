@@ -30,7 +30,8 @@ menuDiv.setAttribute("id", "context-menu");
 const all = document.getElementById("all");
 all.appendChild(menuDiv);
 
-
+const dayDiv = document.getElementById("day-div");
+dayDiv.textContent = "";
 async function fetchTasks () {
     const response = await fetch('http://localhost:8080/api/v1/task');
     const responseJson = await response.json();
@@ -361,4 +362,7 @@ async function submitDescription(taskId, description) {
             "Content-type": "application/json; charset=UTF-8"
         }
     })
+}
+async function getDayRating() {
+    return await fetch();
 }

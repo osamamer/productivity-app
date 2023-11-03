@@ -1,10 +1,13 @@
 package org.osama;
 
 import lombok.Data;
+import org.osama.day.*;
 import org.osama.task.*;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/v1/task")
@@ -12,10 +15,12 @@ import java.util.List;
 public class Controller {
     private final TaskRepository taskRepository;
     private final TaskService taskService;
+    private final DayService dayService;
 
-    public Controller(TaskRepository taskRepository, TaskService taskService) {
+    public Controller(TaskRepository taskRepository, TaskService taskService, DayService dayService) {
         this.taskRepository = taskRepository;
         this.taskService = taskService;
+        this.dayService = dayService;
     }
 
     @GetMapping
@@ -50,6 +55,10 @@ public class Controller {
     public long getAccumulatedTime(@PathVariable String taskId) {
         return taskService.getAccumulatedTime(taskId).getSeconds();
     }
+    @GetMapping("get-today")
+    public Optional<Day> getToday() {
+        return dayService.getToday();
+    }
 
     @DeleteMapping("/{taskId}")
     public void removeTask(@PathVariable String taskId) {
@@ -65,6 +74,10 @@ public class Controller {
     @Data
     static class DeleteTaskRequest {
         String taskId;
+    }
+    @Data
+    static class DayRequest {
+        LocalDateTime localDateTime;
     }
 
 
