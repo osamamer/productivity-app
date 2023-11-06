@@ -10,14 +10,7 @@ body {
     font-family: Raleway, serif;
 }
 img {
-    width: auto;
-    height: auto;
-    max-width: 15px;
-    max-height: 15px;
-    float: left;
-    margin: 10px;
-    background: transparent;
-    object-fit: cover;
+
 }
 .wrapper {
 
@@ -66,7 +59,7 @@ em {
 }
 .sidenav {
     height: 100%; /* Full-height: remove this if you want "auto" height */
-    width: 100px; /* Set the width of the sidebar */
+    width: 60px; /* Set the width of the sidebar */
     position: fixed; /* Fixed Sidebar (stay in place on scroll) */
     z-index: 1; /* Stay on top */
     top: 0; /* Stay at the top */
@@ -76,6 +69,7 @@ em {
     overflow-x: hidden; /* Disable horizontal scroll */
     padding-top: 10px;
     padding-left: 15px;
+    padding-right: 15px;
     margin-right: 5px;
     color: honeydew;
 }
@@ -180,7 +174,14 @@ em {
     grid-column: span 4;
 }
 .task-button {
+    width: auto;
+    height: auto;
+    max-width: 15px;
+    max-height: 15px;
+    float: left;
     margin: auto;
+    background: transparent;
+    object-fit: cover;
 }
 
 #stopwatch {
@@ -207,4 +208,24 @@ em {
 }
 #day-div {
 
+}
+
+.side-button {
+
+    height: auto;
+    max-width: 70%;
+    margin: 10%;
+    border: 20px;
+}
+.side-button-container:hover {
+    background-color: #162E40;
+    cursor: pointer;
+}
+.side-button-container {
+    height: 5%;
+    max-width: 80%;
+    border-radius: 5px;
+    margin-right: auto;
+    margin-bottom: 15px;
+    padding-left: 5px;
 }

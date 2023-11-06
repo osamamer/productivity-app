@@ -16,9 +16,6 @@ function createTaskActionButton(action, taskJson, idSupplier, otherButtonIdSuppl
     const taskId = taskJson["taskId"];
     button.textContent = `${action} session`;
     button.setAttribute("id", idSupplier(taskId));
-    // let startButton = document.getElementById(getStartSessionButtonId(taskId));
-    // let pauseButton = document.getElementById(getEndSessionButtonId(taskId));
-    // setPlayPauseStatus(taskId, startButton, pauseButton);
     button.onclick = async () => {
         await sessionFunction(taskId);
     }

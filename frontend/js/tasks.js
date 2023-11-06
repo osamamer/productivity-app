@@ -51,9 +51,6 @@ export async function startTaskSession(taskId) {
     console.log("Starting task session");
     const buttonId = getStartSessionButtonId(taskId);
     const otherButtonId = getEndSessionButtonId(taskId);
-    // let startButton = document.getElementById(getStartSessionButtonId(taskId));
-    // let pauseButton = document.getElementById(getEndSessionButtonId(taskId));
-    // await setPlayPauseStatus(taskId, startButton, pauseButton);
     await postRequest(taskId, "start-session");
     switchPlayPause(buttonId, otherButtonId, taskId);
     startStopwatch();
@@ -63,9 +60,6 @@ export async function endTaskSession(taskId) {
     const otherButtonId = getStartSessionButtonId(taskId);
     console.log("Ending task session");
     switchPlayPause(buttonId, otherButtonId, taskId);
-    // let startButton = document.getElementById(getStartSessionButtonId(taskId));
-    // let pauseButton = document.getElementById(getEndSessionButtonId(taskId));
-    // await setPlayPauseStatus(taskId, startButton, pauseButton);
     stopStopwatch(intervalId);
     await postRequest(taskId, "end-session");
 }
