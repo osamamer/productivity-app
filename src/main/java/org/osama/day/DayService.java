@@ -16,11 +16,11 @@ public class DayService {
 
     public Day createNewDay() {
         Day newDay = new Day();
-        newDay.setDate(LocalDateTime.now());
+        newDay.setDate(LocalDateTime.now().toLocalDate());
         return newDay;
     }
     public Optional<Day> getToday() {
-        return dayRepository.findDayByDate(LocalDateTime.now());
+        return dayRepository.findDayByDate(LocalDateTime.now().toLocalDate());
     }
 
 

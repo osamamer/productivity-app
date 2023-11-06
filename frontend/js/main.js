@@ -2,7 +2,7 @@ const ROOT_URL = "http://localhost:8080";
 const TASK_URL = ROOT_URL.concat("/api/v1/task");
 
 import {createTaskElement} from './tasks';
-import {displayTodayRating} from './backend-calls';
+import {getTodayRating} from './backend-calls';
 
 window.onload = async function() {
     let taskElements = await fetchTasks();
@@ -52,6 +52,11 @@ async function createNewTask (){
         .then((tasksString) => displayTasks(tasksString))
 }
 
+async function displayTodayRating() {
+    const dayDiv = document.getElementById("day-div");
+    dayDiv.textContent = await getTodayRating();
+    //dayDiv.textContent = "HUH"
+}
 // TODO
 // Bugs to fix:
 // 1. When you delete all tasks, there is an exception.

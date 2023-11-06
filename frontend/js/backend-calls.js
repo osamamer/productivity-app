@@ -47,12 +47,8 @@ export async function submitDescription(taskId, description) {
 async function getToday() {
     return await fetch(TASK_URL.concat("/get-today"));
 }
-async function getTodayRating() {
-    let today = await getToday().json();
+export async function getTodayRating() {
+    let today = (await getToday().then()).json();
     return today["rating"];
 }
-export async function displayTodayRating() {
-    const dayDiv = document.getElementById("day-div");
-    //dayDiv.textContent = await getTodayRating();
-    dayDiv.textContent = "what"
-}
+
