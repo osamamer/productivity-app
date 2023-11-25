@@ -39,6 +39,14 @@ public class Controller {
     public void startTaskSession(@PathVariable String taskId) {
         taskService.startTaskSession(taskId);
     }
+    @PostMapping("/pause-session/{taskId}")
+    public void pauseTaskSession(@PathVariable String taskId) {
+        taskService.pauseTaskSession(taskId);
+    }
+    @PostMapping("/unpause-session/{taskId}")
+    public void unpauseTaskSession(@PathVariable String taskId) {
+        taskService.unpauseTaskSession(taskId);
+    }
     @PostMapping("/end-session/{taskId}")
     public void endTaskSession(@PathVariable String taskId) {
         taskService.endTaskSession(taskId);

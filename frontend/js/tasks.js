@@ -9,7 +9,7 @@ import {
 document.addEventListener('click', function handleClickOutsideBox(event) {
     const highlightBox = document.getElementById("highlighted-task-div");
     const taskBox = document.getElementById("all-tasks-div");
-    if (!highlightBox.contains(event.target) && !taskBox.contains(event.target) && !menuDiv.contains(event.target)) highlightBox.style.visibility = 'hidden';
+    //if (!highlightBox.contains(event.target) && !taskBox.contains(event.target) && !menuDiv.contains(event.target)) highlightBox.style.visibility = 'hidden';
     if (!menuDiv.contains(event.target)) menuDiv.style.visibility = 'hidden';
 });
 
@@ -54,6 +54,20 @@ export async function startTaskSession(taskId) {
     await postRequest(taskId, "start-session");
     switchPlayPause(buttonId, otherButtonId, taskId);
     startStopwatch();
+}
+export async function pauseTaskSession(taskId) {
+    const buttonId = getStartSessionButtonId(taskId);
+    const otherButtonId = getEndSessionButtonId(taskId);
+    stopStopwatch(intervalId);
+    await postRequest(taskId, "pause-session");
+    switchPlayPause(buttonId, otherButtonId, taskId);
+}
+export async function unpauseTaskSession(taskId) {
+    const buttonId = getStartSessionButtonId(taskId);
+    const otherButtonId = getEndSessionButtonId(taskId);
+    stopStopwatch(intervalId);
+    await postRequest(taskId, "unpause-session");
+    switchPlayPause(buttonId, otherButtonId, taskId);
 }
 export async function endTaskSession(taskId) {
     const buttonId = getEndSessionButtonId(taskId);
@@ -114,7 +128,7 @@ async function highlightTask(taskJson) {
         submitDescription(task["taskId"], taskDescription.textContent);
     }, false);
     accumulatedTimeDiv.classList.add("highlighted-task-time");
-    accumulatedTimeDiv.textContent = await displayTaskTime(taskJson["taskId"]); // Should be a function for fancy displaying of time. 10s spent. 5mins spent. Based on how much time.
+    accumulatedTimeDiv.textContent = "Elapsed time: " + await displayTaskTime(taskJson["taskId"]); // Should be a function for fancy displaying of time. 10s spent. 5mins spent. Based on how much time.
 }
 async function displayTaskTime(taskId) {
     let accTime = await getAccumulatedTime(taskId);

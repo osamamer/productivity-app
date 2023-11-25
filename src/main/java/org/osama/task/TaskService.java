@@ -81,8 +81,8 @@ public class TaskService {
 
     public Duration endTaskSession(String taskId) {
         Task task = taskRepository.getTaskById(taskId);
-        Optional<Session> session = sessionRepository.findSessionByTaskIdAndIsRunningIsTrue(taskId);
-        Session activeSession = session.orElseThrow(() -> new IllegalStateException("Cannot end task session because it is not running"));
+        Optional<Session> session = sessionRepository.findSessionByTaskIdAndIsActiveIsTrue(taskId);
+        Session activeSession = session.orElseThrow(() -> new IllegalStateException("Cannot end task session because it is not active"));
         Duration elapsedTime = Duration.between(activeSession.getLastUnpauseTime(), LocalDateTime.now());
         activeSession.setTotalSessionTime(activeSession.getTotalSessionTime().plus(elapsedTime));
         activeSession.setEndTime(LocalDateTime.now());

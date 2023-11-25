@@ -3,7 +3,7 @@ const TASK_URL = ROOT_URL.concat("/api/v1/task");
 
 import {createTaskElement} from './tasks';
 import {getTodayRating} from './backend-calls';
-
+//npm run build
 window.onload = async function() {
     let taskElements = await fetchTasks();
     displayTasks(taskElements);

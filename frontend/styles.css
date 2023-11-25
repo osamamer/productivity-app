@@ -1,6 +1,11 @@
 body {
+    --lavender: #B6D9FA;
+    --darkerlavender: #9FC6FA;
+    --darkestlavender: #76BAFA;
+    --offwhite: #F7F9F5;
     --navyblue: #161840;
-    background: var(--navyblue);
+    --darkernavyblue: #0C0E24;
+    background: var(--offwhite);
 }
 @font-face {
     font-family: Raleway;
@@ -9,58 +14,9 @@ body {
 * {
     font-family: Raleway, serif;
 }
-img {
 
-}
 .wrapper {
     position: relative;
-}
-#all {
-    display: grid;
-    gap: 2rem;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-    margin-left: 150px;
-    overflow: hidden;
-    justify-items: center;
-    align-items: center;
-}
-.top {
-    display: grid;
-    grid-template-columns: 40% 20% 20% 20%;
-    left: 105px;
-}
-.head-question {
-    position: relative;
-    font-size: xx-large;
-    text-align: left;
-    color: honeydew;
-    grid-column: span 2;
-}
-#task-input-field {
-    grid-row: span 2;
-    width: 100%;
-    height: 40%;
-    --darkernavyblue: #0C0E24;
-    background-color: var(--darkernavyblue);
-    border: none;
-    border-radius: 6px;
-    caret-color: white;
-    outline: none;
-    color: honeydew;
-}
-.input-field-wrapper {
-    padding-top: 45px;
-    padding-bottom: 45px;
-    grid-column: span 2;
-}
-em {
-    color: darkred;
-    font-style: italic;
-}
-
-.main {
-    display: grid;
-    margin-left: 150px;
 }
 .sidenav {
     height: 100%; /* Full-height: remove this if you want "auto" height */
@@ -69,8 +25,7 @@ em {
     z-index: 1; /* Stay on top */
     top: 0; /* Stay at the top */
     left: 0;
-    --darkernavyblue: #0C0E24;
-    background-color: var(--darkernavyblue); /* Black */
+    background-color: var(--lavender); /* Black */
     overflow-x: hidden; /* Disable horizontal scroll */
     padding-top: 10px;
     padding-left: 15px;
@@ -78,6 +33,37 @@ em {
     margin-right: 5px;
     color: honeydew;
 }
+#all {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2em;
+    /*gap: 2rem;
+    grid-template-columns: repeat(6, minmax(0, 1fr));*/
+    margin-left: 120px;
+    overflow: hidden;
+    justify-content: flex-start;
+}
+.head-question {
+    position: relative;
+    font-size: xx-large;
+    text-align: left;
+}
+#task-input-field {
+    height: 40px;
+    width: 350px;
+    background-color: var(--lavender);
+    border: none;
+    border-radius: 6px;
+    outline: none;
+    caret-color: black;
+    margin-top: 58px;
+}
+.input-field-wrapper {
+    /*padding-top: 45px;*/
+    /*padding-bottom: 45px;*/
+}
+
+
 .box {
     display: flex;
     flex-direction: column;
@@ -85,10 +71,9 @@ em {
     padding-left: 10px;
     padding-top: 5px;
     padding-right: 10px;
-    --darkernavyblue: #0C0E24;
-    background-color: #0C0E24;
-    border: 3px solid black;
-    border-radius: 15px;
+    background-color: var(--lavender);
+    border: 3px;
+    border-radius: 5px;
     overflow: hidden;
 }
 .box:hover {
@@ -96,27 +81,29 @@ em {
 }
 
 .task-box {
-    grid-column: 1/3;
-    grid-row: 1/3;
-    /*height: 450px;
-    width: 300px; */
+    /*align-self: center;*/
+    height: 450px;
+    width: 300px;
     display: flex;
     flex-direction: column;
     align-items: end;
     color: honeydew;
     text-align: left;
     font-size: 20px;
-    margin-right: auto;
+    /*margin-right: auto;*/
     overflow: hidden;
 }
 #highlighted-task-div {
+    height: 200px;
+    width: 450px;
     color: honeydew;
-    visibility: hidden;
+    /*visibility: hidden;*/
 
     padding: 15px;
 }
 #timer-div {
-    color: honeydew;
+    text-align: center;
+    color: black;
     width: 80px;
     height: 50px;
     padding: 15px;
@@ -135,10 +122,11 @@ em {
 }
 
 .task-div {
+    color: black;
     display: grid;
     grid-template-columns: 70% 15% 15%;
     width: 95%;
-    background-color: #161840;
+    background-color: var(--darkerlavender);
     text-align: justify;
     padding: 5px 5px 5px 10px;
     margin: 10px 0 10px 0;
@@ -165,10 +153,11 @@ em {
     outline: 0 solid transparent;
 }
 #highlighted-task-div {
+    color: black;
     text-align: center;
 }
 .task-div:hover {
-    background-color: #162E40;
+    background-color: var(--darkestlavender);
 }
 .start-task-button {
 
@@ -199,7 +188,7 @@ em {
 .context-menu {
     border-radius: 10px;
     border-width: 1px;
-    background-color: #161840;
+    background-color: var(--lavender);
     color: honeydew;
     visibility: hidden;
     position: absolute;
@@ -224,7 +213,7 @@ em {
     border: 20px;
 }
 .side-button-container:hover {
-    background-color: #162E40;
+    background-color: var(--darkerlavender);
     cursor: pointer;
 }
 .side-button-container {
@@ -237,12 +226,13 @@ em {
 }
 
 .sun-img-div {
-    max-width: 50%;
-    max-height: 50%;
-
+    max-width: 50px;
+    max-height: 50px;
+    border-radius: 5px;
+    margin-top: 58px;
 }
 .sun-img-div:hover {
-    background-color: #162E40;
+    background-color: var(--darkerlavender);
     cursor: pointer;
 }
 #sun-image {
@@ -262,4 +252,8 @@ em {
 .task-box-container {
     grid-row: 2 / 5;
     grid-column: 1 / 3;
+}
+.break {
+    flex-basis: 100%;
+    height: 0;
 }

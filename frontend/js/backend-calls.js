@@ -9,7 +9,6 @@ async function getRequest(taskId, action) {
 export async function postRequest(taskId, action) {
     return await fetch(TASK_URL.concat(`/${action}/${taskId}`), { // `` makes something into a string
         method: "POST",
-
     })
 }
 export async function deleteTask(taskId) {
