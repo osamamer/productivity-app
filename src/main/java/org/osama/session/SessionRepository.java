@@ -7,6 +7,7 @@ import java.util.Optional;
 
 public interface SessionRepository extends JpaRepository<Session, String> {
     Optional<Session> findSessionByTaskIdAndIsRunningIsTrue(String taskId);
+    Optional<Session> findSessionByTaskIdAndIsActiveIsTrue(String taskId);
     List<Session> findAllByTaskId(String taskId);
     List<Session> findAllByIsRunningIsTrue();
 }

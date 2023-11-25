@@ -25,4 +25,6 @@ public class Task {
     @JsonSerialize(using = LocalDateTimeSerializer.class)
     @JsonDeserialize(using = LocalDateTimeDeserializer.class)
     private LocalDateTime creationDate;
+//    @Column
+//    private String activeSessionId;
 }

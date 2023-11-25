@@ -10,6 +10,7 @@ import jakarta.persistence.Id;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 @Data
 @NoArgsConstructor
@@ -21,10 +22,18 @@ public class Session {
     private String taskId;
     @Column(nullable = false)
     private boolean isRunning;
+    @Column(nullable = false)
+    private boolean isActive; // isRunning means that it is currently on, isActive means that it is either currently on or paused.
+    @Column
+    private Duration totalSessionTime;
     @Column
     @JsonSerialize(using = LocalDateTimeSerializer.class)
     @JsonDeserialize(using = LocalDateTimeDeserializer.class)
     private LocalDateTime startTime;
+    @Column
+    @JsonSerialize(using = LocalDateTimeSerializer.class)
+    @JsonDeserialize(using = LocalDateTimeDeserializer.class)
+    private LocalDateTime lastUnpauseTime;
     @Column
     @JsonSerialize(using = LocalDateTimeSerializer.class)
     @JsonDeserialize(using = LocalDateTimeDeserializer.class)
