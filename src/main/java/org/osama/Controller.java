@@ -57,13 +57,17 @@ public class Controller {
     }
     @GetMapping("/get-task-running/{taskId}")
     public boolean getTaskRunning(@PathVariable String taskId) {
-        return taskService.isActive(taskId);
+        return taskService.getTaskRunning(taskId);
+    }
+    @GetMapping("/get-task-active/{taskId}")
+    public boolean getTaskActive(@PathVariable String taskId) {
+        return taskService.getTaskActive(taskId);
     }
     @GetMapping("/get-accumulated-time/{taskId}")
     public long getAccumulatedTime(@PathVariable String taskId) {
         return taskService.getAccumulatedTime(taskId).getSeconds();
     }
-    @GetMapping("get-today")
+    @GetMapping("/get-today")
     public Optional<Day> getToday() {
         return dayService.getToday();
     }
@@ -77,6 +81,10 @@ public class Controller {
         for (int i = 0; i < taskRepository.getAll().size(); i++) {
             taskRepository.remove(taskRepository.getAll().get(i).getTaskId());
         }
+    }
+    @PostMapping("/end-all-sessions")
+    public void endAllSessions() {
+        taskService.endAllSessions();
     }
 
     @Data

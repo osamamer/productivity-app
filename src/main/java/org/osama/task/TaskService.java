@@ -1,7 +1,6 @@
 package org.osama.task;
 
 import lombok.extern.slf4j.Slf4j;
-import org.osama.Controller;
 import org.osama.session.Session;
 import org.osama.session.SessionRepository;
 import org.springframework.stereotype.Service;
@@ -46,14 +45,17 @@ public class TaskService {
                 .toList();
     }
 
-    public boolean isActive(String taskId) {
-        return sessionRepository.findSessionByTaskIdAndIsRunningIsTrue(taskId).isPresent();
+    public boolean getTaskRunning(String taskId) {
+        return !sessionRepository.findAllByTaskIdAndIsRunningIsTrue(taskId).isEmpty();
+    }
+    public boolean getTaskActive(String taskId) {
+        return !sessionRepository.findAllByTaskIdAndIsActiveIsTrue(taskId).isEmpty();
     }
 
     public void startTaskSession(String taskId) {
         Task task = taskRepository.getTaskById(taskId);
-        Optional<Session> activeSession = sessionRepository.findSessionByTaskIdAndIsRunningIsTrue(task.getTaskId());
-        if (activeSession.isPresent()) throw new IllegalStateException("Cannot start a session when the task is already active");
+        List<Session> activeSessions = sessionRepository.findAllByTaskIdAndIsActiveIsTrue(task.getTaskId());
+        if (activeSessions.size() != 0) throw new IllegalStateException("Cannot start a session when the task is already active");
         endAllSessions();
         sessionRepository.save(createSession(task));
         log.info("Started task with ID [{}]", task.getTaskId());
@@ -107,10 +109,11 @@ public class TaskService {
         return session;
     }
 
-    private void endAllSessions() {
-        sessionRepository.findAllByIsRunningIsTrue().forEach(session -> {
+    public void endAllSessions() {
+        sessionRepository.findAll().forEach(session -> {
             session.setEndTime(LocalDateTime.now());
             session.setRunning(false);
+            session.setActive(false);
             sessionRepository.save(session);
         });
     }

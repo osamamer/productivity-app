@@ -2,12 +2,13 @@ const ROOT_URL = "http://localhost:8080";
 const TASK_URL = ROOT_URL.concat("/api/v1/task");
 
 import {createTaskElement} from './tasks';
-import {getTodayRating} from './backend-calls';
+import {endAllSessions, getTodayRating} from './backend-calls';
 //npm run build
 window.onload = async function() {
     let taskElements = await fetchTasks();
     displayTasks(taskElements);
     await displayTodayRating();
+    await endAllSessions();
 }
 const inputForm=document.getElementById("task-input-form");
 inputForm.addEventListener('submit', function(e) {

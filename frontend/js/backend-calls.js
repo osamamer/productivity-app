@@ -26,6 +26,11 @@ export async function getTaskRunning(taskId) {
     })
     return await promise.json();
 }
+export async function getTaskActive(taskId) {
+    let promise = await fetch(TASK_URL.concat(`/get-task-active/${taskId}`), { // `` makes something into a string
+    })
+    return await promise.json();
+}
 export async function getAccumulatedTime(taskId){
     let accTime =  await getRequest(taskId, "get-accumulated-time");
     return accTime.json();
@@ -49,5 +54,12 @@ async function getToday() {
 export async function getTodayRating() {
     let today = (await getToday().then()).json();
     return today["rating"];
+}
+
+export async function endAllSessions() {
+    await fetch(TASK_URL.concat("/end-all-sessions"), {
+        method: "POST"
+    });
+    console.log("Ended all sessions");
 }
 
