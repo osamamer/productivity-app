@@ -220,10 +220,22 @@ async function setupFocusButtons(task) {
         endFocusButton.setAttribute("style", "display: none");
     }
     // Attach and detach event listeners
-    startFocusButton.addEventListener("click", buttonEventListenerFunction, false);
-    pauseFocusButton.addEventListener("click", buttonEventListenerFunction, false);
-    unpauseFocusButton.addEventListener("click", buttonEventListenerFunction, false);
-    endFocusButton.addEventListener("click", buttonEventListenerFunction, false);
+    let buttons = document.getElementsByClassName("focus-button");
+    for (let i = 0; i < buttons.length; i++) {
+        if (buttons[i].getAttribute('listener') === 'true') {
+            buttons[i].removeEventListener("click", buttonEventListenerFunction, false);
+        }
+        buttons[i].addEventListener("click", buttonEventListenerFunction, false);
+        buttons[i].setAttribute('listener', 'true');
+    }
+    // startFocusButton.addEventListener("click", buttonEventListenerFunction, false);
+    // pauseFocusButton.addEventListener("click", buttonEventListenerFunction, false);
+    // unpauseFocusButton.addEventListener("click", buttonEventListenerFunction, false);
+    // endFocusButton.addEventListener("click", buttonEventListenerFunction, false);
+    // startFocusButton.setAttribute('listener', 'true');
+    // pauseFocusButton.setAttribute('listener', 'true');
+    // unpauseFocusButton.setAttribute('listener', 'true');
+    // endFocusButton.setAttribute('listener', 'true');
 }
 
 function buttonEventListenerFunction(e) {
@@ -237,7 +249,7 @@ function buttonEventListenerFunction(e) {
     if (purpose === "unpause") unpauseTaskSession(button.taskId, 0, false);
     if (purpose === "end") {
         endTaskSession(button.taskId);
-        //highlightTask(button.taskId);
+        highlightTask(button.taskId);
     }
 }
 

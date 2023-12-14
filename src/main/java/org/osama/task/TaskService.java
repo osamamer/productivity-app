@@ -63,7 +63,7 @@ public class TaskService {
     public void unpauseTaskSession(String taskId) {
         Task task = taskRepository.getTaskById(taskId);
         Optional<Session> session = sessionRepository.findSessionByTaskIdAndIsRunningIsTrue(task.getTaskId());
-        if (session.isPresent()) throw new IllegalStateException("Cannot unpause a session when the task is already active");
+        if (session.isPresent()) throw new IllegalStateException("Cannot unpause a session when the task is already running");
         session = sessionRepository.findSessionByTaskIdAndIsActiveIsTrue(taskId);
         Session activeSession = session.orElseThrow(() -> new IllegalStateException("Cannot unpause task session because it is not active"));
         activeSession.setRunning(true);

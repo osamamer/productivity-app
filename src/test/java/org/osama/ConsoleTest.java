@@ -30,13 +30,13 @@ public class ConsoleTest {
         taskService.startTaskSession(taskId);
         Thread.sleep(500);
         taskService.pauseTaskSession(taskId);
-        Thread.sleep(250);
-        taskService.unpauseTaskSession(taskId);
         Thread.sleep(5000);
+        taskService.unpauseTaskSession(taskId);
+        Thread.sleep(300);
         taskService.pauseTaskSession(taskId);
         Thread.sleep(250);
         taskService.unpauseTaskSession(taskId);
-        Thread.sleep(5000);
+        Thread.sleep(500);
         taskService.endTaskSession(taskId);
         System.out.println(taskService.getAccumulatedTime(taskId) + " seconds");
     }
