@@ -14,13 +14,13 @@ public class DayService {
     }
 
 
-    public Day createNewDay() {
-        Day newDay = new Day();
-        newDay.setDate(LocalDateTime.now().toLocalDate());
-        return newDay;
+    public DayEntity createNewDay() {
+        DayEntity newDayEntity = new DayEntity();
+        newDayEntity.setDayDate(LocalDateTime.now().toLocalDate());
+        return newDayEntity;
     }
-    public Optional<Day> getToday() {
-        return dayRepository.findDayByDate(LocalDateTime.now().toLocalDate());
+    public Optional<DayEntity> getToday() {
+        return dayRepository.findDayByDayDate(LocalDateTime.now().toLocalDate());
     }
 
 

@@ -65,10 +65,10 @@ public class Controller {
     }
     @GetMapping("/get-accumulated-time/{taskId}")
     public long getAccumulatedTime(@PathVariable String taskId) {
-        return taskService.getAccumulatedTime(taskId).getSeconds();
+        return taskService.getAccumulatedTime(taskId).toSeconds();
     }
     @GetMapping("/get-today")
-    public Optional<Day> getToday() {
+    public Optional<DayEntity> getToday() {
         return dayService.getToday();
     }
 

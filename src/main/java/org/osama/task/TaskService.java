@@ -37,14 +37,6 @@ public class TaskService {
         taskRepository.update(task);
     }
 
-    private List<Duration> getDurations(String taskId) {
-        return sessionRepository.findAllByTaskId(taskId).stream()
-                .map(session ->
-                        Objects.isNull(session.getEndTime()) ? Duration.between(session.getStartTime(), LocalDateTime.now()) :
-                                Duration.between(session.getStartTime(), session.getEndTime()))
-                .toList();
-    }
-
     public boolean getTaskRunning(String taskId) {
         return !sessionRepository.findAllByTaskIdAndIsRunningIsTrue(taskId).isEmpty();
     }
@@ -56,19 +48,9 @@ public class TaskService {
         Task task = taskRepository.getTaskById(taskId);
         List<Session> activeSessions = sessionRepository.findAllByTaskIdAndIsActiveIsTrue(task.getTaskId());
         if (activeSessions.size() != 0) throw new IllegalStateException("Cannot start a session when the task is already active");
-        endAllSessions();
+//        endAllSessions();
         sessionRepository.save(createSession(task));
         log.info("Started task with ID [{}]", task.getTaskId());
-    }
-    public void unpauseTaskSession(String taskId) {
-        Task task = taskRepository.getTaskById(taskId);
-        Optional<Session> session = sessionRepository.findSessionByTaskIdAndIsRunningIsTrue(task.getTaskId());
-        if (session.isPresent()) throw new IllegalStateException("Cannot unpause a session when the task is already running");
-        session = sessionRepository.findSessionByTaskIdAndIsActiveIsTrue(taskId);
-        Session activeSession = session.orElseThrow(() -> new IllegalStateException("Cannot unpause task session because it is not active"));
-        activeSession.setRunning(true);
-        activeSession.setLastUnpauseTime(LocalDateTime.now());
-        sessionRepository.save(activeSession);
     }
     public void pauseTaskSession(String taskId) {
         Task task = taskRepository.getTaskById(taskId);
@@ -80,19 +62,31 @@ public class TaskService {
         sessionRepository.save(activeSession);
         log.info("Paused task with ID [{}]", task.getTaskId());
     }
+    public void unpauseTaskSession(String taskId) {
+        Task task = taskRepository.getTaskById(taskId);
+        Optional<Session> session = sessionRepository.findSessionByTaskIdAndIsRunningIsTrue(task.getTaskId());
+        if (session.isPresent()) throw new IllegalStateException("Cannot unpause a session when the task is already running");
+        session = sessionRepository.findSessionByTaskIdAndIsActiveIsTrue(taskId);
+        Session activeSession = session.orElseThrow(() -> new IllegalStateException("Cannot unpause task session because it is not active"));
+        activeSession.setRunning(true);
+        activeSession.setLastUnpauseTime(LocalDateTime.now());
+        sessionRepository.save(activeSession);
+        log.info("Unpaused task with ID [{}]", task.getTaskId());
+    }
 
-    public Duration endTaskSession(String taskId) {
+    public void endTaskSession(String taskId) {
         Task task = taskRepository.getTaskById(taskId);
         Optional<Session> session = sessionRepository.findSessionByTaskIdAndIsActiveIsTrue(taskId);
         Session activeSession = session.orElseThrow(() -> new IllegalStateException("Cannot end task session because it is not active"));
         Duration elapsedTime = Duration.between(activeSession.getLastUnpauseTime(), LocalDateTime.now());
-        activeSession.setTotalSessionTime(activeSession.getTotalSessionTime().plus(elapsedTime));
+        if (activeSession.isRunning()) {
+            activeSession.setTotalSessionTime(activeSession.getTotalSessionTime().plus(elapsedTime));
+        }
         activeSession.setEndTime(LocalDateTime.now());
         activeSession.setRunning(false);
         activeSession.setActive(false);
         sessionRepository.save(activeSession);
         log.info("Ended session for task with ID [{}]", task.getTaskId());
-        return Duration.between(activeSession.getStartTime(), activeSession.getEndTime());
     }
 
 
@@ -110,11 +104,13 @@ public class TaskService {
     }
 
     public void endAllSessions() {
-        sessionRepository.findAll().forEach(session -> {
-            session.setEndTime(LocalDateTime.now());
-            session.setRunning(false);
-            session.setActive(false);
-            sessionRepository.save(session);
+        sessionRepository.findAll()
+                .stream().filter(Session::isActive)
+                .forEach(activeSession -> {
+            activeSession.setEndTime(LocalDateTime.now());
+            activeSession.setRunning(false);
+            activeSession.setActive(false);
+            sessionRepository.save(activeSession);
         });
     }
 

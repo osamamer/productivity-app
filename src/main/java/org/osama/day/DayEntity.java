@@ -3,7 +3,9 @@ package org.osama.day;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.datatype.jsr310.deser.LocalDateDeserializer;
+import com.fasterxml.jackson.datatype.jsr310.deser.LocalDateTimeDeserializer;
 import com.fasterxml.jackson.datatype.jsr310.ser.LocalDateSerializer;
+import com.fasterxml.jackson.datatype.jsr310.ser.LocalDateTimeSerializer;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -16,7 +18,7 @@ import java.time.LocalDateTime;
 @Data
 @NoArgsConstructor
 @Entity
-public class Day {
+public class DayEntity {
     @Id
     private String id;
     @Column
@@ -28,5 +30,5 @@ public class Day {
     @Column
     @JsonSerialize(using = LocalDateSerializer.class)
     @JsonDeserialize(using = LocalDateDeserializer.class)
-    private LocalDate date;
+    private LocalDate dayDate;
 }

@@ -38,7 +38,21 @@ public class ConsoleTest {
         taskService.unpauseTaskSession(taskId);
         Thread.sleep(500);
         taskService.endTaskSession(taskId);
-        System.out.println(taskService.getAccumulatedTime(taskId) + " seconds");
+        System.out.println(taskService.getAccumulatedTime(taskId).toMillis() + " milliseconds");
+    }
+    @Test
+    void test() throws InterruptedException {
+        NewTaskRequest request = new NewTaskRequest();
+        request.setTaskName("Task poop");
+        request.setTaskDescription("Task poop description");
+        Task task = taskService.createNewTask(request);
+        String taskId = task.getTaskId();
+        taskService.startTaskSession(taskId);
+        Thread.sleep(500);
+        taskService.pauseTaskSession(taskId);
+        Thread.sleep(1000);
+        taskService.endTaskSession(taskId);
+        System.out.println(taskService.getAccumulatedTime(taskId).toMillis() + " milliseconds");
     }
     public void pauseSession(String taskId){
         taskService.pauseTaskSession(taskId);
