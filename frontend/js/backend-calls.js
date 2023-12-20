@@ -49,10 +49,11 @@ export async function submitDescription(taskId, description) {
     })
 }
 async function getToday() {
-    return await fetch(TASK_URL.concat("/get-today"));
+    const response = await fetch(TASK_URL.concat("/get-today"));
+    return await response.json();
 }
 export async function getTodayRating() {
-    let today = (await getToday().then()).json();
+    let today = await getToday();
     return today["rating"];
 }
 

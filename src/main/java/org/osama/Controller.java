@@ -67,11 +67,11 @@ public class Controller {
     public long getAccumulatedTime(@PathVariable String taskId) {
         return taskService.getAccumulatedTime(taskId).toSeconds();
     }
+
     @GetMapping("/get-today")
-    public Optional<DayEntity> getToday() {
+    public DayEntity getToday() {
         return dayService.getToday();
     }
-
     @DeleteMapping("/{taskId}")
     public void removeTask(@PathVariable String taskId) {
         taskRepository.remove(taskId);
@@ -85,6 +85,11 @@ public class Controller {
     @PostMapping("/end-all-sessions")
     public void endAllSessions() {
         taskService.endAllSessions();
+    }
+
+    @PostMapping("/set-today-rating/{rating}")
+    public void setTodayRating(@PathVariable double rating) {
+        dayService.setDayRating(getToday(), rating);
     }
 
     @Data

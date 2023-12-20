@@ -30,5 +30,5 @@ public class DayEntity {
     @Column
     @JsonSerialize(using = LocalDateSerializer.class)
     @JsonDeserialize(using = LocalDateDeserializer.class)
-    private LocalDate dayDate;
+    private LocalDate localDate;
 }

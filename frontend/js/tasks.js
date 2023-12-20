@@ -119,7 +119,7 @@ function updateStopwatch() {
     const seconds = Math.floor(totalElapsedTime / 1000) % 60; // calculate seconds
     const minutes = Math.floor(totalElapsedTime / 1000 / 60) % 60; // calculate minutes
     const hours = Math.floor(totalElapsedTime / 1000 / 60 / 60); // calculate hours
-    document.getElementById("timer-div").textContent = pad(hours) + ":" + pad(minutes) + ":" + pad(seconds); // update the display
+    document.getElementById("timer-div-text").textContent = pad(hours) + ":" + pad(minutes) + ":" + pad(seconds); // update the display
 }
 function clearStopwatch() {
     totalElapsedTime = -1000;
@@ -200,7 +200,6 @@ async function setupFocusButtons(task) {
     // Determine which buttons are displayed based on the running and active attributes of the task
     let taskRunning = await getTaskRunning(task["taskId"]);
     let taskActive = await getTaskActive(task["taskId"]);
-    console.log("Active: " + taskActive + ", " + "Running: " + taskRunning);
     if (!taskActive && !taskRunning) {
         startFocusButton.setAttribute("style", "display: block");
         pauseFocusButton.setAttribute("style", "display: none");

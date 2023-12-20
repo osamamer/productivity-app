@@ -1,9 +1,9 @@
 import {endTaskSession, pauseTaskSession, startTaskSession} from "./tasks";
 
-const PLAY_IMG = "images/play.png";
-const PAUSE_IMG = "images/pause.png";
-const DELETE_IMG = "images/close.png";
-const DOTS_IMG = "images/dots.png";
+const PLAY_IMG = "../images/play.png";
+const PAUSE_IMG = "../images/pause.png";
+const DELETE_IMG = "../images/close.png";
+const DOTS_IMG = "../images/dots.png";
 
 import {deleteTask, getTaskRunning} from './backend-calls'
 

@@ -56,6 +56,7 @@ async function createNewTask (){
 async function displayTodayRating() {
     const dayDiv = document.getElementById("day-div");
     dayDiv.textContent = await getTodayRating();
+    console.log(await getTodayRating());
     //dayDiv.textContent = "HUH"
 }
 // TODO
