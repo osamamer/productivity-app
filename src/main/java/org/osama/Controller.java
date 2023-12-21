@@ -5,7 +5,9 @@ import org.osama.day.*;
 import org.osama.task.*;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Optional;
 
@@ -67,10 +69,29 @@ public class Controller {
     public long getAccumulatedTime(@PathVariable String taskId) {
         return taskService.getAccumulatedTime(taskId).toSeconds();
     }
-
+    @PostMapping("/complete-task/{taskId}")
+    public void completeTask(@PathVariable String taskId) {
+        taskService.completeTask(taskId);
+    }
     @GetMapping("/get-today")
     public DayEntity getToday() {
         return dayService.getToday();
+    }
+    @PostMapping("/set-day-rating/{date}/{rating}")
+    public void setDayRating(@PathVariable String date, @PathVariable double rating) {
+        dayService.setDayRating(date, rating);
+    }
+    @PostMapping("/set-today-rating/{rating}")
+    public void setTodayRating(@PathVariable double rating) {
+        dayService.setTodayRating(rating);
+    }
+    @PostMapping("/set-day-plan/{date}/{plan}")
+    public void setDayPlan(@PathVariable String date, @PathVariable String plan) {
+        dayService.setDayPlan(date, plan);
+    }
+    @PostMapping("/set-day-summary/{date}/{summary}")
+    public void setDaySummary(@PathVariable String date, @PathVariable String summary) {
+        dayService.setDaySummary(date, summary);
     }
     @DeleteMapping("/{taskId}")
     public void removeTask(@PathVariable String taskId) {
@@ -86,12 +107,6 @@ public class Controller {
     public void endAllSessions() {
         taskService.endAllSessions();
     }
-
-    @PostMapping("/set-today-rating/{rating}")
-    public void setTodayRating(@PathVariable double rating) {
-        dayService.setDayRating(getToday(), rating);
-    }
-
     @Data
     static class DeleteTaskRequest {
         String taskId;

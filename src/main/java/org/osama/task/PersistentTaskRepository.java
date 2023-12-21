@@ -7,21 +7,17 @@ import java.util.List;
 @Repository
 public class PersistentTaskRepository implements TaskRepository {
     private final TaskJpaRepository taskJpaRepository;
-
     public PersistentTaskRepository(TaskJpaRepository taskJpaRepository) {
         this.taskJpaRepository = taskJpaRepository;
     }
-
     @Override
     public List<Task> getAll() {
         return taskJpaRepository.findAll();
     }
-
     @Override
     public void add(Task task) {
         taskJpaRepository.save(task);
     }
-
     @Override
     public void remove(String taskId) {
         taskJpaRepository.deleteById(taskId);
@@ -32,7 +28,6 @@ public class PersistentTaskRepository implements TaskRepository {
         return taskJpaRepository.findById(taskId)
                 .orElseThrow(() -> new IllegalArgumentException("Task does not exist"));
     }
-
     @Override
     public List<Task> getTasksByName(String taskName) {
         return taskJpaRepository.findAllByName(taskName);

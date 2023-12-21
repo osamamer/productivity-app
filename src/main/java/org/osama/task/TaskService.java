@@ -43,7 +43,6 @@ public class TaskService {
     public boolean getTaskActive(String taskId) {
         return !sessionRepository.findAllByTaskIdAndIsActiveIsTrue(taskId).isEmpty();
     }
-
     public void startTaskSession(String taskId) {
         Task task = taskRepository.getTaskById(taskId);
         List<Session> activeSessions = sessionRepository.findAllByTaskIdAndIsActiveIsTrue(task.getTaskId());
@@ -73,7 +72,6 @@ public class TaskService {
         sessionRepository.save(activeSession);
         log.info("Unpaused task with ID [{}]", task.getTaskId());
     }
-
     public void endTaskSession(String taskId) {
         Task task = taskRepository.getTaskById(taskId);
         Optional<Session> session = sessionRepository.findSessionByTaskIdAndIsActiveIsTrue(taskId);
@@ -88,9 +86,11 @@ public class TaskService {
         sessionRepository.save(activeSession);
         log.info("Ended session for task with ID [{}]", task.getTaskId());
     }
-
-
-
+    public void completeTask(String taskId) {
+        Task task = taskRepository.getTaskById(taskId);
+        task.setCompleted(true);
+        taskRepository.update(task);
+    }
     private static Session createSession(Task task) {
         Session session = new Session();
         session.setSessionId(UUID.randomUUID().toString());
@@ -113,13 +113,13 @@ public class TaskService {
             sessionRepository.save(activeSession);
         });
     }
-
     public Task createNewTask(NewTaskRequest taskRequest) {
         Task newTask = new Task();
         newTask.setTaskId(UUID.randomUUID().toString());
         newTask.setName(taskRequest.getTaskName());
         newTask.setDescription(taskRequest.getTaskDescription());
         newTask.setCreationDate(LocalDateTime.now());
+        newTask.setCompleted(false);
         taskRepository.add(newTask);
         return newTask;
     }

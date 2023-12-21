@@ -22,9 +22,9 @@ public class Task {
     @Column(nullable = false)
     private String description;
     @Column(nullable = false)
+    private boolean completed;
+    @Column(nullable = false)
     @JsonSerialize(using = LocalDateTimeSerializer.class)
     @JsonDeserialize(using = LocalDateTimeDeserializer.class)
     private LocalDateTime creationDate;
-//    @Column
-//    private String activeSessionId;
 }
