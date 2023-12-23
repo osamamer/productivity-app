@@ -5,7 +5,8 @@ import {
     getTaskById,
     submitDescription,
     getAccumulatedTime,
-    getTaskActive
+    getTaskActive,
+    changeTaskName
 } from './backend-calls'
 import {
     createStartSessionButtons,
@@ -13,11 +14,9 @@ import {
     createDeleteTaskButton,
     getStartSessionButtonId, getEndSessionButtonId
 } from './buttons';
+import {displayTasks, fetchTasks} from "./main";
 
 document.addEventListener('click', function handleClickOutsideBox(event) {
-    const highlightBox = document.getElementById("highlighted-task-div");
-    const taskBox = document.getElementById("all-tasks-div");
-    //if (!highlightBox.contains(event.target) && !taskBox.contains(event.target) && !menuDiv.contains(event.target)) highlightBox.style.visibility = 'hidden';
     if (!menuDiv.contains(event.target)) menuDiv.style.visibility = 'hidden';
 });
 
@@ -38,12 +37,14 @@ export async function createTaskElement(taskJson) {
     taskHeader.textContent = taskJson["name"];
     const startButton = await createStartSessionButtons(taskJson);
     const endButton = await createPauseSessionButton(taskJson);
+    const deleteButton = createDeleteTaskButton(taskJson);
     taskDiv.appendChild(taskHeader);
     taskDiv.appendChild(startButton);
     taskDiv.appendChild(endButton);
-    taskDiv.appendChild(createDeleteTaskButton(taskJson));
-    taskDiv.addEventListener('click', function(){
-        highlightTask(taskId);
+    taskDiv.appendChild(deleteButton);
+    taskDiv.addEventListener('click', function(event){
+        if (!deleteButton.contains(event.target))
+            highlightTask(taskId);
     });
     addRightClickHandler(taskDiv, taskJson);
     return taskDiv;
@@ -98,6 +99,8 @@ export async function endTaskSession(taskId) {
 let intervalId;
 let totalElapsedTime = 0;
 function startStopwatch(period, hasPeriod) {
+    let timerDiv = document.getElementById("timer-div");
+    timerDiv.setAttribute("style", "visibility: visible");
     let startTime = Date.now();
     intervalId = setInterval(function () {
         updateStopwatch();
@@ -124,6 +127,8 @@ function updateStopwatch() {
 function clearStopwatch() {
     totalElapsedTime = -1000;
     updateStopwatch();
+    let timerDiv = document.getElementById("timer-div");
+    timerDiv.setAttribute("style", "visibility: hidden");
 }
 function switchPlayPause(buttonId, otherButtonId, taskId, status) {
     // status: 0 for inactive, 1 for active but not running, 2 for active and running
@@ -169,12 +174,29 @@ async function highlightTask(taskId) {
     taskHeader.textContent = task["name"];
     taskDescription.textContent = task["description"];
     taskDescription.setAttribute("contenteditable", "true");
+    taskHeader.setAttribute("contenteditable", "true");
     taskDescription.addEventListener("input", function () {
         console.log("Changing description");
         submitDescription(task["taskId"], taskDescription.textContent);
     }, false);
-    accumulatedTimeDiv.textContent = "Elapsed time: " + await displayTaskTime(task["taskId"]); // Should be a function for fancy displaying of time. 10s spent. 5mins spent. Based on how much time.+
-    setupFocusButtons(task);
+    if (taskHeader.getAttribute('listener') === 'true') {
+        taskHeader.removeEventListener("input", function () {
+            changeNameEventFunction(task["taskId"], taskHeader)
+        }, false);
+    }
+        taskHeader.addEventListener("input", function () {
+            changeNameEventFunction(task["taskId"], taskHeader)
+        }, false);
+        accumulatedTimeDiv.textContent = "Elapsed time: " + await displayTaskTime(task["taskId"]); // Should be a function for fancy displaying of time. 10s spent. 5mins spent. Based on how much time.+
+        await setupFocusButtons(task);
+
+}
+async function changeNameEventFunction(taskId, taskHeader) {
+    console.log("Changing name");
+    // if (document.activeElement !== taskHeader) {
+    await changeTaskName(taskId, taskHeader.textContent).then(() => fetchTasks()).then((tasks) => displayTasks(tasks));
+    //}
+
 }
 async function setupFocusButtons(task) {
     let startFocusButton = document.getElementById("start-focus-button");
@@ -240,9 +262,7 @@ async function setupFocusButtons(task) {
 function buttonEventListenerFunction(e) {
     let button = e.currentTarget;
     let purpose = button.purpose;
-    // let button = document.getElementById(`${purpose}-focus-button`);
     console.log(`${purpose} button in highlighted box pressed`);
-    let functionName = purpose + "TaskSession";
     if (purpose === "start") startTaskSession(button.taskId, 0, false);
     if (purpose === "pause") pauseTaskSession(button.taskId, 0, false);
     if (purpose === "unpause") unpauseTaskSession(button.taskId, 0, false);
@@ -252,15 +272,6 @@ function buttonEventListenerFunction(e) {
     }
 }
 
-function executeFunctionByName(functionName, context , args ) {
-     args = Array.prototype.slice.call(arguments, 2);
-    var namespaces = functionName.split(".");
-    var func = namespaces.pop();
-    for (var i = 0; i < namespaces.length; i++) {
-        context = context[namespaces[i]];
-    }
-    return context[func].apply(context, args);
-}
 
 // EXTREMELY INTERESTING. IN THIS APPROACH, THE BUTTONS YOU HAVE WILL KEEP ALL OLD EVENT LISTENERS THEY HAD!
 async function displayTaskTime(taskId) {
@@ -293,24 +304,49 @@ function openContextMenu(e) {
 async function populateContextMenu(menuDiv, taskId) {
     menuDiv.innerHTML = "";
     const startDiv = document.createElement("div");
+    const pauseDiv = document.createElement("div");
+    const unpauseDiv = document.createElement("div");
     const endDiv = document.createElement("div");
     const descDiv = document.createElement("div");
     const deleteDiv = document.createElement("div");
     startDiv.classList.add("menu-item", "pointer");
+    pauseDiv.classList.add("menu-item", "pointer");
+    startDiv.classList.add("menu-item", "pointer");
+    unpauseDiv.classList.add("menu-item", "pointer");
     endDiv.classList.add("menu-item", "pointer");
     descDiv.classList.add("menu-item", "pointer");
     deleteDiv.classList.add("menu-item", "pointer");
-    if (await getTaskRunning(taskId)) {
-        startDiv.setAttribute("style", "display: none");
-    }
-    if (!await getTaskRunning(taskId)) {
+    if (!await getTaskActive(taskId)) {
+        pauseDiv.setAttribute("style", "display: none");
+        unpauseDiv.setAttribute("style", "display: none");
         endDiv.setAttribute("style", "display: none");
     }
+    else if (await getTaskRunning(taskId)) {
+        startDiv.setAttribute("style", "display: none");
+        unpauseDiv.setAttribute("style", "display: none");
+        endDiv.setAttribute("style", "display: none");
+    }
+    else {
+        startDiv.setAttribute("style", "display: none");
+        pauseDiv.setAttribute("style", "display: none");
+    }
     startDiv.addEventListener('click', function () {
+        highlightTask(taskId);
         startTaskSession(taskId);
         menuDiv.setAttribute("style", "visibility: hidden");
     })
+    pauseDiv.addEventListener('click', function () {
+        highlightTask(taskId);
+        pauseTaskSession(taskId);
+        menuDiv.setAttribute("style", "visibility: hidden");
+    })
+    unpauseDiv.addEventListener('click', function () {
+        highlightTask(taskId);
+        unpauseTaskSession(taskId);
+        menuDiv.setAttribute("style", "visibility: hidden");
+    })
     endDiv.addEventListener('click', function () {
+        highlightTask(taskId);
         endTaskSession(taskId);
         menuDiv.setAttribute("style", "visibility: hidden");
     })
@@ -319,11 +355,20 @@ async function populateContextMenu(menuDiv, taskId) {
         menuDiv.setAttribute("style", "visibility: hidden");
     })
 
-    startDiv.textContent = "Start";
-    endDiv.textContent = "End";
+    startDiv.textContent = "Start session";
+    pauseDiv.textContent = "Pause session";
+    unpauseDiv.textContent = "Unpause session";
+    endDiv.textContent = "End session";
     descDiv.textContent = "Description";
     deleteDiv.textContent = "Delete";
+    // let elements = document.getElementsByClassName("menu-item pointer");
+    // console.log(elements.length)
+    // for (let i = 0; i < elements.length; i++) {
+    //     menuDiv.appendChild(elements[i]);
+    // }
     menuDiv.appendChild(startDiv);
+    menuDiv.appendChild(pauseDiv);
+    menuDiv.appendChild(unpauseDiv);
     menuDiv.appendChild(endDiv);
     menuDiv.appendChild(descDiv);
     menuDiv.appendChild(deleteDiv);

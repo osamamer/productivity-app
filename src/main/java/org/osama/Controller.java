@@ -73,6 +73,10 @@ public class Controller {
     public void completeTask(@PathVariable String taskId) {
         taskService.completeTask(taskId);
     }
+    @PostMapping("/change-task-name/{taskId}/{newName}")
+    public void changeTaskName(@PathVariable String taskId, @PathVariable String newName) {
+        taskService.changeTaskName(taskId, newName);
+    }
     @GetMapping("/get-today")
     public DayEntity getToday() {
         return dayService.getToday();

@@ -91,6 +91,15 @@ public class TaskService {
         task.setCompleted(true);
         taskRepository.update(task);
     }
+    public boolean getTaskCompleted(String taskId) {
+        Task task = taskRepository.getTaskById(taskId);
+        return task.isCompleted();
+    }
+    public void changeTaskName(String taskId, String newName) {
+        Task task = taskRepository.getTaskById(taskId);
+        task.setName(newName);
+        taskRepository.update(task);
+    }
     private static Session createSession(Task task) {
         Session session = new Session();
         session.setSessionId(UUID.randomUUID().toString());

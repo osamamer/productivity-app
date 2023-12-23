@@ -12,6 +12,8 @@ export async function postRequest(taskId, action) {
     })
 }
 export async function deleteTask(taskId) {
+    let highlightDiv = document.getElementById("highlighted-task-div");
+    highlightDiv.style.visibility = 'hidden';
     await fetch(TASK_URL.concat(`/${taskId}`), { // `` makes something into a string
         method: "DELETE",
     })
@@ -46,6 +48,11 @@ export async function submitDescription(taskId, description) {
         headers: {
             "Content-type": "application/json; charset=UTF-8"
         }
+    })
+}
+export async function changeTaskName(taskId, newName) {
+    return await fetch(TASK_URL.concat(`/change-task-name/${taskId}/${newName}`), { // `` makes something into a string
+        method: "POST",
     })
 }
 async function getToday() {
