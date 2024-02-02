@@ -10,12 +10,30 @@ window.onload = async function() {
     await displayTodayRating();
     await endAllSessions();
 }
-const inputForm=document.getElementById("task-input-form");
+
+const dayPopup = document.getElementById("day-modal");
+const menuDiv = document.getElementById("task-context-menu");
+const inputForm= document.getElementById("task-input-form");
+const dayButton = document.getElementById("sun-image");
+document.addEventListener('click', function handleClickOutsidePopups(event) {
+    if (!menuDiv.contains(event.target)) menuDiv.style.visibility = 'hidden';
+    if (!dayPopup.contains(event.target)) dayPopup.style.visibility = 'hidden';
+});
 inputForm.addEventListener('submit', function(e) {
     console.log("Trying to submit eh?");
     e.preventDefault();
     createNewTask();
 }, false);
+
+
+
+dayButton.addEventListener('click', function(e) {
+    e.preventDefault();
+    function openDayPopup() {
+        dayPopup.style.visibility = 'visible';
+    }
+    openDayPopup();
+})
 export async function fetchTasks () {
     const response = await fetch('http://localhost:8080/api/v1/task');
     const responseJson = await response.json();
@@ -59,7 +77,7 @@ async function displayTodayRating() {
     console.log(await getTodayRating());
     //dayDiv.textContent = "HUH"
 }
-// TODO
-// Bugs to fix:
-// 1. When you delete all tasks, there is an exception.
-// 2. Set up timer box with pause and play and stop, and separate for each task.
+
+//  TODO List:
+// 1. Set up day stuff
+// 2. Figure out what to do with buttons in task boxes

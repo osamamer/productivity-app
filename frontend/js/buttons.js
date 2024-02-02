@@ -21,7 +21,7 @@ function createTaskActionButton(action, taskJson, idSupplier, otherButtonIdSuppl
     }
     return button;
 }
-export async function createStartSessionButtons(taskJson) {
+export async function createStartSessionButton(taskJson) {
     let button = createTaskActionButton("start", taskJson, getStartSessionButtonId, getEndSessionButtonId, startTaskSession, PLAY_IMG);
     if (await getTaskRunning(taskJson["taskId"].toString())) {
         button.setAttribute("style", "display: none");

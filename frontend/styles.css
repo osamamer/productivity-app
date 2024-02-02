@@ -222,6 +222,15 @@ body {
 #day-div {
 
 }
+.modal {
+    z-index: 10;
+    position: absolute;
+    visibility: hidden;
+    background-color: var(--darkerlavender);
+    color: black;
+    width: 250px;
+    height: 250px;
+}
 
 .side-button {
     height: auto;

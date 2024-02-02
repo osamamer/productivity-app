@@ -9,23 +9,15 @@ import {
     changeTaskName
 } from './backend-calls'
 import {
-    createStartSessionButtons,
+    createStartSessionButton,
     createPauseSessionButton,
     createDeleteTaskButton,
     getStartSessionButtonId, getEndSessionButtonId
 } from './buttons';
 import {displayTasks, fetchTasks} from "./main";
 
-document.addEventListener('click', function handleClickOutsideBox(event) {
-    if (!menuDiv.contains(event.target)) menuDiv.style.visibility = 'hidden';
-});
 
-const menuDiv = document.createElement("div");
-menuDiv.classList.add("box");
-menuDiv.classList.add("context-menu");
-menuDiv.setAttribute("id", "context-menu");
-const all = document.getElementById("all");
-all.appendChild(menuDiv);
+const menuDiv = document.getElementById("task-context-menu");
 let focusDuration = 30;
 export async function createTaskElement(taskJson) {
     let taskId = taskJson["taskId"];
@@ -35,12 +27,12 @@ export async function createTaskElement(taskJson) {
     taskDiv.setAttribute("id", taskId);
     taskHeader.classList.add("task-text");
     taskHeader.textContent = taskJson["name"];
-    const startButton = await createStartSessionButtons(taskJson);
-    const endButton = await createPauseSessionButton(taskJson);
+    const startButton = await createStartSessionButton(taskJson);
+    const pauseButton = await createPauseSessionButton(taskJson);
     const deleteButton = createDeleteTaskButton(taskJson);
     taskDiv.appendChild(taskHeader);
     taskDiv.appendChild(startButton);
-    taskDiv.appendChild(endButton);
+    taskDiv.appendChild(pauseButton);
     taskDiv.appendChild(deleteButton);
     taskDiv.addEventListener('click', function(event){
         if (!deleteButton.contains(event.target))
