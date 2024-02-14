@@ -2,7 +2,7 @@ const ROOT_URL = "http://localhost:8080";
 const TASK_URL = ROOT_URL.concat("/api/v1/task");
 
 import {createTaskElement} from './tasks';
-import {endAllSessions, getTodayRating, setTodayRating} from './backend-calls';
+import {endAllSessions, getTodayRating, setDaySummary, setTodayRating} from './backend-calls';
 //npm run build
 window.onload = async function() {
     let taskElements = await fetchTasks();
@@ -30,6 +30,8 @@ taskInputForm.addEventListener('submit', function(e) {
 }, false);
 dayInputForm.addEventListener('submit', function(e) {
     console.log("Submitting day information.");
+    setTodaySummaryFromForm();
+    setTodayPlanFromForm();
     setTodayRatingFromForm().then(r => displayTodayRating());
 })
 
@@ -80,10 +82,34 @@ async function displayTodayRating() {
 }
 async function setTodayRatingFromForm() {
     const userDayRating = document.getElementById("day-rating-input-field").value;
-    console.log(userDayRating.typeof)
     await setTodayRating(userDayRating);
 }
+async function setTodaySummaryFromForm() {
+    const userDaySummary = document.getElementById("day-summary-input-field").value;
+    console.log(userDaySummary)
+    const todayDate = getCurrentDateFormatted();
+    await setDaySummary(todayDate, userDaySummary);
+}
+async function setTodayPlanFromForm() {
+    const userDayPlan = document.getElementById("day-plan-input-field").value;
+    const todayDate = getCurrentDateFormatted();
+    console.log(todayDate)
+    await setDaySummary(todayDate, userDayPlan);
+}
+function getCurrentDateFormatted() {
+    const date = new Date();
+    const year = date.getFullYear();
+    const month = `0${date.getMonth() + 1}`.slice(-2);
+    const day = `0${date.getDate()}`.slice(-2);
+    return `${year}-${month}-${day}`;
+}
+function formatDate(date) {
+    const year = date.getFullYear();
+    const month = `0${date.getMonth() + 1}`.slice(-2);
+    const day = `0${date.getDate()}`.slice(-2);
+    return `${year}-${month}-${day}`;
+}
+
 
 //  TODO List:
 // 1. Set up day stuff
-// 2. Figure out what to do with buttons in task boxes

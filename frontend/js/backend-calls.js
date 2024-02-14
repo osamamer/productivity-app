@@ -68,6 +68,30 @@ export async function setTodayRating(rating) {
         method: "POST",
     })
 }
+export async function setDayPlan(date, plan){
+    return await fetch(TASK_URL.concat('/set-day-plan'), {
+        method: "POST",
+        body: JSON.stringify({
+            dayDate: date,
+            dayPlan: plan
+        }),
+        headers: {
+            "Content-type": "application/json; charset=UTF-8"
+        }
+    })
+}
+export async function setDaySummary(date, summary){
+    return await fetch(TASK_URL.concat('/set-day-summary'), {
+        method: "POST",
+        body: JSON.stringify({
+            dayDate: date,
+            daySummary: summary
+        }),
+        headers: {
+            "Content-type": "application/json; charset=UTF-8"
+        }
+    })
+}
 
 export async function endAllSessions() {
     await fetch(TASK_URL.concat("/end-all-sessions"), {

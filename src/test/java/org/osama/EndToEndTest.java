@@ -1,6 +1,7 @@
 package org.osama;
 
 import org.junit.jupiter.api.Test;
+import org.osama.day.DayService;
 import org.osama.task.NewTaskRequest;
 import org.osama.task.Task;
 import org.osama.task.TaskRepository;
@@ -18,6 +19,8 @@ public class EndToEndTest {
     private TaskService taskService;
     @Autowired
     private TaskRepository taskRepository;
+    @Autowired
+    private DayService dayService;
     @Test
     void createNewTask() {
         Task task = createTask();
@@ -60,10 +63,19 @@ public class EndToEndTest {
         Task task = createTask();
         assertThrows(IllegalStateException.class, () -> taskService.pauseTaskSession(task.getTaskId()));
     }
+    @Test
+    void setDaySummary() {
+        dayService.setDaySummary("2024-02-15", "It was a shit day.");
+    }
+    @Test
+    void setTodayRating() {
+        dayService.setTodayRating(5);
+    }
     private Task createTask() {
         NewTaskRequest taskRequest = new NewTaskRequest();
         taskRequest.setTaskName("Do chores");
         taskRequest.setTaskDescription("Vacuum nasty room");
         return taskService.createNewTask(taskRequest);
     }
+
 }

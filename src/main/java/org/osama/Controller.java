@@ -89,13 +89,13 @@ public class Controller {
     public void setTodayRating(@PathVariable double rating) {
         dayService.setTodayRating(rating);
     }
-    @PostMapping("/set-day-plan/{date}/{plan}")
-    public void setDayPlan(@PathVariable String date, @PathVariable String plan) {
-        dayService.setDayPlan(date, plan);
+    @PostMapping("/set-day-summary")
+    public void setDaySummary(@RequestBody DaySummaryRequest daySummaryRequest) {
+        dayService.setDaySummary(daySummaryRequest.dayDate, daySummaryRequest.daySummary);
     }
-    @PostMapping("/set-day-summary/{date}/{summary}")
-    public void setDaySummary(@PathVariable String date, @PathVariable String summary) {
-        dayService.setDaySummary(date, summary);
+    @PostMapping("/set-day-plan")
+    public void setDayPlan(@RequestBody DayPlanRequest dayPlanRequest) {
+        dayService.setDayPlan(dayPlanRequest.dayDate, dayPlanRequest.dayPlan);
     }
     @DeleteMapping("/{taskId}")
     public void removeTask(@PathVariable String taskId) {
@@ -116,10 +116,21 @@ public class Controller {
         String taskId;
     }
     @Data
-    static class DayRequest {
-        LocalDateTime localDateTime;
+    public static class DayRequest {
+        String dayDate;
+        String dayId;
+        String daySummary;
+        String dayPlan;
+        double dayRating;
     }
-
-
-
+    @Data
+    public static class DaySummaryRequest {
+        String dayDate;
+        String daySummary;
+    }
+    @Data
+    public static class DayPlanRequest {
+        String dayDate;
+        String dayPlan;
+    }
 }

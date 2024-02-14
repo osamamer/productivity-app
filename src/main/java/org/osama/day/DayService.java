@@ -34,26 +34,26 @@ public class DayService {
         dayRepository.save(day);
         log.info("Day {} rating set to {}", dateString, rating);
     }
-    public void setDayPlan(String dateString, String plan) {
-        LocalDate localDate = stringToLocalDate(dateString);
-        DayEntity day = dayRepository.findDayEntityByLocalDate(localDate).orElse(createNewDay(localDate));
-        day.setPlan(plan);
-        dayRepository.save(day);
-    }
     public void setDaySummary(String dateString, String summary) {
         LocalDate localDate = stringToLocalDate(dateString);
         DayEntity day = dayRepository.findDayEntityByLocalDate(localDate).orElse(createNewDay(localDate));
         day.setSummary(summary);
         dayRepository.save(day);
     }
+    public void setDayPlan(String dateString, String plan) {
+        LocalDate localDate = stringToLocalDate(dateString);
+        DayEntity day = dayRepository.findDayEntityByLocalDate(localDate).orElse(createNewDay(localDate));
+        day.setPlan(plan);
+        dayRepository.save(day);
+    }
     private static LocalDate stringToLocalDate(String dateString) {
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
         return LocalDate.parse(dateString, formatter);
     }
     public void setTodayRating(double rating) {
         DayEntity today = getToday();
         LocalDate localDate = today.getLocalDate();
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
         String formattedString = localDate.format(formatter);
         setDayRating(formattedString, rating);
     }
