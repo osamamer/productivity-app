@@ -2,7 +2,7 @@ const ROOT_URL = "http://localhost:8080";
 const TASK_URL = ROOT_URL.concat("/api/v1/task");
 
 import {createTaskElement} from './tasks';
-import {endAllSessions, getTodayRating} from './backend-calls';
+import {endAllSessions, getTodayRating, setTodayRating} from './backend-calls';
 //npm run build
 window.onload = async function() {
     let taskElements = await fetchTasks();
@@ -11,29 +11,29 @@ window.onload = async function() {
     await endAllSessions();
 }
 
-const dayPopup = document.getElementById("day-modal");
 const menuDiv = document.getElementById("task-context-menu");
-const inputForm= document.getElementById("task-input-form");
+const taskInputForm= document.getElementById("task-input-form");
 const dayButton = document.getElementById("sun-image");
+const dayModal = document.getElementById("day-modal");
+const dayInputForm = document.getElementById("day-input-form")
+dayButton.addEventListener('click', () => {
+    dayModal.show();
+})
 document.addEventListener('click', function handleClickOutsidePopups(event) {
     if (!menuDiv.contains(event.target)) menuDiv.style.visibility = 'hidden';
-    if (!dayPopup.contains(event.target)) dayPopup.style.visibility = 'hidden';
+    if (!dayModal.contains(event.target) && !   dayButton.contains(event.target)) dayModal.close();
 });
-inputForm.addEventListener('submit', function(e) {
-    console.log("Trying to submit eh?");
+taskInputForm.addEventListener('submit', function(e) {
+    console.log("Submitting new task.");
     e.preventDefault();
     createNewTask();
 }, false);
-
-
-
-dayButton.addEventListener('click', function(e) {
-    e.preventDefault();
-    function openDayPopup() {
-        dayPopup.style.visibility = 'visible';
-    }
-    openDayPopup();
+dayInputForm.addEventListener('submit', function(e) {
+    console.log("Submitting day information.");
+    setTodayRatingFromForm().then(r => displayTodayRating());
 })
+
+
 export async function fetchTasks () {
     const response = await fetch('http://localhost:8080/api/v1/task');
     const responseJson = await response.json();
@@ -73,9 +73,15 @@ async function createNewTask (){
 
 async function displayTodayRating() {
     const dayDiv = document.getElementById("day-div");
-    dayDiv.textContent = await getTodayRating();
+    const dayRating = await getTodayRating();
+    dayDiv.textContent = `Today's been a ${dayRating}`
     console.log(await getTodayRating());
     //dayDiv.textContent = "HUH"
+}
+async function setTodayRatingFromForm() {
+    const userDayRating = document.getElementById("day-rating-input-field").value;
+    console.log(userDayRating.typeof)
+    await setTodayRating(userDayRating);
 }
 
 //  TODO List:

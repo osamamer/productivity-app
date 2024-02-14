@@ -63,6 +63,11 @@ export async function getTodayRating() {
     let today = await getToday();
     return today["rating"];
 }
+export async function setTodayRating(rating) {
+    await fetch(TASK_URL.concat(`/set-today-rating/${rating}`), {
+        method: "POST",
+    })
+}
 
 export async function endAllSessions() {
     await fetch(TASK_URL.concat("/end-all-sessions"), {

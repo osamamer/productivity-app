@@ -219,18 +219,6 @@ body {
 .menu-item:hover {
     background-color: var(--darkestlavender);
 }
-#day-div {
-
-}
-.modal {
-    z-index: 10;
-    position: absolute;
-    visibility: hidden;
-    background-color: var(--darkerlavender);
-    color: black;
-    width: 250px;
-    height: 250px;
-}
 
 .side-button {
     height: auto;
@@ -265,11 +253,28 @@ body {
     cursor: pointer;
 }
 #sun-image {
-    max-width: 100%;
-    max-height: 100%;
-    margin: auto;
+    max-width: 50px;
+    max-height: 50px;
+    border-radius: 5px;
+    margin-top: 58px;
 }
-
+.modal {
+    border-radius: 5px;
+    border-width: 1px;
+    border-color: var(--lavender);
+    visibility: visible;
+    padding: 5px;
+    max-width: 550px;
+    max-height: 250px;
+    color: #0C0E24;
+    background-color: var(--lavender);
+}
+.day-modal {
+    width: 500px;
+    height: 250px;
+    max-width: 750px;
+    max-height: 250px;
+}
 .vertical-center {
     margin: 0;
     position: absolute;
@@ -289,3 +294,25 @@ body {
 a {
     display: block;
 }
+.button-class {
+    background-color: var(--darkerlavender);
+    color: black;
+    border-width: 0;
+    border-radius: 3px;
+}
+.button-class:hover {
+    background-color: var(--darkestlavender);
+    cursor: pointer;
+}
+.dialogue-head {
+    font-size: 20px;
+    margin-bottom: 15px;
+}
+a {
+    color: black;
+    text-underline: none;
+}
+/*form  { display: table;      }*/
+/*p     { display: table-row;  }*/
+/*label { display: table-cell; }*/
+/*input { display: table-cell; }*/

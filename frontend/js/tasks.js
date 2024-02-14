@@ -156,12 +156,22 @@ function switchPlayPause(buttonId, otherButtonId, taskId, status) {
 function displayFocusButtons() {
 
 }
+const highlightedTaskDiv = document.getElementById("highlighted-task-div");
 async function highlightTask(taskId) {
-    const highlightedTaskDiv = document.getElementById("highlighted-task-div");
+    removeAllChildNodes(highlightedTaskDiv);
     highlightedTaskDiv.setAttribute("style", "visibility: visible");
-    const taskHeader = document.getElementById("highlighted-task-header");
-    const taskDescription = document.getElementById("highlighted-task-desc");
-    const accumulatedTimeDiv = document.getElementById("highlighted-task-time");
+    const taskHeader = document.createElement("p");
+    taskHeader.setAttribute('id', 'highlighted-task-header');
+    taskHeader.classList.add('highlighted-task-text');
+
+    const taskDescription = document.createElement("p");
+    taskDescription.setAttribute('id', 'highlighted-task-desc');
+    taskDescription.classList.add('highlighted-task-text');
+
+    const taskTime = document.createElement("p");
+    taskTime.setAttribute('id', 'highlighted-task-time');
+    taskTime.classList.add('highlighted-task-text');
+
     let task = await getTaskById(taskId); // THIS HAD TO BE DONE BECAUSE WE ARE PASSING INTO IT THE JSON AT THE START. SO THE DESC WASN'T BEING UPDATED UNTIL IT WE ADDED A NEW TASK.
     taskHeader.textContent = task["name"];
     taskDescription.textContent = task["description"];
@@ -171,30 +181,42 @@ async function highlightTask(taskId) {
         console.log("Changing description");
         submitDescription(task["taskId"], taskDescription.textContent);
     }, false);
-    if (taskHeader.getAttribute('listener') === 'true') {
-        taskHeader.removeEventListener("input", function () {
-            changeNameEventFunction(task["taskId"], taskHeader)
-        }, false);
-    }
-        taskHeader.addEventListener("input", function () {
-            changeNameEventFunction(task["taskId"], taskHeader)
-        }, false);
-        accumulatedTimeDiv.textContent = "Elapsed time: " + await displayTaskTime(task["taskId"]); // Should be a function for fancy displaying of time. 10s spent. 5mins spent. Based on how much time.+
-        await setupFocusButtons(task);
-
+    taskHeader.addEventListener("input", async function () {
+        console.log("Changing name");
+        await changeTaskName(taskId, taskHeader.textContent).then(() => fetchTasks()).then((tasks) => displayTasks(tasks));
+    }, false);
+    taskTime.textContent = "Elapsed time: " + await displayTaskTime(task["taskId"]); // Should be a function for fancy displaying of time. 10s spent. 5mins spent. Based on how much time.+
+    highlightedTaskDiv.appendChild(taskHeader);
+    await setupFocusButtons(task);
+    highlightedTaskDiv.appendChild(taskDescription);
+    highlightedTaskDiv.appendChild(taskTime);
 }
 async function changeNameEventFunction(taskId, taskHeader) {
     console.log("Changing name");
-    // if (document.activeElement !== taskHeader) {
     await changeTaskName(taskId, taskHeader.textContent).then(() => fetchTasks()).then((tasks) => displayTasks(tasks));
-    //}
 
 }
 async function setupFocusButtons(task) {
-    let startFocusButton = document.getElementById("start-focus-button");
-    let pauseFocusButton = document.getElementById("pause-focus-button");
-    let unpauseFocusButton = document.getElementById("unpause-focus-button");
-    let endFocusButton = document.getElementById("end-focus-button");
+    const startFocusButton = document.createElement("div");
+    startFocusButton.setAttribute('id', "start-focus-button");
+    startFocusButton.classList.add('focus-button');
+    const pauseFocusButton = document.createElement("div");
+    pauseFocusButton.setAttribute('id', "pause-focus-button");
+    pauseFocusButton.classList.add('focus-button');
+    const unpauseFocusButton = document.createElement("div");
+    unpauseFocusButton.setAttribute('id', "unpause-focus-button");
+    unpauseFocusButton.classList.add('focus-button');
+    const endFocusButton = document.createElement("div");
+    endFocusButton.setAttribute('id', "end-focus-button");
+    endFocusButton.classList.add('focus-button');
+    const focusButtons = document.getElementsByClassName('focus-button');
+    for (let i = 0; i < focusButtons.length; i++) {
+        highlightedTaskDiv.appendChild(focusButtons[i]);
+    }
+    highlightedTaskDiv.appendChild(startFocusButton);
+    highlightedTaskDiv.appendChild(pauseFocusButton);
+    highlightedTaskDiv.appendChild(unpauseFocusButton);
+    highlightedTaskDiv.appendChild(endFocusButton);
     // Define a purpose for each button; for use in event listener function
     startFocusButton.purpose = "start";
     pauseFocusButton.purpose = "pause";
@@ -364,4 +386,9 @@ async function populateContextMenu(menuDiv, taskId) {
     menuDiv.appendChild(endDiv);
     menuDiv.appendChild(descDiv);
     menuDiv.appendChild(deleteDiv);
+}
+function removeAllChildNodes(parent) {
+    while (parent.firstChild) {
+            parent.removeChild(parent.firstChild);
+    }
 }

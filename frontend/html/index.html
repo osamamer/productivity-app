@@ -5,6 +5,7 @@
     <meta name="keywords" content="HTML, CSS">
     <meta name="description" content="A productivity app">
     <title> Productivity App </title>
+    <link rel="icon" href="../images/prod5.png" type="image/x-icon"/>
     <link rel="stylesheet" href="../styles.css">
     <link rel=stylesheet href="https://s3-us-west-2.amazonaws.com/colors-css/2.2.0/colors.min.css">
 </head>
@@ -17,29 +18,34 @@
         <a href="./med-page.html" class="side-button-container" title="Meditation"><img class="side-button" src="../images/yoga.png" alt=""></a>
         <a href="./settings-page.html" class="side-button-container" title="Settings"><img class="side-button" src="../images/settings.png" alt=""></a>
     </div>
-    <div class="modal" id="day-modal">
-        <div>New day</div>
-        <button>Set day rating </button>
-        <button></button>
-    </div>
+    <dialog id="day-modal" class="modal">
+        <div class="dialogue-head">How has your day been?</div>
+        <form id="day-input-form" method="dialog">
+            <p><input id="day-rating-input-field" type="number" placeholder="Day rating (1-10)"></p>
+            <p><input id="day-plan-input-field" type="text" placeholder="Day plan"></p>
+            <p><input id="day-summary-input-field" type="text" placeholder="Day summary"></p>
+            <button class="button-class" type="submit">OK</button>
+        </form>
+        <a href="./day-page.html" style="text-decoration: none">Go to day</a>
+    </dialog>
     <div id="task-context-menu" class="box context-menu"></div>
     <div id="all">
         <p class="head-question">What's on your mind?</p>
         <div class="input-field-wrapper">
             <form id="task-input-form"><label for="task-input-field"></label><input type="text" id="task-input-field"></form>
         </div>
+        <input type="image" class="sun-img-div" src="../images/sun.png" alt="" id="sun-image">
         <div class="day-rating" id="day-div"></div>
-        <div class="sun-img-div"><img src="../images/sun.png" alt="" id="sun-image"></div>
         <div class="break"></div>
         <div class="task-box-container"><div class="box task-box" id="all-tasks-div"></div></div>
         <div class="box" id="highlighted-task-div">
-            <p class="highlighted-task-text" id="highlighted-task-header"></p>
-            <div id="start-focus-button" class="focus-button"></div>
-            <div id="unpause-focus-button" class="focus-button"></div>
-            <div id="end-focus-button" class="focus-button"></div>
-            <div id="pause-focus-button" class="focus-button"></div>
-            <p class="highlighted-task-desc" id="highlighted-task-desc"></p>
-            <p class="highlighted-task-text" id="highlighted-task-time"></p>
+<!--            <p class="highlighted-task-text" id="highlighted-task-header"></p>-->
+<!--            <div id="start-focus-button" class="focus-button"></div>-->
+<!--            <div id="unpause-focus-button" class="focus-button"></div>-->
+<!--            <div id="end-focus-button" class="focus-button"></div>-->
+<!--            <div id="pause-focus-button" class="focus-button"></div>-->
+<!--            <p class="highlighted-task-desc" id="highlighted-task-desc"></p>-->
+<!--            <p class="highlighted-task-text" id="highlighted-task-time"></p>-->
 
         </div>
         <div class="box" id="timer-div"> <p id="timer-div-text"></p></div>
