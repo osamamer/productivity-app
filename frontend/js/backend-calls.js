@@ -1,5 +1,6 @@
 const ROOT_URL = "http://localhost:8080";
 const TASK_URL = ROOT_URL.concat("/api/v1/task");
+const DAY_URL = ROOT_URL.concat("/api/v1/day");
 
 import {fetchTasks, displayTasks} from './main'
 async function getRequest(taskId, action) {
@@ -56,7 +57,7 @@ export async function changeTaskName(taskId, newName) {
     })
 }
 async function getToday() {
-    const response = await fetch(TASK_URL.concat("/get-today"));
+    const response = await fetch(DAY_URL.concat("/get-today"));
     return await response.json();
 }
 export async function getTodayRating() {
@@ -64,12 +65,12 @@ export async function getTodayRating() {
     return today["rating"];
 }
 export async function setTodayRating(rating) {
-    await fetch(TASK_URL.concat(`/set-today-rating/${rating}`), {
+    await fetch(DAY_URL.concat(`/set-today-rating/${rating}`), {
         method: "POST",
     })
 }
 export async function setDayPlan(date, plan){
-    return await fetch(TASK_URL.concat('/set-day-plan'), {
+    return await fetch(DAY_URL.concat('/set-day-plan'), {
         method: "POST",
         body: JSON.stringify({
             dayDate: date,
@@ -81,7 +82,7 @@ export async function setDayPlan(date, plan){
     })
 }
 export async function setDaySummary(date, summary){
-    return await fetch(TASK_URL.concat('/set-day-summary'), {
+    return await fetch(DAY_URL.concat('/set-day-summary'), {
         method: "POST",
         body: JSON.stringify({
             dayDate: date,

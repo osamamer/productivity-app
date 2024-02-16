@@ -2,7 +2,7 @@ const ROOT_URL = "http://localhost:8080";
 const TASK_URL = ROOT_URL.concat("/api/v1/task");
 
 import {createTaskElement} from './tasks';
-import {endAllSessions, getTodayRating, setDaySummary, setTodayRating} from './backend-calls';
+import {endAllSessions, getTodayRating, setDayPlan, setDaySummary, setTodayRating} from './backend-calls';
 //npm run build
 window.onload = async function() {
     let taskElements = await fetchTasks();
@@ -94,7 +94,7 @@ async function setTodayPlanFromForm() {
     const userDayPlan = document.getElementById("day-plan-input-field").value;
     const todayDate = getCurrentDateFormatted();
     console.log(todayDate)
-    await setDaySummary(todayDate, userDayPlan);
+    await setDayPlan(todayDate, userDayPlan);
 }
 function getCurrentDateFormatted() {
     const date = new Date();
