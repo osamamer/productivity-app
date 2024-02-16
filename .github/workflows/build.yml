@@ -1,0 +1,33 @@
+name: Verify Code
+on:
+  push:
+    branches:
+      - 'master'
+jobs:
+  verify_backend:
+    name: Verify Backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: "JDK set-up"
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+      - run: mvn clean verify
+  verify_frontend:
+    name: Verify Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - name: "Node set-up"
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18.x'
+      - name: Install dependencies
+        run: npm install
+      - name: Build
+        run: npm run build -- --mode=production
