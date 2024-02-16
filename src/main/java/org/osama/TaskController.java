@@ -1,28 +1,21 @@
 package org.osama;
 
 import lombok.Data;
-import org.osama.day.*;
 import org.osama.task.*;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/v1/task")
 @CrossOrigin("*")
-public class Controller {
+public class TaskController {
     private final TaskRepository taskRepository;
     private final TaskService taskService;
-    private final DayService dayService;
 
-    public Controller(TaskRepository taskRepository, TaskService taskService, DayService dayService) {
+    public TaskController(TaskRepository taskRepository, TaskService taskService) {
         this.taskRepository = taskRepository;
         this.taskService = taskService;
-        this.dayService = dayService;
     }
 
     @GetMapping
@@ -77,26 +70,6 @@ public class Controller {
     public void changeTaskName(@PathVariable String taskId, @PathVariable String newName) {
         taskService.changeTaskName(taskId, newName);
     }
-    @GetMapping("/get-today")
-    public DayEntity getToday() {
-        return dayService.getToday();
-    }
-    @PostMapping("/set-day-rating/{date}/{rating}")
-    public void setDayRating(@PathVariable String date, @PathVariable double rating) {
-        dayService.setDayRating(date, rating);
-    }
-    @PostMapping("/set-today-rating/{rating}")
-    public void setTodayRating(@PathVariable double rating) {
-        dayService.setTodayRating(rating);
-    }
-    @PostMapping("/set-day-summary")
-    public void setDaySummary(@RequestBody DaySummaryRequest daySummaryRequest) {
-        dayService.setDaySummary(daySummaryRequest.dayDate, daySummaryRequest.daySummary);
-    }
-    @PostMapping("/set-day-plan")
-    public void setDayPlan(@RequestBody DayPlanRequest dayPlanRequest) {
-        dayService.setDayPlan(dayPlanRequest.dayDate, dayPlanRequest.dayPlan);
-    }
     @DeleteMapping("/{taskId}")
     public void removeTask(@PathVariable String taskId) {
         taskRepository.remove(taskId);
@@ -110,27 +83,5 @@ public class Controller {
     @PostMapping("/end-all-sessions")
     public void endAllSessions() {
         taskService.endAllSessions();
-    }
-    @Data
-    static class DeleteTaskRequest {
-        String taskId;
-    }
-    @Data
-    public static class DayRequest {
-        String dayDate;
-        String dayId;
-        String daySummary;
-        String dayPlan;
-        double dayRating;
-    }
-    @Data
-    public static class DaySummaryRequest {
-        String dayDate;
-        String daySummary;
-    }
-    @Data
-    public static class DayPlanRequest {
-        String dayDate;
-        String dayPlan;
     }
 }
