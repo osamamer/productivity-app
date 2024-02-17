@@ -42,9 +42,8 @@ dayInputForm.addEventListener('submit', function(e) {
     setTodaySummaryFromForm();
     setTodayPlanFromForm();
     setTodayRatingFromForm().then(r => displayTodayRating());
+    setupDayBox();
 })
-
-
 export async function fetchTasks () {
     const response = await fetch('http://localhost:8080/api/v1/task');
     const responseJson = await response.json();
@@ -121,25 +120,31 @@ function formatDate(date) {
 async function setupDayBox() {
     const dayBox = document.getElementById('day-box');
     dayBox.innerHTML = "";
-    const dayBoxHeader = document.createElement("div");
-    dayBoxHeader.textContent = "Today (Abridged)";
-    dayBoxHeader.setAttribute('id', 'day-box-header');
-    dayBox.appendChild(dayBoxHeader);
-    const dayPlanDiv = document.createElement("div");
-    let today = await  getToday();
-    console.log(today['localDate'])
-
-    // dayPlanDiv.textContent = await getDayPlan(today["localDate"]);
-    dayPlanDiv.textContent = today['plan'];
-    dayPlanDiv.setAttribute('id', 'day-box-plan');
-    dayBox.appendChild(dayPlanDiv);
-    // createAndAppendChild('day-box-plan', "whatever", dayBox);
+    await createAndAppendChild('day-box-header', 'Today (Abridged)', false, null, [], dayBox);
+    await createAndAppendChild('day-box-rating', 'Today\'s rating: ' , true, getTodayRating(), [], dayBox);
+    await createAndAppendChild('day-box-plan', 'The plan for today: ', true, getTodayPlan(), [], dayBox);
+    await createAndAppendChild('day-box-summary', 'What ended up happening today: ', true, getTodaySummary(), [], dayBox);
 }
-async function createAndAppendChild(id, text, backendCall, requiresCall, parent) {
+export async function createAndAppendChild(id, text, requiresFunction, textFunction, classes, parent) {
     const createdElement = document.createElement("div");
-    createdElement.textContent = await getDayPlan(await getToday());
-    createdElement.setAttribute('id', id);
+    if (requiresFunction) {
+        createdElement.textContent = text + await textFunction; // what if function is not async?
+    }
+    else {
+        createdElement.textContent = text;
+    }
+    if (id) createdElement.setAttribute('id', id);
+    createdElement.classList.add(...classes);
     parent.appendChild(createdElement);
+    return createdElement;
+}
+async function getTodaySummary() {
+    let today = await  getToday();
+    return today['summary'];
+}
+async function getTodayPlan() {
+    let today = await  getToday();
+    return today['plan'];
 }
 
 
@@ -147,3 +152,5 @@ async function createAndAppendChild(id, text, backendCall, requiresCall, parent)
 // 1. Finish day box
 // 2. Fix wrap then stretch problem
 // 3. Give max height to task div in task box
+// 4. Fix code. Make functions. DONE
+// 5. Buttons in task div problem. The start button always starts, should call unpause when the task is paused instead of start.
