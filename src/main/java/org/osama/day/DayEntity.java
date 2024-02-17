@@ -22,7 +22,7 @@ public class DayEntity {
     private String plan;
     @Column
     private String summary;
-    @Column
+    @Column(unique = true)
     @JsonSerialize(using = LocalDateSerializer.class)
     @JsonDeserialize(using = LocalDateDeserializer.class)
     private LocalDate localDate;

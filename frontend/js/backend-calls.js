@@ -13,7 +13,7 @@ export async function postRequest(taskId, action) {
     })
 }
 export async function deleteTask(taskId) {
-    let highlightDiv = document.getElementById("highlighted-task-div");
+    let highlightDiv = document.getElementById("highlighted-task-box");
     highlightDiv.style.visibility = 'hidden';
     await fetch(TASK_URL.concat(`/${taskId}`), { // `` makes something into a string
         method: "DELETE",
@@ -56,7 +56,7 @@ export async function changeTaskName(taskId, newName) {
         method: "POST",
     })
 }
-async function getToday() {
+export async function getToday() {
     const response = await fetch(DAY_URL.concat("/get-today"));
     return await response.json();
 }
@@ -93,7 +93,18 @@ export async function setDaySummary(date, summary){
         }
     })
 }
-
+export async function getDaySummary(date) {
+    const response = await fetch(DAY_URL.concat(`/get-day-summary/${date}`));
+    return await response.json();
+}
+export async function getDayPlan(date) {
+    // let promise =  await fetch(DAY_URL.concat(`/get-day-plan/${date}`), {
+    //     method: "POST",
+    // })
+    // return await promise.json();
+    const response = await fetch(DAY_URL.concat(`/get-day-plan/${date}`));
+    return await response.json();
+}
 export async function endAllSessions() {
     await fetch(TASK_URL.concat("/end-all-sessions"), {
         method: "POST"

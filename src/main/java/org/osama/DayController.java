@@ -35,7 +35,14 @@ public class DayController {
     public void setDayPlan(@RequestBody DayRequest dayPlanRequest) {
         dayService.setDayPlan(dayPlanRequest.dayDate, dayPlanRequest.dayPlan);
     }
-
+    @GetMapping("/get-day-plan/{date}")
+    public String getDayPlan(@PathVariable String date) {
+        return dayService.getDayPlan(date);
+    }
+    @GetMapping("/get-day-summary/{date}")
+    public String getDaySummary(@PathVariable String date) {
+        return dayService.getDaySummary(date);
+    }
     @Data
     public static class DayRequest {
         String dayDate;

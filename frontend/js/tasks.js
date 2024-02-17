@@ -25,7 +25,7 @@ export async function createTaskElement(taskJson) {
     const taskHeader = document.createElement("p");
     taskDiv.classList.add("task-div");
     taskDiv.setAttribute("id", taskId);
-    taskHeader.classList.add("task-text");
+    taskHeader.classList.add("task-div-text");
     taskHeader.textContent = taskJson["name"];
     const startButton = await createStartSessionButton(taskJson);
     const pauseButton = await createPauseSessionButton(taskJson);
@@ -156,7 +156,7 @@ function switchPlayPause(buttonId, otherButtonId, taskId, status) {
 function displayFocusButtons() {
 
 }
-const highlightedTaskDiv = document.getElementById("highlighted-task-div");
+const highlightedTaskDiv = document.getElementById("highlighted-task-box");
 async function highlightTask(taskId) {
     removeAllChildNodes(highlightedTaskDiv);
     highlightedTaskDiv.setAttribute("style", "visibility: visible");

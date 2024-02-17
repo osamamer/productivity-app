@@ -2,12 +2,21 @@ const ROOT_URL = "http://localhost:8080";
 const TASK_URL = ROOT_URL.concat("/api/v1/task");
 
 import {createTaskElement} from './tasks';
-import {endAllSessions, getTodayRating, setDayPlan, setDaySummary, setTodayRating} from './backend-calls';
+import {
+    endAllSessions,
+    getDayPlan,
+    getToday,
+    getTodayRating,
+    setDayPlan,
+    setDaySummary,
+    setTodayRating
+} from './backend-calls';
 //npm run build
 window.onload = async function() {
     let taskElements = await fetchTasks();
     displayTasks(taskElements);
     await displayTodayRating();
+    await setupDayBox();
     await endAllSessions();
 }
 
@@ -88,12 +97,12 @@ async function setTodaySummaryFromForm() {
     const userDaySummary = document.getElementById("day-summary-input-field").value;
     console.log(userDaySummary)
     const todayDate = getCurrentDateFormatted();
+    console.log(todayDate)
     await setDaySummary(todayDate, userDaySummary);
 }
 async function setTodayPlanFromForm() {
     const userDayPlan = document.getElementById("day-plan-input-field").value;
     const todayDate = getCurrentDateFormatted();
-    console.log(todayDate)
     await setDayPlan(todayDate, userDayPlan);
 }
 function getCurrentDateFormatted() {
@@ -109,7 +118,32 @@ function formatDate(date) {
     const day = `0${date.getDate()}`.slice(-2);
     return `${year}-${month}-${day}`;
 }
+async function setupDayBox() {
+    const dayBox = document.getElementById('day-box');
+    dayBox.innerHTML = "";
+    const dayBoxHeader = document.createElement("div");
+    dayBoxHeader.textContent = "Today (Abridged)";
+    dayBoxHeader.setAttribute('id', 'day-box-header');
+    dayBox.appendChild(dayBoxHeader);
+    const dayPlanDiv = document.createElement("div");
+    let today = await  getToday();
+    console.log(today['localDate'])
+
+    // dayPlanDiv.textContent = await getDayPlan(today["localDate"]);
+    dayPlanDiv.textContent = today['plan'];
+    dayPlanDiv.setAttribute('id', 'day-box-plan');
+    dayBox.appendChild(dayPlanDiv);
+    // createAndAppendChild('day-box-plan', "whatever", dayBox);
+}
+async function createAndAppendChild(id, text, backendCall, requiresCall, parent) {
+    const createdElement = document.createElement("div");
+    createdElement.textContent = await getDayPlan(await getToday());
+    createdElement.setAttribute('id', id);
+    parent.appendChild(createdElement);
+}
 
 
 //  TODO List:
-// 1. Set up day stuff
+// 1. Finish day box
+// 2. Fix wrap then stretch problem
+// 3. Give max height to task div in task box

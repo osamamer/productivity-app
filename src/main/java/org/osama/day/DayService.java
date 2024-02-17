@@ -1,5 +1,6 @@
 package org.osama.day;
 
+import jakarta.transaction.Transactional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import java.time.LocalDate;
@@ -46,7 +47,17 @@ public class DayService {
         day.setPlan(plan);
         dayRepository.save(day);
     }
-    private static LocalDate stringToLocalDate(String dateString) {
+    public String getDaySummary(String dateString) {
+        LocalDate localDate = stringToLocalDate(dateString);
+        DayEntity day = dayRepository.findDayEntityByLocalDate(localDate).orElse(createNewDay(localDate));
+        return day.getSummary();
+    }
+    public String getDayPlan(String dateString) {
+        LocalDate localDate = stringToLocalDate(dateString);
+        DayEntity day = dayRepository.findDayEntityByLocalDate(localDate).orElse(createNewDay(localDate));
+        return day.getPlan();
+    }
+        private static LocalDate stringToLocalDate(String dateString) {
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
         return LocalDate.parse(dateString, formatter);
     }
