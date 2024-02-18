@@ -129,7 +129,7 @@ function switchPlayPause(buttonId, otherButtonId) {
 async function highlightTask(taskId) {
     highlightedTaskBox.innerHTML = "";
     highlightedTaskBox.setAttribute("style", "visibility: visible");
-    let task = await getTaskById(taskId); // THIS HAD TO BE DONE BECAUSE WE ARE PASSING INTO IT THE JSON AT THE START. SO THE DESC WASN'T BEING UPDATED UNTIL IT WE ADDED A NEW TASK.
+    let task = await getTaskById(taskId);
 
     const taskHeader =  await createAndAppendChild('highlighted-task-header', task['name'], false, null, ['highlighted-task-text'], highlightedTaskBox);
     await setupFocusButtons(task);
@@ -138,6 +138,7 @@ async function highlightTask(taskId) {
 
     taskDescription.setAttribute("contenteditable", "true");
     taskHeader.setAttribute("contenteditable", "true");
+
     taskHeader.addEventListener("input", async function () {
         console.log("Changing name");
         await changeTaskName(taskId, taskHeader.textContent).then(() => fetchTasks()).then((tasks) => displayTasks(tasks));

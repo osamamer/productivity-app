@@ -1,6 +1,5 @@
 package org.osama;
 
-import lombok.Data;
 import org.osama.task.*;
 import org.springframework.web.bind.annotation.*;
 
@@ -77,7 +76,7 @@ public class TaskController {
     @DeleteMapping
     public void removeAllTasks() {
         for (int i = 0; i < taskRepository.getAll().size(); i++) {
-            taskRepository.remove(taskRepository.getAll().get(i).getTaskId());
+            taskRepository.remove(taskRepository.getAll().get(i).getId());
         }
     }
     @PostMapping("/end-all-sessions")

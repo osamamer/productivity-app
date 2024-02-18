@@ -16,15 +16,38 @@ import java.time.LocalDateTime;
 public class Task {
     @Id
     @Column(nullable = false)
-    private String taskId;
+    private String id;
+
     @Column(nullable = false)
     private String name;
-    @Column(nullable = false)
+
+    @Column
     private String description;
+
     @Column(nullable = false)
     private boolean completed;
+
     @Column(nullable = false)
     @JsonSerialize(using = LocalDateTimeSerializer.class)
     @JsonDeserialize(using = LocalDateTimeDeserializer.class)
-    private LocalDateTime creationDate;
+    private LocalDateTime creationDateTime;
+
+    @Column
+    @JsonSerialize(using = LocalDateTimeSerializer.class)
+    @JsonDeserialize(using = LocalDateTimeDeserializer.class)
+    private LocalDateTime scheduledPerformDateTime;
+
+    @Column
+    @JsonSerialize(using = LocalDateTimeSerializer.class)
+    @JsonDeserialize(using = LocalDateTimeDeserializer.class)
+    private LocalDateTime completionDateTime;
+
+    @Column
+    private String parentId;
+
+    @Column
+    private String tag;
+
+    @Column
+    private int importance;
 }

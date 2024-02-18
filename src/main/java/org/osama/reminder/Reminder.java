@@ -1,4 +1,4 @@
-package org.osama.session;
+package org.osama.reminder;
 
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -9,41 +9,24 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-
-import java.time.Duration;
 import java.time.LocalDateTime;
+
 @Data
 @NoArgsConstructor
 @Entity
-public class Session {
+public class Reminder {
     @Id
     @Column(nullable = false)
-    private String sessionId;
+    private String reminderId;
 
     @Column(nullable = false)
     private String taskId;
 
     @Column(nullable = false)
-    private boolean isRunning;
+    @JsonSerialize(using = LocalDateTimeSerializer.class)
+    @JsonDeserialize(using = LocalDateTimeDeserializer.class)
+    private LocalDateTime dateTime;
 
     @Column(nullable = false)
-    private boolean isActive; // isRunning means that it is currently on, isActive means that it is either currently on or paused.
-
-    @Column
-    private Duration totalSessionTime;
-
-    @Column
-    @JsonSerialize(using = LocalDateTimeSerializer.class)
-    @JsonDeserialize(using = LocalDateTimeDeserializer.class)
-    private LocalDateTime startTime;
-
-    @Column
-    @JsonSerialize(using = LocalDateTimeSerializer.class)
-    @JsonDeserialize(using = LocalDateTimeDeserializer.class)
-    private LocalDateTime lastUnpauseTime;
-
-    @Column
-    @JsonSerialize(using = LocalDateTimeSerializer.class)
-    @JsonDeserialize(using = LocalDateTimeDeserializer.class)
-    private LocalDateTime endTime;
+    private int repeat;
 }

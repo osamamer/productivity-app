@@ -43,11 +43,11 @@ public class TaskService {
     }
     public void startTaskSession(String taskId) {
         Task task = taskRepository.getTaskById(taskId);
-        List<Session> activeSessions = sessionRepository.findAllByTaskIdAndIsActiveIsTrue(task.getTaskId());
+        List<Session> activeSessions = sessionRepository.findAllByTaskIdAndIsActiveIsTrue(task.getId());
         if (activeSessions.size() != 0) throw new IllegalStateException("Cannot start a session when the task is already active");
 //        endAllSessions();
         sessionRepository.save(createSession(task));
-        log.info("Started task with ID [{}]", task.getTaskId());
+        log.info("Started task with ID [{}]", task.getId());
     }
     public void pauseTaskSession(String taskId) {
         Task task = taskRepository.getTaskById(taskId);
@@ -57,18 +57,18 @@ public class TaskService {
         Duration elapsedTime = Duration.between(activeSession.getLastUnpauseTime(), LocalDateTime.now());
         activeSession.setTotalSessionTime(activeSession.getTotalSessionTime().plus(elapsedTime));
         sessionRepository.save(activeSession);
-        log.info("Paused task with ID [{}]", task.getTaskId());
+        log.info("Paused task with ID [{}]", task.getId());
     }
     public void unpauseTaskSession(String taskId) {
         Task task = taskRepository.getTaskById(taskId);
-        Optional<Session> session = sessionRepository.findSessionByTaskIdAndIsRunningIsTrue(task.getTaskId());
+        Optional<Session> session = sessionRepository.findSessionByTaskIdAndIsRunningIsTrue(task.getId());
         if (session.isPresent()) throw new IllegalStateException("Cannot unpause a session when the task is already running");
         session = sessionRepository.findSessionByTaskIdAndIsActiveIsTrue(taskId);
         Session activeSession = session.orElseThrow(() -> new IllegalStateException("Cannot unpause task session because it is not active"));
         activeSession.setRunning(true);
         activeSession.setLastUnpauseTime(LocalDateTime.now());
         sessionRepository.save(activeSession);
-        log.info("Unpaused task with ID [{}]", task.getTaskId());
+        log.info("Unpaused task with ID [{}]", task.getId());
     }
     public void endTaskSession(String taskId) {
         Task task = taskRepository.getTaskById(taskId);
@@ -82,7 +82,7 @@ public class TaskService {
         activeSession.setRunning(false);
         activeSession.setActive(false);
         sessionRepository.save(activeSession);
-        log.info("Ended session for task with ID [{}]", task.getTaskId());
+        log.info("Ended session for task with ID [{}]", task.getId());
     }
     public void completeTask(String taskId) {
         Task task = taskRepository.getTaskById(taskId);
@@ -101,7 +101,7 @@ public class TaskService {
     private static Session createSession(Task task) {
         Session session = new Session();
         session.setSessionId(UUID.randomUUID().toString());
-        session.setTaskId(task.getTaskId());
+        session.setTaskId(task.getId());
         session.setStartTime(LocalDateTime.now());
         session.setTotalSessionTime(Duration.ZERO);
         session.setLastUnpauseTime(session.getStartTime());
@@ -122,10 +122,10 @@ public class TaskService {
     }
     public Task createNewTask(NewTaskRequest taskRequest) {
         Task newTask = new Task();
-        newTask.setTaskId(UUID.randomUUID().toString());
+        newTask.setId(UUID.randomUUID().toString());
         newTask.setName(taskRequest.getTaskName());
         newTask.setDescription(taskRequest.getTaskDescription());
-        newTask.setCreationDate(LocalDateTime.now());
+        newTask.setCreationDateTime(LocalDateTime.now());
         newTask.setCompleted(false);
         taskRepository.add(newTask);
         return newTask;
