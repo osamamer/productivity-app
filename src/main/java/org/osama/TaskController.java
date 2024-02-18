@@ -3,6 +3,7 @@ package org.osama;
 import org.osama.task.*;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @RestController
@@ -69,6 +70,36 @@ public class TaskController {
     public void changeTaskName(@PathVariable String taskId, @PathVariable String newName) {
         taskService.changeTaskName(taskId, newName);
     }
+
+    @GetMapping("/get-task-scheduled-time/{taskId}")
+    public LocalDateTime getTaskScheduledTime(@PathVariable String taskId) {
+        return taskRepository.getTaskById(taskId).getScheduledPerformDateTime();
+    }
+    @GetMapping("/get-task-completion-time/{taskId}")
+    public LocalDateTime getTaskCompletionTime(@PathVariable String taskId) {
+        return taskRepository.getTaskById(taskId).getCompletionDateTime();
+    }
+    @GetMapping("/get-task-creation-time/{taskId}")
+    public LocalDateTime getTaskCreationTime(@PathVariable String taskId) {
+        return taskRepository.getTaskById(taskId).getCreationDateTime();
+    }
+    @GetMapping("/get-task-parent/{taskId}")
+    public Task getTaskParent(@PathVariable String taskId) {
+        return taskService.getParentTask(taskId);
+    }
+    @GetMapping("/get-child-tasks/{taskId}")
+    public List<Task> getChildTasks(@PathVariable String taskId) {
+        return taskService.getChildTasks(taskId);
+    }
+    @GetMapping("/get-tag/{taskId}")
+    public String getTaskTag(@PathVariable String taskId) {
+        return taskRepository.getTaskById(taskId).getTag();
+    }
+    @GetMapping("/get-importance/{taskId}")
+    public int getTaskImportance(@PathVariable String taskId) {
+        return taskRepository.getTaskById(taskId).getImportance();
+    }
+
     @DeleteMapping("/{taskId}")
     public void removeTask(@PathVariable String taskId) {
         taskRepository.remove(taskId);
@@ -76,7 +107,7 @@ public class TaskController {
     @DeleteMapping
     public void removeAllTasks() {
         for (int i = 0; i < taskRepository.getAll().size(); i++) {
-            taskRepository.remove(taskRepository.getAll().get(i).getId());
+            taskRepository.remove(taskRepository.getAll().get(i).getTaskId());
         }
     }
     @PostMapping("/end-all-sessions")

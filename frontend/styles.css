@@ -91,12 +91,14 @@ body {
 }
 .task-div {
     color: black;
+    min-height: 30px;
+    max-height: 80px;
     min-width: 100px;
-    flex: 1 1 auto;
+    flex: 0 1 auto;
     display: flex;
     background-color: var(--darkerlavender);
     text-align: justify;
-    padding: 5px 5px 5px 10px;
+    padding: 5px 5px 5px 8px;
     margin: 10px 0 10px 0;
     border-radius: 5px;
 }
@@ -104,10 +106,9 @@ body {
     width: 65%;
     font-size: 15px;
     padding-right: 15px;
-    margin-top: 5px;
-    margin-bottom: 5px;
     vertical-align: middle;
     overflow: auto;
+
 }
 
 
@@ -199,7 +200,7 @@ body {
 
 .context-menu {
     border-width: 1px;
-    background-color: var(--darkerlavender);
+    background-color: var(--darkestlavender);
     color: black;
     visibility: hidden;
     position: absolute;
@@ -214,6 +215,7 @@ body {
 }
 .menu-item:hover {
     background-color: var(--darkestlavender);
+    cursor: pointer;
 }
 
 .side-button {

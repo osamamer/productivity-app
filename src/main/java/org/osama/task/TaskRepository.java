@@ -9,6 +9,8 @@ public interface TaskRepository {
     Task getTaskById(String taskId);
     List<Task> getTasksByName(String taskName);
 
+    List<Task> getChildTasks(String taskId);
+
     Task update(Task task);
 }
 

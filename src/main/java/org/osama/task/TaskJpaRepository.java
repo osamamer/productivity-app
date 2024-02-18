@@ -7,4 +7,6 @@ import java.util.List;
 @Repository
 public interface TaskJpaRepository extends JpaRepository<Task, String> {
     List<Task> findAllByName(String name);
+
+    List<Task> findAllByParentId(String taskId);
 }

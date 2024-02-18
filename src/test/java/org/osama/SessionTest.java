@@ -24,7 +24,7 @@ public class SessionTest {
     @Test
     void startTaskSession() {
         Task task = createTask();
-        taskService.startTaskSession(task.getId());
+        taskService.startTaskSession(task.getTaskId());
     }
     private Task createTask() {
         NewTaskRequest taskRequest = new NewTaskRequest();

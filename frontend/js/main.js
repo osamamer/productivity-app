@@ -49,7 +49,7 @@ export async function fetchTasks () {
     const responseJson = await response.json();
     let taskElements = [];
     if (responseJson.length === 0) return taskElements;
-    for (let i = 0; i < responseJson.length; i++) {
+    for (let i = responseJson.length - 1; i >= 0; i--) {
         let taskElement = await createTaskElement(responseJson[i]);
         taskElements.push(taskElement);
     }
@@ -151,6 +151,9 @@ async function getTodayPlan() {
 //  TODO List:
 // 1. Finish day box
 // 2. Fix wrap then stretch problem
-// 3. Give max height to task div in task box
+// 3. Give max height to task div in task box. DONE
 // 4. Fix code. Make functions. DONE
 // 5. Buttons in task div problem. The start button always starts, should call unpause when the task is paused instead of start.
+// 6. Make new task appear at top of list. DONE
+// 7. Need to create a function for the description in the context menu. Some sort of popup.
+// 8. Make task list drag-and-droppable.

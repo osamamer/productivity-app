@@ -32,6 +32,10 @@ public class PersistentTaskRepository implements TaskRepository {
     public List<Task> getTasksByName(String taskName) {
         return taskJpaRepository.findAllByName(taskName);
     }
+    @Override
+    public List<Task> getChildTasks(String taskId) {
+        return taskJpaRepository.findAllByParentId(taskId);
+    }
 
     @Override
     public Task update(Task task) {

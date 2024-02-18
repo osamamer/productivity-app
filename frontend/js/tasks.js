@@ -17,13 +17,14 @@ import {
 import {displayTasks, fetchTasks, createAndAppendChild} from "./main";
 
 const highlightedTaskBox = document.getElementById("highlighted-task-box");
-const menuDiv = document.getElementById("task-context-menu");
+const taskContextMenu = document.getElementById("task-context-menu");
 let focusDuration = 30;
 export async function createTaskElement(taskJson) {
     let taskId = taskJson["taskId"];
     const taskDiv = document.createElement("div");
     taskDiv.classList.add("task-div");
     taskDiv.setAttribute("id", taskId);
+    taskDiv.setAttribute("draggable", true);
     await createAndAppendChild(null, taskJson['name'], false, null, ['task-div-text'], taskDiv);
     const startButton = await createStartSessionButton(taskJson);
     const pauseButton = await createPauseSessionButton(taskJson);
@@ -52,7 +53,7 @@ export async function startTaskSession(taskId, period, hasPeriod) {
     const otherButtonId = getEndSessionButtonId(taskId);
     await postRequest(taskId, "start-session");
     switchPlayPause(buttonId, otherButtonId);
-    setFocusButtonDisplays(2);
+    setFocusButtonDisplays("running");
     if (!hasPeriod) {
         startStopwatch(0, false);
     }
@@ -67,7 +68,7 @@ export async function pauseTaskSession(taskId, period, hasPeriod) {
     stopStopwatch(intervalId);
     await postRequest(taskId, "pause-session");
     switchPlayPause(buttonId, otherButtonId);
-    setFocusButtonDisplays(1);
+    setFocusButtonDisplays("active");
 
 }
 export async function unpauseTaskSession(taskId, period, hasPeriod) {
@@ -77,7 +78,7 @@ export async function unpauseTaskSession(taskId, period, hasPeriod) {
     startStopwatch(intervalId);
     await postRequest(taskId, "unpause-session");
     switchPlayPause(buttonId, otherButtonId);
-    setFocusButtonDisplays(2);
+    setFocusButtonDisplays("running");
 
 }
 export async function endTaskSession(taskId) {
@@ -85,7 +86,7 @@ export async function endTaskSession(taskId) {
     const otherButtonId = getStartSessionButtonId(taskId);
     console.log("Ending task session");
     switchPlayPause(buttonId, otherButtonId);
-    setFocusButtonDisplays(0);
+    setFocusButtonDisplays("inactive");
     stopStopwatch(intervalId);
     clearStopwatch();
     await postRequest(taskId, "end-session");
@@ -156,9 +157,9 @@ async function setupFocusButtons(task) {
     let taskRunning = await getTaskRunning(task["taskId"]);
     let taskActive = await getTaskActive(task["taskId"]);
     let status;
-    if (!taskActive && !taskRunning) status = 0;
-    else if (taskActive && !taskRunning) status = 1;
-    else if (taskRunning) status = 2;
+    if (!taskActive && !taskRunning) status = "inactive";
+    else if (taskActive && !taskRunning) status = "active";
+    else if (taskRunning) status = "running";
     setFocusButtonDisplays(status);
 }
 async function setupFocusButton(purpose, task) {
@@ -178,18 +179,17 @@ async function setupFocusButton(purpose, task) {
 }
 function setFocusButtonDisplays(status) { // POSSIBLE PROBLEM: task not highlighted; focus buttons don't exist.
     // status: 0 for inactive, 1 for active but not running, 2 for active and running
-
     const startButton = document.getElementById("start-focus-button");
     const pauseButton = document.getElementById("pause-focus-button");
     const unpauseButton = document.getElementById("unpause-focus-button");
     const endButton = document.getElementById("end-focus-button");
 
     let booleans;
-    if (status === 0)
+    if (status === "inactive")
         booleans = [true, false, false, false];
-    else if (status === 1)
+    else if (status === "active")
         booleans = [false, false, true, true];
-    else if (status === 2)
+    else if (status === "running")
         booleans = [false, true, false, false];
 
     if (booleans[0]) startButton.setAttribute("style", "display: block");
@@ -233,92 +233,33 @@ function addRightClickHandler(taskDiv, taskJson) {
     taskDiv.addEventListener('contextmenu', function(e) {
         openContextMenu(e);
         const taskId = taskJson["taskId"];
-        populateContextMenu(menuDiv, taskId);
+        setupContextMenu(taskId);
     }, false);
 }
 function openContextMenu(e) {
-    console.log("Opened context menu");
+    console.log("Opened task context menu");
     e.preventDefault();
-    const menuDiv = document.getElementById("context-menu");
-    menuDiv.setAttribute("style", "visibility: visible");
-    menuDiv.style.left = e.pageX +"px";
-    menuDiv.style.top = e.pageY - 25 +"px";
+    taskContextMenu.setAttribute("style", "visibility: visible");
+    taskContextMenu.style.left = e.pageX +"px";
+    taskContextMenu.style.top = e.pageY - 25 +"px";
 }
 
-async function populateContextMenu(menuDiv, taskId) {
-    menuDiv.innerHTML = "";
-    const startDiv = document.createElement("div");
-    const pauseDiv = document.createElement("div");
-    const unpauseDiv = document.createElement("div");
-    const endDiv = document.createElement("div");
-    const descDiv = document.createElement("div");
-    const deleteDiv = document.createElement("div");
-    startDiv.classList.add("menu-item", "pointer");
-    pauseDiv.classList.add("menu-item", "pointer");
-    startDiv.classList.add("menu-item", "pointer");
-    unpauseDiv.classList.add("menu-item", "pointer");
-    endDiv.classList.add("menu-item", "pointer");
-    descDiv.classList.add("menu-item", "pointer");
-    deleteDiv.classList.add("menu-item", "pointer");
-    if (!await getTaskActive(taskId)) {
-        pauseDiv.setAttribute("style", "display: none");
-        unpauseDiv.setAttribute("style", "display: none");
-        endDiv.setAttribute("style", "display: none");
-    }
-    else if (await getTaskRunning(taskId)) {
-        startDiv.setAttribute("style", "display: none");
-        unpauseDiv.setAttribute("style", "display: none");
-        endDiv.setAttribute("style", "display: none");
-    }
-    else {
-        startDiv.setAttribute("style", "display: none");
-        pauseDiv.setAttribute("style", "display: none");
-    }
-    startDiv.addEventListener('click', function () {
-        highlightTask(taskId);
-        startTaskSession(taskId);
-        menuDiv.setAttribute("style", "visibility: hidden");
-    })
-    pauseDiv.addEventListener('click', function () {
-        highlightTask(taskId);
-        pauseTaskSession(taskId);
-        menuDiv.setAttribute("style", "visibility: hidden");
-    })
-    unpauseDiv.addEventListener('click', function () {
-        highlightTask(taskId);
-        unpauseTaskSession(taskId);
-        menuDiv.setAttribute("style", "visibility: hidden");
-    })
-    endDiv.addEventListener('click', function () {
-        highlightTask(taskId);
-        endTaskSession(taskId);
-        menuDiv.setAttribute("style", "visibility: hidden");
-    })
-    deleteDiv.addEventListener('click', function () {
-        deleteTask(taskId);
-        menuDiv.setAttribute("style", "visibility: hidden");
-    })
+async function setupContextMenu(taskId) {
+    taskContextMenu.innerHTML = "";
+    const startItem = await createContextMenuItem('start-task-context-item', "Start session", false, null, ['menu-item'], taskContextMenu, taskId, startTaskSession);
+    const pauseItem = await createContextMenuItem('pause-task-context-item', "Pause", false, null, ['menu-item'], taskContextMenu, taskId, pauseTaskSession);
+    const unpauseItem = await createContextMenuItem('unpause-task-context-item', "Unpause", false, null, ['menu-item'], taskContextMenu, taskId, unpauseTaskSession);
+    const endItem = await createContextMenuItem('end-task-context-item', "End session", false, null, ['menu-item'], taskContextMenu, taskId, endTaskSession);
+    const descItem = await createContextMenuItem('task-desc-context-item', "Description", false, null, ['menu-item'], taskContextMenu, taskId, pauseTaskSession);
+    // Need to create a function for the description. Some sort of popup.
 
-    startDiv.textContent = "Start session";
-    pauseDiv.textContent = "Pause session";
-    unpauseDiv.textContent = "Unpause session";
-    endDiv.textContent = "End session";
-    descDiv.textContent = "Description";
-    deleteDiv.textContent = "Delete";
-    // let elements = document.getElementsByClassName("menu-item pointer");
-    // console.log(elements.length)
-    // for (let i = 0; i < elements.length; i++) {
-    //     menuDiv.appendChild(elements[i]);
-    // }
-    menuDiv.appendChild(startDiv);
-    menuDiv.appendChild(pauseDiv);
-    menuDiv.appendChild(unpauseDiv);
-    menuDiv.appendChild(endDiv);
-    menuDiv.appendChild(descDiv);
-    menuDiv.appendChild(deleteDiv);
 }
-function removeAllChildNodes(parent) {
-    while (parent.firstChild) {
-            parent.removeChild(parent.firstChild);
-    }
+async function createContextMenuItem(id, text, requiresFunction, textFunction, classes, parent, taskId, clickFunction) {
+    const item = await createAndAppendChild(id, text, requiresFunction, textFunction, classes, parent);
+    item.addEventListener('click', function () {
+        highlightTask(taskId);
+        clickFunction(taskId);
+        parent.setAttribute("style", "visibility: hidden");
+    })
+    return item;
 }

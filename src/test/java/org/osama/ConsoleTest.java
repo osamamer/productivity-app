@@ -26,7 +26,7 @@ public class ConsoleTest {
         request.setTaskName("Task poop");
         request.setTaskDescription("Task poop description");
         Task task = taskService.createNewTask(request);
-        String taskId = task.getId();
+        String taskId = task.getTaskId();
         taskService.startTaskSession(taskId);
         Thread.sleep(500);
         taskService.pauseTaskSession(taskId);
@@ -46,7 +46,7 @@ public class ConsoleTest {
         request.setTaskName("Task poop");
         request.setTaskDescription("Task poop description");
         Task task = taskService.createNewTask(request);
-        String taskId = task.getId();
+        String taskId = task.getTaskId();
         taskService.startTaskSession(taskId);
         Thread.sleep(500);
         taskService.pauseTaskSession(taskId);

@@ -16,7 +16,7 @@ import java.time.LocalDateTime;
 public class Task {
     @Id
     @Column(nullable = false)
-    private String id;
+    private String taskId;
 
     @Column(nullable = false)
     private String name;
