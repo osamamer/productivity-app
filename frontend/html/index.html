@@ -21,10 +21,10 @@
     </div>
     <dialog id="day-modal" class="modal">
         <div class="dialogue-head">How has your day been?</div>
-        <form id="day-input-form" method="dialog">
-            <p><input id="day-rating-input-field" type="number" placeholder="Day rating (1-10)"></p>
-            <p><input id="day-plan-input-field" type="text" placeholder="Day plan"></p>
-            <p><input id="day-summary-input-field" type="text" placeholder="Day summary"></p>
+        <form id="day-input-form" autocomplete="off" method="dialog">
+            <p><input id="day-rating-input-field" type="number" placeholder="Day rating (1-10)" value="" class="input"></p>
+            <p><input id="day-plan-input-field" type="text" placeholder="Day plan" value="" class="input"></p>
+            <p><input id="day-summary-input-field" type="text" placeholder="Day summary" value="" class="input"></p>
             <button class="button-class" type="submit">OK</button>
         </form>
         <a href="./day-page.html" style="text-decoration: none">Go to day</a>
@@ -42,6 +42,19 @@
         <div class="box" id="highlighted-task-box"></div>
         <div class="box" id="timer-div"> <p id="timer-div-text"></p></div>
         <div class="box" id="day-box"></div>
+
+        <div class="break"></div>
+
+        <div class="box" id="focus-settings-box">
+            <div id="focus-settings-header"></div>
+            <form id="task-focus-form" autocomplete="off" method="dialog">
+                <p><input type="number" placeholder="Focus duration" class="input"></p>
+                <p><input type="number" placeholder="How many focus periods?" class="input"></p>
+                <p><input  type="text" placeholder="Start time" class="input"></p>
+                <button class="button-class" type="submit">Go</button>
+            </form>
+        </div>
+
     </div>
     <script src="../build/main.bundle.js"></script>
 </body>

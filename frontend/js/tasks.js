@@ -51,7 +51,6 @@ async function createCheckBox(taskId) {
     const inner = document.createElement("div")
     inner.classList.add("inner")
     checkBox.appendChild(inner);
-    console.log('Created checkbox')
     return checkBox;
 }
 export async function startTaskSession(taskId, period, hasPeriod) {
@@ -110,7 +109,7 @@ let intervalId;
 let totalElapsedTime = 0;
 function startStopwatch(period, hasPeriod) {
     let timerDiv = document.getElementById("timer-div");
-    timerDiv.setAttribute("style", "visibility: visible");
+    timerDiv.setAttribute("style", "display: block");
     let startTime = Date.now();
     intervalId = setInterval(function () {
         updateStopwatch();
@@ -142,18 +141,30 @@ function switchPlayPause(buttonId, otherButtonId) {
     taskButton.setAttribute("style", "display: none");
     otherTaskButton.setAttribute("style", "display: block");
 }
-async function highlightTask(taskId) {
+export async function highlightTask(taskId) {
     highlightedTaskBox.innerHTML = "";
     highlightedTaskBox.setAttribute("style", "visibility: visible");
     let task = await getTaskById(taskId);
 
     const taskHeader =  await createAndAppendChild('highlighted-task-header', task['name'], false, null, ['highlighted-task-text'], highlightedTaskBox);
     await setupFocusButtons(task);
+    const focusSettingsButton = await createAndAppendChild('focus-settings-button', 'Get to work', false, null, ['focus-button'], highlightedTaskBox);
     const taskDescription = await createAndAppendChild('highlighted-task-desc', task['description'], false, null, ['highlighted-task-text'], highlightedTaskBox);
     const taskTime = await createAndAppendChild('highlighted-task-time', 'Elapsed time: ', true, displayTaskTime(task['taskId']), ['highlighted-task-text'], highlightedTaskBox);
 
+
+    let focusSettingsBox = document.getElementById('focus-settings-box');
+    let settingsBoxHeader =  document.getElementById('focus-settings-header');
+    settingsBoxHeader.innerHTML = taskHeader.cloneNode(true).innerHTML;
+
     taskDescription.setAttribute("contenteditable", "true");
     taskHeader.setAttribute("contenteditable", "true");
+
+    focusSettingsButton.addEventListener('click', function () {
+        focusSettingsBox.setAttribute("style", "display: block");
+        settingsBoxHeader.innerHTML = taskHeader.cloneNode(true).innerHTML;
+        // focusSettingsBox.insertBefore(taskHeader.cloneNode(true), focusSettingsBox.firstChild);
+    })
 
     taskHeader.addEventListener("input", async function () {
         console.log("Changing name");

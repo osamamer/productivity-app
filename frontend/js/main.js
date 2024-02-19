@@ -1,7 +1,7 @@
 const ROOT_URL = "http://localhost:8080";
 const TASK_URL = ROOT_URL.concat("/api/v1/task");
 
-import {createTaskElement} from './tasks';
+import {createTaskElement, highlightTask} from './tasks';
 import {
     endAllSessions,
     getDayPlan,
@@ -68,6 +68,7 @@ export async function fetchTasks () {
         let taskElement = await createTaskElement(responseJson[i]);
         taskElements.push(taskElement);
     }
+    await highlightTask(responseJson[responseJson.length-1]['taskId']);
     return taskElements;
 }
 export function displayTasks (taskElements) {
