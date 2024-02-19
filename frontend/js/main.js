@@ -11,14 +11,17 @@ import {
     setDaySummary,
     setTodayRating
 } from './backend-calls';
-//npm run build
+// npm run build
 window.onload = async function() {
     let taskElements = await fetchTasks();
     displayTasks(taskElements);
     await displayTodayRating();
     await setupDayBox();
     await endAllSessions();
+    console.log(document.location.href)
+
 }
+
 
 const menuDiv = document.getElementById("task-context-menu");
 const taskInputForm= document.getElementById("task-input-form");
@@ -32,6 +35,18 @@ document.addEventListener('click', function handleClickOutsidePopups(event) {
     if (!menuDiv.contains(event.target)) menuDiv.style.visibility = 'hidden';
     if (!dayModal.contains(event.target) && !   dayButton.contains(event.target)) dayModal.close();
 });
+// alert("hello!");
+// document.getElementById('tasks-page').onload = async function() {
+//     alert("hello!");
+//
+// }
+// if (window.location.href.match('task-page.html')) {
+//     alert("hellooo!");
+//
+// }
+// document.onload = async function() {
+//     alert("yo")
+// }
 taskInputForm.addEventListener('submit', function(e) {
     console.log("Submitting new task.");
     e.preventDefault();
@@ -57,8 +72,12 @@ export async function fetchTasks () {
 }
 export function displayTasks (taskElements) {
     document.getElementById("all-tasks-div").innerHTML = "";
+    const p = document.querySelector('.tasks-container');
     for (let i = 0; i < taskElements.length; i++) {
-        document.getElementById("all-tasks-div").appendChild(taskElements[i]);
+        document.querySelector('.tasks-container').appendChild(taskElements[i]);
+        // if (taskElements[i]['completed'] === false) {
+        //     document.querySelector('.tasks-container').appendChild(taskElements[i]);
+        // }
     }
 }
 async function createNewTask (){
@@ -120,10 +139,10 @@ function formatDate(date) {
 async function setupDayBox() {
     const dayBox = document.getElementById('day-box');
     dayBox.innerHTML = "";
-    await createAndAppendChild('day-box-header', 'Today (Abridged)', false, null, [], dayBox);
-    await createAndAppendChild('day-box-rating', 'Today\'s rating: ' , true, getTodayRating(), [], dayBox);
-    await createAndAppendChild('day-box-plan', 'The plan for today: ', true, getTodayPlan(), [], dayBox);
-    await createAndAppendChild('day-box-summary', 'What ended up happening today: ', true, getTodaySummary(), [], dayBox);
+    await createAndAppendChild('day-box-header', 'Today (Abridged)', false, null, ['highlighted-task-text'], dayBox);
+    await createAndAppendChild('day-box-rating', 'Today\'s rating: ' , true, getTodayRating(), ['highlighted-task-text'], dayBox);
+    await createAndAppendChild('day-box-plan', 'The plan for today: ', true, getTodayPlan(), ['highlighted-task-text'], dayBox);
+    await createAndAppendChild('day-box-summary', 'What ended up happening today: ', true, getTodaySummary(), ['highlighted-task-text'], dayBox);
 }
 export async function createAndAppendChild(id, text, requiresFunction, textFunction, classes, parent) {
     const createdElement = document.createElement("div");
@@ -150,10 +169,12 @@ async function getTodayPlan() {
 
 //  TODO List:
 // 1. Finish day box
-// 2. Fix wrap then stretch problem
+// 2. Fix wrap then stretch problem. DONE
 // 3. Give max height to task div in task box. DONE
 // 4. Fix code. Make functions. DONE
 // 5. Buttons in task div problem. The start button always starts, should call unpause when the task is paused instead of start.
 // 6. Make new task appear at top of list. DONE
 // 7. Need to create a function for the description in the context menu. Some sort of popup.
 // 8. Make task list drag-and-droppable.
+// 9. Add lists to tasks.
+// 10. Slightly fix button functions.

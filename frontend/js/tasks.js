@@ -6,7 +6,7 @@ import {
     submitDescription,
     getAccumulatedTime,
     getTaskActive,
-    changeTaskName
+    changeTaskName, completeTask
 } from './backend-calls'
 import {
     createStartSessionButton,
@@ -25,10 +25,12 @@ export async function createTaskElement(taskJson) {
     taskDiv.classList.add("task-div");
     taskDiv.setAttribute("id", taskId);
     taskDiv.setAttribute("draggable", true);
-    await createAndAppendChild(null, taskJson['name'], false, null, ['task-div-text'], taskDiv);
     const startButton = await createStartSessionButton(taskJson);
     const pauseButton = await createPauseSessionButton(taskJson);
     const deleteButton = createDeleteTaskButton(taskJson);
+    const checkBox = await createCheckBox(taskId);
+    taskDiv.appendChild(checkBox);
+    await createAndAppendChild(null, taskJson['name'], false, null, ['task-div-text'], taskDiv);
     taskDiv.appendChild(startButton);
     taskDiv.appendChild(pauseButton);
     taskDiv.appendChild(deleteButton);
@@ -38,6 +40,19 @@ export async function createTaskElement(taskJson) {
     });
     addRightClickHandler(taskDiv, taskJson);
     return taskDiv;
+}
+async function createCheckBox(taskId) {
+    const checkBox = new Image();
+    checkBox.src = '../images/checkbox.png';
+    checkBox.classList.add("task-button");
+    checkBox.addEventListener('click', async function () {
+        await completeTask(taskId);
+    })
+    const inner = document.createElement("div")
+    inner.classList.add("inner")
+    checkBox.appendChild(inner);
+    console.log('Created checkbox')
+    return checkBox;
 }
 export async function startTaskSession(taskId, period, hasPeriod) {
     const tasks = await fetch('http://localhost:8080/api/v1/task');

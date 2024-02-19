@@ -34,6 +34,7 @@ public class TaskService {
         Task task = taskRepository.getTaskById(taskRequest.taskId);
         task.setDescription(taskRequest.taskDescription);
         taskRepository.update(task);
+        log.info("Set new task description for task with ID [{}]", task.getTaskId());
     }
 
     public boolean getTaskRunning(String taskId) {
@@ -89,6 +90,7 @@ public class TaskService {
         Task task = taskRepository.getTaskById(taskId);
         task.setCompleted(true);
         taskRepository.update(task);
+        log.info("Set complete status to true for task with ID [{}]", task.getTaskId());
     }
     public boolean getTaskCompleted(String taskId) {
         Task task = taskRepository.getTaskById(taskId);
@@ -98,11 +100,15 @@ public class TaskService {
         Task task = taskRepository.getTaskById(taskId);
         task.setName(newName);
         taskRepository.update(task);
+        log.info("Changed task name for task with ID [{}]", task.getTaskId());
+
     }
     public void setParentTask(String taskId, String parentId) {
         Task task = taskRepository.getTaskById(taskId);
         task.setParentId(parentId);
         taskRepository.update(task);
+        log.info("Set task with ID [{}] to have parent with ID [{}]", task.getTaskId(), parentId);
+
     }
     public Task getParentTask(String taskId) {
         Task task = taskRepository.getTaskById(taskId);
@@ -122,6 +128,7 @@ public class TaskService {
         session.setLastUnpauseTime(session.getStartTime());
         session.setActive(true);
         session.setRunning(true);
+        log.info("Created session for task with ID [{}]", task.getTaskId());
         return session;
     }
 
@@ -134,6 +141,8 @@ public class TaskService {
             activeSession.setActive(false);
             sessionRepository.save(activeSession);
         });
+        log.info("Ended all sessions.");
+
     }
     public Task createNewTask(NewTaskRequest taskRequest) {
         Task newTask = new Task();
@@ -143,6 +152,7 @@ public class TaskService {
         newTask.setCreationDateTime(LocalDateTime.now());
         newTask.setCompleted(false);
         taskRepository.add(newTask);
+        log.info("Created new task.");
         return newTask;
     }
 }

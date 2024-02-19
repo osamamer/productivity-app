@@ -56,6 +56,18 @@ export async function changeTaskName(taskId, newName) {
         method: "POST",
     })
 }
+export async function completeTask(taskId) {
+    console.log("Completing task");
+    await fetch(TASK_URL.concat(`/complete-task/${taskId}`), {
+        method: "POST",
+    })
+}
+export async function getTaskCompleted(taskId) {
+    await fetch(TASK_URL.concat(`/get-task-completed/${taskId}`), {
+        method: "GET",
+    })
+}
+
 export async function getToday() {
     const response = await fetch(DAY_URL.concat("/get-today"));
     return await response.json();

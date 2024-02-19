@@ -1,6 +1,7 @@
 version: "3.9"
 services:
   productivity-app:
+    container_name: app
     image: productivity-app:SNAPSHOT
     ports:
       - "8080:8080"
@@ -8,6 +9,7 @@ services:
       - postgres
     entrypoint: java -jar -Dspring.profiles.active=dev,postgres app.jar
   postgres:
+    container_name: db
     hostname: postgres
     image: postgres:11.21-bullseye
     ports:
