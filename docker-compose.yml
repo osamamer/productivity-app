@@ -15,7 +15,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres-v2-data:/var/lib/postgresql/data
+      - postgres-v2.1-data:/var/lib/postgresql/data
     environment:
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_USER=postgres
@@ -24,4 +24,6 @@ volumes:
   postgres-data:
     external: true
   postgres-v2-data:
+    external: true
+  postgres-v2.1-data:
     external: true

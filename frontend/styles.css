@@ -61,7 +61,7 @@ body {
 .box {
     display: flex;
     flex-direction: column;
-    margin-top: 50px;
+    /*margin-top: 50px;*/
     padding: 10px;
     background-color: var(--lavender);
     border: 3px;
@@ -75,6 +75,8 @@ body {
 
 /*Flex basis is sort of like width*/
 .task-box {
+    margin-top: 50px;
+
     height: 450px;
     max-width: 300px;
     min-width: 150px;
@@ -117,7 +119,7 @@ body {
 
 
 #highlighted-task-box {
-    height: 200px;
+    max-height: 200px;
     min-width: 150px;
     max-width: 450px;
     flex: 1 1 150px;
@@ -129,7 +131,8 @@ body {
     display: none;
     text-align: center;
     color: black;
-    width: 80px;
+    min-width: 80px;
+    flex: 1 1 80px;
     height: 50px;
     padding: 5px;
     overflow: hidden;
@@ -177,7 +180,7 @@ body {
     margin: 10px;
     max-width: 70%;
     min-width: 25%;
-    max-height: 40px;
+    max-height: 25px;
     min-height: 15px;
     flex: 1 1 auto;
 }
@@ -331,6 +334,8 @@ a {
     text-underline: none;
 }
 #day-box {
+    margin-top: 50px;
+
     height: 430px;
     max-width: 650px;
     min-width: 200px;
@@ -344,14 +349,35 @@ a {
 
 }
 #focus-settings-box {
-    height: 300px;
-    min-width: 150px;
+    max-height: 200px;
+    min-width: 200px;
     max-width: 450px;
-    flex: 1 1 150px;
+    flex: 0 1 75px;
     color: black;
     display: none;
     /*visibility: hidden;*/
     padding: 15px;
+}
+.big-focus-container {
+    margin-top: 50px;
+
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 150px;
+    max-width: 450px;
+    height: 460px;
+    flex: 1 1 150px;
+    flex-wrap: wrap;
+}
+.small-focus-container {
+    display: flex;
+    gap: 5px;
+    min-width: 150px;
+    flex: 1 1 150px;
+}
+.placeholder {
+    font-size: 10px;
 }
 /*form  { display: table;      }*/
 /*p     { display: table-row;  }*/

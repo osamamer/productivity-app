@@ -3,6 +3,7 @@ package org.osama;
 import org.osama.task.*;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -22,7 +23,27 @@ public class TaskController {
     public List<Task> getAll() {
         return taskRepository.getAll();
     }
-    @GetMapping("/get-task/{taskId}")
+    @GetMapping("/get-non-completed-tasks")
+    public List<Task> getNonCompletedTasks() {
+        return taskService.getNonCompletedTasks();
+    }
+    @GetMapping("/get-today-tasks")
+    public List<Task> getTodayTasks() {
+        return taskService.getTasksByDate(String.valueOf(LocalDate.now()));
+    }
+    @GetMapping("/get-tasks/{date}")
+    public List<Task> getTasksByDate(@PathVariable String date) {
+        return taskService.getTasksByDate(date);
+    }
+    @GetMapping("/get-non-completed-tasks/{date}")
+    public List<Task> getNonCompletedTasksByDate(@PathVariable String date) {
+        return taskService.getNonCompletedTasksByDate(date);
+    }
+    @GetMapping("/get-non-completed-today-tasks")
+    public List<Task> getNonCompletedTasksToday() {
+        return taskService.getNonCompletedTasksByDate(String.valueOf(LocalDate.now()));
+    }
+        @GetMapping("/get-task/{taskId}")
     public Task getTaskById(@PathVariable String taskId) {
         return taskRepository.getTaskById(taskId);
     }

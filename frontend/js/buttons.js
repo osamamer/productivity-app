@@ -1,4 +1,4 @@
-import {endTaskSession, pauseTaskSession, startTaskSession} from "./tasks";
+import {endTaskSessionFrontend, pauseTaskSessionFrontend, startTaskSessionFrontend} from "./tasks";
 
 const PLAY_IMG = "../images/play.png";
 const PAUSE_IMG = "../images/pause.png";
@@ -22,14 +22,14 @@ function createTaskActionButton(action, taskJson, idSupplier, otherButtonIdSuppl
     return button;
 }
 export async function createStartSessionButton(taskJson) {
-    let button = createTaskActionButton("start", taskJson, getStartSessionButtonId, getEndSessionButtonId, startTaskSession, PLAY_IMG);
+    let button = createTaskActionButton("start", taskJson, getStartSessionButtonId, getEndSessionButtonId, startTaskSessionFrontend, PLAY_IMG);
     if (await getTaskRunning(taskJson["taskId"].toString())) {
         button.setAttribute("style", "display: none");
     }
     return button;
 }
 export async function createPauseSessionButton(taskJson) {
-    let button = createTaskActionButton("end", taskJson, getEndSessionButtonId, getStartSessionButtonId, pauseTaskSession, PAUSE_IMG);
+    let button = createTaskActionButton("end", taskJson, getEndSessionButtonId, getStartSessionButtonId, pauseTaskSessionFrontend, PAUSE_IMG);
     if (!await getTaskRunning(taskJson["taskId"].toString())) {
         button.setAttribute("style", "display: none");
     }

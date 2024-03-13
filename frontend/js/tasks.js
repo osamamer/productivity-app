@@ -14,11 +14,11 @@ import {
     createDeleteTaskButton,
     getStartSessionButtonId, getEndSessionButtonId
 } from './buttons';
-import {displayTasks, fetchTasks, createAndAppendChild} from "./main";
+import {displayTasks, fetchAllTasks, createAndAppendChild, fetchTodayNonCompletedTasks} from "./main";
 
 const highlightedTaskBox = document.getElementById("highlighted-task-box");
 const taskContextMenu = document.getElementById("task-context-menu");
-let focusDuration = 30;
+let defaultFocusDuration = 30;
 export async function createTaskElement(taskJson) {
     let taskId = taskJson["taskId"];
     const taskDiv = document.createElement("div");
@@ -46,14 +46,15 @@ async function createCheckBox(taskId) {
     checkBox.src = '../images/checkbox.png';
     checkBox.classList.add("task-button");
     checkBox.addEventListener('click', async function () {
-        await completeTask(taskId);
+        await completeTask(taskId).then(() => fetchTodayNonCompletedTasks())
+            .then((tasksString) => displayTasks(tasksString));
     })
     const inner = document.createElement("div")
     inner.classList.add("inner")
     checkBox.appendChild(inner);
     return checkBox;
 }
-export async function startTaskSession(taskId, period, hasPeriod) {
+export async function startTaskSessionFrontend(taskId, period, hasPeriod) {
     const tasks = await fetch('http://localhost:8080/api/v1/task');
     const tasksResponse = await tasks.json();
     for (let i = 0; i < tasksResponse.length; i++) {
@@ -68,14 +69,14 @@ export async function startTaskSession(taskId, period, hasPeriod) {
     await postRequest(taskId, "start-session");
     switchPlayPause(buttonId, otherButtonId);
     setFocusButtonDisplays("running");
-    if (!hasPeriod) {
-        startStopwatch(0, false);
-    }
-    else {
-        startStopwatch(focusDuration, true);
-    }
+    // if (hasPeriod) {
+    startStopwatch(period, false);
+    // }
+    // else {
+    //     startStopwatch(defaultFocusDuration, false);
+    // }
 }
-export async function pauseTaskSession(taskId, period, hasPeriod) {
+export async function pauseTaskSessionFrontend(taskId, period, hasPeriod) {
     const buttonId = getEndSessionButtonId(taskId);
     const otherButtonId = getStartSessionButtonId(taskId);
     console.log("Pausing task session");
@@ -85,7 +86,7 @@ export async function pauseTaskSession(taskId, period, hasPeriod) {
     setFocusButtonDisplays("active");
 
 }
-export async function unpauseTaskSession(taskId, period, hasPeriod) {
+export async function unpauseTaskSessionFrontend(taskId, period, hasPeriod) {
     const buttonId = getStartSessionButtonId(taskId);
     const otherButtonId = getEndSessionButtonId(taskId);
     console.log("Unpausing task session");
@@ -95,7 +96,7 @@ export async function unpauseTaskSession(taskId, period, hasPeriod) {
     setFocusButtonDisplays("running");
 
 }
-export async function endTaskSession(taskId) {
+export async function endTaskSessionFrontend(taskId) {
     const buttonId = getEndSessionButtonId(taskId);
     const otherButtonId = getStartSessionButtonId(taskId);
     console.log("Ending task session");
@@ -153,22 +154,19 @@ export async function highlightTask(taskId) {
     const taskTime = await createAndAppendChild('highlighted-task-time', 'Elapsed time: ', true, displayTaskTime(task['taskId']), ['highlighted-task-text'], highlightedTaskBox);
 
 
-    let focusSettingsBox = document.getElementById('focus-settings-box');
-    let settingsBoxHeader =  document.getElementById('focus-settings-header');
-    settingsBoxHeader.innerHTML = taskHeader.cloneNode(true).innerHTML;
+    const focusSettingsBox = await setupFocusSettingsBox(taskId);
 
     taskDescription.setAttribute("contenteditable", "true");
     taskHeader.setAttribute("contenteditable", "true");
 
     focusSettingsButton.addEventListener('click', function () {
         focusSettingsBox.setAttribute("style", "display: block");
-        settingsBoxHeader.innerHTML = taskHeader.cloneNode(true).innerHTML;
-        // focusSettingsBox.insertBefore(taskHeader.cloneNode(true), focusSettingsBox.firstChild);
+        focusSettingsButton.setAttribute("style", "display: none");
     })
 
     taskHeader.addEventListener("input", async function () {
         console.log("Changing name");
-        await changeTaskName(taskId, taskHeader.textContent).then(() => fetchTasks()).then((tasks) => displayTasks(tasks));
+        await changeTaskName(taskId, taskHeader.textContent).then(() => fetchAllTasks()).then((tasks) => displayTasks(tasks));
     }, false);
     taskDescription.addEventListener("input", function () {
         console.log("Changing description");
@@ -192,7 +190,7 @@ async function setupFocusButton(purpose, task) {
     let id = `${purpose}-focus-button`;
     let text;
     if (purpose === 'start')
-        text = `Start focus for ${focusDuration} minutes`;
+        text = `Start ${defaultFocusDuration}-minute focus`;
     else if (purpose === 'end')
         text = 'End focus';
     else
@@ -236,16 +234,41 @@ function capitalizeFirstLetter(string) {
 function buttonEventListenerFunction(e) {
     let button = e.currentTarget;
     let purpose = button.purpose;
-    if (purpose === "start") startTaskSession(button.taskId, 0, false);
-    if (purpose === "pause") pauseTaskSession(button.taskId, 0, false);
-    if (purpose === "unpause") unpauseTaskSession(button.taskId, 0, false);
+    if (purpose === "start") startTaskSessionFrontend(button.taskId, 0, false);
+    if (purpose === "pause") pauseTaskSessionFrontend(button.taskId, 0, false);
+    if (purpose === "unpause") unpauseTaskSessionFrontend(button.taskId, 0, false);
     if (purpose === "end") {
-        endTaskSession(button.taskId);
+        endTaskSessionFrontend(button.taskId);
         highlightTask(button.taskId);
+    }
+}
+function setupFocusSettingsBox(taskId) {
+    const focusSettingsBox = document.getElementById('focus-settings-box');
+    const focusPeriod = document.getElementById('focus-period-input');
+    const numPeriods = document.getElementById('number-periods-input');
+    const breakPeriod = document.getElementById('break-period-input');
+    const startTime = document.getElementById('start-time-input');
+    focusSettingsBox.addEventListener('submit', function(e) {
+        let now = new Date();
+
+        startTaskSessionFrontend(taskId, focusPeriod, true);
+
+    })
+    return focusSettingsBox;
+}
+function validateForm(form) {
+    let a = document.forms["Form"]["answer_a"].value;
+    let b = document.forms["Form"]["answer_b"].value;
+    let c = document.forms["Form"]["answer_c"].value;
+    let d = document.forms["Form"]["answer_d"].value;
+    if ((a == null || a == "") && (b == null || b == "") && (c == null || c == "") && (d == null || d == "")) {
+        alert("Please Fill In All Required Fields");
+        return false;
     }
 }
 async function displayTaskTime(taskId) {
     let accTime = await getAccumulatedTime(taskId);
+    Math.floor(accTime);
     const seconds = Math.floor(accTime) % 60; // calculate seconds
     const minutes = Math.floor(accTime/ 60) % 60; // calculate minutes
     const hours = Math.floor(accTime / 60 / 60); // calculate hours
@@ -272,11 +295,11 @@ function openContextMenu(e) {
 
 async function setupContextMenu(taskId) {
     taskContextMenu.innerHTML = "";
-    const startItem = await createContextMenuItem('start-task-context-item', "Start session", false, null, ['menu-item'], taskContextMenu, taskId, startTaskSession);
-    const pauseItem = await createContextMenuItem('pause-task-context-item', "Pause", false, null, ['menu-item'], taskContextMenu, taskId, pauseTaskSession);
-    const unpauseItem = await createContextMenuItem('unpause-task-context-item', "Unpause", false, null, ['menu-item'], taskContextMenu, taskId, unpauseTaskSession);
-    const endItem = await createContextMenuItem('end-task-context-item', "End session", false, null, ['menu-item'], taskContextMenu, taskId, endTaskSession);
-    const descItem = await createContextMenuItem('task-desc-context-item', "Description", false, null, ['menu-item'], taskContextMenu, taskId, pauseTaskSession);
+    const startItem = await createContextMenuItem('start-task-context-item', "Start session", false, null, ['menu-item'], taskContextMenu, taskId, startTaskSessionFrontend);
+    const pauseItem = await createContextMenuItem('pause-task-context-item', "Pause", false, null, ['menu-item'], taskContextMenu, taskId, pauseTaskSessionFrontend);
+    const unpauseItem = await createContextMenuItem('unpause-task-context-item', "Unpause", false, null, ['menu-item'], taskContextMenu, taskId, unpauseTaskSessionFrontend);
+    const endItem = await createContextMenuItem('end-task-context-item', "End session", false, null, ['menu-item'], taskContextMenu, taskId, endTaskSessionFrontend);
+    const descItem = await createContextMenuItem('task-desc-context-item', "Description", false, null, ['menu-item'], taskContextMenu, taskId, pauseTaskSessionFrontend);
     // Need to create a function for the description. Some sort of popup.
 
 }

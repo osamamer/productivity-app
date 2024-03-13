@@ -2,6 +2,7 @@ package org.osama.task;
 
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @Repository
@@ -38,7 +39,25 @@ public class PersistentTaskRepository implements TaskRepository {
     }
 
     @Override
+    public List<Task> getNonCompletedTasks() {
+        return taskJpaRepository.findAllByCompletedIsFalse();
+    }
+    @Override
+    public List<Task> getTodayTasks() {
+        return taskJpaRepository.findAllByCreationDate(LocalDate.now());
+    }
+
+    @Override
+    public List<Task> getTasksByDate(LocalDate localDate) {
+        return taskJpaRepository.findAllByCreationDate(localDate);
+    }
+
+
+
+    @Override
     public Task update(Task task) {
         return taskJpaRepository.save(task);
     }
+
+
 }

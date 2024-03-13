@@ -2,7 +2,7 @@ const ROOT_URL = "http://localhost:8080";
 const TASK_URL = ROOT_URL.concat("/api/v1/task");
 const DAY_URL = ROOT_URL.concat("/api/v1/day");
 
-import {fetchTasks, displayTasks} from './main'
+import {fetchAllTasks, displayTasks} from './main'
 async function getRequest(taskId, action) {
     return await fetch(TASK_URL.concat(`/${action}/${taskId}`), { // `` makes something into a string
     })
@@ -12,13 +12,43 @@ export async function postRequest(taskId, action) {
         method: "POST",
     })
 }
+export async function getAllTasks() {
+    let promise = await fetch(TASK_URL);
+    return await promise.json();
+}
+export async function getTasks(date, nonCompletedOnly) {
+    let promise;
+    if (nonCompletedOnly) {
+        promise = await fetch(TASK_URL.concat(`/get-non-completed-tasks/${date}`),{
+            method: "GET",
+        });
+    }
+    else {
+        promise = await fetch(TASK_URL.concat(`/get-tasks/${date}`),{
+            method: "GET",
+        })
+    }
+    return await promise.json();
+}
+export async function startTaskSession(taskId) {
+    return await postRequest(taskId, "start-session");
+}
+export async function pauseTaskSession(taskId) {
+    return await postRequest(taskId, "pause-session");
+}
+export async function unpauseTaskSession(taskId) {
+    return await postRequest(taskId, "unpause-session");
+}
+export async function endTaskSession(taskId) {
+    return await postRequest(taskId, "end-session");
+}
 export async function deleteTask(taskId) {
     let highlightDiv = document.getElementById("highlighted-task-box");
     highlightDiv.style.visibility = 'hidden';
     await fetch(TASK_URL.concat(`/${taskId}`), { // `` makes something into a string
         method: "DELETE",
     })
-        .then(() => fetchTasks())
+        .then(() => fetchAllTasks())
         .then((tasksString) => displayTasks(tasksString))
 }
 export async function getTaskById(taskId) {
@@ -67,6 +97,23 @@ export async function getTaskCompleted(taskId) {
         method: "GET",
     })
 }
+export async function getNonCompletedTasks() {
+    await fetch(TASK_URL.concat("/get-non-completed-tasks"), {
+        method: "GET",
+    })
+}
+export async function getTodayTasks() {
+    await fetch(TASK_URL.concat("/get-today-tasks"), {
+        method: "GET",
+    })
+}
+export async function getTasksByDate(date) {
+    await fetch(TASK_URL.concat(`/get-tasks/${date}`), {
+        method: "GET",
+    })
+}
+
+// ---------------------------------Day calls--------------------------------------------
 
 export async function getToday() {
     const response = await fetch(DAY_URL.concat("/get-today"));

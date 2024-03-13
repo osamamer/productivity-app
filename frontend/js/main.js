@@ -3,8 +3,8 @@ const TASK_URL = ROOT_URL.concat("/api/v1/task");
 
 import {createTaskElement, highlightTask} from './tasks';
 import {
-    endAllSessions,
-    getDayPlan,
+    endAllSessions, getAllTasks,
+    getDayPlan, getTasks,
     getToday,
     getTodayRating,
     setDayPlan,
@@ -13,7 +13,8 @@ import {
 } from './backend-calls';
 // npm run build
 window.onload = async function() {
-    let taskElements = await fetchTasks();
+    let taskElements = await fetchTasks(todayDate, true);
+    // let taskElements = await fetchAllTasks();
     displayTasks(taskElements);
     await displayTodayRating();
     await setupDayBox();
@@ -22,7 +23,7 @@ window.onload = async function() {
 
 }
 
-
+const todayDate = getCurrentDateFormatted();
 const menuDiv = document.getElementById("task-context-menu");
 const taskInputForm= document.getElementById("task-input-form");
 const dayButton = document.getElementById("sun-image");
@@ -35,18 +36,6 @@ document.addEventListener('click', function handleClickOutsidePopups(event) {
     if (!menuDiv.contains(event.target)) menuDiv.style.visibility = 'hidden';
     if (!dayModal.contains(event.target) && !   dayButton.contains(event.target)) dayModal.close();
 });
-// alert("hello!");
-// document.getElementById('tasks-page').onload = async function() {
-//     alert("hello!");
-//
-// }
-// if (window.location.href.match('task-page.html')) {
-//     alert("hellooo!");
-//
-// }
-// document.onload = async function() {
-//     alert("yo")
-// }
 taskInputForm.addEventListener('submit', function(e) {
     console.log("Submitting new task.");
     e.preventDefault();
@@ -59,9 +48,24 @@ dayInputForm.addEventListener('submit', function(e) {
     setTodayRatingFromForm().then(r => displayTodayRating());
     setupDayBox();
 })
-export async function fetchTasks () {
-    const response = await fetch('http://localhost:8080/api/v1/task');
-    const responseJson = await response.json();
+export async function fetchTasks(date, nonCompletedOnly) {
+    const responseJson = await getTasks(date, nonCompletedOnly);
+    let taskElements = [];
+    if (responseJson.length === 0) return taskElements;
+    for (let i = responseJson.length - 1; i >= 0; i--) {
+        let taskElement = await createTaskElement(responseJson[i]);
+        taskElements.push(taskElement);
+    }
+    await highlightTask(responseJson[responseJson.length-1]['taskId']);
+    return taskElements;
+}
+export async function fetchTodayNonCompletedTasks() {
+    return fetchTasks(todayDate, true);
+}
+export async function fetchAllTasks () {
+    // const response = await fetch('http://localhost:8080/api/v1/task');
+    // const responseJson = await response.json();
+    const responseJson = await getAllTasks();
     let taskElements = [];
     if (responseJson.length === 0) return taskElements;
     for (let i = responseJson.length - 1; i >= 0; i--) {
@@ -97,7 +101,7 @@ async function createNewTask (){
             "Content-type": "application/json; charset=UTF-8"
         }
     })
-        .then(() => fetchTasks())
+        .then(() => fetchTodayNonCompletedTasks())
         .then((tasksString) => displayTasks(tasksString))
 }
 
@@ -179,3 +183,4 @@ async function getTodayPlan() {
 // 8. Make task list drag-and-droppable.
 // 9. Add lists to tasks.
 // 10. Slightly fix button functions.
+// 11. Implement Pomodoro shit
