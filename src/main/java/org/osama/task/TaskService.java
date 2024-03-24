@@ -1,6 +1,7 @@
 package org.osama.task;
 
 import lombok.extern.slf4j.Slf4j;
+import org.apache.catalina.filters.RemoteIpFilter;
 import org.osama.session.Session;
 import org.osama.session.SessionRepository;
 import org.springframework.stereotype.Service;
@@ -8,10 +9,7 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
 
 @Service
 @Slf4j
@@ -136,6 +134,63 @@ public class TaskService {
                 nonCompletedList.add(task);
         }
         return nonCompletedList;
+    }
+    @SuppressWarnings("InfiniteLoopStatement")
+    public void startPomodoroSession(String taskId, int focusDurationMinutes, int numOfFocusPeriods, int breakDuration) {
+        final int[] remainingFocuses = {numOfFocusPeriods}; // In order to be mutable and usable within inner class
+        Task task = taskRepository.getTaskById(taskId);
+        startTaskSession(taskId);
+        Timer timer  = new Timer();
+        TimerTask timerUnpause = new TimerTask() {
+            @Override
+            public void run() {
+                unpauseTaskSession(taskId);
+            }
+        };
+        TimerTask timerPause = new TimerTask() {
+            @Override
+            public void run() {
+                pauseTaskSession(taskId);
+                remainingFocuses[0]--;
+            }
+        };
+        while (remainingFocuses[0] > 0) {
+            timer.schedule(timerPause, focusDurationMinutes*60*1000L);
+            
+        }
+
+        for (int remainingFocus : remainingFocuses) { // Type iter for foreach shortcut
+
+        }
+        for (int i = numOfFocusPeriods; i > 0; i--) {
+            timer.schedule(timerPause, );
+        }
+        
+        timer.schedule(timerPause, focusDurationMinutes* 1000L);
+        timer.schedule(timerUnpause, (focusDurationMinutes + breakDuration)*1000L);
+//        timer.schedule();
+        // Perpetually check for user pausing or ending task
+//        new Thread(new Runnable() {
+//            @Override
+//            public void run() {
+//                while(true) {
+//                    try {
+//                        Thread.sleep(1000);
+//                    } catch (InterruptedException e) {
+//                        throw new RuntimeException(e);
+//                    }
+//                    if (!getTaskActive(taskId) && getTaskRunning(taskId)) {
+//                        timer.cancel();
+//                    }
+//                    else if (!getTaskRunning(taskId)) {
+//                        timer.cancel();
+//                    }
+//                }
+//            }
+//        }).start();
+    }
+    public void unpauseTimer(Timer timer, function, int duration) {
+        timer.schedule(timerUnpause, duration*1000L);
     }
     private static Session createSession(Task task) {
         Session session = new Session();

@@ -184,3 +184,8 @@ async function getTodayPlan() {
 // 9. Add lists to tasks.
 // 10. Slightly fix button functions.
 // 11. Implement Pomodoro shit
+// 12. IMPLEMENT POMO SHIT IN BACKEND!
+// 13. Make paths. Like you have writing, productivity app, unity, whatever else. These are all paths.
+// Visualize them. And make tasks have paths associated with them. And then when you complete a task that furthers the path.
+// I think that's really cool and actually helpful.
+// 14. Make the battery thing. Negative energy, positive energy, and measure that shit using your own app. To keep track and understand yourself better.
