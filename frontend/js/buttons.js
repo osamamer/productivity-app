@@ -1,3 +1,5 @@
+"use strict" // strict mode
+
 import {endTaskSessionFrontend, pauseTaskSessionFrontend, startTaskSessionFrontend} from "./tasks";
 
 const PLAY_IMG = "../images/play.png";

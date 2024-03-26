@@ -6,6 +6,8 @@ body {
     --navyblue: #161840;
     --darkernavyblue: #0C0E24;
     background: var(--offwhite);
+    margin: 0;
+    padding: 0;
 }
 @font-face {
     font-family: Raleway;
@@ -22,7 +24,7 @@ body {
     height: 100%; /* Full-height: remove this if you want "auto" height */
     width: 60px; /* Set the width of the sidebar */
     position: fixed; /* Fixed Sidebar (stay in place on scroll) */
-    z-index: 1; /* Stay on top */
+    z-index: 10; /* Stay on top */
     top: 0; /* Stay at the top */
     left: 0;
     background-color: var(--lavender); /* Black */
@@ -32,16 +34,69 @@ body {
     padding-right: 15px;
     margin-right: 5px;
 }
-#all {
+.header {
     display: flex;
-    flex-wrap: wrap;
+    margin-left: 97px;
+    gap: 50px;
+    background-color: #f0f0f0;
+    padding: 20px;
+    text-align: center;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%; /* Ensures header stretches across the full width */
+    height: 50px;
+    z-index: 9; /* Ensures header stays above other elements */
+    margin-bottom: 50px;
+    justify-content: left;
+    align-content: center;
+}
+
+#main-container {
+    display: flex;
+    /*flex-wrap: wrap;*/
     gap: 2em;
-    margin-left: 120px;
+    margin-left: 97px;
     overflow: hidden;
-    justify-content: flex-start;
+    /*justify-content: flex-start;*/
+    margin-top: 120px;
+    flex: 1;
+    align-items: stretch;
+}
+
+
+.container {
+    display: flex;
+}
+
+.section {
+    /*position: fixed;*/
+    display: flex;
+    padding: 20px;
+    box-sizing: border-box;
+    /*height: 100%;*/
+    background: white;
+    align-self: stretch;
+    flex-direction: column;
+}
+
+.left {
+    width: 30%; /* Set width for left section */
+    background-color: #ddd;
+
+}
+
+.center {
+    flex: 50%; /* Takes up twice the space of other sections */
+    background-color: #eee;
+}
+
+.right {
+    width: 20%; /* Set fixed width for right section */
+    background-color: #ECCECE   ;
 }
 .head-question {
-    position: relative;
+    /*position: relative;*/
     font-size: xx-large;
     text-align: left;
 }
@@ -53,17 +108,20 @@ body {
     border-radius: 6px;
     outline: none;
     caret-color: black;
-    margin-top: 38px;
+    /*margin-top: 38px;*/
 }
 
-
+h1 {
+    color: black;
+    font-weight: normal;
+}
 
 .box {
     display: flex;
     flex-direction: column;
     /*margin-top: 50px;*/
     padding: 10px;
-    background-color: var(--lavender);
+    /*background-color: var(--lavender);*/
     border: 3px;
     border-radius: 5px;
     overflow: hidden;
@@ -75,12 +133,11 @@ body {
 
 /*Flex basis is sort of like width*/
 .task-box {
-    margin-top: 50px;
+    /*margin-top: 50px;*/
 
     height: 450px;
     max-width: 300px;
     min-width: 150px;
-    flex: 1 1 150px;
     display: flex;
     flex-direction: column;
     color: honeydew;
@@ -260,7 +317,7 @@ body {
     padding-left: 5px;
 }
 .day-rating {
-    margin-top: 38px;
+    /*margin-top: 38px;*/
 }
 .input {
     border: none;
@@ -271,7 +328,7 @@ body {
     max-width: 50px;
     max-height: 50px;
     border-radius: 5px;
-    margin-top: 38px;
+    /*margin-top: 38px;*/
 }
 .sun-img-div:hover {
     background-color: #D9C041;
@@ -281,7 +338,7 @@ body {
     max-width: 50px;
     max-height: 50px;
     border-radius: 5px;
-    margin-top: 38px;
+    /*margin-top: 38px;*/
 }
 .modal {
     border-radius: 5px;
@@ -334,9 +391,8 @@ a {
     text-underline: none;
 }
 #day-box {
-    margin-top: 50px;
-
-    height: 430px;
+    /*margin-top: 50px;*/
+    height: 1000px;
     max-width: 650px;
     min-width: 200px;
     flex: 1 1 200px;
@@ -359,7 +415,7 @@ a {
     padding: 15px;
 }
 .big-focus-container {
-    margin-top: 50px;
+    /*margin-top: 50px;*/
 
     display: flex;
     flex-direction: column;
@@ -378,6 +434,9 @@ a {
 }
 .placeholder {
     font-size: 10px;
+}
+.header-text {
+    max-height: 100px;
 }
 /*form  { display: table;      }*/
 /*p     { display: table-row;  }*/

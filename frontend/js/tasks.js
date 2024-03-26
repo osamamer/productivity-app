@@ -1,3 +1,5 @@
+"use strict" // strict mode
+
 import {
     getTaskRunning,
     deleteTask,

@@ -1,3 +1,4 @@
+"use strict" // strict mode
 const ROOT_URL = "http://localhost:8080";
 const TASK_URL = ROOT_URL.concat("/api/v1/task");
 
@@ -76,7 +77,8 @@ export async function fetchAllTasks () {
     return taskElements;
 }
 export function displayTasks (taskElements) {
-    document.getElementById("all-tasks-div").innerHTML = "";
+    let taskBox = document.getElementById("all-tasks-div")
+    taskBox.innerHTML = "";
     const p = document.querySelector('.tasks-container');
     for (let i = 0; i < taskElements.length; i++) {
         document.querySelector('.tasks-container').appendChild(taskElements[i]);

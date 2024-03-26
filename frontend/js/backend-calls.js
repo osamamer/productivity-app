@@ -1,3 +1,5 @@
+"use strict" // strict mode
+
 const ROOT_URL = "http://localhost:8080";
 const TASK_URL = ROOT_URL.concat("/api/v1/task");
 const DAY_URL = ROOT_URL.concat("/api/v1/day");
