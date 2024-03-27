@@ -89,6 +89,7 @@ public class TaskService {
     public void completeTask(String taskId) {
         Task task = taskRepository.getTaskById(taskId);
         task.setCompleted(true);
+        task.setCompletionDateTime(LocalDateTime.now());
         taskRepository.update(task);
         log.info("Set complete status to true for task with ID [{}]", task.getTaskId());
     }
@@ -226,7 +227,7 @@ public class TaskService {
         newTask.setCreationDate(newTask.getCreationDateTime().toLocalDate());
         newTask.setCompleted(false);
         taskRepository.add(newTask);
-        log.info("Created new task.");
+        log.info("Created new task at {}.", newTask.getCreationDate());
         return newTask;
     }
     private static LocalDate stringToLocalDate(String dateString) {

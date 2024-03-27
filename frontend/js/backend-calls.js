@@ -1,10 +1,10 @@
 "use strict" // strict mode
-
+import {fetchAllTasks, displayTasks, fetchTasks, getCurrentDateFormatted} from './main'
 const ROOT_URL = "http://localhost:8080";
 const TASK_URL = ROOT_URL.concat("/api/v1/task");
 const DAY_URL = ROOT_URL.concat("/api/v1/day");
+const todayDate = getCurrentDateFormatted();
 
-import {fetchAllTasks, displayTasks} from './main'
 async function getRequest(taskId, action) {
     return await fetch(TASK_URL.concat(`/${action}/${taskId}`), { // `` makes something into a string
     })
@@ -50,7 +50,7 @@ export async function deleteTask(taskId) {
     await fetch(TASK_URL.concat(`/${taskId}`), { // `` makes something into a string
         method: "DELETE",
     })
-        .then(() => fetchAllTasks())
+        .then(() => fetchTasks(todayDate, true))
         .then((tasksString) => displayTasks(tasksString))
 }
 export async function getTaskById(taskId) {

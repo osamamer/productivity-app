@@ -20,7 +20,7 @@ window.onload = async function() {
     await displayTodayRating();
     await setupDayBox();
     await endAllSessions();
-    console.log(document.location.href)
+    console.log(new Date().getDate())
 
 }
 
@@ -130,7 +130,7 @@ async function setTodayPlanFromForm() {
     const todayDate = getCurrentDateFormatted();
     await setDayPlan(todayDate, userDayPlan);
 }
-function getCurrentDateFormatted() {
+export function getCurrentDateFormatted() {
     const date = new Date();
     const year = date.getFullYear();
     const month = `0${date.getMonth() + 1}`.slice(-2);

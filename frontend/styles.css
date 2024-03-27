@@ -62,6 +62,7 @@ body {
     margin-top: 120px;
     flex: 1;
     align-items: stretch;
+
 }
 
 
@@ -135,32 +136,46 @@ h1 {
 .task-box {
     /*margin-top: 50px;*/
 
-    height: 450px;
-    max-width: 300px;
-    min-width: 150px;
+    /*height: 450px;*/
+    /*width: 100%;*/
+    /*max-width: 600px;*/
+    /*min-width: 500px;*/
     display: flex;
     flex-direction: column;
     color: honeydew;
     text-align: left;
     font-size: 20px;
     overflow: hidden;
-    padding-top: 5px;
-    padding-bottom: 5px;
+    padding: 0;
 }
 .task-div {
     color: black;
     min-height: 30px;
-    max-height: 80px;
+    max-height: 100px;
     min-width: 100px;
-    flex: 0 1 auto;
+    flex: 1 0 auto;
     display: flex;
     align-items: center;
-    background-color: var(--darkerlavender);
+    background-color: white;
     text-align: justify;
     padding: 5px 5px 5px 8px;
     margin: 10px 0 10px 0;
     border-radius: 5px;
 }
+/*.task-div::before {*/
+/*    display: block;*/
+/*    content: "";*/
+/*    min-width: 15px;*/
+/*    min-height: 15px;*/
+/*    height: 15px;*/
+/*    width: 15px;*/
+/*    border-radius: 50%;*/
+/*    background-color: black;*/
+/*    z-index: 100;*/
+/*    left: -25px;*/
+/*    top: -25px;*/
+/*    position: relative;*/
+/*}*/
 .task-div-text {
     width: 60%;
     max-height: 90%;
@@ -176,10 +191,10 @@ h1 {
 
 
 #highlighted-task-box {
-    max-height: 200px;
-    min-width: 150px;
-    max-width: 450px;
-    flex: 1 1 150px;
+    /*max-height: 200px;*/
+    /*min-width: 150px;*/
+    /*max-width: 450px;*/
+    /*flex: 1 1 150px;*/
     color: honeydew;
     visibility: hidden;
     padding: 15px;
@@ -392,9 +407,9 @@ a {
 }
 #day-box {
     /*margin-top: 50px;*/
-    height: 1000px;
-    max-width: 650px;
-    min-width: 200px;
+    /*height: 1000px;*/
+    /*max-width: 650px;*/
+    /*min-width: 200px;*/
     flex: 1 1 200px;
     color: black;
     padding: 15px;
