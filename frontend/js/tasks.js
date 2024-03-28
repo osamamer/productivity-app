@@ -168,7 +168,7 @@ export async function highlightTask(taskId) {
 
     taskHeader.addEventListener("input", async function () {
         console.log("Changing name");
-        await changeTaskName(taskId, taskHeader.textContent).then(() => fetchAllTasks()).then((tasks) => displayTasks(tasks));
+        await changeTaskName(taskId, taskHeader.textContent).then(() => fetchTodayNonCompletedTasks()).then((tasks) => displayTasks(tasks));
     }, false);
     taskDescription.addEventListener("input", function () {
         console.log("Changing description");

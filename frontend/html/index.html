@@ -19,7 +19,7 @@
         <a href="./settings-page.html" class="side-button-container" title="Statistics"><img class="side-button" src="../images/stats.png" alt=""></a>
         <a href="./settings-page.html" class="side-button-container" title="Settings"><img class="side-button" src="../images/settings.png" alt=""></a>
     </div>
-    <dialog id="day-modal" class="modal">
+    <dialog id="day-modal" class="modal box-shadow">
         <div class="dialogue-head">How has your day been?</div>
         <form id="day-input-form" autocomplete="off" method="dialog">
             <p><input id="day-rating-input-field" type="number" placeholder="Day rating (0-10)" value="" class="input" min="0" max="10"></p>
@@ -30,20 +30,25 @@
         <a href="./day-page.html" style="text-decoration: none">Go to day</a>
     </dialog>
     <div id="task-context-menu" class="box context-menu"></div>
+    <div class="header">
+        <h1 class="head-question">What's on your mind?</h1>
+        <div class="input-field-wrapper">
+            <form id="task-input-form"><label for="task-input-field"></label><input type="text" id="task-input-field" class="box-shadow"></form>
+        </div>
+        <input type="image" class="sun-img-div" src="../images/sun.png" alt="" id="sun-image" title="Day">
+        <div class="day-rating" id="day-div"></div>
+    </div>
     <div id="main-container">
-        <div class="header">
-            <h1 class="head-question">What's on your mind?</h1>
-            <div class="input-field-wrapper">
-                <form id="task-input-form"><label for="task-input-field"></label><input type="text" id="task-input-field"></form>
+
+        <div class="section left-section">
+            <div>
+                <h1 class="header-text">Tasks for today</h1>
+                <img src="../images/add.png" alt="" class="task-button" id="add-task-button">
+                <div class="tasks-container" id="all-tasks-div"></div>
             </div>
-            <input type="image" class="sun-img-div" src="../images/sun.png" alt="" id="sun-image" title="Day">
-            <div class="day-rating" id="day-div"></div>
+
         </div>
-        <div class="section left">
-            <h1 class="header-text">Tasks for today</h1>
-            <div class="box task-box tasks-container section left" id="all-tasks-div"></div>
-        </div>
-        <div class="section center">
+        <div class="section center-section">
             <div class="box" id="highlighted-task-box"></div>
             <div class="box" id="focus-settings-box">
                 <div id="focus-settings-header">Let's get to work</div>
@@ -57,7 +62,7 @@
             </div>
             <div class="box" id="timer-div"> <p id="timer-div-text"></p></div>
         </div>
-        <div class="section right">
+        <div class="section right-section">
             <div class="box" id="day-box"></div>
         </div>
     </div>
