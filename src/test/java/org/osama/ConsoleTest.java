@@ -25,6 +25,7 @@ public class ConsoleTest {
         NewTaskRequest request = new NewTaskRequest();
         request.setTaskName("Task poop");
         request.setTaskDescription("Task poop description");
+        request.setTaskPerformTime("2017-01-13T17:09:42.411");
         Task task = taskService.createNewTask(request);
         String taskId = task.getTaskId();
         taskService.startTaskSession(taskId);
@@ -45,6 +46,8 @@ public class ConsoleTest {
         NewTaskRequest request = new NewTaskRequest();
         request.setTaskName("Task poop");
         request.setTaskDescription("Task poop description");
+        request.setTaskPerformTime("2017-01-13T17:09:42.411");
+
         Task task = taskService.createNewTask(request);
         String taskId = task.getTaskId();
         taskService.startTaskSession(taskId);

@@ -40,6 +40,20 @@ export async function createTaskElement(taskJson) {
         if (!deleteButton.contains(event.target))
             highlightTask(taskId);
     });
+
+    function setPriorityCircleColor() {
+        // taskDiv.setAttribute('--prioritycolor', '--priorityyellow');
+        let color;
+        if (taskJson['importance'] <= 3) color = 'var(--priorityblue)';
+        else if (3 < taskJson['importance'] && taskJson['importance'] <= 6) color = 'var(--priorityyellow)';
+        else if (6 < taskJson['importance']) color = 'var(--priorityred)';
+        taskDiv.style.setProperty('--prioritycolor', color);
+        // let styles = window.getComputedStyle(taskDiv, ':before');
+        // let content = styles['content'];
+        // console.log(styles);
+    }
+
+    setPriorityCircleColor();
     addRightClickHandler(taskDiv, taskJson);
     return taskDiv;
 }

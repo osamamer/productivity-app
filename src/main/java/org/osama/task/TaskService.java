@@ -1,7 +1,6 @@
 package org.osama.task;
 
 import lombok.extern.slf4j.Slf4j;
-import org.apache.catalina.filters.RemoteIpFilter;
 import org.osama.session.Session;
 import org.osama.session.SessionRepository;
 import org.springframework.stereotype.Service;
@@ -9,6 +8,7 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.*;
 
 @Service
@@ -222,14 +222,32 @@ public class TaskService {
         Task newTask = new Task();
         newTask.setTaskId(UUID.randomUUID().toString());
         newTask.setName(taskRequest.getTaskName());
-        newTask.setDescription(taskRequest.getTaskDescription());
+        if (taskRequest.taskDescription != null) {
+            newTask.setDescription(taskRequest.getTaskDescription());
+        }
         newTask.setCreationDateTime(LocalDateTime.now());
         newTask.setCreationDate(newTask.getCreationDateTime().toLocalDate());
         newTask.setCompleted(false);
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MMM-dd HH:mm");
+
+        try {
+            LocalDateTime performTime = LocalDateTime.parse(taskRequest.taskPerformTime);
+            newTask.setScheduledPerformDateTime(performTime);
+        } catch (DateTimeParseException e) {
+            System.out.println("Invalid LocalDateTime format: " + taskRequest.taskPerformTime);
+        }
+        if (taskRequest.parentTaskId != null) {
+            newTask.setParentId(taskRequest.parentTaskId);
+        }
+        if (taskRequest.taskTag != null) {
+            newTask.setTag(taskRequest.taskTag);
+        }
+        newTask.setImportance(taskRequest.taskImportance);
         taskRepository.add(newTask);
         log.info("Created new task at {}.", newTask.getCreationDate());
         return newTask;
     }
+
     private static LocalDate stringToLocalDate(String dateString) {
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
         return LocalDate.parse(dateString, formatter);

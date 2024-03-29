@@ -75,6 +75,7 @@ public class EndToEndTest {
         NewTaskRequest taskRequest = new NewTaskRequest();
         taskRequest.setTaskName("Do chores");
         taskRequest.setTaskDescription("Vacuum nasty room");
+        taskRequest.setTaskPerformTime("2025-01-13T17:09:42.411");
         return taskService.createNewTask(taskRequest);
     }
 

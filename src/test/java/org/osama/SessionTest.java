@@ -30,6 +30,8 @@ public class SessionTest {
         NewTaskRequest taskRequest = new NewTaskRequest();
         taskRequest.setTaskName("Do chores");
         taskRequest.setTaskDescription("Vacuum nasty room");
+        taskRequest.setTaskPerformTime("2017-01-13T17:09:42.411");
+
         return taskService.createNewTask(taskRequest);
     }
 }

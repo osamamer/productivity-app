@@ -10,7 +10,7 @@ import {
     getTodayRating,
     setDayPlan,
     setDaySummary,
-    setTodayRating
+    setTodayRating, submitTask
 } from './backend-calls';
 // npm run build
 window.onload = async function() {
@@ -29,13 +29,20 @@ const menuDiv = document.getElementById("task-context-menu");
 const taskInputForm= document.getElementById("task-input-form");
 const dayButton = document.getElementById("sun-image");
 const dayModal = document.getElementById("day-modal");
-const dayInputForm = document.getElementById("day-input-form")
+const addTaskButton = document.getElementById("add-task-button");
+const createTaskModal = document.getElementById("create-task-modal");
+const createTaskForm = document.getElementById("create-new-task-form");
+const dayInputForm = document.getElementById("day-input-form");
 dayButton.addEventListener('click', () => {
     dayModal.show();
+})
+addTaskButton.addEventListener('click',  () => {
+    createTaskModal.show();
 })
 document.addEventListener('click', function handleClickOutsidePopups(event) {
     if (!menuDiv.contains(event.target)) menuDiv.style.visibility = 'hidden';
     if (!dayModal.contains(event.target) && !   dayButton.contains(event.target)) dayModal.close();
+    if (!createTaskModal.contains(event.target) && !addTaskButton.contains(event.target)) createTaskModal.close();
 });
 taskInputForm.addEventListener('submit', function(e) {
     console.log("Submitting new task.");
@@ -46,9 +53,20 @@ dayInputForm.addEventListener('submit', function(e) {
     console.log("Submitting day information.");
     setTodaySummaryFromForm();
     setTodayPlanFromForm();
-    setTodayRatingFromForm().then(r => displayTodayRating());
-    setupDayBox();
+    setTodayRatingFromForm().then(r => displayTodayRating()).then(r => setupDayBox());
 })
+createTaskForm.addEventListener('submit', function (e) {
+    console.log("Submitting task information.");
+    const name = document.getElementById('task-name-input-field').value;
+    const description = document.getElementById('task-desc-input-field').value;
+    const scheduledTime = document.getElementById('task-scheduled-input-field').value;
+    const tag = document.getElementById('task-tag-input-field').value;
+    const importance = document.getElementById('task-importance-input-field').value;
+    submitTask(name, description, scheduledTime, tag, importance)
+        .then(() => fetchTodayNonCompletedTasks())
+        .then((tasksString) => displayTasks(tasksString));
+})
+
 export async function fetchTasks(date, nonCompletedOnly) {
     const responseJson = await getTasks(date, nonCompletedOnly);
     let taskElements = [];

@@ -71,12 +71,26 @@ export async function getAccumulatedTime(taskId){
     return accTime.json();
 }
 export async function submitDescription(taskId, description) {
-    console.log(description);
     return await fetch(TASK_URL.concat("/set-description"), { // `` makes something into a string
         method: "POST",
         body: JSON.stringify({
             taskId: taskId,
             taskDescription: description
+        }),
+        headers: {
+            "Content-type": "application/json; charset=UTF-8"
+        }
+    })
+}
+export async function submitTask(name, description, scheduledTime, tag, importance) {
+    return await fetch(TASK_URL.concat("/submit-new-task-form"), { // `` makes something into a string
+        method: "POST",
+        body: JSON.stringify({
+            taskName: name,
+            taskDescription: description,
+            taskPerformTime: scheduledTime,
+            taskTag: tag,
+            taskImportance: importance,
         }),
         headers: {
             "Content-type": "application/json; charset=UTF-8"
@@ -113,6 +127,9 @@ export async function getTasksByDate(date) {
     await fetch(TASK_URL.concat(`/get-tasks/${date}`), {
         method: "GET",
     })
+}
+export async function createTask(taskName, taskDescription, taskPerformTime, parentTask, taskTag, taskImportance) {
+
 }
 
 // ---------------------------------Day calls--------------------------------------------

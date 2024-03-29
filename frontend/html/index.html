@@ -29,11 +29,24 @@
         </form>
         <a href="./day-page.html" style="text-decoration: none">Go to day</a>
     </dialog>
+    <dialog id="create-task-modal" class="modal box-shadow">
+        <div class="dialogue-head">Create new task:</div>
+        <form id="create-new-task-form" autocomplete="off" method="dialog">
+            <p><input id="task-name-input-field" type="text" placeholder="Task name" value="" class="input"></p>
+            <p><input id="task-desc-input-field" type="text" placeholder="Task description" value="" class="input"></p>
+            <p><input id="task-scheduled-input-field" type="text" placeholder="Task scheduled perform date" value="" class="input"></p>
+            <p><input id="task-tag-input-field" type="text" placeholder="Task tag" value="" class="input"></p>
+            <p><input id="task-importance-input-field" type="number" placeholder="Task importance" value="" class="input" min="0" max="10"></p>
+
+            <button class="button-class" type="submit">OK</button>
+        </form>
+
+    </dialog>
     <div id="task-context-menu" class="box context-menu"></div>
     <div class="header">
         <h1 class="head-question">What's on your mind?</h1>
         <div class="input-field-wrapper">
-            <form id="task-input-form"><label for="task-input-field"></label><input type="text" id="task-input-field" class="box-shadow"></form>
+            <form id="task-input-form"><label for="task-input-field"></label><input type="text" id="task-input-field" class="box-shadow" placeholder="Add task..."></form>
         </div>
         <input type="image" class="sun-img-div" src="../images/sun.png" alt="" id="sun-image" title="Day">
         <div class="day-rating" id="day-div"></div>
@@ -41,12 +54,11 @@
     <div id="main-container">
 
         <div class="section left-section">
-            <div>
+            <div id="today-tasks-container" class="box box-shadow">
                 <h1 class="header-text">Tasks for today</h1>
-                <img src="../images/add.png" alt="" class="task-button" id="add-task-button">
+                <img src="../images/add.png" alt="" id="add-task-button" class="button-class" title="Add task">
                 <div class="tasks-container" id="all-tasks-div"></div>
             </div>
-
         </div>
         <div class="section center-section">
             <div class="box" id="highlighted-task-box"></div>
