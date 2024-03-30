@@ -29,15 +29,15 @@ public class ConsoleTest {
         Task task = taskService.createNewTask(request);
         String taskId = task.getTaskId();
         taskService.startTaskSession(taskId);
-        Thread.sleep(500);
+        Thread.sleep(25);
         taskService.pauseTaskSession(taskId);
-        Thread.sleep(5000);
+        Thread.sleep(25);
         taskService.unpauseTaskSession(taskId);
-        Thread.sleep(300);
+        Thread.sleep(25);
         taskService.pauseTaskSession(taskId);
-        Thread.sleep(250);
+        Thread.sleep(25);
         taskService.unpauseTaskSession(taskId);
-        Thread.sleep(500);
+        Thread.sleep(25);
         taskService.endTaskSession(taskId);
         System.out.println(taskService.getAccumulatedTime(taskId).toMillis() + " milliseconds");
     }
@@ -51,9 +51,9 @@ public class ConsoleTest {
         Task task = taskService.createNewTask(request);
         String taskId = task.getTaskId();
         taskService.startTaskSession(taskId);
-        Thread.sleep(500);
+        Thread.sleep(50);
         taskService.pauseTaskSession(taskId);
-        Thread.sleep(1000);
+        Thread.sleep(25);
         taskService.endTaskSession(taskId);
         System.out.println(taskService.getAccumulatedTime(taskId).toMillis() + " milliseconds");
     }

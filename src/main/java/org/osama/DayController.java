@@ -19,6 +19,10 @@ public class DayController {
     public DayEntity getToday() {
         return dayService.getToday();
     }
+    @PostMapping("/set-today-info")
+    public void setTodayInfo(@RequestBody DayRequest dayRequest) {
+        dayService.setTodayInfo(dayRequest.dayRating, dayRequest.dayPlan, dayRequest.daySummary);
+    }
     @PostMapping("/set-day-rating/{date}/{rating}")
     public void setDayRating(@PathVariable String date, @PathVariable double rating) {
         dayService.setDayRating(date, rating);
@@ -47,8 +51,8 @@ public class DayController {
     public static class DayRequest {
         String dayDate;
         String dayId;
-        String daySummary;
-        String dayPlan;
         double dayRating;
+        String dayPlan;
+        String daySummary;
     }
 }

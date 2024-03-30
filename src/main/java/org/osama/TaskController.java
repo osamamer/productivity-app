@@ -47,7 +47,7 @@ public class TaskController {
     public Task getTaskById(@PathVariable String taskId) {
         return taskRepository.getTaskById(taskId);
     }
-    @PostMapping("/submit-new-task-form")
+    @PostMapping("/create-task")
     public Task createTask(@RequestBody NewTaskRequest taskRequest) {
         return taskService.createNewTask(taskRequest);
     }

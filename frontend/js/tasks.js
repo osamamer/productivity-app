@@ -169,7 +169,7 @@ export async function highlightTask(taskId) {
     const taskDescription = await createAndAppendChild('highlighted-task-desc', task['description'], false, null, ['highlighted-task-text'], highlightedTaskBox);
     const taskTime = await createAndAppendChild('highlighted-task-time', 'Elapsed time: ', true, displayTaskTime(task['taskId']), ['highlighted-task-text'], highlightedTaskBox);
 
-
+    if (taskDescription.textContent === "") taskDescription.textContent = "Description"
     const focusSettingsBox = await setupFocusSettingsBox(taskId);
 
     taskDescription.setAttribute("contenteditable", "true");

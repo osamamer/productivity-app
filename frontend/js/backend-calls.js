@@ -82,8 +82,8 @@ export async function submitDescription(taskId, description) {
         }
     })
 }
-export async function submitTask(name, description, scheduledTime, tag, importance) {
-    return await fetch(TASK_URL.concat("/submit-new-task-form"), { // `` makes something into a string
+export async function createTask(name, description, scheduledTime, tag, importance) {
+    return await fetch(TASK_URL.concat("/create-task"), { // `` makes something into a string
         method: "POST",
         body: JSON.stringify({
             taskName: name,
@@ -128,9 +128,6 @@ export async function getTasksByDate(date) {
         method: "GET",
     })
 }
-export async function createTask(taskName, taskDescription, taskPerformTime, parentTask, taskTag, taskImportance) {
-
-}
 
 // ---------------------------------Day calls--------------------------------------------
 
@@ -138,6 +135,20 @@ export async function getToday() {
     const response = await fetch(DAY_URL.concat("/get-today"));
     return await response.json();
 }
+export async function setTodayInfo(rating, plan, summary) {
+    await fetch(DAY_URL.concat('/set-today-info'), {
+        method: "POST",
+        body: JSON.stringify({
+            dayRating: rating,
+            dayPlan: plan,
+            daySummary: summary
+        }),
+        headers: {
+            "Content-type": "application/json; charset=UTF-8"
+        }
+    })
+}
+
 export async function getTodayRating() {
     let today = await getToday();
     return today["rating"];

@@ -22,6 +22,15 @@ body {
 * {
     font-family: Raleway, serif;
 }
+.container {
+    container-type: inline-size;
+}
+@container(width < 250px)  {
+    .box div  {
+        font-size: 1em;
+
+    }
+}
 
 .wrapper {
     position: relative;
@@ -139,7 +148,6 @@ h1 {
     overflow: hidden;
     box-shadow: rgba(17, 17, 26, 0.1) 0px 4px 16px 0px, rgba(17, 17, 26, 0.05) 0px 8px 32px 0px;
     border: 0.1px solid #FEFEFE;
-
 }
 .box:hover {
     overflow-y: scroll;
@@ -147,6 +155,10 @@ h1 {
 .box-shadow {
     box-shadow: rgba(17, 17, 26, 0.1) 0px 4px 16px 0px, rgba(17, 17, 26, 0.05) 0px 8px 32px 0px;
     border: 0.1px solid #FEFEFE;
+}
+.box-header {
+    text-align: center;
+    font-size: 30px;
 }
 
 
@@ -250,7 +262,7 @@ h1 {
     overflow: hidden;
 }
 #timer-div-text {
-    font-size: 20px;
+    /*font-size: 20px;*/
     margin: auto;
 }
 .highlighted-task-time {
@@ -463,11 +475,11 @@ a {
     color: black;
     padding: 15px;
 }
-#day-box-header {
-    text-align: center;
-    font-size: 30px;
+/*#day-box-header {*/
+/*    text-align: center;*/
+    /*font-size: 30px;*/
 
-}
+
 .day-text {
     text-align: left;
 }

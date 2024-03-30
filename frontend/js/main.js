@@ -10,7 +10,7 @@ import {
     getTodayRating,
     setDayPlan,
     setDaySummary,
-    setTodayRating, submitTask
+    setTodayRating, createTask, setTodayInfo
 } from './backend-calls';
 // npm run build
 window.onload = async function() {
@@ -47,13 +47,16 @@ document.addEventListener('click', function handleClickOutsidePopups(event) {
 taskInputForm.addEventListener('submit', function(e) {
     console.log("Submitting new task.");
     e.preventDefault();
-    createNewTask();
+    createTaskFromInputField();
 }, false);
 dayInputForm.addEventListener('submit', function(e) {
     console.log("Submitting day information.");
-    setTodaySummaryFromForm();
-    setTodayPlanFromForm();
-    setTodayRatingFromForm().then(r => displayTodayRating()).then(r => setupDayBox());
+    const rating = document.getElementById('day-rating-input-field').value;
+    const plan = document.getElementById('day-plan-input-field').value;
+    const summary = document.getElementById('day-summary-input-field').value;
+    setTodayInfo(rating, plan, summary)
+        .then(() => displayTodayRating())
+        .then(() => setupDayBox());
 })
 createTaskForm.addEventListener('submit', function (e) {
     console.log("Submitting task information.");
@@ -62,7 +65,7 @@ createTaskForm.addEventListener('submit', function (e) {
     const scheduledTime = document.getElementById('task-scheduled-input-field').value;
     const tag = document.getElementById('task-tag-input-field').value;
     const importance = document.getElementById('task-importance-input-field').value;
-    submitTask(name, description, scheduledTime, tag, importance)
+    createTask(name, description, scheduledTime, tag, importance)
         .then(() => fetchTodayNonCompletedTasks())
         .then((tasksString) => displayTasks(tasksString));
 })
@@ -105,22 +108,12 @@ export function displayTasks (taskElements) {
         // }
     }
 }
-async function createNewTask (){
-    //e.preventDefault();
+async function createTaskFromInputField (){
     const userTaskName = document.getElementById("task-input-field").value;
     if (userTaskName.trim() === "") return;
     document.getElementById("task-input-field").value = "";
     console.log("Creating task: " + userTaskName);
-    await fetch(TASK_URL, {
-        method: "POST",
-        body: JSON.stringify({
-            taskName: userTaskName,
-            taskDescription: "Description"
-        }),
-        headers: {
-            "Content-type": "application/json; charset=UTF-8"
-        }
-    })
+    await createTask(userTaskName, "", "", "", 0)
         .then(() => fetchTodayNonCompletedTasks())
         .then((tasksString) => displayTasks(tasksString))
 }
@@ -164,7 +157,7 @@ function formatDate(date) {
 async function setupDayBox() {
     const dayBox = document.getElementById('day-box');
     dayBox.innerHTML = "";
-    await createAndAppendChild('day-box-header', 'Today (Abridged)', false, null, ['highlighted-task-text'], dayBox);
+    await createAndAppendChild('day-box-header', 'Today (Abridged)', false, null, ['box-header'], dayBox);
     await createAndAppendChild('day-box-rating', 'Today\'s rating: ' , true, getTodayRating(), ['highlighted-task-text', 'day-text'], dayBox);
     await createAndAppendChild('day-box-plan', 'The plan for today: ', true, getTodayPlan(), ['highlighted-task-text', 'day-text'], dayBox);
     await createAndAppendChild('day-box-summary', 'What ended up happening today: ', true, getTodaySummary(), ['highlighted-task-text', 'day-text'], dayBox);

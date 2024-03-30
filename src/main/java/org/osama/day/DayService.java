@@ -26,6 +26,13 @@ public class DayService {
     public DayEntity getToday() {
         return dayRepository.findDayEntityByLocalDate(LocalDateTime.now().toLocalDate()).orElse(createNewDay());
     }
+    public void setTodayInfo(double rating, String plan, String summary) {
+        DayEntity today = dayRepository.findDayEntityByLocalDate(LocalDateTime.now().toLocalDate()).orElse(createNewDay());
+        today.setRating(rating);
+        today.setPlan(plan);
+        today.setSummary(summary);
+        dayRepository.save(today);
+    }
     public void setDayRating(String dateString, double rating) {
         LocalDate localDate = stringToLocalDate(dateString);
         DayEntity day = dayRepository.findDayEntityByLocalDate(localDate).orElse(createNewDay(localDate));
@@ -68,4 +75,6 @@ public class DayService {
         String formattedString = localDate.format(formatter);
         setDayRating(formattedString, rating);
     }
+
+
 }
