@@ -63,9 +63,10 @@ body {
     height: 50px;
     z-index: 9; /* Ensures header stays above other elements */
     margin-bottom: 50px;
-    justify-content: left;
-    align-content: center;
+    /*justify-content: left;*/
+    /*align-content: center;*/
     border-bottom: 1px solid gray;
+    /*box-sizing: border-box;*/
 }
 
 #main-container {
@@ -394,6 +395,7 @@ h1 {
 }
 .day-rating {
     /*margin-top: 38px;*/
+    /*align-self: center;*/
 }
 .input {
     border: none;
@@ -404,6 +406,7 @@ h1 {
     max-width: 50px;
     max-height: 50px;
     border-radius: 5px;
+    /*margin-left: auto;*/
     /*margin-top: 38px;*/
 }
 .sun-img-div:hover {
@@ -475,18 +478,17 @@ a {
     text-underline: none;
 }
 #day-box {
-    /*margin-top: 50px;*/
-    /*height: 1000px;*/
-    /*max-width: 650px;*/
-    /*min-width: 200px;*/
     flex: 0 1 200px;
     color: black;
     padding: 15px;
+    flex-wrap: wrap;
 }
-/*#day-box-header {*/
-/*    text-align: center;*/
-    /*font-size: 30px;*/
-
+#day-box-header {
+    align-self: flex-start;
+}
+#day-box-rating {
+    align-self: flex-end;
+}
 
 .day-text {
     text-align: left;
@@ -502,8 +504,6 @@ a {
     padding: 15px;
 }
 .big-focus-container {
-    /*margin-top: 50px;*/
-
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -534,7 +534,6 @@ a {
 [contenteditable="true"]:empty:not(:focus):before {
     content: attr(data-placeholder);
     color: grey;
-    font-style: italic;
 }
 
 

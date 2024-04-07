@@ -14,6 +14,5 @@ public interface TaskJpaRepository extends JpaRepository<Task, String> {
     List<Task> findAllByCompletedIsFalse();
 
     List<Task> findAllByCreationDate(LocalDate localDate);
-
-    Task findFirstByOrderByImportanceDescCreationDateTimeDesc();
+    Task findFirstByCompletedIsFalseOrderByImportanceDescCreationDateTimeDesc();
 }

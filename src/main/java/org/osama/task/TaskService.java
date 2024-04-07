@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.*;
@@ -128,6 +129,7 @@ public class TaskService {
         return taskRepository.getTasksByDate(localDate);
     }
     public List<Task> getNonCompletedTasksByDate(String date) {
+        log.info("Getting uncompleted tasks for date [{}]", date);
         List<Task> taskList = getTasksByDate(date);
         List<Task> nonCompletedList = new ArrayList<>();
         for (Task task : taskList) {
@@ -136,8 +138,8 @@ public class TaskService {
         }
         return nonCompletedList;
     }
-    public Task getHighestPriorityTaskToday() {
-        return taskRepository.getHighestPriorityTaskToday();
+    public Task getNewestUncompletedHighestPriorityTask() {
+        return taskRepository.getNewestUncompletedHighestPriorityTask();
     }
 //    @SuppressWarnings("InfiniteLoopStatement")
 //    public void startPomodoroSession(String taskId, int focusDurationMinutes, int numOfFocusPeriods, int breakDuration) {
@@ -228,7 +230,9 @@ public class TaskService {
         if (taskRequest.taskDescription != null) {
             newTask.setDescription(taskRequest.getTaskDescription());
         }
-        newTask.setCreationDateTime(LocalDateTime.now());
+        newTask.setCreationDateTime(LocalDateTime.now(TimeZone.getDefault().toZoneId()));
+        log.info(String.valueOf(TimeZone.getDefault()));
+        log.info("TASK CREATION DATE TIME: {}", newTask.getCreationDateTime());
         newTask.setCreationDate(newTask.getCreationDateTime().toLocalDate());
         newTask.setCompleted(false);
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MMM-dd HH:mm");
@@ -247,7 +251,7 @@ public class TaskService {
         }
         newTask.setImportance(taskRequest.taskImportance);
         taskRepository.add(newTask);
-        log.info("Created new task at {}.", newTask.getCreationDate());
+        log.info("Created new task on {}.", newTask.getCreationDate());
         return newTask;
     }
 

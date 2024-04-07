@@ -53,8 +53,8 @@ public class PersistentTaskRepository implements TaskRepository {
     }
 
     @Override
-    public Task getHighestPriorityTaskToday() {
-        return taskJpaRepository.findFirstByOrderByImportanceDescCreationDateTimeDesc();
+    public Task getNewestUncompletedHighestPriorityTask() {
+        return taskJpaRepository.findFirstByCompletedIsFalseOrderByImportanceDescCreationDateTimeDesc();
     }
 
     @Override

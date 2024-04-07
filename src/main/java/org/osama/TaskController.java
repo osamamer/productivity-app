@@ -120,9 +120,9 @@ public class TaskController {
     public int getTaskImportance(@PathVariable String taskId) {
         return taskRepository.getTaskById(taskId).getImportance();
     }
-    @GetMapping("/get-highest-priority-task-today")
-    public Task getHighestPriorityTaskToday() {
-        return taskService.getHighestPriorityTaskToday();
+    @GetMapping("/get-newest-uncompleted-highest-priority-task")
+    public Task getNewestUncompletedHighestPriorityTask() {
+        return taskService.getNewestUncompletedHighestPriorityTask();
     }
 
     @DeleteMapping("/{taskId}")

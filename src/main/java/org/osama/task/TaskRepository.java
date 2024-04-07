@@ -15,7 +15,7 @@ public interface TaskRepository {
     List<Task> getTodayTasks();
 
     List<Task> getTasksByDate(LocalDate localDate);
-    Task getHighestPriorityTaskToday();
+    Task getNewestUncompletedHighestPriorityTask();
 
 
     Task update(Task task);

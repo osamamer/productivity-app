@@ -159,9 +159,9 @@ async function setupDayBox() {
     const dayBox = document.getElementById('day-box');
     dayBox.innerHTML = "";
     await createAndAppendChild('day-box-header', 'Today', false, null, ['box-header'], dayBox);
-    await createAndAppendChild('day-box-rating', 'Today\'s rating: ' , true, getTodayRating(), ['highlighted-task-text', 'day-text'], dayBox);
-    await createAndAppendChild('day-box-plan', 'The plan for today: ', true, getTodayPlan(), ['highlighted-task-text', 'day-text'], dayBox);
-    await createAndAppendChild('day-box-summary', 'What ended up happening today: ', true, getTodaySummary(), ['highlighted-task-text', 'day-text'], dayBox);
+    await createAndAppendChild('day-box-rating', '' , true, getTodayRating(), ['highlighted-task-text', 'day-text'], dayBox);
+    await createAndAppendChild('day-box-plan', '', true, getTodayPlan(), ['highlighted-task-text', 'day-text'], dayBox);
+    await createAndAppendChild('day-box-summary', '', true, getTodaySummary(), ['highlighted-task-text', 'day-text'], dayBox);
 }
 export async function createAndAppendChild(id, text, requiresFunction, textFunction, classes, parent) {
     const createdElement = document.createElement("div");
