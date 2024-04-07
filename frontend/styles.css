@@ -5,7 +5,7 @@ body {
     --offwhite: #F7F9F5;
     --navyblue: #161840;
     --darkernavyblue: #0C0E24;
-    --lemongray: #9995A6;
+    --lemongray: #D6D4D7;
     --priorityred: #FF614B;
     --priorityyellow: #FAEC66;
     --priorityblue: #9FCAFA;
@@ -197,7 +197,7 @@ h1 {
     margin: 10px 0 10px 0;
     border-radius: 20px;
     box-shadow: rgba(17, 17, 26, 0.1) 0px 4px 16px 0px, rgba(17, 17, 26, 0.05) 0px 8px 32px 0px;
-    border: 0.1px solid #FEFEFE;
+    border: 0.1px #FEFEFE;
     text-overflow: ellipsis;
 
 }
@@ -236,14 +236,12 @@ h1 {
     margin-right: 10px;
 }
 
-
-
+/*------------------------HIGHLIGHTED TASK BOX-----------------------------------*/
 #highlighted-task-box {
-    /*max-height: 200px;*/
-    /*min-width: 150px;*/
-    /*max-width: 450px;*/
-    /*flex: 1 1 150px;*/
-    color: honeydew;
+    display: flex;
+    color: black;
+    text-align: center;
+    align-items: center;
     visibility: hidden;
     padding: 15px;
     border-radius: 20px;
@@ -251,12 +249,15 @@ h1 {
     text-overflow: ellipsis;
     border: 0.1px solid #FEFEFE;
 }
+
+
+
 #timer-div {
     display: none;
     text-align: center;
     color: black;
     min-width: 80px;
-    flex: 1 1 80px;
+    flex: 0 1 auto;
     height: 50px;
     padding: 5px;
     overflow: hidden;
@@ -288,11 +289,18 @@ h1 {
     margin-bottom: 10px;
     outline: 0 solid transparent;
 }
-#highlighted-task-box {
+
+#highest-priority-task-box {
     display: flex;
     color: black;
     text-align: center;
     align-items: center;
+    visibility: hidden;
+    padding: 15px;
+    border-radius: 20px;
+    box-shadow: rgba(17, 17, 26, 0.1) 0px 4px 16px 0px, rgba(17, 17, 26, 0.05) 0px 8px 32px 0px;
+    text-overflow: ellipsis;
+    border: 0.1px solid #FEFEFE;
 }
 .focus-button {
     align-items: center;
@@ -487,7 +495,7 @@ a {
     max-height: 200px;
     min-width: 200px;
     max-width: 450px;
-    flex: 0 1 75px;
+    flex: 0 1 auto;
     color: black;
     display: none;
     /*visibility: hidden;*/
@@ -523,8 +531,15 @@ a {
 /*label { display: table-cell; }*/
 /*input { display: table-cell; }*/
 
-/*--------------------------------------------------------------------------------------------------------*/
-/*Task page*/
+[contenteditable="true"]:empty:not(:focus):before {
+    content: attr(data-placeholder);
+    color: grey;
+    font-style: italic;
+}
+
+
+
+/*------------------------TASK PAGE----------------------------------------------------------------*/
 .pane {
     margin-left: 82px;
 

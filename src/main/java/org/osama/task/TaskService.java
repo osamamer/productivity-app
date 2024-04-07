@@ -136,6 +136,9 @@ public class TaskService {
         }
         return nonCompletedList;
     }
+    public Task getHighestPriorityTaskToday() {
+        return taskRepository.getHighestPriorityTaskToday();
+    }
 //    @SuppressWarnings("InfiniteLoopStatement")
 //    public void startPomodoroSession(String taskId, int focusDurationMinutes, int numOfFocusPeriods, int breakDuration) {
 //        final int[] remainingFocuses = {numOfFocusPeriods}; // In order to be mutable and usable within inner class

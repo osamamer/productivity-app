@@ -52,7 +52,10 @@ public class PersistentTaskRepository implements TaskRepository {
         return taskJpaRepository.findAllByCreationDate(localDate);
     }
 
-
+    @Override
+    public Task getHighestPriorityTaskToday() {
+        return taskJpaRepository.findFirstByOrderByImportanceDescCreationDateTimeDesc();
+    }
 
     @Override
     public Task update(Task task) {

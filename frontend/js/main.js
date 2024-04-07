@@ -2,7 +2,7 @@
 const ROOT_URL = "http://localhost:8080";
 const TASK_URL = ROOT_URL.concat("/api/v1/task");
 
-import {createTaskElement, highlightTask} from './tasks';
+import {createTaskElement, highlightTask, setupHighPriorityTaskBox} from './tasks';
 import {
     endAllSessions, getAllTasks,
     getDayPlan, getTasks,
@@ -21,7 +21,7 @@ window.onload = async function() {
     await setupDayBox();
     await endAllSessions();
     console.log(new Date().getDate())
-
+    await setupHighPriorityTaskBox();
 }
 
 const todayDate = getCurrentDateFormatted();
@@ -67,7 +67,8 @@ createTaskForm.addEventListener('submit', function (e) {
     const importance = document.getElementById('task-importance-input-field').value;
     createTask(name, description, scheduledTime, tag, importance)
         .then(() => fetchTodayNonCompletedTasks())
-        .then((tasksString) => displayTasks(tasksString));
+        .then((tasksString) => displayTasks(tasksString))
+        .then(() => setupHighPriorityTaskBox());
 })
 
 export async function fetchTasks(date, nonCompletedOnly) {
@@ -157,7 +158,7 @@ function formatDate(date) {
 async function setupDayBox() {
     const dayBox = document.getElementById('day-box');
     dayBox.innerHTML = "";
-    await createAndAppendChild('day-box-header', 'Today (Abridged)', false, null, ['box-header'], dayBox);
+    await createAndAppendChild('day-box-header', 'Today', false, null, ['box-header'], dayBox);
     await createAndAppendChild('day-box-rating', 'Today\'s rating: ' , true, getTodayRating(), ['highlighted-task-text', 'day-text'], dayBox);
     await createAndAppendChild('day-box-plan', 'The plan for today: ', true, getTodayPlan(), ['highlighted-task-text', 'day-text'], dayBox);
     await createAndAppendChild('day-box-summary', 'What ended up happening today: ', true, getTodaySummary(), ['highlighted-task-text', 'day-text'], dayBox);
@@ -183,6 +184,9 @@ async function getTodayPlan() {
     let today = await  getToday();
     return today['plan'];
 }
+
+
+
 
 
 //  TODO List:

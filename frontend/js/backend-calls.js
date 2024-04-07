@@ -128,6 +128,13 @@ export async function getTasksByDate(date) {
         method: "GET",
     })
 }
+export async function getHighestPriorityTask() {
+
+    let promise = await fetch(TASK_URL.concat(`/get-highest-priority-task-today`), {
+        method: "GET",
+    })
+    return await promise.json();
+}
 
 // ---------------------------------Day calls--------------------------------------------
 

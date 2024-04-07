@@ -15,4 +15,5 @@ public interface TaskJpaRepository extends JpaRepository<Task, String> {
 
     List<Task> findAllByCreationDate(LocalDate localDate);
 
+    Task findFirstByOrderByImportanceDescCreationDateTimeDesc();
 }

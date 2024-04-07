@@ -8,7 +8,7 @@ import {
     submitDescription,
     getAccumulatedTime,
     getTaskActive,
-    changeTaskName, completeTask
+    changeTaskName, completeTask, getHighestPriorityTask
 } from './backend-calls'
 import {
     createStartSessionButton,
@@ -168,13 +168,34 @@ export async function highlightTask(taskId) {
     const focusSettingsButton = await createAndAppendChild('focus-settings-button', 'Get to work', false, null, ['focus-button'], highlightedTaskBox);
     const taskDescription = await createAndAppendChild('highlighted-task-desc', task['description'], false, null, ['highlighted-task-text'], highlightedTaskBox);
     const taskTime = await createAndAppendChild('highlighted-task-time', 'Elapsed time: ', true, displayTaskTime(task['taskId']), ['highlighted-task-text'], highlightedTaskBox);
-
-    if (taskDescription.textContent === "") taskDescription.textContent = "Description"
-    const focusSettingsBox = await setupFocusSettingsBox(taskId);
-
-    taskDescription.setAttribute("contenteditable", "true");
     taskHeader.setAttribute("contenteditable", "true");
 
+    // if (taskDescription.textContent === "") taskDescription.textContent = "Description"
+    const focusSettingsBox = await setupFocusSettingsBox(taskId);
+    taskDescription.classList.add('editable');
+    taskDescription.setAttribute("contenteditable", "true");
+    taskDescription.setAttribute("data-placeholder", "Type something...")
+    const placeholderText = 'Description...';
+
+    taskDescription.setAttribute('data-placeholder', placeholderText);
+    // taskDescription.addEventListener('input', () => {
+    //     if (taskDescription.textContent.trim() === '') {
+    //         taskDescription.setAttribute('data-placeholder', placeholderText);
+    //     } else {
+    //         taskDescription.setAttribute('data-placeholder', "1");
+    //     }
+    // });
+    taskDescription.addEventListener('keydown', (event) => {
+        if (event.key === 'Delete' || event.key === 'Backspace') {
+            if (taskDescription.textContent.trim() === '') {
+                taskDescription.setAttribute('data-placeholder', placeholderText);
+            }
+        }
+    });
+    taskDescription.addEventListener('onblur', () => {
+            taskDescription.setAttribute('data-placeholder', placeholderText);
+
+    });
     focusSettingsButton.addEventListener('click', function () {
         focusSettingsBox.setAttribute("style", "display: block");
         focusSettingsButton.setAttribute("style", "display: none");
@@ -271,6 +292,20 @@ function setupFocusSettingsBox(taskId) {
 
     })
     return focusSettingsBox;
+}
+export async function setupHighPriorityTaskBox() {
+    let highestPriorityTaskBox = document.getElementById('highest-priority-task-box');
+    highestPriorityTaskBox.setAttribute("style", "visibility: visible");
+
+    highestPriorityTaskBox.innerHTML = "";
+    let header = document.createElement("div");
+    let task = await getHighestPriorityTask();
+    header.textContent = task["name"];
+    console.log(task["name"])
+    highestPriorityTaskBox.appendChild(header);
+    // highestPriorityTaskBox.textContent = task['name']
+    // let HighPriorityBoxHeader = createAndAppendChild('high-priority-box-header', '', true, )
+
 }
 function validateForm(form) {
     let a = document.forms["Form"]["answer_a"].value;
