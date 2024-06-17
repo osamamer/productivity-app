@@ -8,7 +8,7 @@ import {
     submitDescription,
     getAccumulatedTime,
     getTaskActive,
-    changeTaskName, completeTask, getHighestPriorityTask
+    changeTaskName, completeTask, getHighestPriorityTask, setTodayInfo
 } from './backend-calls'
 import {
     createStartSessionButton,
@@ -20,7 +20,11 @@ import {displayTasks, fetchAllTasks, createAndAppendChild, fetchTodayNonComplete
 
 const highlightedTaskBox = document.getElementById("highlighted-task-box");
 const taskContextMenu = document.getElementById("task-context-menu");
+let focusSettingsBox = document.getElementById("focus-settings-box");
 let defaultFocusDuration = 30;
+const ROOT_URL = "http://localhost:8080";
+const TASK_URL = ROOT_URL.concat("/api/v1/task");
+
 export async function createTaskElement(taskJson) {
     let taskId = taskJson["taskId"];
     const taskDiv = document.createElement("div");
@@ -69,6 +73,23 @@ async function createCheckBox(taskId) {
     inner.classList.add("inner")
     checkBox.appendChild(inner);
     return checkBox;
+}
+export async function startPomodoro(taskId, focusDuration, shortBreakDuration, longBreakDuration, numFocuses, longBreakCooldown) {
+    console.log("Starting pomodoro")
+    await fetch(TASK_URL.concat("/start-pomodoro"), {
+        method: "POST",
+        body: JSON.stringify({
+            taskId: taskId,
+            focusDuration: focusDuration,
+            shortBreakDuration: shortBreakDuration,
+            longBreakDuration: longBreakDuration,
+            numFocuses: numFocuses,
+            longBreakCooldown: longBreakCooldown
+        }),
+        headers: {
+            "Content-type": "application/json; charset=UTF-8"
+        }
+    });
 }
 export async function startTaskSessionFrontend(taskId, period, hasPeriod) {
     const tasks = await fetch('http://localhost:8080/api/v1/task');
@@ -158,11 +179,13 @@ function switchPlayPause(buttonId, otherButtonId) {
     taskButton.setAttribute("style", "display: none");
     otherTaskButton.setAttribute("style", "display: block");
 }
+
 export async function highlightTask(taskId) {
+    focusSettingsBox.setAttribute("style", "visibility: hidden");
+
     highlightedTaskBox.innerHTML = "";
     highlightedTaskBox.setAttribute("style", "visibility: visible");
     let task = await getTaskById(taskId);
-
     const taskHeader =  await createAndAppendChild('highlighted-task-header', task['name'], false, null, ['highlighted-task-text'], highlightedTaskBox);
     await setupFocusButtons(task);
     const focusSettingsButton = await createAndAppendChild('focus-settings-button', 'Get to work', false, null, ['focus-button'], highlightedTaskBox);
@@ -171,7 +194,7 @@ export async function highlightTask(taskId) {
     taskHeader.setAttribute("contenteditable", "true");
 
     // if (taskDescription.textContent === "") taskDescription.textContent = "Description"
-    const focusSettingsBox = await setupFocusSettingsBox(taskId);
+    focusSettingsBox = await setupFocusSettingsBox(taskId);
     taskDescription.classList.add('editable');
     taskDescription.setAttribute("contenteditable", "true");
     taskDescription.setAttribute("data-placeholder", "Type something...")
@@ -281,16 +304,38 @@ function buttonEventListenerFunction(e) {
 }
 function setupFocusSettingsBox(taskId) {
     const focusSettingsBox = document.getElementById('focus-settings-box');
-    const focusPeriod = document.getElementById('focus-period-input');
-    const numPeriods = document.getElementById('number-periods-input');
-    const breakPeriod = document.getElementById('break-period-input');
-    const startTime = document.getElementById('start-time-input');
-    focusSettingsBox.addEventListener('submit', function(e) {
-        let now = new Date();
+    focusSettingsBox.innerHTML = '';
+    const pomodoroForm = document.createElement("form");
+    const focusSettingsHeader = document.createElement("div");
+    focusSettingsHeader.setAttribute("id", "focus-settings-header");
+    focusSettingsHeader.textContent = "Let's get to work";
+    let pomoHTML = `
+    <p><input id="focus-duration-input" type="number" placeholder="Focus period duration (minutes)" class="input" min="1" max="60"></p>
+    <p><input id="short-break-duration-input" type="number" placeholder="Short break duration (minutes)" class="input" min="1" max="60"></p>
+    <p><input id="long-break-duration-input" type="number" placeholder="Long break duration (minutes)" class="input" min="1" max="60"></p>
+    <p><input id="number-focuses-input" type="number" placeholder="How many focus periods?" class="input" min="2" max="6"></p>
+    <p><input id="long-break-cooldown-input" type="text" placeholder="Long break every...?" class="input" min="2" max="6"></p>
+    <button class="button-class" type="submit">Go</button> `;
+    pomodoroForm.innerHTML = pomoHTML;
+    pomodoroForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        console.log("Submitting pomodoro information1.");
 
-        startTaskSessionFrontend(taskId, focusPeriod, true);
+        console.log("Submitting pomodoro information1.");
+        const focusDuration = document.getElementById('focus-duration-input').value;
+        const shortBreakDuration = document.getElementById('short-break-duration-input').value;
+        const longBreakDuration = document.getElementById('long-break-duration-input').value;
+        const numFocuses = document.getElementById('number-focuses-input').value;
+        const longBreakCooldown = document.getElementById('long-break-cooldown-input').value;
+        console.log("Submitting pomodoro information2.");
 
+        console.log(focusDuration + " " + shortBreakDuration + " " + longBreakDuration + " " + numFocuses + " " + longBreakCooldown)
+        startPomodoro(taskId, focusDuration, shortBreakDuration, longBreakDuration, numFocuses, longBreakCooldown).then(() => fetchTodayNonCompletedTasks())
+            .then((tasksString) => displayTasks(tasksString));
     })
+    focusSettingsBox.appendChild(focusSettingsHeader);
+    focusSettingsBox.appendChild(pomodoroForm);
     return focusSettingsBox;
 }
 export async function setupHighPriorityTaskBox() {
@@ -301,7 +346,7 @@ export async function setupHighPriorityTaskBox() {
     let header = document.createElement("div");
     let task = await getHighestPriorityTask();
     header.textContent = task["name"];
-    console.log(task["name"])
+    // console.log(task["name"])
     highestPriorityTaskBox.appendChild(header);
     // highestPriorityTaskBox.textContent = task['name']
     // let HighPriorityBoxHeader = createAndAppendChild('high-priority-box-header', '', true, )

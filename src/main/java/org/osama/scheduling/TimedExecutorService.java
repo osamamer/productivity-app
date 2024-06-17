@@ -1,6 +1,7 @@
 package org.osama.scheduling;
 
 import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
 import org.osama.task.Task;
 import org.osama.task.TaskService;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -13,9 +14,11 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.function.Consumer;
 
+import static java.awt.SystemColor.info;
 import static javax.management.timer.Timer.ONE_SECOND;
 
 @Service
+@Slf4j
 public class TimedExecutorService {
 
     private static final int FIVE_SECONDS = 5000;
@@ -33,12 +36,14 @@ public class TimedExecutorService {
 
     @Scheduled(fixedRate = ONE_SECOND)
     public void run() {
+//        log.info("Checking for tasks between {} and {} to run", LocalDateTime.now().minusSeconds(5), LocalDateTime.now().plusSeconds(5));
         List<ScheduledJob> jobs = scheduledJobRepository.findAllByDueDateBetween(LocalDateTime.now().minusSeconds(5),
                                 LocalDateTime.now().plusSeconds(5));
         jobs.forEach(this::doJob);
     }
 
     private void doJob(ScheduledJob scheduledJob) {
+        log.info("Doing job!");
         Consumer<String> function = jobMap.get(scheduledJob.getJobType());
         function.accept(scheduledJob.getAssociatedTaskId());
         scheduledJobRepository.delete(scheduledJob);

@@ -1,6 +1,9 @@
 package org.osama;
 
 import org.osama.task.*;
+import org.osama.task.requests.ModifyTaskRequest;
+import org.osama.task.requests.NewTaskRequest;
+import org.osama.task.requests.PomodoroRequest;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -123,6 +126,12 @@ public class TaskController {
     @GetMapping("/get-newest-uncompleted-highest-priority-task")
     public Task getNewestUncompletedHighestPriorityTask() {
         return taskService.getNewestUncompletedHighestPriorityTask();
+    }
+    @PostMapping("/start-pomodoro")
+    public void startPomodoro(@RequestBody PomodoroRequest pomodoroRequest) {
+        taskService.startPomodoro(pomodoroRequest.taskId, pomodoroRequest.focusDuration,
+                pomodoroRequest.shortBreakDuration, pomodoroRequest.longBreakDuration,
+                pomodoroRequest.numFocuses, pomodoroRequest.longBreakCooldown);
     }
 
     @DeleteMapping("/{taskId}")

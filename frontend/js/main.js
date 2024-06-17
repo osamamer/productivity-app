@@ -21,7 +21,6 @@ window.onload = async function() {
     await displayTodayRating();
     await setupDayBox();
     await endAllSessions();
-    console.log(new Date().getDate())
     await setupHighPriorityTaskBox();
 }
 
@@ -34,6 +33,7 @@ const addTaskButton = document.getElementById("add-task-button");
 const createTaskModal = document.getElementById("create-task-modal");
 const createTaskForm = document.getElementById("create-new-task-form");
 const dayInputForm = document.getElementById("day-input-form");
+// const pomodoroForm = document.getElementById("pomodoro-form");
 dayButton.addEventListener('click', () => {
     dayModal.show();
 })
@@ -71,6 +71,7 @@ createTaskForm.addEventListener('submit', function (e) {
         .then((tasksString) => displayTasks(tasksString))
         .then(() => setupHighPriorityTaskBox());
 })
+
 
 export async function fetchTasks(date, nonCompletedOnly) {
     const responseJson = await getTasks(date, nonCompletedOnly);
@@ -123,7 +124,7 @@ async function displayTodayRating() {
     const dayDiv = document.getElementById("day-div");
     const dayRating = await getTodayRating();
     dayDiv.textContent = `Today's been a ${dayRating}`
-    console.log(await getTodayRating());
+    // console.log(await getTodayRating());
     //dayDiv.textContent = "HUH"
 }
 async function setTodayRatingFromForm() {

@@ -30,6 +30,9 @@ body {
         font-size: 1em;
 
     }
+    .task-button img {
+        transform: scale(0.5);
+    }
 }
 
 .wrapper {

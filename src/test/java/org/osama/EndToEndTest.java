@@ -2,7 +2,7 @@ package org.osama;
 
 import org.junit.jupiter.api.Test;
 import org.osama.day.DayService;
-import org.osama.task.NewTaskRequest;
+import org.osama.task.requests.NewTaskRequest;
 import org.osama.task.Task;
 import org.osama.task.TaskRepository;
 import org.osama.task.TaskService;

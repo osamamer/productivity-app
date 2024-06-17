@@ -1,17 +1,13 @@
 package org.osama;
 
 import org.junit.jupiter.api.Test;
-import org.osama.scheduling.JobType;
 import org.osama.scheduling.ScheduledJobRepository;
 import org.osama.scheduling.TimedExecutorService;
-import org.osama.task.NewTaskRequest;
+import org.osama.task.requests.NewTaskRequest;
 import org.osama.task.Task;
 import org.osama.task.TaskService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-
-import java.util.Arrays;
-import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 

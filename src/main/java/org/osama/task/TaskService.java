@@ -6,6 +6,8 @@ import org.osama.scheduling.ScheduledJob;
 import org.osama.scheduling.ScheduledJobRepository;
 import org.osama.session.Session;
 import org.osama.session.SessionRepository;
+import org.osama.task.requests.ModifyTaskRequest;
+import org.osama.task.requests.NewTaskRequest;
 import org.springframework.stereotype.Service;
 import java.time.Duration;
 import java.time.LocalDate;
@@ -13,6 +15,8 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.*;
+
+import static java.awt.SystemColor.info;
 
 @Service
 @Slf4j
@@ -52,7 +56,7 @@ public class TaskService {
     public void startTaskSession(String taskId) {
         Task task = taskRepository.getTaskById(taskId);
         List<Session> activeSessions = sessionRepository.findAllByTaskIdAndIsActiveIsTrue(task.getTaskId());
-        if (activeSessions.size() != 0) throw new IllegalStateException("Cannot start a session when the task is already active");
+        if (activeSessions.size() != 0) throw new IllegalStateException("Cannot start a session when a task is already active");
 //        endAllSessions();
         sessionRepository.save(createSession(task));
         log.info("Started task with ID [{}]", task.getTaskId());
@@ -149,6 +153,7 @@ public class TaskService {
     public void startPomodoro(String taskId, int focusDuration,
                               int shortBreakDuration, int longBreakDuration,
                               int numFocuses, int longBreakCooldown) {
+        log.info("In startPomodoro method");
 
         startTaskSession(taskId);
         setUpJobsForPomo(taskId, focusDuration, shortBreakDuration, longBreakDuration, numFocuses, longBreakCooldown);
@@ -187,6 +192,7 @@ public class TaskService {
         }
     }
     private ScheduledJob createScheduledJob(JobType jobType, LocalDateTime dueDate, String taskId) {
+        log.info("Creating scheduled job");
         ScheduledJob scheduledJob = new ScheduledJob();
         scheduledJob.setJobId(UUID.randomUUID().toString());
         scheduledJob.setJobType(jobType);

@@ -1,4 +1,3 @@
-version: "3.9"
 services:
   productivity-app:
     container_name: app
@@ -17,18 +16,20 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres-v2.2-data:/var/lib/postgresql/data
+      - postgres-v3.1-data:/var/lib/postgresql/data
     environment:
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_USER=postgres
       - POSTGRES_DB=testdb
       - TZ=${SYSTEM_TIME_ZONE}
 volumes:
-  postgres-data:
-    external: true
-  postgres-v2-data:
-    external: true
-  postgres-v2.1-data:
-    external: true
-  postgres-v2.2-data:
+#  postgres-data:
+#    external: true
+#  postgres-v2-data:
+#    external: true
+#  postgres-v2.1-data:
+#    external: true
+#  postgres-v2.2-data:
+#    external: true
+  postgres-v3.1-data:
     external: true
