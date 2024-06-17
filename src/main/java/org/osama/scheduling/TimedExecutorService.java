@@ -13,6 +13,8 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.function.Consumer;
 
+import static javax.management.timer.Timer.ONE_SECOND;
+
 @Service
 public class TimedExecutorService {
 
@@ -29,31 +31,21 @@ public class TimedExecutorService {
         this.jobMap = createJobMap();
     }
 
-    @Scheduled(fixedRate = FIVE_SECONDS)
+    @Scheduled(fixedRate = ONE_SECOND)
     public void run() {
-        List<ScheduledJob> jobs = scheduledJobRepository.findAll();
+        List<ScheduledJob> jobs = scheduledJobRepository.findAllByDueDateBetween(LocalDateTime.now().minusSeconds(5),
+                                LocalDateTime.now().plusSeconds(5));
         jobs.forEach(this::doJob);
     }
 
     private void doJob(ScheduledJob scheduledJob) {
-
         Consumer<String> function = jobMap.get(scheduledJob.getJobType());
         function.accept(scheduledJob.getAssociatedTaskId());
-
+        scheduledJobRepository.delete(scheduledJob);
     }
 
-    public Task createPomadoro() {
-        Task task = new Task();
-        task.setTaskId(UUID.randomUUID().toString());
 
-        ScheduledJob scheduledJob = new ScheduledJob();
-        scheduledJob.setJobType(JobType.PAUSE_TASK);
-        scheduledJob.setDueDate(LocalDateTime.now().plusMinutes(25));
 
-        scheduledJobRepository.save(scheduledJob);
-
-        return task;
-    }
 
     private Map<JobType, Consumer<String>> createJobMap() {
         Map<JobType, Consumer<String>> jobMap = new HashMap<>();

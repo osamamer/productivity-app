@@ -56,10 +56,16 @@
         <div class="section left-section">
             <div id="today-tasks-container" class="box box-shadow container">
                 <h1 class="box-header">Tasks for today</h1>
-                <img src="../images/add.png" alt="" id="add-task-button" class="button-class" title="Add task">
-                <div class="tasks-container" id="all-tasks-div"></div>
+                <img src="../images/add.png" alt="" id="add-task-button" class="button-class add-task-button" title="Add task">
+                <div class="tasks-div" id="today-tasks-div"></div>
+            </div>
+            <div id="non-today-tasks-container" class="box box-shadow container">
+                <h1 class="box-header">Tasks for next week</h1>
+                <img src="../images/add.png" alt="" class="button-class add-task-button" title="Add task">
+                <div class="tasks-div" id="non-today-tasks-div"></div>
             </div>
         </div>
+
         <div class="section center-section">
             <div class="box container" id="highest-priority-task-box"></div>
             <div class="box container" id="highlighted-task-box"></div>

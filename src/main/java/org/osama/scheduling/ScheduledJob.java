@@ -12,6 +12,7 @@ import java.time.LocalDateTime;
 @Entity
 @Data
 public class ScheduledJob {
+
     @Id
     private String jobId;
 

@@ -1,13 +1,15 @@
 package org.osama.task;
 
 import lombok.extern.slf4j.Slf4j;
+import org.osama.scheduling.JobType;
+import org.osama.scheduling.ScheduledJob;
+import org.osama.scheduling.ScheduledJobRepository;
 import org.osama.session.Session;
 import org.osama.session.SessionRepository;
 import org.springframework.stereotype.Service;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.*;
@@ -17,10 +19,13 @@ import java.util.*;
 public class TaskService {
     private final TaskRepository taskRepository;
     private final SessionRepository sessionRepository;
+    private final ScheduledJobRepository scheduledJobRepository;
 
-    public TaskService(TaskRepository taskRepository, SessionRepository sessionRepository) {
+
+    public TaskService(TaskRepository taskRepository, SessionRepository sessionRepository, ScheduledJobRepository scheduledJobRepository) {
         this.taskRepository = taskRepository;
         this.sessionRepository = sessionRepository;
+        this.scheduledJobRepository = scheduledJobRepository;
     }
 
     public Duration getAccumulatedTime(String taskId) {
@@ -141,63 +146,56 @@ public class TaskService {
     public Task getNewestUncompletedHighestPriorityTask() {
         return taskRepository.getNewestUncompletedHighestPriorityTask();
     }
-//    @SuppressWarnings("InfiniteLoopStatement")
-//    public void startPomodoroSession(String taskId, int focusDurationMinutes, int numOfFocusPeriods, int breakDuration) {
-//        final int[] remainingFocuses = {numOfFocusPeriods}; // In order to be mutable and usable within inner class
-//        Task task = taskRepository.getTaskById(taskId);
-//        startTaskSession(taskId);
-//        Timer timer  = new Timer();
-//        TimerTask timerUnpause = new TimerTask() {
-//            @Override
-//            public void run() {
-//                unpauseTaskSession(taskId);
-//            }
-//        };
-//        TimerTask timerPause = new TimerTask() {
-//            @Override
-//            public void run() {
-//                pauseTaskSession(taskId);
-//                remainingFocuses[0]--;
-//            }
-//        };
-//        while (remainingFocuses[0] > 0) {
-//            timer.schedule(timerPause, focusDurationMinutes*60*1000L);
-//
-//        }
-//
-//        for (int remainingFocus : remainingFocuses) { // Type iter for foreach shortcut
-//
-//        }
-//        for (int i = numOfFocusPeriods; i > 0; i--) {
-//            timer.schedule(timerPause, );
-//        }
-//
-//        timer.schedule(timerPause, focusDurationMinutes* 1000L);
-//        timer.schedule(timerUnpause, (focusDurationMinutes + breakDuration)*1000L);
-////        timer.schedule();
-//        // Perpetually check for user pausing or ending task
-////        new Thread(new Runnable() {
-////            @Override
-////            public void run() {
-////                while(true) {
-////                    try {
-////                        Thread.sleep(1000);
-////                    } catch (InterruptedException e) {
-////                        throw new RuntimeException(e);
-////                    }
-////                    if (!getTaskActive(taskId) && getTaskRunning(taskId)) {
-////                        timer.cancel();
-////                    }
-////                    else if (!getTaskRunning(taskId)) {
-////                        timer.cancel();
-////                    }
-////                }
-////            }
-////        }).start();
-//    }
-//    public void unpauseTimer(Timer timer, function, int duration) {
-//        timer.schedule(timerUnpause, duration*1000L);
-//    }
+    public void startPomodoro(String taskId, int focusDuration,
+                              int shortBreakDuration, int longBreakDuration,
+                              int numFocuses, int longBreakCooldown) {
+
+        startTaskSession(taskId);
+        setUpJobsForPomo(taskId, focusDuration, shortBreakDuration, longBreakDuration, numFocuses, longBreakCooldown);
+    }
+    private void setUpJobsForPomo(String taskId, int focusDuration,
+                                  int shortBreakDuration, int longBreakDuration,
+                                  int numFocuses, int longBreakCooldown) {
+        int n = 2*numFocuses-1;
+        int timeElapsed = 0;
+        int breaksTaken = 0;
+        for (int i = 0; i < n; i++) {
+            if (i % 2 == 0) { // Meaning that are in an even iteration in which the task is active
+                if (i == n - 1) {
+                    createScheduledJob(JobType.END_TASK,
+                            LocalDateTime.now().plusMinutes(timeElapsed + focusDuration), taskId);
+                    break;
+                }
+                createScheduledJob(JobType.PAUSE_TASK,
+                        LocalDateTime.now().plusMinutes(timeElapsed + focusDuration), taskId);
+                timeElapsed += focusDuration;
+            }
+            else { // Meaning that we are in an odd iteration in which we are taking a break
+                breaksTaken++;
+                if (breaksTaken % longBreakCooldown != 0) { // Short break
+                    createScheduledJob(JobType.UNPAUSE_TASK,
+                            LocalDateTime.now().plusMinutes(timeElapsed + shortBreakDuration), taskId);
+
+                    timeElapsed += shortBreakDuration;
+                }
+                else { // Long break
+                    createScheduledJob(JobType.UNPAUSE_TASK,
+                            LocalDateTime.now().plusMinutes(timeElapsed + longBreakDuration), taskId);
+                    timeElapsed += longBreakDuration;
+                }
+            }
+        }
+    }
+    private ScheduledJob createScheduledJob(JobType jobType, LocalDateTime dueDate, String taskId) {
+        ScheduledJob scheduledJob = new ScheduledJob();
+        scheduledJob.setJobId(UUID.randomUUID().toString());
+        scheduledJob.setJobType(jobType);
+        scheduledJob.setDueDate(dueDate);
+        scheduledJob.setAssociatedTaskId(taskId);
+        scheduledJobRepository.save(scheduledJob);
+        log.info("Scheduled {} job for task [{}] on {}", jobType.toString(), taskId, dueDate);
+        return scheduledJob;
+    }
     private static Session createSession(Task task) {
         Session session = new Session();
         session.setSessionId(UUID.randomUUID().toString());

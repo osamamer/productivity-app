@@ -14,9 +14,10 @@ import {
 } from './backend-calls';
 // npm run build
 window.onload = async function() {
-    let taskElements = await fetchTasks(todayDate, true);
-    // let taskElements = await fetchAllTasks();
-    displayTasks(taskElements);
+    let todayTaskElements = await fetchTasks(todayDate, true);
+    let allTaskElements = await fetchAllTasks();
+    // let todayTaskElements = await fetchAllTasks();
+    displayTasks(todayTaskElements);
     await displayTodayRating();
     await setupDayBox();
     await endAllSessions();
@@ -74,7 +75,9 @@ createTaskForm.addEventListener('submit', function (e) {
 export async function fetchTasks(date, nonCompletedOnly) {
     const responseJson = await getTasks(date, nonCompletedOnly);
     let taskElements = [];
-    if (responseJson.length === 0) return taskElements;
+    if (responseJson.length === 0) {
+        return taskElements;
+    }
     for (let i = responseJson.length - 1; i >= 0; i--) {
         let taskElement = await createTaskElement(responseJson[i]);
         taskElements.push(taskElement);
@@ -99,14 +102,11 @@ export async function fetchAllTasks () {
     return taskElements;
 }
 export function displayTasks (taskElements) {
-    let taskBox = document.getElementById("all-tasks-div")
-    taskBox.innerHTML = "";
-    const p = document.querySelector('.tasks-container');
+    let todayTasksDiv = document.getElementById("today-tasks-div");
+    let allTasksDiv = document.getElementById("all-tasks-div");
+    todayTasksDiv.innerHTML = "";
     for (let i = 0; i < taskElements.length; i++) {
-        document.querySelector('.tasks-container').appendChild(taskElements[i]);
-        // if (taskElements[i]['completed'] === false) {
-        //     document.querySelector('.tasks-container').appendChild(taskElements[i]);
-        // }
+        todayTasksDiv.appendChild(taskElements[i]);
     }
 }
 async function createTaskFromInputField (){

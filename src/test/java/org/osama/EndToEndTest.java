@@ -71,7 +71,7 @@ public class EndToEndTest {
     void setTodayRating() {
         dayService.setTodayRating(5);
     }
-    private Task createTask() {
+    public Task createTask() {
         NewTaskRequest taskRequest = new NewTaskRequest();
         taskRequest.setTaskName("Do chores");
         taskRequest.setTaskDescription("Vacuum nasty room");

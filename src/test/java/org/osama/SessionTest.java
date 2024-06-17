@@ -26,7 +26,7 @@ public class SessionTest {
         Task task = createTask();
         taskService.startTaskSession(task.getTaskId());
     }
-    private Task createTask() {
+    public Task createTask() {
         NewTaskRequest taskRequest = new NewTaskRequest();
         taskRequest.setTaskName("Do chores");
         taskRequest.setTaskDescription("Vacuum nasty room");
