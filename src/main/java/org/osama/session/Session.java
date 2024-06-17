@@ -45,5 +45,12 @@ public class Session {
     @Column
     @JsonSerialize(using = LocalDateTimeSerializer.class)
     @JsonDeserialize(using = LocalDateTimeDeserializer.class)
+    private LocalDateTime lastPauseTime;
+
+    @Column
+    @JsonSerialize(using = LocalDateTimeSerializer.class)
+    @JsonDeserialize(using = LocalDateTimeDeserializer.class)
     private LocalDateTime endTime;
+    @Column
+    private boolean pomodoro;
 }

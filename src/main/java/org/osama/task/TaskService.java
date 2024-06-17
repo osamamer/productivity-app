@@ -2,6 +2,7 @@ package org.osama.task;
 
 import lombok.extern.slf4j.Slf4j;
 import org.osama.scheduling.JobType;
+import org.osama.scheduling.Pomodoro;
 import org.osama.scheduling.ScheduledJob;
 import org.osama.scheduling.ScheduledJobRepository;
 import org.osama.session.Session;
@@ -14,9 +15,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
-
-import static java.awt.SystemColor.info;
 
 @Service
 @Slf4j
@@ -68,6 +68,10 @@ public class TaskService {
         activeSession.setRunning(false);
         Duration elapsedTime = Duration.between(activeSession.getLastUnpauseTime(), LocalDateTime.now());
         activeSession.setTotalSessionTime(activeSession.getTotalSessionTime().plus(elapsedTime));
+        activeSession.setLastPauseTime(LocalDateTime.now());
+        if (activeSession.isPomodoro()) {
+            unscheduleTaskJobs(taskId);
+        }
         sessionRepository.save(activeSession);
         log.info("Paused task with ID [{}]", task.getTaskId());
     }
@@ -79,6 +83,10 @@ public class TaskService {
         Session activeSession = session.orElseThrow(() -> new IllegalStateException("Cannot unpause task session because it is not active"));
         activeSession.setRunning(true);
         activeSession.setLastUnpauseTime(LocalDateTime.now());
+        if (activeSession.isPomodoro()) {
+            shiftTaskJobDueDates(taskId, (int) ChronoUnit.MINUTES.between(activeSession.getLastPauseTime(), activeSession.getLastUnpauseTime()));
+            rescheduleTaskJobs(taskId);
+        }
         sessionRepository.save(activeSession);
         log.info("Unpaused task with ID [{}]", task.getTaskId());
     }
@@ -153,14 +161,15 @@ public class TaskService {
     public void startPomodoro(String taskId, int focusDuration,
                               int shortBreakDuration, int longBreakDuration,
                               int numFocuses, int longBreakCooldown) {
-        log.info("In startPomodoro method");
 
+        Pomodoro pomodoro = createPomodoro(taskId, focusDuration, shortBreakDuration, longBreakDuration, numFocuses, longBreakCooldown);
         startTaskSession(taskId);
-        setUpJobsForPomo(taskId, focusDuration, shortBreakDuration, longBreakDuration, numFocuses, longBreakCooldown);
+        schedulePomoJobs(taskId, focusDuration, shortBreakDuration, longBreakDuration, numFocuses, longBreakCooldown);
     }
-    private void setUpJobsForPomo(String taskId, int focusDuration,
+    private void schedulePomoJobs(String taskId, int focusDuration,
                                   int shortBreakDuration, int longBreakDuration,
                                   int numFocuses, int longBreakCooldown) {
+        // Why are we even using the same session? What is actually the point? Why not different sessions?
         int n = 2*numFocuses-1;
         int timeElapsed = 0;
         int breaksTaken = 0;
@@ -190,6 +199,32 @@ public class TaskService {
                 }
             }
         }
+    }
+    public void unscheduleTaskJobs(String taskId) { // For when the user pauses
+        List<ScheduledJob> taskJobs = scheduledJobRepository.findAllByAssociatedTaskId(taskId);
+        taskJobs.forEach((job) -> job.setScheduled(false));
+    }
+    public void rescheduleTaskJobs(String taskId) { // For when the user pauses
+        List<ScheduledJob> taskJobs = scheduledJobRepository.findAllByAssociatedTaskId(taskId);
+        taskJobs.forEach((job) -> job.setScheduled(true));
+    }
+    public void shiftTaskJobDueDates(String taskId, int shift) {
+        List<ScheduledJob> taskJobs = scheduledJobRepository.findAllByAssociatedTaskId(taskId);
+        taskJobs.forEach((job) -> job.setDueDate(job.getDueDate().plusMinutes(shift)));
+    }
+    private Pomodoro createPomodoro(String taskId, int focusDuration,
+                                    int shortBreakDuration, int longBreakDuration,
+                                    int numFocuses, int longBreakCooldown) {
+        Pomodoro pomodoro = new Pomodoro();
+        pomodoro.setPomodoroId(UUID.randomUUID().toString());
+        pomodoro.setTaskId(taskId);
+        pomodoro.setFocusDuration(focusDuration);
+        pomodoro.setShortBreakDuration(shortBreakDuration);
+        pomodoro.setLongBreakCooldown(longBreakDuration);
+        pomodoro.setFocusesRemaining(numFocuses);
+        pomodoro.setLongBreakCooldown(longBreakCooldown);
+        pomodoro.setTimeRemainingInCurrentFocus(focusDuration);
+        return pomodoro;
     }
     private ScheduledJob createScheduledJob(JobType jobType, LocalDateTime dueDate, String taskId) {
         log.info("Creating scheduled job");

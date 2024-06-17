@@ -14,17 +14,20 @@ import java.time.LocalDateTime;
 public class ScheduledJob {
 
     @Id
+    @Column(nullable = false)
     private String jobId;
 
-    @Column
+    @Column(nullable = false)
     @Enumerated(EnumType.STRING)
     private JobType jobType;
 
     @Column
     private String associatedTaskId;
 
-    @Column
+    @Column(nullable = false)
     @JsonSerialize(using = LocalDateTimeSerializer.class)
     @JsonDeserialize(using = LocalDateTimeDeserializer.class)
     private LocalDateTime dueDate;
+    @Column(nullable = false)
+    private boolean scheduled;
 }
