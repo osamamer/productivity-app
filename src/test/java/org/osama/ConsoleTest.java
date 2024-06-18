@@ -28,7 +28,7 @@ public class ConsoleTest {
         request.setTaskPerformTime("2017-01-13T17:09:42.411");
         Task task = taskService.createNewTask(request);
         String taskId = task.getTaskId();
-        taskService.startTaskSession(taskId);
+        taskService.startTaskSession(taskId, false);
         Thread.sleep(25);
         taskService.pauseTaskSession(taskId);
         Thread.sleep(25);
@@ -50,7 +50,7 @@ public class ConsoleTest {
 
         Task task = taskService.createNewTask(request);
         String taskId = task.getTaskId();
-        taskService.startTaskSession(taskId);
+        taskService.startTaskSession(taskId, false);
         Thread.sleep(50);
         taskService.pauseTaskSession(taskId);
         Thread.sleep(25);

@@ -56,7 +56,7 @@ public class TaskController {
     }
     @PostMapping("/start-session/{taskId}")
     public void startTaskSession(@PathVariable String taskId) {
-        taskService.startTaskSession(taskId);
+        taskService.startTaskSession(taskId, false);
     }
     @PostMapping("/pause-session/{taskId}")
     public void pauseTaskSession(@PathVariable String taskId) {

@@ -55,7 +55,7 @@ public class TimedExecutorService {
     private Map<JobType, Consumer<String>> createJobMap() {
         Map<JobType, Consumer<String>> jobMap = new HashMap<>();
 
-        jobMap.put(JobType.START_TASK, taskService::startTaskSession);
+        jobMap.put(JobType.START_TASK, (taskId) -> taskService.startTaskSession(taskId, true));
         jobMap.put(JobType.END_TASK, taskService::endTaskSession);
         jobMap.put(JobType.PAUSE_TASK, taskService::pauseTaskSession);
         jobMap.put(JobType.UNPAUSE_TASK, taskService::unpauseTaskSession);

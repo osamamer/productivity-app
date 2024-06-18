@@ -31,26 +31,26 @@ public class EndToEndTest {
     @Test
     void startAndEndSession() {
         Task task = createTask();
-        assertDoesNotThrow(() -> taskService.startTaskSession(task.getTaskId()));
+        assertDoesNotThrow(() -> taskService.startTaskSession(task.getTaskId(), false));
         assertDoesNotThrow(() -> taskService.endTaskSession(task.getTaskId()));
     }
     @Test
     void pauseAndUnpauseSession() {
         Task task = createTask();
-        taskService.startTaskSession(task.getTaskId());
+        taskService.startTaskSession(task.getTaskId(), false);
         assertDoesNotThrow(() -> taskService.pauseTaskSession(task.getTaskId()));
         assertDoesNotThrow(() -> taskService.unpauseTaskSession(task.getTaskId()));
     }
     @Test
     void startAlreadyRunningSession() {
         Task task = createTask();
-        taskService.startTaskSession(task.getTaskId());
-        assertThrows(IllegalStateException.class, () -> taskService.startTaskSession(task.getTaskId()));
+        taskService.startTaskSession(task.getTaskId(), false);
+        assertThrows(IllegalStateException.class, () -> taskService.startTaskSession(task.getTaskId(), false));
     }
     @Test
     void unpauseAlreadyRunningSession() {
         Task task = createTask();
-        taskService.startTaskSession(task.getTaskId());
+        taskService.startTaskSession(task.getTaskId(), false);
         assertThrows(IllegalStateException.class, () -> taskService.unpauseTaskSession(task.getTaskId()));
     }
     @Test
