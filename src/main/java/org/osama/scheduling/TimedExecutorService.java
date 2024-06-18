@@ -2,7 +2,6 @@ package org.osama.scheduling;
 
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
-import org.osama.task.Task;
 import org.osama.task.TaskService;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -11,10 +10,8 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.function.Consumer;
 
-import static java.awt.SystemColor.info;
 import static javax.management.timer.Timer.ONE_SECOND;
 
 @Service
@@ -55,10 +52,10 @@ public class TimedExecutorService {
     private Map<JobType, Consumer<String>> createJobMap() {
         Map<JobType, Consumer<String>> jobMap = new HashMap<>();
 
-        jobMap.put(JobType.START_TASK, (taskId) -> taskService.startTaskSession(taskId, true));
-        jobMap.put(JobType.END_TASK, taskService::endTaskSession);
-        jobMap.put(JobType.PAUSE_TASK, taskService::pauseTaskSession);
-        jobMap.put(JobType.UNPAUSE_TASK, taskService::unpauseTaskSession);
+        jobMap.put(JobType.START_SESSION, (taskId) -> taskService.startTaskSession(taskId, true));
+        jobMap.put(JobType.END_SESSION, taskService::endTaskSession);
+        jobMap.put(JobType.PAUSE_SESSION, taskService::pauseTaskSession);
+        jobMap.put(JobType.UNPAUSE_SESSION, taskService::unpauseTaskSession);
 
         return Map.copyOf(jobMap);
     }

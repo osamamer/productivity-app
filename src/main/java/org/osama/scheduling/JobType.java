@@ -1,5 +1,5 @@
 package org.osama.scheduling;
 
 public enum JobType {
-    START_TASK, END_TASK, PAUSE_TASK, UNPAUSE_TASK
+    START_SESSION, END_SESSION, PAUSE_SESSION, UNPAUSE_SESSION
 }

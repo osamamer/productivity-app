@@ -175,25 +175,19 @@ public class TaskService {
         int breaksTaken = 0;
         for (int i = 0; i < n; i++) {
             if (i % 2 == 0) { // Meaning that are in an even iteration in which the task is active
-                if (i == n - 1) {
-                    createScheduledJob(JobType.END_TASK,
+                    createScheduledJob(JobType.END_SESSION,
                             LocalDateTime.now().plusMinutes(timeElapsed + focusDuration), taskId);
-                    break;
-                }
-                createScheduledJob(JobType.PAUSE_TASK,
-                        LocalDateTime.now().plusMinutes(timeElapsed + focusDuration), taskId);
                 timeElapsed += focusDuration;
             }
             else { // Meaning that we are in an odd iteration in which we are taking a break
                 breaksTaken++;
                 if (breaksTaken % longBreakCooldown != 0) { // Short break
-                    createScheduledJob(JobType.UNPAUSE_TASK,
+                    createScheduledJob(JobType.START_SESSION,
                             LocalDateTime.now().plusMinutes(timeElapsed + shortBreakDuration), taskId);
-
                     timeElapsed += shortBreakDuration;
                 }
                 else { // Long break
-                    createScheduledJob(JobType.UNPAUSE_TASK,
+                    createScheduledJob(JobType.START_SESSION,
                             LocalDateTime.now().plusMinutes(timeElapsed + longBreakDuration), taskId);
                     timeElapsed += longBreakDuration;
                 }
