@@ -2,7 +2,6 @@ package org.osama.task;
 
 import lombok.extern.slf4j.Slf4j;
 import org.osama.scheduling.JobType;
-import org.osama.scheduling.Pomodoro;
 import org.osama.scheduling.ScheduledJob;
 import org.osama.scheduling.ScheduledJobRepository;
 import org.osama.session.Session;
@@ -58,8 +57,9 @@ public class TaskService {
         List<Session> activeSessions = sessionRepository.findAllByTaskIdAndIsActiveIsTrue(task.getTaskId());
         if (!activeSessions.isEmpty()) throw new IllegalStateException("Cannot start a session when a task is already active");
 //        endAllSessions();
-        sessionRepository.save(createSession(task, isPomodoro));
-        log.info("Started task with ID [{}]", task.getTaskId());
+        Session session = createSession(task, isPomodoro);
+        sessionRepository.save(session);
+        log.info("Started session for task with ID [{}] on {}", task.getTaskId(), session.getStartTime());
     }
     public void pauseTaskSession(String taskId) {
         Task task = taskRepository.getTaskById(taskId);
@@ -73,7 +73,7 @@ public class TaskService {
             unscheduleTaskJobs(taskId);
         }
         sessionRepository.save(activeSession);
-        log.info("Paused task with ID [{}]", task.getTaskId());
+        log.info("Paused task with ID [{}] on {}", task.getTaskId(), activeSession.getLastPauseTime());
     }
     public void unpauseTaskSession(String taskId) {
         Task task = taskRepository.getTaskById(taskId);
@@ -88,7 +88,7 @@ public class TaskService {
             rescheduleTaskJobs(taskId);
         }
         sessionRepository.save(activeSession);
-        log.info("Unpaused task with ID [{}]", task.getTaskId());
+        log.info("Unpaused task with ID [{}] on {}", task.getTaskId(), activeSession.getLastUnpauseTime());
     }
     public void endTaskSession(String taskId) {
         Task task = taskRepository.getTaskById(taskId);
@@ -102,7 +102,7 @@ public class TaskService {
         activeSession.setRunning(false);
         activeSession.setActive(false);
         sessionRepository.save(activeSession);
-        log.info("Ended session for task with ID [{}]", task.getTaskId());
+        log.info("Ended session for task with ID [{}] on {}", task.getTaskId(), activeSession.getEndTime());
     }
     public void completeTask(String taskId) {
         Task task = taskRepository.getTaskById(taskId);
@@ -161,8 +161,6 @@ public class TaskService {
     public void startPomodoro(String taskId, int focusDuration,
                               int shortBreakDuration, int longBreakDuration,
                               int numFocuses, int longBreakCooldown) {
-
-        Pomodoro pomodoro = createPomodoro(taskId, focusDuration, shortBreakDuration, longBreakDuration, numFocuses, longBreakCooldown);
         startTaskSession(taskId, true);
         schedulePomoJobs(taskId, focusDuration, shortBreakDuration, longBreakDuration, numFocuses, longBreakCooldown);
     }
@@ -199,16 +197,18 @@ public class TaskService {
         taskJobs.forEach((job) -> {
             job.setScheduled(false);
             scheduledJobRepository.save(job);
-            log.info("Unscheduled {} job", job.getJobType());
         });
+        log.info("Unscheduled jobs for task with ID [{}]", taskId);
+
     }
     private void rescheduleTaskJobs(String taskId) { // For when the user pauses
         List<ScheduledJob> taskJobs = scheduledJobRepository.findAllByAssociatedTaskId(taskId);
         taskJobs.forEach((job) -> {
             job.setScheduled(true);
             scheduledJobRepository.save(job);
-            log.info("Rescheduled {} job", job.getJobType());
         });
+        log.info("Rescheduled jobs for task with ID [{}]", taskId);
+
     }
     private void shiftTaskJobDueDates(String taskId, int shift) {
         List<ScheduledJob> taskJobs = scheduledJobRepository.findAllByAssociatedTaskId(taskId);
@@ -218,27 +218,13 @@ public class TaskService {
             log.info("Shifted {} job to {}", job.getJobType(), job.getDueDate());
         });
     }
-    private Pomodoro createPomodoro(String taskId, int focusDuration,
-                                    int shortBreakDuration, int longBreakDuration,
-                                    int numFocuses, int longBreakCooldown) {
-        Pomodoro pomodoro = new Pomodoro();
-        pomodoro.setPomodoroId(UUID.randomUUID().toString());
-        pomodoro.setTaskId(taskId);
-        pomodoro.setFocusDuration(focusDuration);
-        pomodoro.setShortBreakDuration(shortBreakDuration);
-        pomodoro.setLongBreakCooldown(longBreakDuration);
-        pomodoro.setFocusesRemaining(numFocuses);
-        pomodoro.setLongBreakCooldown(longBreakCooldown);
-        pomodoro.setTimeRemainingInCurrentFocus(focusDuration);
-        return pomodoro;
-    }
     private ScheduledJob createScheduledJob(JobType jobType, LocalDateTime dueDate, String taskId) {
-        log.info("Creating scheduled job");
         ScheduledJob scheduledJob = new ScheduledJob();
         scheduledJob.setJobId(UUID.randomUUID().toString());
         scheduledJob.setJobType(jobType);
         scheduledJob.setDueDate(dueDate);
         scheduledJob.setAssociatedTaskId(taskId);
+        scheduledJob.setScheduled(true);
         scheduledJobRepository.save(scheduledJob);
         log.info("Scheduled {} job for task [{}] on {}", jobType.toString(), taskId, dueDate);
         return scheduledJob;
@@ -277,8 +263,6 @@ public class TaskService {
             newTask.setDescription(taskRequest.getTaskDescription());
         }
         newTask.setCreationDateTime(LocalDateTime.now(TimeZone.getDefault().toZoneId()));
-        log.info(String.valueOf(TimeZone.getDefault()));
-        log.info("TASK CREATION DATE TIME: {}", newTask.getCreationDateTime());
         newTask.setCreationDate(newTask.getCreationDateTime().toLocalDate());
         newTask.setCompleted(false);
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MMM-dd HH:mm");
@@ -297,7 +281,7 @@ public class TaskService {
         }
         newTask.setImportance(taskRequest.taskImportance);
         taskRepository.add(newTask);
-        log.info("Created new task on {}.", newTask.getCreationDate());
+        log.info("Created new task on {}.", newTask.getCreationDateTime());
         return newTask;
     }
 

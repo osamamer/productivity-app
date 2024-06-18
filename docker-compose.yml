@@ -16,7 +16,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres-v3.1-data:/var/lib/postgresql/data
+      - postgres-v3.3-data:/var/lib/postgresql/data
     environment:
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_USER=postgres
@@ -31,5 +31,5 @@ volumes:
 #    external: true
 #  postgres-v2.2-data:
 #    external: true
-  postgres-v3.1-data:
+  postgres-v3.3-data:
     external: true

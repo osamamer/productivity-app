@@ -320,17 +320,11 @@ function setupFocusSettingsBox(taskId) {
     pomodoroForm.addEventListener('submit', function(e) {
         e.preventDefault();
         e.stopImmediatePropagation();
-        console.log("Submitting pomodoro information1.");
-
-        console.log("Submitting pomodoro information1.");
         const focusDuration = document.getElementById('focus-duration-input').value;
         const shortBreakDuration = document.getElementById('short-break-duration-input').value;
         const longBreakDuration = document.getElementById('long-break-duration-input').value;
         const numFocuses = document.getElementById('number-focuses-input').value;
         const longBreakCooldown = document.getElementById('long-break-cooldown-input').value;
-        console.log("Submitting pomodoro information2.");
-
-        console.log(focusDuration + " " + shortBreakDuration + " " + longBreakDuration + " " + numFocuses + " " + longBreakCooldown)
         startPomodoro(taskId, focusDuration, shortBreakDuration, longBreakDuration, numFocuses, longBreakCooldown).then(() => fetchTodayNonCompletedTasks())
             .then((tasksString) => displayTasks(tasksString));
     })

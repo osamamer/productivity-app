@@ -46,10 +46,10 @@ public class PomoTest {
         int longBreakDuration = 2;
         int numFocuses = 3;
         int longBreakCooldown = 2;
-        long pauseTime = 15000;
+        long pauseTime = 1000;
         taskService.startPomodoro(task.getTaskId(), focusDuration, shortBreakDuration, longBreakDuration, numFocuses, longBreakCooldown);
         List<LocalDateTime> oldDueDates = scheduledJobRepository.findAllByAssociatedTaskId(task.getTaskId()).stream().map(ScheduledJob::getDueDate).toList();;
-        Thread.sleep(10000);
+        Thread.sleep(1000);
         taskService.pauseTaskSession(task.getTaskId());
         Thread.sleep(pauseTime);
         taskService.unpauseTaskSession(task.getTaskId());
