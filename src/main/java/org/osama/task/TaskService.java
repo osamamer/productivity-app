@@ -40,21 +40,21 @@ public class TaskService {
         return totalDuration;
     }
     public void setTaskDescription(ModifyTaskRequest taskRequest) {
-        Task task = taskRepository.getTaskById(taskRequest.taskId);
+        Task task = taskRepository.findTaskByTaskId(taskRequest.taskId);
         task.setDescription(taskRequest.taskDescription);
-        taskRepository.update(task);
+        taskRepository.save(task);
         log.info("Set new task description for task with ID [{}]", task.getTaskId());
     }
 
     public boolean getTaskRunning(String taskId) {
-        return !sessionRepository.findAllByTaskIdAndIsRunningIsTrue(taskId).isEmpty();
+        return !sessionRepository.findAllByTaskIdAndRunningIsTrue(taskId).isEmpty();
     }
     public boolean getTaskActive(String taskId) {
-        return !sessionRepository.findAllByTaskIdAndIsActiveIsTrue(taskId).isEmpty();
+        return !sessionRepository.findAllByTaskIdAndActiveIsTrue(taskId).isEmpty();
     }
     public void startTaskSession(String taskId, boolean isPomodoro) {
-        Task task = taskRepository.getTaskById(taskId);
-        List<Session> activeSessions = sessionRepository.findAllByTaskIdAndIsActiveIsTrue(task.getTaskId());
+        Task task = taskRepository.findTaskByTaskId(taskId);
+        List<Session> activeSessions = sessionRepository.findAllByTaskIdAndActiveIsTrue(task.getTaskId());
         if (!activeSessions.isEmpty()) throw new IllegalStateException("Cannot start a session when a task is already active");
 //        endAllSessions();
         Session session = createSession(task, isPomodoro);
@@ -62,8 +62,8 @@ public class TaskService {
         log.info("Started session for task with ID [{}] on {}", task.getTaskId(), session.getStartTime());
     }
     public void pauseTaskSession(String taskId) {
-        Task task = taskRepository.getTaskById(taskId);
-        Optional<Session> session = sessionRepository.findSessionByTaskIdAndIsRunningIsTrue(taskId);
+        Task task = taskRepository.findTaskByTaskId(taskId);
+        Optional<Session> session = sessionRepository.findSessionByTaskIdAndRunningIsTrue(taskId);
         Session activeSession = session.orElseThrow(() -> new IllegalStateException("Cannot pause task session because it is not running"));
         activeSession.setRunning(false);
         Duration elapsedTime = Duration.between(activeSession.getLastUnpauseTime(), LocalDateTime.now());
@@ -76,10 +76,10 @@ public class TaskService {
         log.info("Paused task with ID [{}] on {}", task.getTaskId(), activeSession.getLastPauseTime());
     }
     public void unpauseTaskSession(String taskId) {
-        Task task = taskRepository.getTaskById(taskId);
-        Optional<Session> session = sessionRepository.findSessionByTaskIdAndIsRunningIsTrue(task.getTaskId());
+        Task task = taskRepository.findTaskByTaskId(taskId);
+        Optional<Session> session = sessionRepository.findSessionByTaskIdAndRunningIsTrue(task.getTaskId());
         if (session.isPresent()) throw new IllegalStateException("Cannot unpause a session when the task is already running");
-        session = sessionRepository.findSessionByTaskIdAndIsActiveIsTrue(taskId);
+        session = sessionRepository.findSessionByTaskIdAndActiveIsTrue(taskId);
         Session activeSession = session.orElseThrow(() -> new IllegalStateException("Cannot unpause task session because it is not active"));
         activeSession.setRunning(true);
         activeSession.setLastUnpauseTime(LocalDateTime.now());
@@ -91,8 +91,8 @@ public class TaskService {
         log.info("Unpaused task with ID [{}] on {}", task.getTaskId(), activeSession.getLastUnpauseTime());
     }
     public void endTaskSession(String taskId) {
-        Task task = taskRepository.getTaskById(taskId);
-        Optional<Session> session = sessionRepository.findSessionByTaskIdAndIsActiveIsTrue(taskId);
+        Task task = taskRepository.findTaskByTaskId(taskId);
+        Optional<Session> session = sessionRepository.findSessionByTaskIdAndActiveIsTrue(taskId);
         Session activeSession = session.orElseThrow(() -> new IllegalStateException("Cannot end task session because it is not active"));
         Duration elapsedTime = Duration.between(activeSession.getLastUnpauseTime(), LocalDateTime.now());
         if (activeSession.isRunning()) {
@@ -105,45 +105,59 @@ public class TaskService {
         log.info("Ended session for task with ID [{}] on {}", task.getTaskId(), activeSession.getEndTime());
     }
     public void completeTask(String taskId) {
-        Task task = taskRepository.getTaskById(taskId);
+        Task task = taskRepository.findTaskByTaskId(taskId);
         task.setCompleted(true);
         task.setCompletionDateTime(LocalDateTime.now());
-        taskRepository.update(task);
+        task.setCompletionDate(task.getCompletionDateTime().toLocalDate());
+        taskRepository.save(task);
         log.info("Set complete status to true for task with ID [{}]", task.getTaskId());
     }
+        public void uncompleteTask(String taskId) {
+        Task task = taskRepository.findTaskByTaskId(taskId);
+        task.setCompleted(false);
+        task.setCompletionDateTime(null);
+        taskRepository.save(task);
+        log.info("Set complete status to false for task with ID [{}]", task.getTaskId());
+    }
+    public void toggleTaskCompletion(String taskId) {
+        Task task = taskRepository.findTaskByTaskId(taskId);
+        task.setCompleted(!task.isCompleted());
+        taskRepository.save(task);
+        log.info("Toggled completion to {} for task with ID [{}]", task.isCompleted(), taskId);
+    }
     public boolean getTaskCompleted(String taskId) {
-        Task task = taskRepository.getTaskById(taskId);
+        Task task = taskRepository.findTaskByTaskId(taskId);
         return task.isCompleted();
     }
     public void changeTaskName(String taskId, String newName) {
-        Task task = taskRepository.getTaskById(taskId);
+        Task task = taskRepository.findTaskByTaskId(taskId);
         task.setName(newName);
-        taskRepository.update(task);
+        taskRepository.save(task);
         log.info("Changed task name for task with ID [{}]", task.getTaskId());
 
     }
     public void setParentTask(String taskId, String parentId) {
-        Task task = taskRepository.getTaskById(taskId);
+        Task task = taskRepository.findTaskByTaskId(taskId);
         task.setParentId(parentId);
-        taskRepository.update(task);
+        taskRepository.save(task);
         log.info("Set task with ID [{}] to have parent with ID [{}]", task.getTaskId(), parentId);
     }
     public Task getParentTask(String taskId) {
-        Task task = taskRepository.getTaskById(taskId);
-        return taskRepository.getTaskById(task.getParentId());
+        Task task = taskRepository.findTaskByTaskId(taskId);
+        return taskRepository.findTaskByTaskId(task.getParentId());
     }
     public List<Task> getChildTasks(String taskId) {
-        return taskRepository.getChildTasks(taskId);
+        return taskRepository.findAllByParentId(taskId);
     }
     public List<Task> getNonCompletedTasks() {
-        return taskRepository.getNonCompletedTasks();
+        return taskRepository.findAllByCompletedIsFalse();
     }
     public List<Task> getTodayTasks() {
-        return taskRepository.getTodayTasks();
+        return taskRepository.findAllByCreationDate(LocalDate.now());
     }
     public List<Task> getTasksByDate(String date) {
         LocalDate localDate = stringToLocalDate(date);
-        return taskRepository.getTasksByDate(localDate);
+        return taskRepository.findAllByCreationDate(localDate);
     }
     public List<Task> getNonCompletedTasksByDate(String date) {
         log.info("Getting uncompleted tasks for date [{}]", date);
@@ -156,7 +170,7 @@ public class TaskService {
         return nonCompletedList;
     }
     public Task getNewestUncompletedHighestPriorityTask() {
-        return taskRepository.getNewestUncompletedHighestPriorityTask();
+        return taskRepository.findFirstByCompletedIsFalseOrderByImportanceDescCreationDateTimeDesc();
     }
     public void startPomodoro(String taskId, int focusDuration,
                               int shortBreakDuration, int longBreakDuration,
@@ -270,6 +284,7 @@ public class TaskService {
         try {
             LocalDateTime performTime = LocalDateTime.parse(taskRequest.taskPerformTime);
             newTask.setScheduledPerformDateTime(performTime);
+            newTask.setScheduledPerformDate(newTask.getScheduledPerformDateTime().toLocalDate());
         } catch (DateTimeParseException e) {
             System.out.println("Invalid LocalDateTime format: " + taskRequest.taskPerformTime);
         }
@@ -280,7 +295,7 @@ public class TaskService {
             newTask.setTag(taskRequest.taskTag);
         }
         newTask.setImportance(taskRequest.taskImportance);
-        taskRepository.add(newTask);
+        taskRepository.save(newTask);
         log.info("Created new task on {}.", newTask.getCreationDateTime());
         return newTask;
     }

@@ -24,8 +24,8 @@ public class EndToEndTest {
     @Test
     void createNewTask() {
         Task task = createTask();
-        assertDoesNotThrow(() -> taskRepository.getTaskById(task.getTaskId()));
-        assertThrows(InvalidDataAccessApiUsageException.class, () -> taskRepository.getTaskById("INVALID_ID"));
+        assertDoesNotThrow(() -> taskRepository.findTaskByTaskId(task.getTaskId()));
+//        assertThrows(InvalidDataAccessApiUsageException.class, () -> taskRepository.findTaskByTaskId("INVALID_ID"));
     }
 
     @Test

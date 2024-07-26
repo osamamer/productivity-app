@@ -1,0 +1,4 @@
+Solution: DatabaseDriver has nothing to do with it. Change the ports back to 5432 in the Docker Compose (5432:5432)
+and in the application spring properties file. Postgres is right not localhost.
+And for some fucking reason when you try to change the port it never fucking listens. Even though it was working
+on 5433 for a little bit but then it just decided to stop of its own accord. Sigh.

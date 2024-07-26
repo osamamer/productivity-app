@@ -1,0 +1,91 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="keywords" content="HTML, CSS">
+    <meta name="description" content="A productivity app">
+    <title> Productivity App </title>
+    <link rel="icon" href="../images/prod5.png" type="image/x-icon"/>
+    <link rel="stylesheet" href="../styles.css">
+    <link rel=stylesheet href="https://s3-us-west-2.amazonaws.com/colors-css/2.2.0/colors.min.css">
+</head>
+<body class="home-page">
+    <div class="sidenav">
+        <a href="./index.html" class="side-button-container" title="Home"><img class="side-button" src="../images/home.png" alt=""></a>
+        <a href="task-page.html" class="side-button-container" title="Tasks"><img class="side-button" src="../images/clipboard.png" alt=""></a>
+        <a href="day-page.html" class="side-button-container" title="Day"><img class="side-button" src="../images/day.png" alt=""></a>
+        <a href="calender-page.html" class="side-button-container" title="Calender"><img class="side-button" src="../images/calendar.png" alt=""></a>
+        <a href="med-page.html" class="side-button-container" title="Meditation"><img class="side-button" src="../images/yoga.png" alt=""></a>
+        <a href="settings-page.html" class="side-button-container" title="Statistics"><img class="side-button" src="../images/stats.png" alt=""></a>
+        <a href="settings-page.html" class="side-button-container" title="Settings"><img class="side-button" src="../images/settings.png" alt=""></a>
+    </div>
+    <dialog id="day-modal" class="modal box-shadow">
+        <div class="dialogue-head">How has your day been?</div>
+        <form id="day-input-form" autocomplete="off" method="dialog">
+            <p><input id="day-rating-input-field" type="number" placeholder="Day rating (0-10)" value="" class="input" min="0" max="10"></p>
+            <p><input id="day-plan-input-field" type="text" placeholder="Day plan" value="" class="input"></p>
+            <p><input id="day-summary-input-field" type="text" placeholder="Day summary" value="" class="input"></p>
+            <button class="button-class" type="submit">OK</button>
+        </form>
+        <a href="day-page.html" style="text-decoration: none">Go to day</a>
+    </dialog>
+    <dialog id="create-task-modal" class="modal box-shadow">
+        <div class="dialogue-head">Create new task:</div>
+        <form id="create-new-task-form" autocomplete="off" method="dialog">
+            <p><input id="task-name-input-field" type="text" placeholder="Task name" value="" class="input"></p>
+            <p><input id="task-desc-input-field" type="text" placeholder="Task description" value="" class="input"></p>
+            <p><input id="task-scheduled-input-field" type="text" placeholder="Task scheduled perform date" value="" class="input"></p>
+            <p><input id="task-tag-input-field" type="text" placeholder="Task tag" value="" class="input"></p>
+            <p><input id="task-importance-input-field" type="number" placeholder="Task importance" value="" class="input" min="0" max="10"></p>
+
+            <button class="button-class" type="submit">OK</button>
+        </form>
+
+    </dialog>
+    <div id="task-context-menu" class="box context-menu"></div>
+    <div class="header">
+        <h1 class="head-question">What's on your mind?</h1>
+        <div class="input-field-wrapper">
+            <form id="task-input-form"><label for="task-input-field"></label><input type="text" id="task-input-field" class="box-shadow" placeholder="Add task..."></form>
+        </div>
+        <div class="day-rating" id="day-div"></div>
+        <img class="sun-img-div" src="../images/sun.png" alt="" id="sun-image" title="Day">
+    </div>
+    <div id="main-container">
+
+        <div class="section left-section">
+            <div id="today-tasks-container" class="box box-shadow container">
+                <h1 class="box-header">Tasks for today</h1>
+                <img src="../images/add.png" alt="" id="add-task-button" class="button-class add-task-button" title="Add task">
+                <div class="tasks-div" id="today-tasks-div"></div>
+            </div>
+            <div id="non-today-tasks-container" class="box box-shadow container">
+                <h1 class="box-header">Tasks for next week</h1>
+                <img src="../images/add.png" alt="" class="button-class add-task-button" title="Add task">
+                <div class="tasks-div" id="non-today-tasks-div"></div>
+            </div>
+        </div>
+
+        <div class="section center-section">
+            <div class="box container" id="highest-priority-task-box"></div>
+            <div class="box container" id="highlighted-task-box"></div>
+            <div class="box" id="focus-settings-box">
+<!--                <div id="focus-settings-header">Let's get to work</div>-->
+<!--                <form id="pomodoro-form" autocomplete="off" method="dialog">-->
+<!--                    <p><input id="focus-duration-input" type="number" placeholder="Focus period duration (minutes)" class="input" min="1" max="60"></p>-->
+<!--                    <p><input id="short-break-duration-input" type="number" placeholder="Short break duration (minutes)" class="input" min="1" max="60"></p>-->
+<!--                    <p><input id="long-break-duration-input" type="number" placeholder="Long break duration (minutes)" class="input" min="1" max="60"></p>-->
+<!--                    <p><input id="number-focuses-input" type="number" placeholder="How many focus periods?" class="input" min="2" max="6"></p>-->
+<!--                    <p><input id="long-break-cooldown-input" type="text" placeholder="Long break every...?" class="input" min="2" max="6"></p>-->
+<!--                    <button class="button-class" type="submit">Go</button>-->
+<!--                </form>-->
+            </div>
+            <div class="box" id="timer-div"> <p id="timer-div-text"></p></div>
+        </div>
+        <div class="section right-section">
+            <div class="box container" id="day-box"></div>
+        </div>
+    </div>
+    <script src="../build/main.bundle.js"></script>
+</body>
+</html>

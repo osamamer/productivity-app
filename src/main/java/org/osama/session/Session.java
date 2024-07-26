@@ -24,10 +24,10 @@ public class Session {
     private String taskId;
 
     @Column(nullable = false)
-    private boolean isRunning;
+    private boolean running;
 
     @Column(nullable = false)
-    private boolean isActive; // isRunning means that it is currently on, isActive means that it is either currently on or paused.
+    private boolean active; // isRunning means that it is currently on, isActive means that it is either currently on or paused.
 
     @Column
     private Duration totalSessionTime;

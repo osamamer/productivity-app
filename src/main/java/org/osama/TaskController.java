@@ -24,7 +24,7 @@ public class TaskController {
 
     @GetMapping
     public List<Task> getAll() {
-        return taskRepository.getAll();
+        return taskRepository.findAll();
     }
     @GetMapping("/get-non-completed-tasks")
     public List<Task> getNonCompletedTasks() {
@@ -48,7 +48,7 @@ public class TaskController {
     }
         @GetMapping("/get-task/{taskId}")
     public Task getTaskById(@PathVariable String taskId) {
-        return taskRepository.getTaskById(taskId);
+        return taskRepository.findTaskByTaskId(taskId);
     }
     @PostMapping("/create-task")
     public Task createTask(@RequestBody NewTaskRequest taskRequest) {
@@ -90,6 +90,15 @@ public class TaskController {
     public void completeTask(@PathVariable String taskId) {
         taskService.completeTask(taskId);
     }
+    @PostMapping("/uncomplete-task/{taskId}")
+    public void uncompleteTask(@PathVariable String taskId) {
+        taskService.uncompleteTask(taskId);
+    }
+    @PostMapping("/toggle-task-completion/{taskId}")
+    public void toggleTaskCompletion(@PathVariable String taskId) {
+        taskService.toggleTaskCompletion(taskId);
+    }
+
     @PostMapping("/change-task-name/{taskId}/{newName}")
     public void changeTaskName(@PathVariable String taskId, @PathVariable String newName) {
         taskService.changeTaskName(taskId, newName);
@@ -97,15 +106,15 @@ public class TaskController {
 
     @GetMapping("/get-task-scheduled-time/{taskId}")
     public LocalDateTime getTaskScheduledTime(@PathVariable String taskId) {
-        return taskRepository.getTaskById(taskId).getScheduledPerformDateTime();
+        return taskRepository.findTaskByTaskId(taskId).getScheduledPerformDateTime();
     }
     @GetMapping("/get-task-completion-time/{taskId}")
     public LocalDateTime getTaskCompletionTime(@PathVariable String taskId) {
-        return taskRepository.getTaskById(taskId).getCompletionDateTime();
+        return taskRepository.findTaskByTaskId(taskId).getCompletionDateTime();
     }
     @GetMapping("/get-task-creation-time/{taskId}")
     public LocalDateTime getTaskCreationTime(@PathVariable String taskId) {
-        return taskRepository.getTaskById(taskId).getCreationDateTime();
+        return taskRepository.findTaskByTaskId(taskId).getCreationDateTime();
     }
     @GetMapping("/get-task-parent/{taskId}")
     public Task getTaskParent(@PathVariable String taskId) {
@@ -117,11 +126,11 @@ public class TaskController {
     }
     @GetMapping("/get-tag/{taskId}")
     public String getTaskTag(@PathVariable String taskId) {
-        return taskRepository.getTaskById(taskId).getTag();
+        return taskRepository.findTaskByTaskId(taskId).getTag();
     }
     @GetMapping("/get-importance/{taskId}")
     public int getTaskImportance(@PathVariable String taskId) {
-        return taskRepository.getTaskById(taskId).getImportance();
+        return taskRepository.findTaskByTaskId(taskId).getImportance();
     }
     @GetMapping("/get-newest-uncompleted-highest-priority-task")
     public Task getNewestUncompletedHighestPriorityTask() {
@@ -136,12 +145,12 @@ public class TaskController {
 
     @DeleteMapping("/{taskId}")
     public void removeTask(@PathVariable String taskId) {
-        taskRepository.remove(taskId);
+        taskRepository.deleteTaskByTaskId(taskId);
     }
     @DeleteMapping
     public void removeAllTasks() {
-        for (int i = 0; i < taskRepository.getAll().size(); i++) {
-            taskRepository.remove(taskRepository.getAll().get(i).getTaskId());
+        for (int i = 0; i < taskRepository.findAll().size(); i++) {
+            taskRepository.deleteTaskByTaskId(taskRepository.findAll().get(i).getTaskId());
         }
     }
     @PostMapping("/end-all-sessions")

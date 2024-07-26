@@ -10,17 +10,19 @@ body {
     --priorityyellow: #FAEC66;
     --priorityblue: #9FCAFA;
     --prioritycolor: var(--priorityblue);
-    background: white;
+    /*background: white;*/
     margin: 0;
     padding: 0;
     overflow: hidden;
 }
 @font-face {
     font-family: Raleway;
-    src: url(fonts/Raleway-VariableFont_wght.ttf);
+    src: url(react/src/fonts/Raleway-VariableFont_wght.ttf);
 }
 * {
     font-family: Raleway, serif;
+    color: black;
+    background-color: white;
 }
 .container {
     container-type: inline-size;
