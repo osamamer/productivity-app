@@ -1,0 +1,6 @@
+1. Currently, we need to work on the modals. We have need of a few of them, one for creating a task,
+one for setting the day's info, and one for creating a pomodoro session.
+Let's make sure that the pomo modal is fully functional, then adapt everything we did to the others.
+
+2. Then we implement WebSockets in a separate branch.
+Once we have, we are much, much closer to a functional application.

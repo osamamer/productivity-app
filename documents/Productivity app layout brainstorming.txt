@@ -1,0 +1,24 @@
+Ideas for the new layout of the productivity app?
+Elements of the page:
+1. List of today's tasks.
+2. Day information.
+3. Highlighted task.
+4. 
+
+
+THREE MAJOR SECTIONS:
+ONE: TASKS
+TWO: HIGHLIGHTS
+THREE: DAYS
+
+ONE: 
+today's tasks, and other tasks
+TWO:
+The highest priority task, whatever task you choose to highlight, and a third thing
+THREE: 
+Current day info, small calender
+
+Make everything a nice little box with rounded corners
+
+NO accent color :( because I need a neutral background to employ other colors for priority purposes and other fun shit.
+

@@ -1,0 +1,1 @@
+You just need to set the username and password (postgres, postgres) and change the db name in the link at the bottom to testdb if it is still that.

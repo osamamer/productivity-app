@@ -1,0 +1,8 @@
+    const [highestPriorityTask, setHighestPriorityTask] = useState<Task>({} as Task);
+
+    useEffect(() => {
+        console.log("Yo im fetchin my shit sticky")
+        fetchHighestPriorityTask().then((task) => {
+            // TODO: Handle case of no tasks (currently throws error and prevents whole site from rendering)
+            setHighestPriorityTask(task)});
+    }, [props.tasks, highestPriorityTask]);

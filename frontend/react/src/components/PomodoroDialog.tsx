@@ -1,0 +1,35 @@
+import React, {useEffect, useState} from "react";
+import {DynamicFormDialog} from "./DynamicFormDialog.tsx";
+import {Field} from "../interfaces/Field.tsx";
+
+const fields: Field[] =  [
+    {name: "focusDuration", label: "", placeholder: "Focus duration"},
+    {name: "shortBreakDuration", label: "", placeholder: "Short break duration"},
+    {name: "longBreakDuration", label: "", placeholder: "Long break duration"},
+    {name: "numFocuses", label: "", placeholder: "Number of focus durations"},
+    {name: "longBreakCooldown", label: "", placeholder: "Long break every...?"}
+]
+
+type props = {
+    open: boolean;
+    handleClose: (string) => void;
+    onSubmit: (string, values: Record<string, string>) => void;
+}
+export function PomodoroDialog(props: props) {
+    const [open, setOpen] = useState(props.open);
+
+
+    useEffect(() => {
+        if (props.open !== open) {
+            setOpen(props.open);
+        }
+    }, [props.open]);
+
+
+    return (
+        <DynamicFormDialog dialogTitle="Enter pomodoro information:"
+                           open={open} handleClose={props.handleClose}
+                           fields={fields} onSubmit={props.onSubmit} dialogType={"pomodoroDialog"}>
+        </DynamicFormDialog>
+    );
+}

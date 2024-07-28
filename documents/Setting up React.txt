@@ -1,0 +1,4 @@
+NAVIGATE TO THE DIRECTORY OF REACT!!!
+Install Node.js latest version
+npm install: installs all the dependencies specified in the package.json file
+npm run dev to run it

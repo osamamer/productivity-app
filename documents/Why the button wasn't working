@@ -1,0 +1,4 @@
+Because state isn't updated when props change.
+You have to handle that manually.
+By using useEffect inside the component and updating the state there.
+Yes it will be re-rendered when props update but with the same state.

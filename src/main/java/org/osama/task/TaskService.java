@@ -150,14 +150,14 @@ public class TaskService {
         return taskRepository.findAllByParentId(taskId);
     }
     public List<Task> getNonCompletedTasks() {
-        return taskRepository.findAllByCompletedIsFalse();
+        return taskRepository.findAllByCompletedIsFalseOrderByCreationDateTimeDesc();
     }
     public List<Task> getTodayTasks() {
-        return taskRepository.findAllByCreationDate(LocalDate.now());
+        return taskRepository.findAllByCreationDateOrderByCreationDateTimeDesc(LocalDate.now());
     }
     public List<Task> getTasksByDate(String date) {
         LocalDate localDate = stringToLocalDate(date);
-        return taskRepository.findAllByCreationDate(localDate);
+        return taskRepository.findAllByCreationDateOrderByCreationDateTimeDesc(localDate);
     }
     public List<Task> getNonCompletedTasksByDate(String date) {
         log.info("Getting uncompleted tasks for date [{}]", date);

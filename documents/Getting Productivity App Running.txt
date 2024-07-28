@@ -1,0 +1,8 @@
+First of all you have to clone from Github.
+Then you need to install Java 17 on the machine itself so that Maven doesn't use another version.
+You will need to install Maven itself too, then run mvn clean install.
+You will need to install npm in the frontend dir, then run npm run build.
+You will need to ./build-docker-image.sh
+You will need to create a docker volume by the same name possibly (same name as the one defined in the docker-compose). It will be empty then written to once you run the containers.
+You will need to run the containers with docker-compose up.
+What tripped me up this time: bad data. I created tasks when it wasn't running right and they weren't assigned creation dates. What we did was use DBeaver to delete those tasks and now we have no bad data and everything ran.

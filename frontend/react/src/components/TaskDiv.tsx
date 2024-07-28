@@ -1,12 +1,14 @@
 import {Task} from "../interfaces/Task.tsx";
 
-type props = {task: Task, toggleTaskCompletion: (taskId: number) => void};
+type props = {task: Task, toggleTaskCompletion: (taskId: number) => void, onClick: (task) => void};
 
 
 
 export function TaskDiv(props: props) {
     return (
-        <div className="task-div">
+        <div className="task-div" onClick={() => {
+            props.onClick(props.task)}
+        }>
             <label>
                 <input
                     type="checkbox"
