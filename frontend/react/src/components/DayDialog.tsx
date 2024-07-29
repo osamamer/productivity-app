@@ -3,7 +3,7 @@ import {DynamicFormDialog} from "./DynamicFormDialog.tsx";
 import {Field} from "../interfaces/Field.tsx";
 
 const fields: Field[] =  [
-    {name: "dayRating", label: "", placeholder: "Today out of 10?", type: "number"},
+    {name: "dayRating", label: "", placeholder: "Today out of 10?", type: "number", min: 0, max: 10},
     {name: "dayPlan", label: "", placeholder: "What's the plan?"},
     {name: "daySummary", label: "", placeholder: "What happened today?"}
 ]

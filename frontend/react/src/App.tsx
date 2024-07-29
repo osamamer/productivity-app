@@ -226,7 +226,7 @@ function App() {
                 </div>
 
                 <div className="section right-section">
-                    <TodayBox today={today}/>
+                    <TodayBox today={today} handleOpenDialog={handleOpen}/>
 
 
                 </div>
