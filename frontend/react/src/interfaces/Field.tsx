@@ -4,4 +4,6 @@ export interface Field {
     type?: string;
     placeholder?: string;
     required?: boolean;
+    min?: number;
+    max?: number;
 }

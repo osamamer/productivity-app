@@ -118,9 +118,9 @@ function App() {
     function highlightTask(task: Task): void {
         setHighlightedTask(task);
     }
-    async function startPomodoro(taskId, focusDuration, shortBreakDuration,
-                                 longBreakDuration, numFocuses,
-                                 longBreakCooldown): Promise<void> {
+    async function startPomodoro(taskId: string, focusDuration: number, shortBreakDuration: number,
+                                 longBreakDuration: number, numFocuses: number,
+                                 longBreakCooldown: number): Promise<void> {
         console.log("Attempting to start pomodoro " + taskId + " "
         + focusDuration + " " + shortBreakDuration + " " + longBreakDuration + " " + numFocuses + " " + longBreakCooldown)
         await fetch(TASK_URL.concat("/start-pomodoro"), {
@@ -159,7 +159,7 @@ function App() {
             ({ ...prev, [dialogType]: true }));
     };
     // Handles Submission for all modals
-    const handleSubmit = (dialogType: string, values: Record<String, String>) => {
+    const handleSubmit = (dialogType: string, values: Record<string, any>) => {
         console.log(`Handling ${dialogType} modal submit`)
         console.log(values.focusDuration)
         switch(dialogType) {
@@ -221,27 +221,12 @@ function App() {
 
                 <div className="section center-section">
                     <HighestPriorityTaskBox tasks={allTasks}/>
-                    <HighlightedTaskBox task={highlightedTask} handleOpen={handleOpen}/>
+                    <HighlightedTaskBox task={highlightedTask} handleOpenDialog={handleOpen}/>
                     <Timer/>
                 </div>
 
                 <div className="section right-section">
                     <TodayBox today={today}/>
-                    {/*<OvalButton variant="contained" color="primary" onClick={() => {*/}
-                    {/*    handleOpen('pomodoroDialog')*/}
-                    {/*}}>*/}
-                    {/*    Primary*/}
-                    {/*</OvalButton>*/}
-                    {/*<OvalButton variant="contained" color="quinary" onClick={() => {*/}
-                    {/*    handleOpen('dayDialog')*/}
-                    {/*}}>*/}
-                    {/*    Secondary*/}
-                    {/*</OvalButton>*/}
-                    {/*<OvalButton variant="contained" color="tertiary" onClick={() => {*/}
-                    {/*    handleOpen('createTaskDialog')*/}
-                    {/*}}>*/}
-                    {/*    Thirdiary*/}
-                    {/*</OvalButton>*/}
 
 
                 </div>

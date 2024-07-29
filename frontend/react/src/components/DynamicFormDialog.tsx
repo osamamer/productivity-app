@@ -10,26 +10,54 @@ import {
 import { useFormik, FormikHelpers } from 'formik';
 import * as Yup from 'yup';
 import {Field} from "../interfaces/Field.tsx";
-
+import {AnyObject, NumberSchema, StringSchema} from "yup";
+type FormValues = Record<string, string | number>;
 type props = {
     dialogTitle: string;
     dialogType: string;
-    handleClose: (string) => void;
+    handleClose: (dialogType: string) => void;
     fields: Field[];
-    onSubmit: (string, values: Record<string, string>) => void;
+    onSubmit: (dialogType: string, values: Record<string, string>) => void;
     open: boolean;
 }
 
 export function DynamicFormDialog(props: props) {
     const [open, setOpen] = useState(props.open);
     const validationSchema = props.fields.reduce((acc, field) => {
-        acc[field.name] = field.required
-            ? Yup.string().required(`${field.label} is required`)
-            : Yup.string();
-        return acc;
-    }, {} as Record<string, Yup.StringSchema>);
+        if (field.type === 'number') {
+            let schema: NumberSchema<number | undefined | null, AnyObject, undefined, ""> = Yup.number()
+                .typeError(`${field.label} must be a number`);
 
-    const formik = useFormik({
+            if (field.required) {
+                schema = schema.required(`${field.label} is required`);
+            } else {
+                schema = schema.nullable();
+            }
+
+            if (field.min !== undefined) {
+                schema = schema.min(field.min, `${field.label} must be at least ${field.min}`);
+            }
+            if (field.max !== undefined) {
+                schema = schema.max(field.max, `${field.label} must be at most ${field.max}`);
+            }
+
+            acc[field.name] = schema;
+        } else {
+            let schema: StringSchema<string | undefined | null, AnyObject, undefined, ""> = Yup.string();
+
+            if (field.required) {
+                schema = schema.required(`${field.label} is required`);
+            } else {
+                schema = schema.nullable();
+            }
+
+            acc[field.name] = schema;
+        }
+        return acc;
+    }, {} as Record<string, Yup.AnySchema>);
+
+    // @ts-ignore
+    const formik = useFormik<FormValues>({
         initialValues: props.fields.reduce((acc, field) =>
             ({ ...acc, [field.name]: '' }), {}),
         validationSchema: Yup.object(validationSchema),
@@ -74,6 +102,15 @@ export function DynamicFormDialog(props: props) {
                             onBlur={formik.handleBlur}
                             error={formik.touched[field.name] && Boolean(formik.errors[field.name])}
                             helperText={formik.touched[field.name] && formik.errors[field.name]}
+                            inputProps={
+                                field.type === 'number'
+                                    ? {
+                                        min: field.min ?? undefined,
+                                        max: field.max ?? undefined,
+                                        step: 1, // Or any step value you need
+                                    }
+                                    : {}
+                            }
                         />
                     ))}
                 </form>

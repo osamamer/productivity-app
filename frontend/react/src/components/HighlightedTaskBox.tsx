@@ -13,7 +13,7 @@ import {OvalButton} from "../App.tsx";
 // });
 type props = {
     task: Task
-    handleOpen: (string) => void;
+    handleOpenDialog: (dialogType: string) => void;
 };
 
 export function HighlightedTaskBox(props: props) {
@@ -22,15 +22,13 @@ export function HighlightedTaskBox(props: props) {
         <div className="box container" id="highlighted-task-box">
             <div id="highlighted-task-header" className="highlighted-task-text">{props.task.name}</div>
             <div className="highlighted-task-text">{props.task.description}</div>
-            <OvalButton variant="contained" color="primary" onClick={() => {
-                props.handleOpen('pomodoroDialog')
+            <OvalButton sx={{m:1}} variant="contained" color="primary" onClick={() => {
+                props.handleOpenDialog('pomodoroDialog')
             }}>
                 POMODORO SESSION
             </OvalButton>
-            <OvalButton variant="contained" color="secondary" >
+            <OvalButton sx={{m:1}} variant="contained" color="secondary" >
                 START WORK
-            </OvalButton>
-            <OvalButton variant="contained" color="primary">
             </OvalButton>
         </div>
     );

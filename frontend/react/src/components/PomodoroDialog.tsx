@@ -3,17 +3,17 @@ import {DynamicFormDialog} from "./DynamicFormDialog.tsx";
 import {Field} from "../interfaces/Field.tsx";
 
 const fields: Field[] =  [
-    {name: "focusDuration", label: "", placeholder: "Focus duration"},
-    {name: "shortBreakDuration", label: "", placeholder: "Short break duration"},
-    {name: "longBreakDuration", label: "", placeholder: "Long break duration"},
-    {name: "numFocuses", label: "", placeholder: "Number of focus durations"},
-    {name: "longBreakCooldown", label: "", placeholder: "Long break every...?"}
+    {name: "focusDuration", label: "", placeholder: "Focus duration (minutes)", required: true, type: "number", min:1, max:180},
+    {name: "shortBreakDuration", label: "", placeholder: "Short break duration (minutes)", required: true, type: "number", min:1, max:15},
+    {name: "longBreakDuration", label: "", placeholder: "Long break duration (minutes)", required: true, type: "number", min:1, max:45},
+    {name: "numFocuses", label: "", placeholder: "Number of focus durations (minutes)", required: true, type: "number", min:1, max:12},
+    {name: "longBreakCooldown", label: "", placeholder: "Long break every...?", required: true, type: "number", min:1, max:6},
 ]
 
 type props = {
     open: boolean;
-    handleClose: (string) => void;
-    onSubmit: (string, values: Record<string, string>) => void;
+    handleClose: (dialogType: string) => void;
+    onSubmit: (dialogType: string, values: Record<string, string>) => void;
 }
 export function PomodoroDialog(props: props) {
     const [open, setOpen] = useState(props.open);
