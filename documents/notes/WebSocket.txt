@@ -1,0 +1,4 @@
+ /ws is the WebSocket endpoint that the client (e.g., your React frontend) connects to.
+ /app is the prefix for application-specific destinations where the client can send messages.
+ /topic is the prefix for destinations that are broadcasted to all subscribers.
+ This is where messages from the server are sent to all clients subscribed to this destination.

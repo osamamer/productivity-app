@@ -15,6 +15,24 @@ import {TaskToCreate} from "./interfaces/TaskToCreate.tsx";
 import Button from '@mui/material/Button'
 import {styled} from "@mui/material";
 import {PomodoroDialog} from "./components/PomodoroDialog.tsx";
+import WebSocketCommunicator from "./components/WebSocketCommunicator.tsx";
+// Object.assign(global, { WebSocket });
+
+// const client = new Client({
+//   brokerURL: 'ws://localhost:15674/ws',
+//   onConnect: () => {
+//     client.subscribe('/topic/test01', message =>
+//       console.log(`Received: ${message.body}`)
+//     );
+//     client.publish({ destination: '/topic/test01', body: 'First Message' });
+//   },
+// });
+// const stompClient = new Stomp.Client({
+//     brokerURL: 'ws://localhost:8080/gs-guide-websocket'
+// });
+// client.activate();
+
+
 export const OvalButton = styled(Button)({
     borderRadius: '50px', // Adjust the value to get the oval shape you desire
     padding: '10px 20px', // Adjust the padding for the desired size
@@ -227,7 +245,7 @@ function App() {
 
                 <div className="section right-section">
                     <TodayBox today={today} handleOpenDialog={handleOpen}/>
-
+                    <WebSocketCommunicator/>
 
                 </div>
             </div>

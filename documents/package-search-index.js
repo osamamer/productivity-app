@@ -1,0 +1,1 @@
+packageSearchIndex = [{"l":"All Packages","u":"allpackages-index.html"},{"l":"org.osama"},{"l":"org.osama.day"},{"l":"org.osama.reminder"},{"l":"org.osama.scheduling"},{"l":"org.osama.session"},{"l":"org.osama.task"},{"l":"org.osama.task.requests"}];updateSearchResults();

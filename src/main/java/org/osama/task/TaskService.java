@@ -8,6 +8,8 @@ import org.osama.session.Session;
 import org.osama.session.SessionRepository;
 import org.osama.task.requests.ModifyTaskRequest;
 import org.osama.task.requests.NewTaskRequest;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import java.time.Duration;
 import java.time.LocalDate;

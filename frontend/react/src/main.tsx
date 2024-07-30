@@ -5,6 +5,10 @@ import './index.css'
 import {DevSupport} from "@react-buddy/ide-toolbox";
 import {ComponentPreviews, useInitial} from "./dev";
 import {createTheme, ThemeProvider} from "@mui/material";
+if (typeof global === 'undefined') {
+    window.global = window;
+}
+
 const theme = createTheme({
     palette: {
         primary: {
@@ -13,15 +17,15 @@ const theme = createTheme({
         secondary: {
             main: '#03a9f4'
         },
-        tertiary: {
-            main: '#ff69b4',
-        },
-        quaternary: {
-            main: '#ffeb3b',
-        },
-        quinary: {
-            main: '#4caf50',
-        }
+        // tertiary: {
+        //     main: '#ff69b4',
+        // },
+        // quaternary: {
+        //     main: '#ffeb3b',
+        // },
+        // quinary: {
+        //     main: '#4caf50',
+        // }
     },
 })
 ReactDOM.createRoot(document.getElementById('root')!).render(

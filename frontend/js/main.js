@@ -33,6 +33,20 @@ const addTaskButton = document.getElementById("add-task-button");
 const createTaskModal = document.getElementById("create-task-modal");
 const createTaskForm = document.getElementById("create-new-task-form");
 const dayInputForm = document.getElementById("day-input-form");
+const webSocket = new WebSocket("ws://localhost:8080/ws")
+webSocket.onopen = function(event) {
+    console.log("WebSocket opened on websocket open");
+}
+const stompClient = new StompJs.Client({
+    brokerURL: 'ws://localhost:8080/ws'
+});
+stompClient.onConnect = (frame) => {
+    setConnected(true);
+    console.log('Connected: ' + frame);
+    stompClient.subscribe('/topic/greetings', (greeting) => {
+        showGreeting(JSON.parse(greeting.body).content);
+    });
+};
 // const pomodoroForm = document.getElementById("pomodoro-form");
 dayButton.addEventListener('click', () => {
     dayModal.show();
