@@ -1,0 +1,7 @@
+Since they are both running within Docker containers, you can't use localhost.
+localhost refers to the container of Grafana in the context of Grafana. But they are
+on the same network. So what you can do is use hostname to access each container within
+the network. So the way I did it was:
+URL: postgres:5432
+TSl or whatever: disable
+user and pass: postgres

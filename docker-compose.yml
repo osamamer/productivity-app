@@ -9,6 +9,8 @@ services:
     entrypoint: java -jar -Dspring.profiles.active=dev,postgres app.jar
     environment:
       - TZ=${SYSTEM_TIME_ZONE}
+    networks:
+      - monitoring
   postgres:
     container_name: db
     hostname: postgres
@@ -22,6 +24,23 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_DB=testdb
       - TZ=${SYSTEM_TIME_ZONE}
+    networks:
+      - monitoring
+    expose:
+      - "5432"
+  grafana:
+    container_name: grafana
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    depends_on:
+      - postgres
+    networks:
+      - monitoring
 volumes:
   data-3.6:
     external: true
+networks:
+  monitoring:
