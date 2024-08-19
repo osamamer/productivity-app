@@ -1,6 +1,6 @@
 import {Task} from "../interfaces/Task.tsx";
 
-type props = {task: Task, toggleTaskCompletion: (taskId: number) => void, onClick: (task) => void};
+type props = {task: Task, toggleTaskCompletion: (taskId: string) => void, onClick: (task: Task) => void};
 
 
 

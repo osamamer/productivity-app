@@ -57,6 +57,8 @@ export function DynamicFormDialog(props: props) {
     }, {} as Record<string, Yup.AnySchema>);
 
     // @ts-ignore
+    // @ts-ignore
+    // @ts-ignore
     const formik = useFormik<FormValues>({
         initialValues: props.fields.reduce((acc, field) =>
             ({ ...acc, [field.name]: '' }), {}),

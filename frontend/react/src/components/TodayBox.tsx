@@ -1,5 +1,5 @@
 import {DayEntity} from "../interfaces/DayEntity.tsx";
-import {OvalButton} from "../App.tsx";
+import {OvalButton} from "../pages/HomePage.tsx";
 import React from "react";
 
 type props = {today: DayEntity, handleOpenDialog: (dialogType: string) => void};

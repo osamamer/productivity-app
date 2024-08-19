@@ -1,7 +1,7 @@
 import {Task} from "../interfaces/Task.tsx";
 import React from "react";
 import {TaskDiv} from "./TaskDiv.tsx";
-import {OvalButton} from "../App.tsx";
+import {OvalButton} from "../pages/HomePage.tsx";
 type props = {tasks: Task[], type: string, toggleTaskCompletion: (taskId: number) => void,
     onDivClick: (task: Task) => void, handleButtonClick: (dialogType: string) => void};
 export function TaskBox(props: props) {

@@ -11,8 +11,8 @@ const fields: Field[] =  [
 ]
 type props = {
     open: boolean;
-    handleClose: (string) => void;
-    onSubmit: (string, values: Record<string, string>) => void;
+    handleClose: (arg0: string) => void;
+    onSubmit: (arg0: string, values: Record<string, string>) => void;
 }
 export function CreateTaskDialog(props: props) {
     const [open, setOpen] = useState(props.open);

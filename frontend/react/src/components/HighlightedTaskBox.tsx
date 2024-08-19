@@ -1,33 +1,45 @@
 import React from "react";
-import {Task} from "../interfaces/Task.tsx";
-import {DialogContent, styled} from "@mui/material";
+import { Task } from "../interfaces/Task.tsx";
+import { DialogContent, styled } from "@mui/material";
 import Button from "@mui/material/Button";
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
-import {PomodoroDialog} from "./PomodoroDialog.tsx";
-import {OvalButton} from "../App.tsx";
-// const OvalButton = styled(Button)({
-//     borderRadius: '50px', // Adjust the value to get the oval shape you desire
-//     padding: '10px 20px', // Adjust the padding for the desired size
-//     margin: 10
-// });
-type props = {
-    task: Task
-    handleOpenDialog: (dialogType: string) => void;
+import { PomodoroDialog } from "./PomodoroDialog.tsx";
+import { OvalButton } from "../pages/HomePage.tsx";
+
+type Props = {
+    task?: Task | null;
+    handleOpenDialog?: (dialogType: string) => void;
 };
 
-export function HighlightedTaskBox(props: props) {
+export function HighlightedTaskBox({ task, handleOpenDialog }: Props) {
+    if (!task) {
+        return null; // or return some fallback UI if task is null/undefined
+    }
 
     return (
         <div className="box container" id="highlighted-task-box">
-            <div id="highlighted-task-header" className="highlighted-task-text">{props.task.name}</div>
-            <div className="highlighted-task-text">{props.task.description}</div>
-            <OvalButton sx={{m:1}} variant="contained" color="primary" onClick={() => {
-                props.handleOpenDialog('pomodoroDialog')
-            }}>
+            <div id="highlighted-task-header" className="highlighted-task-text">
+                {task.name ?? "No Task Name"}
+            </div>
+            <div className="highlighted-task-text">
+                {task.description ?? "No Description Available"}
+            </div>
+            <OvalButton
+                sx={{ m: 1 }}
+                variant="contained"
+                color="primary"
+                onClick={() => {
+                    handleOpenDialog?.('pomodoroDialog');
+                }}
+            >
                 POMODORO SESSION
             </OvalButton>
-            <OvalButton sx={{m:1}} variant="contained" color="secondary" >
+            <OvalButton
+                sx={{ m: 1 }}
+                variant="contained"
+                color="secondary"
+            >
                 START WORK
             </OvalButton>
         </div>
