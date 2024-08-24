@@ -1,0 +1,102 @@
+import {AppBar, Box, Button, IconButton, Paper, TextField, Toolbar, Typography} from "@mui/material";
+import NightlightIcon from '@mui/icons-material/Nightlight';
+import ChatIcon from '@mui/icons-material/Chat';
+import {useNavigate} from "react-router-dom";
+import React, {useContext} from "react";
+import {ThemeContext} from "@emotion/react";
+import {TaskToCreate} from "../interfaces/TaskToCreate.tsx";
+
+type props = {onSubmit: (taskToCreate: TaskToCreate) => void,
+            darkModeFunction: (darkMode: boolean) => void,
+            darkMode};
+
+export function TopBar(props: props) {
+
+    // const {toggleTheme, isDarkMode} = useContext(ThemeContext);
+    const navigate = useNavigate();
+    const handleFeedbackClick = () => {
+        navigate('/feedback');
+    }
+    const handleLogoutClick = () => {
+        navigate('/login');
+    }
+    const [newTask, setNewTask] = React.useState("");
+    function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+        e.preventDefault();
+        if (newTask === "") return
+        console.log(newTask)
+        const taskToCreate: TaskToCreate = {
+            name: newTask.valueOf(),
+            description: "",
+            scheduledPerformDateTime: "",
+            tag: "",
+            importance: 0};
+        props.onSubmit(taskToCreate);
+        setNewTask("");
+    }
+    return (
+        <>
+            {/*<Box style={{zIndex: 1400, position: 'static', marginBottom: 10, pl: 0}}>*/}
+            <AppBar  sx={{padding: 0, backgroundColor: "background.default"}} className="appbar">
+                <Toolbar sx={{display: 'flex', padding: 0, justifyContent: 'space-between'}} className="appbar">
+                    {/*<Box sx={{*/}
+                    {/*    display: 'flex', alignItems: 'center', flexGrow: 1,*/}
+                    {/*    flexBasis: 0*/}
+                    {/*}}>*/}
+                    {/*    /!*<img src={logo} alt="logo" className="logo"/>*!/*/}
+                    {/*</Box>*/}
+
+                    <Typography
+                        sx={{ mr: 2}}
+                        variant="h4" component="div">
+                        What's on your mind?
+                    </Typography>
+                    <Box component="form" onSubmit={handleSubmit} sx={{ padding: 2 }}>
+                        <TextField
+                            value={newTask}
+                            onChange={(e) => setNewTask(e.target.value)}
+                            placeholder="Add task..."
+                            variant="standard"
+                            fullWidth
+                            sx={{
+                                boxShadow: 1, // Subtle shadow
+                            }}
+                        />
+                    </Box>
+                    {/*<div className="input-field-wrapper">*/}
+                    {/*    <form onSubmit={handleSubmit} id="task-input-form"><label htmlFor="task-input-field"></label>*/}
+                    {/*        <input type="text"*/}
+                    {/*               value={newTask}*/}
+                    {/*               onChange={(e) => setNewTask(e.target.value)}*/}
+                    {/*               id="task-input-field"*/}
+                    {/*               className="box-shadow"*/}
+                    {/*               placeholder="Add task..."/>*/}
+                    {/*    </form>*/}
+                    {/*</div>*/}
+                    <Box sx={{
+                        display: 'flex', justifyContent: 'flex-end', gap: 1, flexGrow: 1,
+                        flexBasis: 0
+                    }}>
+                        <IconButton onClick={() => {props.darkModeFunction(props.darkMode)}}>
+                            <NightlightIcon></NightlightIcon>
+                        </IconButton>
+                        <Button
+                            variant="outlined"
+                            onClick={handleFeedbackClick}
+                            startIcon={<ChatIcon/>}
+                        >
+                            Feedback
+                        </Button>
+
+                        <Button sx={{
+                            '&:hover': {
+                                color: theme => theme.palette.high.main
+                            },
+                        }} color="inherit" onClick={handleLogoutClick}>Log out</Button>
+                    </Box>
+                </Toolbar>
+            </AppBar>
+            {/*</Box>*/}
+        </>
+    )
+}

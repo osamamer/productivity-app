@@ -1,30 +1,109 @@
-import React from "react";
+// import React from "react";
+//
+// export function SideNav() {
+//     const images = import.meta.glob<{ default: string }>('../images/*.{png,jpg,jpeg,svg}', { eager: true });
+//
+//     return (
+//         <div className="sidenav">
+//             <a href="../html/index.html" className="side-button-container" title="Home">
+//                 <img className="side-button" src={images['../images/home.png'].default} alt=""/></a>
+//             <a href="../html/task-page.html" className="side-button-container" title="Tasks"><img
+//                 className="side-button"
+//                 src={images['../images/clipboard.png'].default}
+//                 alt=""/></a>
+//             <a href="../html/day-page.html" className="side-button-container" title="Day">
+//                 <img className="side-button"
+//                      src={images['../images/day.png'].default}
+//                      alt=""/></a>
+//             <a href="../html/calender-page.html" className="side-button-container" title="Calender">
+//                 <img className="side-button" src={images['../images/calendar.png'].default} alt=""/></a>
+//             <a href="../html/med-page.html" className="side-button-container" title="Meditation">
+//                 <img className="side-button"
+//                 src={images['../images/yoga.png'].default}
+//                 alt=""/></a>
+//             <a href="../html/settings-page.html" className="side-button-container" title="Statistics"><img
+//                 className="side-button" src={images['../images/stats.png'].default} alt=""/></a>
+//             <a href="../html/settings-page.html" className="side-button-container" title="Settings"><img
+//                 className="side-button" src={images['../images/settings.png'].default} alt=""/></a>
+//         </div>
+//     );
+// }
+/* eslint-disable no-unused-vars */
+import {
+    Box,
+    Drawer,
+    IconButton,
+    List,
+    ListItem,
+    ListItemIcon,
+    ListItemText,
+    Menu,
+    useMediaQuery,
+    useTheme
+} from "@mui/material";
+import {Home, Info, Settings} from "@mui/icons-material";
+import {useState} from "react";
+import home from '../assets/images/home.png';
+import clipboard from '../assets/images/clipboard.png';
+import day from '../assets/images/day.png';
+import calender from '../assets/images/calendar.png';
+import meditation from '../assets/images/yoga.png'
+import stats from '../assets/images/stats.png';
+import settings from '../assets/images/settings.png';
 
-export function SideNav() {
-    const images = import.meta.glob<{ default: string }>('../images/*.{png,jpg,jpeg,svg}', { eager: true });
+import device from '../assets/images/storage-device.png';
+import {SideMenuButton} from "./SideMenuButton.jsx";
+import {Task} from "../interfaces/Task.tsx";
+type props = {
+    onSidebarWidthChange: (number) => void;
+    openProp: boolean;
+};
+export function SideNav(props: props) {
+    const theme = useTheme();
+    const [open, setOpen] = useState(props.openProp);
+    const handleMouseEnter = () => {
+        setOpen(true);
+        props.onSidebarWidthChange(240);
+    };
 
+    // Function to handle mouse leave (close the drawer)
+    const handleMouseLeave = () => {
+        setOpen(false);
+        props.onSidebarWidthChange(75);
+
+    };
     return (
-        <div className="sidenav">
-            <a href="../html/index.html" className="side-button-container" title="Home">
-                <img className="side-button" src={images['../images/home.png'].default} alt=""/></a>
-            <a href="../html/task-page.html" className="side-button-container" title="Tasks"><img
-                className="side-button"
-                src={images['../images/clipboard.png'].default}
-                alt=""/></a>
-            <a href="../html/day-page.html" className="side-button-container" title="Day">
-                <img className="side-button"
-                     src={images['../images/day.png'].default}
-                     alt=""/></a>
-            <a href="../html/calender-page.html" className="side-button-container" title="Calender">
-                <img className="side-button" src={images['../images/calendar.png'].default} alt=""/></a>
-            <a href="../html/med-page.html" className="side-button-container" title="Meditation">
-                <img className="side-button"
-                src={images['../images/yoga.png'].default}
-                alt=""/></a>
-            <a href="../html/settings-page.html" className="side-button-container" title="Statistics"><img
-                className="side-button" src={images['../images/stats.png'].default} alt=""/></a>
-            <a href="../html/settings-page.html" className="side-button-container" title="Settings"><img
-                className="side-button" src={images['../images/settings.png'].default} alt=""/></a>
-        </div>
+        <Drawer
+            variant="permanent"
+            anchor="left"
+            open={open}
+            onMouseEnter={handleMouseEnter}
+            onMouseLeave={handleMouseLeave}
+            elevation={24}
+            sx={{
+                position: 'fixed',
+                zIndex: 1000,
+                width: open ? 240 : 75,
+                '& .MuiDrawer-paper': {
+                    width: open ? 240 : 75,
+                    overflowX: 'hidden',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    transition: 'width 0.3s ease',
+                },
+                borderRight: 0.5
+            }}
+        >
+            <List sx={{width: '100%', textAlign: 'center', mt: 8}}>
+                <SideMenuButton image={home as string} text="Home" targetPage="/" open={open}></SideMenuButton>
+                <SideMenuButton image={clipboard as string} text="Tasks" targetPage="/tasks" open={open}></SideMenuButton>
+                <SideMenuButton image={day as string} text="Day" targetPage="/day" open={open}></SideMenuButton>
+                <SideMenuButton image={calender as string} text="Calender" targetPage="/calender" open={open}></SideMenuButton>
+                <SideMenuButton image={meditation as string} text="Meditation" targetPage="/meditation" open={open}></SideMenuButton>
+                <SideMenuButton image={stats as string} text={"Statistics"} targetPage={"/statistics"} open={open}></SideMenuButton>
+                <SideMenuButton image={settings as string} text={"Settings"} targetPage={"/settings"} open={open}></SideMenuButton>
+            </List>
+        </Drawer>
     );
 }

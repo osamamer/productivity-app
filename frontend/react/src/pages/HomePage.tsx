@@ -13,29 +13,36 @@ import {DayDialog} from "../components/DayDialog.tsx";
 import {SideNav} from "../components/SideNav.tsx";
 import {TaskToCreate} from "../interfaces/TaskToCreate.tsx";
 import Button from '@mui/material/Button'
-import {styled} from "@mui/material";
+import {Box, CssBaseline, styled, useTheme} from "@mui/material";
 import {PomodoroDialog} from "../components/PomodoroDialog.tsx";
+import {TopBar} from "../components/TopBar.tsx";
+import {lightTheme} from "../Theme.tsx";
+
 export const OvalButton = styled(Button)({
     borderRadius: '50px', // Adjust the value to get the oval shape you desire
     padding: '10px 20px', // Adjust the padding for the desired size
 
 });
-export function HomePage() {
+type props = {darkMode: boolean, darkModeFunction};
+export function HomePage(props: props) {
     const ROOT_URL = "http://localhost:8080";
     const TASK_URL = ROOT_URL.concat("/api/v1/task");
     const DAY_URL = ROOT_URL.concat("/api/v1/day");
     const date = getCurrentDateFormatted();
-
+    const theme = useTheme();
     const [todayTasks, setTodayTasks] = useState<Task[]>([]);
     const [today, setToday] = useState<DayEntity>({} as DayEntity);
     const [allTasks, setAllTasks] = useState<Task[]>([]);
     const [highlightedTask, setHighlightedTask] = useState<Task>({} as Task);
+    const [sidenavOpen, setSidenavOpen] = useState(false);
+    // const [localDarkMode, setLocalDarkMode] = useState(false);
+    const [sidebarWidth, setSidebarWidth] = useState(75); // Default collapsed width
     const [dialogOpen, setDialogOpen] =
         useState<{ [key: string]: boolean }>({
-        dayDialog: false,
-        pomodoroDialog: false,
-        createTaskDialog: false,
-    });
+            dayDialog: false,
+            pomodoroDialog: false,
+            createTaskDialog: false,
+        });
 
     useEffect(() => {
         fetchTodayTasks();
@@ -65,9 +72,10 @@ export function HomePage() {
         const response = await fetch(TASK_URL);
         const allTasks = await response.json();
         setAllTasks(allTasks);
-        setHighlightedTask(allTasks[allTasks.length - 1]);
+        setHighlightedTask(allTasks[0]);
         return allTasks;
     }
+
     async function fetchTodayTasks() {
         try {
             const response = await fetch(TASK_URL.concat(`/get-non-completed-tasks/${date}`));
@@ -78,14 +86,16 @@ export function HomePage() {
             console.error('Error fetching tasks:', error);
         }
     }
-     async function fetchToday(): Promise<DayEntity> {
+
+    async function fetchToday(): Promise<DayEntity> {
         const response = await fetch(DAY_URL.concat('/get-today'));
-        const today =  await response.json();
+        const today = await response.json();
         setToday(today);
         return today;
     }
+
     async function createTask(task: TaskToCreate) {
-         await fetch(TASK_URL.concat("/create-task"), {
+        await fetch(TASK_URL.concat("/create-task"), {
             method: "POST",
             body: JSON.stringify({
                 taskName: task.name,
@@ -100,29 +110,33 @@ export function HomePage() {
         });
         await fetchTodayTasks();
         await fetchAllTasks();
-}
-    async function toggleTaskCompletion(taskId: number) {
+    }
+
+    async function toggleTaskCompletion(taskId: string) {
         await fetch(TASK_URL.concat(`/toggle-task-completion/${taskId}`), {
             method: "POST",
         });
         await fetchTodayTasks();
         await fetchAllTasks();
     }
+
     async function fetchHighestPriorityTask(): Promise<Task> {
         const response =
             await fetch(TASK_URL.concat("/get-newest-uncompleted-highest-priority-task"), {
-            method: "GET",
-        });
+                method: "GET",
+            });
         return response.json();
     }
+
     function highlightTask(task: Task): void {
         setHighlightedTask(task);
     }
+
     async function startPomodoro(taskId: string, focusDuration: number, shortBreakDuration: number,
                                  longBreakDuration: number, numFocuses: number,
                                  longBreakCooldown: number): Promise<void> {
         console.log("Attempting to start pomodoro " + taskId + " "
-        + focusDuration + " " + shortBreakDuration + " " + longBreakDuration + " " + numFocuses + " " + longBreakCooldown)
+            + focusDuration + " " + shortBreakDuration + " " + longBreakDuration + " " + numFocuses + " " + longBreakCooldown)
         await fetch(TASK_URL.concat("/start-pomodoro"), {
             method: "POST",
             body: JSON.stringify({
@@ -138,6 +152,7 @@ export function HomePage() {
             }
         });
     }
+
     async function setTodayInfo(rating: number, plan: string,
                                 summary: string): Promise<void> {
         await fetch(DAY_URL.concat("/set-today-info"), {
@@ -155,14 +170,14 @@ export function HomePage() {
 
     // Handles opening for all modals
     const handleOpen = (dialogType: string) => {
-        setDialogOpen((prev)=>
-            ({ ...prev, [dialogType]: true }));
+        setDialogOpen((prev) =>
+            ({...prev, [dialogType]: true}));
     };
     // Handles Submission for all modals
     const handleSubmit = (dialogType: string, values: Record<string, any>) => {
         console.log(`Handling ${dialogType} modal submit`)
         console.log(values.focusDuration)
-        switch(dialogType) {
+        switch (dialogType) {
             case "pomodoroDialog": {
                 startPomodoro(highlightedTask.taskId, values.focusDuration,
                     values.shortBreakDuration, values.longBreakDuration,
@@ -190,8 +205,8 @@ export function HomePage() {
     };
 // Handles closing for all modals
     const handleClose = (dialogType: string) => {
-        setDialogOpen((prev)=>
-            ({ ...prev, [dialogType]: false }));
+        setDialogOpen((prev) =>
+            ({...prev, [dialogType]: false}));
     };
     // Makes more sense to have them here since they may be used for multiple components
 
@@ -207,30 +222,56 @@ export function HomePage() {
             <DayDialog open={dialogOpen.dayDialog}
                        handleClose={handleClose}
                        onSubmit={handleSubmit}/>
-            <SideNav/>
-            <Header onSubmit={createTask}/>
-            <div id="main-container">
-                <div className="section left-section">
-                    <TaskBox tasks={todayTasks} type={"Today"}
-                             toggleTaskCompletion={toggleTaskCompletion}
-                             onDivClick={highlightTask} handleButtonClick={handleOpen}/>
-                    <TaskBox tasks={allTasks} type={"Next-week"}
-                             toggleTaskCompletion={toggleTaskCompletion}
-                             onDivClick={highlightTask} handleButtonClick={handleOpen}/>
-                </div>
+            <Box sx={{display: 'flex'}}>
+                {/*<CssBaseline/>*/}
+                <SideNav onSidebarWidthChange={setSidebarWidth} openProp={sidenavOpen}/>
+                {/*<Header onSubmit={createTask}/>*/}
+                <TopBar onSubmit={createTask} darkMode={props.darkMode} darkModeFunction={props.darkModeFunction}/>
+                <Box sx={{
+                    // width: 1,
+                    maxWidth: '100%',
+                    display: 'flex',
+                    overflow: 'hidden',
+                    justifyContent: 'center',
+                    mt: 8, flexGrow: 1, mr: 0,
+                    marginLeft: `${sidebarWidth}px`,
+                    ...(sidenavOpen && {
+                        transition: theme.transitions.create('margin', {
+                            easing: theme.transitions.easing.easeOut,
+                            duration: theme.transitions.duration.enteringScreen,
+                        }),
+                        marginLeft: 0,
+                    }),
+                    transition: theme.transitions.create('margin', {
+                        easing: theme.transitions.easing.sharp,
+                        duration: theme.transitions.duration.leavingScreen,
+                    }),
+                    padding: 3,
+                }}>
+                    {/*<div className="section left-section">*/}
+                    <Box className="section" sx={{width: '25%'}}>
+                        <TaskBox tasks={todayTasks} type={"Today"}
+                                 toggleTaskCompletion={toggleTaskCompletion}
+                                 onDivClick={highlightTask} handleButtonClick={handleOpen}/>
+                        <TaskBox tasks={allTasks} type={"Next week"}
+                                 toggleTaskCompletion={toggleTaskCompletion}
+                                 onDivClick={highlightTask} handleButtonClick={handleOpen}/>
+                    </Box>
 
-                <div className="section center-section">
-                    <HighestPriorityTaskBox tasks={allTasks}/>
-                    <HighlightedTaskBox task={highlightedTask} handleOpenDialog={handleOpen}/>
-                    <Timer/>
-                </div>
 
-                <div className="section right-section">
-                    <TodayBox today={today} handleOpenDialog={handleOpen}/>
+                    <Box className="section" sx={{width: '40%'}}>
+                        <HighestPriorityTaskBox tasks={allTasks}/>
+                        <HighlightedTaskBox task={highlightedTask} handleOpenDialog={handleOpen}/>
+                        <Timer/>
+                    </Box>
+
+                    <Box className="section" sx={{width: '40%'}}>
+                        <TodayBox today={today} handleOpenDialog={handleOpen}/>
+                    </Box>
+                </Box>
+            </Box>
 
 
-                </div>
-            </div>
         </>
     )
 }

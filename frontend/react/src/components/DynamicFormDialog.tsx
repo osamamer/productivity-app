@@ -5,7 +5,7 @@ import {
     DialogContent,
     DialogTitle,
     Button,
-    TextField,
+    TextField, useTheme,
 } from '@mui/material';
 import { useFormik, FormikHelpers } from 'formik';
 import * as Yup from 'yup';
@@ -22,6 +22,7 @@ type props = {
 }
 
 export function DynamicFormDialog(props: props) {
+    const theme = useTheme();
     const [open, setOpen] = useState(props.open);
     const validationSchema = props.fields.reduce((acc, field) => {
         if (field.type === 'number') {

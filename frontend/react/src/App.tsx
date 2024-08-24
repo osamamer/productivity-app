@@ -28,7 +28,7 @@ function App() {
             <CssBaseline/>
             <Router>
                 <Routes>
-                    <Route exact path="/" element={<HomePage/>}/>
+                    <Route exact path="/" element={<HomePage darkMode={darkMode} darkModeFunction={toggleTheme}/>}/>
                 </Routes>
             </Router>
         </ThemeProvider>

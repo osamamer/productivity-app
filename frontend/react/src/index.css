@@ -1,8 +1,9 @@
 #root {
-  max-width: 1280px;
+  /*max-width: 1280px;*/
   margin: 0;
   padding: 0;
   text-align: center;
+    max-width: 100%;
 }
 
 body {
@@ -28,7 +29,7 @@ body {
 }
 * {
     font-family: Raleway, serif;
-    color: black;
+    /*color: black;*/
     /*background-color: white;*/
 }
 .container {
@@ -101,18 +102,21 @@ body {
 
 .section {
     display: flex;
-    padding: 35px;
+    padding: 10px 25px 25px 25px;
     /*box-sizing: border-box;*/
     /*height: 100%;*/
-    background: white;
+    /*background: white;*/
     flex-direction: column;
-    border-right: 1px solid gray;
+    /*border-right: 1px solid gray;*/
     gap: 2em;
+    overflow: auto;
+    height: 100vh;
+    max-height: 100vh;
 }
 
 .left-section {
     width: 25%; /* Set width for left section */
-    padding: 35px 25px 25px 25px;
+    padding: 10px 25px 25px 25px;
     /*background-color: #ddd;*/
     overflow: scroll;
 }
@@ -120,13 +124,13 @@ body {
 .center-section {
     flex: 1 1 35%; /* Takes up twice the space of other sections */
     max-width: 40%;
-    padding: 35px 25px 25px 25px;
+    /*padding: 35px 25px 25px 25px;*/
     /*background-color: #eee;*/
 }
 
 .right-section {
     flex: 1 1 auto;
-    padding: 35px 25px 25px 25px;
+    /*padding: 35px 25px 25px 25px;*/
     /*width: 20%; !* Set fixed width for right section *!*/
     /*background-color: #ECCECE   ;*/
 }
@@ -148,7 +152,7 @@ body {
 }
 
 h1 {
-    color: black;
+    /*color: black;*/
     font-weight: normal;
 }
 
@@ -158,18 +162,18 @@ h1 {
     /*margin-top: 50px;*/
     padding: 10px;
     /*background-color: var(--lavender);*/
-    border: 3px;
+    /*border: 3px;*/
     border-radius: 20px;
     overflow: hidden;
     box-shadow: rgba(17, 17, 26, 0.1) 0px 4px 16px 0px, rgba(17, 17, 26, 0.05) 0px 8px 32px 0px;
-    border: 0.1px solid #FEFEFE;
+    /*border: 0.1px solid #FEFEFE;*/
 }
 .box:hover {
     overflow-y: scroll;
 }
 .box-shadow {
     box-shadow: rgba(17, 17, 26, 0.1) 0px 4px 16px 0px, rgba(17, 17, 26, 0.05) 0px 8px 32px 0px;
-    border: 0.1px solid #FEFEFE;
+    /*border: 0.1px solid #FEFEFE;*/
 }
 .box-header {
     text-align: center;
@@ -182,33 +186,35 @@ h1 {
     width: 90%;
     display: flex;
     flex-direction: column;
-    color: black;
-    background-color: white;
+    /*color: black;*/
+    /*background-color: white;*/
     text-align: left;
     font-size: 20px;
     overflow: scroll;
     padding: 20px 10px 20px 20px;
     max-height: 300px;
+    min-height: max-content;
 
 }
 #today-tasks-container {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    border-radius: 20px;
+    /*border-radius: 20px;*/
+    /*min-height: 1000px;*/
 }
 #Next-week-tasks-container {
     margin-bottom: 50px;
 }
 .task-div {
-    color: black;
+    /*color: black;*/
     min-height: 30px;
     max-height: 100px;
     /*min-width: 200px;*/
     flex: 1 0 auto;
     display: flex;
     align-items: center;
-    background-color: white;
+    /*background-color: white;*/
     text-align: justify;
     padding: 5px 5px 5px 8px;
     margin: 10px 0 10px 0;
@@ -218,7 +224,21 @@ h1 {
     text-overflow: ellipsis;
 
 }
-.task-div::before {
+/*.task-div::before {*/
+/*    display: block;*/
+/*    content: "";*/
+/*    min-width: 12px;*/
+/*    min-height: 12px;*/
+/*    height: 12px;*/
+/*    width: 12px;*/
+/*    border-radius: 50%;*/
+/*    background-color: var(--prioritycolor, var(--priorityblue));*/
+/*    z-index: 1000;*/
+/*    !*left: -25px;*!*/
+/*    !*bottom: 25px;*!*/
+/*    position: relative;*/
+/*}*/
+.circle {
     display: block;
     content: "";
     min-width: 12px;
@@ -226,11 +246,7 @@ h1 {
     height: 12px;
     width: 12px;
     border-radius: 50%;
-    background-color: var(--prioritycolor, var(--priorityblue));
-    z-index: 100;
-    left: -25px;
-    bottom: 25px;
-    position: relative;
+    z-index: 10000;
 }
 .task-div-text {
     text-overflow: ellipsis;
@@ -254,10 +270,23 @@ h1 {
     margin-right: 10px;
 }
 
+.logo {
+    height: 2em;
+    /*padding: 1.5em;*/
+    will-change: filter;
+    transition: filter 300ms;
+}
+.logo:hover {
+    filter: drop-shadow(0 0 2em #646cffaa);
+}
+.icon {
+    filter: brightness(0) invert(0.7);
+}
+
 /*------------------------HIGHLIGHTED TASK BOX-----------------------------------*/
 #highlighted-task-box {
     display: flex;
-    color: black;
+    /*color: black;*/
     text-align: center;
     align-items: center;
     /*visibility: hidden;*/
@@ -265,7 +294,7 @@ h1 {
     border-radius: 20px;
     box-shadow: rgba(17, 17, 26, 0.1) 0px 4px 16px 0px, rgba(17, 17, 26, 0.05) 0px 8px 32px 0px;
     text-overflow: ellipsis;
-    border: 0.1px solid #FEFEFE;
+    /*border: 0.1px solid #FEFEFE;*/
 }
 
 
@@ -273,7 +302,7 @@ h1 {
 #timer-div {
     display: none;
     text-align: center;
-    color: black;
+    /*color: black;*/
     min-width: 80px;
     flex: 0 1 auto;
     height: 50px;
@@ -310,14 +339,14 @@ h1 {
 
 #highest-priority-task-box {
     display: flex;
-    color: black;
+    /*color: black;*/
     text-align: center;
     align-items: center;
     padding: 15px;
     border-radius: 20px;
     box-shadow: rgba(17, 17, 26, 0.1) 0px 4px 16px 0px, rgba(17, 17, 26, 0.05) 0px 8px 32px 0px;
     text-overflow: ellipsis;
-    border: 2px solid var(--priorityred);
+    /*border: 2px solid var(--priorityred);*/
 ;
 }
 /*#priority-task-text::before {*/
@@ -357,7 +386,7 @@ h1 {
     border-radius: 20px;
 }
 .task-div:hover {
-    background-color: var(--lemongray);
+    /*background-color: var(--lemongray);*/
 }
 .grid-col-span-4 {
     grid-column: span 4;
@@ -387,8 +416,8 @@ h1 {
 
 .context-menu {
     border-width: 1px;
-    color: black;
-    background-color: white;
+    /*color: black;*/
+    /*background-color: white;*/
     visibility: hidden;
     position: absolute;
     width: 100px;
@@ -492,7 +521,7 @@ a {
 }
 .button-class {
     /*background-color: var(--darkerlavender);*/
-    color: black;
+    /*color: black;*/
     border-width: 0;
     border-radius: 3px;
 }
@@ -505,12 +534,12 @@ a {
     margin-bottom: 15px;
 }
 a {
-    color: black;
+    /*color: black;*/
     text-underline: none;
 }
 #day-box {
     flex: 0 1 200px;
-    color: black;
+    /*color: black;*/
     padding: 15px;
     flex-wrap: wrap;
 }
