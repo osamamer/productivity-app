@@ -21,7 +21,17 @@ export function HighestPriorityTaskBox(props: props) {
             // TODO: Handle case of no tasks (currently throws error and prevents whole site from rendering)
             setHighestPriorityTask(task)});
     }, [props.tasks]);
+    let importance;
 
+    if (!(highestPriorityTask) || highestPriorityTask.importance <= 3) {
+        importance = "low";
+    } else if (3 < highestPriorityTask.importance && highestPriorityTask.importance <= 7) {
+        importance = "medium";
+
+    } else {
+        importance = "high";
+    }
+    let color = importance;
     return (
         // <div className="box container" id="highest-priority-task-box">
         //     <div id="priority-task-text" className="highlighted-task-text">
@@ -38,7 +48,7 @@ export function HighestPriorityTaskBox(props: props) {
             boxShadow: 3,
             borderRadius: 5,
         }}>             <Typography>You should probably get to this . . . </Typography>
-            <Typography sx={{color: 'high.main'}}>{highestPriorityTask.name}</Typography>
+            <Typography sx={{color: `${color}.main`}}>{highestPriorityTask.name}</Typography>
         </Card>
     );
 }

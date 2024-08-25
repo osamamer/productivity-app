@@ -16,8 +16,8 @@ export function TaskBox(props: props) {
     const isTodayBox = props.type === "Today";
     return (
         <Card className="box-shadow box" sx={{
-            display: 'flex', gap: 1, px: 4, py: 2, minHeight: 200, direction: 'column',
-            flex: isTodayBox ? '0 0 1' : '0 0 0 ',
+            display: 'flex', gap: 1, px: 2, py: 2, minHeight: 200, direction: 'column',
+            flex: isTodayBox ? '0 0 1' : '0 0 1 ',
             '&:hover': {
                 transform: 'scale(1.05)',
                 boxShadow: 6,
@@ -25,11 +25,16 @@ export function TaskBox(props: props) {
             transition: 'transform 0.3s, box-shadow 0.3s',
             boxShadow: 3,
             borderRadius: 5,
+            maxHeight: '80%',
         }}>
-            <Typography variant="h4">{`${props.type}'s tasks`}</Typography>
-            <Button sx={{width: 1 / 2, position: 'sticky'}} variant="outlined" color="primary" onClick={() => {
-                props.handleButtonClick('createTaskDialog')
-            }}>New task</Button>
+            {/*<Typography variant="h4">{`${props.type}'s tasks`}</Typography>*/}
+            <Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', pr: 1}}>
+                <Typography variant="h4" sx={{textAlign: 'left'}}>Tasks</Typography>
+                <Button sx={{width: 1 / 2, position: 'sticky', alignSelf: 'flex-end'}} variant="outlined" color="primary" onClick={() => {
+                    props.handleButtonClick('createTaskDialog')
+                }}>New task</Button>
+            </Box>
+
             {!tasksEmpty && <List>
                 {props.tasks.map((task: Task) => (
                     <TaskDiv task={task} toggleTaskCompletion={props.toggleTaskCompletion} onClick={props.onDivClick}/>

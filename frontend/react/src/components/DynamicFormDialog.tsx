@@ -66,8 +66,6 @@ export function DynamicFormDialog(props: props) {
         validationSchema: Yup.object(validationSchema),
         onSubmit: (values: Record<string, string>, { setSubmitting }:
             FormikHelpers<Record<string, string>>) => {
-            console.log("Dialog type: " + props.dialogType)
-            console.log(values)
             props.onSubmit(props.dialogType, values);
             setSubmitting(false);
             props.handleClose(props.dialogType);
@@ -80,7 +78,7 @@ export function DynamicFormDialog(props: props) {
         }
     }, [props.open]);
     return (
-        <Dialog open={open} onClose={props.handleClose}>
+        <Dialog open={open} onClose={props.handleClose} sx={{minHeight: 800, minWidth: 800}}>
             <DialogTitle>{props.dialogTitle}</DialogTitle>
             <DialogContent>
                 <form onSubmit={formik.handleSubmit}>
@@ -91,6 +89,7 @@ export function DynamicFormDialog(props: props) {
                                     formik.values[field.name] !== ""
                                         ? { borderBottomColor: "blue" }
                                         : { borderBottomColor: "grey" },
+                                flex: '1 0 auto'
                             }}
                             key={field.name}
                             margin="dense"

@@ -17,7 +17,6 @@ import {Box, CssBaseline, styled, useTheme} from "@mui/material";
 import {PomodoroDialog} from "../components/PomodoroDialog.tsx";
 import {TopBar} from "../components/TopBar.tsx";
 import {lightTheme} from "../Theme.tsx";
-
 export const OvalButton = styled(Button)({
     borderRadius: '50px', // Adjust the value to get the oval shape you desire
     padding: '10px 20px', // Adjust the padding for the desired size
@@ -250,9 +249,9 @@ export function HomePage(props: props) {
                 }}>
                     {/*<div className="section left-section">*/}
                     <Box className="section" sx={{width: '25%'}}>
-                        <TaskBox tasks={todayTasks} type={"Today"}
-                                 toggleTaskCompletion={toggleTaskCompletion}
-                                 onDivClick={highlightTask} handleButtonClick={handleOpen}/>
+                        {/*<TaskBox tasks={todayTasks} type={"Today"}*/}
+                        {/*         toggleTaskCompletion={toggleTaskCompletion}*/}
+                        {/*         onDivClick={highlightTask} handleButtonClick={handleOpen}/>*/}
                         <TaskBox tasks={allTasks} type={"Next week"}
                                  toggleTaskCompletion={toggleTaskCompletion}
                                  onDivClick={highlightTask} handleButtonClick={handleOpen}/>

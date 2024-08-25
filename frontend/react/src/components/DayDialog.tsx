@@ -15,11 +15,9 @@ type props = {
 }
 export function DayDialog(props: props) {
     const [open, setOpen] = useState(props.open);
-    console.log("IM HERE")
 
 
     useEffect(() => {
-        console.log("IM HERE in useEffect")
         if (props.open !== open) {
             setOpen(props.open);
         }
