@@ -8,7 +8,7 @@ import {TaskToCreate} from "../interfaces/TaskToCreate.tsx";
 
 type props = {onSubmit: (taskToCreate: TaskToCreate) => void,
             darkModeFunction: (darkMode: boolean) => void,
-            darkMode};
+            darkMode: boolean};
 
 export function TopBar(props: props) {
 

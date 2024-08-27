@@ -276,12 +276,9 @@ h1 {
     will-change: filter;
     transition: filter 300ms;
 }
-.logo:hover {
-    filter: drop-shadow(0 0 2em #646cffaa);
-}
-.icon {
-    filter: brightness(0) invert(0.7);
-}
+/*.icon {*/
+/*    filter: brightness(0) invert(0.7);*/
+/*}*/
 
 /*------------------------HIGHLIGHTED TASK BOX-----------------------------------*/
 #highlighted-task-box {

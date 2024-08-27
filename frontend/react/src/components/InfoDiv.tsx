@@ -4,8 +4,9 @@ import {Box, Card, Checkbox, Paper, Typography} from "@mui/material";
 type props = {
     type: string,
     image: string;
-    info: string,
-    onClick: () => void
+    info: string;
+    onClick: () => void;
+    darkMode: boolean;
 };
 
 
@@ -33,34 +34,37 @@ export function InfoDiv(props: props) {
             // props.onClick(props.task)
         }
         }>
-            <Box sx={{ borderColor: 'primary.main', px: 1, mr: 1}}>
-                <img className="logo icon" src={props.image} alt={props.type}/>
-            </Box>
-            {/*<Checkbox size="small" checked={props.task.completed}*/}
-            {/*          onChange={() => {*/}
-            {/*              props.toggleTaskCompletion(props.task.taskId)*/}
-            {/*          }*/}
-            {/*          }>*/}
+            <Box sx={{borderColor: 'primary.main', px: 1, mr: 1}}>
+                <img className="logo icon" src={props.image} alt={props.type} style={{
+                    filter: props.darkMode
+                        ? 'brightness(0) invert(1)'  // Light icon on dark background
+                        : 'brightness(0) invert(0)' }}/>
+                    </Box>
+                {/*<Checkbox size="small" checked={props.task.completed}*/}
+                {/*          onChange={() => {*/}
+                {/*              props.toggleTaskCompletion(props.task.taskId)*/}
+                {/*          }*/}
+                {/*          }>*/}
 
-            {/*</Checkbox>*/}
-            {/*<label>*/}
-            {/*    <input*/}
-            {/*        type="checkbox"*/}
-            {/*        className="task-button"*/}
-            {/*        checked={props.task.completed}*/}
-            {/*        onChange={() => {*/}
-            {/*            props.toggleTaskCompletion(props.task.taskId)}*/}
-            {/*        }*/}
-            {/*    />*/}
-            {/*</label>*/}
-            {/*<Typography sx={{flex: '1 1 auto'}} className="task-div-text">{props.info}</Typography>*/}
-            <Typography sx={{flex: '1 1 auto', pr: 1}}
-                variant="body1"
-                color={isPlaceholder ? 'textSecondary' : 'textPrimary'}
-                style={{ fontStyle: isPlaceholder ? 'italic' : 'normal' }}
-            >
-                {props.info || `Today's ${props.type}`}
-            </Typography>
+                {/*</Checkbox>*/}
+                {/*<label>*/}
+                {/*    <input*/}
+                {/*        type="checkbox"*/}
+                {/*        className="task-button"*/}
+                {/*        checked={props.task.completed}*/}
+                {/*        onChange={() => {*/}
+                {/*            props.toggleTaskCompletion(props.task.taskId)}*/}
+                {/*        }*/}
+                {/*    />*/}
+                {/*</label>*/}
+                {/*<Typography sx={{flex: '1 1 auto'}} className="task-div-text">{props.info}</Typography>*/}
+                    <Typography sx={{flex: '1 1 auto', pr: 1}}
+                     variant="body1"
+                     color={isPlaceholder ? 'textSecondary' : 'textPrimary'}
+                     style={{fontStyle: isPlaceholder ? 'italic' : 'normal'}}
+                >
+                    {props.info || `Today's ${props.type}`}
+                </Typography>
         </Card>
     );
 }

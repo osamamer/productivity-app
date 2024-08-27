@@ -6,13 +6,13 @@ import Button from "@mui/material/Button";
 import {Box, Card, List, Typography} from "@mui/material";
 
 type props = {
-    tasks: Task[], type: string, toggleTaskCompletion: (taskId: string) => void,
+    allTasks: Task[], todayTasks: Task[], type: string, toggleTaskCompletion: (taskId: string) => void,
     onDivClick: (task: Task) => void, handleButtonClick: (dialogType: string) => void
 };
 
 export function TaskBox(props: props) {
-    const tasksLength = props.tasks.length;
-    const tasksEmpty = tasksLength === 0;
+    const noTasks = props.allTasks.length === 0;
+    const noTodayTasks = props.allTasks.length === 0;
     const isTodayBox = props.type === "Today";
     return (
         <Card className="box-shadow box" sx={{
@@ -30,17 +30,36 @@ export function TaskBox(props: props) {
             {/*<Typography variant="h4">{`${props.type}'s tasks`}</Typography>*/}
             <Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', pr: 1}}>
                 <Typography variant="h4" sx={{textAlign: 'left'}}>Tasks</Typography>
-                <Button sx={{width: 1 / 2, position: 'sticky', alignSelf: 'flex-end'}} variant="outlined" color="primary" onClick={() => {
+                <Button sx={{width: 1 / 2, position: 'sticky', alignSelf: 'flex-end'}} variant="outlined"
+                        color="primary" onClick={() => {
                     props.handleButtonClick('createTaskDialog')
                 }}>New task</Button>
             </Box>
-
-            {!tasksEmpty && <List>
-                {props.tasks.map((task: Task) => (
-                    <TaskDiv task={task} toggleTaskCompletion={props.toggleTaskCompletion} onClick={props.onDivClick}/>
-                ))}
-            </List>}
-            {tasksEmpty && <Typography variant="h5">No tasks.</Typography>}
+            {!noTodayTasks
+                && <List>
+                    {props.todayTasks.map((task: Task) => (
+                        <TaskDiv key={task.taskId} task={task} toggleTaskCompletion={props.toggleTaskCompletion}
+                                 onClick={props.onDivClick}/>
+                    ))}
+                </List>}
+            {!noTasks && (
+                <>
+                    <Typography variant="h5" sx={{textAlign: 'left', mt: 1}}>
+                        Leftovers
+                    </Typography>
+                    <List>
+                        {props.allTasks.map((task: Task) => (
+                            <TaskDiv
+                                key={task.taskId}
+                                task={task}
+                                toggleTaskCompletion={props.toggleTaskCompletion}
+                                onClick={props.onDivClick}
+                            />
+                        ))}
+                    </List>
+                </>
+            )}
+            {noTasks && <Typography variant="h6">Nothing to do. Enjoy!</Typography>}
 
 
         </Card>

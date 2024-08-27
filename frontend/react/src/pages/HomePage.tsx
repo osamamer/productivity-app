@@ -22,7 +22,7 @@ export const OvalButton = styled(Button)({
     padding: '10px 20px', // Adjust the padding for the desired size
 
 });
-type props = {darkMode: boolean, darkModeFunction};
+type props = {darkMode: boolean, darkModeFunction: (darkMode: boolean) => void};
 export function HomePage(props: props) {
     const ROOT_URL = "http://localhost:8080";
     const TASK_URL = ROOT_URL.concat("/api/v1/task");
@@ -223,7 +223,7 @@ export function HomePage(props: props) {
                        onSubmit={handleSubmit}/>
             <Box sx={{display: 'flex'}}>
                 {/*<CssBaseline/>*/}
-                <SideNav onSidebarWidthChange={setSidebarWidth} openProp={sidenavOpen}/>
+                <SideNav onSidebarWidthChange={setSidebarWidth} openProp={sidenavOpen} darkMode={props.darkMode}/>
                 {/*<Header onSubmit={createTask}/>*/}
                 <TopBar onSubmit={createTask} darkMode={props.darkMode} darkModeFunction={props.darkModeFunction}/>
                 <Box sx={{
@@ -252,9 +252,9 @@ export function HomePage(props: props) {
                         {/*<TaskBox tasks={todayTasks} type={"Today"}*/}
                         {/*         toggleTaskCompletion={toggleTaskCompletion}*/}
                         {/*         onDivClick={highlightTask} handleButtonClick={handleOpen}/>*/}
-                        <TaskBox tasks={allTasks} type={"Next week"}
+                        <TaskBox allTasks={allTasks} todayTasks={todayTasks} type={"Next week"}
                                  toggleTaskCompletion={toggleTaskCompletion}
-                                 onDivClick={highlightTask} handleButtonClick={handleOpen}/>
+                                 onDivClick={highlightTask} handleButtonClick={handleOpen} />
                     </Box>
 
 
@@ -265,7 +265,7 @@ export function HomePage(props: props) {
                     </Box>
 
                     <Box className="section" sx={{width: '40%'}}>
-                        <TodayBox today={today} handleOpenDialog={handleOpen}/>
+                        <TodayBox today={today} handleOpenDialog={handleOpen} darkMode={props.darkMode}/>
                     </Box>
                 </Box>
             </Box>

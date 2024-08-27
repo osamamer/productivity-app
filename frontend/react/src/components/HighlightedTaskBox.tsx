@@ -14,7 +14,7 @@ type props = {
 
 export function HighlightedTaskBox(props: props) {
     let importance;
-
+    console.log(props.task)
     if (!(props.task) || props.task.importance <= 3) {
         importance = "low";
     } else if (3 < props.task.importance && props.task.importance <= 7) {
@@ -26,9 +26,11 @@ export function HighlightedTaskBox(props: props) {
     let color = importance;
 
     if (!props.task) {
-        return null; // or return some fallback UI if task is null/undefined
+        return null;
     }
 
+    // @ts-ignore
+    // @ts-ignore
     return (
         <Card className="box-shadow box" sx={{
             display: 'flex', gap: 1, px: 4, py: 2, minHeight: 200, direction: 'column',
@@ -57,6 +59,7 @@ export function HighlightedTaskBox(props: props) {
             >
                 POMODORO SESSION
             </Button>
+
             <Button
                 sx={{m: 1, width: 1/2, alignSelf: 'center'}}
                 variant="contained"
