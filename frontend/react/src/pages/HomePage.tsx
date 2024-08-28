@@ -212,6 +212,13 @@ export function HomePage(props: props) {
     // const [highestPriorityTask, setHighestPriorityTask] = useState<Task>({} as Task);
 
 
+    async function completeTask(taskId: string) {
+        await fetch(TASK_URL.concat(`/complete-task/${taskId}`), {
+            method: "POST"});
+        fetchTodayTasks();
+        fetchAllTasks();
+    }
+
     return (
         <>
             <PomodoroDialog open={dialogOpen.pomodoroDialog}
@@ -260,7 +267,7 @@ export function HomePage(props: props) {
 
                     <Box className="section" sx={{width: '40%'}}>
                         <HighestPriorityTaskBox tasks={allTasks}/>
-                        <HighlightedTaskBox task={highlightedTask} handleOpenDialog={handleOpen}/>
+                        <HighlightedTaskBox task={highlightedTask} handleOpenDialog={handleOpen} handleCompleteTask={completeTask}/>
                         <Timer/>
                     </Box>
 

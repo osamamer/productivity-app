@@ -16,7 +16,7 @@ export function TaskBox(props: props) {
     const isTodayBox = props.type === "Today";
     return (
         <Card className="box-shadow box" sx={{
-            display: 'flex', gap: 1, px: 2, py: 2, minHeight: 200, direction: 'column',
+            display: 'flex', gap: 1, px: 2, py: 2, minHeight: 400, direction: 'column',
             flex: isTodayBox ? '0 0 1' : '0 0 1 ',
             '&:hover': {
                 transform: 'scale(1.05)',

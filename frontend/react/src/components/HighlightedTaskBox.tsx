@@ -2,14 +2,12 @@ import React from "react";
 import {Task} from "../interfaces/Task.tsx";
 import {Box, Card, DialogContent, styled, Typography} from "@mui/material";
 import Button from "@mui/material/Button";
-import Dialog from '@mui/material/Dialog';
-import DialogTitle from '@mui/material/DialogTitle';
-import {PomodoroDialog} from "./PomodoroDialog.tsx";
-import {OvalButton} from "../pages/HomePage.tsx";
-
+import CheckIcon from '@mui/icons-material/Check';
+import AdjustIcon from '@mui/icons-material/Adjust';
 type props = {
     task?: Task | null;
     handleOpenDialog?: (dialogType: string) => void;
+    handleCompleteTask: (taskId: string) => void;
 };
 
 export function HighlightedTaskBox(props: props) {
@@ -56,16 +54,22 @@ export function HighlightedTaskBox(props: props) {
                 onClick={() => {
                     props.handleOpenDialog?.('pomodoroDialog');
                 }}
+                endIcon={<AdjustIcon/>}
             >
-                POMODORO SESSION
+                Focus Session
             </Button>
 
             <Button
                 sx={{m: 1, width: 1/2, alignSelf: 'center'}}
                 variant="contained"
                 color={color}
+                endIcon={<CheckIcon/>}
+                onClick = {() => {
+                    if ("taskId" in props.task) {
+                        props.handleCompleteTask(props.task.taskId)
+                    }}}
             >
-                START WORK
+                Complete Task
             </Button>
         </Card>
         // <div className="box container" id="highlighted-task-box">

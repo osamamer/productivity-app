@@ -1,4 +1,4 @@
-import {AppBar, Box, Button, IconButton, Paper, TextField, Toolbar, Typography} from "@mui/material";
+import {AppBar, Box, Button, IconButton, Paper, TextField, Toolbar, Typography, useTheme} from "@mui/material";
 import NightlightIcon from '@mui/icons-material/Nightlight';
 import ChatIcon from '@mui/icons-material/Chat';
 import {useNavigate} from "react-router-dom";
@@ -11,7 +11,7 @@ type props = {onSubmit: (taskToCreate: TaskToCreate) => void,
             darkMode: boolean};
 
 export function TopBar(props: props) {
-
+    const theme = useTheme();
     // const {toggleTheme, isDarkMode} = useContext(ThemeContext);
     const navigate = useNavigate();
     const handleFeedbackClick = () => {
@@ -47,6 +47,7 @@ export function TopBar(props: props) {
                     {/*</Box>*/}
 
                     <Typography
+                        color="text.primary"
                         sx={{ mr: 2}}
                         variant="h4" component="div">
                         What's on your mind?
@@ -58,21 +59,8 @@ export function TopBar(props: props) {
                             placeholder="Add task..."
                             variant="standard"
                             fullWidth
-                            sx={{
-                                boxShadow: 1, // Subtle shadow
-                            }}
                         />
                     </Box>
-                    {/*<div className="input-field-wrapper">*/}
-                    {/*    <form onSubmit={handleSubmit} id="task-input-form"><label htmlFor="task-input-field"></label>*/}
-                    {/*        <input type="text"*/}
-                    {/*               value={newTask}*/}
-                    {/*               onChange={(e) => setNewTask(e.target.value)}*/}
-                    {/*               id="task-input-field"*/}
-                    {/*               className="box-shadow"*/}
-                    {/*               placeholder="Add task..."/>*/}
-                    {/*    </form>*/}
-                    {/*</div>*/}
                     <Box sx={{
                         display: 'flex', justifyContent: 'flex-end', gap: 1, flexGrow: 1,
                         flexBasis: 0
@@ -89,6 +77,7 @@ export function TopBar(props: props) {
                         </Button>
 
                         <Button sx={{
+                            color: 'text.primary',
                             '&:hover': {
                                 color: theme => theme.palette.high.main
                             },

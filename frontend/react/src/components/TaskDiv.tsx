@@ -12,13 +12,16 @@ function Circle() {
 
 export function TaskDiv(props: props) {
     let importance;
+    let title;
     if (props.task.importance <= 3) {
         importance = "low";
+        title = "Low importance task";
     } else if (3 < props.task.importance && props.task.importance <= 7) {
         importance = "medium";
+        title = "Medium importance task";
     } else {
         importance = "high";
-
+        title = "High importance task";
     }
     const divStyle = {
         display: 'block',
@@ -70,8 +73,8 @@ export function TaskDiv(props: props) {
             {/*        }*/}
             {/*    />*/}
             {/*</label>*/}
-            <Typography className="task-div-text">{props.task.name}</Typography>
-            <div className="circle" style={divStyle}></div>
+            <Typography className="task-div-text" style={{color: props.task.completed? "gray" : "inherit"}}>{props.task.name}</Typography>
+            <div className="circle" title={title} style={divStyle}></div>
         </Card>
     );
 }
