@@ -42,10 +42,10 @@ export function SideMenuButton(props: props) {
                     src={props.image}
                     alt="icon"
                     style={{
-                        height: 'auto', // Maintain the aspect ratio
-                        width: '100%',  // Ensure the width fits the container
-                        maxHeight: '100%', // Prevent the image from exceeding the container's height
-                        objectFit: 'contain', // Prevent stretching by containing the image within the bounds
+                        height: 'auto',
+                        width: '100%',
+                        maxHeight: '100%',
+                        objectFit: 'contain',
                         filter: props.darkMode
                             ? 'brightness(0) invert(1)'  // Light icon on dark background
                             : 'brightness(0) invert(0)', // Dark icon on light background

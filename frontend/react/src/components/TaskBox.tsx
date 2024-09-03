@@ -1,18 +1,26 @@
 import {Task} from "../interfaces/Task.tsx";
 import React from "react";
 import {TaskDiv} from "./TaskDiv.tsx";
-import {OvalButton} from "../pages/HomePage.tsx";
 import Button from "@mui/material/Button";
 import {Box, Card, List, Typography} from "@mui/material";
 
 type props = {
-    allTasks: Task[], todayTasks: Task[], type: string, toggleTaskCompletion: (taskId: string) => void,
-    onDivClick: (task: Task) => void, handleButtonClick: (dialogType: string) => void
+    pastTasks: Task[],
+    todayTasks: Task[],
+    futureTasks: Task[],
+    type: string,
+    toggleTaskCompletion: (taskId: string) => void,
+    onDivClick: (task: Task) => void,
+    handleButtonClick: (dialogType: string) => void
 };
 
 export function TaskBox(props: props) {
-    const noTasks = props.allTasks.length === 0;
-    const noTodayTasks = props.allTasks.length === 0;
+    const todayTasksExist = Array.isArray(props.todayTasks) && props.todayTasks.length > 0;
+    const futureTasksExist = Array.isArray(props.futureTasks) && props.futureTasks.length > 0;
+    const pastTasksExist = Array.isArray(props.pastTasks) && props.pastTasks.length > 0;
+    const tasksExist = todayTasksExist || futureTasksExist || pastTasksExist;
+
+
     const isTodayBox = props.type === "Today";
     return (
         <Card className="box-shadow box" sx={{
@@ -35,20 +43,27 @@ export function TaskBox(props: props) {
                     props.handleButtonClick('createTaskDialog')
                 }}>New task</Button>
             </Box>
-            {!noTodayTasks
-                && <List>
-                    {props.todayTasks.map((task: Task) => (
-                        <TaskDiv key={task.taskId} task={task} toggleTaskCompletion={props.toggleTaskCompletion}
-                                 onClick={props.onDivClick}/>
-                    ))}
-                </List>}
-            {!noTasks && (
+            {todayTasksExist
+                && (
+                    <>
+                        <Typography variant="h5" sx={{textAlign: 'left', mt: 1}}>
+                            For today
+                        </Typography>
+                        <List>
+                            {props.todayTasks.map((task: Task) => (
+                                <TaskDiv key={task.taskId} task={task} toggleTaskCompletion={props.toggleTaskCompletion}
+                                         onClick={props.onDivClick}/>
+                            ))}
+                        </List>
+                    </>
+                )}
+            {pastTasksExist && (
                 <>
                     <Typography variant="h5" sx={{textAlign: 'left', mt: 1}}>
                         Leftovers
                     </Typography>
                     <List>
-                        {props.allTasks.map((task: Task) => (
+                        {props.pastTasks.map((task: Task) => (
                             <TaskDiv
                                 key={task.taskId}
                                 task={task}
@@ -59,7 +74,24 @@ export function TaskBox(props: props) {
                     </List>
                 </>
             )}
-            {noTasks && <Typography variant="h6">Nothing to do. Enjoy!</Typography>}
+            {futureTasksExist && (
+                <>
+                    <Typography variant="h5" sx={{textAlign: 'left', mt: 1}}>
+                        Coming up
+                    </Typography>
+                    <List>
+                        {props.futureTasks.map((task: Task) => (
+                            <TaskDiv
+                                key={task.taskId}
+                                task={task}
+                                toggleTaskCompletion={props.toggleTaskCompletion}
+                                onClick={props.onDivClick}
+                            />
+                        ))}
+                    </List>
+                </>
+            )}
+            {!tasksExist && <Typography variant="h6">Nothing to do. Enjoy!</Typography>}
 
 
         </Card>

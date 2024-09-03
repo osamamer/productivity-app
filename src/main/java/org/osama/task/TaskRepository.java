@@ -9,16 +9,31 @@ import java.util.List;
 public interface TaskRepository extends JpaRepository<Task, String> {
     @NotNull
     List<Task> findAll();
+
     Task findTaskByTaskId(String taskId);
+
     List<Task> findAllByName(String name);
+
     List<Task> findAllByParentId(String taskId);
+
     List<Task> findAllByCompletedIsFalseOrderByCreationDateTimeDesc();
+
     List<Task> findAllByCreationDateOrderByCreationDateTimeDesc(LocalDate creationDate);
+
     Task findFirstByCompletedIsFalseOrderByImportanceDescCreationDateTimeDesc();
+
     List<Task> findAllByScheduledPerformDate(LocalDate scheduledPerformDate);
+
     List<Task> findAllByCreationDateAndCompletedIsTrueOrderByCreationDateTimeDesc(LocalDate localDate);
+
     void deleteTaskByTaskId(String taskId);
 
+    List<Task> findByCreationDateNot(LocalDate creationDate);
+
+    List<Task> findAllByScheduledPerformDateBeforeOrderByCompletedAscCreationDateTimeDesc(LocalDate performDate);
+
+    List<Task> findAllByScheduledPerformDateAfterOrderByCompletedAscCreationDateTimeDesc(LocalDate performDate);
+    List<Task> findAllByScheduledPerformDateOrderByCompletedAscCreationDateTimeDesc(LocalDate performDate);
 }
 
 

@@ -1,9 +1,8 @@
-import {AppBar, Box, Button, IconButton, Paper, TextField, Toolbar, Typography, useTheme} from "@mui/material";
+import {AppBar, Box, Button, IconButton, TextField, Toolbar, Typography} from "@mui/material";
 import NightlightIcon from '@mui/icons-material/Nightlight';
 import ChatIcon from '@mui/icons-material/Chat';
 import {useNavigate} from "react-router-dom";
-import React, {useContext} from "react";
-import {ThemeContext} from "@emotion/react";
+import React from "react";
 import {TaskToCreate} from "../interfaces/TaskToCreate.tsx";
 
 type props = {onSubmit: (taskToCreate: TaskToCreate) => void,
@@ -11,7 +10,6 @@ type props = {onSubmit: (taskToCreate: TaskToCreate) => void,
             darkMode: boolean};
 
 export function TopBar(props: props) {
-    const theme = useTheme();
     // const {toggleTheme, isDarkMode} = useContext(ThemeContext);
     const navigate = useNavigate();
     const handleFeedbackClick = () => {

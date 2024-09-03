@@ -17,12 +17,14 @@ import {Box, CssBaseline, styled, useTheme} from "@mui/material";
 import {PomodoroDialog} from "../components/PomodoroDialog.tsx";
 import {TopBar} from "../components/TopBar.tsx";
 import {lightTheme} from "../Theme.tsx";
+
 export const OvalButton = styled(Button)({
     borderRadius: '50px', // Adjust the value to get the oval shape you desire
     padding: '10px 20px', // Adjust the padding for the desired size
 
 });
-type props = {darkMode: boolean, darkModeFunction: (darkMode: boolean) => void};
+type props = { darkMode: boolean, darkModeFunction: (darkMode: boolean) => void };
+
 export function HomePage(props: props) {
     const ROOT_URL = "http://localhost:8080";
     const TASK_URL = ROOT_URL.concat("/api/v1/task");
@@ -32,6 +34,8 @@ export function HomePage(props: props) {
     const [todayTasks, setTodayTasks] = useState<Task[]>([]);
     const [today, setToday] = useState<DayEntity>({} as DayEntity);
     const [allTasks, setAllTasks] = useState<Task[]>([]);
+    const [futureTasks, setFutureTasks] = useState<Task[]>([]);
+    const [pastTasks, setPastTasks] = useState<Task[]>([]);
     const [highlightedTask, setHighlightedTask] = useState<Task>({} as Task);
     const [sidenavOpen, setSidenavOpen] = useState(false);
     // const [localDarkMode, setLocalDarkMode] = useState(false);
@@ -52,6 +56,12 @@ export function HomePage(props: props) {
     }, []);
     useEffect(() => {
         fetchAllTasks();
+    }, []);
+    useEffect(() => {
+        fetchFutureTasks();
+    }, []);
+    useEffect(() => {
+        fetchPastTasks();
     }, []);
 
 
@@ -77,10 +87,32 @@ export function HomePage(props: props) {
 
     async function fetchTodayTasks() {
         try {
-            const response = await fetch(TASK_URL.concat(`/get-non-completed-tasks/${date}`));
+            const response = await fetch(TASK_URL.concat(`/get-today-tasks`));
             const todayTasks: Task[] = await response.json();
             setTodayTasks(todayTasks); // Update state with fetched tasks
             return todayTasks;
+        } catch (error) {
+            console.error('Error fetching tasks:', error);
+        }
+    }
+
+    async function fetchPastTasks() {
+        try {
+            const response = await fetch(TASK_URL.concat('/get-past-tasks'));
+            const pastTasks: Task[] = await response.json();
+            setPastTasks(pastTasks); // Update state with fetched tasks
+            return pastTasks;
+        } catch (error) {
+            console.error('Error fetching tasks:', error);
+        }
+    }
+
+    async function fetchFutureTasks() {
+        try {
+            const response = await fetch(TASK_URL.concat('/get-future-tasks'));
+            const futureTasks: Task[] = await response.json();
+            setFutureTasks(futureTasks); // Update state with fetched tasks
+            return futureTasks;
         } catch (error) {
             console.error('Error fetching tasks:', error);
         }
@@ -109,6 +141,9 @@ export function HomePage(props: props) {
         });
         await fetchTodayTasks();
         await fetchAllTasks();
+        await fetchPastTasks();
+        await fetchFutureTasks();
+
     }
 
     async function toggleTaskCompletion(taskId: string) {
@@ -117,6 +152,8 @@ export function HomePage(props: props) {
         });
         await fetchTodayTasks();
         await fetchAllTasks();
+        await fetchPastTasks();
+        await fetchFutureTasks();
     }
 
     async function fetchHighestPriorityTask(): Promise<Task> {
@@ -214,9 +251,12 @@ export function HomePage(props: props) {
 
     async function completeTask(taskId: string) {
         await fetch(TASK_URL.concat(`/complete-task/${taskId}`), {
-            method: "POST"});
+            method: "POST"
+        });
         fetchTodayTasks();
         fetchAllTasks();
+        fetchFutureTasks();
+        fetchPastTasks();
     }
 
     return (
@@ -259,15 +299,16 @@ export function HomePage(props: props) {
                         {/*<TaskBox tasks={todayTasks} type={"Today"}*/}
                         {/*         toggleTaskCompletion={toggleTaskCompletion}*/}
                         {/*         onDivClick={highlightTask} handleButtonClick={handleOpen}/>*/}
-                        <TaskBox allTasks={allTasks} todayTasks={todayTasks} type={"Next week"}
+                        <TaskBox pastTasks={pastTasks} todayTasks={todayTasks} type={"Next week"}
                                  toggleTaskCompletion={toggleTaskCompletion}
-                                 onDivClick={highlightTask} handleButtonClick={handleOpen} />
+                                 onDivClick={highlightTask} handleButtonClick={handleOpen} futureTasks={futureTasks}/>
                     </Box>
 
 
                     <Box className="section" sx={{width: '40%'}}>
                         <HighestPriorityTaskBox tasks={allTasks}/>
-                        <HighlightedTaskBox task={highlightedTask} handleOpenDialog={handleOpen} handleCompleteTask={completeTask}/>
+                        <HighlightedTaskBox task={highlightedTask} handleOpenDialog={handleOpen}
+                                            handleCompleteTask={completeTask}/>
                         <Timer/>
                     </Box>
 

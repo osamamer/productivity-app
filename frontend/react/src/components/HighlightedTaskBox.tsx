@@ -4,8 +4,9 @@ import {Box, Card, DialogContent, styled, Typography} from "@mui/material";
 import Button from "@mui/material/Button";
 import CheckIcon from '@mui/icons-material/Check';
 import AdjustIcon from '@mui/icons-material/Adjust';
+import InputText from "./InputText.tsx";
 type props = {
-    task?: Task | null;
+    task: Task;
     handleOpenDialog?: (dialogType: string) => void;
     handleCompleteTask: (taskId: string) => void;
 };
@@ -29,6 +30,7 @@ export function HighlightedTaskBox(props: props) {
 
     // @ts-ignore
     // @ts-ignore
+    // @ts-ignore
     return (
         <Card className="box-shadow box" sx={{
             display: 'flex', gap: 1, px: 4, py: 2, minHeight: 200, direction: 'column',
@@ -46,6 +48,7 @@ export function HighlightedTaskBox(props: props) {
                 <Typography variant="h5"
                             sx={{mb: 2}}>{props.task.description ?? "No description available"}</Typography>
             }
+            <InputText task={props.task}></InputText>
             <Button
                 sx={{m: 1, width: 1/2, alignSelf: 'center'}}
                 variant="contained"
@@ -62,6 +65,7 @@ export function HighlightedTaskBox(props: props) {
             <Button
                 sx={{m: 1, width: 1/2, alignSelf: 'center'}}
                 variant="contained"
+                // @ts-ignore
                 color={color}
                 endIcon={<CheckIcon/>}
                 onClick = {() => {

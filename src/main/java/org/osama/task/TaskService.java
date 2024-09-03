@@ -155,9 +155,13 @@ public class TaskService {
     public List<Task> getTodayTasks() {
         return taskRepository.findAllByCreationDateOrderByCreationDateTimeDesc(LocalDate.now());
     }
-    public List<Task> getTasksByDate(String date) {
+    public List<Task> getTasksByDate(String date) { // Now searches for the perform not creation date
         LocalDate localDate = stringToLocalDate(date);
-        return taskRepository.findAllByCreationDateOrderByCreationDateTimeDesc(localDate);
+        return taskRepository.findAllByScheduledPerformDateOrderByCompletedAscCreationDateTimeDesc(localDate);
+    }
+    public List<Task> getAllButDay(String date) {
+        LocalDate localDate = stringToLocalDate(date);
+        return taskRepository.findByCreationDateNot(localDate);
     }
     public List<Task> getNonCompletedTasksByDate(String date) {
         log.info("Getting uncompleted tasks for date [{}]", date);
@@ -280,14 +284,22 @@ public class TaskService {
         newTask.setCreationDate(newTask.getCreationDateTime().toLocalDate());
         newTask.setCompleted(false);
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MMM-dd HH:mm");
-
-        try {
+        if (!Objects.equals(taskRequest.taskPerformTime, "")) {
+            log.info("Task perform time not null");
+            try {
             LocalDateTime performTime = LocalDateTime.parse(taskRequest.taskPerformTime);
             newTask.setScheduledPerformDateTime(performTime);
             newTask.setScheduledPerformDate(newTask.getScheduledPerformDateTime().toLocalDate());
         } catch (DateTimeParseException e) {
             System.out.println("Invalid LocalDateTime format: " + taskRequest.taskPerformTime);
         }
+        }
+        else {
+            newTask.setScheduledPerformDateTime(LocalDateTime.now());
+            newTask.setScheduledPerformDate(newTask.getScheduledPerformDateTime().toLocalDate());
+        }
+
+
         if (taskRequest.parentTaskId != null) {
             newTask.setParentId(taskRequest.parentTaskId);
         }
@@ -306,5 +318,11 @@ public class TaskService {
     }
 
 
+    public List<Task> getPastTasks() {
+        return taskRepository.findAllByScheduledPerformDateBeforeOrderByCompletedAscCreationDateTimeDesc(LocalDate.now());
 
+    }
+    public List<Task> getFutureTasks() {
+        return taskRepository.findAllByScheduledPerformDateAfterOrderByCompletedAscCreationDateTimeDesc(LocalDate.now());
+    }
 }
