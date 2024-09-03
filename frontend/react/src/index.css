@@ -295,6 +295,33 @@ h1 {
 }
 
 
+[contenteditable="true"]:empty:not(:focus):before {
+    content: attr(data-placeholder);
+    color: grey;
+}
+
+.task-description-container .ql-container {
+  border: none; /* Remove the border around the editor */
+  text-align: center; /* Center the text inside the editor */
+}
+
+.task-description-container .ql-editor {
+  padding: 0; /* Remove padding inside the editor */
+  text-align: center; /* Ensure text is centered */
+  min-height: 40px; /* Ensure a minimum height */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.task-description-container .ql-editor.ql-blank::before {
+  left: 0; /* Ensure placeholder is centered */
+  right: 0;
+  text-align: center;
+  color: #aaa;
+}
+
+
 
 #timer-div {
     display: none;

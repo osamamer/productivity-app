@@ -5,10 +5,13 @@ import Button from "@mui/material/Button";
 import CheckIcon from '@mui/icons-material/Check';
 import AdjustIcon from '@mui/icons-material/Adjust';
 import InputText from "./InputText.tsx";
+import EditableField from "./EditableField.tsx";
+
 type props = {
     task: Task;
     handleOpenDialog?: (dialogType: string) => void;
     handleCompleteTask: (taskId: string) => void;
+    handleChangeDescription: (description: string, taskId: string) => void;
 };
 
 export function HighlightedTaskBox(props: props) {
@@ -48,9 +51,9 @@ export function HighlightedTaskBox(props: props) {
                 <Typography variant="h5"
                             sx={{mb: 2}}>{props.task.description ?? "No description available"}</Typography>
             }
-            <InputText task={props.task}></InputText>
+            {/*<InputText task={props.task}></InputText>*/}
             <Button
-                sx={{m: 1, width: 1/2, alignSelf: 'center'}}
+                sx={{m: 1, width: 1 / 2, alignSelf: 'center'}}
                 variant="contained"
 
 
@@ -63,18 +66,27 @@ export function HighlightedTaskBox(props: props) {
             </Button>
 
             <Button
-                sx={{m: 1, width: 1/2, alignSelf: 'center'}}
+                sx={{m: 1, width: 1 / 2, alignSelf: 'center'}}
                 variant="contained"
                 // @ts-ignore
                 color={color}
                 endIcon={<CheckIcon/>}
-                onClick = {() => {
+                onClick={() => {
                     if ("taskId" in props.task) {
                         props.handleCompleteTask(props.task.taskId)
-                    }}}
+                    }
+                }}
             >
                 Complete Task
             </Button>
+            <EditableField onSubmit={props.handleChangeDescription} initialTargetText={props.task.description}
+                           placeholderText={"Describe this task..."} task={props.task}></EditableField>
+            {/*<div*/}
+            {/*    style={{contentEditable: true}}*/}
+            {/*    data-placeholder="Type something..."*/}
+            {/*>*/}
+            {/*    {props.task.description}*/}
+            {/*</div>*/}
         </Card>
         // <div className="box container" id="highlighted-task-box">
         //     <div id="highlighted-task-header" className="highlighted-task-text">

@@ -204,6 +204,20 @@ export function HomePage(props: props) {
         });
     }
 
+    async function changeDescription(description: string, taskId: string): Promise<void> {
+        await fetch(TASK_URL.concat("/set-description"), {
+            method: "POST",
+            body: JSON.stringify({
+                taskId: taskId,
+                taskDescription: description,
+            }),
+            headers: {
+                "Content-type": "application/json; charset=UTF-8"
+            }
+        });
+    }
+
+
     // Handles opening for all modals
     const handleOpen = (dialogType: string) => {
         setDialogOpen((prev) =>
@@ -308,7 +322,7 @@ export function HomePage(props: props) {
                     <Box className="section" sx={{width: '40%'}}>
                         <HighestPriorityTaskBox tasks={allTasks}/>
                         <HighlightedTaskBox task={highlightedTask} handleOpenDialog={handleOpen}
-                                            handleCompleteTask={completeTask}/>
+                                            handleCompleteTask={completeTask} handleChangeDescription={changeDescription}/>
                         <Timer/>
                     </Box>
 
