@@ -1,7 +1,7 @@
-#Productivity App#
+# Productivity App
 
 Build the docker image with:
-sh```
+```sh
 ./build-docker-image.sh
 ```
 
