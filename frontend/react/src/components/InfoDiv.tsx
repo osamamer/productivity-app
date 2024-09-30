@@ -22,7 +22,7 @@ export function InfoDiv(props: props) {
     return (
         <Card title={title} className="task-div" sx={{
             '&:hover': {
-                transform: 'scale(1.05)',
+                transform: 'scale(1.03)',
                 boxShadow: 6,
             },
             transition: 'transform 0.3s, box-shadow 0.3s',

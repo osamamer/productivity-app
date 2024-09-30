@@ -8,21 +8,10 @@ import plan from "../assets/images/walk.png";
 import {InfoDiv} from "./InfoDiv.tsx";
 type props = { today: DayEntity, handleOpenDialog: (dialogType: string) => void, darkMode: boolean };
 import altDayIcon from '../assets/images/time.png'
+import {HoverCardBox} from "./HoverCardBox";
 export function TodayBox(props: props) {
     return (
-        <Card  className="box-shadow box"  sx={{
-            p: 2,
-            color: 'text.primary',
-            display: 'flex', gap: 2,
-            '&:hover': {
-                transform: 'scale(1.05)',
-                boxShadow: 6,
-            },
-            transition: 'transform 0.3s, box-shadow 0.3s',
-            boxShadow: 3,
-            borderRadius: 5,
-            minHeight: 200
-        }}>
+        <HoverCardBox>
             <Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', pr: 1}}>
                 <Typography variant="h4">Today</Typography>
 
@@ -39,7 +28,7 @@ export function TodayBox(props: props) {
             }} >
                 How's today been?
             </Button>
-        </Card>
+        </HoverCardBox>
         // <div className="box container" id="day-box">
         //     <p className="box-header">Today</p>
         //     <Button sx={{m: 1}} variant="contained" color="primary" onClick={() => {

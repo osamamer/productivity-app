@@ -6,6 +6,7 @@ import CheckIcon from '@mui/icons-material/Check';
 import AdjustIcon from '@mui/icons-material/Adjust';
 import InputText from "./InputText.tsx";
 import EditableField from "./EditableField.tsx";
+import {HoverCardBox} from "./HoverCardBox";
 
 type props = {
     task: Task;
@@ -35,17 +36,7 @@ export function HighlightedTaskBox(props: props) {
     // @ts-ignore
     // @ts-ignore
     return (
-        <Card className="box-shadow box" sx={{
-            display: 'flex', gap: 1, px: 4, py: 2, minHeight: 200, direction: 'column',
-            '&:hover': {
-                transform: 'scale(1.05)',
-                boxShadow: 6,
-            },
-            transition: 'transform 0.3s, box-shadow 0.3s',
-            boxShadow: 3,
-            borderRadius: 5,
-        }}>
-
+        <HoverCardBox>
             <Typography variant="h4" sx={{mb: 2}}>{props.task.name ?? "No task to highlight"}</Typography>
             {props.task.description && props.task.description.trim() !== '' &&
                 <Typography variant="h5"
@@ -87,7 +78,7 @@ export function HighlightedTaskBox(props: props) {
             {/*>*/}
             {/*    {props.task.description}*/}
             {/*</div>*/}
-        </Card>
+        </HoverCardBox>
         // <div className="box container" id="highlighted-task-box">
         //     <div id="highlighted-task-header" className="highlighted-task-text">
         //         {task.name ?? "No Task Name"}

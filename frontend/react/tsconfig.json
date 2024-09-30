@@ -8,5 +8,8 @@
       "path": "./tsconfig.node.json"
     }
   ],
-  "include": ["src/**/*"]
+  "include": ["src/**/*"],
+  "compilerOptions": {
+    "jsx": "react"
+  }
 }

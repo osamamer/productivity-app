@@ -3,6 +3,7 @@ import React from "react";
 import {TaskDiv} from "./TaskDiv.tsx";
 import Button from "@mui/material/Button";
 import {Box, Card, List, Typography} from "@mui/material";
+import {HoverCardBox} from "./HoverCardBox";
 
 type props = {
     pastTasks: Task[],
@@ -23,18 +24,7 @@ export function TaskBox(props: props) {
 
     const isTodayBox = props.type === "Today";
     return (
-        <Card className="box-shadow box" sx={{
-            display: 'flex', gap: 1, px: 2, py: 2, minHeight: 400, direction: 'column',
-            flex: isTodayBox ? '0 0 1' : '0 0 1 ',
-            '&:hover': {
-                transform: 'scale(1.05)',
-                boxShadow: 6,
-            },
-            transition: 'transform 0.3s, box-shadow 0.3s',
-            boxShadow: 3,
-            borderRadius: 5,
-            maxHeight: '80%',
-        }}>
+        <HoverCardBox>
             {/*<Typography variant="h4">{`${props.type}'s tasks`}</Typography>*/}
             <Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', pr: 1}}>
                 <Typography variant="h4" sx={{textAlign: 'left'}}>Tasks</Typography>
@@ -94,7 +84,7 @@ export function TaskBox(props: props) {
             {!tasksExist && <Typography variant="h6">Nothing to do. Enjoy!</Typography>}
 
 
-        </Card>
+        </HoverCardBox>
         // <div id={`${props.type}-tasks-container`} className="box box-shadow container">
         //     <h1 className="box-header">{`${props.type}'s tasks`}</h1>
         //     <Button sx={{width: 1/2}} variant="outlined" color="primary" onClick={() => {
