@@ -25,6 +25,10 @@ const EditableField: React.FC<props> = (props: props) => {
             reference.current?.setAttribute('data-placeholder', '');
         }
     }, [targetText]);
+    useEffect(() => {
+        setTargetText(props.task.description || ""); // Reset when task changes
+    }, [props.task]);
+
 
     const handleInput = (event: React.FormEvent<HTMLDivElement>) => {
         setTargetText(event.currentTarget.textContent || '');
@@ -37,12 +41,15 @@ const EditableField: React.FC<props> = (props: props) => {
     };
 
     const handleBlur = () => {
-        if (!targetText.trim()) {
-            setTargetText('');
-        }
+        const trimmedText = targetText.trim();
+        setTargetText(trimmedText); // Keep UI updated
         setIsEditing(false);
-        props.onSubmit(targetText.trim(), props.task.taskId);
+
+        if (props.task.taskId) {
+            props.onSubmit(trimmedText, props.task.taskId); // Ensure task ID is passed
+        }
     };
+
 
     const handleFocus = () => {
         setIsEditing(true);

@@ -4,7 +4,6 @@ import {Box, Card, DialogContent, styled, Typography} from "@mui/material";
 import Button from "@mui/material/Button";
 import CheckIcon from '@mui/icons-material/Check';
 import AdjustIcon from '@mui/icons-material/Adjust';
-import InputText from "./InputText.tsx";
 import EditableField from "./EditableField.tsx";
 import {HoverCardBox} from "./HoverCardBox";
 
@@ -32,16 +31,18 @@ export function HighlightedTaskBox(props: props) {
         return null;
     }
 
-    // @ts-ignore
-    // @ts-ignore
-    // @ts-ignore
     return (
         <HoverCardBox>
-            <Typography variant="h4" sx={{mb: 2}}>{props.task.name ?? "No task to highlight"}</Typography>
-            {props.task.description && props.task.description.trim() !== '' &&
-                <Typography variant="h5"
-                            sx={{mb: 2}}>{props.task.description ?? "No description available"}</Typography>
-            }
+            <Typography variant="h4" sx={{ mb: 0 }}>
+                {props.task.name ?? "No task to highlight"}
+            </Typography>
+
+            {props.task.description && props.task.description.trim() !== '' && (
+                <Typography variant="h5" sx={{ m: 0, p: 0 }}     className="no-margin"
+                            dangerouslySetInnerHTML={{ __html: props.task.description }}>
+                </Typography>
+            )}
+
             {/*<InputText task={props.task}></InputText>*/}
             <Button
                 sx={{m: 1, width: 1 / 2, alignSelf: 'center'}}
@@ -72,22 +73,7 @@ export function HighlightedTaskBox(props: props) {
             </Button>
             <EditableField onSubmit={props.handleChangeDescription} initialTargetText={props.task.description}
                            placeholderText={"Describe this task..."} task={props.task}></EditableField>
-            {/*<div*/}
-            {/*    style={{contentEditable: true}}*/}
-            {/*    data-placeholder="Type something..."*/}
-            {/*>*/}
-            {/*    {props.task.description}*/}
-            {/*</div>*/}
         </HoverCardBox>
-        // <div className="box container" id="highlighted-task-box">
-        //     <div id="highlighted-task-header" className="highlighted-task-text">
-        //         {task.name ?? "No Task Name"}
-        //     </div>
-        //     <div className="highlighted-task-text">
-        //         {task.description ?? "No Description Available"}
-        //     </div>
-        //
-        // </div>
 
     )
         ;
