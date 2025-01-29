@@ -2,13 +2,13 @@ services:
   productivity-app:
     container_name: app
     image: productivity-app:SNAPSHOT
+    environment:
+      - TZ=GMT+03:00
+      - SPRING_PROFILES_ACTIVE=dev,postgres
     ports:
       - "8080:8080"
     depends_on:
       - postgres
-    entrypoint: java -jar -Dspring.profiles.active=dev,postgres app.jar
-    environment:
-      - TZ=${SYSTEM_TIME_ZONE}
   postgres:
     container_name: db
     hostname: postgres
@@ -17,11 +17,12 @@ services:
       - "5433:5432"
     volumes:
       - data:/var/lib/postgresql/data
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
     environment:
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_USER=postgres
       - POSTGRES_DB=testdb
-      - TZ=${SYSTEM_TIME_ZONE}
 volumes:
   data:
     external: true

@@ -1,6 +1,7 @@
 package org.osama.task;
 
 import lombok.extern.slf4j.Slf4j;
+import org.osama.PomodoroWebSocketController;
 import org.osama.scheduling.JobType;
 import org.osama.scheduling.ScheduledJob;
 import org.osama.scheduling.ScheduledJobRepository;
@@ -12,6 +13,7 @@ import org.springframework.stereotype.Service;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
@@ -23,12 +25,13 @@ public class TaskService {
     private final TaskRepository taskRepository;
     private final SessionRepository sessionRepository;
     private final ScheduledJobRepository scheduledJobRepository;
+    private final PomodoroWebSocketController pomodoroWebSocketController;
 
-
-    public TaskService(TaskRepository taskRepository, SessionRepository sessionRepository, ScheduledJobRepository scheduledJobRepository) {
+    public TaskService(TaskRepository taskRepository, SessionRepository sessionRepository, ScheduledJobRepository scheduledJobRepository, PomodoroWebSocketController pomodoroWebSocketController) {
         this.taskRepository = taskRepository;
         this.sessionRepository = sessionRepository;
         this.scheduledJobRepository = scheduledJobRepository;
+        this.pomodoroWebSocketController = pomodoroWebSocketController;
     }
 
     public Duration getAccumulatedTime(String taskId) {
@@ -102,6 +105,7 @@ public class TaskService {
         activeSession.setRunning(false);
         activeSession.setActive(false);
         sessionRepository.save(activeSession);
+        pomodoroWebSocketController.stopPomodoroUpdates(taskId);
         log.info("Ended session for task with ID [{}] on {}", task.getTaskId(), activeSession.getEndTime());
     }
     public void completeTask(String taskId) {
@@ -181,6 +185,9 @@ public class TaskService {
                               int numFocuses, int longBreakCooldown) {
         startTaskSession(taskId, true);
         schedulePomoJobs(taskId, focusDuration, shortBreakDuration, longBreakDuration, numFocuses, longBreakCooldown);
+        // Start sending WebSocket updates
+        Task task = taskRepository.findTaskByTaskId(taskId);
+        pomodoroWebSocketController.startPomodoroUpdates(taskId, numFocuses);
     }
     private void schedulePomoJobs(String taskId, int focusDuration,
                                   int shortBreakDuration, int longBreakDuration,
@@ -309,6 +316,10 @@ public class TaskService {
         newTask.setImportance(taskRequest.taskImportance);
         taskRepository.save(newTask);
         log.info("Created new task on {}.", newTask.getCreationDateTime());
+        System.out.println("System TZ: " + System.getProperty("user.timezone"));
+        System.out.println("System default TZ: " + TimeZone.getDefault().getID());
+        System.out.println("Current time: " + LocalDateTime.now());
+        System.out.println("Current time with ZoneId: " + LocalDateTime.now(ZoneId.systemDefault()));
         return newTask;
     }
 

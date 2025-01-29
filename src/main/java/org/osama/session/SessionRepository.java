@@ -14,5 +14,5 @@ public interface SessionRepository extends JpaRepository<Session, String> {
     List<Session> findAllByTaskId(String taskId);
     List<Session> findAllByRunningIsTrue();
     List<Session> findAllByActiveIsTrue();
-
+    int countAllByTaskIdAndActiveIsFalse(String taskId);
 }

@@ -17,6 +17,7 @@ import {Box, CssBaseline, styled, useTheme} from "@mui/material";
 import {PomodoroDialog} from "../components/PomodoroDialog.tsx";
 import {TopBar} from "../components/TopBar.tsx";
 import {lightTheme} from "../Theme.tsx";
+import PomodoroTimer from "../components/PomodoroTimer";
 
 export const OvalButton = styled(Button)({
     borderRadius: '50px', // Adjust the value to get the oval shape you desire
@@ -323,7 +324,7 @@ export function HomePage(props: props) {
                         <HighestPriorityTaskBox tasks={allTasks}/>
                         <HighlightedTaskBox task={highlightedTask} handleOpenDialog={handleOpen}
                                             handleCompleteTask={completeTask} handleChangeDescription={changeDescription}/>
-                        <Timer/>
+                        <PomodoroTimer/>
                     </Box>
 
                     <Box className="section" sx={{width: '40%'}}>

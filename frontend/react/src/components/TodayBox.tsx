@@ -29,17 +29,5 @@ export function TodayBox(props: props) {
                 How's today been?
             </Button>
         </HoverCardBox>
-        // <div className="box container" id="day-box">
-        //     <p className="box-header">Today</p>
-        //     <Button sx={{m: 1}} variant="contained" color="primary" onClick={() => {
-        //         props.handleOpenDialog('dayDialog')
-        //     }}>
-        //         Day info
-        //     </Button>
-        //     <p>{props.today.rating}</p>
-        //     <p>{props.today.plan}</p>
-        //     <p>{props.today.summary}</p>
-        // </div>
     )
-        ;
 }

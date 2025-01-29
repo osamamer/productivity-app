@@ -2,6 +2,7 @@
   "name": "frontend",
   "version": "1.0.0",
   "dependencies": {
+    "@stomp/stompjs": "^7.0.0",
     "loadash": "^1.0.0",
     "webpack": "^5.89.0"
   },

@@ -1,0 +1,1 @@
+Adding a new task doesn't add it to pomo dropdown list
