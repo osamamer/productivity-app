@@ -2,9 +2,9 @@ services:
   productivity-app:
     container_name: app
     image: productivity-app:SNAPSHOT
-    environment:
-      - TZ=GMT+03:00
-      - SPRING_PROFILES_ACTIVE=dev,postgres
+    volumes:
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
     ports:
       - "8080:8080"
     depends_on:
