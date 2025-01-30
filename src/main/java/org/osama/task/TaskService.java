@@ -316,10 +316,6 @@ public class TaskService {
         newTask.setImportance(taskRequest.taskImportance);
         taskRepository.save(newTask);
         log.info("Created new task on {}.", newTask.getCreationDateTime());
-        System.out.println("System TZ: " + System.getProperty("user.timezone"));
-        System.out.println("System default TZ: " + TimeZone.getDefault().getID());
-        System.out.println("Current time: " + LocalDateTime.now());
-        System.out.println("Current time with ZoneId: " + LocalDateTime.now(ZoneId.systemDefault()));
         return newTask;
     }
 

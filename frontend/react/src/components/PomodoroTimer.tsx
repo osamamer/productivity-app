@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Client } from '@stomp/stompjs';
 import {
     Box,
@@ -10,7 +10,9 @@ import {
     InputLabel,
     Typography,
     LinearProgress,
-    Stack, SelectChangeEvent
+    Stack,
+    SelectChangeEvent,
+    Alert
 } from '@mui/material';
 import { HoverCardBox } from './HoverCardBox';
 
@@ -40,7 +42,9 @@ interface PomodoroFormData {
 const PomodoroTimer: React.FC = () => {
     const [tasks, setTasks] = useState<Task[]>([]);
     const [status, setStatus] = useState<PomodoroStatus | null>(null);
-    const [stompClient, setStompClient] = useState<Client | null>(null);
+    const [isConnected, setIsConnected] = useState(false);
+    const [connectionError, setConnectionError] = useState<string | null>(null);
+    const stompClientRef = useRef<Client | null>(null);
     const [formData, setFormData] = useState<PomodoroFormData>({
         taskId: '',
         focusDuration: 25,
@@ -52,75 +56,172 @@ const PomodoroTimer: React.FC = () => {
 
     const ROOT_URL = "http://localhost:8080";
     const TASK_URL = ROOT_URL.concat("/api/v1/task");
-    const DAY_URL = ROOT_URL.concat("/api/v1/day");
+    const WS_URL = `ws://localhost:8080/ws`;
 
-    useEffect(() => {
-        fetch(TASK_URL.concat('/get-today-tasks'))
-            .then(response => response.json())
-            .then(data => setTasks(data));
+    const connectWebSocket = useCallback(() => {
+        if (stompClientRef.current?.active) {
+            console.log('STOMP client already active');
+            return;
+        }
 
+        console.log('Creating new STOMP client...');
         const client = new Client({
-            brokerURL: 'ws://localhost:8080/ws',
-            debug: function (str) {
-                console.log(str);
+            brokerURL: WS_URL,
+            debug: (str) => {
+                console.log('STOMP Debug:', str);
             },
             reconnectDelay: 5000,
             heartbeatIncoming: 4000,
-            heartbeatOutgoing: 4000
+            heartbeatOutgoing: 4000,
+            connectionTimeout: 10000,
+            onStompError: (frame) => {
+                console.error('STOMP protocol error:', frame);
+                setConnectionError(`STOMP error: ${frame.headers?.message || 'Unknown error'}`);
+                setIsConnected(false);
+            }
         });
 
-        client.onConnect = () => {
+        client.onConnect = (frame) => {
+            console.log('STOMP Client Connected:', frame);
+            setIsConnected(true);
+            setConnectionError(null);
+
             if (formData.taskId) {
-                subscribeToTask(client, formData.taskId);
+                subscribeToTask(formData.taskId);
             }
         };
 
-        client.activate();
-        setStompClient(client);
+        client.onDisconnect = () => {
+            console.log('STOMP Client Disconnected');
+            setIsConnected(false);
+        };
+
+        client.onWebSocketError = (error) => {
+            console.error('WebSocket Error:', error);
+            setConnectionError('Failed to connect to WebSocket server');
+            setIsConnected(false);
+        };
+
+        stompClientRef.current = client;
+
+        try {
+            console.log('Activating STOMP client...');
+            client.activate();
+        } catch (error) {
+            console.error('Error activating STOMP client:', error);
+            setConnectionError(`Failed to activate STOMP client: ${error}`);
+        }
 
         return () => {
-            client.deactivate();
+            if (client.active) {
+                console.log('Deactivating STOMP client...');
+                client.deactivate();
+            }
         };
+    }, [formData.taskId]);
+
+    useEffect(() => {
+        const cleanup = connectWebSocket();
+        return () => {
+            cleanup?.();
+        };
+    }, [connectWebSocket]);
+
+    const subscribeToTask = useCallback((taskId: string) => {
+        const client = stompClientRef.current;
+        if (!client?.active) {
+            console.log('Cannot subscribe: STOMP client not active');
+            return;
+        }
+
+        const destination = `/topic/pomodoro/${taskId}`;
+        console.log(`Subscribing to ${destination}`);
+
+        try {
+            return client.subscribe(destination, (message) => {
+                console.log('Received message:', message.body);
+                try {
+                    const newStatus: PomodoroStatus = JSON.parse(message.body);
+                    setStatus(newStatus);
+                } catch (error) {
+                    console.error('Error parsing message:', error);
+                }
+            });
+        } catch (error) {
+            console.error('Error subscribing to task:', error);
+            setConnectionError(`Failed to subscribe: ${error}`);
+        }
     }, []);
 
-    const subscribeToTask = (client: Client, taskId: string) => {
-        client.subscribe(`/topic/pomodoro/${taskId}`, (message) => {
-            const newStatus: PomodoroStatus = JSON.parse(message.body);
-            setStatus(newStatus);
-        });
-    };
+    useEffect(() => {
+        const fetchTasks = async () => {
+            try {
+                console.log('Fetching tasks...');
+                const response = await fetch(TASK_URL.concat('/get-today-tasks'));
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                console.log('Tasks fetched:', data);
+                setTasks(data);
+            } catch (error) {
+                console.error('Error fetching tasks:', error);
+            }
+        };
+
+        fetchTasks();
+    }, []);
+
+    useEffect(() => {
+        if (formData.taskId && isConnected) {
+            const subscription = subscribeToTask(formData.taskId);
+            return () => {
+                subscription?.unsubscribe();
+            };
+        }
+    }, [formData.taskId, isConnected, subscribeToTask]);
 
     const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = event.target;
         setFormData(prev => ({
             ...prev,
-            [name]: value
+            [name]: Number(value)
         }));
     };
 
     const handleTaskChange = (event: SelectChangeEvent) => {
         const taskId = event.target.value as string;
+        console.log('Task changed to:', taskId);
         setFormData(prev => ({
             ...prev,
             taskId
         }));
-
-        if (stompClient?.connected) {
-            subscribeToTask(stompClient, taskId);
-        }
     };
 
     const startPomodoro = async () => {
+        if (!isConnected) {
+            setConnectionError('Cannot start Pomodoro: WebSocket not connected');
+            return;
+        }
+
         try {
-            await fetch(TASK_URL.concat('/start-pomodoro'), {
+            console.log('Starting pomodoro with data:', formData);
+            const response = await fetch(TASK_URL.concat('/start-pomodoro'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify(formData),
             });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            console.log('Pomodoro started successfully');
         } catch (error) {
             console.error('Error starting pomodoro:', error);
+            setConnectionError(`Failed to start pomodoro: ${error}`);
         }
     };
 
@@ -133,10 +234,16 @@ const PomodoroTimer: React.FC = () => {
     return (
         <HoverCardBox>
             <Stack spacing={2} sx={{ width: '100%' }}>
+                {connectionError && (
+                    <Alert severity="error" onClose={() => setConnectionError(null)}>
+                        {connectionError}
+                    </Alert>
+                )}
+
                 {!status?.isSessionActive ? (
                     <>
                         <Typography variant="h6">
-                            Pomodoro Timer
+                            Pomodoro Timer {isConnected ? '(Connected)' : '(Disconnected)'}
                         </Typography>
 
                         <FormControl size="small" fullWidth>
@@ -196,11 +303,11 @@ const PomodoroTimer: React.FC = () => {
                             variant="contained"
                             color="primary"
                             onClick={startPomodoro}
-                            disabled={!formData.taskId}
+                            disabled={!formData.taskId || !isConnected}
                             fullWidth
                             size="small"
                         >
-                            Start Pomodoro
+                            Start Pomodoro {!isConnected ? '(Waiting for connection...)' : ''}
                         </Button>
                     </>
                 ) : (

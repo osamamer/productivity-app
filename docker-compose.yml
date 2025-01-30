@@ -8,7 +8,18 @@ services:
     ports:
       - "8080:8080"
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/testdb
+      - SPRING_DATASOURCE_USERNAME=postgres
+      - SPRING_DATASOURCE_PASSWORD=postgres
+      # Add CORS configuration
+      - SPRING_WEBMVC_CORS_ALLOWED-ORIGINS=http://localhost:5173
+      - SPRING_WEBMVC_CORS_ALLOWED-METHODS=GET,POST,PUT,DELETE,OPTIONS
+      - SPRING_WEBMVC_CORS_ALLOWED-HEADERS=*
+      - SPRING_WEBMVC_CORS_ALLOW-CREDENTIALS=true
+
   postgres:
     container_name: db
     hostname: postgres
@@ -23,6 +34,12 @@ services:
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_USER=postgres
       - POSTGRES_DB=testdb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
 volumes:
   data:
     external: true

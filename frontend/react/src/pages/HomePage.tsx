@@ -18,6 +18,7 @@ import {PomodoroDialog} from "../components/PomodoroDialog.tsx";
 import {TopBar} from "../components/TopBar.tsx";
 import {lightTheme} from "../Theme.tsx";
 import PomodoroTimer from "../components/PomodoroTimer";
+import WebSocketTest from "../components/WebSocketTest";
 
 export const OvalButton = styled(Button)({
     borderRadius: '50px', // Adjust the value to get the oval shape you desire
@@ -311,9 +312,6 @@ export function HomePage(props: props) {
                 }}>
                     {/*<div className="section left-section">*/}
                     <Box className="section" sx={{width: '25%'}}>
-                        {/*<TaskBox tasks={todayTasks} type={"Today"}*/}
-                        {/*         toggleTaskCompletion={toggleTaskCompletion}*/}
-                        {/*         onDivClick={highlightTask} handleButtonClick={handleOpen}/>*/}
                         <TaskBox pastTasks={pastTasks} todayTasks={todayTasks} type={"Next week"}
                                  toggleTaskCompletion={toggleTaskCompletion}
                                  onDivClick={highlightTask} handleButtonClick={handleOpen} futureTasks={futureTasks}/>
@@ -329,6 +327,8 @@ export function HomePage(props: props) {
 
                     <Box className="section" sx={{width: '40%'}}>
                         <TodayBox today={today} handleOpenDialog={handleOpen} darkMode={props.darkMode}/>
+                        <WebSocketTest/>
+
                     </Box>
                 </Box>
             </Box>

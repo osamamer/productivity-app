@@ -16,7 +16,6 @@ type props = {
 
 export function HighlightedTaskBox(props: props) {
     let importance;
-    console.log(props.task)
     if (!(props.task) || props.task.importance <= 3) {
         importance = "low";
     } else if (3 < props.task.importance && props.task.importance <= 7) {
