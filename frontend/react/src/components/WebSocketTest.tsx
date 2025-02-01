@@ -1,89 +1,107 @@
-import React, { useEffect, useState } from 'react';
-import { Client } from '@stomp/stompjs';
-import SockJS from 'sockjs-client';
+import React, { useState, useRef } from 'react';
+import * as StompJs from '@stomp/stompjs';
 
-const WebSocketTest = () => {
-    const [status, setStatus] = useState('Disconnected');
-    const [messages, setMessages] = useState<string[]>([]);
+const WebSocketTest: React.FC = () => {
+    // State to track connection and received greetings
+    const [connected, setConnected] = useState<boolean>(false);
+    const [greetings, setGreetings] = useState<string[]>([]);
+    const nameInputRef = useRef<HTMLInputElement>(null);
 
-    useEffect(() => {
-        let client: Client | null = null;
+    // Ref for the STOMP client (persisting across renders)
+    const stompClientRef = useRef<StompJs.Client | null>(null);
 
-        const connect = () => {
-            try {
-                const socket = new SockJS('http://localhost:8080/ws');
-                console.log('SockJS instance created');
+    // Add a greeting to the state
+    const showGreeting = (message: string) => {
+        setGreetings((prev) => [...prev, message]);
+    };
 
-                client = new Client({
-                    webSocketFactory: () => socket,
-                    debug: (str) => {
-                        console.log('STOMP Debug:', str);
-                    },
-                    reconnectDelay: 5000,
-                    heartbeatIncoming: 4000,
-                    heartbeatOutgoing: 4000
-                });
-
-                client.onConnect = () => {
-                    setStatus('Connected');
-                    console.log('Connected to WebSocket');
-
-                    // Subscribe to test topic
-                    client.subscribe('/topic/test', (message) => {
-                        console.log('Received message:', message);
-                        setMessages(prev => [...prev, message.body]);
+    // Connect the STOMP client
+    const connect = () => {
+        console.log('Connect button clicked');
+        if (!stompClientRef.current) {
+            stompClientRef.current = new StompJs.Client({
+                brokerURL: 'ws://localhost:8080/gs-guide-websocket',
+                reconnectDelay: 5000,
+                debug: (msg) => console.log(new Date().toISOString(), msg),
+                onConnect: (frame) => {
+                    console.log('Connected:', frame);
+                    setConnected(true);
+                    stompClientRef.current?.subscribe('/topic/greetings', (message) => {
+                        console.log('Received message:', message.body);
+                        const body = JSON.parse(message.body);
+                        showGreeting(body.content);
                     });
+                },
+                onWebSocketError: (error) => {
+                    console.error('WebSocket error:', error);
+                },
+                onStompError: (frame) => {
+                    console.error('Broker reported error:', frame.headers['message']);
+                    console.error('Additional details:', frame.body);
+                },
+            });
+        }
+        stompClientRef.current.activate();
+    };
 
-                    // Send a test message
-                    client.publish({
-                        destination: '/app/test',
-                        body: 'Hello from React!'
-                    });
-                };
+    // Disconnect the STOMP client
+    const disconnect = () => {
+        stompClientRef.current?.deactivate();
+        setConnected(false);
+        console.log('Disconnected');
+    };
 
-                client.onDisconnect = () => {
-                    setStatus('Disconnected');
-                    console.log('Disconnected from WebSocket');
-                };
+    // Publish a message to the backend
+    const sendName = () => {
+        if (stompClientRef.current && nameInputRef.current && nameInputRef.current.value) {
+            stompClientRef.current.publish({
+                destination: '/app/hello',
+                body: JSON.stringify({ name: nameInputRef.current.value }),
+            });
+        }
+    };
 
-                client.onWebSocketError = (error) => {
-                    console.error('WebSocket Error:', error);
-                    setStatus('Error: ' + error.toString());
-                };
-
-                client.onStompError = (frame) => {
-                    console.error('STOMP Error:', frame);
-                    setStatus('STOMP Error: ' + frame.headers.message);
-                };
-
-                console.log('Activating STOMP client...');
-                client.activate();
-            } catch (error) {
-                console.error('Error during connection setup:', error);
-                setStatus('Setup Error: ' + error.toString());
-            }
-        };
-
-        connect();
-
-        return () => {
-            if (client && client.active) {
-                console.log('Deactivating STOMP client...');
-                client.deactivate();
-            }
-        };
-    }, []);
+    // Prevent form submission from reloading the page
+    const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+        e.preventDefault();
+    };
 
     return (
         <div>
-            <h2>WebSocket Test</h2>
-            <p>Status: {status}</p>
-            <h3>Messages:</h3>
-            <ul>
-                {messages.map((msg, index) => (
-                    <li key={index}>{msg}</li>
-                ))}
-            </ul>
+            <form onSubmit={handleSubmit}>
+                <div>
+                    <label>WebSocket connection:</label>
+                    <button type="button" id="connect" onClick={connect} disabled={connected}>
+                        Connect
+                    </button>
+                    <button type="button" id="disconnect" onClick={disconnect} disabled={!connected}>
+                        Disconnect
+                    </button>
+                </div>
+                {connected && (
+                    <div>
+                        <label>What is your name?</label>
+                        <input type="text" ref={nameInputRef} />
+                        <button type="button" id="send" onClick={sendName}>
+                            Send
+                        </button>
+                        <table>
+                            <thead>
+                            <tr>
+                                <th>Greetings</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            {greetings.map((g, index) => (
+                                <tr key={index}>
+                                    <td>{g}</td>
+                                </tr>
+                            ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </form>
         </div>
     );
 };
