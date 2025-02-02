@@ -7,6 +7,8 @@ services:
       - /etc/localtime:/etc/localtime:ro
     ports:
       - "8080:8080"
+      - "80:80"
+      - "443:443"
     depends_on:
       postgres:
         condition: service_healthy
@@ -14,19 +16,26 @@ services:
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/testdb
       - SPRING_DATASOURCE_USERNAME=postgres
       - SPRING_DATASOURCE_PASSWORD=postgres
-      # Add CORS configuration
-      - SPRING_WEBMVC_CORS_ALLOWED-ORIGINS=http://localhost:5173
+      # Update CORS to point to frontend container
+      - SPRING_WEBMVC_CORS_ALLOWED-ORIGINS=http://frontend:5173
       - SPRING_WEBMVC_CORS_ALLOWED-METHODS=GET,POST,PUT,DELETE,OPTIONS
       - SPRING_WEBMVC_CORS_ALLOWED-HEADERS=*
       - SPRING_WEBMVC_CORS_ALLOW-CREDENTIALS=true
-      - SPRING_WEBSOCKET_ALLOWED-ORIGINS=http://localhost:5173
-      - SPRING_WEBSOCKET_ALLOWED-METHODS=GET,POST,PUT,DELETE,OPTIONS
-      - SPRING_WEBSOCKET_ALLOWED-HEADERS=*
-      - SPRING_WEBSOCKET_ALLOW-CREDENTIALS=true
-      - SPRING_MVC_CORS_ALLOWED_ORIGINS=http://localhost:5173
-      - SPRING_MVC_CORS_ALLOWED_METHODS=GET,POST,PUT,DELETE,OPTIONS
-      - SPRING_MVC_CORS_ALLOWED_HEADERS=*
-      - SPRING_MVC_CORS_ALLOW_CREDENTIALS=true
+
+  frontend:
+    container_name: frontend
+    build:
+      context: ./frontend  # Path to frontend directory
+      dockerfile: frontend.dockerfile
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_WEBSOCKET_URL=ws://app:8080/gs-guide-websocket
+    depends_on:
+      - productivity-app
 
   postgres:
     container_name: db
