@@ -33,6 +33,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         logger.info("Message broker configured");
     }
 
+
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         registry.addEndpoint("/gs-guide-websocket")
