@@ -322,7 +322,7 @@ export function HomePage(props: props) {
                         <HighestPriorityTaskBox tasks={allTasks}/>
                         <HighlightedTaskBox task={highlightedTask} handleOpenDialog={handleOpen}
                                             handleCompleteTask={completeTask} handleChangeDescription={changeDescription}/>
-                        {/*<PomodoroTimer/>*/}
+                        <PomodoroTimer/>
                     </Box>
 
                     <Box className="section" sx={{width: '40%'}}>
