@@ -8,7 +8,9 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/task")
@@ -25,6 +27,15 @@ public class TaskController {
     @GetMapping
     public List<Task> getAll() {
         return taskRepository.findAll();
+    }
+
+    @GetMapping("/get-partitioned-tasks")
+    public Map<String, List<Task>> getPartitionedTasks() {
+        HashMap<String, List<Task>> taskMap = new HashMap<>();
+        taskMap.put("Past", taskService.getPastTasks());
+        taskMap.put("Today", taskService.getTodayTasks());
+        taskMap.put("Future", taskService.getFutureTasks());
+        return taskMap;
     }
 
     @GetMapping("/get-non-completed-tasks")

@@ -207,17 +207,54 @@ export function HomePage(props: props) {
     }
 
     async function changeDescription(description: string, taskId: string): Promise<void> {
-        await fetch(TASK_URL.concat("/set-description"), {
+        const response = await fetch(TASK_URL.concat("/set-description"), {
             method: "POST",
             body: JSON.stringify({
-                taskId: taskId,
+                taskId,
                 taskDescription: description,
             }),
-            headers: {
-                "Content-type": "application/json; charset=UTF-8"
-            }
+            headers: { "Content-type": "application/json; charset=UTF-8" },
         });
+
+        if (!response.ok) {
+            console.error("Failed to update description");
+            return;
+        }
+
+        // Instead of re-fetching everything, update the task in local state
+        setTodayTasks(prev =>
+            prev.map(task =>
+                task.taskId === taskId
+                    ? { ...task, taskDescription: description }
+                    : task
+            )
+        );
+
+        setPastTasks(prev =>
+            prev.map(task =>
+                task.taskId === taskId
+                    ? { ...task, taskDescription: description }
+                    : task
+            )
+        );
+
+        setFutureTasks(prev =>
+            prev.map(task =>
+                task.taskId === taskId
+                    ? { ...task, taskDescription: description }
+                    : task
+            )
+        );
+
+        setAllTasks(prev =>
+            prev.map(task =>
+                task.taskId === taskId
+                    ? { ...task, taskDescription: description }
+                    : task
+            )
+        );
     }
+
 
 
     // Handles opening for all modals
@@ -320,14 +357,13 @@ export function HomePage(props: props) {
 
                     <Box className="section" sx={{width: '40%'}}>
                         <HighestPriorityTaskBox tasks={allTasks}/>
-                        <HighlightedTaskBox task={highlightedTask} handleOpenDialog={handleOpen}
+                        <HighlightedTaskBox key={highlightedTask.taskId} tasks={allTasks} task={highlightedTask} handleOpenDialog={handleOpen}
                                             handleCompleteTask={completeTask} handleChangeDescription={changeDescription}/>
                         <PomodoroTimer/>
                     </Box>
 
                     <Box className="section" sx={{width: '40%'}}>
                         <TodayBox today={today} handleOpenDialog={handleOpen} darkMode={props.darkMode}/>
-                        <WebSocketTest/>
 
                     </Box>
                 </Box>

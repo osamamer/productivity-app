@@ -1,4 +1,4 @@
-import React from "react";
+import React, {useEffect, useState} from "react";
 import {Task} from "../interfaces/Task.tsx";
 import {Box, Card, DialogContent, styled, Typography} from "@mui/material";
 import Button from "@mui/material/Button";
@@ -8,6 +8,7 @@ import EditableField from "./EditableField.tsx";
 import {HoverCardBox} from "./HoverCardBox";
 
 type props = {
+    tasks: Task[];
     task: Task;
     handleOpenDialog?: (dialogType: string) => void;
     handleCompleteTask: (taskId: string) => void;
@@ -29,18 +30,21 @@ export function HighlightedTaskBox(props: props) {
     if (!props.task) {
         return null;
     }
+    useEffect(() => {
 
+    }, [props.tasks]);
     return (
         <HoverCardBox>
             <Typography variant="h4" sx={{ mb: 0 }}>
                 {props.task.name ?? "No task to highlight"}
             </Typography>
-
-            {props.task.description && props.task.description.trim() !== '' && (
-                <Typography variant="h5" sx={{ m: 0, p: 0 }}     className="no-margin"
-                            dangerouslySetInnerHTML={{ __html: props.task.description }}>
-                </Typography>
-            )}
+            <EditableField onSubmit={props.handleChangeDescription}
+                           description={props.task.description} taskId = {props.task.taskId}></EditableField>
+            {/*{props.task.description && props.task.description.trim() !== '' && (*/}
+            {/*    <Typography variant="h5" sx={{ m: 0, p: 0 }}     className="no-margin"*/}
+            {/*                dangerouslySetInnerHTML={{ __html: props.task.description }}>*/}
+            {/*    </Typography>*/}
+            {/*)}*/}
 
             {/*<InputText task={props.task}></InputText>*/}
             <Button
@@ -70,8 +74,7 @@ export function HighlightedTaskBox(props: props) {
             >
                 Complete Task
             </Button>
-            <EditableField onSubmit={props.handleChangeDescription} initialTargetText={props.task.description}
-                           placeholderText={"Describe this task..."} task={props.task}></EditableField>
+
         </HoverCardBox>
 
     )

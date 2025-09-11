@@ -5,29 +5,31 @@ import 'react-quill/dist/quill.snow.css';
 import {Task} from "../interfaces/Task.tsx"; // Import styles
 type props =
     {
-        initialTargetText: string;
         onSubmit: (text: string, taskId: string) => void;
-        placeholderText: string;
-        task: Task;
+        description: string;
+        taskId: string;
     }
 
 const EditableField: React.FC<props> = (props: props) => {
     const [targetText, setTargetText] =
-        useState<string>(props.task.description);
+        useState<string>(props.description);
     const [isEditing, setIsEditing] =
         useState<boolean>(false);
     const reference = useRef<HTMLDivElement>(null);
-
+    const PLACEHOLDER = "Describe this task...";
     useEffect(() => {
         if (reference.current && !targetText.trim()) {
-            reference.current.setAttribute('data-placeholder', props.placeholderText);
+            reference.current.setAttribute('data-placeholder', PLACEHOLDER);
         } else {
             reference.current?.setAttribute('data-placeholder', '');
         }
     }, [targetText]);
     useEffect(() => {
-        setTargetText(props.task.description || ""); // Reset when task changes
-    }, [props.task]);
+        setTargetText(props.description || ""); // Reset when task changes
+    }, [props.description]);
+    useEffect(() => {
+        setTargetText(props.description || "");
+    }, [props.description]);
 
 
     const handleInput = (event: React.FormEvent<HTMLDivElement>) => {
@@ -36,7 +38,7 @@ const EditableField: React.FC<props> = (props: props) => {
 
     const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
         if ((event.key === 'Delete' || event.key === 'Backspace') && !targetText.trim()) {
-            reference.current?.setAttribute('data-placeholder', props.placeholderText);
+            reference.current?.setAttribute('data-placeholder', PLACEHOLDER);
         }
     };
 
@@ -44,9 +46,13 @@ const EditableField: React.FC<props> = (props: props) => {
         const trimmedText = targetText.trim();
         setTargetText(trimmedText); // Keep UI updated
         setIsEditing(false);
+        console.log("ayo")
+        if (props.taskId) {
+            console.log("ayoo")
+            console.log(trimmedText)
+            console.log(props.taskId)
 
-        if (props.task.taskId) {
-            props.onSubmit(trimmedText, props.task.taskId); // Ensure task ID is passed
+            props.onSubmit(trimmedText, props.taskId); // Ensure task ID is passed
         }
     };
 
@@ -57,14 +63,20 @@ const EditableField: React.FC<props> = (props: props) => {
 
 
     return (
-        <Box
-            sx={{
-                padding: '8px',
-                minHeight: '40px',
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-            }}
+        <Box sx={{
+            '& .ql-editor': {
+                fontSize: '20px',
+                textAlign: 'center',
+                border: 'none'
+            }
+        }}
+            // sx={{
+            //     padding: '8px',
+            //     minHeight: '40px',
+            //     display: 'flex',
+            //     justifyContent: 'center',
+            //     alignItems: 'center',
+            // }}
             style={{
                 border: 'none',
                 textAlign: 'center',
@@ -72,12 +84,12 @@ const EditableField: React.FC<props> = (props: props) => {
                 color: 'text.primary',
                 fontSize: 'large',
             }}
-            className="task-description-container"
+            className="task-props.description-container"
         >
             <ReactQuill
                 value={targetText}
                 onChange={setTargetText}
-                placeholder={props.placeholderText}
+                placeholder={PLACEHOLDER}
                 onBlur={handleBlur}
                 theme="snow"
                 modules={{toolbar: false}} // Disable toolbar for simple editing
