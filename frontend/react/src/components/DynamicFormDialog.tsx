@@ -78,7 +78,13 @@ export function DynamicFormDialog(props: props) {
         }
     }, [props.open]);
     return (
-        <Dialog open={open} onClose={props.handleClose} sx={{minHeight: 800, minWidth: 800}}>
+        <Dialog open={open} onClose={props.handleClose} sx={{minHeight: 800, minWidth: 800}}
+                onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                        e.preventDefault(); // avoid accidental form submits
+                        formik.handleSubmit();
+                    }
+                }}>
             <DialogTitle>{props.dialogTitle}</DialogTitle>
             <DialogContent>
                 <form onSubmit={formik.handleSubmit}>

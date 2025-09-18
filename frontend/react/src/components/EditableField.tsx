@@ -63,28 +63,23 @@ const EditableField: React.FC<props> = (props: props) => {
 
 
     return (
-        <Box sx={{
-            '& .ql-editor': {
-                fontSize: '20px',
-                textAlign: 'center',
-                border: 'none'
-            }
-        }}
-            // sx={{
-            //     padding: '8px',
-            //     minHeight: '40px',
-            //     display: 'flex',
-            //     justifyContent: 'center',
-            //     alignItems: 'center',
-            // }}
-            style={{
-                border: 'none',
-                textAlign: 'center',
-                width: '100%',
-                color: 'text.primary',
-                fontSize: 'large',
+        <Box
+            sx={{
+                '& .ql-container': {
+                    border: 'none !important',   // removes the outer border
+                },
+                '& .ql-editor': {
+                    fontSize: '20px',
+                    textAlign: 'center',
+                    color: 'white',              // main text color
+                    minHeight: '40px',
+                    '&.ql-blank::before': {
+                        color: 'rgba(255, 255, 255, 0.5)', // placeholder gray-white
+                        fontStyle: 'italic',
+                        textAlign: 'center',
+                    },
+                },
             }}
-            className="task-props.description-container"
         >
             <ReactQuill
                 value={targetText}
@@ -92,15 +87,10 @@ const EditableField: React.FC<props> = (props: props) => {
                 placeholder={PLACEHOLDER}
                 onBlur={handleBlur}
                 theme="snow"
-                modules={{toolbar: false}} // Disable toolbar for simple editing
-                style={{
-                    border: 'none',
-                    textAlign: 'center',
-                    width: '100%',
-                    color: 'primary.main'
-                }}
+                modules={{ toolbar: false }}
             />
         </Box>
+
     );
 };
 

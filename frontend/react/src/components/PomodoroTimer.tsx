@@ -232,7 +232,11 @@ const PomodoroTimer: React.FC = () => {
     };
 
     return (
-        <HoverCardBox>
+        <HoverCardBox
+            display={(theme) => ({
+                display: "none",
+                [theme.breakpoints.up("lg")]: { display: "block" },
+            })}>
             <Stack spacing={2} sx={{ width: '100%' }}>
                 {connectionError && (
                     <Alert severity="error" onClose={() => setConnectionError(null)}>

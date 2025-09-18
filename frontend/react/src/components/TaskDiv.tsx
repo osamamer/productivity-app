@@ -1,5 +1,5 @@
 import {Task} from "../interfaces/Task.tsx";
-import {Card, Checkbox, Paper, Typography} from "@mui/material";
+import {Card, Checkbox, Typography} from "@mui/material";
 
 type props = { task: Task, toggleTaskCompletion: (taskId: string) => void, onClick: (task: Task) => void };
 
@@ -9,6 +9,20 @@ function Circle() {
         <div className="circle"></div>
     );
 }
+const formatTime = (dateTime: string): string => {
+    const date = new Date(dateTime);
+    const now = new Date();
+
+    const isSameDay =
+        now.getFullYear() === date.getFullYear() &&
+        now.getMonth() === date.getMonth() &&
+        now.getDate() === date.getDate();
+
+    if (isSameDay) return "Today";
+
+    const dayNames = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+    return dayNames[date.getDay()];
+};
 
 export function TaskDiv(props: props) {
     let importance;
@@ -24,17 +38,17 @@ export function TaskDiv(props: props) {
         title = "High importance task";
     }
     const divStyle = {
-        display: 'block',
-        content: "",
-        minWidth: '12px',
-        minHeight: '12px',
-        height: '12px',
-        width: '12px',
-        borderRadius: '50%',
-        marginLeft: 15,
+        // display: 'block',
+        // content: "",
+        // minWidth: '12px',
+        // minHeight: '12px',
+        // height: '12px',
+        // width: '12px',
+        // borderRadius: '50%',
+        // marginLeft: 15,
         zIndex: 10000,
         right: '-10px',
-        backgroundColor: importance === 'low'
+        color: importance === 'low'
             ? ' var(--priorityblue)'
             : importance === 'medium'
                 ? 'var(--priorityyellow)'
@@ -51,30 +65,54 @@ export function TaskDiv(props: props) {
             },
             transition: 'transform 0.3s, box-shadow 0.3s',
             boxShadow: 3,
-            borderRadius: 3,
+            borderRadius: 2,
         }} onClick={() => {
             props.onClick(props.task)
         }
         }>
-            <Checkbox size="small" checked={props.task.completed}
-                      onChange={() => {
-                          props.toggleTaskCompletion(props.task.taskId)
-                      }
-                      }>
+            <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                flex: 1,
+                minWidth: 0
+            }}>
+                <Checkbox size="small" checked={props.task.completed}
+                          onChange={() => {
+                              props.toggleTaskCompletion(props.task.taskId)
+                          }
+                          }>
 
-            </Checkbox>
-            {/*<label>*/}
-            {/*    <input*/}
-            {/*        type="checkbox"*/}
-            {/*        className="task-button"*/}
-            {/*        checked={props.task.completed}*/}
-            {/*        onChange={() => {*/}
-            {/*            props.toggleTaskCompletion(props.task.taskId)}*/}
-            {/*        }*/}
-            {/*    />*/}
-            {/*</label>*/}
-            <Typography className="task-div-text" style={{color: props.task.completed? "gray" : "inherit"}}>{props.task.name}</Typography>
-            <div className="circle" title={title} style={divStyle}></div>
+                </Checkbox>
+                {/*<label>*/}
+                {/*    <input*/}
+                {/*        type="checkbox"*/}
+                {/*        className="task-button"*/}
+                {/*        checked={props.task.completed}*/}
+                {/*        onChange={() => {*/}
+                {/*            props.toggleTaskCompletion(props.task.taskId)}*/}
+                {/*        }*/}
+                {/*    />*/}
+                {/*</label>*/}
+                <Typography
+                    sx={{
+                        color: props.task.completed ? "gray" : "inherit",
+                        display: "-webkit-box",
+                        overflow: "hidden",
+                        WebkitBoxOrient: "vertical",
+                        WebkitLineClamp: 4,   // <-- max number of lines before cutting off
+                        lineHeight: 1.4,
+                        maxHeight: "5.6em",   // 4 * lineHeight → ensures container height
+                    }}
+                >
+                    {props.task.name}
+                </Typography>
+            </div>
+
+            <Typography className="circle" style={divStyle}>
+                {formatTime(props.task.scheduledPerformDateTime)}
+            </Typography>
+            {/*<div className="circle" title={title} style={divStyle}></div>*/}
         </Card>
     );
 }

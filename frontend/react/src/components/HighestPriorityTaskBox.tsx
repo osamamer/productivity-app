@@ -43,7 +43,13 @@ export function HighestPriorityTaskBox(props: props) {
         return null;
     }
     return (
-        <HoverCardBox> <Typography>You should probably get to this . . . </Typography>
+        <HoverCardBox
+            // display={(theme) => ({
+            //     display: "none",
+            //     [theme.breakpoints.up("lg")]: { display: "block" },
+            // })}
+        >
+            <Typography>You should probably get to this one . . . </Typography>
             <Typography sx={{color: `${color}.main`}}>{highestPriorityTask.name}</Typography>
         </HoverCardBox>
     );

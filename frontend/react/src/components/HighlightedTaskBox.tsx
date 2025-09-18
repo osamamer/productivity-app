@@ -34,7 +34,12 @@ export function HighlightedTaskBox(props: props) {
 
     }, [props.tasks]);
     return (
-        <HoverCardBox>
+        <HoverCardBox
+        //     display={(theme) => ({
+        //     display: "none",
+        //     [theme.breakpoints.up("lg")]: { display: "block" },
+        // })}
+        >
             <Typography variant="h4" sx={{ mb: 0 }}>
                 {props.task.name ?? "No task to highlight"}
             </Typography>
@@ -47,33 +52,35 @@ export function HighlightedTaskBox(props: props) {
             {/*)}*/}
 
             {/*<InputText task={props.task}></InputText>*/}
-            <Button
-                sx={{m: 1, width: 1 / 2, alignSelf: 'center'}}
-                variant="contained"
+            <div style={{display: 'flex',
+                        alignItems: 'center', justifyContent: 'center'}}>
+                <Button
+                    sx={{m: 1, width: 1 / 4, alignSelf: 'center'}}
+                    variant="contained"
 
 
-                onClick={() => {
-                    props.handleOpenDialog?.('pomodoroDialog');
-                }}
-                endIcon={<AdjustIcon/>}
-            >
-                Focus Session
-            </Button>
+                    onClick={() => {
+                        props.handleOpenDialog?.('pomodoroDialog');
+                    }}
+                    endIcon={<AdjustIcon/>}
+                >
+                </Button>
 
-            <Button
-                sx={{m: 1, width: 1 / 2, alignSelf: 'center'}}
-                variant="contained"
-                // @ts-ignore
-                color={color}
-                endIcon={<CheckIcon/>}
-                onClick={() => {
-                    if ("taskId" in props.task) {
-                        props.handleCompleteTask(props.task.taskId)
-                    }
-                }}
-            >
-                Complete Task
-            </Button>
+                <Button
+                    sx={{m: 1, width: 1 / 4, alignSelf: 'center'}}
+                    variant="contained"
+                    // @ts-ignore
+                    color={color}
+                    endIcon={<CheckIcon/>}
+                    onClick={() => {
+                        if ("taskId" in props.task) {
+                            props.handleCompleteTask(props.task.taskId)
+                        }
+                    }}
+                >
+                </Button>
+            </div>
+
 
         </HoverCardBox>
 
