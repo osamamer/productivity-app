@@ -19,6 +19,9 @@ import {TopBar} from "../components/TopBar.tsx";
 import {lightTheme} from "../Theme.tsx";
 import PomodoroTimer from "../components/PomodoroTimer";
 import WebSocketTest from "../components/WebSocketTest";
+import FullCalendar from '@fullcalendar/react'
+import dayGridPlugin from '@fullcalendar/daygrid'
+import {HoverCardBox} from "../components/HoverCardBox"; // a plugin!
 
 export const OvalButton = styled(Button)({
     borderRadius: '50px', // Adjust the value to get the oval shape you desire
@@ -395,6 +398,16 @@ export function HomePage(props: props) {
                          }}
                     >
                         <TodayBox today={today} handleOpenDialog={handleOpen} darkMode={props.darkMode}/>
+                        <HoverCardBox maximumHeight='500px'>
+                            <FullCalendar
+                                plugins={[ dayGridPlugin ]}
+                                initialView="dayGridMonth"
+                                eventColor="#1976d2"           // all events blue
+                                eventTextColor="#fff"          // text white
+                                height={300}
+                                themeSystem="bootstrap5"
+                            />
+                        </HoverCardBox>
 
                     </Box>
                 </Box>

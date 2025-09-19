@@ -1,16 +1,13 @@
-import {createTheme} from "@mui/material";
+import {createTheme, responsiveFontSizes} from "@mui/material";
 const { palette } = createTheme();
 const { augmentColor } = palette;
 const createColor = (mainColor: string) => augmentColor({ color: { main: mainColor } });
 export const baseTheme = createTheme();
-    export const darkTheme = createTheme({
+    export let darkTheme = createTheme({
 
     typography: {
         fontFamily: 'Raleway, Arial, sans-serif',
-        fontSize: 13,
-        [baseTheme.breakpoints.up('md')]: {
-            fontSize: '2.4rem',
-        },
+        // fontSize: 'clamp(0.9rem, 1vw + 0.5rem, 1.2rem)',
     },
         palette: {
             mode: 'dark',
@@ -41,7 +38,8 @@ export const baseTheme = createTheme();
         }
     }
 )
-export const lightTheme = createTheme({
+darkTheme = responsiveFontSizes(darkTheme);
+export let lightTheme = createTheme({
     typography: {
         fontFamily: 'Raleway, Arial, sans-serif', // Set your desired font family
     },
@@ -71,3 +69,4 @@ export const lightTheme = createTheme({
         },
     },
 });
+lightTheme = responsiveFontSizes(lightTheme);

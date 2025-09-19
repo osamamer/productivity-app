@@ -6,9 +6,10 @@ interface props {
     children: ReactNode,
     display?: (theme: any) => any; // a function that receives the theme
     maximumWidth?: string;
+    maximumHeight?: string;
 }
 
-export function HoverCardBox({ children, display, maximumWidth }: props) {
+export function HoverCardBox({ children, display, maximumWidth, maximumHeight }: props) {
     return (
         <Card
             sx={(theme) => ({
@@ -21,7 +22,8 @@ export function HoverCardBox({ children, display, maximumWidth }: props) {
                 transition: "transform 0.3s, box-shadow 0.3s",
                 boxShadow: 3,
                 borderRadius: 1,
-                maxWidth: maximumWidth? maximumWidth : '100%'
+                maxWidth: maximumWidth? maximumWidth : '100%',
+                maxHeight: maximumHeight? maximumHeight : '100%',
             })}
         >
             {children}

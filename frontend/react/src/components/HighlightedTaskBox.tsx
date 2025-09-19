@@ -40,7 +40,7 @@ export function HighlightedTaskBox(props: props) {
         //     [theme.breakpoints.up("lg")]: { display: "block" },
         // })}
         >
-            <Typography variant="h4" sx={{ mb: 0 }}>
+            <Typography variant="h5" sx={{ mb: 0 }}>
                 {props.task.name ?? "No task to highlight"}
             </Typography>
             <EditableField onSubmit={props.handleChangeDescription}

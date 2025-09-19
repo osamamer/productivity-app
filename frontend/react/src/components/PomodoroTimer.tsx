@@ -232,11 +232,7 @@ const PomodoroTimer: React.FC = () => {
     };
 
     return (
-        <HoverCardBox
-            display={(theme) => ({
-                display: "none",
-                [theme.breakpoints.up("lg")]: { display: "block" },
-            })}>
+        <HoverCardBox>
             <Stack spacing={2} sx={{ width: '100%' }}>
                 {connectionError && (
                     <Alert severity="error" onClose={() => setConnectionError(null)}>
@@ -246,7 +242,7 @@ const PomodoroTimer: React.FC = () => {
 
                 {!status?.isSessionActive ? (
                     <>
-                        <Typography variant="h6">
+                        <Typography variant="h5">
                             Pomodoro Timer {isConnected ? '(Connected)' : '(Disconnected)'}
                         </Typography>
 

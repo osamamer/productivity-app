@@ -22,13 +22,12 @@ export function TaskBox(props: props) {
     const tasksExist = todayTasksExist || futureTasksExist || pastTasksExist;
 
 
-    const isTodayBox = props.type === "Today";
     return (
         <HoverCardBox>
             {/*<Typography variant="h4">{`${props.type}'s tasks`}</Typography>*/}
-            <Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', pr: 1}}>
+            <Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', pr: 1, mb: 3}}>
                 <Typography variant="h4" sx={{textAlign: 'left'}}>Tasks</Typography>
-                <Button sx={{width: 1 / 4, position: 'sticky', alignSelf: 'flex-end'}} variant="outlined"
+                <Button sx={{width: 1 / 3, position: 'sticky', alignSelf: 'flex-end'}} variant="outlined"
                         color="primary" onClick={() => {
                     props.handleButtonClick('createTaskDialog')
                 }}>New task</Button>

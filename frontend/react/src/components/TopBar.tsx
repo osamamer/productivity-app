@@ -47,7 +47,7 @@ export function TopBar(props: props) {
                     <Typography
                         color="text.primary"
                         sx={{ mr: 2}}
-                        variant="h4" component="div">
+                        variant="h5" component="div">
                         What's on your mind?
                     </Typography>
                     <Box component="form" onSubmit={handleSubmit} sx={{ padding: 2 }}>
