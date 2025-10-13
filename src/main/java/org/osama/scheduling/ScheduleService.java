@@ -1,6 +1,7 @@
 package org.osama.scheduling;
 
 import lombok.extern.slf4j.Slf4j;
+import org.osama.pomodoro.Pomodoro;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -16,30 +17,28 @@ public class ScheduleService {
         this.scheduledJobRepository = scheduledJobRepository;
     }
 
-    public void schedulePomoJobs(String taskId, int focusDuration,
-                                 int shortBreakDuration, int longBreakDuration,
-                                 int numFocuses, int longBreakCooldown) {
+    public void schedulePomoJobs(Pomodoro pomodoro) {
         // Why are we even using the same session? What is actually the point? Why not different sessions?
-        int n = 2*numFocuses-1;
+        int n = 2* pomodoro.getNumFocuses() -1;
         int timeElapsed = 0;
         int breaksTaken = 0;
         for (int i = 0; i < n; i++) {
             if (i % 2 == 0) { // Meaning that are in an even iteration in which the task is active
                 createScheduledJob(JobType.END_SESSION,
-                        LocalDateTime.now().plusMinutes(timeElapsed + focusDuration), taskId);
-                timeElapsed += focusDuration;
+                        LocalDateTime.now().plusMinutes(timeElapsed + pomodoro.getFocusDuration()), pomodoro.getAssociatedTaskId());
+                timeElapsed += pomodoro.getFocusDuration();
             }
             else { // Meaning that we are in an odd iteration in which we are taking a break
                 breaksTaken++;
-                if (breaksTaken % longBreakCooldown != 0) { // Short break
+                if (breaksTaken % pomodoro.getLongBreakCooldown() != 0) { // Short break
                     createScheduledJob(JobType.START_SESSION,
-                            LocalDateTime.now().plusMinutes(timeElapsed + shortBreakDuration), taskId);
-                    timeElapsed += shortBreakDuration;
+                            LocalDateTime.now().plusMinutes(timeElapsed + pomodoro.getShortBreakDuration()), pomodoro.getAssociatedTaskId());
+                    timeElapsed += pomodoro.getShortBreakDuration();
                 }
                 else { // Long break
                     createScheduledJob(JobType.START_SESSION,
-                            LocalDateTime.now().plusMinutes(timeElapsed + longBreakDuration), taskId);
-                    timeElapsed += longBreakDuration;
+                            LocalDateTime.now().plusMinutes(timeElapsed + pomodoro.getLongBreakDuration()), pomodoro.getAssociatedTaskId());
+                    timeElapsed += pomodoro.getLongBreakDuration();
                 }
             }
         }
@@ -51,7 +50,7 @@ public class ScheduleService {
             scheduledJobRepository.save(job);
         });
         log.info("Unscheduled jobs for task with ID [{}]", taskId);
-
+        // TODO: find out why calling this method fixed the bug wherein ending a task didn't stop the timer counting
     }
     public void rescheduleTaskJobs(String taskId) { // For when the user unpauses
         List<ScheduledJob> taskJobs = scheduledJobRepository.findAllByAssociatedTaskId(taskId);

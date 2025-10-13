@@ -21,7 +21,10 @@ public class Session {
     private String sessionId;
 
     @Column(nullable = false)
-    private String taskId;
+    private String associatedTaskId;
+
+    @Column
+    private String associatedPomodoroId;
 
     @Column(nullable = false)
     private boolean running;
@@ -53,4 +56,7 @@ public class Session {
     private LocalDateTime endTime;
     @Column
     private boolean pomodoro;
+
+
+
 }

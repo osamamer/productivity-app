@@ -209,7 +209,10 @@ public class TaskController {
             taskRepository.deleteTaskByTaskId(taskRepository.findAll().get(i).getTaskId());
         }
     }
-
+    @PostMapping("/end-pomodoro/{taskId}")
+    public void endPomodoro(@PathVariable String taskId) {
+        sessionService.endPomodoro(taskId);
+    }
     @PostMapping("/end-all-sessions")
     public void endAllSessions() {
         taskService.endAllSessions();

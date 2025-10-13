@@ -23,15 +23,15 @@ interface Task {
     name: string;
 }
 
-interface PomodoroStatus {
+interface Pomodoro {
     taskId: string;
     taskName: string;
     sessionActive: boolean;
     sessionRunning: boolean;
     secondsPassed: number;
-    secondsUntilTransition: number;
+    secondsUntilNextTransition: number;
     currentFocusNumber: number;
-    totalFocuses: number;
+    numFocuses: number;
 }
 
 interface PomodoroFormData {
@@ -49,7 +49,7 @@ interface props {
 
 export function PomodoroTimer(props: props) {
     const [tasks, setTasks] = useState<Task[]>([]);
-    const [status, setStatus] = useState<PomodoroStatus | null>(null);
+    const [status, setStatus] = useState<Pomodoro | null>(null);
     const [isConnected, setIsConnected] = useState(false);
     const [connectionError, setConnectionError] = useState<string | null>(null);
     const stompClientRef = useRef<Client | null>(null);
@@ -77,7 +77,9 @@ export function PomodoroTimer(props: props) {
         }
     }, [props.tasks]);
 
-
+    useEffect(() => {
+        console.log(status)
+    }, [status]);
     const ROOT_URL = "http://localhost:8080";
     const TASK_URL = ROOT_URL.concat("/api/v1/task");
     const WS_URL = `ws://localhost:8080/ws`;
@@ -95,7 +97,7 @@ export function PomodoroTimer(props: props) {
         }
     }
     async function handleEndSession() {
-        await fetch(TASK_URL.concat(`/end-session/${formData.taskId}`), {
+        await fetch(TASK_URL.concat(`/end-pomodoro/${formData.taskId}`), {
             method: "POST"
             })
     }
@@ -194,7 +196,7 @@ export function PomodoroTimer(props: props) {
             return client.subscribe(destination, (message) => {
                 // console.log('Received message:', message.body);
                 try {
-                    const newStatus: PomodoroStatus = JSON.parse(message.body);
+                    const newStatus: Pomodoro = JSON.parse(message.body);
                     setStatus(newStatus);
                 } catch (error) {
                     console.error('Error parsing message:', error);
@@ -207,7 +209,7 @@ export function PomodoroTimer(props: props) {
     }, []);
 
 
-    useEffect(() => {
+    useEffect(() => { // If the task changes, or the connection, or a new subscription comes in, unsubscribe from the old one.
         if (formData.taskId && isConnected) {
             const subscription = subscribeToTask(formData.taskId);
             return () => {
@@ -333,16 +335,16 @@ export function PomodoroTimer(props: props) {
                             </Typography>
 
                             <Typography variant="h4">
-                                {formatTime(status.secondsUntilTransition)}
+                                {formatTime(status.secondsUntilNextTransition)}
                             </Typography>
 
                             <Box sx={{width: '100%', mt: 1}}>
                                 <LinearProgress
                                     variant="determinate"
-                                    value={(status.secondsPassed / (status.secondsPassed + status.secondsUntilTransition)) * 100}
+                                    value={(status.secondsPassed / (status.secondsPassed + status.secondsUntilNextTransition)) * 100}
                                 />
                                 <Typography variant="caption" color="text.secondary" sx={{mt: 0.5}}>
-                                    Session {status.currentFocusNumber} of {status.totalFocuses}
+                                    Session {status.currentFocusNumber} of {status.numFocuses}
                                 </Typography>
                             </Box>
                             {/*{status.sessionActive && ( <PauseIcon onClick={pauseSession}></PauseIcon>)}*/}

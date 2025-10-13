@@ -25,7 +25,7 @@ public class TaskService {
 
     public Duration getAccumulatedTime(String taskId) {
         Duration totalDuration = Duration.ZERO;
-        List<Session> sessionList = sessionRepository.findAllByTaskId(taskId);
+        List<Session> sessionList = sessionRepository.findAllByAssociatedTaskId(taskId);
         for (Session session : sessionList) {
             totalDuration = totalDuration.plus(session.getTotalSessionTime());
         }
@@ -39,10 +39,10 @@ public class TaskService {
     }
 
     public boolean getTaskRunning(String taskId) {
-        return !sessionRepository.findAllByTaskIdAndRunningIsTrue(taskId).isEmpty();
+        return !sessionRepository.findAllByAssociatedTaskIdAndRunningIsTrue(taskId).isEmpty();
     }
     public boolean getTaskActive(String taskId) {
-        return !sessionRepository.findAllByTaskIdAndActiveIsTrue(taskId).isEmpty();
+        return !sessionRepository.findAllByAssociatedTaskIdAndActiveIsTrue(taskId).isEmpty();
     }
 
 
