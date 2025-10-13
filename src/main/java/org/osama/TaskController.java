@@ -1,9 +1,11 @@
 package org.osama;
 
+import org.osama.session.Session;
+import org.osama.session.SessionService;
 import org.osama.task.*;
-import org.osama.task.requests.ModifyTaskRequest;
-import org.osama.task.requests.NewTaskRequest;
-import org.osama.task.requests.PomodoroRequest;
+import org.osama.requests.ModifyTaskRequest;
+import org.osama.requests.NewTaskRequest;
+import org.osama.requests.PomodoroRequest;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -18,10 +20,12 @@ import java.util.Map;
 public class TaskController {
     private final TaskRepository taskRepository;
     private final TaskService taskService;
+    private final SessionService sessionService;
 
-    public TaskController(TaskRepository taskRepository, TaskService taskService) {
+    public TaskController(TaskRepository taskRepository, TaskService taskService, SessionService sessionService) {
         this.taskRepository = taskRepository;
         this.taskService = taskService;
+        this.sessionService = sessionService;
     }
 
     @GetMapping
@@ -89,22 +93,22 @@ public class TaskController {
 
     @PostMapping("/start-session/{taskId}")
     public void startTaskSession(@PathVariable String taskId) {
-        taskService.startTaskSession(taskId, false);
+        sessionService.startTaskSession(taskId, false);
     }
 
     @PostMapping("/pause-session/{taskId}")
     public void pauseTaskSession(@PathVariable String taskId) {
-        taskService.pauseTaskSession(taskId);
+        sessionService.pauseTaskSession(taskId);
     }
 
     @PostMapping("/unpause-session/{taskId}")
     public void unpauseTaskSession(@PathVariable String taskId) {
-        taskService.unpauseTaskSession(taskId);
+        sessionService.unpauseTaskSession(taskId);
     }
 
     @PostMapping("/end-session/{taskId}")
     public void endTaskSession(@PathVariable String taskId) {
-        taskService.endTaskSession(taskId);
+        sessionService.endTaskSession(taskId);
     }
 
     @PostMapping("/set-description")
@@ -189,7 +193,7 @@ public class TaskController {
 
     @PostMapping("/start-pomodoro")
     public void startPomodoro(@RequestBody PomodoroRequest pomodoroRequest) {
-        taskService.startPomodoro(pomodoroRequest.taskId, pomodoroRequest.focusDuration,
+        sessionService.startPomodoro(pomodoroRequest.taskId, pomodoroRequest.focusDuration,
                 pomodoroRequest.shortBreakDuration, pomodoroRequest.longBreakDuration,
                 pomodoroRequest.numFocuses, pomodoroRequest.longBreakCooldown);
     }

@@ -1,22 +1,16 @@
 package org.osama.task;
 
 import lombok.extern.slf4j.Slf4j;
-import org.osama.PomodoroWebSocketController;
-import org.osama.scheduling.JobType;
-import org.osama.scheduling.ScheduledJob;
-import org.osama.scheduling.ScheduledJobRepository;
 import org.osama.session.Session;
 import org.osama.session.SessionRepository;
-import org.osama.task.requests.ModifyTaskRequest;
-import org.osama.task.requests.NewTaskRequest;
+import org.osama.requests.ModifyTaskRequest;
+import org.osama.requests.NewTaskRequest;
 import org.springframework.stereotype.Service;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
-import java.time.temporal.ChronoUnit;
 import java.util.*;
 
 @Service
@@ -24,14 +18,9 @@ import java.util.*;
 public class TaskService {
     private final TaskRepository taskRepository;
     private final SessionRepository sessionRepository;
-    private final ScheduledJobRepository scheduledJobRepository;
-    private final PomodoroWebSocketController pomodoroWebSocketController;
-
-    public TaskService(TaskRepository taskRepository, SessionRepository sessionRepository, ScheduledJobRepository scheduledJobRepository, PomodoroWebSocketController pomodoroWebSocketController) {
+    public TaskService(TaskRepository taskRepository, SessionRepository sessionRepository) {
         this.taskRepository = taskRepository;
         this.sessionRepository = sessionRepository;
-        this.scheduledJobRepository = scheduledJobRepository;
-        this.pomodoroWebSocketController = pomodoroWebSocketController;
     }
 
     public Duration getAccumulatedTime(String taskId) {
@@ -55,59 +44,9 @@ public class TaskService {
     public boolean getTaskActive(String taskId) {
         return !sessionRepository.findAllByTaskIdAndActiveIsTrue(taskId).isEmpty();
     }
-    public void startTaskSession(String taskId, boolean isPomodoro) {
-        Task task = taskRepository.findTaskByTaskId(taskId);
-        List<Session> activeSessions = sessionRepository.findAllByTaskIdAndActiveIsTrue(task.getTaskId());
-        if (!activeSessions.isEmpty()) throw new IllegalStateException("Cannot start a session when a task is already active");
-//        endAllSessions();
-        Session session = createSession(task, isPomodoro);
-        sessionRepository.save(session);
-        log.info("Started session for task with ID [{}] on {}", task.getTaskId(), session.getStartTime());
-    }
-    public void pauseTaskSession(String taskId) {
-        Task task = taskRepository.findTaskByTaskId(taskId);
-        Optional<Session> session = sessionRepository.findSessionByTaskIdAndRunningIsTrue(taskId);
-        Session activeSession = session.orElseThrow(() -> new IllegalStateException("Cannot pause task session because it is not running"));
-        activeSession.setRunning(false);
-        Duration elapsedTime = Duration.between(activeSession.getLastUnpauseTime(), LocalDateTime.now());
-        activeSession.setTotalSessionTime(activeSession.getTotalSessionTime().plus(elapsedTime));
-        activeSession.setLastPauseTime(LocalDateTime.now());
-        if (activeSession.isPomodoro()) {
-            unscheduleTaskJobs(taskId);
-        }
-        sessionRepository.save(activeSession);
-        log.info("Paused task with ID [{}] on {}", task.getTaskId(), activeSession.getLastPauseTime());
-    }
-    public void unpauseTaskSession(String taskId) {
-        Task task = taskRepository.findTaskByTaskId(taskId);
-        Optional<Session> session = sessionRepository.findSessionByTaskIdAndRunningIsTrue(task.getTaskId());
-        if (session.isPresent()) throw new IllegalStateException("Cannot unpause a session when the task is already running");
-        session = sessionRepository.findSessionByTaskIdAndActiveIsTrue(taskId);
-        Session activeSession = session.orElseThrow(() -> new IllegalStateException("Cannot unpause task session because it is not active"));
-        activeSession.setRunning(true);
-        activeSession.setLastUnpauseTime(LocalDateTime.now());
-        if (activeSession.isPomodoro()) {
-            shiftTaskJobDueDates(taskId, (int) ChronoUnit.SECONDS.between(activeSession.getLastPauseTime(), activeSession.getLastUnpauseTime()));
-            rescheduleTaskJobs(taskId);
-        }
-        sessionRepository.save(activeSession);
-        log.info("Unpaused task with ID [{}] on {}", task.getTaskId(), activeSession.getLastUnpauseTime());
-    }
-    public void endTaskSession(String taskId) {
-        Task task = taskRepository.findTaskByTaskId(taskId);
-        Optional<Session> session = sessionRepository.findSessionByTaskIdAndActiveIsTrue(taskId);
-        Session activeSession = session.orElseThrow(() -> new IllegalStateException("Cannot end task session because it is not active"));
-        Duration elapsedTime = Duration.between(activeSession.getLastUnpauseTime(), LocalDateTime.now());
-        if (activeSession.isRunning()) {
-            activeSession.setTotalSessionTime(activeSession.getTotalSessionTime().plus(elapsedTime));
-        }
-        activeSession.setEndTime(LocalDateTime.now());
-        activeSession.setRunning(false);
-        activeSession.setActive(false);
-        sessionRepository.save(activeSession);
-        pomodoroWebSocketController.stopPomodoroUpdates(taskId);
-        log.info("Ended session for task with ID [{}] on {}", task.getTaskId(), activeSession.getEndTime());
-    }
+
+
+
     public void completeTask(String taskId) {
         Task task = taskRepository.findTaskByTaskId(taskId);
         task.setCompleted(true);
@@ -180,93 +119,7 @@ public class TaskService {
     public Task getNewestUncompletedHighestPriorityTask() {
         return taskRepository.findFirstByCompletedIsFalseOrderByImportanceDescCreationDateTimeDesc();
     }
-    public void startPomodoro(String taskId, int focusDuration,
-                              int shortBreakDuration, int longBreakDuration,
-                              int numFocuses, int longBreakCooldown) {
-        startTaskSession(taskId, true);
-        schedulePomoJobs(taskId, focusDuration, shortBreakDuration, longBreakDuration, numFocuses, longBreakCooldown);
-        // Start sending WebSocket updates
-        Task task = taskRepository.findTaskByTaskId(taskId);
-        pomodoroWebSocketController.startPomodoroUpdates(taskId, numFocuses);
-    }
-    private void schedulePomoJobs(String taskId, int focusDuration,
-                                  int shortBreakDuration, int longBreakDuration,
-                                  int numFocuses, int longBreakCooldown) {
-        // Why are we even using the same session? What is actually the point? Why not different sessions?
-        int n = 2*numFocuses-1;
-        int timeElapsed = 0;
-        int breaksTaken = 0;
-        for (int i = 0; i < n; i++) {
-            if (i % 2 == 0) { // Meaning that are in an even iteration in which the task is active
-                    createScheduledJob(JobType.END_SESSION,
-                            LocalDateTime.now().plusMinutes(timeElapsed + focusDuration), taskId);
-                timeElapsed += focusDuration;
-            }
-            else { // Meaning that we are in an odd iteration in which we are taking a break
-                breaksTaken++;
-                if (breaksTaken % longBreakCooldown != 0) { // Short break
-                    createScheduledJob(JobType.START_SESSION,
-                            LocalDateTime.now().plusMinutes(timeElapsed + shortBreakDuration), taskId);
-                    timeElapsed += shortBreakDuration;
-                }
-                else { // Long break
-                    createScheduledJob(JobType.START_SESSION,
-                            LocalDateTime.now().plusMinutes(timeElapsed + longBreakDuration), taskId);
-                    timeElapsed += longBreakDuration;
-                }
-            }
-        }
-    }
-    private void unscheduleTaskJobs(String taskId) { // For when the user pauses
-        List<ScheduledJob> taskJobs = scheduledJobRepository.findAllByAssociatedTaskId(taskId);
-        taskJobs.forEach((job) -> {
-            job.setScheduled(false);
-            scheduledJobRepository.save(job);
-        });
-        log.info("Unscheduled jobs for task with ID [{}]", taskId);
 
-    }
-    private void rescheduleTaskJobs(String taskId) { // For when the user pauses
-        List<ScheduledJob> taskJobs = scheduledJobRepository.findAllByAssociatedTaskId(taskId);
-        taskJobs.forEach((job) -> {
-            job.setScheduled(true);
-            scheduledJobRepository.save(job);
-        });
-        log.info("Rescheduled jobs for task with ID [{}]", taskId);
-
-    }
-    private void shiftTaskJobDueDates(String taskId, int shift) {
-        List<ScheduledJob> taskJobs = scheduledJobRepository.findAllByAssociatedTaskId(taskId);
-        taskJobs.forEach((job) -> {
-            job.setDueDate(job.getDueDate().plusSeconds(shift));
-            scheduledJobRepository.save(job);
-            log.info("Shifted {} job to {}", job.getJobType(), job.getDueDate());
-        });
-    }
-    private ScheduledJob createScheduledJob(JobType jobType, LocalDateTime dueDate, String taskId) {
-        ScheduledJob scheduledJob = new ScheduledJob();
-        scheduledJob.setJobId(UUID.randomUUID().toString());
-        scheduledJob.setJobType(jobType);
-        scheduledJob.setDueDate(dueDate);
-        scheduledJob.setAssociatedTaskId(taskId);
-        scheduledJob.setScheduled(true);
-        scheduledJobRepository.save(scheduledJob);
-        log.info("Scheduled {} job for task [{}] on {}", jobType.toString(), taskId, dueDate);
-        return scheduledJob;
-    }
-    private static Session createSession(Task task, boolean isPomodoro) {
-        Session session = new Session();
-        session.setSessionId(UUID.randomUUID().toString());
-        session.setTaskId(task.getTaskId());
-        session.setStartTime(LocalDateTime.now());
-        session.setTotalSessionTime(Duration.ZERO);
-        session.setLastUnpauseTime(session.getStartTime());
-        session.setActive(true);
-        session.setRunning(true);
-        session.setPomodoro(isPomodoro);
-        log.info("Created session for task with ID [{}]", task.getTaskId());
-        return session;
-    }
 
     public void endAllSessions() {
         sessionRepository.findAll()
@@ -290,7 +143,6 @@ public class TaskService {
         newTask.setCreationDateTime(LocalDateTime.now(TimeZone.getDefault().toZoneId()));
         newTask.setCreationDate(newTask.getCreationDateTime().toLocalDate());
         newTask.setCompleted(false);
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MMM-dd HH:mm");
         if (!Objects.equals(taskRequest.taskPerformTime, "")) {
             log.info("Task perform time not null");
             try {

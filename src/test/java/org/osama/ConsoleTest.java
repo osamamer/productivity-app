@@ -3,7 +3,8 @@ package org.osama;
 import org.junit.jupiter.api.Test;
 import org.osama.day.DayService;
 import org.osama.session.SessionRepository;
-import org.osama.task.requests.NewTaskRequest;
+import org.osama.requests.NewTaskRequest;
+import org.osama.session.SessionService;
 import org.osama.task.Task;
 import org.osama.task.TaskRepository;
 import org.osama.task.TaskService;
@@ -20,6 +21,8 @@ public class ConsoleTest {
     private SessionRepository sessionRepository;
     @Autowired
     private DayService dayService;
+    @Autowired
+    private SessionService sessionService;
     @Test
     void main() throws InterruptedException {
         NewTaskRequest request = new NewTaskRequest();
@@ -28,17 +31,17 @@ public class ConsoleTest {
         request.setTaskPerformTime("2017-01-13T17:09:42.411");
         Task task = taskService.createNewTask(request);
         String taskId = task.getTaskId();
-        taskService.startTaskSession(taskId, false);
+        sessionService.startTaskSession(taskId, false);
         Thread.sleep(25);
-        taskService.pauseTaskSession(taskId);
+        sessionService.pauseTaskSession(taskId);
         Thread.sleep(25);
-        taskService.unpauseTaskSession(taskId);
+        sessionService.unpauseTaskSession(taskId);
         Thread.sleep(25);
-        taskService.pauseTaskSession(taskId);
+        sessionService.pauseTaskSession(taskId);
         Thread.sleep(25);
-        taskService.unpauseTaskSession(taskId);
+        sessionService.unpauseTaskSession(taskId);
         Thread.sleep(25);
-        taskService.endTaskSession(taskId);
+        sessionService.endTaskSession(taskId);
         System.out.println(taskService.getAccumulatedTime(taskId).toMillis() + " milliseconds");
     }
     @Test
@@ -50,14 +53,14 @@ public class ConsoleTest {
 
         Task task = taskService.createNewTask(request);
         String taskId = task.getTaskId();
-        taskService.startTaskSession(taskId, false);
+        sessionService.startTaskSession(taskId, false);
         Thread.sleep(50);
-        taskService.pauseTaskSession(taskId);
+        sessionService.pauseTaskSession(taskId);
         Thread.sleep(25);
-        taskService.endTaskSession(taskId);
+        sessionService.endTaskSession(taskId);
         System.out.println(taskService.getAccumulatedTime(taskId).toMillis() + " milliseconds");
     }
     public void pauseSession(String taskId){
-        taskService.pauseTaskSession(taskId);
+        sessionService.pauseTaskSession(taskId);
     }
 }

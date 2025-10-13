@@ -9,7 +9,7 @@ import {HoverCardBox} from "./HoverCardBox";
 
 type props = {
     tasks: Task[];
-    task: Task;
+    task: Task | null;
     handleOpenDialog?: (dialogType: string) => void;
     handleCompleteTask: (taskId: string) => void;
     handleChangeDescription: (description: string, taskId: string) => void;

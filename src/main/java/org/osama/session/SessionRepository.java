@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Optional;
 
 public interface SessionRepository extends JpaRepository<Session, String> {
+    Session findSessionBySessionId(String sessionId);
     Optional<Session> findSessionByTaskIdAndRunningIsTrue(String taskId);
     Optional<Session> findSessionByTaskIdAndActiveIsTrue(String taskId);
     List<Session> findAllByTaskIdAndRunningIsTrue(String taskId);
@@ -15,4 +16,6 @@ public interface SessionRepository extends JpaRepository<Session, String> {
     List<Session> findAllByRunningIsTrue();
     List<Session> findAllByActiveIsTrue();
     int countAllByTaskIdAndActiveIsFalse(String taskId);
+
+    boolean existsByTaskIdAndRunningIsTrue(String taskId);
 }

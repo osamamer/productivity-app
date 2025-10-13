@@ -4,7 +4,8 @@ import org.junit.jupiter.api.Test;
 import org.osama.scheduling.ScheduledJob;
 import org.osama.scheduling.ScheduledJobRepository;
 import org.osama.scheduling.TimedExecutorService;
-import org.osama.task.requests.NewTaskRequest;
+import org.osama.requests.NewTaskRequest;
+import org.osama.session.SessionService;
 import org.osama.task.Task;
 import org.osama.task.TaskService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,6 +27,8 @@ public class PomoTest {
     private ScheduledJobRepository scheduledJobRepository;
     @Autowired
     private TaskService taskService;
+    @Autowired
+    private SessionService sessionService;
 
 
     @Test
@@ -36,7 +39,7 @@ public class PomoTest {
         int longBreakDuration = 2;
         int numFocuses = 3;
         int longBreakCooldown = 2;
-        taskService.startPomodoro(task.getTaskId(), focusDuration, shortBreakDuration, longBreakDuration, numFocuses, longBreakCooldown);
+        sessionService.startPomodoro(task.getTaskId(), focusDuration, shortBreakDuration, longBreakDuration, numFocuses, longBreakCooldown);
     }
     @Test
     void pomoUserInterventionTest() throws InterruptedException {
@@ -47,12 +50,12 @@ public class PomoTest {
         int numFocuses = 3;
         int longBreakCooldown = 2;
         long pauseTime = 1000;
-        taskService.startPomodoro(task.getTaskId(), focusDuration, shortBreakDuration, longBreakDuration, numFocuses, longBreakCooldown);
+        sessionService.startPomodoro(task.getTaskId(), focusDuration, shortBreakDuration, longBreakDuration, numFocuses, longBreakCooldown);
         List<LocalDateTime> oldDueDates = scheduledJobRepository.findAllByAssociatedTaskId(task.getTaskId()).stream().map(ScheduledJob::getDueDate).toList();;
         Thread.sleep(1000);
-        taskService.pauseTaskSession(task.getTaskId());
+        sessionService.pauseTaskSession(task.getTaskId());
         Thread.sleep(pauseTime);
-        taskService.unpauseTaskSession(task.getTaskId());
+        sessionService.unpauseTaskSession(task.getTaskId());
         List<LocalDateTime> newDueDates = scheduledJobRepository.findAllByAssociatedTaskId(task.getTaskId()).stream().map(ScheduledJob::getDueDate).toList();
         for (LocalDateTime date:newDueDates) {
             System.out.println(date);

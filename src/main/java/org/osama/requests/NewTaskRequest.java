@@ -1,4 +1,4 @@
-package org.osama.task.requests;
+package org.osama.requests;
 
 import lombok.Data;
 

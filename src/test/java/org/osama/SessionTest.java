@@ -2,7 +2,8 @@ package org.osama;
 
 import org.junit.jupiter.api.Test;
 import org.osama.session.SessionRepository;
-import org.osama.task.requests.NewTaskRequest;
+import org.osama.requests.NewTaskRequest;
+import org.osama.session.SessionService;
 import org.osama.task.Task;
 import org.osama.task.TaskRepository;
 import org.osama.task.TaskService;
@@ -17,6 +18,8 @@ public class SessionTest {
     @Autowired
     private TaskService taskService;
     @Autowired
+    private SessionService sessionService;
+    @Autowired
     private TaskRepository taskRepository;
     @Autowired
     private SessionRepository sessionRepository;
@@ -24,7 +27,7 @@ public class SessionTest {
     @Test
     void startTaskSession() {
         Task task = createTask();
-        taskService.startTaskSession(task.getTaskId(), false);
+        sessionService.startTaskSession(task.getTaskId(), false);
     }
     public Task createTask() {
         NewTaskRequest taskRequest = new NewTaskRequest();

@@ -2,13 +2,13 @@ package org.osama;
 
 import org.junit.jupiter.api.Test;
 import org.osama.day.DayService;
-import org.osama.task.requests.NewTaskRequest;
+import org.osama.requests.NewTaskRequest;
+import org.osama.session.SessionService;
 import org.osama.task.Task;
 import org.osama.task.TaskRepository;
 import org.osama.task.TaskService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.dao.InvalidDataAccessApiUsageException;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -17,6 +17,8 @@ import static org.junit.jupiter.api.Assertions.*;
 public class EndToEndTest {
     @Autowired
     private TaskService taskService;
+    @Autowired
+    private SessionService sessionService;
     @Autowired
     private TaskRepository taskRepository;
     @Autowired
@@ -31,37 +33,37 @@ public class EndToEndTest {
     @Test
     void startAndEndSession() {
         Task task = createTask();
-        assertDoesNotThrow(() -> taskService.startTaskSession(task.getTaskId(), false));
-        assertDoesNotThrow(() -> taskService.endTaskSession(task.getTaskId()));
+        assertDoesNotThrow(() -> sessionService.startTaskSession(task.getTaskId(), false));
+        assertDoesNotThrow(() -> sessionService.endTaskSession(task.getTaskId()));
     }
     @Test
     void pauseAndUnpauseSession() {
         Task task = createTask();
-        taskService.startTaskSession(task.getTaskId(), false);
-        assertDoesNotThrow(() -> taskService.pauseTaskSession(task.getTaskId()));
-        assertDoesNotThrow(() -> taskService.unpauseTaskSession(task.getTaskId()));
+        sessionService.startTaskSession(task.getTaskId(), false);
+        assertDoesNotThrow(() -> sessionService.pauseTaskSession(task.getTaskId()));
+        assertDoesNotThrow(() -> sessionService.unpauseTaskSession(task.getTaskId()));
     }
     @Test
     void startAlreadyRunningSession() {
         Task task = createTask();
-        taskService.startTaskSession(task.getTaskId(), false);
-        assertThrows(IllegalStateException.class, () -> taskService.startTaskSession(task.getTaskId(), false));
+        sessionService.startTaskSession(task.getTaskId(), false);
+        assertThrows(IllegalStateException.class, () -> sessionService.startTaskSession(task.getTaskId(), false));
     }
     @Test
     void unpauseAlreadyRunningSession() {
         Task task = createTask();
-        taskService.startTaskSession(task.getTaskId(), false);
-        assertThrows(IllegalStateException.class, () -> taskService.unpauseTaskSession(task.getTaskId()));
+        sessionService.startTaskSession(task.getTaskId(), false);
+        assertThrows(IllegalStateException.class, () -> sessionService.unpauseTaskSession(task.getTaskId()));
     }
     @Test
     void endNotRunningTask() {
         Task task = createTask();
-        assertThrows(IllegalStateException.class, () -> taskService.endTaskSession(task.getTaskId()));
+        assertThrows(IllegalStateException.class, () -> sessionService.endTaskSession(task.getTaskId()));
     }
     @Test
     void pauseNotRunningTask() {
         Task task = createTask();
-        assertThrows(IllegalStateException.class, () -> taskService.pauseTaskSession(task.getTaskId()));
+        assertThrows(IllegalStateException.class, () -> sessionService.pauseTaskSession(task.getTaskId()));
     }
     @Test
     void setDaySummary() {

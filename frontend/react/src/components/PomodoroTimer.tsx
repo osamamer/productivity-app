@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Client } from '@stomp/stompjs';
+import React, {useState, useEffect, useCallback, useRef} from 'react';
+import {Client} from '@stomp/stompjs';
 import {
     Box,
     Button,
@@ -12,10 +12,12 @@ import {
     LinearProgress,
     Stack,
     SelectChangeEvent,
-    Alert
+    Alert, IconButton
 } from '@mui/material';
-import { HoverCardBox } from './HoverCardBox';
-
+import {HoverCardBox} from './HoverCardBox';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import PauseIcon from '@mui/icons-material/Pause';
+import StopIcon from '@mui/icons-material/Stop';
 interface Task {
     taskId: string;
     name: string;
@@ -24,7 +26,9 @@ interface Task {
 interface PomodoroStatus {
     taskId: string;
     taskName: string;
-    isSessionActive: boolean;
+    sessionActive: boolean;
+    sessionRunning: boolean;
+    secondsPassed: number;
     secondsUntilTransition: number;
     currentFocusNumber: number;
     totalFocuses: number;
@@ -39,7 +43,11 @@ interface PomodoroFormData {
     longBreakCooldown: number;
 }
 
-const PomodoroTimer: React.FC = () => {
+interface props {
+    tasks: Task[];
+}
+
+export function PomodoroTimer(props: props) {
     const [tasks, setTasks] = useState<Task[]>([]);
     const [status, setStatus] = useState<PomodoroStatus | null>(null);
     const [isConnected, setIsConnected] = useState(false);
@@ -54,10 +62,55 @@ const PomodoroTimer: React.FC = () => {
         longBreakCooldown: 4
     });
 
+    useEffect(() => {
+        if (props.tasks && props.tasks.length > 0) {
+            setTasks(props.tasks);
+
+            // Auto-select the first task if none is selected
+            setFormData(prev => ({
+                ...prev,
+                taskId: prev.taskId || props.tasks[0].taskId
+            }));
+        } else {
+            setTasks([]);
+            setFormData(prev => ({...prev, taskId: ''}));
+        }
+    }, [props.tasks]);
+
+
     const ROOT_URL = "http://localhost:8080";
     const TASK_URL = ROOT_URL.concat("/api/v1/task");
     const WS_URL = `ws://localhost:8080/ws`;
 
+    async function handleTogglePlayPause() {
+        if (status?.sessionRunning) {
+            console.log("yurp")
+            await fetch(TASK_URL.concat(`/pause-session/${formData.taskId}`), {
+                method: "POST"
+            })
+        } else {
+            await fetch(TASK_URL.concat(`/unpause-session/${formData.taskId}`), {
+                method: "POST"
+            })
+        }
+    }
+    async function handleEndSession() {
+        await fetch(TASK_URL.concat(`/end-session/${formData.taskId}`), {
+            method: "POST"
+            })
+    }
+
+
+//     async function pauseSession() {
+//         await fetch(TASK_URL.concat(`/pause-session/${formData.taskId}`)), {
+//             method: "POST"
+//         }
+//         }
+// async function unpauseSession() {
+//     await fetch(TASK_URL.concat(`/unpause-session/${formData.taskId}`)), {
+//         method: "POST"
+//     }
+// }
     const connectWebSocket = useCallback(() => {
         if (stompClientRef.current?.active) {
             console.log('STOMP client already active');
@@ -67,9 +120,9 @@ const PomodoroTimer: React.FC = () => {
         console.log('Creating new STOMP client...');
         const client = new Client({
             brokerURL: WS_URL,
-            debug: (str) => {
-                console.log('STOMP Debug:', str);
-            },
+            // debug: (str) => {
+            //     console.log('STOMP Debug:', str);
+            // },
             reconnectDelay: 5000,
             heartbeatIncoming: 4000,
             heartbeatOutgoing: 4000,
@@ -139,7 +192,7 @@ const PomodoroTimer: React.FC = () => {
 
         try {
             return client.subscribe(destination, (message) => {
-                console.log('Received message:', message.body);
+                // console.log('Received message:', message.body);
                 try {
                     const newStatus: PomodoroStatus = JSON.parse(message.body);
                     setStatus(newStatus);
@@ -153,24 +206,6 @@ const PomodoroTimer: React.FC = () => {
         }
     }, []);
 
-    useEffect(() => {
-        const fetchTasks = async () => {
-            try {
-                console.log('Fetching tasks...');
-                const response = await fetch(TASK_URL.concat('/get-today-tasks'));
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                const data = await response.json();
-                console.log('Tasks fetched:', data);
-                setTasks(data);
-            } catch (error) {
-                console.error('Error fetching tasks:', error);
-            }
-        };
-
-        fetchTasks();
-    }, []);
 
     useEffect(() => {
         if (formData.taskId && isConnected) {
@@ -181,8 +216,9 @@ const PomodoroTimer: React.FC = () => {
         }
     }, [formData.taskId, isConnected, subscribeToTask]);
 
+
     const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-        const { name, value } = event.target;
+        const {name, value} = event.target;
         setFormData(prev => ({
             ...prev,
             [name]: Number(value)
@@ -233,86 +269,65 @@ const PomodoroTimer: React.FC = () => {
 
     return (
         <HoverCardBox>
-            <Stack spacing={2} sx={{ width: '100%' }}>
+            <Stack spacing={2} sx={{width: '100%'}}>
                 {connectionError && (
                     <Alert severity="error" onClose={() => setConnectionError(null)}>
                         {connectionError}
                     </Alert>
                 )}
 
-                {!status?.isSessionActive ? (
+                {!status?.sessionActive ? (
                     <>
                         <Typography variant="h5">
                             Pomodoro Timer {isConnected ? '(Connected)' : '(Disconnected)'}
                         </Typography>
 
-                        <FormControl size="small" fullWidth>
+                        <FormControl size="small" fullWidth disabled={tasks.length === 0}>
                             <InputLabel>Select Task</InputLabel>
                             <Select
-                                value={formData.taskId}
+                                value={formData.taskId || ''}
                                 onChange={handleTaskChange}
                                 label="Select Task"
-                                variant="standard">
-                                {tasks.map((task) => (
-                                    <MenuItem key={task.taskId} value={task.taskId}>
-                                        {task.name}
+                                variant="standard"
+                            >
+                                {tasks.length === 0 ? (
+                                    <MenuItem value="" disabled>
+                                        No tasks available
                                     </MenuItem>
-                                ))}
+                                ) : (
+                                    tasks.map((task) => (
+                                        <MenuItem key={task.taskId} value={task.taskId}>
+                                            {task.name}
+                                        </MenuItem>
+                                    ))
+                                )}
                             </Select>
                         </FormControl>
-
-                        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
-                            <TextField
-                                name="focusDuration"
-                                label="Focus (min)"
-                                type="number"
-                                size="small"
-                                value={formData.focusDuration}
-                                onChange={handleInputChange}
-                            />
-
-                            <TextField
-                                name="shortBreakDuration"
-                                label="Short Break (min)"
-                                type="number"
-                                size="small"
-                                value={formData.shortBreakDuration}
-                                onChange={handleInputChange}
-                            />
-
-                            <TextField
-                                name="longBreakDuration"
-                                label="Long Break (min)"
-                                type="number"
-                                size="small"
-                                value={formData.longBreakDuration}
-                                onChange={handleInputChange}
-                            />
-
-                            <TextField
-                                name="numFocuses"
-                                label="Focus Sessions"
-                                type="number"
-                                size="small"
-                                value={formData.numFocuses}
-                                onChange={handleInputChange}
-                            />
-                        </Box>
+                        <Box sx={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2}}> <TextField
+                            name="focusDuration" label="Focus (min)" type="number" size="small"
+                            value={formData.focusDuration} onChange={handleInputChange}/> <TextField
+                            name="shortBreakDuration" label="Short Break (min)" type="number" size="small"
+                            value={formData.shortBreakDuration} onChange={handleInputChange}/> <TextField
+                            name="longBreakDuration" label="Long Break (min)" type="number" size="small"
+                            value={formData.longBreakDuration} onChange={handleInputChange}/> <TextField
+                            name="numFocuses" label="Focus Sessions" type="number" size="small"
+                            value={formData.numFocuses} onChange={handleInputChange}/> </Box>
 
                         <Button
                             variant="contained"
                             color="primary"
                             onClick={startPomodoro}
-                            disabled={!formData.taskId || !isConnected}
+                            disabled={!formData.taskId || !isConnected || tasks.length === 0}
                             fullWidth
                             size="small"
                         >
                             Start Pomodoro {!isConnected ? '(Waiting for connection...)' : ''}
                         </Button>
+
                     </>
                 ) : (
                     <>
-                        <Box sx={{ textAlign: 'center' }}>
+                        <Box sx={{textAlign: 'center'}}>
                             <Typography variant="subtitle1" gutterBottom>
                                 {status.taskName}
                             </Typography>
@@ -321,15 +336,24 @@ const PomodoroTimer: React.FC = () => {
                                 {formatTime(status.secondsUntilTransition)}
                             </Typography>
 
-                            <Box sx={{ width: '100%', mt: 1 }}>
+                            <Box sx={{width: '100%', mt: 1}}>
                                 <LinearProgress
                                     variant="determinate"
-                                    value={(status.currentFocusNumber / status.totalFocuses) * 100}
+                                    value={(status.secondsPassed / (status.secondsPassed + status.secondsUntilTransition)) * 100}
                                 />
-                                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
+                                <Typography variant="caption" color="text.secondary" sx={{mt: 0.5}}>
                                     Session {status.currentFocusNumber} of {status.totalFocuses}
                                 </Typography>
                             </Box>
+                            {/*{status.sessionActive && ( <PauseIcon onClick={pauseSession}></PauseIcon>)}*/}
+                            {/*{!status.sessionActive && (<PlayArrowIcon onClick={unpauseSession}></PlayArrowIcon>)}*/}
+                            <IconButton onClick={handleTogglePlayPause} color="primary">
+                                {status.sessionRunning ? <PauseIcon/> : <PlayArrowIcon/>}
+                            </IconButton>
+                            <IconButton onClick={handleEndSession} color="primary">
+                                <StopIcon />
+                            </IconButton>
+
                         </Box>
                     </>
                 )}

@@ -23,9 +23,8 @@ public class AppStart {
     public void onReadyEvent(){
         log.info("Starting app");
         taskService.endAllSessions();
-        log.info("Ended all sessions!");
         scheduledJobRepository.deleteAll();
-        log.info("Deleted all jobs!");
+        log.info("Deleted all jobs.");
 
     }
 }

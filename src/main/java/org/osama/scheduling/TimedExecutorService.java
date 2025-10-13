@@ -2,6 +2,7 @@ package org.osama.scheduling;
 
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.osama.session.SessionService;
 import org.osama.task.TaskService;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -20,15 +21,16 @@ public class TimedExecutorService {
 
     private static final int FIVE_SECONDS = 5000;
     private final ScheduledJobRepository scheduledJobRepository;
-    private final TaskService taskService;
     @Getter
     private final Map<JobType, Consumer<String>> jobMap;
+    private final SessionService sessionService;
 
 
-    public TimedExecutorService(ScheduledJobRepository scheduledJobRepository, TaskService taskService) {
+    public TimedExecutorService(ScheduledJobRepository scheduledJobRepository, TaskService taskService, SessionService sessionService) {
         this.scheduledJobRepository = scheduledJobRepository;
-        this.taskService = taskService;
+        this.sessionService = sessionService;
         this.jobMap = createJobMap();
+
     }
 
     @Scheduled(fixedRate = ONE_SECOND)
@@ -46,16 +48,13 @@ public class TimedExecutorService {
         scheduledJobRepository.delete(scheduledJob);
     }
 
-
-
-
     private Map<JobType, Consumer<String>> createJobMap() {
         Map<JobType, Consumer<String>> jobMap = new HashMap<>();
 
-        jobMap.put(JobType.START_SESSION, (taskId) -> taskService.startTaskSession(taskId, true));
-        jobMap.put(JobType.END_SESSION, taskService::endTaskSession);
-        jobMap.put(JobType.PAUSE_SESSION, taskService::pauseTaskSession);
-        jobMap.put(JobType.UNPAUSE_SESSION, taskService::unpauseTaskSession);
+        jobMap.put(JobType.START_SESSION, (taskId) -> sessionService.startTaskSession(taskId, true));
+        jobMap.put(JobType.END_SESSION, sessionService::endTaskSession);
+        jobMap.put(JobType.PAUSE_SESSION, sessionService::pauseTaskSession);
+        jobMap.put(JobType.UNPAUSE_SESSION, sessionService::unpauseTaskSession);
 
         return Map.copyOf(jobMap);
     }

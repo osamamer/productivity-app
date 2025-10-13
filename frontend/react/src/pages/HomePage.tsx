@@ -43,6 +43,7 @@ export function HomePage(props: props) {
     const [pastTasks, setPastTasks] = useState<Task[]>([]);
     const [highlightedTask, setHighlightedTask] = useState<Task | null>(null);
     const [sidenavOpen, setSidenavOpen] = useState(false);
+    const [tasksExist, setTasksExist] = useState(false);
     // const [localDarkMode, setLocalDarkMode] = useState(false);
     const [sidebarWidth, setSidebarWidth] = useState(75); // Default collapsed width
     const [dialogOpen, setDialogOpen] =
@@ -87,8 +88,10 @@ export function HomePage(props: props) {
         const allTasks = await response.json();
         setAllTasks(allTasks);
         if (allTasks.length > 0) {
+            setTasksExist(true);
             setHighlightedTask(allTasks[0]);
         } else {
+            setTasksExist(false);
             setHighlightedTask({} as Task); // or leave null
         }
         return allTasks;
@@ -387,7 +390,7 @@ export function HomePage(props: props) {
                             handleOpenDialog={handleOpen} handleCompleteTask={completeTask} handleChangeDescription={changeDescription}
                         />
                             )}
-                        <PomodoroTimer/>
+                        <PomodoroTimer tasks={allTasks}/>
                     </Box>
 
                     <Box className="section"
