@@ -68,7 +68,13 @@ public class ScheduleService {
         log.info("Rescheduled jobs for task with ID [{}]", taskId);
 
     }
-    public void shiftTaskJobDueDates(String taskId, int shift) {
+    public void deleteTaskJobs(String taskId) {
+        List<ScheduledJob> taskJobs = scheduledJobRepository.findAllByAssociatedTaskId(taskId);
+        scheduledJobRepository.deleteAll(taskJobs);
+        log.info("Deleted all jobs for task with ID [{}]", taskId);
+    }
+
+        public void shiftTaskJobDueDates(String taskId, int shift) {
         List<ScheduledJob> taskJobs = scheduledJobRepository.findAllByAssociatedTaskId(taskId);
         taskJobs.forEach((job) -> {
             job.setDueDate(job.getDueDate().plusSeconds(shift));

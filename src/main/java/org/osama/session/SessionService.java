@@ -137,9 +137,9 @@ public class SessionService {
             pomodoroRepository.save(pomodoro);
 
             pomodoroService.pausePomodoroUpdates(taskId);
-            pomodoroService.startPomodoroUpdates(taskId);
-//            scheduleService.unscheduleTaskJobs(taskId);
-//            pomodoroService.endPomodoroUpdates(taskId);
+            if (pomodoro.getCurrentFocusNumber() < pomodoro.getNumFocuses()) {
+                pomodoroService.startPomodoroUpdates(taskId);
+            }
         }
 
         log.info("Ended session for task with ID [{}] on {}", task.getTaskId(), activeSession.getEndTime());
@@ -162,7 +162,7 @@ public class SessionService {
         pomodoro.setActive(false);
         pomodoroRepository.save(pomodoro);
 
-        scheduleService.unscheduleTaskJobs(taskId);
+        scheduleService.deleteTaskJobs(taskId);
         pomodoroService.pausePomodoroUpdates(taskId);
         pomodoroService.sendAsyncUpdate(taskId);
 

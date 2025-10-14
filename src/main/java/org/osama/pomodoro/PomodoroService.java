@@ -46,17 +46,17 @@ public class PomodoroService {
     public void startPomodoroUpdates(String taskId) {
         Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskId(taskId);
         Task task = taskRepository.findTaskByTaskId(taskId);
+        if (pomodoro.isActive()) {
+            ScheduledFuture<?> future = schedulerConfig.taskScheduler().scheduleAtFixedRate(() -> {
 
-        ScheduledFuture<?> future = schedulerConfig.taskScheduler().scheduleAtFixedRate(() -> {
-
-            Optional<Session> activeSession = sessionRepository.findSessionByAssociatedTaskIdAndActiveIsTrue(taskId);
-            List<ScheduledJob> futureJobs = scheduledJobRepository.findAllByScheduledIsTrueAndAssociatedTaskId(taskId);
-            List<ScheduledJob> pastJobs = scheduledJobRepository.findAllByScheduledIsFalseAndAssociatedTaskId(taskId);
-            Optional<ScheduledJob> previousJob = pastJobs.stream()
-                    .max(Comparator.comparing(ScheduledJob::getDueDate));
-            Optional<ScheduledJob> nextJob = futureJobs.stream()
-                    .min(Comparator.comparing(ScheduledJob::getDueDate));
-            if (nextJob.isPresent() && pomodoro.isActive()) {
+                Optional<Session> activeSession = sessionRepository.findSessionByAssociatedTaskIdAndActiveIsTrue(taskId);
+                List<ScheduledJob> futureJobs = scheduledJobRepository.findAllByScheduledIsTrueAndAssociatedTaskId(taskId);
+                List<ScheduledJob> pastJobs = scheduledJobRepository.findAllByScheduledIsFalseAndAssociatedTaskId(taskId);
+                Optional<ScheduledJob> previousJob = pastJobs.stream()
+                        .max(Comparator.comparing(ScheduledJob::getDueDate));
+                Optional<ScheduledJob> nextJob = futureJobs.stream()
+                        .min(Comparator.comparing(ScheduledJob::getDueDate));
+                if (nextJob.isPresent()) {
                     if (activeSession.isPresent()) { // If a session is running
                         Session session = activeSession.get();
                         pomodoro.setSecondsPassedInSession(session.getTotalSessionTime().toSeconds());
@@ -70,12 +70,14 @@ public class PomodoroService {
                     }
                     pomodoro.setSecondsUntilNextTransition(ChronoUnit.SECONDS.between(LocalDateTime.now(), nextJob.get().getDueDate()));
                     pomodoroRepository.save(pomodoro);
-                simpMessagingTemplate.convertAndSend("/topic/pomodoro/" + taskId, pomodoro);
-            } else {
-                pausePomodoroUpdates(taskId);
-            }
-        }, 1000);
-        statusUpdateTasks.put(taskId, future);
+                    simpMessagingTemplate.convertAndSend("/topic/pomodoro/" + taskId, pomodoro);
+                } else {
+                    pausePomodoroUpdates(taskId);
+                }
+            }, 1000);
+            statusUpdateTasks.put(taskId, future);
+        }
+
     }
 
 
