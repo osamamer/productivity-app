@@ -12,6 +12,8 @@ public interface ScheduledJobRepository extends JpaRepository<ScheduledJob, Stri
     List<ScheduledJob> findAllByScheduledIsTrueAndDueDateBetween(LocalDateTime intervalStart, LocalDateTime intervalEnd);
     List<ScheduledJob> findAllByAssociatedTaskId(String taskId);
     List<ScheduledJob> findAllByScheduledIsTrueAndAssociatedTaskId(String taskId);
+    List<ScheduledJob> findAllByScheduledIsFalseAndAssociatedTaskId(String taskId);
+
 
 
 }

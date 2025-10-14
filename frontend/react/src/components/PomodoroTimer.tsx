@@ -55,10 +55,10 @@ export function PomodoroTimer(props: props) {
     const stompClientRef = useRef<Client | null>(null);
     const [formData, setFormData] = useState<PomodoroFormData>({
         taskId: '',
-        focusDuration: 25,
-        shortBreakDuration: 5,
+        focusDuration: 1,
+        shortBreakDuration: 1,
         longBreakDuration: 15,
-        numFocuses: 4,
+        numFocuses: 2,
         longBreakCooldown: 4
     });
 
@@ -341,6 +341,7 @@ export function PomodoroTimer(props: props) {
                             <Box sx={{width: '100%', mt: 1}}>
                                 <LinearProgress
                                     variant="determinate"
+                                    color = {status.sessionRunning ? "primary" : "secondary"}
                                     value={(status.secondsPassedInSession / (status.secondsPassedInSession + status.secondsUntilNextTransition)) * 100}
                                 />
                                 <Typography variant="caption" color="text.secondary" sx={{mt: 0.5}}>

@@ -45,7 +45,8 @@ public class TimedExecutorService {
         log.info("Performing {} job with ID [{}]", scheduledJob.getJobType(), scheduledJob.getJobId());
         Consumer<String> function = jobMap.get(scheduledJob.getJobType());
         function.accept(scheduledJob.getAssociatedTaskId());
-        scheduledJobRepository.delete(scheduledJob);
+        scheduledJob.setScheduled(false);
+        scheduledJobRepository.save(scheduledJob);
     }
 
     private Map<JobType, Consumer<String>> createJobMap() {

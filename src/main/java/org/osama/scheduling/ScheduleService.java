@@ -51,14 +51,13 @@ public class ScheduleService {
             }
         }
     }
-    public void unscheduleTaskJobs(String taskId) { // For when the user pauses
+    public void unscheduleTaskJobs(String taskId) {
         List<ScheduledJob> taskJobs = scheduledJobRepository.findAllByAssociatedTaskId(taskId);
         taskJobs.forEach((job) -> {
             job.setScheduled(false);
             scheduledJobRepository.save(job);
         });
         log.info("Unscheduled jobs for task with ID [{}]", taskId);
-        // TODO: find out why calling this method fixed the bug wherein ending a task didn't stop the timer counting
     }
     public void rescheduleTaskJobs(String taskId) { // For when the user unpauses
         List<ScheduledJob> taskJobs = scheduledJobRepository.findAllByAssociatedTaskId(taskId);

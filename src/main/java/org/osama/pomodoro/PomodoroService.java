@@ -51,20 +51,25 @@ public class PomodoroService {
 
             Optional<Session> activeSession = sessionRepository.findSessionByAssociatedTaskIdAndActiveIsTrue(taskId);
             List<ScheduledJob> futureJobs = scheduledJobRepository.findAllByScheduledIsTrueAndAssociatedTaskId(taskId);
+            List<ScheduledJob> pastJobs = scheduledJobRepository.findAllByScheduledIsFalseAndAssociatedTaskId(taskId);
+            Optional<ScheduledJob> previousJob = pastJobs.stream()
+                    .max(Comparator.comparing(ScheduledJob::getDueDate));
             Optional<ScheduledJob> nextJob = futureJobs.stream()
                     .min(Comparator.comparing(ScheduledJob::getDueDate));
-            if (nextJob.isPresent()) {
-                if (activeSession.isPresent()) {
-                    Session session = activeSession.get();
-                    pomodoro.setSecondsPassedInSession(session.getTotalSessionTime().toSeconds());
-                    if (session.isRunning()) {
-                        pomodoro.setSecondsPassedInSession(pomodoro.getSecondsPassedInSession()
-                                + Duration.between(session.getLastUnpauseTime(), LocalDateTime.now()).toSeconds());
+            if (nextJob.isPresent() && pomodoro.isActive()) {
+                    if (activeSession.isPresent()) { // If a session is running
+                        Session session = activeSession.get();
+                        pomodoro.setSecondsPassedInSession(session.getTotalSessionTime().toSeconds());
+                        if (session.isRunning()) {
+                            pomodoro.setSecondsPassedInSession(pomodoro.getSecondsPassedInSession()
+                                    + Duration.between(session.getLastUnpauseTime(), LocalDateTime.now()).toSeconds());
+                        }
+                    }
+                    else if (previousJob.isPresent()) { // If the pomodoro is in the break
+                        pomodoro.setSecondsPassedInSession(Duration.between(previousJob.get().getDueDate(), LocalDateTime.now()).toSeconds());
                     }
                     pomodoro.setSecondsUntilNextTransition(ChronoUnit.SECONDS.between(LocalDateTime.now(), nextJob.get().getDueDate()));
                     pomodoroRepository.save(pomodoro);
-
-                }
                 simpMessagingTemplate.convertAndSend("/topic/pomodoro/" + taskId, pomodoro);
             } else {
                 pausePomodoroUpdates(taskId);
@@ -83,6 +88,7 @@ public class PomodoroService {
     }
 
     public void sendAsyncUpdate(String taskId) {
+        log.info("Sending asynchronous update.");
         Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskId(taskId);
         simpMessagingTemplate.convertAndSend("/topic/pomodoro/" + taskId, pomodoro);
     }
