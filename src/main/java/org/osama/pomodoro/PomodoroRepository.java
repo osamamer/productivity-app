@@ -8,4 +8,6 @@ import java.util.Optional;
 @Repository
 public interface PomodoroRepository extends JpaRepository<Pomodoro, String> {
     Pomodoro findPomodoroByAssociatedTaskId(String associatedTaskId);
+
+    Pomodoro findPomodoroByPomodoroId(String pomodoroId);
 }

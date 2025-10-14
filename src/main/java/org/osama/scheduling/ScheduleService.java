@@ -2,6 +2,7 @@ package org.osama.scheduling;
 
 import lombok.extern.slf4j.Slf4j;
 import org.osama.pomodoro.Pomodoro;
+import org.osama.pomodoro.PomodoroRepository;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -12,18 +13,25 @@ import java.util.UUID;
 @Service
 public class ScheduleService {
     private final ScheduledJobRepository scheduledJobRepository;
+    private final PomodoroRepository pomodoroRepository;
 
-    public ScheduleService(ScheduledJobRepository scheduledJobRepository) {
+    public ScheduleService(ScheduledJobRepository scheduledJobRepository, PomodoroRepository pomodoroRepository) {
         this.scheduledJobRepository = scheduledJobRepository;
+        this.pomodoroRepository = pomodoroRepository;
     }
 
-    public void schedulePomoJobs(Pomodoro pomodoro) {
-        // Why are we even using the same session? What is actually the point? Why not different sessions?
+    public void schedulePomoJobs(String taskId) {
+        Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskId(taskId);
         int n = 2* pomodoro.getNumFocuses() -1;
         int timeElapsed = 0;
         int breaksTaken = 0;
         for (int i = 0; i < n; i++) {
             if (i % 2 == 0) { // Meaning that are in an even iteration in which the task is active
+                if (i == n - 1) {
+                    createScheduledJob(JobType.END_POMODORO,
+                            LocalDateTime.now().plusMinutes(timeElapsed + pomodoro.getFocusDuration()), pomodoro.getAssociatedTaskId());
+                    break;
+                }
                 createScheduledJob(JobType.END_SESSION,
                         LocalDateTime.now().plusMinutes(timeElapsed + pomodoro.getFocusDuration()), pomodoro.getAssociatedTaskId());
                 timeElapsed += pomodoro.getFocusDuration();

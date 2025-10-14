@@ -28,7 +28,7 @@ interface Pomodoro {
     taskName: string;
     sessionActive: boolean;
     sessionRunning: boolean;
-    secondsPassed: number;
+    secondsPassedInSession: number;
     secondsUntilNextTransition: number;
     currentFocusNumber: number;
     numFocuses: number;
@@ -341,7 +341,7 @@ export function PomodoroTimer(props: props) {
                             <Box sx={{width: '100%', mt: 1}}>
                                 <LinearProgress
                                     variant="determinate"
-                                    value={(status.secondsPassed / (status.secondsPassed + status.secondsUntilNextTransition)) * 100}
+                                    value={(status.secondsPassedInSession / (status.secondsPassedInSession + status.secondsUntilNextTransition)) * 100}
                                 />
                                 <Typography variant="caption" color="text.secondary" sx={{mt: 0.5}}>
                                     Session {status.currentFocusNumber} of {status.numFocuses}

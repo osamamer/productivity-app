@@ -55,6 +55,8 @@ public class TimedExecutorService {
         jobMap.put(JobType.END_SESSION, sessionService::endTaskSession);
         jobMap.put(JobType.PAUSE_SESSION, sessionService::pauseTaskSession);
         jobMap.put(JobType.UNPAUSE_SESSION, sessionService::unpauseTaskSession);
+        jobMap.put(JobType.END_POMODORO, sessionService::endPomodoro);
+
 
         return Map.copyOf(jobMap);
     }

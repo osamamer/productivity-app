@@ -43,8 +43,8 @@ public class PomodoroService {
     private final Map<String, ScheduledFuture<?>> statusUpdateTasks = new ConcurrentHashMap<>();
 
 
-    public void startPomodoroUpdates(Pomodoro pomodoro) {
-        String taskId = pomodoro.getAssociatedTaskId();
+    public void startPomodoroUpdates(String taskId) {
+        Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskId(taskId);
         Task task = taskRepository.findTaskByTaskId(taskId);
 
         ScheduledFuture<?> future = schedulerConfig.taskScheduler().scheduleAtFixedRate(() -> {
@@ -65,26 +65,6 @@ public class PomodoroService {
                     pomodoroRepository.save(pomodoro);
 
                 }
-//                String taskId;
-//                String taskName;
-//                boolean isSessionActive;
-//                boolean isSessionRunning;
-//                LocalDateTime nextTransitionTime;
-//                int currentFocusNumber;
-//                int totalFocuses;
-//                long secondsPassed;
-//                long secondsUntilTransition;
-//               PomodoroStatus pomodoroStatus = new PomodoroStatus(
-//                        taskId,
-//                        task.getName(),
-//                        pomodoro.isSessionActive(),
-//                        pomodoro.isSessionRunning(),
-//                        nextJob.get().getDueDate(),
-//                        pomodoro.getCurrentFocusNumber(),
-//                        pomodoro.getNumFocuses(),
-//                        secondsPassed,
-//                        ChronoUnit.SECONDS.between(LocalDateTime.now(), nextJob.get().getDueDate())
-//                );
                 simpMessagingTemplate.convertAndSend("/topic/pomodoro/" + taskId, pomodoro);
             } else {
                 pausePomodoroUpdates(taskId);
@@ -93,10 +73,7 @@ public class PomodoroService {
         statusUpdateTasks.put(taskId, future);
     }
 
-    public void restartPomodoroUpdates(String taskId) {
-        Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskId(taskId);
-        startPomodoroUpdates(pomodoro);
-    }
+
     public void pausePomodoroUpdates(String taskId) {
         ScheduledFuture<?> future = statusUpdateTasks.get(taskId);
         if (future != null) {
@@ -104,21 +81,9 @@ public class PomodoroService {
             statusUpdateTasks.remove(taskId);
         }
     }
-    public void endPomodoroUpdates(String taskId) {
-        sendAsyncUpdate(taskId);
-//        pomodoroStatus = null;
-        ScheduledFuture<?> future = statusUpdateTasks.get(taskId);
-        if (future != null) {
-            future.cancel(false);
-            statusUpdateTasks.remove(taskId);
-        }
-//        activeTaskId = null;
-//        this.numFocuses = 0;
-    }
 
     public void sendAsyncUpdate(String taskId) {
         Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskId(taskId);
-        pomodoroRepository.save(pomodoro);
         simpMessagingTemplate.convertAndSend("/topic/pomodoro/" + taskId, pomodoro);
     }
 

@@ -64,13 +64,12 @@ public class SessionService {
         ).map(Pomodoro::getPomodoroId).orElse(null);
         if (isPomodoro) {
             Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskId(taskId);
-//            log.info("Setting pomodoro focus to {}", pomodoro.getCurrentFocusNumber());
-//
             pomodoro.setCurrentFocusNumber(pomodoro.getCurrentFocusNumber() + 1);
             pomodoroRepository.save(pomodoro);
             pomodoroService.sendAsyncUpdate(taskId);
+            pomodoroService.pausePomodoroUpdates(taskId);
+            pomodoroService.startPomodoroUpdates(taskId);
             log.info("Setting pomodoro focus to {}", pomodoro.getCurrentFocusNumber());
-
         }
         Session session = createSession(task, Optional.ofNullable(pomodoroId));
         sessionRepository.save(session);
@@ -112,8 +111,7 @@ public class SessionService {
             Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskId(taskId);
             pomodoro.setSessionRunning(true);
             pomodoroRepository.save(pomodoro);
-
-            pomodoroService.restartPomodoroUpdates(taskId);
+            pomodoroService.startPomodoroUpdates(taskId);
         }
         log.info("Unpaused task with ID [{}] on {}", task.getTaskId(), activeSession.getLastUnpauseTime());
     }
@@ -130,6 +128,8 @@ public class SessionService {
         activeSession.setActive(false);
         sessionRepository.save(activeSession);
         if (activeSession.isPomodoro()) {
+            pomodoroService.pausePomodoroUpdates(taskId);
+            pomodoroService.startPomodoroUpdates(taskId);
 //            scheduleService.unscheduleTaskJobs(taskId);
 //            pomodoroService.endPomodoroUpdates(taskId);
         }
@@ -139,13 +139,12 @@ public class SessionService {
     public void startPomodoro(String taskId, int focusDuration,
                               int shortBreakDuration, int longBreakDuration,
                               int numFocuses, int longBreakCooldown) {
+
         taskService.endAllSessions();
         Pomodoro pomodoro = pomodoroService.createPomodoro(taskId, focusDuration, shortBreakDuration, longBreakDuration, numFocuses, longBreakCooldown);
         startTaskSession(taskId, true);
-        pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskId(taskId);
-        scheduleService.schedulePomoJobs(pomodoro);
-        // Start sending WebSocket updates
-        pomodoroService.startPomodoroUpdates(pomodoro);
+        scheduleService.schedulePomoJobs(taskId);
+        pomodoroService.startPomodoroUpdates(taskId);
     }
     public void endPomodoro(String taskId) {
         endTaskSession(taskId);
@@ -153,8 +152,9 @@ public class SessionService {
         pomodoro.setSessionRunning(false);
         pomodoro.setSessionActive(false);
         pomodoro.setActive(false);
+        pomodoroRepository.save(pomodoro);
         scheduleService.unscheduleTaskJobs(taskId);
-        pomodoroService.endPomodoroUpdates(taskId);
+        pomodoroService.pausePomodoroUpdates(taskId);
         pomodoroService.sendAsyncUpdate(taskId);
 
         pomodoroRepository.delete(pomodoro);
