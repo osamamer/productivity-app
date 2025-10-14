@@ -65,6 +65,8 @@ public class SessionService {
         if (isPomodoro) {
             Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskId(taskId);
             pomodoro.setCurrentFocusNumber(pomodoro.getCurrentFocusNumber() + 1);
+            pomodoro.setSessionActive(true);
+            pomodoro.setSessionRunning(true);
             pomodoroRepository.save(pomodoro);
             pomodoroService.sendAsyncUpdate(taskId);
             pomodoroService.pausePomodoroUpdates(taskId);
@@ -130,6 +132,8 @@ public class SessionService {
         if (activeSession.isPomodoro()) {
             Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskId(taskId);
             pomodoro.setSecondsPassedInSession(0);
+            pomodoro.setSessionActive(false);
+            pomodoro.setSessionRunning(false);
             pomodoroRepository.save(pomodoro);
 
             pomodoroService.pausePomodoroUpdates(taskId);

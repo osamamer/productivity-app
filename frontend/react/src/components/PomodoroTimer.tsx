@@ -26,6 +26,7 @@ interface Task {
 interface Pomodoro {
     taskId: string;
     taskName: string;
+    active: string;
     sessionActive: boolean;
     sessionRunning: boolean;
     secondsPassedInSession: number;
@@ -278,7 +279,7 @@ export function PomodoroTimer(props: props) {
                     </Alert>
                 )}
 
-                {!status?.sessionActive ? (
+                {!status?.active ? (
                     <>
                         <Typography variant="h5">
                             Pomodoro Timer {isConnected ? '(Connected)' : '(Disconnected)'}
