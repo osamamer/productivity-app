@@ -13,7 +13,7 @@ public class ProjectService {
         Project project = new Project();
         project.setProjectId(UUID.randomUUID().toString());
         project.setCreationDateTime(LocalDateTime.now());
-        project.setProjectName(projectName);
+        project.setName(projectName);
         return project;
     }
 }

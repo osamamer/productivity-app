@@ -67,7 +67,7 @@ export function SideNav(props: props) {
                 borderRight: 0.5
             }}
         >
-            <List sx={{width: '100%', textAlign: 'center', mt: 8}}>
+            <List sx={{width: '100%', textAlign: 'center', mt: 1}}>
                 <SideMenuButton image={home as string} text="Home" targetPage="/" open={open}
                                 darkMode={props.darkMode}></SideMenuButton>
                 <SideMenuButton image={clipboard as string} text="Tasks" targetPage="/tasks" open={open}

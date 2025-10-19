@@ -46,7 +46,7 @@ export function TaskDiv(props: props) {
         // width: '12px',
         // borderRadius: '50%',
         // marginLeft: 15,
-        zIndex: 10000,
+        zIndex: 100,
         right: '-10px',
         color: importance === 'low'
             ? ' var(--priorityblue)'

@@ -1,53 +1,14 @@
+version: '3.8'
 services:
-  productivity-app:
-    container_name: app
-    image: productivity-app:SNAPSHOT
-    volumes:
-      - /etc/timezone:/etc/timezone:ro
-      - /etc/localtime:/etc/localtime:ro
-    ports:
-      - "8080:8080"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/testdb
-      - SPRING_DATASOURCE_USERNAME=postgres
-      - SPRING_DATASOURCE_PASSWORD=postgres
-      # Add CORS configuration
-      - SPRING_WEBMVC_CORS_ALLOWED-ORIGINS=http://localhost:5173
-      - SPRING_WEBMVC_CORS_ALLOWED-METHODS=GET,POST,PUT,DELETE,OPTIONS
-      - SPRING_WEBMVC_CORS_ALLOWED-HEADERS=*
-      - SPRING_WEBMVC_CORS_ALLOW-CREDENTIALS=true
-      - SPRING_WEBSOCKET_ALLOWED-ORIGINS=http://localhost:5173
-      - SPRING_WEBSOCKET_ALLOWED-METHODS=GET,POST,PUT,DELETE,OPTIONS
-      - SPRING_WEBSOCKET_ALLOWED-HEADERS=*
-      - SPRING_WEBSOCKET_ALLOW-CREDENTIALS=true
-      - SPRING_MVC_CORS_ALLOWED_ORIGINS=http://localhost:5173
-      - SPRING_MVC_CORS_ALLOWED_METHODS=GET,POST,PUT,DELETE,OPTIONS
-      - SPRING_MVC_CORS_ALLOWED_HEADERS=*
-      - SPRING_MVC_CORS_ALLOW_CREDENTIALS=true
-
   postgres:
-    container_name: db
-    hostname: postgres
-    image: postgres:11.21-bullseye
-    ports:
-      - "5433:5432"
-    volumes:
-      - data:/var/lib/postgresql/data
-      - /etc/timezone:/etc/timezone:ro
-      - /etc/localtime:/etc/localtime:ro
+    image: postgres:latest
     environment:
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_USER=postgres
-      - POSTGRES_DB=testdb
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: trucking_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_storage:/var/lib/postgresql/data
 volumes:
-  data:
-    external: true
+  db_storage:

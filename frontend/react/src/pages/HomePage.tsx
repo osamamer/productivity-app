@@ -230,39 +230,7 @@ export function HomePage(props: props) {
             console.error("Failed to update description");
             return;
         }
-
-        // Instead of re-fetching everything, update the task in local state
-        setTodayTasks(prev =>
-            prev.map(task =>
-                task.taskId === taskId
-                    ? { ...task, taskDescription: description }
-                    : task
-            )
-        );
-
-        setPastTasks(prev =>
-            prev.map(task =>
-                task.taskId === taskId
-                    ? { ...task, taskDescription: description }
-                    : task
-            )
-        );
-
-        setFutureTasks(prev =>
-            prev.map(task =>
-                task.taskId === taskId
-                    ? { ...task, taskDescription: description }
-                    : task
-            )
-        );
-
-        setAllTasks(prev =>
-            prev.map(task =>
-                task.taskId === taskId
-                    ? { ...task, taskDescription: description }
-                    : task
-            )
-        );
+        await fetchAllTasks();
     }
 
 
@@ -278,6 +246,7 @@ export function HomePage(props: props) {
         console.log(values.focusDuration)
         switch (dialogType) {
             case "pomodoroDialog": {
+                // @ts-ignore
                 startPomodoro(highlightedTask.taskId, values.focusDuration,
                     values.shortBreakDuration, values.longBreakDuration,
                     values.numFocuses, values.longBreakCooldown);
@@ -336,7 +305,7 @@ export function HomePage(props: props) {
                 {/*<CssBaseline/>*/}
                 <SideNav onSidebarWidthChange={setSidebarWidth} openProp={sidenavOpen} darkMode={props.darkMode}/>
                 {/*<Header onSubmit={createTask}/>*/}
-                <TopBar onSubmit={createTask} darkMode={props.darkMode} darkModeFunction={props.darkModeFunction}/>
+                {/*<TopBar onSubmit={createTask} darkMode={props.darkMode} darkModeFunction={props.darkModeFunction}/>*/}
                 <Box sx={{
                     // width: 1,
                     maxWidth: '100%',
@@ -344,10 +313,10 @@ export function HomePage(props: props) {
                     flexGrow: 1,
                     // justifyContent: 'center',
                     flexWrap: 'wrap', // allows stacking per section
-                    gap: 3,
+                    // gap: 3,
                     overflowY: 'auto', // allows scrolling if stacked content exceeds viewport
                     // justifyContent: 'space-evenly',
-                    mt: 8, mr: 0,
+                    mt: 0, mr: 0,
                     marginLeft: `${sidebarWidth}px`,
                     ...(sidenavOpen && {
                         transition: theme.transitions.create('margin', {
@@ -360,47 +329,21 @@ export function HomePage(props: props) {
                         easing: theme.transitions.easing.sharp,
                         duration: theme.transitions.duration.leavingScreen,
                     }),
-                    padding: 3,
+                    padding: 1,
                 }}>
-                    {/*<div className="section left-section">*/}
-                    <Box className="section"
+
+
+                    <Box className="left-section"
                          // sx={{width: '25%'}}
                          sx={{
                              flex: { xs: '1 1 100%', md: '1 1 45%', lg: '1 1 18%' },
-                             minWidth: 0
-                         }}
-                    >
-                        <TaskBox pastTasks={pastTasks ?? []}
-                                 todayTasks={todayTasks ?? []}
-                                 futureTasks={futureTasks ?? []} type={"Next week"}
-                                 toggleTaskCompletion={toggleTaskCompletion}
-                                 onDivClick={highlightTask} handleButtonClick={handleOpen}/>
-                    </Box>
-
-
-                    <Box
-                        sx={{
-                            flex: { xs: '1 1 100%', md: '1 1 45%', lg: '1 1 25%' },
-                            minWidth: 0
-                        }}
-                        className="section">
-                        <HighestPriorityTaskBox tasks={allTasks}/>
-                        {allTasks.length > 0 && ( <HighlightedTaskBox
-                            key={highlightedTask?.taskId ?? "no-task"} tasks={allTasks ?? []} task={highlightedTask}
-                            handleOpenDialog={handleOpen} handleCompleteTask={completeTask} handleChangeDescription={changeDescription}
-                        />
-                            )}
-                        <PomodoroTimer tasks={allTasks}/>
-                    </Box>
-
-                    <Box className="section"
-                         // sx={{width: '40%'}}
-                         sx={{
-                             flex: { xs: '1 1 100%', md: '1 1 100%', lg: '1 1 25%'  },
-                             minWidth: 0
+                             minWidth: 0,
+                             gap: '50%',
                          }}
                     >
                         <TodayBox today={today} handleOpenDialog={handleOpen} darkMode={props.darkMode}/>
+                        <HighestPriorityTaskBox tasks={allTasks}/>
+
                         <HoverCardBox maximumHeight='500px'>
                             <FullCalendar
                                 plugins={[ dayGridPlugin ]}
@@ -411,6 +354,43 @@ export function HomePage(props: props) {
                                 themeSystem="bootstrap5"
                             />
                         </HoverCardBox>
+
+
+                        {/*{allTasks.length > 0 && ( <PomodoroTimer tasks={allTasks}/>)}*/}
+                    </Box>
+
+
+                    <Box className="center-section"
+                        sx={{
+                            flex: { xs: '1 1 100%', md: '1 1 45%', lg: '1 1 25%' },
+                            minWidth: 0
+                        }}
+                        >
+                        <TaskBox pastTasks={pastTasks ?? []}
+                                 todayTasks={todayTasks ?? []}
+                                 futureTasks={futureTasks ?? []} type={"Next week"}
+                                 toggleTaskCompletion={toggleTaskCompletion}
+                                 onDivClick={highlightTask} handleButtonClick={handleOpen}
+                                 onSubmit={createTask}   />
+
+
+
+                    </Box>
+
+
+
+                    <Box className="right-section"
+                         // sx={{width: '40%'}}
+                         sx={{
+                             flex: { xs: '1 1 100%', md: '1 1 100%', lg: '1 1 25%'  },
+                             minWidth: 0
+                         }}
+                    >
+                        {allTasks.length > 0 && ( <HighlightedTaskBox
+                                key={highlightedTask?.taskId ?? "no-task"} tasks={allTasks ?? []} task={highlightedTask}
+                                handleOpenDialog={handleOpen} handleCompleteTask={completeTask} handleChangeDescription={changeDescription}
+                            />
+                        )}
 
                     </Box>
                 </Box>

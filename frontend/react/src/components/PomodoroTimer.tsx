@@ -4,20 +4,17 @@ import {
     Box,
     Button,
     TextField,
-    Select,
-    MenuItem,
-    FormControl,
-    InputLabel,
     Typography,
     LinearProgress,
     Stack,
-    SelectChangeEvent,
-    Alert, IconButton
+    Alert,
+    IconButton
 } from '@mui/material';
 import {HoverCardBox} from './HoverCardBox';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
 import StopIcon from '@mui/icons-material/Stop';
+
 interface Task {
     taskId: string;
     name: string;
@@ -44,76 +41,65 @@ interface PomodoroFormData {
     longBreakCooldown: number;
 }
 
-interface props {
-    tasks: Task[];
+interface Props {
+    task: Task | null;
 }
 
-export function PomodoroTimer(props: props) {
-    const [tasks, setTasks] = useState<Task[]>([]);
+export function PomodoroTimer({task}: Props) {
     const [status, setStatus] = useState<Pomodoro | null>(null);
     const [isConnected, setIsConnected] = useState(false);
     const [connectionError, setConnectionError] = useState<string | null>(null);
     const stompClientRef = useRef<Client | null>(null);
     const [formData, setFormData] = useState<PomodoroFormData>({
         taskId: '',
-        focusDuration: 1,
-        shortBreakDuration: 1,
+        focusDuration: 25,
+        shortBreakDuration: 5,
         longBreakDuration: 15,
-        numFocuses: 2,
+        numFocuses: 4,
         longBreakCooldown: 4
     });
 
+    // Update taskId when task prop changes
     useEffect(() => {
-        if (props.tasks && props.tasks.length > 0) {
-            setTasks(props.tasks);
-
-            // Auto-select the first task if none is selected
+        if (task) {
             setFormData(prev => ({
                 ...prev,
-                taskId: prev.taskId || props.tasks[0].taskId
+                taskId: task.taskId
             }));
         } else {
-            setTasks([]);
-            setFormData(prev => ({...prev, taskId: ''}));
+            setFormData(prev => ({
+                ...prev,
+                taskId: ''
+            }));
         }
-    }, [props.tasks]);
+    }, [task]);
 
-    useEffect(() => {
-        console.log(status)
-    }, [status]);
     const ROOT_URL = "http://localhost:8080";
     const TASK_URL = ROOT_URL.concat("/api/v1/task");
     const WS_URL = `ws://localhost:8080/ws`;
 
     async function handleTogglePlayPause() {
+        if (!task) return;
+
         if (status?.sessionRunning) {
-            console.log("yurp")
-            await fetch(TASK_URL.concat(`/pause-session/${formData.taskId}`), {
+            await fetch(TASK_URL.concat(`/pause-session/${task.taskId}`), {
                 method: "POST"
-            })
+            });
         } else {
-            await fetch(TASK_URL.concat(`/unpause-session/${formData.taskId}`), {
+            await fetch(TASK_URL.concat(`/unpause-session/${task.taskId}`), {
                 method: "POST"
-            })
+            });
         }
     }
+
     async function handleEndSession() {
-        await fetch(TASK_URL.concat(`/end-pomodoro/${formData.taskId}`), {
+        if (!task) return;
+
+        await fetch(TASK_URL.concat(`/end-pomodoro/${task.taskId}`), {
             method: "POST"
-            })
+        });
     }
 
-
-//     async function pauseSession() {
-//         await fetch(TASK_URL.concat(`/pause-session/${formData.taskId}`)), {
-//             method: "POST"
-//         }
-//         }
-// async function unpauseSession() {
-//     await fetch(TASK_URL.concat(`/unpause-session/${formData.taskId}`)), {
-//         method: "POST"
-//     }
-// }
     const connectWebSocket = useCallback(() => {
         if (stompClientRef.current?.active) {
             console.log('STOMP client already active');
@@ -123,9 +109,6 @@ export function PomodoroTimer(props: props) {
         console.log('Creating new STOMP client...');
         const client = new Client({
             brokerURL: WS_URL,
-            // debug: (str) => {
-            //     console.log('STOMP Debug:', str);
-            // },
             reconnectDelay: 5000,
             heartbeatIncoming: 4000,
             heartbeatOutgoing: 4000,
@@ -142,8 +125,8 @@ export function PomodoroTimer(props: props) {
             setIsConnected(true);
             setConnectionError(null);
 
-            if (formData.taskId) {
-                subscribeToTask(formData.taskId);
+            if (task?.taskId) {
+                subscribeToTask(task.taskId);
             }
         };
 
@@ -174,7 +157,7 @@ export function PomodoroTimer(props: props) {
                 client.deactivate();
             }
         };
-    }, [formData.taskId]);
+    }, [task?.taskId]);
 
     useEffect(() => {
         const cleanup = connectWebSocket();
@@ -195,7 +178,6 @@ export function PomodoroTimer(props: props) {
 
         try {
             return client.subscribe(destination, (message) => {
-                // console.log('Received message:', message.body);
                 try {
                     const newStatus: Pomodoro = JSON.parse(message.body);
                     setStatus(newStatus);
@@ -209,31 +191,20 @@ export function PomodoroTimer(props: props) {
         }
     }, []);
 
-
-    useEffect(() => { // If the task changes, or the connection, or a new subscription comes in, unsubscribe from the old one.
-        if (formData.taskId && isConnected) {
-            const subscription = subscribeToTask(formData.taskId);
+    useEffect(() => {
+        if (task?.taskId && isConnected) {
+            const subscription = subscribeToTask(task.taskId);
             return () => {
                 subscription?.unsubscribe();
             };
         }
-    }, [formData.taskId, isConnected, subscribeToTask]);
-
+    }, [task?.taskId, isConnected, subscribeToTask]);
 
     const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         const {name, value} = event.target;
         setFormData(prev => ({
             ...prev,
             [name]: Number(value)
-        }));
-    };
-
-    const handleTaskChange = (event: SelectChangeEvent) => {
-        const taskId = event.target.value as string;
-        console.log('Task changed to:', taskId);
-        setFormData(prev => ({
-            ...prev,
-            taskId
         }));
     };
 
@@ -270,6 +241,16 @@ export function PomodoroTimer(props: props) {
         return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
     };
 
+    if (!task) {
+        return (
+            <HoverCardBox>
+                <Typography variant="body2" color="text.secondary" textAlign="center">
+                    No task selected
+                </Typography>
+            </HoverCardBox>
+        );
+    }
+
     return (
         <HoverCardBox>
             <Stack spacing={2} sx={{width: '100%'}}>
@@ -282,51 +263,55 @@ export function PomodoroTimer(props: props) {
                 {!status?.active ? (
                     <>
                         <Typography variant="h5">
-                            Pomodoro Timer {isConnected ? '(Connected)' : '(Disconnected)'}
+                            Pomodoro Timer
                         </Typography>
 
-                        <FormControl size="small" fullWidth disabled={tasks.length === 0}>
-                            <InputLabel>Select Task</InputLabel>
-                            <Select
-                                value={formData.taskId || ''}
-                                onChange={handleTaskChange}
-                                label="Select Task"
-                                variant="standard"
-                            >
-                                {tasks.length === 0 ? (
-                                    <MenuItem value="" disabled>
-                                        No tasks available
-                                    </MenuItem>
-                                ) : (
-                                    tasks.map((task) => (
-                                        <MenuItem key={task.taskId} value={task.taskId}>
-                                            {task.name}
-                                        </MenuItem>
-                                    ))
-                                )}
-                            </Select>
-                        </FormControl>
-                        <Box sx={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2}}> <TextField
-                            name="focusDuration" label="Focus (min)" type="number" size="small"
-                            value={formData.focusDuration} onChange={handleInputChange}/> <TextField
-                            name="shortBreakDuration" label="Short Break (min)" type="number" size="small"
-                            value={formData.shortBreakDuration} onChange={handleInputChange}/> <TextField
-                            name="longBreakDuration" label="Long Break (min)" type="number" size="small"
-                            value={formData.longBreakDuration} onChange={handleInputChange}/> <TextField
-                            name="numFocuses" label="Focus Sessions" type="number" size="small"
-                            value={formData.numFocuses} onChange={handleInputChange}/> </Box>
+
+                        <Box sx={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2}}>
+                            <TextField
+                                name="focusDuration"
+                                label="Focus (min)"
+                                type="number"
+                                size="small"
+                                value={formData.focusDuration}
+                                onChange={handleInputChange}
+                            />
+                            <TextField
+                                name="shortBreakDuration"
+                                label="Short Break (min)"
+                                type="number"
+                                size="small"
+                                value={formData.shortBreakDuration}
+                                onChange={handleInputChange}
+                            />
+                            <TextField
+                                name="longBreakDuration"
+                                label="Long Break (min)"
+                                type="number"
+                                size="small"
+                                value={formData.longBreakDuration}
+                                onChange={handleInputChange}
+                            />
+                            <TextField
+                                name="numFocuses"
+                                label="Focus Sessions"
+                                type="number"
+                                size="small"
+                                value={formData.numFocuses}
+                                onChange={handleInputChange}
+                            />
+                        </Box>
 
                         <Button
                             variant="contained"
                             color="primary"
                             onClick={startPomodoro}
-                            disabled={!formData.taskId || !isConnected || tasks.length === 0}
+                            disabled={!isConnected}
                             fullWidth
                             size="small"
                         >
                             Start Pomodoro {!isConnected ? '(Waiting for connection...)' : ''}
                         </Button>
-
                     </>
                 ) : (
                     <>
@@ -342,28 +327,28 @@ export function PomodoroTimer(props: props) {
                             <Box sx={{width: '100%', mt: 1}}>
                                 <LinearProgress
                                     variant="determinate"
-                                    color = {status.sessionRunning ? "primary" : "secondary"}
+                                    color={status.sessionRunning ? "primary" : "secondary"}
                                     value={(status.secondsPassedInSession / (status.secondsPassedInSession + status.secondsUntilNextTransition)) * 100}
                                 />
                                 <Typography variant="caption" color="text.secondary" sx={{mt: 0.5}}>
                                     Session {status.currentFocusNumber} of {status.numFocuses}
                                 </Typography>
                             </Box>
-                            {/*{status.sessionActive && ( <PauseIcon onClick={pauseSession}></PauseIcon>)}*/}
-                            {/*{!status.sessionActive && (<PlayArrowIcon onClick={unpauseSession}></PlayArrowIcon>)}*/}
-                            <IconButton onClick={handleTogglePlayPause} color="primary">
-                                {status.sessionRunning ? <PauseIcon/> : <PlayArrowIcon/>}
-                            </IconButton>
-                            <IconButton onClick={handleEndSession} color="primary">
-                                <StopIcon />
-                            </IconButton>
 
+                            <Box sx={{mt: 1}}>
+                                <IconButton onClick={handleTogglePlayPause} color="primary">
+                                    {status.sessionRunning ? <PauseIcon/> : <PlayArrowIcon/>}
+                                </IconButton>
+                                <IconButton onClick={handleEndSession} color="primary">
+                                    <StopIcon/>
+                                </IconButton>
+                            </Box>
                         </Box>
                     </>
                 )}
             </Stack>
         </HoverCardBox>
     );
-};
+}
 
 export default PomodoroTimer;

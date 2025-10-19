@@ -18,7 +18,10 @@ public class Project {
     private LocalDateTime creationDateTime;
 
     @Column(nullable = false)
-    private String projectName;
+    private String name;
+
+    @Column
+    private String description;
 
 
 }

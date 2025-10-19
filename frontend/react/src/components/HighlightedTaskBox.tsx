@@ -6,6 +6,7 @@ import CheckIcon from '@mui/icons-material/Check';
 import AdjustIcon from '@mui/icons-material/Adjust';
 import EditableField from "./EditableField.tsx";
 import {HoverCardBox} from "./HoverCardBox";
+import PomodoroTimer from "./PomodoroTimer";
 
 type props = {
     tasks: Task[];
@@ -16,6 +17,7 @@ type props = {
 };
 
 export function HighlightedTaskBox(props: props) {
+    const [showPomodoro, setShowPomodoro] = useState(false);
     let importance;
     if (!(props.task) || props.task.importance <= 3) {
         importance = "low";
@@ -32,7 +34,7 @@ export function HighlightedTaskBox(props: props) {
     }
     useEffect(() => {
 
-    }, [props.tasks]);
+    }, [props.task]);
     return (
         <HoverCardBox
         //     display={(theme) => ({
@@ -60,7 +62,7 @@ export function HighlightedTaskBox(props: props) {
 
 
                     onClick={() => {
-                        props.handleOpenDialog?.('pomodoroDialog');
+                        setShowPomodoro(true);
                     }}
                     endIcon={<AdjustIcon/>}
                 >
@@ -73,6 +75,7 @@ export function HighlightedTaskBox(props: props) {
                     color={color}
                     endIcon={<CheckIcon/>}
                     onClick={() => {
+                        // @ts-ignore
                         if ("taskId" in props.task) {
                             props.handleCompleteTask(props.task.taskId)
                         }
@@ -80,6 +83,8 @@ export function HighlightedTaskBox(props: props) {
                 >
                 </Button>
             </div>
+            {showPomodoro && (<PomodoroTimer task={props.task}/>)}
+
 
 
         </HoverCardBox>

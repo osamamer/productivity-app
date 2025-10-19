@@ -27,10 +27,8 @@ export const baseTheme = createTheme();
             high: createColor('#FF614B'),
 
             background: {
-                // default: '#1F1D21',
-                // paper: '#1F1D21',
-                // default: '#1e2124',
-                // paper: '#1e2124',
+                default: '#0f0f0f',
+                paper: '#0f0f0f',
             },
             text: {
                 primary: '#FFFFFF',

@@ -4,16 +4,16 @@ import {string} from "yup";
 
 interface props {
     children: ReactNode,
-    display?: (theme: any) => any; // a function that receives the theme
+    display?: (theme: any) => any;
     maximumWidth?: string;
     maximumHeight?: string;
 }
 
 export function HoverCardBox({ children, display, maximumWidth, maximumHeight }: props) {
     return (
-        <Card
+        <Box
             sx={(theme) => ({
-                display: display ? display(theme) : "block", // use the function or fallback
+                display: display ? display(theme) : "block",
                 flexDirection: "column",
                 gap: 1,
                 px: 2,
@@ -21,12 +21,12 @@ export function HoverCardBox({ children, display, maximumWidth, maximumHeight }:
                 "&:hover": { transform: "scale(1.01)", boxShadow: 6 },
                 transition: "transform 0.3s, box-shadow 0.3s",
                 boxShadow: 3,
-                borderRadius: 1,
+                borderRadius: 2,
                 maxWidth: maximumWidth? maximumWidth : '100%',
                 maxHeight: maximumHeight? maximumHeight : '100%',
             })}
         >
             {children}
-        </Card>
+        </Box>
     );
 }

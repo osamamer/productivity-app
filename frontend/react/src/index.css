@@ -102,38 +102,43 @@ body {
 
 .section {
     display: flex;
-    padding: 10px 25px 25px 25px;
-    /*box-sizing: border-box;*/
-    /*height: 100%;*/
-    /*background: white;*/
     flex-direction: column;
-    /*border-right: 1px solid gray;*/
     gap: 2em;
     overflow: auto;
-    /*height: 100vh;*/
+    padding: 10px 25px 25px 25px;
     max-height: 100vh;
+    box-sizing: border-box;
+}
+
+.section-row {
+    display: flex;
+    flex-direction: row;
+    gap: 1em; /* space between sections if needed */
 }
 
 .left-section {
-    width: 25%; /* Set width for left section */
     padding: 10px 25px 25px 25px;
-    /*background-color: #ddd;*/
-    overflow: scroll;
+
+    width: 25%;
+    /*border-right: 1px solid darkgray;*/
 }
 
 .center-section {
-    flex: 1 1 35%; /* Takes up twice the space of other sections */
+    padding: 10px 25px 25px 25px;
+
+    flex: 1 1 35%;
     max-width: 40%;
-    /*padding: 35px 25px 25px 25px;*/
-    /*background-color: #eee;*/
+    /*border-left: 1px solid darkgray;*/
+    /*border-right: 1px solid darkgray;*/
 }
 
 .right-section {
+    padding: 10px 25px 25px 25px;
+
     flex: 1 1 auto;
-    /*padding: 35px 25px 25px 25px;*/
-    /*width: 20%; !* Set fixed width for right section *!*/
-    /*background-color: #ECCECE   ;*/
+    /*border-left: 1px solid darkgray;*/
 }
+
 .head-question {
     /*position: relative;*/
     font-size: xx-large;

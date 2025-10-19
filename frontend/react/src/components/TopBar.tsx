@@ -35,7 +35,7 @@ export function TopBar(props: props) {
     return (
         <>
             {/*<Box style={{zIndex: 1400, position: 'static', marginBottom: 10, pl: 0}}>*/}
-            <AppBar  sx={{padding: 0, backgroundColor: "background.default"}} className="appbar">
+            <AppBar  sx={{padding: 0}} className="appbar">
                 <Toolbar sx={{display: 'flex', padding: 0, justifyContent: 'space-between'}} className="appbar">
                     {/*<Box sx={{*/}
                     {/*    display: 'flex', alignItems: 'center', flexGrow: 1,*/}
