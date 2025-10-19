@@ -65,6 +65,9 @@ public class Task {
     private String parentId;
 
     @Column
+    private String projectId;
+
+    @Column
     private String tag;
 
     @Column
