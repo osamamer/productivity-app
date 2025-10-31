@@ -1,7 +1,7 @@
 import React, {useEffect, useState} from "react";
-import {Task} from "../../interfaces/Task.tsx";
-import {DayEntity} from "../../interfaces/DayEntity.tsx";
-import {TaskToCreate} from "../../interfaces/TaskToCreate.tsx";
+import {Task} from "../../types/Task.tsx";
+import {DayEntity} from "../../types/DayEntity.tsx";
+import {TaskToCreate} from "../../types/TaskToCreate.tsx";
 import {Box, Card, Typography} from "@mui/material";
 import {HoverCardBox} from "./HoverCardBox";
 

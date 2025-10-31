@@ -1,6 +1,6 @@
 import React, {useEffect, useState} from "react";
 import {DynamicFormDialog} from "./DynamicFormDialog.tsx";
-import {Field} from "../../interfaces/Field.tsx";
+import {Field} from "../../types/Field.tsx";
 
 const fields: Field[] =  [
     {name: "dayRating", label: "", placeholder: "Today out of 10?", type: "number", min: 0, max: 10},

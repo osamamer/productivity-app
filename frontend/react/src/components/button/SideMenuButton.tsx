@@ -1,16 +1,17 @@
 import React from 'react';
 import { ListItemButton, ListItemIcon, ListItemText } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
+import {useAppTheme} from "../../contexts/ThemeContext";
 
 type props = {
     image: string,
     text: string,
     targetPage: string,
     open: boolean,
-    darkMode: boolean,
 }
 
 export function SideMenuButton(props: props) {
+    const darkMode = useAppTheme();
     const navigate = useNavigate();
 
     const handleNavigation = () => {
@@ -46,7 +47,7 @@ export function SideMenuButton(props: props) {
                         width: '100%',
                         maxHeight: '100%',
                         objectFit: 'contain',
-                        filter: props.darkMode
+                        filter: darkMode
                             ? 'brightness(0) invert(1)'  // Light icon on dark background
                             : 'brightness(0) invert(0)', // Dark icon on light background
                     }}

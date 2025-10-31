@@ -1,5 +1,5 @@
 import React, {useEffect, useState} from "react";
-import {Task} from "../../interfaces/Task.tsx";
+import {Task} from "../../types/Task.tsx";
 import {Box, Card, DialogContent, styled, Typography} from "@mui/material";
 import Button from "@mui/material/Button";
 import CheckIcon from '@mui/icons-material/Check';

@@ -3,7 +3,7 @@ import NightlightIcon from '@mui/icons-material/Nightlight';
 import ChatIcon from '@mui/icons-material/Chat';
 import {useNavigate} from "react-router-dom";
 import React from "react";
-import {TaskToCreate} from "../interfaces/TaskToCreate.tsx";
+import {TaskToCreate} from "../types/TaskToCreate.tsx";
 
 type props = {onSubmit: (taskToCreate: TaskToCreate) => void,
             darkModeFunction: (darkMode: boolean) => void,

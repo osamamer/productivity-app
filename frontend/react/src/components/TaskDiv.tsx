@@ -1,4 +1,4 @@
-import {Task} from "../interfaces/Task.tsx";
+import {Task} from "../types/Task.tsx";
 import {Card, Checkbox, Typography} from "@mui/material";
 
 type props = { task: Task, toggleTaskCompletion: (taskId: string) => void, onClick: (task: Task) => void };

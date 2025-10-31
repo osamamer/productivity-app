@@ -2,7 +2,7 @@ import React, {useState, useEffect, useRef} from 'react';
 import {Box} from '@mui/material';
 import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
-import {Task} from "../interfaces/Task.tsx"; // Import styles
+import {Task} from "../types/Task.tsx"; // Import styles
 type props =
     {
         onSubmit: (text: string, taskId: string) => void;
@@ -46,13 +46,8 @@ const EditableField: React.FC<props> = (props: props) => {
         const trimmedText = targetText.trim();
         setTargetText(trimmedText); // Keep UI updated
         setIsEditing(false);
-        console.log("ayo")
         if (props.taskId) {
-            console.log("ayoo")
-            console.log(trimmedText)
-            console.log(props.taskId)
-
-            props.onSubmit(trimmedText, props.taskId); // Ensure task ID is passed
+            props.onSubmit(trimmedText, props.taskId);
         }
     };
 

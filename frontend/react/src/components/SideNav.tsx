@@ -8,9 +8,7 @@ import {
     ListItemText,
     Menu,
     useMediaQuery,
-    useTheme
 } from "@mui/material";
-import {Home, Info, Settings} from "@mui/icons-material";
 import {useState} from "react";
 import home from '../assets/images/home.png';
 import clipboard from '../assets/images/clipboard.png';
@@ -19,19 +17,16 @@ import calender from '../assets/images/calendar.png';
 import meditation from '../assets/images/yoga.png'
 import stats from '../assets/images/stats.png';
 import settings from '../assets/images/settings.png';
-
-import device from '../assets/images/storage-device.png';
 import {SideMenuButton} from "./button/SideMenuButton";
-import {Task} from "../interfaces/Task.tsx";
+import {useAppTheme} from "../contexts/ThemeContext";
 
 type props = {
     onSidebarWidthChange: (arg0: number) => void;
     openProp: boolean;
-    darkMode: boolean;
 };
 
 export function SideNav(props: props) {
-    const theme = useTheme();
+    const { darkMode } = useAppTheme();
     const [open, setOpen] = useState(props.openProp);
     const handleMouseEnter = () => {
         setOpen(true);
@@ -69,19 +64,19 @@ export function SideNav(props: props) {
         >
             <List sx={{width: '100%', textAlign: 'center', mt: 1}}>
                 <SideMenuButton image={home as string} text="Home" targetPage="/" open={open}
-                                darkMode={props.darkMode}></SideMenuButton>
+                                ></SideMenuButton>
                 <SideMenuButton image={clipboard as string} text="Tasks" targetPage="/tasks" open={open}
-                                darkMode={props.darkMode}></SideMenuButton>
+                                ></SideMenuButton>
                 <SideMenuButton image={day as string} text="Day" targetPage="/day" open={open}
-                                darkMode={props.darkMode}></SideMenuButton>
+                                ></SideMenuButton>
                 <SideMenuButton image={calender as string} text="Calender" targetPage="/calender" open={open}
-                                darkMode={props.darkMode}></SideMenuButton>
+                                ></SideMenuButton>
                 <SideMenuButton image={meditation as string} text="Meditation" targetPage="/meditation" open={open}
-                                darkMode={props.darkMode}></SideMenuButton>
+                                ></SideMenuButton>
                 <SideMenuButton image={stats as string} text={"Statistics"} targetPage={"/statistics"} open={open}
-                                darkMode={props.darkMode}></SideMenuButton>
+                                ></SideMenuButton>
                 <SideMenuButton image={settings as string} text={"Settings"} targetPage={"/settings"} open={open}
-                                darkMode={props.darkMode}></SideMenuButton>
+                                ></SideMenuButton>
             </List>
         </Drawer>
     );

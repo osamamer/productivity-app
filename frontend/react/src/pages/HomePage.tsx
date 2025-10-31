@@ -1,7 +1,7 @@
 import React, {useEffect, useState} from 'react'
 import '../App.css'
-import {Task} from "../interfaces/Task.tsx";
-import {DayEntity} from "../interfaces/DayEntity.tsx";
+import {Task} from "../types/Task.tsx";
+import {DayEntity} from "../types/DayEntity.tsx";
 import {TodayBox} from "../components/box/TodayBox.tsx";
 import {TaskBox} from "../components/box/TaskBox.tsx";
 import {CreateTaskDialog} from "../components/dialog/CreateTaskDialog.tsx";
@@ -9,32 +9,21 @@ import {HighlightedTaskBox} from "../components/box/HighlightedTaskBox.tsx";
 import {HighestPriorityTaskBox} from "../components/box/HighestPriorityTaskBox.tsx";
 import {DayDialog} from "../components/dialog/DayDialog.tsx";
 import {SideNav} from "../components/SideNav.tsx";
-import {TaskToCreate} from "../interfaces/TaskToCreate.tsx";
-import Button from '@mui/material/Button'
-import {Box, styled, useTheme} from "@mui/material";
+import {TaskToCreate} from "../types/TaskToCreate.tsx";
+import {Box} from "@mui/material";
 import {PomodoroDialog} from "../components/dialog/PomodoroDialog.tsx";
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
-import {HoverCardBox} from "../components/box/HoverCardBox"; // a plugin!
+import {HoverCardBox} from "../components/box/HoverCardBox";
+import { useTaskManager } from '../hooks/useTaskManager';
+import {dayService, taskService} from "../services/api";
+import {useAppTheme} from "../contexts/ThemeContext";
 
-export const OvalButton = styled(Button)({
-    borderRadius: '50px',
-    padding: '10px 20px',
 
-});
-type props = { darkMode: boolean, darkModeFunction: (darkMode: boolean) => void };
-
-export function HomePage(props: props) {
-    const ROOT_URL = import.meta.env.BACKEND_BASE_URL;
-    const TASK_URL = ROOT_URL.concat("/api/v1/task");
-    const DAY_URL = ROOT_URL.concat("/api/v1/day");
-    const theme = useTheme();
-    const [todayTasks, setTodayTasks] = useState<Task[]>([]);
+export function HomePage() {
+    const theme = useAppTheme();
     const [today, setToday] = useState<DayEntity>({} as DayEntity);
-    const [allTasks, setAllTasks] = useState<Task[]>([]);
-    const [futureTasks, setFutureTasks] = useState<Task[]>([]);
-    const [pastTasks, setPastTasks] = useState<Task[]>([]);
-    const [highlightedTask, setHighlightedTask] = useState<Task | null>(null);
+
     const [sidenavOpen, setSidenavOpen] = useState(false);
     const [tasksExist, setTasksExist] = useState(false);
     const [sidebarWidth, setSidebarWidth] = useState(75); // Default collapsed width
@@ -45,13 +34,134 @@ export function HomePage(props: props) {
             createTaskDialog: false,
         });
 
+    const {
+        allTasks,
+        todayTasks,
+        futureTasks,
+        pastTasks,
+        highlightedTask,
+        loading,
+        error,
+        setHighlightedTask,
+        fetchAllTasks,
+        fetchTodayTasks,
+        fetchFutureTasks,
+        fetchPastTasks,
+        addTaskToState,
+        updateTaskInState,
+        removeTaskFromState,
+    } = useTaskManager();
+
     useEffect(() => {
-        fetchTodayTasks();
-        fetchToday();
-        fetchAllTasks();
-        fetchFutureTasks();
-        fetchPastTasks();
+        const fetchData = async () => {
+            await Promise.all([
+                fetchAllTasks(),
+                fetchTodayTasks(),
+                fetchFutureTasks(),
+                fetchPastTasks(),
+                fetchToday(),
+            ]);
+        };
+        fetchData();
     }, []);
+
+    async function fetchToday() {
+        try {
+            const todayData = await dayService.getToday();
+            setToday(todayData);
+        } catch (err) {
+            console.error('Error fetching today:', err);
+        }
+    }
+    async function createTask(task: TaskToCreate) {
+        try {
+            const createdTask = await taskService.createTask(task);
+            addTaskToState(createdTask);
+        } catch (err) {
+            console.error('Error creating task:', err);
+            // Fallback: refetch if create doesn't return task
+            await Promise.all([
+                fetchAllTasks(),
+                fetchTodayTasks(),
+                fetchFutureTasks(),
+                fetchPastTasks(),
+            ]);
+        }
+    }
+
+    async function toggleTaskCompletion(taskId: string) {
+        // Optimistic update
+        const task = allTasks.find(t => t.taskId === taskId);
+        if (task) {
+            updateTaskInState(taskId, { completed: !task.completed });
+        }
+
+        try {
+            await taskService.toggleTaskCompletion(taskId);
+        } catch (err) {
+            console.error('Error toggling task:', err);
+            // Rollback
+            if (task) {
+                updateTaskInState(taskId, { completed: task.completed });
+            }
+        }
+    }
+
+    async function completeTask(taskId: string) {
+        // Optimistic removal
+        removeTaskFromState(taskId);
+
+        try {
+            await taskService.completeTask(taskId);
+        } catch (err) {
+            console.error('Error completing task:', err);
+            // Refetch on error
+            await fetchAllTasks();
+        }
+    }
+
+    async function changeDescription(description: string, taskId: string) {
+        updateTaskInState(taskId, { description: description });
+
+        try {
+            await taskService.updateDescription(taskId, description);
+        } catch (err) {
+            console.error('Error updating description:', err);
+            await fetchAllTasks();
+        }
+    }
+
+    async function startPomodoro(
+        taskId: string,
+        focusDuration: number,
+        shortBreakDuration: number,
+        longBreakDuration: number,
+        numFocuses: number,
+        longBreakCooldown: number
+    ) {
+        try {
+            await taskService.startPomodoro(
+                taskId,
+                focusDuration,
+                shortBreakDuration,
+                longBreakDuration,
+                numFocuses,
+                longBreakCooldown
+            );
+        } catch (err) {
+            console.error('Error starting pomodoro:', err);
+        }
+    }
+
+    async function setTodayInfo(rating: number, plan: string, summary: string) {
+        try {
+            await dayService.setTodayInfo(rating, plan, summary);
+            const updatedToday = await dayService.getToday();
+            setToday(updatedToday);
+        } catch (err) {
+            console.error('Error setting today info:', err);
+        }
+    }
 
 
     function getCurrentDateFormatted() {
@@ -63,165 +173,12 @@ export function HomePage(props: props) {
     }
 
 
-    async function fetchAllTasks(): Promise<Task[]> {
-        const response = await fetch(TASK_URL);
-        const allTasks = await response.json();
-        setAllTasks(allTasks);
-        if (allTasks.length > 0) {
-            setTasksExist(true);
-            setHighlightedTask(allTasks[0]);
-        } else {
-            setTasksExist(false);
-            setHighlightedTask({} as Task); // or leave null
-        }
-        return allTasks;
-    }
-
-    async function fetchTodayTasks() {
-        try {
-            const response = await fetch(TASK_URL.concat(`/get-today-tasks`));
-            const todayTasks: Task[] = await response.json();
-            setTodayTasks(todayTasks); // Update state with fetched tasks
-            return todayTasks;
-        } catch (error) {
-            console.error('Error fetching tasks:', error);
-        }
-    }
-
-    async function fetchPastTasks() {
-        try {
-            const response = await fetch(TASK_URL.concat('/get-past-tasks'));
-            const pastTasks: Task[] = await response.json();
-            setPastTasks(pastTasks); // Update state with fetched tasks
-            return pastTasks;
-        } catch (error) {
-            console.error('Error fetching tasks:', error);
-        }
-    }
-
-    async function fetchFutureTasks() {
-        try {
-            const response = await fetch(TASK_URL.concat('/get-future-tasks'));
-            const futureTasks: Task[] = await response.json();
-            setFutureTasks(futureTasks); // Update state with fetched tasks
-            return futureTasks;
-        } catch (error) {
-            console.error('Error fetching tasks:', error);
-        }
-    }
-
-    async function fetchToday(): Promise<DayEntity> {
-        const response = await fetch(DAY_URL.concat('/get-today'));
-        const today = await response.json();
-        setToday(today);
-        return today;
-    }
-
-    async function createTask(task: TaskToCreate) {
-        await fetch(TASK_URL.concat("/create-task"), {
-            method: "POST",
-            body: JSON.stringify({
-                taskName: task.name,
-                taskDescription: task.description,
-                taskPerformTime: task.scheduledPerformDateTime,
-                taskTag: task.tag,
-                taskImportance: task.importance,
-            }),
-            headers: {
-                "Content-type": "application/json; charset=UTF-8"
-            }
-        });
-        await fetchTodayTasks();
-        await fetchAllTasks();
-        await fetchPastTasks();
-        await fetchFutureTasks();
-
-    }
-
-    async function toggleTaskCompletion(taskId: string) {
-        await fetch(TASK_URL.concat(`/toggle-task-completion/${taskId}`), {
-            method: "POST",
-        });
-        await fetchTodayTasks();
-        await fetchAllTasks();
-        await fetchPastTasks();
-        await fetchFutureTasks();
-    }
-
-    async function fetchHighestPriorityTask(): Promise<Task> {
-        const response =
-            await fetch(TASK_URL.concat("/get-newest-uncompleted-highest-priority-task"), {
-                method: "GET",
-            });
-        return response.json();
-    }
-
-    function highlightTask(task: Task): void {
-        setHighlightedTask(task);
-    }
-
-    async function startPomodoro(taskId: string, focusDuration: number, shortBreakDuration: number,
-                                 longBreakDuration: number, numFocuses: number,
-                                 longBreakCooldown: number): Promise<void> {
-        console.log("Attempting to start pomodoro " + taskId + " "
-            + focusDuration + " " + shortBreakDuration + " " + longBreakDuration + " " + numFocuses + " " + longBreakCooldown)
-        await fetch(TASK_URL.concat("/start-pomodoro"), {
-            method: "POST",
-            body: JSON.stringify({
-                taskId: taskId,
-                focusDuration: focusDuration,
-                shortBreakDuration: shortBreakDuration,
-                longBreakDuration: longBreakDuration,
-                numFocuses: numFocuses,
-                longBreakCooldown: longBreakCooldown
-            }),
-            headers: {
-                "Content-type": "application/json; charset=UTF-8"
-            }
-        });
-    }
-
-    async function setTodayInfo(rating: number, plan: string,
-                                summary: string): Promise<void> {
-        await fetch(DAY_URL.concat("/set-today-info"), {
-            method: "POST",
-            body: JSON.stringify({
-                dayRating: rating,
-                dayPlan: plan,
-                daySummary: summary,
-            }),
-            headers: {
-                "Content-type": "application/json; charset=UTF-8"
-            }
-        });
-    }
-
-    async function changeDescription(description: string, taskId: string): Promise<void> {
-        const response = await fetch(TASK_URL.concat("/set-description"), {
-            method: "POST",
-            body: JSON.stringify({
-                taskId,
-                taskDescription: description,
-            }),
-            headers: { "Content-type": "application/json; charset=UTF-8" },
-        });
-
-        if (!response.ok) {
-            console.error("Failed to update description");
-            return;
-        }
-        await fetchAllTasks();
-    }
-
-
-
-    // Handles opening for all modals
     const handleOpen = (dialogType: string) => {
         setDialogOpen((prev) =>
             ({...prev, [dialogType]: true}));
     };
     // Handles Submission for all modals
-    const handleSubmit = (dialogType: string, values: Record<string, any>) => {
+    const handleSubmit = async (dialogType: string, values: Record<string, any>) => {
         console.log(`Handling ${dialogType} modal submit`)
         console.log(values.focusDuration)
         switch (dialogType) {
@@ -245,9 +202,17 @@ export function HomePage(props: props) {
                 break;
             }
             case "dayDialog": {
-                setTodayInfo(values.dayRating, values.dayPlan,
-                    values.daySummary)
-                    .then(() => fetchToday()).then((today) => setToday(today));
+                const dayValues = values;
+                try {
+                    await setTodayInfo(
+                        dayValues.dayRating,
+                        dayValues.dayPlan,
+                        dayValues.daySummary
+                    );
+                    await fetchToday(); // fetchToday already calls setToday internally
+                } catch (err) {
+                    console.error('Error updating day info:', err);
+                }
                 break;
             }
         }
@@ -260,16 +225,6 @@ export function HomePage(props: props) {
 
 
 
-    async function completeTask(taskId: string) {
-        await fetch(TASK_URL.concat(`/complete-task/${taskId}`), {
-            method: "POST"
-        });
-        fetchTodayTasks();
-        fetchAllTasks();
-        fetchFutureTasks();
-        fetchPastTasks();
-    }
-
     return (
         <>
             <PomodoroDialog open={dialogOpen.pomodoroDialog}
@@ -281,21 +236,15 @@ export function HomePage(props: props) {
                        onSubmit={handleSubmit}/>
             <Box sx={{display: 'flex', overflowY: 'auto'
             }}>
-                {/*<CssBaseline/>*/}
-                <SideNav onSidebarWidthChange={setSidebarWidth} openProp={sidenavOpen} darkMode={props.darkMode}/>
-                {/*<Header onSubmit={createTask}/>*/}
-                {/*<TopBar onSubmit={createTask} darkMode={props.darkMode} darkModeFunction={props.darkModeFunction}/>*/}
-                <Box sx={{
-                    // width: 1,
+                <SideNav onSidebarWidthChange={setSidebarWidth} openProp={sidenavOpen}/>
+                <Box sx={(theme) => ({ // sx receives theme as parameter
                     maxWidth: '100%',
                     display: 'flex',
                     flexGrow: 1,
-                    // justifyContent: 'center',
-                    flexWrap: 'wrap', // allows stacking per section
-                    // gap: 3,
-                    overflowY: 'auto', // allows scrolling if stacked content exceeds viewport
-                    // justifyContent: 'space-evenly',
-                    mt: 0, mr: 0,
+                    flexWrap: 'wrap',
+                    overflowY: 'auto',
+                    mt: 0,
+                    mr: 0,
                     marginLeft: `${sidebarWidth}px`,
                     ...(sidenavOpen && {
                         transition: theme.transitions.create('margin', {
@@ -309,18 +258,19 @@ export function HomePage(props: props) {
                         duration: theme.transitions.duration.leavingScreen,
                     }),
                     padding: 1,
-                }}>
-
+                })}>
 
                     <Box className="left-section"
                          // sx={{width: '25%'}}
                          sx={{
+                             display: 'flex',
+                             flexDirection: 'column',
                              flex: { xs: '1 1 100%', md: '1 1 45%', lg: '1 1 18%' },
                              minWidth: 0,
-                             gap: '50%',
+                             gap: 4,
                          }}
                     >
-                        <TodayBox today={today} handleOpenDialog={handleOpen} darkMode={props.darkMode}/>
+                        <TodayBox today={today} handleOpenDialog={handleOpen}/>
                         <HighestPriorityTaskBox tasks={allTasks}/>
 
                         <HoverCardBox maximumHeight='500px'>
@@ -345,11 +295,11 @@ export function HomePage(props: props) {
                             minWidth: 0
                         }}
                         >
-                        <TaskBox pastTasks={pastTasks ?? []}
-                                 todayTasks={todayTasks ?? []}
-                                 futureTasks={futureTasks ?? []} type={"Next week"}
+                        <TaskBox pastTasks={pastTasks}
+                                 todayTasks={todayTasks}
+                                 futureTasks={futureTasks} type={"Next week"}
                                  toggleTaskCompletion={toggleTaskCompletion}
-                                 onDivClick={highlightTask} handleButtonClick={handleOpen}
+                                 onDivClick={setHighlightedTask} handleButtonClick={handleOpen}
                                  onSubmit={createTask}   />
                     </Box>
 
@@ -362,9 +312,14 @@ export function HomePage(props: props) {
                              minWidth: 0
                          }}
                     >
-                        {allTasks.length > 0 && ( <HighlightedTaskBox
-                                key={highlightedTask?.taskId ?? "no-task"} tasks={allTasks ?? []} task={highlightedTask}
-                                handleOpenDialog={handleOpen} handleCompleteTask={completeTask} handleChangeDescription={changeDescription}
+                        {highlightedTask && (
+                            <HighlightedTaskBox
+                                key={highlightedTask.taskId}
+                                tasks={allTasks}
+                                task={highlightedTask}
+                                handleOpenDialog={handleOpen}
+                                handleCompleteTask={completeTask}
+                                handleChangeDescription={changeDescription}
                             />
                         )}
 
