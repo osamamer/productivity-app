@@ -2,7 +2,7 @@
 
 Build the docker image with:
 ```sh
-./build-docker-image.sh
+./deployment/build-docker-image.sh
 ```
 Rerun the app after making changes to the backend:
 ```sh
