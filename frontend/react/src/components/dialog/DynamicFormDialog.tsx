@@ -9,7 +9,7 @@ import {
 } from '@mui/material';
 import { useFormik, FormikHelpers } from 'formik';
 import * as Yup from 'yup';
-import {Field} from "../interfaces/Field.tsx";
+import {Field} from "../../interfaces/Field.tsx";
 import {AnyObject, NumberSchema, StringSchema} from "yup";
 type FormValues = Record<string, string | number>;
 type props = {

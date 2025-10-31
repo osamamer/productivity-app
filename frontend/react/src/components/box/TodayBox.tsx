@@ -1,13 +1,13 @@
-import {DayEntity} from "../interfaces/DayEntity.tsx";
-import {OvalButton} from "../pages/HomePage.tsx";
+import {DayEntity} from "../../interfaces/DayEntity.tsx";
+import {OvalButton} from "../../pages/HomePage.tsx";
 import React from "react";
 import Button from "@mui/material/Button";
 import {Box, Card, Typography} from "@mui/material";
-import summary from "../assets/images/summary.png"
-import plan from "../assets/images/walk.png";
-import {InfoDiv} from "./InfoDiv.tsx";
+import summary from "../../assets/images/summary.png"
+import plan from "../../assets/images/walk.png";
+import {DayInfoDiv} from "../DayInfoDiv.tsx";
 type props = { today: DayEntity, handleOpenDialog: (dialogType: string) => void, darkMode: boolean };
-import altDayIcon from '../assets/images/time.png'
+import altDayIcon from '../../assets/images/time.png'
 import {HoverCardBox} from "./HoverCardBox";
 export function TodayBox(props: props) {
     return (
@@ -17,8 +17,8 @@ export function TodayBox(props: props) {
 
                 <Typography title="Today's rating" variant="h5" color="primary.main">{props.today.rating ?? 'Rate today'}</Typography>
             </Box>
-            <InfoDiv type="plan" image={plan as string} info={props.today.plan} onClick={() => {}} darkMode={props.darkMode}></InfoDiv>
-            <InfoDiv type="summary" image={summary as string} info={props.today.summary} onClick={() => {}} darkMode={props.darkMode}></InfoDiv>
+            <DayInfoDiv type="plan" image={plan as string} info={props.today.plan} onClick={() => {}} darkMode={props.darkMode}></DayInfoDiv>
+            <DayInfoDiv type="summary" image={summary as string} info={props.today.summary} onClick={() => {}} darkMode={props.darkMode}></DayInfoDiv>
 
             {/*<Typography>{props.today.rating ?? 'Rate today'}</Typography>*/}
             {/*<Typography variant="h5" sx={{alignText: 'left'}}>{props.today.plan !== 'null' && props.today.plan}</Typography>*/}

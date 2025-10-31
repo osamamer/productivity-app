@@ -10,7 +10,7 @@ import {
     Alert,
     IconButton
 } from '@mui/material';
-import {HoverCardBox} from './HoverCardBox';
+import {HoverCardBox} from './box/HoverCardBox';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
 import StopIcon from '@mui/icons-material/Stop';

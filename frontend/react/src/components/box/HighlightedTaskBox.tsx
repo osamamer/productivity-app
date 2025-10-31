@@ -1,12 +1,12 @@
 import React, {useEffect, useState} from "react";
-import {Task} from "../interfaces/Task.tsx";
+import {Task} from "../../interfaces/Task.tsx";
 import {Box, Card, DialogContent, styled, Typography} from "@mui/material";
 import Button from "@mui/material/Button";
 import CheckIcon from '@mui/icons-material/Check';
 import AdjustIcon from '@mui/icons-material/Adjust';
-import EditableField from "./EditableField.tsx";
+import EditableField from "../EditableField.tsx";
 import {HoverCardBox} from "./HoverCardBox";
-import PomodoroTimer from "./PomodoroTimer";
+import PomodoroTimer from "../PomodoroTimer";
 
 type props = {
     tasks: Task[];

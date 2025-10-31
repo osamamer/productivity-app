@@ -21,7 +21,7 @@ import stats from '../assets/images/stats.png';
 import settings from '../assets/images/settings.png';
 
 import device from '../assets/images/storage-device.png';
-import {SideMenuButton} from "./SideMenuButton.jsx";
+import {SideMenuButton} from "./button/SideMenuButton";
 import {Task} from "../interfaces/Task.tsx";
 
 type props = {

@@ -2,20 +2,20 @@ import React, {useEffect, useState} from 'react'
 import '../App.css'
 import {Task} from "../interfaces/Task.tsx";
 import {DayEntity} from "../interfaces/DayEntity.tsx";
-import {TodayBox} from "../components/TodayBox.tsx";
-import {TaskBox} from "../components/TaskBox.tsx";
-import {CreateTaskDialog} from "../components/CreateTaskDialog.tsx";
-import {HighlightedTaskBox} from "../components/HighlightedTaskBox.tsx";
-import {HighestPriorityTaskBox} from "../components/HighestPriorityTaskBox.tsx";
-import {DayDialog} from "../components/DayDialog.tsx";
+import {TodayBox} from "../components/box/TodayBox.tsx";
+import {TaskBox} from "../components/box/TaskBox.tsx";
+import {CreateTaskDialog} from "../components/dialog/CreateTaskDialog.tsx";
+import {HighlightedTaskBox} from "../components/box/HighlightedTaskBox.tsx";
+import {HighestPriorityTaskBox} from "../components/box/HighestPriorityTaskBox.tsx";
+import {DayDialog} from "../components/dialog/DayDialog.tsx";
 import {SideNav} from "../components/SideNav.tsx";
 import {TaskToCreate} from "../interfaces/TaskToCreate.tsx";
 import Button from '@mui/material/Button'
 import {Box, styled, useTheme} from "@mui/material";
-import {PomodoroDialog} from "../components/PomodoroDialog.tsx";
+import {PomodoroDialog} from "../components/dialog/PomodoroDialog.tsx";
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
-import {HoverCardBox} from "../components/HoverCardBox"; // a plugin!
+import {HoverCardBox} from "../components/box/HoverCardBox"; // a plugin!
 
 export const OvalButton = styled(Button)({
     borderRadius: '50px',
@@ -25,7 +25,7 @@ export const OvalButton = styled(Button)({
 type props = { darkMode: boolean, darkModeFunction: (darkMode: boolean) => void };
 
 export function HomePage(props: props) {
-    const ROOT_URL = "http://localhost:8080";
+    const ROOT_URL = import.meta.env.BACKEND_BASE_URL;
     const TASK_URL = ROOT_URL.concat("/api/v1/task");
     const DAY_URL = ROOT_URL.concat("/api/v1/day");
     const theme = useTheme();
@@ -37,7 +37,6 @@ export function HomePage(props: props) {
     const [highlightedTask, setHighlightedTask] = useState<Task | null>(null);
     const [sidenavOpen, setSidenavOpen] = useState(false);
     const [tasksExist, setTasksExist] = useState(false);
-    // const [localDarkMode, setLocalDarkMode] = useState(false);
     const [sidebarWidth, setSidebarWidth] = useState(75); // Default collapsed width
     const [dialogOpen, setDialogOpen] =
         useState<{ [key: string]: boolean }>({
@@ -48,18 +47,9 @@ export function HomePage(props: props) {
 
     useEffect(() => {
         fetchTodayTasks();
-    }, []);
-
-    useEffect(() => {
         fetchToday();
-    }, []);
-    useEffect(() => {
         fetchAllTasks();
-    }, []);
-    useEffect(() => {
         fetchFutureTasks();
-    }, []);
-    useEffect(() => {
         fetchPastTasks();
     }, []);
 
@@ -236,10 +226,11 @@ export function HomePage(props: props) {
         console.log(values.focusDuration)
         switch (dialogType) {
             case "pomodoroDialog": {
-                // @ts-ignore
-                startPomodoro(highlightedTask.taskId, values.focusDuration,
-                    values.shortBreakDuration, values.longBreakDuration,
-                    values.numFocuses, values.longBreakCooldown);
+                if (highlightedTask) {
+                        startPomodoro(highlightedTask.taskId, values.focusDuration,
+                        values.shortBreakDuration, values.longBreakDuration,
+                        values.numFocuses, values.longBreakCooldown);
+                }
                 break;
             }
             case "createTaskDialog": {
@@ -266,9 +257,7 @@ export function HomePage(props: props) {
         setDialogOpen((prev) =>
             ({...prev, [dialogType]: false}));
     };
-    // Makes more sense to have them here since they may be used for multiple components
 
-    // const [highestPriorityTask, setHighestPriorityTask] = useState<Task>({} as Task);
 
 
     async function completeTask(taskId: string) {

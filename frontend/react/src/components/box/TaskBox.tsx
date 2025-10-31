@@ -1,10 +1,10 @@
-import {Task} from "../interfaces/Task.tsx";
+import {Task} from "../../interfaces/Task.tsx";
 import React, {useState} from "react";
-import {TaskDiv} from "./TaskDiv.tsx";
+import {TaskDiv} from "../TaskDiv.tsx";
 import Button from "@mui/material/Button";
 import {Accordion, AccordionDetails, AccordionSummary, Box, Card, List, TextField, Typography} from "@mui/material";
 import {HoverCardBox} from "./HoverCardBox";
-import {TaskToCreate} from "../interfaces/TaskToCreate";
+import {TaskToCreate} from "../../interfaces/TaskToCreate";
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 

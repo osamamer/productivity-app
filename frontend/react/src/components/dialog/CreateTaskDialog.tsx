@@ -1,6 +1,6 @@
 import React, {useEffect, useState} from "react";
 import {DynamicFormDialog} from "./DynamicFormDialog.tsx";
-import {Field} from "../interfaces/Field.tsx";
+import {Field} from "../../interfaces/Field.tsx";
 
 const fields: Field[] =  [
     {name: "taskName", label: "", placeholder: "Task name", required: true},

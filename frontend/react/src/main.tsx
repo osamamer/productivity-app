@@ -13,15 +13,6 @@ const theme = createTheme({
         secondary: {
             main: '#03a9f4'
         },
-        tertiary: {
-            main: '#ff69b4',
-        },
-        quaternary: {
-            main: '#ffeb3b',
-        },
-        quinary: {
-            main: '#4caf50',
-        }
     },
 })
 window.global = window;

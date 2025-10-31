@@ -16,7 +16,7 @@ function Circle() {
     );
 }
 
-export function InfoDiv(props: props) {
+export function DayInfoDiv(props: props) {
     const isPlaceholder = !props.info;
     const title = `Today's ${props.type}`
     return (
@@ -40,24 +40,6 @@ export function InfoDiv(props: props) {
                         ? 'brightness(0) invert(1)'  // Light icon on dark background
                         : 'brightness(0) invert(0)' }}/>
                     </Box>
-                {/*<Checkbox size="small" checked={props.task.completed}*/}
-                {/*          onChange={() => {*/}
-                {/*              props.toggleTaskCompletion(props.task.taskId)*/}
-                {/*          }*/}
-                {/*          }>*/}
-
-                {/*</Checkbox>*/}
-                {/*<label>*/}
-                {/*    <input*/}
-                {/*        type="checkbox"*/}
-                {/*        className="task-button"*/}
-                {/*        checked={props.task.completed}*/}
-                {/*        onChange={() => {*/}
-                {/*            props.toggleTaskCompletion(props.task.taskId)}*/}
-                {/*        }*/}
-                {/*    />*/}
-                {/*</label>*/}
-                {/*<Typography sx={{flex: '1 1 auto'}} className="task-div-text">{props.info}</Typography>*/}
                     <Typography sx={{flex: '1 1 auto', pr: 1}}
                      variant="body1"
                      color={isPlaceholder ? 'textSecondary' : 'textPrimary'}

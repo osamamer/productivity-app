@@ -1,6 +1,6 @@
 import React, {useEffect, useState} from "react";
 import {DynamicFormDialog} from "./DynamicFormDialog.tsx";
-import {Field} from "../interfaces/Field.tsx";
+import {Field} from "../../interfaces/Field.tsx";
 
 const fields: Field[] =  [
     {name: "focusDuration", label: "", placeholder: "Focus duration (minutes)", required: true, type: "number", min:1, max:180},
