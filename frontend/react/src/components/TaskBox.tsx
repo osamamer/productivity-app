@@ -17,8 +17,6 @@ type props = {
     onDivClick: (task: Task) => void,
     handleButtonClick: (dialogType: string) => void
     onSubmit: (taskToCreate: TaskToCreate) => void,
-    darkModeFunction: (darkMode: boolean) => void,
-    darkMode: boolean
 };
 
 

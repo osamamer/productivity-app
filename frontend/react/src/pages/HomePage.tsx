@@ -7,25 +7,19 @@ import {TaskBox} from "../components/TaskBox.tsx";
 import {CreateTaskDialog} from "../components/CreateTaskDialog.tsx";
 import {HighlightedTaskBox} from "../components/HighlightedTaskBox.tsx";
 import {HighestPriorityTaskBox} from "../components/HighestPriorityTaskBox.tsx";
-import {Timer} from "../components/Timer.tsx";
-import {Header} from "../components/Header.tsx";
 import {DayDialog} from "../components/DayDialog.tsx";
 import {SideNav} from "../components/SideNav.tsx";
 import {TaskToCreate} from "../interfaces/TaskToCreate.tsx";
 import Button from '@mui/material/Button'
-import {Box, CssBaseline, styled, useTheme} from "@mui/material";
+import {Box, styled, useTheme} from "@mui/material";
 import {PomodoroDialog} from "../components/PomodoroDialog.tsx";
-import {TopBar} from "../components/TopBar.tsx";
-import {lightTheme} from "../Theme.tsx";
-import PomodoroTimer from "../components/PomodoroTimer";
-import WebSocketTest from "../components/WebSocketTest";
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import {HoverCardBox} from "../components/HoverCardBox"; // a plugin!
 
 export const OvalButton = styled(Button)({
-    borderRadius: '50px', // Adjust the value to get the oval shape you desire
-    padding: '10px 20px', // Adjust the padding for the desired size
+    borderRadius: '50px',
+    padding: '10px 20px',
 
 });
 type props = { darkMode: boolean, darkModeFunction: (darkMode: boolean) => void };
@@ -34,7 +28,6 @@ export function HomePage(props: props) {
     const ROOT_URL = "http://localhost:8080";
     const TASK_URL = ROOT_URL.concat("/api/v1/task");
     const DAY_URL = ROOT_URL.concat("/api/v1/day");
-    const date = getCurrentDateFormatted();
     const theme = useTheme();
     const [todayTasks, setTodayTasks] = useState<Task[]>([]);
     const [today, setToday] = useState<DayEntity>({} as DayEntity);
@@ -79,10 +72,7 @@ export function HomePage(props: props) {
         return `${year}-${month}-${day}`;
     }
 
-    // async function fetchTodayUncompletedTasks(): Promise<Task[]> {
-    //   const response = await fetch(TASK_URL.concat(`/get-non-completed-tasks/${date}`));
-    //     return await response.json();
-    // }
+
     async function fetchAllTasks(): Promise<Task[]> {
         const response = await fetch(TASK_URL);
         const allTasks = await response.json();
@@ -372,9 +362,6 @@ export function HomePage(props: props) {
                                  toggleTaskCompletion={toggleTaskCompletion}
                                  onDivClick={highlightTask} handleButtonClick={handleOpen}
                                  onSubmit={createTask}   />
-
-
-
                     </Box>
 
 
