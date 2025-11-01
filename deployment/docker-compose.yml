@@ -3,12 +3,12 @@ services:
   postgres:
     image: postgres:latest
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: trucking_db
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: postgres_db
     ports:
       - "5432:5432"
     volumes:
-      - db_storage:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
 volumes:
-  db_storage:
+  postgres_data:

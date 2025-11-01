@@ -2,7 +2,7 @@ import React, {useState, useEffect, useRef} from 'react';
 import {Box} from '@mui/material';
 import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
-import {Task} from "../types/Task.tsx"; // Import styles
+import {Task} from "../../types/Task.tsx"; // Import styles
 type props =
     {
         onSubmit: (text: string, taskId: string) => void;

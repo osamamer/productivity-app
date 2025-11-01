@@ -18,7 +18,7 @@ export function useTaskManager() {
             const tasks = await taskService.getAllTasks();
             setAllTasks(tasks);
             if (tasks.length > 0 && !highlightedTask) {
-                setHighlightedTask(tasks[0]);
+                setHighlightedTask(tasks[tasks.length - 1]);
             }
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to fetch tasks');

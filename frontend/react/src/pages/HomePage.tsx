@@ -18,11 +18,11 @@ import {HoverCardBox} from "../components/box/HoverCardBox";
 import { useTaskManager } from '../hooks/useTaskManager';
 import {dayService, taskService} from "../services/api";
 import {useAppTheme} from "../contexts/ThemeContext";
+import {TaskCalendar} from "../components/TaskCalender";
 
 
 export function HomePage() {
     const theme = useAppTheme();
-    const [today, setToday] = useState<DayEntity>({} as DayEntity);
 
     const [sidenavOpen, setSidenavOpen] = useState(false);
     const [tasksExist, setTasksExist] = useState(false);
@@ -59,24 +59,17 @@ export function HomePage() {
                 fetchTodayTasks(),
                 fetchFutureTasks(),
                 fetchPastTasks(),
-                fetchToday(),
             ]);
         };
         fetchData();
     }, []);
 
-    async function fetchToday() {
-        try {
-            const todayData = await dayService.getToday();
-            setToday(todayData);
-        } catch (err) {
-            console.error('Error fetching today:', err);
-        }
-    }
+
     async function createTask(task: TaskToCreate) {
         try {
             const createdTask = await taskService.createTask(task);
             addTaskToState(createdTask);
+            setHighlightedTask(createdTask);
         } catch (err) {
             console.error('Error creating task:', err);
             // Fallback: refetch if create doesn't return task
@@ -153,16 +146,6 @@ export function HomePage() {
         }
     }
 
-    async function setTodayInfo(rating: number, plan: string, summary: string) {
-        try {
-            await dayService.setTodayInfo(rating, plan, summary);
-            const updatedToday = await dayService.getToday();
-            setToday(updatedToday);
-        } catch (err) {
-            console.error('Error setting today info:', err);
-        }
-    }
-
 
     function getCurrentDateFormatted() {
         const date = new Date();
@@ -177,46 +160,7 @@ export function HomePage() {
         setDialogOpen((prev) =>
             ({...prev, [dialogType]: true}));
     };
-    // Handles Submission for all modals
-    const handleSubmit = async (dialogType: string, values: Record<string, any>) => {
-        console.log(`Handling ${dialogType} modal submit`)
-        console.log(values.focusDuration)
-        switch (dialogType) {
-            case "pomodoroDialog": {
-                if (highlightedTask) {
-                        startPomodoro(highlightedTask.taskId, values.focusDuration,
-                        values.shortBreakDuration, values.longBreakDuration,
-                        values.numFocuses, values.longBreakCooldown);
-                }
-                break;
-            }
-            case "createTaskDialog": {
-                const task: TaskToCreate = {
-                    name: values.taskName,
-                    description: values.taskDescription,
-                    scheduledPerformDateTime: values.taskPerformTime,
-                    tag: values.taskTag,
-                    importance: values.taskImportance
-                }
-                createTask(task);
-                break;
-            }
-            case "dayDialog": {
-                const dayValues = values;
-                try {
-                    await setTodayInfo(
-                        dayValues.dayRating,
-                        dayValues.dayPlan,
-                        dayValues.daySummary
-                    );
-                    await fetchToday(); // fetchToday already calls setToday internally
-                } catch (err) {
-                    console.error('Error updating day info:', err);
-                }
-                break;
-            }
-        }
-    };
+
 // Handles closing for all modals
     const handleClose = (dialogType: string) => {
         setDialogOpen((prev) =>
@@ -227,13 +171,6 @@ export function HomePage() {
 
     return (
         <>
-            <PomodoroDialog open={dialogOpen.pomodoroDialog}
-                            handleClose={handleClose}
-                            onSubmit={handleSubmit}/>
-            <CreateTaskDialog handleClose={handleClose} onSubmit={handleSubmit} open={dialogOpen.createTaskDialog}/>
-            <DayDialog open={dialogOpen.dayDialog}
-                       handleClose={handleClose}
-                       onSubmit={handleSubmit}/>
             <Box sx={{display: 'flex', overflowY: 'auto'
             }}>
                 <SideNav onSidebarWidthChange={setSidebarWidth} openProp={sidenavOpen}/>
@@ -270,19 +207,9 @@ export function HomePage() {
                              gap: 4,
                          }}
                     >
-                        <TodayBox today={today} handleOpenDialog={handleOpen}/>
+                        <TodayBox handleOpenDialog={handleOpen}/>
                         <HighestPriorityTaskBox tasks={allTasks}/>
-
-                        <HoverCardBox maximumHeight='500px'>
-                            <FullCalendar
-                                plugins={[ dayGridPlugin ]}
-                                initialView="dayGridMonth"
-                                eventColor="#1976d2"           // all events blue
-                                eventTextColor="#fff"          // text white
-                                height={300}
-                                themeSystem="bootstrap5"
-                            />
-                        </HoverCardBox>
+                        <TaskCalendar tasks={allTasks} />
 
 
                         {/*{allTasks.length > 0 && ( <PomodoroTimer tasks={allTasks}/>)}*/}
