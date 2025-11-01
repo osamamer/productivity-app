@@ -11,11 +11,19 @@ import {
     Paper,
     Typography,
     IconButton,
+    Grid,
+    Button,
+    Divider,
 } from '@mui/material';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import { TimePicker } from '@mui/x-date-pickers/TimePicker';
+import { DateCalendar } from '@mui/x-date-pickers/DateCalendar';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import FlagIcon from '@mui/icons-material/Flag';
 import LabelIcon from '@mui/icons-material/Label';
 import CloseIcon from '@mui/icons-material/Close';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import { TaskToCreate } from '../../types/TaskToCreate';
 
 type SmartTaskInputProps = {
@@ -37,6 +45,9 @@ export function SmartTaskInput({ onSubmit }: SmartTaskInputProps) {
     });
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
     const [suggestionType, setSuggestionType] = useState<'priority' | 'date' | 'tag' | null>(null);
+    const [showCustomDateTime, setShowCustomDateTime] = useState(false);
+    const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+    const [selectedTime, setSelectedTime] = useState<Date | null>(new Date());
     const inputRef = useRef<HTMLInputElement>(null);
 
     const priorityOptions = [
@@ -50,7 +61,6 @@ export function SmartTaskInput({ onSubmit }: SmartTaskInputProps) {
             label: 'Today',
             getValue: () => {
                 const today = new Date();
-                // Format as ISO LocalDateTime: YYYY-MM-DDTHH:mm:ss
                 const year = today.getFullYear();
                 const month = String(today.getMonth() + 1).padStart(2, '0');
                 const day = String(today.getDate()).padStart(2, '0');
@@ -68,32 +78,6 @@ export function SmartTaskInput({ onSubmit }: SmartTaskInputProps) {
                 return `${year}-${month}-${day}T12:00:00`;
             }
         },
-        {
-            label: 'This Weekend',
-            getValue: () => {
-                const date = new Date();
-                const day = date.getDay();
-                const daysUntilSaturday = day === 0 ? 6 : (6 - day);
-                date.setDate(date.getDate() + daysUntilSaturday);
-                const year = date.getFullYear();
-                const month = String(date.getMonth() + 1).padStart(2, '0');
-                const dayNum = String(date.getDate()).padStart(2, '0');
-                return `${year}-${month}-${dayNum}T12:00:00`;
-            }
-        },
-        {
-            label: 'Next Week',
-            getValue: () => {
-                const date = new Date();
-                const day = date.getDay();
-                const daysUntilNextMonday = day === 0 ? 1 : (8 - day);
-                date.setDate(date.getDate() + daysUntilNextMonday);
-                const year = date.getFullYear();
-                const month = String(date.getMonth() + 1).padStart(2, '0');
-                const dayNum = String(date.getDate()).padStart(2, '0');
-                return `${year}-${month}-${dayNum}T12:00:00`;
-            }
-        },
     ];
 
     const tagOptions = [
@@ -109,23 +93,26 @@ export function SmartTaskInput({ onSubmit }: SmartTaskInputProps) {
 
         if (text.includes('!priority') || text.includes('!p')) {
             setSuggestionType('priority');
+            setShowCustomDateTime(false);
             setAnchorEl(inputRef.current);
         } else if (text.includes('!date') || text.includes('!d')) {
             setSuggestionType('date');
+            setShowCustomDateTime(false);
             setAnchorEl(inputRef.current);
         } else if (text.includes('!tag') || text.includes('!t')) {
             setSuggestionType('tag');
+            setShowCustomDateTime(false);
             setAnchorEl(inputRef.current);
         } else {
             setAnchorEl(null);
             setSuggestionType(null);
+            setShowCustomDateTime(false);
         }
     }, [input]);
 
     const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
 
-        // Remove command keywords from task name
         let taskName = input
             .replace(/!priority|!p/gi, '')
             .replace(/!date|!d/gi, '')
@@ -142,7 +129,7 @@ export function SmartTaskInput({ onSubmit }: SmartTaskInputProps) {
             importance: metadata.importance,
         };
 
-        console.log('Creating task:', taskToCreate); // Debug log
+        console.log('Creating task:', taskToCreate);
 
         onSubmit(taskToCreate);
         setInput('');
@@ -159,6 +146,7 @@ export function SmartTaskInput({ onSubmit }: SmartTaskInputProps) {
         setMetadata({ ...metadata, scheduledDate: dateValue });
         setInput(input.replace(/!date|!d/gi, '').trim());
         setAnchorEl(null);
+        setShowCustomDateTime(false);
     };
 
     const selectTag = (tagValue: string) => {
@@ -186,7 +174,6 @@ export function SmartTaskInput({ onSubmit }: SmartTaskInputProps) {
     const formatDate = (dateString: string) => {
         if (!dateString) return '';
 
-        // Handle ISO LocalDateTime format: YYYY-MM-DDTHH:mm:ss
         const date = new Date(dateString);
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -200,6 +187,20 @@ export function SmartTaskInput({ onSubmit }: SmartTaskInputProps) {
         if (taskDate.getTime() === tomorrow.getTime()) return 'Tomorrow';
 
         return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    };
+
+    const confirmCustomDateTime = () => {
+        const year = selectedDate.getFullYear();
+        const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+        const day = String(selectedDate.getDate()).padStart(2, '0');
+
+        const timeToUse = selectedTime || new Date();
+        const hour = String(timeToUse.getHours()).padStart(2, '0');
+        const minute = String(timeToUse.getMinutes()).padStart(2, '0');
+
+        const dateTimeString = `${year}-${month}-${day}T${hour}:${minute}:00`;
+
+        selectDate(dateTimeString);
     };
 
     return (
@@ -266,7 +267,10 @@ export function SmartTaskInput({ onSubmit }: SmartTaskInputProps) {
             <Popover
                 open={Boolean(anchorEl)}
                 anchorEl={anchorEl}
-                onClose={() => setAnchorEl(null)}
+                onClose={() => {
+                    setAnchorEl(null);
+                    setShowCustomDateTime(false);
+                }}
                 anchorOrigin={{
                     vertical: 'bottom',
                     horizontal: 'left',
@@ -276,7 +280,7 @@ export function SmartTaskInput({ onSubmit }: SmartTaskInputProps) {
                     horizontal: 'left',
                 }}
             >
-                <Paper sx={{ width: 200, maxHeight: 200, overflow: 'auto' }}>
+                <Paper sx={{ width: showCustomDateTime ? 320 : 200, maxHeight: showCustomDateTime ? 450 : 200, overflow: 'auto' }}>
                     {suggestionType === 'priority' && (
                         <List dense>
                             <ListItem sx={{ py: 0.5, minHeight: 'auto' }}>
@@ -300,7 +304,7 @@ export function SmartTaskInput({ onSubmit }: SmartTaskInputProps) {
                         </List>
                     )}
 
-                    {suggestionType === 'date' && (
+                    {suggestionType === 'date' && !showCustomDateTime && (
                         <List dense>
                             <ListItem sx={{ py: 0.5, minHeight: 'auto' }}>
                                 <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
@@ -320,7 +324,71 @@ export function SmartTaskInput({ onSubmit }: SmartTaskInputProps) {
                                     />
                                 </ListItemButton>
                             ))}
+                            <ListItemButton
+                                onClick={() => setShowCustomDateTime(true)}
+                                sx={{ py: 0.5, minHeight: 'auto' }}
+                            >
+                                <AccessTimeIcon sx={{ mr: 1, fontSize: '1rem', color: 'secondary.main' }} />
+                                <ListItemText
+                                    primary="Custom Date & Time"
+                                    primaryTypographyProps={{ fontSize: '0.85rem', fontWeight: 500 }}
+                                />
+                            </ListItemButton>
                         </List>
+                    )}
+
+                    {suggestionType === 'date' && showCustomDateTime && (
+                        <Box sx={{ p: 1 }}>
+                            <LocalizationProvider dateAdapter={AdapterDateFns}>
+                                {/* Calendar */}
+                                <DateCalendar
+                                    value={selectedDate}
+                                    onChange={(newValue) => setSelectedDate(newValue || new Date())}
+                                    sx={{
+                                        width: '100%',
+                                        '& .MuiPickersCalendarHeader-root': {
+                                            paddingLeft: 1,
+                                            paddingRight: 1,
+                                        }
+                                    }}
+                                />
+
+                                {/* Time picker */}
+                                <Box sx={{ mb: 2 }}>
+                                    <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+                                        Select Time
+                                    </Typography>
+                                    <TimePicker
+                                        value={selectedTime}
+                                        onChange={(newValue) => setSelectedTime(newValue)}
+                                        ampm={false}
+                                        slotProps={{
+                                            textField: {
+                                                fullWidth: true,
+                                                size: 'small',
+                                            },
+                                        }}
+                                    />
+                                </Box>
+
+                                {/* Action buttons */}
+                                <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+                                    <Button
+                                        size="small"
+                                        onClick={() => setShowCustomDateTime(false)}
+                                    >
+                                        Back
+                                    </Button>
+                                    <Button
+                                        size="small"
+                                        variant="contained"
+                                        onClick={confirmCustomDateTime}
+                                    >
+                                        Confirm
+                                    </Button>
+                                </Box>
+                            </LocalizationProvider>
+                        </Box>
                     )}
 
                     {suggestionType === 'tag' && (

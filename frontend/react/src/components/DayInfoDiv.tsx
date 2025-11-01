@@ -14,7 +14,7 @@ type DayInfoDivProps = {
 export function DayInfoDiv({ type, image, info, onSubmit }: DayInfoDivProps) {
     const darkMode = useAppTheme();
     const [content, setContent] = useState<string>(info || '');
-    const PLACEHOLDER = `Add today's ${type}...`;
+    const PLACEHOLDER = `Write a ${type} for today...`;
 
     // Update local state when prop changes (e.g., after refresh)
     useEffect(() => {

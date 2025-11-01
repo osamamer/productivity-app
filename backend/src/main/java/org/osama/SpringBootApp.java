@@ -16,6 +16,8 @@ import java.util.TimeZone;
 @SpringBootApplication
 public class SpringBootApp {
     public static void main(String[] args) {
-        SpringApplication.run(SpringBootApp.class);
+        SpringApplication app = new SpringApplication(SpringBootApp.class);
+        app.setAdditionalProfiles("postgres");
+        app.run(args);
     }
 }
