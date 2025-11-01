@@ -53,16 +53,16 @@ export function TaskBox(props: props) {
             />
 
             <TaskAccordion
-                title="Leftovers"
-                tasks={props.pastTasks}
+                title="Coming up"
+                tasks={props.futureTasks}
                 defaultExpanded={false}
                 toggleTaskCompletion={props.toggleTaskCompletion}
                 onTaskClick={props.onDivClick}
             />
 
             <TaskAccordion
-                title="Coming up"
-                tasks={props.futureTasks}
+                title="Leftovers"
+                tasks={props.pastTasks}
                 defaultExpanded={false}
                 toggleTaskCompletion={props.toggleTaskCompletion}
                 onTaskClick={props.onDivClick}
