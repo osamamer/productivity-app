@@ -5,15 +5,18 @@ import {
     Button,
     TextField,
     Typography,
-    LinearProgress,
     Stack,
     Alert,
-    IconButton
+    IconButton,
+    CircularProgress,
+    Chip,
 } from '@mui/material';
 import {HoverCardBox} from './box/HoverCardBox';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
 import StopIcon from '@mui/icons-material/Stop';
+import TimerIcon from '@mui/icons-material/Timer';
+import FreeBreakfastIcon from '@mui/icons-material/FreeBreakfast';
 
 interface Task {
     taskId: string;
@@ -241,19 +244,37 @@ export function PomodoroTimer({task}: Props) {
         return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
     };
 
+    const isBreakTime = () => {
+        if (status) {
+            return !status.sessionRunning;
+        }
+        else {
+            return true;
+        }
+    };
+
+    const getProgressPercentage = () => {
+        if (!status) return 0;
+        const total = status.secondsPassedInSession + status.secondsUntilNextTransition;
+        return (status.secondsPassedInSession / total) * 100;
+    };
+
     if (!task) {
         return (
             <HoverCardBox>
-                <Typography variant="body2" color="text.secondary" textAlign="center">
-                    No task selected
-                </Typography>
+                <Box sx={{ textAlign: 'center', py: 4 }}>
+                    <TimerIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
+                    <Typography variant="body1" color="text.secondary">
+                        Select a task to start a Pomodoro session
+                    </Typography>
+                </Box>
             </HoverCardBox>
         );
     }
 
     return (
-        <HoverCardBox>
-            <Stack spacing={2} sx={{width: '100%'}}>
+        <Box sx={{pt: 5}}>
+            <Stack spacing={3} sx={{width: '100%'}}>
                 {connectionError && (
                     <Alert severity="error" onClose={() => setConnectionError(null)}>
                         {connectionError}
@@ -262,10 +283,14 @@ export function PomodoroTimer({task}: Props) {
 
                 {!status?.active ? (
                     <>
-                        <Typography variant="h5">
-                            Pomodoro Timer
-                        </Typography>
+                        <Box sx={{ textAlign: 'center' }}>
+                            <Typography sx={{mb: 2}} variant="h5" gutterBottom>
+                                Pomodoro Timer
+                            </Typography>
+                            <TimerIcon sx={{ fontSize: 48, color: 'primary.main' }} />
 
+
+                        </Box>
 
                         <Box sx={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2}}>
                             <TextField
@@ -308,46 +333,146 @@ export function PomodoroTimer({task}: Props) {
                             onClick={startPomodoro}
                             disabled={!isConnected}
                             fullWidth
-                            size="small"
+                            startIcon={<PlayArrowIcon />}
                         >
-                            Start Pomodoro {!isConnected ? '(Waiting for connection...)' : ''}
+                            {!isConnected ? 'Connecting...' : 'Start Session'}
                         </Button>
                     </>
                 ) : (
                     <>
-                        <Box sx={{textAlign: 'center'}}>
-                            <Typography variant="subtitle1" gutterBottom>
+                        <Box sx={{ textAlign: 'center', position: 'relative' }}>
+                            {/* Circular Progress */}
+                            <Box sx={{ position: 'relative', display: 'inline-flex', mb: 2 }}>
+                                <CircularProgress
+                                    variant="determinate"
+                                    value={100}
+                                    size={200}
+                                    thickness={2}
+                                    sx={{
+                                        color: 'action.disabled',
+                                        position: 'absolute',
+                                    }}
+                                />
+                                <CircularProgress
+                                    variant="determinate"
+                                    value={getProgressPercentage()}
+                                    size={200}
+                                    thickness={2}
+                                    sx={{
+                                        color: isBreakTime() ? '#4caf50' : 'primary.main',
+                                        '& .MuiCircularProgress-circle': {
+                                            strokeLinecap: 'round',
+                                        },
+                                    }}
+                                />
+                                <Box
+                                    sx={{
+                                        top: 0,
+                                        left: 0,
+                                        bottom: 0,
+                                        right: 0,
+                                        position: 'absolute',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        flexDirection: 'column',
+                                    }}
+                                >
+                                    {isBreakTime() ? (
+                                        <FreeBreakfastIcon sx={{ fontSize: 32, color: '#4caf50', mb: 1 }} />
+                                    ) : (
+                                        <TimerIcon sx={{ fontSize: 32, color: 'primary.main', mb: 1 }} />
+                                    )}
+                                    <Typography variant="h3" component="div" fontWeight="bold">
+                                        {formatTime(status.secondsUntilNextTransition)}
+                                    </Typography>
+                                </Box>
+                            </Box>
+
+                            {/* Task Name */}
+                            <Typography
+                                variant="h6"
+                                gutterBottom
+                                sx={{
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                }}
+                            >
                                 {status.taskName}
                             </Typography>
 
-                            <Typography variant="h4">
-                                {formatTime(status.secondsUntilNextTransition)}
-                            </Typography>
+                            {/* Status Chip */}
+                            <Chip
+                                label={isBreakTime() ? 'Break Time' : 'Focus Time'}
+                                color={isBreakTime() ? 'success' : 'primary'}
+                                icon={isBreakTime() ? <FreeBreakfastIcon /> : <TimerIcon />}
+                                sx={{ mb: 2 }}
+                            />
 
-                            <Box sx={{width: '100%', mt: 1}}>
-                                <LinearProgress
-                                    variant="determinate"
-                                    color={status.sessionRunning ? "primary" : "secondary"}
-                                    value={(status.secondsPassedInSession / (status.secondsPassedInSession + status.secondsUntilNextTransition)) * 100}
-                                />
-                                <Typography variant="caption" color="text.secondary" sx={{mt: 0.5}}>
-                                    Session {status.currentFocusNumber} of {status.numFocuses}
-                                </Typography>
+                            {/* Session Progress */}
+                            <Box sx={{
+                                display: 'flex',
+                                gap: 0.5,
+                                justifyContent: 'center',
+                                mb: 2
+                            }}>
+                                {Array.from({ length: status.numFocuses }).map((_, index) => (
+                                    <Box
+                                        key={index}
+                                        sx={{
+                                            width: 12,
+                                            height: 12,
+                                            borderRadius: '50%',
+                                            backgroundColor: index < status.currentFocusNumber
+                                                ? 'primary.main'
+                                                : 'action.disabled',
+                                            transition: 'all 0.3s',
+                                        }}
+                                    />
+                                ))}
                             </Box>
 
-                            <Box sx={{mt: 1}}>
-                                <IconButton onClick={handleTogglePlayPause} color="primary">
+                            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>
+                                Session {status.currentFocusNumber} of {status.numFocuses}
+                            </Typography>
+
+                            {/* Controls */}
+                            {status.sessionActive  && (<Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
+                                <IconButton
+                                    onClick={handleTogglePlayPause}
+                                    color="primary"
+                                    size="large"
+                                    sx={{
+                                        backgroundColor: 'action.hover',
+                                        '&:hover': {
+                                            backgroundColor: 'action.selected',
+                                        },
+                                    }}
+                                >
                                     {status.sessionRunning ? <PauseIcon/> : <PlayArrowIcon/>}
                                 </IconButton>
-                                <IconButton onClick={handleEndSession} color="primary">
+                                <IconButton
+                                    onClick={handleEndSession}
+                                    color="error"
+                                    size="large"
+                                    sx={{
+                                        backgroundColor: 'action.hover',
+                                        '&:hover': {
+                                            backgroundColor: 'error.light',
+                                            color: 'error.contrastText',
+                                        },
+                                    }}
+                                >
                                     <StopIcon/>
                                 </IconButton>
                             </Box>
+                            )}
                         </Box>
                     </>
                 )}
             </Stack>
-        </HoverCardBox>
+        </Box>
     );
 }
 
