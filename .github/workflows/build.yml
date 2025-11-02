@@ -39,7 +39,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: frontend
+        working-directory: frontend/react
     steps:
       - uses: actions/checkout@v4
       - name: "Node set-up"
