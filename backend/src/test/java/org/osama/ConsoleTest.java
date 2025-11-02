@@ -26,8 +26,8 @@ public class ConsoleTest {
     @Test
     void main() throws InterruptedException {
         NewTaskRequest request = new NewTaskRequest();
-        request.setTaskName("Task poop");
-        request.setTaskDescription("Task poop description");
+        request.setTaskName("Task one");
+        request.setTaskDescription("Task one description");
         request.setTaskPerformTime("2017-01-13T17:09:42.411");
         Task task = taskService.createNewTask(request);
         String taskId = task.getTaskId();
@@ -47,8 +47,8 @@ public class ConsoleTest {
     @Test
     void test() throws InterruptedException {
         NewTaskRequest request = new NewTaskRequest();
-        request.setTaskName("Task poop");
-        request.setTaskDescription("Task poop description");
+        request.setTaskName("Task one");
+        request.setTaskDescription("Task one description");
         request.setTaskPerformTime("2017-01-13T17:09:42.411");
 
         Task task = taskService.createNewTask(request);
