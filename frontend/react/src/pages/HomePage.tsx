@@ -1,20 +1,12 @@
 import React, {useEffect, useState} from 'react'
 import '../App.css'
-import {Task} from "../types/Task.tsx";
-import {DayEntity} from "../types/DayEntity.tsx";
 import {TodayBox} from "../components/box/TodayBox.tsx";
 import {TaskBox} from "../components/box/TaskBox.tsx";
-import {CreateTaskDialog} from "../components/dialog/CreateTaskDialog.tsx";
 import {HighlightedTaskBox} from "../components/box/HighlightedTaskBox.tsx";
 import {HighestPriorityTaskBox} from "../components/box/HighestPriorityTaskBox.tsx";
-import {DayDialog} from "../components/dialog/DayDialog.tsx";
 import {SideNav} from "../components/SideNav.tsx";
 import {TaskToCreate} from "../types/TaskToCreate.tsx";
 import {Box} from "@mui/material";
-import {PomodoroDialog} from "../components/dialog/PomodoroDialog.tsx";
-import FullCalendar from '@fullcalendar/react'
-import dayGridPlugin from '@fullcalendar/daygrid'
-import {HoverCardBox} from "../components/box/HoverCardBox";
 import { useTaskManager } from '../hooks/useTaskManager';
 import {dayService, taskService} from "../services/api";
 import {useAppTheme} from "../contexts/ThemeContext";
