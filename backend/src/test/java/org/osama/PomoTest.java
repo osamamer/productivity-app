@@ -1,5 +1,6 @@
 package org.osama;
 
+import jakarta.transaction.Transactional;
 import org.junit.jupiter.api.Test;
 import org.osama.scheduling.ScheduledJob;
 import org.osama.scheduling.ScheduledJobRepository;
@@ -18,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @SpringBootTest
+@Transactional
 public class PomoTest {
 
 
