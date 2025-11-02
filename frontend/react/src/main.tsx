@@ -2,7 +2,6 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.tsx'
 import './index.css'
-import {DevSupport} from "@react-buddy/ide-toolbox";
 import {AppThemeProvider} from "./contexts/ThemeContext";
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
