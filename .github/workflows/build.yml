@@ -7,6 +7,20 @@ jobs:
   verify_backend:
     name: Verify Backend
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: admin
+          POSTGRES_PASSWORD: admin
+          POSTGRES_DB: postgres_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - name: "JDK set-up"
@@ -15,6 +29,11 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
       - run: cd backend && mvn clean verify
+        env:
+          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/postgres_db
+          SPRING_DATASOURCE_USERNAME: admin
+          SPRING_DATASOURCE_PASSWORD: admin
+
   verify_frontend:
     name: Verify Frontend
     runs-on: ubuntu-latest
