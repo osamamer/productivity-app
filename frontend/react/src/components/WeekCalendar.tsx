@@ -90,6 +90,8 @@ export function WeekCalendar({ tasks }: TaskCalendarProps) {
                                 display: 'flex',
                                 flexDirection: 'column',
                                 minHeight: '140px',
+                                maxHeight: '240px', // prevent box from growing infinitely
+                                overflow: 'hidden', // keep everything contained
                                 '&:hover': {
                                     transform: 'translateY(-4px)',
                                     boxShadow: 4,
@@ -132,6 +134,16 @@ export function WeekCalendar({ tasks }: TaskCalendarProps) {
                                     flexDirection: 'column',
                                     gap: 0.5,
                                     flex: 1,
+                                    flexWrap: 'wrap', // allow chips to wrap
+                                    overflowY: 'auto', // enable vertical scrolling if needed
+                                    overflowX: 'hidden',
+                                    '&::-webkit-scrollbar': {
+                                        width: '4px',
+                                    },
+                                    '&::-webkit-scrollbar-thumb': {
+                                        backgroundColor: 'rgba(0,0,0,0.2)',
+                                        borderRadius: '2px',
+                                    },
                                 }}
                             >
                                 {dayTasks.length === 0 ? (

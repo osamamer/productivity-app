@@ -179,7 +179,6 @@ export function HomePage() {
                     >
                         <TodayBox handleOpenDialog={handleOpen}/>
                         <HighestPriorityTaskBox tasks={allTasks}/>
-                        <WeekCalendar tasks={allTasks} />
 
 
                         {/*{allTasks.length > 0 && ( <PomodoroTimer tasks={allTasks}/>)}*/}
@@ -188,6 +187,9 @@ export function HomePage() {
 
                     <Box className="center-section"
                         sx={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 4,
                             flex: { xs: '1 1 100%', md: '1 1 45%', lg: '1 1 25%' },
                             minWidth: 0
                         }}
@@ -205,6 +207,9 @@ export function HomePage() {
                     <Box className="right-section"
                          // sx={{width: '40%'}}
                          sx={{
+                             display: 'flex',
+                             flexDirection: 'column',
+                             gap: 4,
                              flex: { xs: '1 1 100%', md: '1 1 100%', lg: '1 1 25%'  },
                              minWidth: 0
                          }}
@@ -219,6 +224,8 @@ export function HomePage() {
                                 handleChangeDescription={changeDescription}
                             />
                         )}
+                        <WeekCalendar tasks={allTasks} />
+
 
                     </Box>
                 </Box>
