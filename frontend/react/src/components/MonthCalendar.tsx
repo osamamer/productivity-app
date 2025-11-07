@@ -79,7 +79,7 @@ export function MonthCalendar({ tasks }: MonthCalenderProps) {
                     },
                     '& .fc-day-today': {
                         background: `${theme.palette.primary.main}20 !important`,
-                        borderRadius: '8px',
+                        borderRadius: '0px',
                     },
                     '& .fc-toolbar-title': {
                         fontSize: '1.5rem',
