@@ -166,6 +166,7 @@ export function MonthCalendar({ tasks, onCreateTask }: MonthCalenderProps) {
                         events={calendarEvents}
                         eventDidMount={handleEventDidMount}
                         dateClick={handleDateClick}
+                        dayMaxEvents={4}
                         headerToolbar={{
                             left: 'prev,next today',
                             center: 'title',
