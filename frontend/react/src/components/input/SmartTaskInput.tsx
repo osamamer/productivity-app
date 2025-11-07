@@ -28,6 +28,8 @@ import { TaskToCreate } from '../../types/TaskToCreate';
 
 type SmartTaskInputProps = {
     onSubmit: (taskToCreate: TaskToCreate) => void;
+    initialDate?: string;
+    autoFocus?: boolean;
 };
 
 type TaskMetadata = {
@@ -36,11 +38,11 @@ type TaskMetadata = {
     tag: string;
 };
 
-export function SmartTaskInput({ onSubmit }: SmartTaskInputProps) {
+export function SmartTaskInput({ onSubmit, initialDate, autoFocus }: SmartTaskInputProps) {
     const [input, setInput] = useState('');
     const [metadata, setMetadata] = useState<TaskMetadata>({
         importance: 0,
-        scheduledDate: '',
+        scheduledDate: initialDate || '',
         tag: '',
     });
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
@@ -49,6 +51,12 @@ export function SmartTaskInput({ onSubmit }: SmartTaskInputProps) {
     const [selectedDate, setSelectedDate] = useState<Date>(new Date());
     const [selectedTime, setSelectedTime] = useState<Date | null>(new Date());
     const inputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        if (autoFocus && inputRef.current) {
+            inputRef.current.focus();
+        }
+    }, [autoFocus]);
 
     const priorityOptions = [
         { label: 'Low', value: 3, color: '#1976d2' },
@@ -124,7 +132,8 @@ export function SmartTaskInput({ onSubmit }: SmartTaskInputProps) {
         const taskToCreate: TaskToCreate = {
             name: taskName,
             description: '',
-            scheduledPerformDateTime: metadata.scheduledDate,
+            // CRITICAL FIX: Use metadata date OR fall back to initialDate
+            scheduledPerformDateTime: metadata.scheduledDate || initialDate || '',
             tag: metadata.tag,
             importance: metadata.importance,
         };
@@ -133,7 +142,12 @@ export function SmartTaskInput({ onSubmit }: SmartTaskInputProps) {
 
         onSubmit(taskToCreate);
         setInput('');
-        setMetadata({ importance: 0, scheduledDate: '', tag: '' });
+        // CRITICAL FIX: When resetting, preserve initialDate
+        setMetadata({
+            importance: 0,
+            scheduledDate: initialDate || '', // Keep the initialDate!
+            tag: ''
+        });
     };
 
     const selectPriority = (value: number) => {
@@ -282,17 +296,32 @@ export function SmartTaskInput({ onSubmit }: SmartTaskInputProps) {
             >
                 <Paper sx={{ width: showCustomDateTime ? 320 : 200, maxHeight: showCustomDateTime ? 450 : 200, overflow: 'auto' }}>
                     {suggestionType === 'priority' && (
-                        <List dense>
+                        <List
+                            dense
+                            onKeyDown={(e) => {
+                                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                                    e.preventDefault();
+                                    const buttons = document.querySelectorAll('[data-priority-option]');
+                                    const currentIndex = Array.from(buttons).findIndex(btn => btn === document.activeElement);
+                                    const nextIndex = e.key === 'ArrowDown'
+                                        ? Math.min(currentIndex + 1, buttons.length - 1)
+                                        : Math.max(currentIndex - 1, 0);
+                                    (buttons[nextIndex] as HTMLElement)?.focus();
+                                }
+                            }}
+                        >
                             <ListItem sx={{ py: 0.5, minHeight: 'auto' }}>
                                 <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
                                     Select Priority
                                 </Typography>
                             </ListItem>
-                            {priorityOptions.map((option) => (
+                            {priorityOptions.map((option, index) => (
                                 <ListItemButton
                                     key={option.value}
                                     onClick={() => selectPriority(option.value)}
                                     sx={{ py: 0.5, minHeight: 'auto' }}
+                                    autoFocus={index === 0}
+                                    data-priority-option
                                 >
                                     <FlagIcon sx={{ mr: 1, fontSize: '1rem', color: option.color }} />
                                     <ListItemText
@@ -305,17 +334,32 @@ export function SmartTaskInput({ onSubmit }: SmartTaskInputProps) {
                     )}
 
                     {suggestionType === 'date' && !showCustomDateTime && (
-                        <List dense>
+                        <List
+                            dense
+                            onKeyDown={(e) => {
+                                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                                    e.preventDefault();
+                                    const buttons = document.querySelectorAll('[data-date-option]');
+                                    const currentIndex = Array.from(buttons).findIndex(btn => btn === document.activeElement);
+                                    const nextIndex = e.key === 'ArrowDown'
+                                        ? Math.min(currentIndex + 1, buttons.length - 1)
+                                        : Math.max(currentIndex - 1, 0);
+                                    (buttons[nextIndex] as HTMLElement)?.focus();
+                                }
+                            }}
+                        >
                             <ListItem sx={{ py: 0.5, minHeight: 'auto' }}>
                                 <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
                                     Select Date
                                 </Typography>
                             </ListItem>
-                            {dateOptions.map((option) => (
+                            {dateOptions.map((option, index) => (
                                 <ListItemButton
                                     key={option.label}
                                     onClick={() => selectDate(option.getValue())}
                                     sx={{ py: 0.5, minHeight: 'auto' }}
+                                    autoFocus={index === 0}
+                                    data-date-option
                                 >
                                     <CalendarTodayIcon sx={{ mr: 1, fontSize: '1rem', color: 'primary.main' }} />
                                     <ListItemText
@@ -327,6 +371,7 @@ export function SmartTaskInput({ onSubmit }: SmartTaskInputProps) {
                             <ListItemButton
                                 onClick={() => setShowCustomDateTime(true)}
                                 sx={{ py: 0.5, minHeight: 'auto' }}
+                                data-date-option
                             >
                                 <AccessTimeIcon sx={{ mr: 1, fontSize: '1rem', color: 'secondary.main' }} />
                                 <ListItemText
@@ -392,17 +437,32 @@ export function SmartTaskInput({ onSubmit }: SmartTaskInputProps) {
                     )}
 
                     {suggestionType === 'tag' && (
-                        <List dense>
+                        <List
+                            dense
+                            onKeyDown={(e) => {
+                                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                                    e.preventDefault();
+                                    const buttons = document.querySelectorAll('[data-tag-option]');
+                                    const currentIndex = Array.from(buttons).findIndex(btn => btn === document.activeElement);
+                                    const nextIndex = e.key === 'ArrowDown'
+                                        ? Math.min(currentIndex + 1, buttons.length - 1)
+                                        : Math.max(currentIndex - 1, 0);
+                                    (buttons[nextIndex] as HTMLElement)?.focus();
+                                }
+                            }}
+                        >
                             <ListItem sx={{ py: 0.5, minHeight: 'auto' }}>
                                 <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
                                     Select Tag
                                 </Typography>
                             </ListItem>
-                            {tagOptions.map((option) => (
+                            {tagOptions.map((option, index) => (
                                 <ListItemButton
                                     key={option.label}
                                     onClick={() => selectTag(option.label)}
                                     sx={{ py: 0.5, minHeight: 'auto' }}
+                                    autoFocus={index === 0}
+                                    data-tag-option
                                 >
                                     <LabelIcon sx={{ mr: 1, fontSize: '1rem', color: option.color }} />
                                     <ListItemText
