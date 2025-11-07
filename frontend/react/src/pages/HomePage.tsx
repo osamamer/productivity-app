@@ -4,21 +4,17 @@ import {TodayBox} from "../components/box/TodayBox.tsx";
 import {TaskBox} from "../components/box/TaskBox.tsx";
 import {HighlightedTaskBox} from "../components/box/HighlightedTaskBox.tsx";
 import {HighestPriorityTaskBox} from "../components/box/HighestPriorityTaskBox.tsx";
-import {SideNav} from "../components/SideNav.tsx";
 import {TaskToCreate} from "../types/TaskToCreate.tsx";
 import {Box} from "@mui/material";
-import { useTaskManager } from '../hooks/useTaskManager';
 import {dayService, taskService} from "../services/api";
 import {useAppTheme} from "../contexts/ThemeContext";
-import {TaskCalendar} from "../components/TaskCalender";
+import {WeekCalendar} from "../components/WeekCalendar.tsx";
+import {PageWrapper} from "../components/PageWrapper.tsx";
+import {useGlobalTasks} from "../contexts/TaskContext.tsx";
 
 
 export function HomePage() {
     const theme = useAppTheme();
-
-    const [sidenavOpen, setSidenavOpen] = useState(false);
-    const [tasksExist, setTasksExist] = useState(false);
-    const [sidebarWidth, setSidebarWidth] = useState(75); // Default collapsed width
     const [dialogOpen, setDialogOpen] =
         useState<{ [key: string]: boolean }>({
             dayDialog: false,
@@ -42,7 +38,7 @@ export function HomePage() {
         addTaskToState,
         updateTaskInState,
         removeTaskFromState,
-    } = useTaskManager();
+    } = useGlobalTasks();
 
     useEffect(() => {
         const fetchData = async () => {
@@ -163,31 +159,13 @@ export function HomePage() {
 
     return (
         <>
-            <Box sx={{display: 'flex', overflowY: 'auto'
-            }}>
-                <SideNav onSidebarWidthChange={setSidebarWidth} openProp={sidenavOpen}/>
-                <Box sx={(theme) => ({ // sx receives theme as parameter
-                    maxWidth: '100%',
+            <PageWrapper>
+                <Box sx={{
                     display: 'flex',
-                    flexGrow: 1,
                     flexWrap: 'wrap',
-                    overflowY: 'auto',
-                    mt: 0,
-                    mr: 0,
-                    marginLeft: `${sidebarWidth}px`,
-                    ...(sidenavOpen && {
-                        transition: theme.transitions.create('margin', {
-                            easing: theme.transitions.easing.easeOut,
-                            duration: theme.transitions.duration.enteringScreen,
-                        }),
-                        marginLeft: 0,
-                    }),
-                    transition: theme.transitions.create('margin', {
-                        easing: theme.transitions.easing.sharp,
-                        duration: theme.transitions.duration.leavingScreen,
-                    }),
-                    padding: 1,
-                })}>
+                    gap: 2,
+                    height: '100%',
+                }}>
 
                     <Box className="left-section"
                          // sx={{width: '25%'}}
@@ -201,7 +179,7 @@ export function HomePage() {
                     >
                         <TodayBox handleOpenDialog={handleOpen}/>
                         <HighestPriorityTaskBox tasks={allTasks}/>
-                        <TaskCalendar tasks={allTasks} />
+                        <WeekCalendar tasks={allTasks} />
 
 
                         {/*{allTasks.length > 0 && ( <PomodoroTimer tasks={allTasks}/>)}*/}
@@ -244,8 +222,7 @@ export function HomePage() {
 
                     </Box>
                 </Box>
-            </Box>
-
+            </PageWrapper>
 
         </>
     )

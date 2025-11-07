@@ -7,7 +7,7 @@ type TaskCalendarProps = {
     tasks: Task[];
 };
 
-export function TaskCalendar({ tasks }: TaskCalendarProps) {
+export function WeekCalendar({ tasks }: TaskCalendarProps) {
     // Get current week (Sunday to Saturday)
     const weekDays = useMemo(() => {
         const today = new Date();

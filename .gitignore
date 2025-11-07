@@ -37,3 +37,7 @@ build/
 .env.production
 .env.test
 .env*.local
+
+### TypeScript declaration files
+*.d.ts
+!src/vite-env.d.ts

@@ -69,7 +69,7 @@ export function SideNav(props: props) {
                                 ></SideMenuButton>
                 <SideMenuButton image={day as string} text="Day" targetPage="/day" open={open}
                                 ></SideMenuButton>
-                <SideMenuButton image={calender as string} text="Calender" targetPage="/calender" open={open}
+                <SideMenuButton image={calender as string} text="Calendar" targetPage="/calendar" open={open}
                                 ></SideMenuButton>
                 <SideMenuButton image={meditation as string} text="Meditation" targetPage="/meditation" open={open}
                                 ></SideMenuButton>

@@ -8,7 +8,10 @@ import '@fontsource/roboto/500.css';
 import '@fontsource/roboto/700.css';
 import {BrowserRouter as Router, Routes, Route, Link} from "react-router-dom";
 import {HomePage} from "./pages/HomePage.jsx";
+import {CalendarPage} from "./pages/CalendarPage.jsx";
+
 import { AppThemeProvider } from './contexts/ThemeContext';
+import {TaskProvider} from "./contexts/TaskContext.tsx";
 
 
 function App() {
@@ -16,9 +19,12 @@ function App() {
     return (
         <AppThemeProvider>
             <Router>
-                <Routes>
-                    <Route exact path="/" element={<HomePage/>}/>
-                </Routes>
+                <TaskProvider>
+                    <Routes>
+                        <Route exact path="/" element={<HomePage/>}/>
+                        <Route exact path="/calendar" element={<CalendarPage/>}/>
+                    </Routes>
+                </TaskProvider>
             </Router>
         </AppThemeProvider>
     );
