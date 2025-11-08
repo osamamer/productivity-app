@@ -8,6 +8,8 @@ type TaskAccordionProps = {
     title: string;
     tasks: Task[];
     defaultExpanded?: boolean;
+    expanded?: boolean;
+    onChange?: (event: React.SyntheticEvent, isExpanded: boolean) => void;
     toggleTaskCompletion: (taskId: string) => void;
     onTaskClick: (task: Task) => void;
 };
@@ -16,13 +18,18 @@ export function TaskAccordion({
                                   title,
                                   tasks,
                                   defaultExpanded = false,
+                                  expanded,
+                                  onChange,
                                   toggleTaskCompletion,
                                   onTaskClick
                               }: TaskAccordionProps) {
     if (!tasks || tasks.length === 0) return null;
+    const accordionProps = expanded !== undefined
+        ? { expanded: expanded, onChange: onChange }
+        : { defaultExpanded: defaultExpanded };
 
     return (
-        <Accordion
+        <Accordion {...accordionProps}
             defaultExpanded={defaultExpanded}
             sx={{
                 borderRadius: 2,
