@@ -124,12 +124,6 @@ export function HighlightedTaskBox(props: props) {
                     <AdjustIcon onClick={() => setShowPomodoro(!showPomodoro)}/>
                 </IconButton>
 
-                {/*<IconButton color={importance as any}>*/}
-                {/*    <CheckIcon*/}
-                {/*        // @ts-ignore*/}
-                {/*        onClick={() => props.toggleTaskCompletion(props.task.taskId)}*/}
-                {/*    />*/}
-                {/*</IconButton>*/}
             </Box>
 
             {showPomodoro && <PomodoroTimer task={props.task}/>}
