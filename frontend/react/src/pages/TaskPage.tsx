@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import { Box, Typography, Chip, Stack, Divider } from '@mui/material';
 import { PageWrapper } from '../components/PageWrapper';
 import { useGlobalTasks } from '../contexts/TaskContext';
@@ -47,6 +47,10 @@ export function TaskPage() {
         comingUp: false,
         leftovers: false,
     });
+
+    const todayRef = useRef<HTMLDivElement>(null);
+    const comingUpRef = useRef<HTMLDivElement>(null);
+    const leftoversRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -127,6 +131,23 @@ export function TaskPage() {
             ...prev,
             [section]: !prev[section],
         }));
+
+        // Scroll to the section
+        const refs = {
+            today: todayRef,
+            comingUp: comingUpRef,
+            leftovers: leftoversRef,
+        };
+
+        if (!expandedSections[section]) {
+            setTimeout(() => {
+                refs[section].current?.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'end'
+                });
+            }, 100);
+        }
+
     };
 
     const todayTasksExist = Array.isArray(todayTasks) && todayTasks.length > 0;
@@ -228,157 +249,166 @@ export function TaskPage() {
                         gap: 2,
                     }}>
                         {/* Today's Tasks */}
-                        <HoverCardBox>
-                            <Box sx={{ mb: 2 }}>
-                                <Box sx={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    mb: 1,
-                                }}>
+                        <Box ref={todayRef}>
+                            <HoverCardBox>
+                                <Box sx={{ mb: 2 }}>
+                                    <Box sx={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        mb: 1,
+                                    }}>
+                                        <Typography
+                                            variant="h5"
+                                            color="text.primary"
+                                            sx={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 1,
+                                            }}
+                                        >
+                                            <TodayIcon color="primary" />
+                                            Today
+                                        </Typography>
+                                        {todayTasksExist && (
+                                            <Typography variant="body2" color="text.secondary">
+                                                {completedTodayCount} of {todayTasks.length} completed
+                                            </Typography>
+                                        )}
+                                    </Box>
+                                </Box>
+                                <TaskAccordion
+                                    title=""
+                                    tasks={todayTasks}
+                                    expanded={expandedSections.today}
+                                    onChange={() => handleChipClick('today')}
+                                    toggleTaskCompletion={toggleTaskCompletion}
+                                    onTaskClick={setHighlightedTask}
+                                />
+                                {!todayTasksExist && (
                                     <Typography
-                                        variant="h5"
-                                        color="text.primary"
+                                        variant="body1"
                                         sx={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: 1,
+                                            textAlign: 'center',
+                                            color: 'text.secondary',
+                                            fontStyle: 'italic',
+                                            py: 3,
                                         }}
                                     >
-                                        <TodayIcon color="primary" />
-                                        Today
+                                        No tasks scheduled for today
                                     </Typography>
-                                    {todayTasksExist && (
-                                        <Typography variant="body2" color="text.secondary">
-                                            {completedTodayCount} of {todayTasks.length} completed
-                                        </Typography>
-                                    )}
-                                </Box>
-                            </Box>
-                            <TaskAccordion
-                                title=""
-                                tasks={todayTasks}
-                                expanded={expandedSections.today}
-                                onChange={() => handleChipClick('today')}
-                                toggleTaskCompletion={toggleTaskCompletion}
-                                onTaskClick={setHighlightedTask}
-                            />
-                            {!todayTasksExist && (
-                                <Typography
-                                    variant="body1"
-                                    sx={{
-                                        textAlign: 'center',
-                                        color: 'text.secondary',
-                                        fontStyle: 'italic',
-                                        py: 3,
-                                    }}
-                                >
-                                    No tasks scheduled for today
-                                </Typography>
-                            )}
-                        </HoverCardBox>
+                                )}
+                            </HoverCardBox>
+                        </Box>
+
 
                         {/* Coming Up Tasks */}
-                        <HoverCardBox>
-                            <Box sx={{ mb: 2 }}>
-                                <Box sx={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    mb: 1,
-                                }}>
+                        <Box ref={comingUpRef}>
+                            <HoverCardBox>
+                                <Box sx={{ mb: 2 }}>
+                                    <Box sx={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        mb: 1,
+                                    }}>
+                                        <Typography
+                                            variant="h5"
+                                            color="text.primary"
+                                            sx={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 1,
+                                            }}
+                                        >
+                                            <UpcomingIcon color="secondary" />
+                                            Coming Up
+                                        </Typography>
+                                        {futureTasksExist && (
+                                            <Typography variant="body2" color="text.secondary">
+                                                {completedFutureCount} of {futureTasks.length} completed
+                                            </Typography>
+                                        )}
+                                    </Box>
+                                </Box>
+                                <TaskAccordion
+                                    title=""
+                                    tasks={futureTasks}
+                                    expanded={expandedSections.comingUp}
+                                    onChange={() => handleChipClick('comingUp')}
+                                    toggleTaskCompletion={toggleTaskCompletion}
+                                    onTaskClick={setHighlightedTask}
+                                />
+                                {!futureTasksExist && (
                                     <Typography
-                                        variant="h5"
-                                        color="text.primary"
+                                        variant="body1"
                                         sx={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: 1,
+                                            textAlign: 'center',
+                                            color: 'text.secondary',
+                                            fontStyle: 'italic',
+                                            py: 3,
                                         }}
                                     >
-                                        <UpcomingIcon color="secondary" />
-                                        Coming Up
+                                        No upcoming tasks
                                     </Typography>
-                                    {futureTasksExist && (
-                                        <Typography variant="body2" color="text.secondary">
-                                            {completedFutureCount} of {futureTasks.length} completed
-                                        </Typography>
-                                    )}
-                                </Box>
-                            </Box>
-                            <TaskAccordion
-                                title=""
-                                tasks={futureTasks}
-                                expanded={expandedSections.comingUp}
-                                onChange={() => handleChipClick('comingUp')}
-                                toggleTaskCompletion={toggleTaskCompletion}
-                                onTaskClick={setHighlightedTask}
-                            />
-                            {!futureTasksExist && (
-                                <Typography
-                                    variant="body1"
-                                    sx={{
-                                        textAlign: 'center',
-                                        color: 'text.secondary',
-                                        fontStyle: 'italic',
-                                        py: 3,
-                                    }}
-                                >
-                                    No upcoming tasks
-                                </Typography>
-                            )}
-                        </HoverCardBox>
+                                )}
+                            </HoverCardBox>
+                        </Box>
+
 
                         {/* Past Tasks (Leftovers) */}
-                        <HoverCardBox>
-                            <Box sx={{ mb: 2 }}>
-                                <Box sx={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    mb: 1,
-                                }}>
+                        <Box ref={leftoversRef}>
+                            <HoverCardBox>
+                                <Box sx={{ mb: 2 }}>
+                                    <Box sx={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        mb: 1,
+                                    }}>
+                                        <Typography
+                                            variant="h5"
+                                            color="text.primary"
+                                            sx={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 1,
+                                            }}
+                                        >
+                                            <HistoryIcon />
+                                            Leftovers
+                                        </Typography>
+                                        {pastTasksExist && (
+                                            <Typography variant="body2" color="text.secondary">
+                                                {completedPastCount} of {pastTasks.length} completed
+                                            </Typography>
+                                        )}
+                                    </Box>
+                                </Box>
+                                <TaskAccordion
+                                    title=""
+                                    tasks={pastTasks}
+                                    expanded={expandedSections.leftovers}
+                                    onChange={() => handleChipClick('leftovers')}
+                                    toggleTaskCompletion={toggleTaskCompletion}
+                                    onTaskClick={setHighlightedTask}
+                                />
+                                {!pastTasksExist && (
                                     <Typography
-                                        variant="h5"
-                                        color="text.primary"
+                                        variant="body1"
                                         sx={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: 1,
+                                            textAlign: 'center',
+                                            color: 'text.secondary',
+                                            fontStyle: 'italic',
+                                            py: 3,
                                         }}
                                     >
-                                        <HistoryIcon />
-                                        Leftovers
+                                        No overdue tasks
                                     </Typography>
-                                    {pastTasksExist && (
-                                        <Typography variant="body2" color="text.secondary">
-                                            {completedPastCount} of {pastTasks.length} completed
-                                        </Typography>
-                                    )}
-                                </Box>
-                            </Box>
-                            <TaskAccordion
-                                title=""
-                                tasks={pastTasks}
-                                expanded={expandedSections.leftovers}
-                                onChange={() => handleChipClick('leftovers')}
-                                toggleTaskCompletion={toggleTaskCompletion}
-                                onTaskClick={setHighlightedTask}
-                            />
-                            {!pastTasksExist && (
-                                <Typography
-                                    variant="body1"
-                                    sx={{
-                                        textAlign: 'center',
-                                        color: 'text.secondary',
-                                        fontStyle: 'italic',
-                                        py: 3,
-                                    }}
-                                >
-                                    No overdue tasks
-                                </Typography>
-                            )}
-                        </HoverCardBox>
+                                )}
+                            </HoverCardBox>
+                        </Box>
+
                     </Box>
 
                     {/* Empty State */}
@@ -413,7 +443,6 @@ export function TaskPage() {
                             tasks={allTasks}
                             task={highlightedTask}
                             handleOpenDialog={handleOpen}
-                            handleCompleteTask={completeTask}
                             handleChangeDescription={changeDescription}
                             toggleTaskCompletion={toggleTaskCompletion}
                             />

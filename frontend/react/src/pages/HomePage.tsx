@@ -219,7 +219,6 @@ export function HomePage() {
                                 tasks={allTasks}
                                 task={highlightedTask}
                                 handleOpenDialog={handleOpen}
-                                handleCompleteTask={completeTask}
                                 toggleTaskCompletion={toggleTaskCompletion}
                                 handleChangeDescription={changeDescription}
                             />

@@ -19,7 +19,6 @@ type props = {
     tasks: Task[];
     task: Task | null;
     handleOpenDialog?: (dialogType: string) => void;
-    handleCompleteTask: (taskId: string) => void;
     handleChangeDescription: (description: string, taskId: string) => void;
     toggleTaskCompletion: (taskId: string) => void,
 };
@@ -107,7 +106,7 @@ export function HighlightedTaskBox(props: props) {
             />
 
             {showSubtasks && (
-                <>
+                <Box sx={{mb: 4}}>
                     <List>
                         {subTasks.map((subtask: Task) => (
                             <TaskDiv
@@ -118,24 +117,19 @@ export function HighlightedTaskBox(props: props) {
                         ))}
                     </List>
                     <SmartTaskInput onSubmit={createTask} parentId={props.task.taskId}/>
-                </>
+                </Box>
             )}
+            <Box sx={{display: 'flex', justifyContent: 'center'}}>
+                <IconButton color={importance as any}>
+                    <AdjustIcon onClick={() => setShowPomodoro(!showPomodoro)}/>
+                </IconButton>
 
-            <Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-                <Button
-                    sx={{m: 1, width: 1 / 4}}
-                    variant="contained"
-                    onClick={() => setShowPomodoro(true)}
-                    endIcon={<AdjustIcon/>}
-                />
-                <Button
-                    sx={{m: 1, width: 1 / 4}}
-                    variant="contained"
-                    color={importance as any}
-                    endIcon={<CheckIcon/>}
-                    // @ts-ignore
-                    onClick={() => props.handleCompleteTask(props.task.taskId)}
-                />
+                {/*<IconButton color={importance as any}>*/}
+                {/*    <CheckIcon*/}
+                {/*        // @ts-ignore*/}
+                {/*        onClick={() => props.toggleTaskCompletion(props.task.taskId)}*/}
+                {/*    />*/}
+                {/*</IconButton>*/}
             </Box>
 
             {showPomodoro && <PomodoroTimer task={props.task}/>}
