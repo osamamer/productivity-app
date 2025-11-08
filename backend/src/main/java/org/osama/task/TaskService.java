@@ -1,11 +1,15 @@
 package org.osama.task;
 
 import lombok.extern.slf4j.Slf4j;
+import org.osama.exceptions.ParentTaskNotFoundException;
 import org.osama.session.Session;
 import org.osama.session.SessionRepository;
 import org.osama.requests.ModifyTaskRequest;
 import org.osama.requests.NewTaskRequest;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
+
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -140,28 +144,33 @@ public class TaskService {
         if (taskRequest.taskDescription != null) {
             newTask.setDescription(taskRequest.getTaskDescription());
         }
+        if (taskRequest.parentTaskId != null) {
+            if (taskRepository.existsById(taskRequest.parentTaskId)) {
+                newTask.setParentId(taskRequest.parentTaskId);
+            }
+            else {
+                log.info("No such task exists with specified parent task Id: {}", taskRequest.parentTaskId);
+                throw new ParentTaskNotFoundException(taskRequest.parentTaskId);
+            }
+        }
         newTask.setCreationDateTime(LocalDateTime.now(TimeZone.getDefault().toZoneId()));
         newTask.setCreationDate(newTask.getCreationDateTime().toLocalDate());
         newTask.setCompleted(false);
         if (!Objects.equals(taskRequest.taskPerformTime, "")) {
-            log.info("Task perform time not null");
             try {
-            LocalDateTime performTime = LocalDateTime.parse(taskRequest.taskPerformTime);
-            newTask.setScheduledPerformDateTime(performTime);
-            newTask.setScheduledPerformDate(newTask.getScheduledPerformDateTime().toLocalDate());
-        } catch (DateTimeParseException e) {
-            System.out.println("Invalid LocalDateTime format: " + taskRequest.taskPerformTime);
-        }
+                LocalDateTime performTime = LocalDateTime.parse(taskRequest.taskPerformTime);
+                newTask.setScheduledPerformDateTime(performTime);
+                newTask.setScheduledPerformDate(newTask.getScheduledPerformDateTime().toLocalDate());
+            }
+            catch (DateTimeParseException e) {
+                System.out.println("Invalid LocalDateTime format: " + taskRequest.taskPerformTime);
+            }
         }
         else {
             newTask.setScheduledPerformDateTime(LocalDateTime.now());
             newTask.setScheduledPerformDate(newTask.getScheduledPerformDateTime().toLocalDate());
         }
 
-
-        if (taskRequest.parentTaskId != null) {
-            newTask.setParentId(taskRequest.parentTaskId);
-        }
         if (taskRequest.taskTag != null) {
             newTask.setTag(taskRequest.taskTag);
         }
