@@ -30,6 +30,7 @@ type SmartTaskInputProps = {
     onSubmit: (taskToCreate: TaskToCreate) => void;
     initialDate?: string;
     autoFocus?: boolean;
+    parentId?: string;
 };
 
 type TaskMetadata = {
@@ -38,7 +39,7 @@ type TaskMetadata = {
     tag: string;
 };
 
-export function SmartTaskInput({ onSubmit, initialDate, autoFocus }: SmartTaskInputProps) {
+export function SmartTaskInput({ onSubmit, initialDate, autoFocus, parentId }: SmartTaskInputProps) {
     const [input, setInput] = useState('');
     const [metadata, setMetadata] = useState<TaskMetadata>({
         importance: 0,
@@ -137,6 +138,7 @@ export function SmartTaskInput({ onSubmit, initialDate, autoFocus }: SmartTaskIn
             tag: metadata.tag,
             importance: metadata.importance,
         };
+        if (parentId) taskToCreate.parentId = parentId;
 
         console.log('Creating task:', taskToCreate);
 
@@ -224,7 +226,7 @@ export function SmartTaskInput({ onSubmit, initialDate, autoFocus }: SmartTaskIn
                     inputRef={inputRef}
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
-                    placeholder="Add task..."
+                    placeholder={ parentId ? "Add subtask..." : "Add task..."}
                     variant="standard"
                     fullWidth
                     sx={{

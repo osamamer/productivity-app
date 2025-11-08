@@ -6,8 +6,8 @@ const TASK_URL = `${API_BASE_URL}/api/v1/task`;
 
 export const taskService = {
 
-    async getAllTasks(): Promise<Task[]> {
-        const response = await fetch(TASK_URL);
+    async getAllMainTasks(): Promise<Task[]> {
+        const response = await fetch(`${TASK_URL}/get-all-main-tasks`);
         if (!response.ok) {
             throw new Error('Failed to fetch all tasks');
         }
@@ -48,6 +48,16 @@ export const taskService = {
         return response.json();
     },
 
+    async getSubtasks(taskId: string): Promise<Task[]> {
+        const response = await fetch(
+            `${TASK_URL}/get-subtasks/${taskId}`
+        );
+        if (!response.ok) {
+            throw new Error('Failed to fetch subtasks');
+        }
+        return response.json();
+    },
+
     async createTask(task: TaskToCreate): Promise<Task> {
         const response = await fetch(`${TASK_URL}/create-task`, {
             method: 'POST',
@@ -57,6 +67,7 @@ export const taskService = {
                 taskPerformTime: task.scheduledPerformDateTime,
                 taskTag: task.tag,
                 taskImportance: task.importance,
+                parentTaskId: task.parentId,
             }),
             headers: {
                 'Content-Type': 'application/json; charset=UTF-8',

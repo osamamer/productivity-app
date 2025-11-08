@@ -60,7 +60,7 @@ export function TaskAccordion({
             </AccordionSummary>
             <AccordionDetails sx={{ pt: 0, background: 'transparent' }}>
                 <List sx={{ py: 0 }}>
-                    {tasks.map((task: Task) => (
+                    {tasks.filter((task) => !task.parentId).map((task: Task) => (
                         <TaskDiv
                             key={task.taskId}
                             task={task}

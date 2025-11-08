@@ -12,7 +12,6 @@ import {WeekCalendar} from "../components/WeekCalendar.tsx";
 import {PageWrapper} from "../components/PageWrapper.tsx";
 import {useGlobalTasks} from "../contexts/TaskContext.tsx";
 
-
 export function HomePage() {
     const theme = useAppTheme();
     const [dialogOpen, setDialogOpen] =
@@ -53,7 +52,7 @@ export function HomePage() {
     }, []);
 
 
-    async function createTask(task: TaskToCreate) {
+     async function createTask(task: TaskToCreate) {
         try {
             const createdTask = await taskService.createTask(task);
             addTaskToState(createdTask);
@@ -221,6 +220,7 @@ export function HomePage() {
                                 task={highlightedTask}
                                 handleOpenDialog={handleOpen}
                                 handleCompleteTask={completeTask}
+                                toggleTaskCompletion={toggleTaskCompletion}
                                 handleChangeDescription={changeDescription}
                             />
                         )}

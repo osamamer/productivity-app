@@ -6,9 +6,7 @@ import org.osama.session.Session;
 import org.osama.session.SessionRepository;
 import org.osama.requests.ModifyTaskRequest;
 import org.osama.requests.NewTaskRequest;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Duration;
 import java.time.LocalDate;
@@ -94,7 +92,7 @@ public class TaskService {
         return taskRepository.findTaskByTaskId(task.getParentId());
     }
     public List<Task> getChildTasks(String taskId) {
-        return taskRepository.findAllByParentId(taskId);
+        return taskRepository.findAllByParentIdOrderByCreationDateTimeAsc(taskId);
     }
     public List<Task> getNonCompletedTasks() {
         return taskRepository.findAllByCompletedIsFalseOrderByCreationDateTimeDesc();
@@ -102,9 +100,12 @@ public class TaskService {
     public List<Task> getTodayTasks() {
         return taskRepository.findAllByCreationDateOrderByCreationDateTimeDesc(LocalDate.now());
     }
+    public List<Task> getAllMainTasks() {
+        return taskRepository.findAllByParentIdIsNull();
+    }
     public List<Task> getTasksByDate(String date) { // Now searches for the perform not creation date
         LocalDate localDate = stringToLocalDate(date);
-        return taskRepository.findAllByScheduledPerformDateOrderByCompletedAscCreationDateTimeDesc(localDate);
+        return taskRepository.findAllByScheduledPerformDateAndParentIdIsNullOrderByCompletedAscCreationDateTimeDesc(localDate);
     }
     public List<Task> getAllButDay(String date) {
         LocalDate localDate = stringToLocalDate(date);
@@ -187,10 +188,10 @@ public class TaskService {
 
 
     public List<Task> getPastTasks() {
-        return taskRepository.findAllByScheduledPerformDateBeforeOrderByCompletedAscCreationDateTimeDesc(LocalDate.now());
+        return taskRepository.findAllByScheduledPerformDateBeforeAndParentIdIsNullOrderByCompletedAscCreationDateTimeDesc(LocalDate.now());
 
     }
     public List<Task> getFutureTasks() {
-        return taskRepository.findAllByScheduledPerformDateAfterOrderByCompletedAscCreationDateTimeDesc(LocalDate.now());
+        return taskRepository.findAllByScheduledPerformDateAfterAndParentIdIsNullOrderByCompletedAscCreationDateTimeDesc(LocalDate.now());
     }
 }

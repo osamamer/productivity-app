@@ -13,8 +13,9 @@ public interface TaskRepository extends JpaRepository<Task, String> {
     Task findTaskByTaskId(String taskId);
 
     List<Task> findAllByName(String name);
+    List<Task> findAllByParentIdIsNull();
 
-    List<Task> findAllByParentId(String taskId);
+    List<Task> findAllByParentIdOrderByCreationDateTimeAsc(String taskId);
 
     List<Task> findAllByCompletedIsFalseOrderByCreationDateTimeDesc();
 
@@ -30,10 +31,10 @@ public interface TaskRepository extends JpaRepository<Task, String> {
 
     List<Task> findByCreationDateNot(LocalDate creationDate);
 
-    List<Task> findAllByScheduledPerformDateBeforeOrderByCompletedAscCreationDateTimeDesc(LocalDate performDate);
+    List<Task> findAllByScheduledPerformDateBeforeAndParentIdIsNullOrderByCompletedAscCreationDateTimeDesc(LocalDate performDate);
 
-    List<Task> findAllByScheduledPerformDateAfterOrderByCompletedAscCreationDateTimeDesc(LocalDate performDate);
-    List<Task> findAllByScheduledPerformDateOrderByCompletedAscCreationDateTimeDesc(LocalDate performDate);
+    List<Task> findAllByScheduledPerformDateAfterAndParentIdIsNullOrderByCompletedAscCreationDateTimeDesc(LocalDate performDate);
+    List<Task> findAllByScheduledPerformDateAndParentIdIsNullOrderByCompletedAscCreationDateTimeDesc(LocalDate performDate);
 }
 
 

@@ -415,7 +415,8 @@ export function TaskPage() {
                             handleOpenDialog={handleOpen}
                             handleCompleteTask={completeTask}
                             handleChangeDescription={changeDescription}
-                        />
+                            toggleTaskCompletion={toggleTaskCompletion}
+                            />
                     ) : (
                         <HoverCardBox>
                             <Typography

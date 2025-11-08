@@ -1,7 +1,7 @@
 import {Task} from "../types/Task.tsx";
 import {Card, Checkbox, Typography, Box} from "@mui/material";
 
-type props = { task: Task, toggleTaskCompletion: (taskId: string) => void, onClick: (task: Task) => void };
+type props = { task: Task, toggleTaskCompletion: (taskId: string) => void, onClick?: (task: Task) => void };
 
 const formatTime = (dateTime: string): string => {
     const date = new Date(dateTime);
@@ -90,7 +90,7 @@ export function TaskDiv(props: props) {
                 borderRadius: 2,
                 position: 'relative', // For absolute positioning of date
             }}
-            onClick={() => props.onClick(props.task)}
+            onClick={() => props.onClick ? props.onClick(props.task) : {}}
         >
             <Box sx={{
                 display: 'flex',
@@ -125,21 +125,23 @@ export function TaskDiv(props: props) {
                     {props.task.name}
                 </Typography>
             </Box>
+            {!props.task.parentId && (
+                <Typography
+                    sx={{
+                        position: 'absolute',
+                        top: '50%',
+                        right: 12,
+                        transform: 'translateY(-50%)',
+                        color: getDateColor(),
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        whiteSpace: 'nowrap',
+                    }}
+                >
+                    {formatTime(props.task.scheduledPerformDateTime)}
+                </Typography>
+            )}
 
-            <Typography
-                sx={{
-                    position: 'absolute',
-                    top: '50%',
-                    right: 12,
-                    transform: 'translateY(-50%)',
-                    color: getDateColor(),
-                    fontSize: '0.75rem',
-                    fontWeight: 600,
-                    whiteSpace: 'nowrap',
-                }}
-            >
-                {formatTime(props.task.scheduledPerformDateTime)}
-            </Typography>
         </Card>
     );
 }

@@ -4,4 +4,5 @@ export interface TaskToCreate   {
     scheduledPerformDateTime: string;
     tag: string;
     importance: number;
+    parentId?: string;
 }

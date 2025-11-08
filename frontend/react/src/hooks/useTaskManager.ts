@@ -15,7 +15,7 @@ export function useTaskManager() {
         try {
             setLoading(true);
             setError(null);
-            const tasks = await taskService.getAllTasks();
+            const tasks = await taskService.getAllMainTasks();
             setAllTasks(tasks);
             if (tasks.length > 0 && !highlightedTask) {
                 setHighlightedTask(tasks[tasks.length - 1]);

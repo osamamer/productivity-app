@@ -1,6 +1,5 @@
 package org.osama;
 
-import org.osama.session.Session;
 import org.osama.session.SessionService;
 import org.osama.task.*;
 import org.osama.requests.ModifyTaskRequest;
@@ -175,6 +174,10 @@ public class TaskController {
     public List<Task> getChildTasks(@PathVariable String taskId) {
         return taskService.getChildTasks(taskId);
     }
+    @GetMapping("/get-all-main-tasks")
+    public List<Task> getAllMainTasks() {
+        return taskService.getAllMainTasks();
+    }
 
     @GetMapping("/get-tag/{taskId}")
     public String getTaskTag(@PathVariable String taskId) {
@@ -201,6 +204,11 @@ public class TaskController {
     @DeleteMapping("/{taskId}")
     public void removeTask(@PathVariable String taskId) {
         taskRepository.deleteTaskByTaskId(taskId);
+    }
+
+    @GetMapping("/get-subtasks/{taskId}")
+    public List<Task> getSubtasks(@PathVariable String taskId) {
+        return taskRepository.findAllByParentIdOrderByCreationDateTimeAsc(taskId);
     }
 
     @DeleteMapping
