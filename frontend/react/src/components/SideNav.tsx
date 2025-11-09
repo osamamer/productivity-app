@@ -73,7 +73,7 @@ export function SideNav(props: props) {
                                 ></SideMenuButton>
                 <SideMenuButton image={meditation as string} text="Meditation" targetPage="/meditation" open={open}
                                 ></SideMenuButton>
-                <SideMenuButton image={stats as string} text={"Statistics"} targetPage={"/statistics"} open={open}
+                <SideMenuButton image={stats as string} text={"Statistics"} targetPage={"/stats"} open={open}
                                 ></SideMenuButton>
                 <SideMenuButton image={settings as string} text={"Settings"} targetPage={"/settings"} open={open}
                                 ></SideMenuButton>

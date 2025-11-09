@@ -57,16 +57,25 @@ public class TaskService {
         taskRepository.save(task);
         log.info("Set complete status to true for task with ID [{}]", task.getTaskId());
     }
-        public void uncompleteTask(String taskId) {
+    public void uncompleteTask(String taskId) {
         Task task = taskRepository.findTaskByTaskId(taskId);
         task.setCompleted(false);
         task.setCompletionDateTime(null);
+        task.setCompletionDate(null);
         taskRepository.save(task);
         log.info("Set complete status to false for task with ID [{}]", task.getTaskId());
     }
     public void toggleTaskCompletion(String taskId) {
         Task task = taskRepository.findTaskByTaskId(taskId);
         task.setCompleted(!task.isCompleted());
+        if (task.isCompleted()) {
+            task.setCompletionDateTime(LocalDateTime.now());
+            task.setCompletionDate(task.getCompletionDateTime().toLocalDate());
+        }
+        else {
+            task.setCompletionDateTime(null);
+            task.setCompletionDate(null);
+        }
         taskRepository.save(task);
         log.info("Toggled completion to {} for task with ID [{}]", task.isCompleted(), taskId);
     }

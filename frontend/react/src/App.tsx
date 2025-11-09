@@ -13,6 +13,7 @@ import {TaskPage} from "./pages/TaskPage.jsx";
 
 import { AppThemeProvider } from './contexts/ThemeContext';
 import {TaskProvider} from "./contexts/TaskContext.tsx";
+import {StatsPage} from "./pages/StatsPage.tsx";
 
 
 function App() {
@@ -25,6 +26,8 @@ function App() {
                         <Route exact path="/" element={<HomePage/>}/>
                         <Route exact path="/calendar" element={<CalendarPage/>}/>
                         <Route exact path="/tasks" element={<TaskPage/>}/>
+                        <Route exact path="/stats" element={<StatsPage/>}/>
+
 
                     </Routes>
                 </TaskProvider>
