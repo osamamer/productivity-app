@@ -1,8 +1,6 @@
-package org.osama;
+package org.osama.day;
 
 import lombok.Data;
-import org.osama.day.DayEntity;
-import org.osama.day.DayService;
 import org.springframework.web.bind.annotation.*;
 
 @RestController

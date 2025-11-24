@@ -41,7 +41,7 @@ public class EndToEndTest {
     void tearDown() {
         try {
             if (testTask != null) {
-                sessionService.endTaskSession(testTask.getTaskId());
+                sessionService.endSession(testTask.getTaskId());
             }
         } catch (Exception e) {
         }
@@ -54,37 +54,37 @@ public class EndToEndTest {
 
     @Test
     void startAndEndSession() {
-        assertDoesNotThrow(() -> sessionService.startTaskSession(testTask.getTaskId(), false));
-        assertDoesNotThrow(() -> sessionService.endTaskSession(testTask.getTaskId()));
+        assertDoesNotThrow(() -> sessionService.startSession(testTask.getTaskId(), false));
+        assertDoesNotThrow(() -> sessionService.endSession(testTask.getTaskId()));
     }
 
     @Test
     void pauseAndUnpauseSession() {
-        sessionService.startTaskSession(testTask.getTaskId(), false);
-        assertDoesNotThrow(() -> sessionService.pauseTaskSession(testTask.getTaskId()));
-        assertDoesNotThrow(() -> sessionService.unpauseTaskSession(testTask.getTaskId()));
+        sessionService.startSession(testTask.getTaskId(), false);
+        assertDoesNotThrow(() -> sessionService.pauseSession(testTask.getTaskId()));
+        assertDoesNotThrow(() -> sessionService.unpauseSession(testTask.getTaskId()));
     }
 
     @Test
     void startAlreadyRunningSession() {
-        sessionService.startTaskSession(testTask.getTaskId(), false);
-        assertThrows(IllegalStateException.class, () -> sessionService.startTaskSession(testTask.getTaskId(), false));
+        sessionService.startSession(testTask.getTaskId(), false);
+        assertThrows(IllegalStateException.class, () -> sessionService.startSession(testTask.getTaskId(), false));
     }
 
     @Test
     void unpauseAlreadyRunningSession() {
-        sessionService.startTaskSession(testTask.getTaskId(), false);
-        assertThrows(IllegalStateException.class, () -> sessionService.unpauseTaskSession(testTask.getTaskId()));
+        sessionService.startSession(testTask.getTaskId(), false);
+        assertThrows(IllegalStateException.class, () -> sessionService.unpauseSession(testTask.getTaskId()));
     }
 
     @Test
     void endNotRunningTask() {
-        assertThrows(IllegalStateException.class, () -> sessionService.endTaskSession(testTask.getTaskId()));
+        assertThrows(IllegalStateException.class, () -> sessionService.endSession(testTask.getTaskId()));
     }
 
     @Test
     void pauseNotRunningTask() {
-        assertThrows(IllegalStateException.class, () -> sessionService.pauseTaskSession(testTask.getTaskId()));
+        assertThrows(IllegalStateException.class, () -> sessionService.pauseSession(testTask.getTaskId()));
     }
 
     @Test
@@ -99,9 +99,9 @@ public class EndToEndTest {
 
     private Task createTask() {
         NewTaskRequest taskRequest = new NewTaskRequest();
-        taskRequest.setTaskName("Do chores");
-        taskRequest.setTaskDescription("Vacuum nasty room");
-        taskRequest.setTaskPerformTime("2025-01-13T17:09:42.411");
-        return taskService.createNewTask(taskRequest);
+        taskRequest.setName("Do chores");
+        taskRequest.setDescription("Vacuum nasty room");
+        taskRequest.setScheduledPerformDateTime("2025-01-13T17:09:42.411");
+        return taskService.createTask(taskRequest);
     }
 }

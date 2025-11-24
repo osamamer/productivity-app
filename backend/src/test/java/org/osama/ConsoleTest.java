@@ -26,41 +26,41 @@ public class ConsoleTest {
     @Test
     void main() throws InterruptedException {
         NewTaskRequest request = new NewTaskRequest();
-        request.setTaskName("Task one");
-        request.setTaskDescription("Task one description");
-        request.setTaskPerformTime("2017-01-13T17:09:42.411");
-        Task task = taskService.createNewTask(request);
+        request.setName("Task one");
+        request.setDescription("Task one description");
+        request.setScheduledPerformDateTime("2017-01-13T17:09:42.411");
+        Task task = taskService.createTask(request);
         String taskId = task.getTaskId();
-        sessionService.startTaskSession(taskId, false);
+        sessionService.startSession(taskId, false);
         Thread.sleep(25);
-        sessionService.pauseTaskSession(taskId);
+        sessionService.pauseSession(taskId);
         Thread.sleep(25);
-        sessionService.unpauseTaskSession(taskId);
+        sessionService.unpauseSession(taskId);
         Thread.sleep(25);
-        sessionService.pauseTaskSession(taskId);
+        sessionService.pauseSession(taskId);
         Thread.sleep(25);
-        sessionService.unpauseTaskSession(taskId);
+        sessionService.unpauseSession(taskId);
         Thread.sleep(25);
-        sessionService.endTaskSession(taskId);
+        sessionService.endSession(taskId);
         System.out.println(taskService.getAccumulatedTime(taskId).toMillis() + " milliseconds");
     }
     @Test
     void test() throws InterruptedException {
         NewTaskRequest request = new NewTaskRequest();
-        request.setTaskName("Task one");
-        request.setTaskDescription("Task one description");
-        request.setTaskPerformTime("2017-01-13T17:09:42.411");
+        request.setName("Task one");
+        request.setDescription("Task one description");
+        request.setScheduledPerformDateTime("2017-01-13T17:09:42.411");
 
-        Task task = taskService.createNewTask(request);
+        Task task = taskService.createTask(request);
         String taskId = task.getTaskId();
-        sessionService.startTaskSession(taskId, false);
+        sessionService.startSession(taskId, false);
         Thread.sleep(50);
-        sessionService.pauseTaskSession(taskId);
+        sessionService.pauseSession(taskId);
         Thread.sleep(25);
-        sessionService.endTaskSession(taskId);
+        sessionService.endSession(taskId);
         System.out.println(taskService.getAccumulatedTime(taskId).toMillis() + " milliseconds");
     }
     public void pauseSession(String taskId){
-        sessionService.pauseTaskSession(taskId);
+        sessionService.pauseSession(taskId);
     }
 }

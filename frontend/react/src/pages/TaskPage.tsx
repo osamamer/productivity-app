@@ -96,16 +96,6 @@ export function TaskPage() {
         }
     }
 
-    async function completeTask(taskId: string) {
-        removeTaskFromState(taskId);
-
-        try {
-            await taskService.completeTask(taskId);
-        } catch (err) {
-            console.error('Error completing task:', err);
-            await fetchAllTasks();
-        }
-    }
 
     async function changeDescription(description: string, taskId: string) {
         updateTaskInState(taskId, { description: description });

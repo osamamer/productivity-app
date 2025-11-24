@@ -1,30 +1,53 @@
 package org.osama.task;
 
-import lombok.extern.slf4j.Slf4j;
-import org.osama.exceptions.ParentTaskNotFoundException;
+
+import org.osama.requests.UpdateTaskRequest;
+import org.osama.requests.NewTaskRequest;
 import org.osama.session.Session;
 import org.osama.session.SessionRepository;
-import org.osama.requests.ModifyTaskRequest;
-import org.osama.requests.NewTaskRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.*;
 
 @Service
-@Slf4j
 public class TaskService {
     private final TaskRepository taskRepository;
     private final SessionRepository sessionRepository;
+
     public TaskService(TaskRepository taskRepository, SessionRepository sessionRepository) {
         this.taskRepository = taskRepository;
         this.sessionRepository = sessionRepository;
     }
 
+    public List<Task> findTasks(TaskQuery query) {
+        Specification<Task> spec = TaskSpecifications.matchesQuery(query);
+
+        // Add sorting
+        Sort sort = Sort.by(
+                Sort.Order.asc("completed"),
+                Sort.Order.desc("importance"),
+                Sort.Order.desc("creationDateTime")
+        );
+
+        return taskRepository.findAll(spec, sort);
+    }
+
+    public Optional<Task> getTask(String taskId) {
+        return taskRepository.findTaskByTaskId(taskId);
+    }
+
+    public List<Task> getSubtasks(String parentTaskId) {
+        TaskQuery query = TaskQuery.builder()
+                .parentId(parentTaskId)
+                .build();
+        return findTasks(query);
+    }
     public Duration getAccumulatedTime(String taskId) {
         Duration totalDuration = Duration.ZERO;
         List<Session> sessionList = sessionRepository.findAllByAssociatedTaskId(taskId);
@@ -33,174 +56,108 @@ public class TaskService {
         }
         return totalDuration;
     }
-    public void setTaskDescription(ModifyTaskRequest taskRequest) {
-        Task task = taskRepository.findTaskByTaskId(taskRequest.taskId);
-        task.setDescription(taskRequest.taskDescription);
-        taskRepository.save(task);
-        log.info("Set new task description for task with ID [{}]", task.getTaskId());
-    }
 
-    public boolean getTaskRunning(String taskId) {
-        return !sessionRepository.findAllByAssociatedTaskIdAndRunningIsTrue(taskId).isEmpty();
-    }
-    public boolean getTaskActive(String taskId) {
-        return !sessionRepository.findAllByAssociatedTaskIdAndActiveIsTrue(taskId).isEmpty();
-    }
-
-
-
-    public void completeTask(String taskId) {
-        Task task = taskRepository.findTaskByTaskId(taskId);
-        task.setCompleted(true);
-        task.setCompletionDateTime(LocalDateTime.now());
-        task.setCompletionDate(task.getCompletionDateTime().toLocalDate());
-        taskRepository.save(task);
-        log.info("Set complete status to true for task with ID [{}]", task.getTaskId());
-    }
-    public void uncompleteTask(String taskId) {
-        Task task = taskRepository.findTaskByTaskId(taskId);
-        task.setCompleted(false);
-        task.setCompletionDateTime(null);
-        task.setCompletionDate(null);
-        taskRepository.save(task);
-        log.info("Set complete status to false for task with ID [{}]", task.getTaskId());
-    }
-    public void toggleTaskCompletion(String taskId) {
-        Task task = taskRepository.findTaskByTaskId(taskId);
-        task.setCompleted(!task.isCompleted());
-        if (task.isCompleted()) {
-            task.setCompletionDateTime(LocalDateTime.now());
-            task.setCompletionDate(task.getCompletionDateTime().toLocalDate());
+    public Task createTask(NewTaskRequest request) {
+        // Validate required field
+        if (request.getName() == null || request.getName().isBlank()) {
+            throw new IllegalArgumentException("Task name is required");
         }
-        else {
-            task.setCompletionDateTime(null);
-            task.setCompletionDate(null);
-        }
-        taskRepository.save(task);
-        log.info("Toggled completion to {} for task with ID [{}]", task.isCompleted(), taskId);
-    }
-    public boolean getTaskCompleted(String taskId) {
-        Task task = taskRepository.findTaskByTaskId(taskId);
-        return task.isCompleted();
-    }
-    public void changeTaskName(String taskId, String newName) {
-        Task task = taskRepository.findTaskByTaskId(taskId);
-        task.setName(newName);
-        taskRepository.save(task);
-        log.info("Changed task name for task with ID [{}]", task.getTaskId());
 
-    }
-    public void setParentTask(String taskId, String parentId) {
-        Task task = taskRepository.findTaskByTaskId(taskId);
-        task.setParentId(parentId);
-        taskRepository.save(task);
-        log.info("Set task with ID [{}] to have parent with ID [{}]", task.getTaskId(), parentId);
-    }
-    public Task getParentTask(String taskId) {
-        Task task = taskRepository.findTaskByTaskId(taskId);
-        return taskRepository.findTaskByTaskId(task.getParentId());
-    }
-    public List<Task> getChildTasks(String taskId) {
-        return taskRepository.findAllByParentIdOrderByCreationDateTimeAsc(taskId);
-    }
-    public List<Task> getNonCompletedTasks() {
-        return taskRepository.findAllByCompletedIsFalseOrderByCreationDateTimeDesc();
-    }
-    public List<Task> getTodayTasks() {
-        return taskRepository.findAllByCreationDateOrderByCreationDateTimeDesc(LocalDate.now());
-    }
-    public List<Task> getAllMainTasks() {
-        return taskRepository.findAllByParentIdIsNull();
-    }
-    public List<Task> getTasksByDate(String date) { // Now searches for the perform not creation date
-        LocalDate localDate = stringToLocalDate(date);
-        return taskRepository.findAllByScheduledPerformDateAndParentIdIsNullOrderByCompletedAscCreationDateTimeDesc(localDate);
-    }
-    public List<Task> getAllButDay(String date) {
-        LocalDate localDate = stringToLocalDate(date);
-        return taskRepository.findByCreationDateNot(localDate);
-    }
-    public List<Task> getNonCompletedTasksByDate(String date) {
-        log.info("Getting uncompleted tasks for date [{}]", date);
-        List<Task> taskList = getTasksByDate(date);
-        List<Task> nonCompletedList = new ArrayList<>();
-        for (Task task : taskList) {
-            if (!task.isCompleted())
-                nonCompletedList.add(task);
+        // Validate parent exists if this is a subtask
+        if (request.getParentId() != null && !request.getParentId().isBlank()) {
+            taskRepository.findTaskByTaskId(request.getParentId())
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "Parent task not found: " + request.getParentId()
+                    ));
         }
-        return nonCompletedList;
-    }
-    public Task getNewestUncompletedHighestPriorityTask() {
-        return taskRepository.findFirstByCompletedIsFalseOrderByImportanceDescCreationDateTimeDesc();
-    }
 
+        Task task = new Task();
+        task.setTaskId(UUID.randomUUID().toString());
+        task.setName(request.getName());
 
-    public void endAllSessions() {
-        sessionRepository.findAll()
-                .stream().filter(Session::isActive)
-                .forEach(activeSession -> {
-            activeSession.setEndTime(LocalDateTime.now());
-            activeSession.setRunning(false);
-            activeSession.setActive(false);
-            sessionRepository.save(activeSession);
-        });
-        log.info("Ended all sessions.");
+        // Optional fields with null checks
+        task.setDescription(request.getDescription()); // null is fine for description
 
-    }
-    public Task createNewTask(NewTaskRequest taskRequest) {
-        Task newTask = new Task();
-        newTask.setTaskId(UUID.randomUUID().toString());
-        newTask.setName(taskRequest.getTaskName());
-        if (taskRequest.taskDescription != null) {
-            newTask.setDescription(taskRequest.getTaskDescription());
-        }
-        if (taskRequest.parentTaskId != null) {
-            if (taskRepository.existsById(taskRequest.parentTaskId)) {
-                newTask.setParentId(taskRequest.parentTaskId);
-            }
-            else {
-                log.info("No such task exists with specified parent task Id: {}", taskRequest.parentTaskId);
-                throw new ParentTaskNotFoundException(taskRequest.parentTaskId);
-            }
-        }
-        newTask.setCreationDateTime(LocalDateTime.now(TimeZone.getDefault().toZoneId()));
-        newTask.setCreationDate(newTask.getCreationDateTime().toLocalDate());
-        newTask.setCompleted(false);
-        if (!Objects.equals(taskRequest.taskPerformTime, "")) {
+        // Parse datetime only if provided
+        if (request.getScheduledPerformDateTime() != null && !request.getScheduledPerformDateTime().isBlank()) {
             try {
-                LocalDateTime performTime = LocalDateTime.parse(taskRequest.taskPerformTime);
-                newTask.setScheduledPerformDateTime(performTime);
-                newTask.setScheduledPerformDate(newTask.getScheduledPerformDateTime().toLocalDate());
+                task.setScheduledPerformDateTime(LocalDateTime.parse(request.getScheduledPerformDateTime()));
+            } catch (DateTimeParseException e) {
+                throw new IllegalArgumentException("Invalid datetime format. Use ISO format: 2024-01-20T10:30:00", e);
             }
-            catch (DateTimeParseException e) {
-                System.out.println("Invalid LocalDateTime format: " + taskRequest.taskPerformTime);
-            }
-        }
-        else {
-            newTask.setScheduledPerformDateTime(LocalDateTime.now());
-            newTask.setScheduledPerformDate(newTask.getScheduledPerformDateTime().toLocalDate());
+        } else {
+            // Default to now if not provided
+            task.setScheduledPerformDateTime(LocalDateTime.now());
         }
 
-        if (taskRequest.taskTag != null) {
-            newTask.setTag(taskRequest.taskTag);
-        }
-        newTask.setImportance(taskRequest.taskImportance);
-        taskRepository.save(newTask);
-        log.info("Created new task on {}.", newTask.getCreationDateTime());
-        return newTask;
+        task.setParentId(request.getParentId()); // null is fine for main tasks
+        task.setTag(request.getTag()); // null is fine
+        task.setImportance(request.getImportance()); // primitive int defaults to 0
+        task.setCompleted(false);
+        task.setCreationDateTime(LocalDateTime.now());
+
+        return taskRepository.save(task);
     }
 
-    private static LocalDate stringToLocalDate(String dateString) {
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
-        return LocalDate.parse(dateString, formatter);
+    public Optional<Task> updateTask(String taskId, UpdateTaskRequest request) {
+        return taskRepository.findTaskByTaskId(taskId)
+                .map(task -> {
+                    if (request.getName() != null) {
+                        task.setName(request.getName());
+                    }
+                    if (request.getDescription() != null) {
+                        task.setDescription(request.getDescription());
+                    }
+                    if (request.getCompleted() != null) {
+                        task.setCompleted(request.getCompleted());
+                        if (request.getCompleted()) {
+                            task.setCompletionDateTime(LocalDateTime.now());
+                        }
+                    }
+                    if (request.getTag() != null) {
+                        task.setTag(request.getTag());
+                    }
+                    if (request.getImportance() != null) {
+                        task.setImportance(request.getImportance());
+                    }
+                    if (request.getScheduledPerformDateTime() != null) {
+                        task.setScheduledPerformDateTime(request.getScheduledPerformDateTime());
+                    }
+                    return taskRepository.save(task);
+                });
     }
 
+    public void deleteTask(String taskId) {
+        // Delete subtasks first
+        TaskQuery subtaskQuery = TaskQuery.builder()
+                .parentId(taskId)
+                .build();
+        List<Task> subtasks = findTasks(subtaskQuery);
+        subtasks.forEach(subtask -> taskRepository.deleteTaskByTaskId(subtask.getTaskId()));
 
-    public List<Task> getPastTasks() {
-        return taskRepository.findAllByScheduledPerformDateBeforeAndParentIdIsNullOrderByCompletedAscCreationDateTimeDesc(LocalDate.now());
+        // Delete main task
+        taskRepository.deleteTaskByTaskId(taskId);
+    }
 
+    // Convenience methods for common queries
+    public List<Task> getAllMainTasks() {
+        return findTasks(TaskQuery.builder().build());
     }
-    public List<Task> getFutureTasks() {
-        return taskRepository.findAllByScheduledPerformDateAfterAndParentIdIsNullOrderByCompletedAscCreationDateTimeDesc(LocalDate.now());
+
+    public List<Task> getTodayTasks() {
+        return findTasks(TaskQuery.builder().period(TaskQuery.DatePeriod.TODAY).build());
     }
+
+    public List<Task> getIncompleteTasks() {
+        return findTasks(TaskQuery.builder().completed(false).build());
+    }
+
+    public Optional<Task> getHighestPriorityIncompleteTask() {
+        TaskQuery query = TaskQuery.builder()
+                .completed(false)
+                .build();
+
+        return findTasks(query).stream().findFirst(); // Already sorted by importance
+    }
+
 }

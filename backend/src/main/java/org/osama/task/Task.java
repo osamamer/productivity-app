@@ -36,30 +36,18 @@ public class Task {
     @JsonDeserialize(using = LocalDateTimeDeserializer.class)
     private LocalDateTime creationDateTime;
 
-    @Column(nullable = false)
-    @JsonSerialize(using = LocalDateSerializer.class)
-    @JsonDeserialize(using = LocalDateDeserializer.class)
-    private LocalDate creationDate;
 
     @Column
     @JsonSerialize(using = LocalDateTimeSerializer.class)
     @JsonDeserialize(using = LocalDateTimeDeserializer.class)
     private LocalDateTime scheduledPerformDateTime;
 
-    @Column
-    @JsonSerialize(using = LocalDateSerializer.class)
-    @JsonDeserialize(using = LocalDateDeserializer.class)
-    private LocalDate scheduledPerformDate;
 
     @Column
     @JsonSerialize(using = LocalDateTimeSerializer.class)
     @JsonDeserialize(using = LocalDateTimeDeserializer.class)
     private LocalDateTime completionDateTime;
 
-    @Column
-    @JsonSerialize(using = LocalDateSerializer.class)
-    @JsonDeserialize(using = LocalDateDeserializer.class)
-    private LocalDate completionDate;
 
     @Column
     private String parentId;

@@ -2,8 +2,8 @@ package org.osama.scheduling;
 
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.osama.pomodoro.PomodoroService;
 import org.osama.session.SessionService;
-import org.osama.task.TaskService;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -19,18 +19,19 @@ import static javax.management.timer.Timer.ONE_SECOND;
 @Slf4j
 public class TimedExecutorService {
 
-    private static final int FIVE_SECONDS = 5000;
     private final ScheduledJobRepository scheduledJobRepository;
-    @Getter
-    private final Map<JobType, Consumer<String>> jobMap;
+    private final PomodoroService pomodoroService;
     private final SessionService sessionService;
 
+    @Getter
+    private final Map<JobType, Consumer<String>> jobMap;
 
-    public TimedExecutorService(ScheduledJobRepository scheduledJobRepository, TaskService taskService, SessionService sessionService) {
+
+    public TimedExecutorService(ScheduledJobRepository scheduledJobRepository, SessionService sessionService, PomodoroService pomodoroService) {
         this.scheduledJobRepository = scheduledJobRepository;
         this.sessionService = sessionService;
+        this.pomodoroService = pomodoroService;
         this.jobMap = createJobMap();
-
     }
 
     @Scheduled(fixedRate = ONE_SECOND)
@@ -52,11 +53,11 @@ public class TimedExecutorService {
     private Map<JobType, Consumer<String>> createJobMap() {
         Map<JobType, Consumer<String>> jobMap = new HashMap<>();
 
-        jobMap.put(JobType.START_SESSION, (taskId) -> sessionService.startTaskSession(taskId, true));
-        jobMap.put(JobType.END_SESSION, sessionService::endTaskSession);
-        jobMap.put(JobType.PAUSE_SESSION, sessionService::pauseTaskSession);
-        jobMap.put(JobType.UNPAUSE_SESSION, sessionService::unpauseTaskSession);
-        jobMap.put(JobType.END_POMODORO, sessionService::endPomodoro);
+        jobMap.put(JobType.START_SESSION, (taskId) -> sessionService.startSession(taskId, true));
+        jobMap.put(JobType.END_SESSION, sessionService::endSession);
+        jobMap.put(JobType.PAUSE_SESSION, sessionService::pauseSession);
+        jobMap.put(JobType.UNPAUSE_SESSION, sessionService::unpauseSession);
+        jobMap.put(JobType.END_POMODORO, pomodoroService::endPomodoro);
 
 
         return Map.copyOf(jobMap);

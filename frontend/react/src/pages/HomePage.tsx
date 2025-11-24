@@ -87,18 +87,7 @@ export function HomePage() {
         }
     }
 
-    async function completeTask(taskId: string) {
-        // Optimistic removal
-        removeTaskFromState(taskId);
 
-        try {
-            await taskService.completeTask(taskId);
-        } catch (err) {
-            console.error('Error completing task:', err);
-            // Refetch on error
-            await fetchAllTasks();
-        }
-    }
 
     async function changeDescription(description: string, taskId: string) {
         updateTaskInState(taskId, { description: description });

@@ -22,7 +22,6 @@ public class AppStart {
     @EventListener(ApplicationReadyEvent.class)
     public void onReadyEvent(){
         log.info("Starting app");
-        taskService.endAllSessions();
         scheduledJobRepository.deleteAll();
         log.info("Deleted all jobs.");
 

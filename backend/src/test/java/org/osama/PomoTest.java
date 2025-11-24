@@ -2,6 +2,7 @@ package org.osama;
 
 import jakarta.transaction.Transactional;
 import org.junit.jupiter.api.Test;
+import org.osama.pomodoro.PomodoroService;
 import org.osama.scheduling.ScheduledJob;
 import org.osama.scheduling.ScheduledJobRepository;
 import org.osama.scheduling.TimedExecutorService;
@@ -31,6 +32,8 @@ public class PomoTest {
     private TaskService taskService;
     @Autowired
     private SessionService sessionService;
+    @Autowired
+    private PomodoroService pomodoroService;
 
 
     @Test
@@ -41,7 +44,7 @@ public class PomoTest {
         int longBreakDuration = 2;
         int numFocuses = 3;
         int longBreakCooldown = 2;
-        sessionService.startPomodoro(task.getTaskId(), focusDuration, shortBreakDuration, longBreakDuration, numFocuses, longBreakCooldown);
+        pomodoroService.startPomodoro(task.getTaskId(), focusDuration, shortBreakDuration, longBreakDuration, numFocuses, longBreakCooldown);
     }
     @Test
     void pomoUserInterventionTest() throws InterruptedException {
@@ -52,12 +55,12 @@ public class PomoTest {
         int numFocuses = 3;
         int longBreakCooldown = 2;
         long pauseTime = 1000;
-        sessionService.startPomodoro(task.getTaskId(), focusDuration, shortBreakDuration, longBreakDuration, numFocuses, longBreakCooldown);
+        pomodoroService.startPomodoro(task.getTaskId(), focusDuration, shortBreakDuration, longBreakDuration, numFocuses, longBreakCooldown);
         List<LocalDateTime> oldDueDates = scheduledJobRepository.findAllByAssociatedTaskId(task.getTaskId()).stream().map(ScheduledJob::getDueDate).toList();;
         Thread.sleep(1000);
-        sessionService.pauseTaskSession(task.getTaskId());
+        sessionService.pauseSession(task.getTaskId());
         Thread.sleep(pauseTime);
-        sessionService.unpauseTaskSession(task.getTaskId());
+        sessionService.unpauseSession(task.getTaskId());
         List<LocalDateTime> newDueDates = scheduledJobRepository.findAllByAssociatedTaskId(task.getTaskId()).stream().map(ScheduledJob::getDueDate).toList();
         for (LocalDateTime date:newDueDates) {
             System.out.println(date);
@@ -68,10 +71,10 @@ public class PomoTest {
     }
     public Task createTask() {
         NewTaskRequest taskRequest = new NewTaskRequest();
-        taskRequest.setTaskName("Do chores");
-        taskRequest.setTaskDescription("Vacuum nasty room");
-        taskRequest.setTaskPerformTime("2017-01-13T17:09:42.411");
+        taskRequest.setName("Do chores");
+        taskRequest.setDescription("Vacuum nasty room");
+        taskRequest.setScheduledPerformDateTime("2017-01-13T17:09:42.411");
 
-        return taskService.createNewTask(taskRequest);
+        return taskService.createTask(taskRequest);
     }
 }

@@ -1,5 +1,5 @@
-import React, {useState, useEffect, useCallback, useRef} from 'react';
-import {Client} from '@stomp/stompjs';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Client } from '@stomp/stompjs';
 import {
     Box,
     Button,
@@ -11,12 +11,13 @@ import {
     CircularProgress,
     Chip,
 } from '@mui/material';
-import {HoverCardBox} from './box/HoverCardBox';
+import { HoverCardBox } from './box/HoverCardBox';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
 import StopIcon from '@mui/icons-material/Stop';
 import TimerIcon from '@mui/icons-material/Timer';
 import FreeBreakfastIcon from '@mui/icons-material/FreeBreakfast';
+import { taskService } from '../services/api'; // Import the service
 
 interface Task {
     taskId: string;
@@ -26,7 +27,7 @@ interface Task {
 interface Pomodoro {
     taskId: string;
     taskName: string;
-    active: string;
+    active: boolean;
     sessionActive: boolean;
     sessionRunning: boolean;
     secondsPassedInSession: number;
@@ -36,7 +37,6 @@ interface Pomodoro {
 }
 
 interface PomodoroFormData {
-    taskId: string;
     focusDuration: number;
     shortBreakDuration: number;
     longBreakDuration: number;
@@ -48,13 +48,16 @@ interface Props {
     task: Task | null;
 }
 
-export function PomodoroTimer({task}: Props) {
+const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8080/ws';
+
+export function PomodoroTimer({ task }: Props) {
     const [status, setStatus] = useState<Pomodoro | null>(null);
     const [isConnected, setIsConnected] = useState(false);
     const [connectionError, setConnectionError] = useState<string | null>(null);
+    const [isLoading, setIsLoading] = useState(false);
     const stompClientRef = useRef<Client | null>(null);
+
     const [formData, setFormData] = useState<PomodoroFormData>({
-        taskId: '',
         focusDuration: 25,
         shortBreakDuration: 5,
         longBreakDuration: 15,
@@ -62,46 +65,38 @@ export function PomodoroTimer({task}: Props) {
         longBreakCooldown: 4
     });
 
-    // Update taskId when task prop changes
-    useEffect(() => {
-        if (task) {
-            setFormData(prev => ({
-                ...prev,
-                taskId: task.taskId
-            }));
-        } else {
-            setFormData(prev => ({
-                ...prev,
-                taskId: ''
-            }));
-        }
-    }, [task]);
-
-    const ROOT_URL = "http://localhost:8080";
-    const TASK_URL = ROOT_URL.concat("/api/v1/task");
-    const WS_URL = `ws://localhost:8080/ws`;
-
-    async function handleTogglePlayPause() {
+    const handleTogglePlayPause = async () => {
         if (!task) return;
 
-        if (status?.sessionRunning) {
-            await fetch(TASK_URL.concat(`/pause-session/${task.taskId}`), {
-                method: "POST"
-            });
-        } else {
-            await fetch(TASK_URL.concat(`/unpause-session/${task.taskId}`), {
-                method: "POST"
-            });
+        setIsLoading(true);
+        try {
+            if (status?.sessionRunning) {
+                await taskService.pauseSession(task.taskId);
+            } else {
+                await taskService.unpauseSession(task.taskId);
+            }
+        } catch (error) {
+            console.error('Error toggling play/pause:', error);
+            setConnectionError(error instanceof Error ? error.message : 'Failed to toggle session');
+        } finally {
+            setIsLoading(false);
         }
-    }
+    };
 
-    async function handleEndSession() {
+    const handleEndSession = async () => {
         if (!task) return;
 
-        await fetch(TASK_URL.concat(`/end-pomodoro/${task.taskId}`), {
-            method: "POST"
-        });
-    }
+        setIsLoading(true);
+        try {
+            await taskService.endPomodoro(task.taskId);
+            setStatus(null);
+        } catch (error) {
+            console.error('Error ending session:', error);
+            setConnectionError(error instanceof Error ? error.message : 'Failed to end session');
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     const connectWebSocket = useCallback(() => {
         if (stompClientRef.current?.active) {
@@ -204,7 +199,7 @@ export function PomodoroTimer({task}: Props) {
     }, [task?.taskId, isConnected, subscribeToTask]);
 
     const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-        const {name, value} = event.target;
+        const { name, value } = event.target;
         setFormData(prev => ({
             ...prev,
             [name]: Number(value)
@@ -212,29 +207,33 @@ export function PomodoroTimer({task}: Props) {
     };
 
     const startPomodoro = async () => {
+        if (!task) {
+            setConnectionError('No task selected');
+            return;
+        }
+
         if (!isConnected) {
             setConnectionError('Cannot start Pomodoro: WebSocket not connected');
             return;
         }
 
+        setIsLoading(true);
         try {
             console.log('Starting pomodoro with data:', formData);
-            const response = await fetch(TASK_URL.concat('/start-pomodoro'), {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(formData),
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
+            await taskService.startPomodoro(
+                task.taskId,
+                formData.focusDuration,
+                formData.shortBreakDuration,
+                formData.longBreakDuration,
+                formData.numFocuses,
+                formData.longBreakCooldown
+            );
             console.log('Pomodoro started successfully');
         } catch (error) {
             console.error('Error starting pomodoro:', error);
-            setConnectionError(`Failed to start pomodoro: ${error}`);
+            setConnectionError(error instanceof Error ? error.message : 'Failed to start pomodoro');
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -246,17 +245,15 @@ export function PomodoroTimer({task}: Props) {
 
     const isBreakTime = () => {
         if (status) {
-            return !status.sessionRunning;
+            return !status.sessionActive;
         }
-        else {
-            return true;
-        }
+        return true;
     };
 
     const getProgressPercentage = () => {
         if (!status) return 0;
         const total = status.secondsPassedInSession + status.secondsUntilNextTransition;
-        return (status.secondsPassedInSession / total) * 100;
+        return total > 0 ? (status.secondsPassedInSession / total) * 100 : 0;
     };
 
     if (!task) {
@@ -273,8 +270,8 @@ export function PomodoroTimer({task}: Props) {
     }
 
     return (
-        <Box sx={{pt: 5}}>
-            <Stack spacing={3} sx={{width: '100%'}}>
+        <Box sx={{ pt: 5 }}>
+            <Stack spacing={3} sx={{ width: '100%' }}>
                 {connectionError && (
                     <Alert severity="error" onClose={() => setConnectionError(null)}>
                         {connectionError}
@@ -284,15 +281,13 @@ export function PomodoroTimer({task}: Props) {
                 {!status?.active ? (
                     <>
                         <Box sx={{ textAlign: 'center' }}>
-                            <Typography sx={{mb: 2}} variant="h5" gutterBottom>
+                            <Typography sx={{ mb: 2 }} variant="h5" gutterBottom>
                                 Pomodoro Timer
                             </Typography>
                             <TimerIcon sx={{ fontSize: 48, color: 'primary.main' }} />
-
-
                         </Box>
 
-                        <Box sx={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2}}>
+                        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
                             <TextField
                                 name="focusDuration"
                                 label="Focus (min)"
@@ -300,6 +295,7 @@ export function PomodoroTimer({task}: Props) {
                                 size="small"
                                 value={formData.focusDuration}
                                 onChange={handleInputChange}
+                                disabled={isLoading}
                             />
                             <TextField
                                 name="shortBreakDuration"
@@ -308,6 +304,7 @@ export function PomodoroTimer({task}: Props) {
                                 size="small"
                                 value={formData.shortBreakDuration}
                                 onChange={handleInputChange}
+                                disabled={isLoading}
                             />
                             <TextField
                                 name="longBreakDuration"
@@ -316,6 +313,7 @@ export function PomodoroTimer({task}: Props) {
                                 size="small"
                                 value={formData.longBreakDuration}
                                 onChange={handleInputChange}
+                                disabled={isLoading}
                             />
                             <TextField
                                 name="numFocuses"
@@ -324,6 +322,7 @@ export function PomodoroTimer({task}: Props) {
                                 size="small"
                                 value={formData.numFocuses}
                                 onChange={handleInputChange}
+                                disabled={isLoading}
                             />
                         </Box>
 
@@ -331,11 +330,11 @@ export function PomodoroTimer({task}: Props) {
                             variant="contained"
                             color="primary"
                             onClick={startPomodoro}
-                            disabled={!isConnected}
+                            disabled={!isConnected || isLoading}
                             fullWidth
-                            startIcon={<PlayArrowIcon />}
+                            startIcon={isLoading ? <CircularProgress size={20} /> : <PlayArrowIcon />}
                         >
-                            {!isConnected ? 'Connecting...' : 'Start Session'}
+                            {isLoading ? 'Starting...' : !isConnected ? 'Connecting...' : 'Start Session'}
                         </Button>
                     </>
                 ) : (
@@ -399,7 +398,7 @@ export function PomodoroTimer({task}: Props) {
                                     whiteSpace: 'nowrap',
                                 }}
                             >
-                                {status.taskName}
+                                {status.taskName || task.name}
                             </Typography>
 
                             {/* Status Chip */}
@@ -438,35 +437,38 @@ export function PomodoroTimer({task}: Props) {
                             </Typography>
 
                             {/* Controls */}
-                            {status.sessionActive  && (<Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
-                                <IconButton
-                                    onClick={handleTogglePlayPause}
-                                    color="primary"
-                                    size="large"
-                                    sx={{
-                                        backgroundColor: 'action.hover',
-                                        '&:hover': {
-                                            backgroundColor: 'action.selected',
-                                        },
-                                    }}
-                                >
-                                    {status.sessionRunning ? <PauseIcon/> : <PlayArrowIcon/>}
-                                </IconButton>
-                                <IconButton
-                                    onClick={handleEndSession}
-                                    color="error"
-                                    size="large"
-                                    sx={{
-                                        backgroundColor: 'action.hover',
-                                        '&:hover': {
-                                            backgroundColor: 'error.light',
-                                            color: 'error.contrastText',
-                                        },
-                                    }}
-                                >
-                                    <StopIcon/>
-                                </IconButton>
-                            </Box>
+                            {status.sessionActive && (
+                                <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
+                                    <IconButton
+                                        onClick={handleTogglePlayPause}
+                                        color="primary"
+                                        size="large"
+                                        disabled={isLoading}
+                                        sx={{
+                                            backgroundColor: 'action.hover',
+                                            '&:hover': {
+                                                backgroundColor: 'action.selected',
+                                            },
+                                        }}
+                                    >
+                                        {status.sessionRunning ? <PauseIcon /> : <PlayArrowIcon />}
+                                    </IconButton>
+                                    <IconButton
+                                        onClick={handleEndSession}
+                                        color="error"
+                                        size="large"
+                                        disabled={isLoading}
+                                        sx={{
+                                            backgroundColor: 'action.hover',
+                                            '&:hover': {
+                                                backgroundColor: 'error.light',
+                                                color: 'error.contrastText',
+                                            },
+                                        }}
+                                    >
+                                        <StopIcon />
+                                    </IconButton>
+                                </Box>
                             )}
                         </Box>
                     </>

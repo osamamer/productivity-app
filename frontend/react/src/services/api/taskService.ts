@@ -2,12 +2,16 @@ import { Task } from '../../types/Task';
 import { TaskToCreate } from '../../types/TaskToCreate';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
-const TASK_URL = `${API_BASE_URL}/api/v1/task`;
+const TASK_URL = `${API_BASE_URL}/api/v1/tasks`;
+const SESSION_URL = `${API_BASE_URL}/api/v1/session`;
+const POMODORO_URL = `${API_BASE_URL}/api/v1/pomodoro`;
 
 export const taskService = {
 
+    // ============ Task Queries ============
+
     async getAllMainTasks(): Promise<Task[]> {
-        const response = await fetch(`${TASK_URL}/get-all-main-tasks`);
+        const response = await fetch(`${TASK_URL}/main`);
         if (!response.ok) {
             throw new Error('Failed to fetch all tasks');
         }
@@ -15,7 +19,7 @@ export const taskService = {
     },
 
     async getTodayTasks(): Promise<Task[]> {
-        const response = await fetch(`${TASK_URL}/get-today-tasks`);
+        const response = await fetch(`${TASK_URL}/today`);
         if (!response.ok) {
             throw new Error('Failed to fetch today tasks');
         }
@@ -23,7 +27,7 @@ export const taskService = {
     },
 
     async getPastTasks(): Promise<Task[]> {
-        const response = await fetch(`${TASK_URL}/get-past-tasks`);
+        const response = await fetch(`${TASK_URL}?period=PAST`);
         if (!response.ok) {
             throw new Error('Failed to fetch past tasks');
         }
@@ -31,7 +35,7 @@ export const taskService = {
     },
 
     async getFutureTasks(): Promise<Task[]> {
-        const response = await fetch(`${TASK_URL}/get-future-tasks`);
+        const response = await fetch(`${TASK_URL}?period=FUTURE`);
         if (!response.ok) {
             throw new Error('Failed to fetch future tasks');
         }
@@ -39,9 +43,7 @@ export const taskService = {
     },
 
     async getHighestPriorityTask(): Promise<Task> {
-        const response = await fetch(
-            `${TASK_URL}/get-newest-uncompleted-highest-priority-task`
-        );
+        const response = await fetch(`${TASK_URL}/highest-priority`);
         if (!response.ok) {
             throw new Error('Failed to fetch highest priority task');
         }
@@ -49,25 +51,25 @@ export const taskService = {
     },
 
     async getSubtasks(taskId: string): Promise<Task[]> {
-        const response = await fetch(
-            `${TASK_URL}/get-subtasks/${taskId}`
-        );
+        const response = await fetch(`${TASK_URL}/${taskId}/subtasks`);
         if (!response.ok) {
             throw new Error('Failed to fetch subtasks');
         }
         return response.json();
     },
 
+    // ============ Task Mutations ============
+
     async createTask(task: TaskToCreate): Promise<Task> {
-        const response = await fetch(`${TASK_URL}/create-task`, {
+        const response = await fetch(`${TASK_URL}`, {
             method: 'POST',
             body: JSON.stringify({
-                taskName: task.name,
-                taskDescription: task.description,
-                taskPerformTime: task.scheduledPerformDateTime,
-                taskTag: task.tag,
-                taskImportance: task.importance,
-                parentTaskId: task.parentId,
+                name: task.name,
+                description: task.description,
+                scheduledPerformDateTime: task.scheduledPerformDateTime,
+                tag: task.tag,
+                importance: task.importance,
+                parentId: task.parentId,
             }),
             headers: {
                 'Content-Type': 'application/json; charset=UTF-8',
@@ -77,53 +79,92 @@ export const taskService = {
         if (!response.ok) {
             throw new Error('Failed to create task');
         }
-            return response.json();
+        return response.json();
     },
 
-
-    async toggleTaskCompletion(taskId: string): Promise<void> {
-        const response = await fetch(
-            `${TASK_URL}/toggle-task-completion/${taskId}`,
-            {
-                method: 'POST',
-            }
-        );
-        if (!response.ok) {
-            throw new Error('Failed to toggle task completion');
-        }
-    },
-
-
-    async completeTask(taskId: string): Promise<void> {
-        const response = await fetch(`${TASK_URL}/complete-task/${taskId}`, {
-            method: 'POST',
-        });
-        if (!response.ok) {
-            throw new Error('Failed to complete task');
-        }
-    },
-
-
-    async updateDescription(taskId: string, description: string): Promise<void> {
-        const response = await fetch(`${TASK_URL}/set-description`, {
-            method: 'POST',
-            body: JSON.stringify({
-                taskId,
-                taskDescription: description,
-            }),
+    async updateTask(taskId: string, updates: Partial<Task>): Promise<Task> {
+        const response = await fetch(`${TASK_URL}/${taskId}`, {
+            method: 'PATCH',
+            body: JSON.stringify(updates),
             headers: {
                 'Content-Type': 'application/json; charset=UTF-8',
             },
         });
 
         if (!response.ok) {
-            throw new Error('Failed to update description');
+            throw new Error('Failed to update task');
         }
-        else {
-            console.log("Updated description.");
+        return response.json();
+    },
+
+    async getTask(taskId: string): Promise<Task> {
+        const response = await fetch(`${TASK_URL}/${taskId}`);
+        if (!response.ok) {
+            throw new Error('Failed to fetch task');
+        }
+        return response.json();
+    },
+
+    async toggleTaskCompletion(taskId: string): Promise<Task> {
+        // Get current state, then toggle
+        const task = await this.getTask(taskId);
+        return this.updateTask(taskId, { completed: !task.completed });
+    },
+
+
+
+    async updateDescription(taskId: string, description: string): Promise<Task> {
+        return this.updateTask(taskId, { description });
+    },
+
+    async deleteTask(taskId: string): Promise<void> {
+        const response = await fetch(`${TASK_URL}/${taskId}`, {
+            method: 'DELETE',
+        });
+        if (!response.ok) {
+            throw new Error('Failed to delete task');
         }
     },
 
+    // ============ Session Operations ============
+
+    async startSession(taskId: string): Promise<void> {
+        const response = await fetch(`${SESSION_URL}/start/${taskId}`, {
+            method: 'POST',
+        });
+        if (!response.ok) {
+            throw new Error('Failed to start session');
+        }
+    },
+
+    async pauseSession(taskId: string): Promise<void> {
+        const response = await fetch(`${SESSION_URL}/pause/${taskId}`, {
+            method: 'POST',
+        });
+        if (!response.ok) {
+            throw new Error('Failed to pause session');
+        }
+    },
+
+    async unpauseSession(taskId: string): Promise<void> {
+        const response = await fetch(`${SESSION_URL}/unpause/${taskId}`, {
+            method: 'POST',
+        });
+        if (!response.ok) {
+            throw new Error('Failed to unpause session');
+        }
+    },
+
+    async endSession(taskId: string): Promise<void> {
+        const response = await fetch(`${SESSION_URL}/end/${taskId}`, {
+            method: 'POST',
+        });
+        if (!response.ok) {
+            throw new Error('Failed to end session');
+        }
+    },
+
+    // ============ Pomodoro Operations ============
 
     async startPomodoro(
         taskId: string,
@@ -133,7 +174,7 @@ export const taskService = {
         numFocuses: number,
         longBreakCooldown: number
     ): Promise<void> {
-        const response = await fetch(`${TASK_URL}/start-pomodoro`, {
+        const response = await fetch(`${POMODORO_URL}/start`, {
             method: 'POST',
             body: JSON.stringify({
                 taskId,
@@ -151,8 +192,16 @@ export const taskService = {
         if (!response.ok) {
             throw new Error('Failed to start pomodoro');
         }
-        else {
-            console.log("Started Pomodoro.");
+        console.log("Started Pomodoro.");
+    },
+
+    async endPomodoro(taskId: string): Promise<void> {
+        const response = await fetch(`${POMODORO_URL}/end/${taskId}`, {
+            method: 'POST',
+        });
+        if (!response.ok) {
+            throw new Error('Failed to end pomodoro');
         }
+        console.log("Ended Pomodoro.");
     },
 };

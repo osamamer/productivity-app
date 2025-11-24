@@ -27,14 +27,13 @@ public class SessionTest {
     @Test
     void startTaskSession() {
         Task task = createTask();
-        sessionService.startTaskSession(task.getTaskId(), false);
+        sessionService.startSession(task.getTaskId(), false);
     }
     public Task createTask() {
         NewTaskRequest taskRequest = new NewTaskRequest();
-        taskRequest.setTaskName("Do chores");
-        taskRequest.setTaskDescription("Vacuum nasty room");
-        taskRequest.setTaskPerformTime("2017-01-13T17:09:42.411");
-
-        return taskService.createNewTask(taskRequest);
+        taskRequest.setName("Do chores");
+        taskRequest.setDescription("Vacuum nasty room");
+        taskRequest.setScheduledPerformDateTime("2017-01-13T17:09:42.411");
+        return taskService.createTask(taskRequest);
     }
 }

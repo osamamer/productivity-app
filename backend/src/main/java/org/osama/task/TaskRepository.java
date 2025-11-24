@@ -2,39 +2,20 @@ package org.osama.task;
 
 import org.jetbrains.annotations.NotNull;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
-public interface TaskRepository extends JpaRepository<Task, String> {
-    @NotNull
-    List<Task> findAll();
+public interface TaskRepository extends JpaRepository<Task, String>,
+                                        JpaSpecificationExecutor<Task> {
 
-    Task findTaskByTaskId(String taskId);
-
-    List<Task> findAllByName(String name);
-    List<Task> findAllByParentIdIsNull();
-
-    List<Task> findAllByParentIdOrderByCreationDateTimeAsc(String taskId);
-
-    List<Task> findAllByCompletedIsFalseOrderByCreationDateTimeDesc();
-
-    List<Task> findAllByCreationDateOrderByCreationDateTimeDesc(LocalDate creationDate);
-
-    Task findFirstByCompletedIsFalseOrderByImportanceDescCreationDateTimeDesc();
-
-    List<Task> findAllByScheduledPerformDate(LocalDate scheduledPerformDate);
-
-    List<Task> findAllByCreationDateAndCompletedIsTrueOrderByCreationDateTimeDesc(LocalDate localDate);
+    Optional<Task> findTaskByTaskId(String taskId);
 
     void deleteTaskByTaskId(String taskId);
 
-    List<Task> findByCreationDateNot(LocalDate creationDate);
 
-    List<Task> findAllByScheduledPerformDateBeforeAndParentIdIsNullOrderByCompletedAscCreationDateTimeDesc(LocalDate performDate);
-
-    List<Task> findAllByScheduledPerformDateAfterAndParentIdIsNullOrderByCompletedAscCreationDateTimeDesc(LocalDate performDate);
-    List<Task> findAllByScheduledPerformDateAndParentIdIsNullOrderByCompletedAscCreationDateTimeDesc(LocalDate performDate);
 }
 
 
