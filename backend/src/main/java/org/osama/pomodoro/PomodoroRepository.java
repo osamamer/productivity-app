@@ -7,7 +7,7 @@ import java.util.Optional;
 
 @Repository
 public interface PomodoroRepository extends JpaRepository<Pomodoro, String> {
-    Optional<Pomodoro> findPomodoroByAssociatedTaskId(String associatedTaskId);
+    Optional<Pomodoro> findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(String associatedTaskId);
 
     Pomodoro findPomodoroByPomodoroId(String pomodoroId);
 }

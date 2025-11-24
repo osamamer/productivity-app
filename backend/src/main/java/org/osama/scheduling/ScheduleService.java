@@ -21,7 +21,7 @@ public class ScheduleService {
     }
 
     public void schedulePomoJobs(String taskId) {
-        Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskId(taskId).orElseThrow();
+        Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(taskId).orElseThrow();
         int n = 2* pomodoro.getNumFocuses() -1;
         int timeElapsed = 0;
         int breaksTaken = 0;

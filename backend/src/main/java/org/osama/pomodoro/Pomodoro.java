@@ -15,7 +15,7 @@ public class Pomodoro {
     @Column(nullable = false)
     private String pomodoroId;
 
-    @Column(nullable = false, unique = true)
+    @Column(nullable = false)
     private String associatedTaskId;
 
     @Column(nullable = false)
