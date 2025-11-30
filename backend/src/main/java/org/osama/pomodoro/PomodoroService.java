@@ -84,7 +84,7 @@ public class PomodoroService {
 
         pomodoro.setSessionRunning(false);
         String taskId = pomodoro.getAssociatedTaskId();
-        Optional<Session> activeSession = sessionRepository
+        Optional<TaskSession> activeSession = sessionRepository
                 .findSessionByAssociatedTaskIdAndActiveIsTrue(taskId);
         List<ScheduledJob> pastJobs = scheduledJobRepository
                 .findAllByScheduledIsFalseAndAssociatedTaskId(taskId);
@@ -245,7 +245,7 @@ public class PomodoroService {
             return;
         }
 
-        Optional<Session> activeSession = sessionRepository
+        Optional<TaskSession> activeSession = sessionRepository
                 .findSessionByAssociatedTaskIdAndActiveIsTrue(taskId);
         List<ScheduledJob> pastJobs = scheduledJobRepository
                 .findAllByScheduledIsFalseAndAssociatedTaskId(taskId);
@@ -270,13 +270,13 @@ public class PomodoroService {
         simpMessagingTemplate.convertAndSend("/topic/pomodoro/" + taskId, pomodoro);
     }
 
-    private long calculateSecondsPassedInSession(Optional<Session> activeSession,
+    private long calculateSecondsPassedInSession(Optional<TaskSession> activeSession,
                                                  List<ScheduledJob> pastJobs) {
         if (activeSession.isPresent()) {
-            Session session = activeSession.get();
-            long totalSeconds = session.getTotalSessionTime().toSeconds();
-            if (session.isRunning()) {
-                totalSeconds += Duration.between(session.getLastUnpauseTime(), LocalDateTime.now()).toSeconds();
+            TaskSession taskSession = activeSession.get();
+            long totalSeconds = taskSession.getTotalSessionTime().toSeconds();
+            if (taskSession.isRunning()) {
+                totalSeconds += Duration.between(taskSession.getLastUnpauseTime(), LocalDateTime.now()).toSeconds();
             }
             return totalSeconds;
         } else if (!pastJobs.isEmpty()) {

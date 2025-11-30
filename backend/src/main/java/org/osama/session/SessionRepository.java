@@ -5,16 +5,16 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.List;
 import java.util.Optional;
 
-public interface SessionRepository extends JpaRepository<Session, String> {
-    Session findSessionBySessionId(String sessionId);
-    Optional<Session> findSessionByAssociatedTaskIdAndRunningIsTrue(String taskId);
-    Optional<Session> findSessionByAssociatedTaskIdAndActiveIsTrue(String taskId);
-    List<Session> findAllByAssociatedTaskIdAndRunningIsTrue(String taskId);
-    List<Session> findAllByAssociatedTaskIdAndActiveIsTrue(String taskId);
+public interface SessionRepository extends JpaRepository<TaskSession, String> {
+    TaskSession findSessionBySessionId(String sessionId);
+    Optional<TaskSession> findSessionByAssociatedTaskIdAndRunningIsTrue(String taskId);
+    Optional<TaskSession> findSessionByAssociatedTaskIdAndActiveIsTrue(String taskId);
+    List<TaskSession> findAllByAssociatedTaskIdAndRunningIsTrue(String taskId);
+    List<TaskSession> findAllByAssociatedTaskIdAndActiveIsTrue(String taskId);
 
-    List<Session> findAllByAssociatedTaskId(String taskId);
-    List<Session> findAllByRunningIsTrue();
-    List<Session> findAllByActiveIsTrue();
+    List<TaskSession> findAllByAssociatedTaskId(String taskId);
+    List<TaskSession> findAllByRunningIsTrue();
+    List<TaskSession> findAllByActiveIsTrue();
     int countAllByAssociatedTaskIdAndActiveIsFalse(String taskId);
 
     boolean existsByAssociatedTaskIdAndRunningIsTrue(String taskId);

@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 @SpringBootTest
-public class SessionTest {
+public class TaskSessionTest {
     @Autowired
     private TaskService taskService;
     @Autowired

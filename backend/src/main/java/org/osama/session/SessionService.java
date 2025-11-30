@@ -27,63 +27,63 @@ public class SessionService {
         this.eventPublisher = eventPublisher;
     }
 
-    public Session startSession(String taskId, boolean isPomodoro) {
+    public TaskSession startSession(String taskId, boolean isPomodoro) {
         taskRepository.findTaskByTaskId(taskId)
                 .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
 
         // Validate no active session exists
-        Optional<Session> existingSession = sessionRepository
+        Optional<TaskSession> existingSession = sessionRepository
                 .findSessionByAssociatedTaskIdAndActiveIsTrue(taskId);
         if (existingSession.isPresent()) {
             throw new IllegalStateException("Cannot start a session when a task already has an active session.");
         }
 
         // Create session
-        Session session = new Session();
-        session.setSessionId(UUID.randomUUID().toString());
-        session.setAssociatedTaskId(taskId);
-        session.setStartTime(LocalDateTime.now());
-        session.setTotalSessionTime(Duration.ZERO);
-        session.setLastUnpauseTime(session.getStartTime());
-        session.setActive(true);
-        session.setRunning(true);
-        session.setPomodoro(isPomodoro);
+        TaskSession taskSession = new TaskSession();
+        taskSession.setSessionId(UUID.randomUUID().toString());
+        taskSession.setAssociatedTaskId(taskId);
+        taskSession.setStartTime(LocalDateTime.now());
+        taskSession.setTotalSessionTime(Duration.ZERO);
+        taskSession.setLastUnpauseTime(taskSession.getStartTime());
+        taskSession.setActive(true);
+        taskSession.setRunning(true);
+        taskSession.setPomodoro(isPomodoro);
 
-        Session savedSession = sessionRepository.save(session);
-        log.info("Started session [{}] for task [{}]", savedSession.getSessionId(), taskId);
+        TaskSession savedTaskSession = sessionRepository.save(taskSession);
+        log.info("Started session [{}] for task [{}]", savedTaskSession.getSessionId(), taskId);
 
         // Publish event (Pomodoro will listen to this)
         eventPublisher.publishEvent(new SessionStartedEvent(
                 taskId,
-                savedSession.getSessionId(),
+                savedTaskSession.getSessionId(),
                 isPomodoro,
                 LocalDateTime.now()
         ));
 
-        return savedSession;
+        return savedTaskSession;
     }
 
     public void pauseSession(String taskId) {
         taskRepository.findTaskByTaskId(taskId)
                 .orElseThrow(() -> new IllegalArgumentException("Cannot pause session. Task not found: " + taskId));
 
-        Session session = sessionRepository.findSessionByAssociatedTaskIdAndRunningIsTrue(taskId)
+        TaskSession taskSession = sessionRepository.findSessionByAssociatedTaskIdAndRunningIsTrue(taskId)
                 .orElseThrow(() -> new IllegalStateException("No running session found for task: " + taskId));
 
         // Update session state
-        Duration elapsedTime = Duration.between(session.getLastUnpauseTime(), LocalDateTime.now());
-        session.setRunning(false);
-        session.setTotalSessionTime(session.getTotalSessionTime().plus(elapsedTime));
-        session.setLastPauseTime(LocalDateTime.now());
-        sessionRepository.save(session);
+        Duration elapsedTime = Duration.between(taskSession.getLastUnpauseTime(), LocalDateTime.now());
+        taskSession.setRunning(false);
+        taskSession.setTotalSessionTime(taskSession.getTotalSessionTime().plus(elapsedTime));
+        taskSession.setLastPauseTime(LocalDateTime.now());
+        sessionRepository.save(taskSession);
 
-        log.info("Paused session [{}] for task [{}]", session.getSessionId(), taskId);
+        log.info("Paused session [{}] for task [{}]", taskSession.getSessionId(), taskId);
 
         // Publish event
         eventPublisher.publishEvent(new SessionPausedEvent(
                 taskId,
-                session.getSessionId(),
-                session.isPomodoro(),
+                taskSession.getSessionId(),
+                taskSession.isPomodoro(),
                 LocalDateTime.now()
         ));
     }
@@ -93,28 +93,28 @@ public class SessionService {
                 .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
 
         // Verify no running session
-        Optional<Session> runningSession = sessionRepository
+        Optional<TaskSession> runningSession = sessionRepository
                 .findSessionByAssociatedTaskIdAndRunningIsTrue(taskId);
         if (runningSession.isPresent()) {
             throw new IllegalStateException("Cannot unpause: task already has a running session.");
         }
 
-        Session session = sessionRepository.findSessionByAssociatedTaskIdAndActiveIsTrue(taskId)
+        TaskSession taskSession = sessionRepository.findSessionByAssociatedTaskIdAndActiveIsTrue(taskId)
                 .orElseThrow(() -> new IllegalStateException("No active session found for task: " + taskId));
 
-        Duration pauseDuration = Duration.between(session.getLastPauseTime(), LocalDateTime.now());
+        Duration pauseDuration = Duration.between(taskSession.getLastPauseTime(), LocalDateTime.now());
 
-        session.setRunning(true);
-        session.setLastUnpauseTime(LocalDateTime.now());
-        sessionRepository.save(session);
+        taskSession.setRunning(true);
+        taskSession.setLastUnpauseTime(LocalDateTime.now());
+        sessionRepository.save(taskSession);
 
-        log.info("Unpaused session [{}] for task [{}]", session.getSessionId(), taskId);
+        log.info("Unpaused session [{}] for task [{}]", taskSession.getSessionId(), taskId);
 
         // Publish event
         eventPublisher.publishEvent(new SessionUnpausedEvent(
                 taskId,
-                session.getSessionId(),
-                session.isPomodoro(),
+                taskSession.getSessionId(),
+                taskSession.isPomodoro(),
                 pauseDuration,
                 LocalDateTime.now()
         ));
@@ -124,29 +124,29 @@ public class SessionService {
         taskRepository.findTaskByTaskId(taskId)
                 .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
 
-        Session session = sessionRepository.findSessionByAssociatedTaskIdAndActiveIsTrue(taskId)
+        TaskSession taskSession = sessionRepository.findSessionByAssociatedTaskIdAndActiveIsTrue(taskId)
                 .orElseThrow(() -> new IllegalStateException("No active session found for task: " + taskId));
 
         // Calculate final time
-        if (session.isRunning()) {
-            Duration elapsedTime = Duration.between(session.getLastUnpauseTime(), LocalDateTime.now());
-            session.setTotalSessionTime(session.getTotalSessionTime().plus(elapsedTime));
+        if (taskSession.isRunning()) {
+            Duration elapsedTime = Duration.between(taskSession.getLastUnpauseTime(), LocalDateTime.now());
+            taskSession.setTotalSessionTime(taskSession.getTotalSessionTime().plus(elapsedTime));
         }
 
-        session.setEndTime(LocalDateTime.now());
-        session.setRunning(false);
-        session.setActive(false);
-        sessionRepository.save(session);
+        taskSession.setEndTime(LocalDateTime.now());
+        taskSession.setRunning(false);
+        taskSession.setActive(false);
+        sessionRepository.save(taskSession);
 
         log.info("Ended session [{}] for task [{}]. Total time: {}",
-                session.getSessionId(), taskId, session.getTotalSessionTime());
+                taskSession.getSessionId(), taskId, taskSession.getTotalSessionTime());
 
         // Publish event
         eventPublisher.publishEvent(new SessionEndedEvent(
                 taskId,
-                session.getSessionId(),
-                session.isPomodoro(),
-                session.getTotalSessionTime(),
+                taskSession.getSessionId(),
+                taskSession.isPomodoro(),
+                taskSession.getTotalSessionTime(),
                 LocalDateTime.now()
         ));
     }

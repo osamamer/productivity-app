@@ -3,14 +3,13 @@ package org.osama.task;
 
 import org.osama.requests.UpdateTaskRequest;
 import org.osama.requests.NewTaskRequest;
-import org.osama.session.Session;
+import org.osama.session.TaskSession;
 import org.osama.session.SessionRepository;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.*;
@@ -50,9 +49,9 @@ public class TaskService {
     }
     public Duration getAccumulatedTime(String taskId) {
         Duration totalDuration = Duration.ZERO;
-        List<Session> sessionList = sessionRepository.findAllByAssociatedTaskId(taskId);
-        for (Session session : sessionList) {
-            totalDuration = totalDuration.plus(session.getTotalSessionTime());
+        List<TaskSession> taskSessionList = sessionRepository.findAllByAssociatedTaskId(taskId);
+        for (TaskSession taskSession : taskSessionList) {
+            totalDuration = totalDuration.plus(taskSession.getTotalSessionTime());
         }
         return totalDuration;
     }

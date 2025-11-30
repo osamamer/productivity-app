@@ -15,7 +15,7 @@ import java.time.LocalDateTime;
 @Data
 @NoArgsConstructor
 @Entity
-public class Session {
+public class TaskSession {
     @Id
     @Column(nullable = false)
     private String sessionId;
