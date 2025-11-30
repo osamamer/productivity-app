@@ -22,7 +22,7 @@ const formatTime = (dateTime: string): string => {
 
     // Within a week (future or past)
     const daysDiff = Math.floor((taskDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-    if (Math.abs(daysDiff) <= 7) {
+    if (Math.abs(daysDiff) < 7) {
         const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
         return dayNames[date.getDay()];
     }

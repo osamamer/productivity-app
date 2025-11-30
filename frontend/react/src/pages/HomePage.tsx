@@ -166,10 +166,7 @@ export function HomePage() {
                          }}
                     >
                         <TodayBox handleOpenDialog={handleOpen}/>
-                        <HighestPriorityTaskBox tasks={allTasks}/>
-
-
-                        {/*{allTasks.length > 0 && ( <PomodoroTimer tasks={allTasks}/>)}*/}
+                        {allTasks.length > 0 && (<HighestPriorityTaskBox tasks={allTasks}/>)}
                     </Box>
 
 

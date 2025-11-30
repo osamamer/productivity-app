@@ -6,10 +6,10 @@ import {Box, Card, Typography} from "@mui/material";
 import {HoverCardBox} from "./HoverCardBox";
 
 const ROOT_URL = "http://localhost:8080";
-const TASK_URL = ROOT_URL.concat("/api/v1/task");
+const TASK_URL = ROOT_URL.concat("/api/v1/tasks");
 
 async function fetchHighestPriorityTask(): Promise<Task> {
-    const response = await fetch(TASK_URL.concat('/get-newest-uncompleted-highest-priority-task'), {
+    const response = await fetch(TASK_URL.concat('/highest-priority'), {
         method: "GET"
     });
     return response.json();
