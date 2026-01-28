@@ -11,13 +11,13 @@ import {
     CircularProgress,
     Chip,
 } from '@mui/material';
-import { HoverCardBox } from './box/HoverCardBox';
+import { HoverCardBox } from '../box/HoverCardBox.tsx';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
 import StopIcon from '@mui/icons-material/Stop';
 import TimerIcon from '@mui/icons-material/Timer';
 import FreeBreakfastIcon from '@mui/icons-material/FreeBreakfast';
-import { taskService } from '../services/api'; // Import the service
+import { taskService } from '../../services/api'; // Import the service
 
 interface Task {
     taskId: string;
@@ -45,12 +45,11 @@ interface PomodoroFormData {
 }
 
 interface Props {
-    task: Task | null;
 }
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8080/ws';
 
-export function PomodoroTimer({ task }: Props) {
+export function CustomTimer({  }: Props) {
     const [status, setStatus] = useState<Pomodoro | null>(null);
     const [isConnected, setIsConnected] = useState(false);
     const [connectionError, setConnectionError] = useState<string | null>(null);
@@ -478,4 +477,4 @@ export function PomodoroTimer({ task }: Props) {
     );
 }
 
-export default PomodoroTimer;
+export default CustomTimer;

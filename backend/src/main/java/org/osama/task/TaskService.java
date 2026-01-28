@@ -3,8 +3,8 @@ package org.osama.task;
 
 import org.osama.requests.UpdateTaskRequest;
 import org.osama.requests.NewTaskRequest;
-import org.osama.session.TaskSession;
-import org.osama.session.SessionRepository;
+import org.osama.session.task.TaskSession;
+import org.osama.session.task.TaskSessionRepository;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
@@ -17,11 +17,11 @@ import java.util.*;
 @Service
 public class TaskService {
     private final TaskRepository taskRepository;
-    private final SessionRepository sessionRepository;
+    private final TaskSessionRepository taskSessionRepository;
 
-    public TaskService(TaskRepository taskRepository, SessionRepository sessionRepository) {
+    public TaskService(TaskRepository taskRepository, TaskSessionRepository taskSessionRepository) {
         this.taskRepository = taskRepository;
-        this.sessionRepository = sessionRepository;
+        this.taskSessionRepository = taskSessionRepository;
     }
 
     public List<Task> findTasks(TaskQuery query) {
@@ -49,7 +49,7 @@ public class TaskService {
     }
     public Duration getAccumulatedTime(String taskId) {
         Duration totalDuration = Duration.ZERO;
-        List<TaskSession> taskSessionList = sessionRepository.findAllByAssociatedTaskId(taskId);
+        List<TaskSession> taskSessionList = taskSessionRepository.findAllByAssociatedTaskId(taskId);
         for (TaskSession taskSession : taskSessionList) {
             totalDuration = totalDuration.plus(taskSession.getTotalSessionTime());
         }

@@ -7,7 +7,7 @@ import org.osama.scheduling.ScheduledJob;
 import org.osama.scheduling.ScheduledJobRepository;
 import org.osama.scheduling.TimedExecutorService;
 import org.osama.requests.NewTaskRequest;
-import org.osama.session.SessionService;
+import org.osama.session.task.TaskSessionService;
 import org.osama.task.Task;
 import org.osama.task.TaskService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,7 +31,7 @@ public class PomoTest {
     @Autowired
     private TaskService taskService;
     @Autowired
-    private SessionService sessionService;
+    private TaskSessionService taskSessionService;
     @Autowired
     private PomodoroService pomodoroService;
 
@@ -58,9 +58,9 @@ public class PomoTest {
         pomodoroService.startPomodoro(task.getTaskId(), focusDuration, shortBreakDuration, longBreakDuration, numFocuses, longBreakCooldown);
         List<LocalDateTime> oldDueDates = scheduledJobRepository.findAllByAssociatedTaskId(task.getTaskId()).stream().map(ScheduledJob::getDueDate).toList();;
         Thread.sleep(1000);
-        sessionService.pauseSession(task.getTaskId());
+        taskSessionService.pauseSession(task.getTaskId());
         Thread.sleep(pauseTime);
-        sessionService.unpauseSession(task.getTaskId());
+        taskSessionService.unpauseSession(task.getTaskId());
         List<LocalDateTime> newDueDates = scheduledJobRepository.findAllByAssociatedTaskId(task.getTaskId()).stream().map(ScheduledJob::getDueDate).toList();
         for (LocalDateTime date:newDueDates) {
             System.out.println(date);

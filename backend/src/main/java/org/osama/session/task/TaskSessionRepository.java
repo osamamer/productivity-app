@@ -1,11 +1,10 @@
-package org.osama.session;
+package org.osama.session.task;
 
 import org.springframework.data.jpa.repository.JpaRepository;
-
 import java.util.List;
 import java.util.Optional;
 
-public interface SessionRepository extends JpaRepository<TaskSession, String> {
+public interface TaskSessionRepository extends JpaRepository<TaskSession, String> {
     TaskSession findSessionBySessionId(String sessionId);
     Optional<TaskSession> findSessionByAssociatedTaskIdAndRunningIsTrue(String taskId);
     Optional<TaskSession> findSessionByAssociatedTaskIdAndActiveIsTrue(String taskId);

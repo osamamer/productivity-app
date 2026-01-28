@@ -1,4 +1,4 @@
-package org.osama.session;
+package org.osama.session.task;
 
 import lombok.extern.slf4j.Slf4j;
 import org.osama.session.events.SessionEndedEvent;
@@ -15,15 +15,15 @@ import java.util.UUID;
 
 @Slf4j
 @Service
-public class SessionService {
+public class TaskSessionService {
     private final TaskRepository taskRepository;
-    private final SessionRepository sessionRepository;
+    private final TaskSessionRepository taskSessionRepository;
     private final ApplicationEventPublisher eventPublisher;
 
-    public SessionService(TaskRepository taskRepository,
-                          SessionRepository sessionRepository, ApplicationEventPublisher eventPublisher) {
+    public TaskSessionService(TaskRepository taskRepository,
+                              TaskSessionRepository taskSessionRepository, ApplicationEventPublisher eventPublisher) {
         this.taskRepository = taskRepository;
-        this.sessionRepository = sessionRepository;
+        this.taskSessionRepository = taskSessionRepository;
         this.eventPublisher = eventPublisher;
     }
 
@@ -32,7 +32,7 @@ public class SessionService {
                 .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
 
         // Validate no active session exists
-        Optional<TaskSession> existingSession = sessionRepository
+        Optional<TaskSession> existingSession = taskSessionRepository
                 .findSessionByAssociatedTaskIdAndActiveIsTrue(taskId);
         if (existingSession.isPresent()) {
             throw new IllegalStateException("Cannot start a session when a task already has an active session.");
@@ -49,7 +49,7 @@ public class SessionService {
         taskSession.setRunning(true);
         taskSession.setPomodoro(isPomodoro);
 
-        TaskSession savedTaskSession = sessionRepository.save(taskSession);
+        TaskSession savedTaskSession = taskSessionRepository.save(taskSession);
         log.info("Started session [{}] for task [{}]", savedTaskSession.getSessionId(), taskId);
 
         // Publish event (Pomodoro will listen to this)
@@ -67,7 +67,7 @@ public class SessionService {
         taskRepository.findTaskByTaskId(taskId)
                 .orElseThrow(() -> new IllegalArgumentException("Cannot pause session. Task not found: " + taskId));
 
-        TaskSession taskSession = sessionRepository.findSessionByAssociatedTaskIdAndRunningIsTrue(taskId)
+        TaskSession taskSession = taskSessionRepository.findSessionByAssociatedTaskIdAndRunningIsTrue(taskId)
                 .orElseThrow(() -> new IllegalStateException("No running session found for task: " + taskId));
 
         // Update session state
@@ -75,7 +75,7 @@ public class SessionService {
         taskSession.setRunning(false);
         taskSession.setTotalSessionTime(taskSession.getTotalSessionTime().plus(elapsedTime));
         taskSession.setLastPauseTime(LocalDateTime.now());
-        sessionRepository.save(taskSession);
+        taskSessionRepository.save(taskSession);
 
         log.info("Paused session [{}] for task [{}]", taskSession.getSessionId(), taskId);
 
@@ -93,20 +93,20 @@ public class SessionService {
                 .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
 
         // Verify no running session
-        Optional<TaskSession> runningSession = sessionRepository
+        Optional<TaskSession> runningSession = taskSessionRepository
                 .findSessionByAssociatedTaskIdAndRunningIsTrue(taskId);
         if (runningSession.isPresent()) {
             throw new IllegalStateException("Cannot unpause: task already has a running session.");
         }
 
-        TaskSession taskSession = sessionRepository.findSessionByAssociatedTaskIdAndActiveIsTrue(taskId)
+        TaskSession taskSession = taskSessionRepository.findSessionByAssociatedTaskIdAndActiveIsTrue(taskId)
                 .orElseThrow(() -> new IllegalStateException("No active session found for task: " + taskId));
 
         Duration pauseDuration = Duration.between(taskSession.getLastPauseTime(), LocalDateTime.now());
 
         taskSession.setRunning(true);
         taskSession.setLastUnpauseTime(LocalDateTime.now());
-        sessionRepository.save(taskSession);
+        taskSessionRepository.save(taskSession);
 
         log.info("Unpaused session [{}] for task [{}]", taskSession.getSessionId(), taskId);
 
@@ -124,7 +124,7 @@ public class SessionService {
         taskRepository.findTaskByTaskId(taskId)
                 .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
 
-        TaskSession taskSession = sessionRepository.findSessionByAssociatedTaskIdAndActiveIsTrue(taskId)
+        TaskSession taskSession = taskSessionRepository.findSessionByAssociatedTaskIdAndActiveIsTrue(taskId)
                 .orElseThrow(() -> new IllegalStateException("No active session found for task: " + taskId));
 
         // Calculate final time
@@ -136,7 +136,7 @@ public class SessionService {
         taskSession.setEndTime(LocalDateTime.now());
         taskSession.setRunning(false);
         taskSession.setActive(false);
-        sessionRepository.save(taskSession);
+        taskSessionRepository.save(taskSession);
 
         log.info("Ended session [{}] for task [{}]. Total time: {}",
                 taskSession.getSessionId(), taskId, taskSession.getTotalSessionTime());

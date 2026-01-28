@@ -10,6 +10,8 @@ import {BrowserRouter as Router, Routes, Route, Link} from "react-router-dom";
 import {HomePage} from "./pages/HomePage.jsx";
 import {CalendarPage} from "./pages/CalendarPage.jsx";
 import {TaskPage} from "./pages/TaskPage.jsx";
+import {MeditationPage} from "./pages/MeditationPage.jsx";
+
 
 import { AppThemeProvider } from './contexts/ThemeContext';
 import {TaskProvider} from "./contexts/TaskContext.tsx";
@@ -25,6 +27,7 @@ function App() {
                     <Routes>
                         <Route exact path="/" element={<HomePage/>}/>
                         <Route exact path="/calendar" element={<CalendarPage/>}/>
+                        <Route exact path="/meditation" element={<MeditationPage/>}/>
                         <Route exact path="/tasks" element={<TaskPage/>}/>
                         <Route exact path="/stats" element={<StatsPage/>}/>
 

@@ -1,34 +1,35 @@
 package org.osama.session;
 
+import org.osama.session.task.TaskSessionService;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/v1/session")
 @CrossOrigin(origins = "http://localhost:5173")
 public class SessionController {
-    private final SessionService sessionService;
+    private final TaskSessionService taskSessionService;
 
-    public SessionController(SessionService sessionService) {
-        this.sessionService = sessionService;
+    public SessionController(TaskSessionService taskSessionService) {
+        this.taskSessionService = taskSessionService;
     }
 
     @PostMapping("/start/{taskId}")
     public void startTaskSession(@PathVariable String taskId) {
-        sessionService.startSession(taskId, false);
+        taskSessionService.startSession(taskId, false);
     }
 
     @PostMapping("/pause/{taskId}")
     public void pauseTaskSession(@PathVariable String taskId) {
-        sessionService.pauseSession(taskId);
+        taskSessionService.pauseSession(taskId);
     }
 
     @PostMapping("/unpause/{taskId}")
     public void unpauseTaskSession(@PathVariable String taskId) {
-        sessionService.unpauseSession(taskId);
+        taskSessionService.unpauseSession(taskId);
     }
 
     @PostMapping("/end/{taskId}")
     public void endTaskSession(@PathVariable String taskId) {
-        sessionService.endSession(taskId);
+        taskSessionService.endSession(taskId);
     }
 }

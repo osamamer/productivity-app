@@ -6,58 +6,51 @@ import com.fasterxml.jackson.datatype.jsr310.deser.LocalDateTimeDeserializer;
 import com.fasterxml.jackson.datatype.jsr310.ser.LocalDateTimeSerializer;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
+import jakarta.persistence.MappedSuperclass;
+import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import lombok.experimental.SuperBuilder;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+
 @Data
+@MappedSuperclass
+@SuperBuilder
 @NoArgsConstructor
-@Entity
-public class TaskSession {
-    @Id
-    @Column(nullable = false)
-    private String sessionId;
+@AllArgsConstructor
+public abstract class Session {
 
     @Column(nullable = false)
-    private String associatedTaskId;
+    protected boolean running;
+
+    @Column(nullable = false)
+    protected boolean active; // isRunning means that it is currently on, isActive means that it is either currently on or paused.
 
     @Column
-    private String associatedPomodoroId;
-
-    @Column(nullable = false)
-    private boolean running;
-
-    @Column(nullable = false)
-    private boolean active; // isRunning means that it is currently on, isActive means that it is either currently on or paused.
-
-    @Column
-    private Duration totalSessionTime;
+    protected Duration totalSessionTime;
 
     @Column
     @JsonSerialize(using = LocalDateTimeSerializer.class)
     @JsonDeserialize(using = LocalDateTimeDeserializer.class)
-    private LocalDateTime startTime;
+    protected LocalDateTime startTime;
 
     @Column
     @JsonSerialize(using = LocalDateTimeSerializer.class)
     @JsonDeserialize(using = LocalDateTimeDeserializer.class)
-    private LocalDateTime lastUnpauseTime;
+    protected LocalDateTime lastUnpauseTime;
 
     @Column
     @JsonSerialize(using = LocalDateTimeSerializer.class)
     @JsonDeserialize(using = LocalDateTimeDeserializer.class)
-    private LocalDateTime lastPauseTime;
+    protected LocalDateTime lastPauseTime;
 
     @Column
     @JsonSerialize(using = LocalDateTimeSerializer.class)
     @JsonDeserialize(using = LocalDateTimeDeserializer.class)
-    private LocalDateTime endTime;
+    protected LocalDateTime endTime;
 
     @Column
-    private boolean pomodoro;
-
-
-
+    protected boolean pomodoro;
 }

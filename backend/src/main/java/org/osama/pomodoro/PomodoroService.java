@@ -5,11 +5,13 @@ import org.osama.scheduling.ScheduleService;
 import org.osama.scheduling.ScheduledJob;
 import org.osama.scheduling.ScheduledJobRepository;
 import org.osama.scheduling.SchedulerConfig;
-import org.osama.session.*;
 import org.osama.session.events.SessionEndedEvent;
 import org.osama.session.events.SessionPausedEvent;
 import org.osama.session.events.SessionStartedEvent;
 import org.osama.session.events.SessionUnpausedEvent;
+import org.osama.session.task.TaskSession;
+import org.osama.session.task.TaskSessionRepository;
+import org.osama.session.task.TaskSessionService;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import java.time.Duration;
@@ -25,28 +27,28 @@ import org.springframework.context.event.EventListener;
 public class PomodoroService {
     private final PomodoroRepository pomodoroRepository;
     private final ScheduledJobRepository scheduledJobRepository;
-    private final SessionRepository sessionRepository;
+    private final TaskSessionRepository taskSessionRepository;
     private final ScheduleService scheduleService;
     private final SchedulerConfig schedulerConfig;
     private final SimpMessagingTemplate simpMessagingTemplate;
-    private final SessionService sessionService;
+    private final TaskSessionService taskSessionService;
 
     private final Map<String, ScheduledFuture<?>> statusUpdateTasks = new ConcurrentHashMap<>();
 
     public PomodoroService(PomodoroRepository pomodoroRepository,
                            ScheduledJobRepository scheduledJobRepository,
-                           SessionRepository sessionRepository,
+                           TaskSessionRepository taskSessionRepository,
                            ScheduleService scheduleService,
                            SchedulerConfig schedulerConfig,
                            SimpMessagingTemplate simpMessagingTemplate,
-                           SessionService sessionService) {
+                           TaskSessionService taskSessionService) {
         this.pomodoroRepository = pomodoroRepository;
         this.scheduledJobRepository = scheduledJobRepository;
-        this.sessionRepository = sessionRepository;
+        this.taskSessionRepository = taskSessionRepository;
         this.scheduleService = scheduleService;
         this.schedulerConfig = schedulerConfig;
         this.simpMessagingTemplate = simpMessagingTemplate;
-        this.sessionService = sessionService;
+        this.taskSessionService = taskSessionService;
     }
 
     // ============ Event Listeners ============
@@ -84,7 +86,7 @@ public class PomodoroService {
 
         pomodoro.setSessionRunning(false);
         String taskId = pomodoro.getAssociatedTaskId();
-        Optional<TaskSession> activeSession = sessionRepository
+        Optional<TaskSession> activeSession = taskSessionRepository
                 .findSessionByAssociatedTaskIdAndActiveIsTrue(taskId);
         List<ScheduledJob> pastJobs = scheduledJobRepository
                 .findAllByScheduledIsFalseAndAssociatedTaskId(taskId);
@@ -159,7 +161,7 @@ public class PomodoroService {
                 longBreakDuration, numFocuses, longBreakCooldown);
 
         scheduleService.schedulePomoJobs(taskId);
-        sessionService.startSession(taskId, true);
+        taskSessionService.startSession(taskId, true);
         startPomodoroUpdates(taskId);
     }
 
@@ -170,7 +172,7 @@ public class PomodoroService {
             return;
         }
 
-        sessionService.endSession(taskId);
+        taskSessionService.endSession(taskId);
 
         sendAsyncUpdate(taskId);
 
@@ -245,7 +247,7 @@ public class PomodoroService {
             return;
         }
 
-        Optional<TaskSession> activeSession = sessionRepository
+        Optional<TaskSession> activeSession = taskSessionRepository
                 .findSessionByAssociatedTaskIdAndActiveIsTrue(taskId);
         List<ScheduledJob> pastJobs = scheduledJobRepository
                 .findAllByScheduledIsFalseAndAssociatedTaskId(taskId);

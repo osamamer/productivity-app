@@ -6,7 +6,7 @@ import CheckIcon from '@mui/icons-material/Check';
 import AdjustIcon from '@mui/icons-material/Adjust';
 import EditableField from "../input/EditableField.tsx";
 import {HoverCardBox} from "./HoverCardBox";
-import PomodoroTimer from "../PomodoroTimer";
+import PomodoroTimer from "../timer/PomodoroTimer.tsx";
 import DensityMediumRoundedIcon from '@mui/icons-material/DensityMediumRounded';
 import List from '@mui/material/List';
 import {SmartTaskInput} from "../input/SmartTaskInput.tsx";
