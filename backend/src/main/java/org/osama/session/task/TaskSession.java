@@ -4,11 +4,13 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 import org.osama.session.Session;
 
 @Data
 @NoArgsConstructor
+@EqualsAndHashCode(callSuper = true)
 @Entity
 public class TaskSession extends Session {
     @Id

@@ -1,0 +1,67 @@
+databaseChangeLog:
+  - changeSet:
+      id: 002-create-task-session-table
+      author: osama
+      comment: Create task_session table for task-related sessions
+      changes:
+        - createTable:
+            tableName: task_session
+            columns:
+              # Primary key (note: different name than MeditationSession!)
+              - column:
+                  name: session_id
+                  type: varchar(255)
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+
+              # Session base fields (from Session @MappedSuperclass)
+              - column:
+                  name: running
+                  type: boolean
+                  constraints:
+                    nullable: false
+                  defaultValueBoolean: false
+              - column:
+                  name: active
+                  type: boolean
+                  constraints:
+                    nullable: false
+                  defaultValueBoolean: false
+              - column:
+                  name: total_session_time
+                  type: numeric(21,0)
+                  remarks: Duration stored as nanoseconds
+              - column:
+                  name: start_time
+                  type: timestamp
+              - column:
+                  name: last_unpause_time
+                  type: timestamp
+              - column:
+                  name: last_pause_time
+                  type: timestamp
+              - column:
+                  name: end_time
+                  type: timestamp
+              - column:
+                  name: pomodoro
+                  type: boolean
+                  constraints:
+                    nullable: false
+                  defaultValueBoolean: false
+
+              # Task-specific fields
+              - column:
+                  name: associated_task_id
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+                  remarks: ID of the associated task
+              - column:
+                  name: associated_pomodoro_id
+                  type: varchar(255)
+                  remarks: ID of the associated pomodoro session if applicable
+      rollback:
+        - dropTable:
+            tableName: task_session

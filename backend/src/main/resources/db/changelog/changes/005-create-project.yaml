@@ -1,0 +1,31 @@
+databaseChangeLog:
+  - changeSet:
+      id: 005-create-project-table
+      author: osama
+      comment: Create project table for organizing tasks
+      changes:
+        - createTable:
+            tableName: project
+            columns:
+              - column:
+                  name: project_id
+                  type: varchar(255)
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: creation_date_time
+                  type: timestamp
+                  constraints:
+                    nullable: false
+              - column:
+                  name: name
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: text
+      rollback:
+        - dropTable:
+            tableName: project

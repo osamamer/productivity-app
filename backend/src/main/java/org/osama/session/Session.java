@@ -50,7 +50,4 @@ public abstract class Session {
     @JsonSerialize(using = LocalDateTimeSerializer.class)
     @JsonDeserialize(using = LocalDateTimeDeserializer.class)
     protected LocalDateTime endTime;
-
-    @Column
-    protected boolean pomodoro;
 }

@@ -1,0 +1,80 @@
+databaseChangeLog:
+  - changeSet:
+      id: 001-create-meditation-session-table
+      author: osama
+      comment: Create meditation_session table with all session fields
+      changes:
+        - createTable:
+            tableName: meditation_session
+            columns:
+              # Primary key
+              - column:
+                  name: id
+                  type: varchar(255)
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+
+              # Session base fields (from Session @MappedSuperclass)
+              - column:
+                  name: running
+                  type: boolean
+                  constraints:
+                    nullable: false
+                  defaultValueBoolean: false
+              - column:
+                  name: active
+                  type: boolean
+                  constraints:
+                    nullable: false
+                  defaultValueBoolean: false
+              - column:
+                  name: total_session_time
+                  type: numeric(21,0)
+                  remarks: Duration stored as nanoseconds
+              - column:
+                  name: start_time
+                  type: timestamp
+              - column:
+                  name: last_unpause_time
+                  type: timestamp
+              - column:
+                  name: last_pause_time
+                  type: timestamp
+              - column:
+                  name: end_time
+                  type: timestamp
+
+
+              # Meditation-specific fields
+              - column:
+                  name: mood_before
+                  type: integer
+                  constraints:
+                    nullable: false
+                  defaultValueNumeric: 0
+                  remarks: Mood rating before meditation (1-10)
+              - column:
+                  name: mood_after
+                  type: integer
+                  constraints:
+                    nullable: false
+                  defaultValueNumeric: 0
+                  remarks: Mood rating after meditation (1-10)
+              - column:
+                  name: num_interval_bells
+                  type: integer
+                  constraints:
+                    nullable: false
+                  defaultValueNumeric: 0
+                  remarks: Number of interval bells during session
+              - column:
+                  name: intended_length
+                  type: integer
+                  constraints:
+                    nullable: false
+                  defaultValueNumeric: 0
+                  remarks: Intended session length in seconds
+      rollback:
+        - dropTable:
+            tableName: meditation_session

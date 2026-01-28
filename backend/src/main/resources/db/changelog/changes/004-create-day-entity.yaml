@@ -1,0 +1,33 @@
+databaseChangeLog:
+  - changeSet:
+      id: 004-create-day-entity-table
+      author: osama
+      comment: Create day_entity table for daily planning and ratings
+      changes:
+        - createTable:
+            tableName: day_entity
+            columns:
+              - column:
+                  name: id
+                  type: varchar(255)
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: rating
+                  type: double precision
+                  defaultValueNumeric: 0.0
+              - column:
+                  name: plan
+                  type: text
+              - column:
+                  name: summary
+                  type: text
+              - column:
+                  name: local_date
+                  type: date
+                  constraints:
+                    unique: true
+      rollback:
+        - dropTable:
+            tableName: day_entity

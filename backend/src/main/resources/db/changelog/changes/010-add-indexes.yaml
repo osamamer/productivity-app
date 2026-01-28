@@ -1,0 +1,96 @@
+databaseChangeLog:
+  # Indexes for Task table
+  - changeSet:
+      id: 010-add-task-indexes
+      author: osama
+      comment: Add indexes for common task queries
+      changes:
+        - createIndex:
+            tableName: task
+            indexName: idx_task_completed
+            columns:
+              - column:
+                  name: completed
+        - createIndex:
+            tableName: task
+            indexName: idx_task_project_id
+            columns:
+              - column:
+                  name: project_id
+        - createIndex:
+            tableName: task
+            indexName: idx_task_parent_id
+            columns:
+              - column:
+                  name: parent_id
+        - createIndex:
+            tableName: task
+            indexName: idx_task_scheduled_date
+            columns:
+              - column:
+                  name: scheduled_perform_date_time
+        - createIndex:
+            tableName: task
+            indexName: idx_task_importance
+            columns:
+              - column:
+                  name: importance
+                  descending: true
+        - createIndex:
+            tableName: task
+            indexName: idx_task_tag
+            columns:
+              - column:
+                  name: tag
+
+  # Indexes for Reminder table
+  - changeSet:
+      id: 010-add-reminder-indexes
+      author: osama
+      comment: Add indexes for reminder queries
+      changes:
+        - createIndex:
+            tableName: reminder
+            indexName: idx_reminder_task_id
+            columns:
+              - column:
+                  name: task_id
+        - createIndex:
+            tableName: reminder
+            indexName: idx_reminder_date_time
+            columns:
+              - column:
+                  name: date_time
+
+  # Indexes for Pomodoro table
+  - changeSet:
+      id: 010-add-pomodoro-indexes
+      author: osama
+      comment: Add indexes for pomodoro queries
+      changes:
+        - createIndex:
+            tableName: pomodoro
+            indexName: idx_pomodoro_task_id
+            columns:
+              - column:
+                  name: associated_task_id
+        - createIndex:
+            tableName: pomodoro
+            indexName: idx_pomodoro_active
+            columns:
+              - column:
+                  name: is_active
+
+  # Index for DayEntity
+  - changeSet:
+      id: 010-add-day-entity-index
+      author: osama
+      comment: Add index for day entity date lookups
+      changes:
+        - createIndex:
+            tableName: day_entity
+            indexName: idx_day_entity_date
+            columns:
+              - column:
+                  name: local_date
+                  descending: true

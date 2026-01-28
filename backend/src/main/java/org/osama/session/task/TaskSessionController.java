@@ -1,15 +1,14 @@
-package org.osama.session;
+package org.osama.session.task;
 
-import org.osama.session.task.TaskSessionService;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/v1/session")
 @CrossOrigin(origins = "http://localhost:5173")
-public class SessionController {
+public class TaskSessionController {
     private final TaskSessionService taskSessionService;
 
-    public SessionController(TaskSessionService taskSessionService) {
+    public TaskSessionController(TaskSessionService taskSessionService) {
         this.taskSessionService = taskSessionService;
     }
 

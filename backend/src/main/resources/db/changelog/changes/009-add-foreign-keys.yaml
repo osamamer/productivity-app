@@ -1,0 +1,114 @@
+databaseChangeLog:
+  # Foreign key: Task -> Project
+  - changeSet:
+      id: 009-add-task-project-fk
+      author: osama
+      comment: Add foreign key constraint from task to project
+      changes:
+        - addForeignKeyConstraint:
+            baseTableName: task
+            baseColumnNames: project_id
+            referencedTableName: project
+            referencedColumnNames: project_id
+            constraintName: fk_task_project
+            onDelete: SET NULL
+            onUpdate: CASCADE
+      rollback:
+        - dropForeignKeyConstraint:
+            baseTableName: task
+            constraintName: fk_task_project
+
+  # Foreign key: Task -> Task (parent-child relationship)
+  - changeSet:
+      id: 009-add-task-parent-fk
+      author: osama
+      comment: Add foreign key constraint for task parent-child relationship
+      changes:
+        - addForeignKeyConstraint:
+            baseTableName: task
+            baseColumnNames: parent_id
+            referencedTableName: task
+            referencedColumnNames: task_id
+            constraintName: fk_task_parent
+            onDelete: SET NULL
+            onUpdate: CASCADE
+      rollback:
+        - dropForeignKeyConstraint:
+            baseTableName: task
+            constraintName: fk_task_parent
+
+  # Foreign key: Reminder -> Task
+  - changeSet:
+      id: 009-add-reminder-task-fk
+      author: osama
+      comment: Add foreign key constraint from reminder to task
+      changes:
+        - addForeignKeyConstraint:
+            baseTableName: reminder
+            baseColumnNames: task_id
+            referencedTableName: task
+            referencedColumnNames: task_id
+            constraintName: fk_reminder_task
+            onDelete: CASCADE
+            onUpdate: CASCADE
+      rollback:
+        - dropForeignKeyConstraint:
+            baseTableName: reminder
+            constraintName: fk_reminder_task
+
+  # Foreign key: Pomodoro -> Task
+  - changeSet:
+      id: 009-add-pomodoro-task-fk
+      author: osama
+      comment: Add foreign key constraint from pomodoro to task
+      changes:
+        - addForeignKeyConstraint:
+            baseTableName: pomodoro
+            baseColumnNames: associated_task_id
+            referencedTableName: task
+            referencedColumnNames: task_id
+            constraintName: fk_pomodoro_task
+            onDelete: CASCADE
+            onUpdate: CASCADE
+      rollback:
+        - dropForeignKeyConstraint:
+            baseTableName: pomodoro
+            constraintName: fk_pomodoro_task
+
+  # Foreign key: TaskSession -> Task
+  - changeSet:
+      id: 009-add-task-session-task-fk
+      author: osama
+      comment: Add foreign key constraint from task_session to task
+      changes:
+        - addForeignKeyConstraint:
+            baseTableName: task_session
+            baseColumnNames: associated_task_id
+            referencedTableName: task
+            referencedColumnNames: task_id
+            constraintName: fk_task_session_task
+            onDelete: CASCADE
+            onUpdate: CASCADE
+      rollback:
+        - dropForeignKeyConstraint:
+            baseTableName: task_session
+            constraintName: fk_task_session_task
+
+  # Foreign key: TaskSession -> Pomodoro
+  - changeSet:
+      id: 009-add-task-session-pomodoro-fk
+      author: osama
+      comment: Add foreign key constraint from task_session to pomodoro
+      changes:
+        - addForeignKeyConstraint:
+            baseTableName: task_session
+            baseColumnNames: associated_pomodoro_id
+            referencedTableName: pomodoro
+            referencedColumnNames: pomodoro_id
+            constraintName: fk_task_session_pomodoro
+            onDelete: SET NULL
+            onUpdate: CASCADE
+      rollback:
+        - dropForeignKeyConstraint:
+            baseTableName: task_session
+            constraintName: fk_task_session_pomodoro

@@ -1,0 +1,88 @@
+databaseChangeLog:
+  - changeSet:
+      id: 011-create-scheduled-job-table
+      author: osama
+      comment: Create scheduled_job table for job scheduling
+      changes:
+        - createTable:
+            tableName: scheduled_job
+            columns:
+              - column:
+                  name: job_id
+                  type: varchar(255)
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: job_type
+                  type: varchar(50)
+                  constraints:
+                    nullable: false
+                  remarks: Enum stored as string - JobType values
+              - column:
+                  name: associated_task_id
+                  type: varchar(255)
+              - column:
+                  name: due_date
+                  type: timestamp
+                  constraints:
+                    nullable: false
+              - column:
+                  name: scheduled
+                  type: boolean
+                  constraints:
+                    nullable: false
+                  defaultValueBoolean: false
+      rollback:
+        - dropTable:
+            tableName: scheduled_job
+
+  # Add foreign key to task table
+  - changeSet:
+      id: 011-add-scheduled-job-task-fk
+      author: osama
+      comment: Add foreign key constraint from scheduled_job to task
+      changes:
+        - addForeignKeyConstraint:
+            baseTableName: scheduled_job
+            baseColumnNames: associated_task_id
+            referencedTableName: task
+            referencedColumnNames: task_id
+            constraintName: fk_scheduled_job_task
+            onDelete: CASCADE
+            onUpdate: CASCADE
+      rollback:
+        - dropForeignKeyConstraint:
+            baseTableName: scheduled_job
+            constraintName: fk_scheduled_job_task
+
+  # Add indexes for common queries
+  - changeSet:
+      id: 011-add-scheduled-job-indexes
+      author: osama
+      comment: Add indexes for scheduled job queries
+      changes:
+        - createIndex:
+            tableName: scheduled_job
+            indexName: idx_scheduled_job_task_id
+            columns:
+              - column:
+                  name: associated_task_id
+        - createIndex:
+            tableName: scheduled_job
+            indexName: idx_scheduled_job_due_date
+            columns:
+              - column:
+                  name: due_date
+        - createIndex:
+            tableName: scheduled_job
+            indexName: idx_scheduled_job_scheduled
+            columns:
+              - column:
+                  name: scheduled
+        - createIndex:
+            tableName: scheduled_job
+            indexName: idx_scheduled_job_type
+            columns:
+              - column:
+                  name: job_type

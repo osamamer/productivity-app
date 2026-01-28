@@ -71,13 +71,18 @@ public class TaskController {
     @PostMapping
     public ResponseEntity<Task> createTask(@RequestBody @Valid NewTaskRequest request) {
         Task task = taskService.createTask(request);
-        return ResponseEntity.status(HttpStatus.CREATED).body(task);
+        URI location = ServletUriComponentsBuilder
+                .fromCurrentRequest()
+                .path("/{id}")
+                .buildAndExpand(task.getTaskId())
+                .toUri();
+        return ResponseEntity.created(location).body(task);
     }
 
     @PatchMapping("/{taskId}")
     public ResponseEntity<Task> updateTask(
             @PathVariable String taskId,
-            @RequestBody UpdateTaskRequest request
+            @RequestBody @Valid UpdateTaskRequest request
     ) {
         return taskService.updateTask(taskId, request)
                 .map(ResponseEntity::ok)
@@ -106,12 +111,12 @@ public class TaskController {
     @PostMapping("/{taskId}/subtasks")
     public ResponseEntity<Task> createSubtask(
             @PathVariable String taskId,
-            @RequestBody NewTaskRequest request
+            @RequestBody @Valid NewTaskRequest request
     ) {
-        // Verify parent task exists
-        if (taskService.getTask(taskId).isEmpty()) {
-            return ResponseEntity.notFound().build();
-        }
+//        // Verify parent task exists
+//        if (taskService.getTask(taskId).isEmpty()) {
+//            return ResponseEntity.notFound().build();
+//        }
 
         // Set parent ID
         request.setParentId(taskId);

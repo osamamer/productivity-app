@@ -1,0 +1,69 @@
+databaseChangeLog:
+  - changeSet:
+      id: 008-create-pomodoro-table
+      author: osama
+      comment: Create pomodoro table for pomodoro timer sessions
+      changes:
+        - createTable:
+            tableName: pomodoro
+            columns:
+              - column:
+                  name: pomodoro_id
+                  type: varchar(255)
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: associated_task_id
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: is_active
+                  type: boolean
+                  constraints:
+                    nullable: false
+                  defaultValueBoolean: false
+              - column:
+                  name: is_session_active
+                  type: boolean
+                  defaultValueBoolean: false
+              - column:
+                  name: is_session_running
+                  type: boolean
+                  defaultValueBoolean: false
+              - column:
+                  name: focus_duration
+                  type: integer
+                  defaultValueNumeric: 0
+              - column:
+                  name: short_break_duration
+                  type: integer
+                  defaultValueNumeric: 0
+              - column:
+                  name: long_break_duration
+                  type: integer
+                  defaultValueNumeric: 0
+              - column:
+                  name: num_focuses
+                  type: integer
+                  defaultValueNumeric: 0
+              - column:
+                  name: long_break_cooldown
+                  type: integer
+                  defaultValueNumeric: 0
+              - column:
+                  name: current_focus_number
+                  type: integer
+                  defaultValueNumeric: 0
+              - column:
+                  name: seconds_until_next_transition
+                  type: bigint
+                  defaultValueNumeric: 0
+              - column:
+                  name: seconds_passed_in_session
+                  type: bigint
+                  defaultValueNumeric: 0
+      rollback:
+        - dropTable:
+            tableName: pomodoro

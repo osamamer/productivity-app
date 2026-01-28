@@ -1,0 +1,115 @@
+databaseChangeLog:
+  # Meditation Session Constraints
+  - changeSet:
+      id: 003-add-meditation-mood-constraints
+      author: osama
+      comment: Add check constraints for mood values in meditation_session (1-10)
+      changes:
+        - sql:
+            sql: >
+              ALTER TABLE meditation_session 
+              ADD CONSTRAINT check_mood_before 
+              CHECK (mood_before >= 1 AND mood_before <= 10)
+        - sql:
+            sql: >
+              ALTER TABLE meditation_session 
+              ADD CONSTRAINT check_mood_after 
+              CHECK (mood_after >= 0 AND mood_after <= 10)
+            remarks: mood_after can be 0 if session not completed
+      rollback:
+        - sql:
+            sql: ALTER TABLE meditation_session DROP CONSTRAINT IF EXISTS check_mood_before
+        - sql:
+            sql: ALTER TABLE meditation_session DROP CONSTRAINT IF EXISTS check_mood_after
+
+  - changeSet:
+      id: 003-add-meditation-bells-constraint
+      author: osama
+      comment: Ensure interval bells is non-negative
+      changes:
+        - sql:
+            sql: >
+              ALTER TABLE meditation_session 
+              ADD CONSTRAINT check_interval_bells 
+              CHECK (num_interval_bells >= 0)
+      rollback:
+        - sql:
+            sql: ALTER TABLE meditation_session DROP CONSTRAINT IF EXISTS check_interval_bells
+
+  - changeSet:
+      id: 003-add-meditation-length-constraint
+      author: osama
+      comment: Ensure intended length is positive
+      changes:
+        - sql:
+            sql: >
+              ALTER TABLE meditation_session 
+              ADD CONSTRAINT check_intended_length 
+              CHECK (intended_length >= 0)
+      rollback:
+        - sql:
+            sql: ALTER TABLE meditation_session DROP CONSTRAINT IF EXISTS check_intended_length
+
+  # Task Session Constraints
+  - changeSet:
+      id: 003-add-task-session-indexes
+      author: osama
+      comment: Add indexes for task session lookups
+      changes:
+        - createIndex:
+            tableName: task_session
+            indexName: idx_task_session_task_id
+            columns:
+              - column:
+                  name: associated_task_id
+        - createIndex:
+            tableName: task_session
+            indexName: idx_task_session_active
+            columns:
+              - column:
+                  name: active
+              - column:
+                  name: running
+      rollback:
+        - dropIndex:
+            tableName: task_session
+            indexName: idx_task_session_task_id
+        - dropIndex:
+            tableName: task_session
+            indexName: idx_task_session_active
+
+  # Meditation Session Indexes
+  - changeSet:
+      id: 003-add-meditation-session-indexes
+      author: osama
+      comment: Add indexes for meditation session queries
+      changes:
+        - createIndex:
+            tableName: meditation_session
+            indexName: idx_meditation_session_active
+            columns:
+              - column:
+                  name: active
+        - createIndex:
+            tableName: meditation_session
+            indexName: idx_meditation_session_running
+            columns:
+              - column:
+                  name: running
+        - createIndex:
+            tableName: meditation_session
+            indexName: idx_meditation_session_start_time
+            columns:
+              - column:
+                  name: start_time
+                  descending: true
+      rollback:
+        - dropIndex:
+            tableName: meditation_session
+            indexName: idx_meditation_session_active
+        - dropIndex:
+            tableName: meditation_session
+            indexName: idx_meditation_session_running
+        - dropIndex:
+            tableName: meditation_session
+            indexName: idx_meditation_session_start_time

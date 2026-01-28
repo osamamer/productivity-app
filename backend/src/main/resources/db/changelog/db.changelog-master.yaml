@@ -1,0 +1,30 @@
+databaseChangeLog:
+  # Session tables
+  - include:
+      file: db/changelog/changes/001-create-meditation-session.yaml
+  - include:
+      file: db/changelog/changes/002-create-task-session.yaml
+  - include:
+      file: db/changelog/changes/003-add-constraints.yaml
+
+  # Core domain tables
+  - include:
+      file: db/changelog/changes/004-create-day-entity.yaml
+  - include:
+      file: db/changelog/changes/005-create-project.yaml
+  - include:
+      file: db/changelog/changes/006-create-task.yaml
+  - include:
+      file: db/changelog/changes/007-create-reminder.yaml
+  - include:
+      file: db/changelog/changes/008-create-pomodoro.yaml
+
+  # Relationships and performance
+  - include:
+      file: db/changelog/changes/009-add-foreign-keys.yaml
+  - include:
+      file: db/changelog/changes/010-add-indexes.yaml
+
+  # Scheduling
+  - include:
+      file: db/changelog/changes/011-create-scheduled-job.yaml
