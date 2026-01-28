@@ -17,7 +17,7 @@ import PauseIcon from '@mui/icons-material/Pause';
 import StopIcon from '@mui/icons-material/Stop';
 import TimerIcon from '@mui/icons-material/Timer';
 import FreeBreakfastIcon from '@mui/icons-material/FreeBreakfast';
-import { taskService } from '../../services/api'; // Import the service
+import { taskService } from '../../services/api';
 
 interface Task {
     taskId: string;
@@ -45,11 +45,12 @@ interface PomodoroFormData {
 }
 
 interface Props {
+    task?: Task | null;
 }
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8080/ws';
 
-export function CustomTimer({  }: Props) {
+export function CustomTimer({ task }: Props) {
     const [status, setStatus] = useState<Pomodoro | null>(null);
     const [isConnected, setIsConnected] = useState(false);
     const [connectionError, setConnectionError] = useState<string | null>(null);
@@ -96,6 +97,31 @@ export function CustomTimer({  }: Props) {
             setIsLoading(false);
         }
     };
+
+    const subscribeToTask = useCallback((taskId: string) => {
+        const client = stompClientRef.current;
+        if (!client?.active) {
+            console.log('Cannot subscribe: STOMP client not active');
+            return;
+        }
+
+        const destination = `/topic/pomodoro/${taskId}`;
+        console.log(`Subscribing to ${destination}`);
+
+        try {
+            return client.subscribe(destination, (message) => {
+                try {
+                    const newStatus: Pomodoro = JSON.parse(message.body);
+                    setStatus(newStatus);
+                } catch (error) {
+                    console.error('Error parsing message:', error);
+                }
+            });
+        } catch (error) {
+            console.error('Error subscribing to task:', error);
+            setConnectionError(`Failed to subscribe: ${error}`);
+        }
+    }, []);
 
     const connectWebSocket = useCallback(() => {
         if (stompClientRef.current?.active) {
@@ -154,7 +180,7 @@ export function CustomTimer({  }: Props) {
                 client.deactivate();
             }
         };
-    }, [task?.taskId]);
+    }, [task?.taskId, subscribeToTask]);
 
     useEffect(() => {
         const cleanup = connectWebSocket();
@@ -162,31 +188,6 @@ export function CustomTimer({  }: Props) {
             cleanup?.();
         };
     }, [connectWebSocket]);
-
-    const subscribeToTask = useCallback((taskId: string) => {
-        const client = stompClientRef.current;
-        if (!client?.active) {
-            console.log('Cannot subscribe: STOMP client not active');
-            return;
-        }
-
-        const destination = `/topic/pomodoro/${taskId}`;
-        console.log(`Subscribing to ${destination}`);
-
-        try {
-            return client.subscribe(destination, (message) => {
-                try {
-                    const newStatus: Pomodoro = JSON.parse(message.body);
-                    setStatus(newStatus);
-                } catch (error) {
-                    console.error('Error parsing message:', error);
-                }
-            });
-        } catch (error) {
-            console.error('Error subscribing to task:', error);
-            setConnectionError(`Failed to subscribe: ${error}`);
-        }
-    }, []);
 
     useEffect(() => {
         if (task?.taskId && isConnected) {
@@ -295,6 +296,7 @@ export function CustomTimer({  }: Props) {
                                 value={formData.focusDuration}
                                 onChange={handleInputChange}
                                 disabled={isLoading}
+                                inputProps={{ min: 1 }}
                             />
                             <TextField
                                 name="shortBreakDuration"
@@ -304,6 +306,7 @@ export function CustomTimer({  }: Props) {
                                 value={formData.shortBreakDuration}
                                 onChange={handleInputChange}
                                 disabled={isLoading}
+                                inputProps={{ min: 1 }}
                             />
                             <TextField
                                 name="longBreakDuration"
@@ -313,6 +316,7 @@ export function CustomTimer({  }: Props) {
                                 value={formData.longBreakDuration}
                                 onChange={handleInputChange}
                                 disabled={isLoading}
+                                inputProps={{ min: 1 }}
                             />
                             <TextField
                                 name="numFocuses"
@@ -322,6 +326,7 @@ export function CustomTimer({  }: Props) {
                                 value={formData.numFocuses}
                                 onChange={handleInputChange}
                                 disabled={isLoading}
+                                inputProps={{ min: 1, max: 10 }}
                             />
                         </Box>
 
