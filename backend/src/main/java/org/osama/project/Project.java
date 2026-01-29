@@ -1,9 +1,8 @@
 package org.osama.project;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
+import jakarta.persistence.*;
 import lombok.Data;
+import org.osama.user.User;
 
 import java.time.LocalDateTime;
 
@@ -23,5 +22,11 @@ public class Project {
     @Column
     private String description;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false)
+    private User user;
+
+    @Column(name = "user_id", insertable = false, updatable = false)
+    private String userId;
 
 }

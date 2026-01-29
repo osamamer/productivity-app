@@ -1,0 +1,83 @@
+databaseChangeLog:
+  - changeSet:
+      id: 012-create-user-table
+      author: osama
+      comment: Create app_user table for user management
+      changes:
+        - createTable:
+            tableName: app_user
+            columns:
+              - column:
+                  name: id
+                  type: varchar(255)
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: keycloak_id
+                  type: varchar(255)
+                  constraints:
+                    unique: true
+              - column:
+                  name: email
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+                    unique: true
+              - column:
+                  name: first_name
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: last_name
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: username
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+                    unique: true
+              - column:
+                  name: active
+                  type: boolean
+                  constraints:
+                    nullable: false
+                  defaultValueBoolean: true
+              - column:
+                  name: created_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+              - column:
+                  name: modified_at
+                  type: timestamp
+      rollback:
+        - dropTable:
+            tableName: app_user
+
+  - changeSet:
+      id: 012-add-user-indexes
+      author: osama
+      comment: Add indexes for user lookups
+      changes:
+        - createIndex:
+            tableName: app_user
+            indexName: idx_user_email
+            columns:
+              - column:
+                  name: email
+        - createIndex:
+            tableName: app_user
+            indexName: idx_user_username
+            columns:
+              - column:
+                  name: username
+        - createIndex:
+            tableName: app_user
+            indexName: idx_user_keycloak_id
+            columns:
+              - column:
+                  name: keycloak_id

@@ -1,0 +1,299 @@
+databaseChangeLog:
+  # Add user_id to day_entity table
+  - changeSet:
+      id: 013-add-user-id-to-day-entity
+      author: osama
+      comment: Add user_id foreign key to day_entity table
+      changes:
+        - addColumn:
+            tableName: day_entity
+            columns:
+              - column:
+                  name: user_id
+                  type: varchar(255)
+                  constraints:
+                    nullable: true
+        - addForeignKeyConstraint:
+            baseTableName: day_entity
+            baseColumnNames: user_id
+            referencedTableName: app_user
+            referencedColumnNames: id
+            constraintName: fk_day_entity_user
+            onDelete: CASCADE
+            onUpdate: CASCADE
+      rollback:
+        - dropForeignKeyConstraint:
+            baseTableName: day_entity
+            constraintName: fk_day_entity_user
+        - dropColumn:
+            tableName: day_entity
+            columnName: user_id
+
+  # Add user_id to pomodoro table
+  - changeSet:
+      id: 013-add-user-id-to-pomodoro
+      author: osama
+      comment: Add user_id foreign key to pomodoro table
+      changes:
+        - addColumn:
+            tableName: pomodoro
+            columns:
+              - column:
+                  name: user_id
+                  type: varchar(255)
+                  constraints:
+                    nullable: true
+        - addForeignKeyConstraint:
+            baseTableName: pomodoro
+            baseColumnNames: user_id
+            referencedTableName: app_user
+            referencedColumnNames: id
+            constraintName: fk_pomodoro_user
+            onDelete: CASCADE
+            onUpdate: CASCADE
+      rollback:
+        - dropForeignKeyConstraint:
+            baseTableName: pomodoro
+            constraintName: fk_pomodoro_user
+        - dropColumn:
+            tableName: pomodoro
+            columnName: user_id
+
+  # Add user_id to project table
+  - changeSet:
+      id: 013-add-user-id-to-project
+      author: osama
+      comment: Add user_id foreign key to project table
+      changes:
+        - addColumn:
+            tableName: project
+            columns:
+              - column:
+                  name: user_id
+                  type: varchar(255)
+                  constraints:
+                    nullable: true
+        - addForeignKeyConstraint:
+            baseTableName: project
+            baseColumnNames: user_id
+            referencedTableName: app_user
+            referencedColumnNames: id
+            constraintName: fk_project_user
+            onDelete: CASCADE
+            onUpdate: CASCADE
+      rollback:
+        - dropForeignKeyConstraint:
+            baseTableName: project
+            constraintName: fk_project_user
+        - dropColumn:
+            tableName: project
+            columnName: user_id
+
+  # Add user_id to reminder table
+  - changeSet:
+      id: 013-add-user-id-to-reminder
+      author: osama
+      comment: Add user_id foreign key to reminder table
+      changes:
+        - addColumn:
+            tableName: reminder
+            columns:
+              - column:
+                  name: user_id
+                  type: varchar(255)
+                  constraints:
+                    nullable: true
+        - addForeignKeyConstraint:
+            baseTableName: reminder
+            baseColumnNames: user_id
+            referencedTableName: app_user
+            referencedColumnNames: id
+            constraintName: fk_reminder_user
+            onDelete: CASCADE
+            onUpdate: CASCADE
+      rollback:
+        - dropForeignKeyConstraint:
+            baseTableName: reminder
+            constraintName: fk_reminder_user
+        - dropColumn:
+            tableName: reminder
+            columnName: user_id
+
+  # Add user_id to scheduled_job table
+  - changeSet:
+      id: 013-add-user-id-to-scheduled-job
+      author: osama
+      comment: Add user_id foreign key to scheduled_job table
+      changes:
+        - addColumn:
+            tableName: scheduled_job
+            columns:
+              - column:
+                  name: user_id
+                  type: varchar(255)
+                  constraints:
+                    nullable: true
+        - addForeignKeyConstraint:
+            baseTableName: scheduled_job
+            baseColumnNames: user_id
+            referencedTableName: app_user
+            referencedColumnNames: id
+            constraintName: fk_scheduled_job_user
+            onDelete: CASCADE
+            onUpdate: CASCADE
+      rollback:
+        - dropForeignKeyConstraint:
+            baseTableName: scheduled_job
+            constraintName: fk_scheduled_job_user
+        - dropColumn:
+            tableName: scheduled_job
+            columnName: user_id
+
+  # Add user_id to meditation_session table
+  - changeSet:
+      id: 013-add-user-id-to-meditation-session
+      author: osama
+      comment: Add user_id foreign key to meditation_session table
+      changes:
+        - addColumn:
+            tableName: meditation_session
+            columns:
+              - column:
+                  name: user_id
+                  type: varchar(255)
+                  constraints:
+                    nullable: true
+        - addForeignKeyConstraint:
+            baseTableName: meditation_session
+            baseColumnNames: user_id
+            referencedTableName: app_user
+            referencedColumnNames: id
+            constraintName: fk_meditation_session_user
+            onDelete: CASCADE
+            onUpdate: CASCADE
+      rollback:
+        - dropForeignKeyConstraint:
+            baseTableName: meditation_session
+            constraintName: fk_meditation_session_user
+        - dropColumn:
+            tableName: meditation_session
+            columnName: user_id
+
+  # Add user_id to task table
+  - changeSet:
+      id: 013-add-user-id-to-task
+      author: osama
+      comment: Add user_id foreign key to task table
+      changes:
+        - addColumn:
+            tableName: task
+            columns:
+              - column:
+                  name: user_id
+                  type: varchar(255)
+                  constraints:
+                    nullable: true
+        - addForeignKeyConstraint:
+            baseTableName: task
+            baseColumnNames: user_id
+            referencedTableName: app_user
+            referencedColumnNames: id
+            constraintName: fk_task_user
+            onDelete: CASCADE
+            onUpdate: CASCADE
+      rollback:
+        - dropForeignKeyConstraint:
+            baseTableName: task
+            constraintName: fk_task_user
+        - dropColumn:
+            tableName: task
+            columnName: user_id
+
+  # Add indexes for user_id foreign keys
+  - changeSet:
+      id: 013-add-user-id-indexes
+      author: osama
+      comment: Add indexes for user_id columns
+      changes:
+        - createIndex:
+            tableName: day_entity
+            indexName: idx_day_entity_user_id
+            columns:
+              - column:
+                  name: user_id
+        - createIndex:
+            tableName: pomodoro
+            indexName: idx_pomodoro_user_id
+            columns:
+              - column:
+                  name: user_id
+        - createIndex:
+            tableName: project
+            indexName: idx_project_user_id
+            columns:
+              - column:
+                  name: user_id
+        - createIndex:
+            tableName: reminder
+            indexName: idx_reminder_user_id
+            columns:
+              - column:
+                  name: user_id
+        - createIndex:
+            tableName: scheduled_job
+            indexName: idx_scheduled_job_user_id
+            columns:
+              - column:
+                  name: user_id
+        - createIndex:
+            tableName: meditation_session
+            indexName: idx_meditation_session_user_id
+            columns:
+              - column:
+                  name: user_id
+        - createIndex:
+            tableName: task
+            indexName: idx_task_user_id
+            columns:
+              - column:
+                  name: user_id
+
+  # Add composite indexes for common query patterns
+  - changeSet:
+      id: 013-add-composite-user-indexes
+      author: osama
+      comment: Add composite indexes for common user-scoped queries
+      changes:
+        - createIndex:
+            tableName: task
+            indexName: idx_task_user_completed
+            columns:
+              - column:
+                  name: user_id
+              - column:
+                  name: completed
+        - createIndex:
+            tableName: task
+            indexName: idx_task_user_scheduled_date
+            columns:
+              - column:
+                  name: user_id
+              - column:
+                  name: scheduled_perform_date_time
+        - createIndex:
+            tableName: day_entity
+            indexName: idx_day_entity_user_date
+            unique: true
+            columns:
+              - column:
+                  name: user_id
+              - column:
+                  name: local_date
+        - createIndex:
+            tableName: pomodoro
+            indexName: idx_pomodoro_user_active
+            columns:
+              - column:
+                  name: user_id
+              - column:
+                  name: is_active

@@ -1,11 +1,10 @@
 package org.osama.session.meditation;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
+import jakarta.persistence.*;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
 import org.osama.session.Session;
+import org.osama.user.User;
 
 @Data
 @SuperBuilder
@@ -30,4 +29,10 @@ public class MeditationSession extends Session {
     @Column
     private int intendedLength;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false)
+    private User user;
+
+    @Column(name = "user_id", insertable = false, updatable = false)
+    private String userId;
 }
