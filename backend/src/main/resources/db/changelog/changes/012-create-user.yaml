@@ -65,19 +65,22 @@ databaseChangeLog:
       changes:
         - createIndex:
             tableName: app_user
-            indexName: idx_user_email
+            indexName: idx_app_user_email
+            ifNotExists: true
             columns:
               - column:
                   name: email
         - createIndex:
             tableName: app_user
-            indexName: idx_user_username
+            indexName: idx_app_user_username
+            ifNotExists: true
             columns:
               - column:
                   name: username
         - createIndex:
             tableName: app_user
-            indexName: idx_user_keycloak_id
+            indexName: idx_app_user_keycloak_id
+            ifNotExists: true
             columns:
               - column:
                   name: keycloak_id

@@ -1,0 +1,19 @@
+databaseChangeLog:
+  - changeSet:
+      id: 014-drop-day-entity-local-date-unique-constraint
+      author: osama
+      comment: Drop the single-column unique constraint on local_date now that uniqueness is enforced by the composite (user_id, local_date) index
+      preConditions:
+        - onFail: MARK_RAN
+        - uniqueConstraintExists:
+            tableName: day_entity
+            constraintName: day_entity_local_date_key
+      changes:
+        - dropUniqueConstraint:
+            tableName: day_entity
+            constraintName: day_entity_local_date_key
+      rollback:
+        - addUniqueConstraint:
+            tableName: day_entity
+            columnNames: local_date
+            constraintName: day_entity_local_date_key

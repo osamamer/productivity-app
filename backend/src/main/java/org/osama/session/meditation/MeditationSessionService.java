@@ -2,6 +2,8 @@ package org.osama.session.meditation;
 
 import jakarta.transaction.Transactional;
 import lombok.extern.slf4j.Slf4j;
+import org.osama.user.User;
+import org.osama.user.UserRepository;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
@@ -18,14 +20,17 @@ import static org.osama.constants.MeditationConstants.*;
 public class MeditationSessionService {
     private final MeditationSessionRepository meditationSessionRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final UserRepository userRepository;
 
-
-    public MeditationSessionService(MeditationSessionRepository meditationSessionRepository, ApplicationEventPublisher eventPublisher) {
+    public MeditationSessionService(MeditationSessionRepository meditationSessionRepository,
+                                    ApplicationEventPublisher eventPublisher,
+                                    UserRepository userRepository) {
         this.meditationSessionRepository = meditationSessionRepository;
         this.eventPublisher = eventPublisher;
+        this.userRepository = userRepository;
     }
 
-    public MeditationSession startSession(int mood, int numIntervalBells) {
+    public MeditationSession startSession(int mood, int numIntervalBells, String userId) {
         Optional<MeditationSession> activeSession = meditationSessionRepository.findMeditationSessionByActiveIsTrue();
         if (activeSession.isPresent()) {
             throw new IllegalStateException("Cannot start a meditation session when another is already active.");
@@ -34,6 +39,9 @@ public class MeditationSessionService {
         validateMood(mood);
         validateNumIntervalBells(numIntervalBells);
 
+        User user = userRepository.findUserById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
+
         MeditationSession session = createSession();
         session.setStartTime(LocalDateTime.now());
         session.setLastUnpauseTime(session.getStartTime());
@@ -41,6 +49,7 @@ public class MeditationSessionService {
         session.setNumIntervalBells(numIntervalBells);
         session.setActive(true);
         session.setRunning(true);
+        session.setUser(user);
         log.info("Started a meditation session with ID [{}]", session.getId());
         return meditationSessionRepository.save(session);
     }

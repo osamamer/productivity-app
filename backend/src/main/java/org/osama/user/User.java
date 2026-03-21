@@ -1,13 +1,12 @@
 package org.osama.user;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import net.bytebuddy.asm.Advice;
 
-import javax.validation.constraints.NotNull;
 import java.time.LocalDateTime;
 
 @NoArgsConstructor
@@ -16,6 +15,7 @@ import java.time.LocalDateTime;
 @Data
 @Entity
 @Table(name = "app_user")
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class User {
 
     @Id

@@ -2,6 +2,7 @@ package org.osama.task;
 
 import org.osama.requests.UpdateTaskRequest;
 import org.osama.requests.NewTaskRequest;
+import org.osama.user.CurrentUserService;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -15,12 +16,13 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/tasks")
-@CrossOrigin(origins = "http://localhost:5173")
 public class TaskController {
     private final TaskService taskService;
+    private final CurrentUserService currentUserService;
 
-    public TaskController(TaskService taskService) {
+    public TaskController(TaskService taskService, CurrentUserService currentUserService) {
         this.taskService = taskService;
+        this.currentUserService = currentUserService;
     }
 
     // ============ Main Query Endpoint ============
@@ -46,6 +48,7 @@ public class TaskController {
             @RequestParam(required = false)
             String tag
     ) {
+        String userId = currentUserService.getCurrentUserId();
         TaskQuery query = TaskQuery.builder()
                 .date(date)
                 .period(period)
@@ -53,6 +56,7 @@ public class TaskController {
                 .parentId(parentId)
                 .minImportance(minImportance)
                 .tag(tag)
+                .userId(userId)
                 .build();
 
         List<Task> tasks = taskService.findTasks(query);
@@ -70,7 +74,8 @@ public class TaskController {
 
     @PostMapping
     public ResponseEntity<Task> createTask(@RequestBody @Valid NewTaskRequest request) {
-        Task task = taskService.createTask(request);
+        String userId = currentUserService.getCurrentUserId();
+        Task task = taskService.createTask(request, userId);
         URI location = ServletUriComponentsBuilder
                 .fromCurrentRequest()
                 .path("/{id}")
@@ -113,15 +118,11 @@ public class TaskController {
             @PathVariable String taskId,
             @RequestBody @Valid NewTaskRequest request
     ) {
-//        // Verify parent task exists
-//        if (taskService.getTask(taskId).isEmpty()) {
-//            return ResponseEntity.notFound().build();
-//        }
-
+        String userId = currentUserService.getCurrentUserId();
         // Set parent ID
         request.setParentId(taskId);
 
-        Task subtask = taskService.createTask(request);
+        Task subtask = taskService.createTask(request, userId);
         return ResponseEntity.status(HttpStatus.CREATED).body(subtask);
     }
 
@@ -129,22 +130,22 @@ public class TaskController {
 
     @GetMapping("/main")
     public ResponseEntity<List<Task>> getMainTasks() {
-        return ResponseEntity.ok(taskService.getAllMainTasks());
+        return ResponseEntity.ok(taskService.getAllMainTasks(currentUserService.getCurrentUserId()));
     }
 
     @GetMapping("/today")
     public ResponseEntity<List<Task>> getTodayTasks() {
-        return ResponseEntity.ok(taskService.getTodayTasks());
+        return ResponseEntity.ok(taskService.getTodayTasks(currentUserService.getCurrentUserId()));
     }
 
     @GetMapping("/incomplete")
     public ResponseEntity<List<Task>> getIncompleteTasks() {
-        return ResponseEntity.ok(taskService.getIncompleteTasks());
+        return ResponseEntity.ok(taskService.getIncompleteTasks(currentUserService.getCurrentUserId()));
     }
 
     @GetMapping("/highest-priority")
     public ResponseEntity<Task> getHighestPriorityTask() {
-        return taskService.getHighestPriorityIncompleteTask()
+        return taskService.getHighestPriorityIncompleteTask(currentUserService.getCurrentUserId())
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }

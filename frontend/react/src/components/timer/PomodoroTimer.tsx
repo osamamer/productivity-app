@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Client } from '@stomp/stompjs';
+import keycloak from '../../services/keycloak';
 import {
     Box,
     Button,
@@ -107,6 +108,9 @@ export function PomodoroTimer({ task }: Props) {
         console.log('Creating new STOMP client...');
         const client = new Client({
             brokerURL: WS_URL,
+            connectHeaders: {
+                Authorization: `Bearer ${keycloak.token ?? ''}`,
+            },
             reconnectDelay: 5000,
             heartbeatIncoming: 4000,
             heartbeatOutgoing: 4000,

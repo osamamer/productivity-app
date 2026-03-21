@@ -34,3 +34,7 @@ databaseChangeLog:
   # User relationships (must be AFTER tables exist AND after 009)
   - include:
       file: db/changelog/changes/013-add-user-relationships.yaml
+
+  # Fix day_entity unique constraint to allow multiple users per date
+  - include:
+      file: db/changelog/changes/014-fix-day-entity-unique-constraint.yaml

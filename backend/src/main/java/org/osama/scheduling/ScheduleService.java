@@ -3,6 +3,7 @@ package org.osama.scheduling;
 import lombok.extern.slf4j.Slf4j;
 import org.osama.pomodoro.Pomodoro;
 import org.osama.pomodoro.PomodoroRepository;
+import org.osama.user.User;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -21,7 +22,9 @@ public class ScheduleService {
     }
 
     public void schedulePomoJobs(String taskId) {
-        Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(taskId).orElseThrow();
+        Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(taskId).orElseThrow(
+                () -> new IllegalStateException("No active pomodoro found for task: " + taskId));
+        User user = pomodoro.getUser();
         int n = 2* pomodoro.getNumFocuses() -1;
         int timeElapsed = 0;
         int breaksTaken = 0;
@@ -29,23 +32,23 @@ public class ScheduleService {
             if (i % 2 == 0) { // Meaning that are in an even iteration in which the task is active
                 if (i == n - 1) {
                     createScheduledJob(JobType.END_POMODORO,
-                            LocalDateTime.now().plusMinutes(timeElapsed + pomodoro.getFocusDuration()), pomodoro.getAssociatedTaskId());
+                            LocalDateTime.now().plusMinutes(timeElapsed + pomodoro.getFocusDuration()), pomodoro.getAssociatedTaskId(), user);
                     break;
                 }
                 createScheduledJob(JobType.END_SESSION,
-                        LocalDateTime.now().plusMinutes(timeElapsed + pomodoro.getFocusDuration()), pomodoro.getAssociatedTaskId());
+                        LocalDateTime.now().plusMinutes(timeElapsed + pomodoro.getFocusDuration()), pomodoro.getAssociatedTaskId(), user);
                 timeElapsed += pomodoro.getFocusDuration();
             }
             else { // Meaning that we are in an odd iteration in which we are taking a break
                 breaksTaken++;
                 if (breaksTaken % pomodoro.getLongBreakCooldown() != 0) { // Short break
                     createScheduledJob(JobType.START_SESSION,
-                            LocalDateTime.now().plusMinutes(timeElapsed + pomodoro.getShortBreakDuration()), pomodoro.getAssociatedTaskId());
+                            LocalDateTime.now().plusMinutes(timeElapsed + pomodoro.getShortBreakDuration()), pomodoro.getAssociatedTaskId(), user);
                     timeElapsed += pomodoro.getShortBreakDuration();
                 }
                 else { // Long break
                     createScheduledJob(JobType.START_SESSION,
-                            LocalDateTime.now().plusMinutes(timeElapsed + pomodoro.getLongBreakDuration()), pomodoro.getAssociatedTaskId());
+                            LocalDateTime.now().plusMinutes(timeElapsed + pomodoro.getLongBreakDuration()), pomodoro.getAssociatedTaskId(), user);
                     timeElapsed += pomodoro.getLongBreakDuration();
                 }
             }
@@ -82,13 +85,14 @@ public class ScheduleService {
             log.info("Shifted {} job to {}", job.getJobType(), job.getDueDate());
         });
     }
-    private ScheduledJob createScheduledJob(JobType jobType, LocalDateTime dueDate, String taskId) {
+    private ScheduledJob createScheduledJob(JobType jobType, LocalDateTime dueDate, String taskId, User user) {
         ScheduledJob scheduledJob = new ScheduledJob();
         scheduledJob.setJobId(UUID.randomUUID().toString());
         scheduledJob.setJobType(jobType);
         scheduledJob.setDueDate(dueDate);
         scheduledJob.setAssociatedTaskId(taskId);
         scheduledJob.setScheduled(true);
+        scheduledJob.setUser(user);
         scheduledJobRepository.save(scheduledJob);
         log.info("Scheduled {} job for task [{}] on {}", jobType.toString(), taskId, dueDate);
         return scheduledJob;

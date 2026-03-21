@@ -5,6 +5,8 @@ import org.osama.requests.UpdateTaskRequest;
 import org.osama.requests.NewTaskRequest;
 import org.osama.session.task.TaskSession;
 import org.osama.session.task.TaskSessionRepository;
+import org.osama.user.User;
+import org.osama.user.UserRepository;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
@@ -18,10 +20,13 @@ import java.util.*;
 public class TaskService {
     private final TaskRepository taskRepository;
     private final TaskSessionRepository taskSessionRepository;
+    private final UserRepository userRepository;
 
-    public TaskService(TaskRepository taskRepository, TaskSessionRepository taskSessionRepository) {
+    public TaskService(TaskRepository taskRepository, TaskSessionRepository taskSessionRepository,
+                       UserRepository userRepository) {
         this.taskRepository = taskRepository;
         this.taskSessionRepository = taskSessionRepository;
+        this.userRepository = userRepository;
     }
 
     public List<Task> findTasks(TaskQuery query) {
@@ -56,11 +61,14 @@ public class TaskService {
         return totalDuration;
     }
 
-    public Task createTask(NewTaskRequest request) {
+    public Task createTask(NewTaskRequest request, String userId) {
         // Validate required field
         if (request.getName() == null || request.getName().isBlank()) {
             throw new IllegalArgumentException("Task name is required");
         }
+
+        User user = userRepository.findUserById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
 
         // Validate parent exists if this is a subtask
         if (request.getParentId() != null && !request.getParentId().isBlank()) {
@@ -94,6 +102,7 @@ public class TaskService {
         task.setImportance(request.getImportance()); // primitive int defaults to 0
         task.setCompleted(false);
         task.setCreationDateTime(LocalDateTime.now());
+        task.setUser(user);
 
         return taskRepository.save(task);
     }
@@ -139,21 +148,22 @@ public class TaskService {
     }
 
     // Convenience methods for common queries
-    public List<Task> getAllMainTasks() {
-        return findTasks(TaskQuery.builder().build());
+    public List<Task> getAllMainTasks(String userId) {
+        return findTasks(TaskQuery.builder().userId(userId).build());
     }
 
-    public List<Task> getTodayTasks() {
-        return findTasks(TaskQuery.builder().period(TaskQuery.DatePeriod.TODAY).build());
+    public List<Task> getTodayTasks(String userId) {
+        return findTasks(TaskQuery.builder().period(TaskQuery.DatePeriod.TODAY).userId(userId).build());
     }
 
-    public List<Task> getIncompleteTasks() {
-        return findTasks(TaskQuery.builder().completed(false).build());
+    public List<Task> getIncompleteTasks(String userId) {
+        return findTasks(TaskQuery.builder().completed(false).userId(userId).build());
     }
 
-    public Optional<Task> getHighestPriorityIncompleteTask() {
+    public Optional<Task> getHighestPriorityIncompleteTask(String userId) {
         TaskQuery query = TaskQuery.builder()
                 .completed(false)
+                .userId(userId)
                 .build();
 
         return findTasks(query).stream().findFirst(); // Already sorted by importance

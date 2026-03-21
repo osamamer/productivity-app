@@ -11,7 +11,6 @@ import {useAppTheme} from "../contexts/ThemeContext";
 import {WeekCalendar} from "../components/WeekCalendar.tsx";
 import {PageWrapper} from "../components/PageWrapper.tsx";
 import {useGlobalTasks} from "../contexts/TaskContext.tsx";
-import {TopBar} from "../components/TopBar.tsx";
 
 export function HomePage() {
     const theme = useAppTheme();
@@ -155,11 +154,6 @@ export function HomePage() {
                     gap: 2,
                     height: '100%',
                 }}>
-                    <TopBar onSubmit={function(taskToCreate: TaskToCreate): void {
-                        throw new Error('Function not implemented.');
-                    } } darkModeFunction={function(darkMode: boolean): void {
-                        throw new Error('Function not implemented.');
-                    } } darkMode={false}/>
                     <Box className="left-section"
                          // sx={{width: '25%'}}
                          sx={{

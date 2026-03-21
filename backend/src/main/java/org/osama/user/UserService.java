@@ -5,6 +5,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import org.springframework.security.oauth2.jwt.Jwt;
+
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -16,6 +18,32 @@ import java.util.UUID;
 public class UserService {
 
     private final UserRepository userRepository;
+
+    /**
+     * Looks up the app User by Keycloak subject, creating one on first login.
+     * Thread-safety: relies on the unique constraint on keycloakId — concurrent
+     * first-logins for the same Keycloak user will fail with a constraint error on
+     * the losing thread (acceptable; the user retries).
+     */
+    @Transactional
+    public User getOrCreateFromJwt(Jwt jwt) {
+        String keycloakId = jwt.getSubject();
+        return userRepository.findUserByKeycloakId(keycloakId)
+                .orElseGet(() -> {
+                    String email = jwt.getClaimAsString("email");
+                    String firstName = jwt.getClaimAsString("given_name");
+                    String lastName = jwt.getClaimAsString("family_name");
+                    String username = jwt.getClaimAsString("preferred_username");
+
+                    if (email == null || email.isBlank()) email = keycloakId + "@users.local";
+                    if (firstName == null || firstName.isBlank()) firstName = username != null ? username : keycloakId;
+                    if (lastName == null || lastName.isBlank()) lastName = "-";
+                    if (username == null || username.isBlank()) username = email.split("@")[0];
+
+                    log.info("Auto-provisioning user from Keycloak sub={}", keycloakId);
+                    return createUser(email, firstName, lastName, username, keycloakId);
+                });
+    }
 
     @Transactional
     public User createUser(String email, String firstName, String lastName, String username, String keycloakId) {

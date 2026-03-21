@@ -6,4 +6,5 @@ import java.util.Optional;
 
 public interface DayRepository extends JpaRepository<DayEntity, String> {
     Optional<DayEntity> findDayEntityByLocalDate(LocalDate localDate);
+    Optional<DayEntity> findDayEntityByLocalDateAndUserId(LocalDate localDate, String userId);
 }

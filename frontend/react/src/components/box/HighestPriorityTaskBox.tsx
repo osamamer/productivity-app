@@ -1,19 +1,8 @@
 import React, {useEffect, useState} from "react";
 import {Task} from "../../types/Task.tsx";
-import {DayEntity} from "../../types/DayEntity.tsx";
-import {TaskToCreate} from "../../types/TaskToCreate.tsx";
-import {Box, Card, Typography} from "@mui/material";
+import {Typography} from "@mui/material";
 import {HoverCardBox} from "./HoverCardBox";
-
-const ROOT_URL = "http://localhost:8080";
-const TASK_URL = ROOT_URL.concat("/api/v1/tasks");
-
-async function fetchHighestPriorityTask(): Promise<Task> {
-    const response = await fetch(TASK_URL.concat('/highest-priority'), {
-        method: "GET"
-    });
-    return response.json();
-}
+import {taskService} from "../../services/api";
 
 type props = { tasks: Task[] };
 
@@ -21,10 +10,10 @@ export function HighestPriorityTaskBox(props: props) {
     const [highestPriorityTask, setHighestPriorityTask] = useState<Task>({} as Task);
 
     useEffect(() => {
-        // console.log("Yo im fetchin my shit sticky")
-        fetchHighestPriorityTask().then((task) => {
-            // TODO: Handle case of no tasks (currently throws error and prevents whole site from rendering)
+        taskService.getHighestPriorityTask().then((task) => {
             setHighestPriorityTask(task)
+        }).catch(() => {
+            // No tasks or error — leave as empty
         });
     }, [props.tasks]);
     let importance;

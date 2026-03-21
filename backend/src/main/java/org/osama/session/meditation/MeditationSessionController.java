@@ -1,6 +1,7 @@
 package org.osama.session.meditation;
 
 import org.osama.requests.StartMeditationRequest;
+import org.osama.user.CurrentUserService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -9,17 +10,19 @@ import java.net.URI;
 
 @RestController
 @RequestMapping("/api/v1/meditation")
-@CrossOrigin(origins = "http://localhost:5173")
 public class MeditationSessionController {
     private final MeditationSessionService meditationSessionService;
+    private final CurrentUserService currentUserService;
 
-    public MeditationSessionController(MeditationSessionService meditationSessionService) {
+    public MeditationSessionController(MeditationSessionService meditationSessionService, CurrentUserService currentUserService) {
         this.meditationSessionService = meditationSessionService;
+        this.currentUserService = currentUserService;
     }
+
     @PostMapping("/start")
     public ResponseEntity<MeditationSession> startSession(@RequestBody @Valid StartMeditationRequest startMeditationRequest) {
         MeditationSession session = meditationSessionService
-                .startSession(startMeditationRequest.getMood(), startMeditationRequest.getNumIntervalBells());
+                .startSession(startMeditationRequest.getMood(), startMeditationRequest.getNumIntervalBells(), currentUserService.getCurrentUserId());
         URI location = URI.create("/api/v1/meditation/" + session.getId());
         return ResponseEntity.created(location).build();
     }

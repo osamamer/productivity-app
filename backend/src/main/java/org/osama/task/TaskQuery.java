@@ -18,6 +18,7 @@ public class TaskQuery {
     private String parentId;
     private Integer minImportance;
     private String tag;
+    private String userId;
 
     public enum DatePeriod {
         TODAY, PAST, FUTURE

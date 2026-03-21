@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { userService } from '../services/api';
+import keycloak from '../services/keycloak';
 
-interface UserResponse {
+interface UserInfo {
     id: string;
     email: string;
     firstName: string;
@@ -12,9 +12,10 @@ interface UserResponse {
 }
 
 interface UserContextType {
-    user: UserResponse | null;
+    user: UserInfo | null;
     loading: boolean;
-    login: (email: string, password: string) => Promise<void>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    login: (...args: any[]) => void;
     logout: () => void;
     isAuthenticated: boolean;
 }
@@ -22,35 +23,30 @@ interface UserContextType {
 const UserContext = createContext<UserContextType | undefined>(undefined);
 
 export function UserProvider({ children }: { children: ReactNode }) {
-    const [user, setUser] = useState<UserResponse | null>(null);
+    const [user, setUser] = useState<UserInfo | null>(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        // Check for stored user on mount
-        const storedUser = localStorage.getItem('user');
-        if (storedUser) {
-            setUser(JSON.parse(storedUser));
+        const parsed = keycloak.tokenParsed;
+        if (parsed) {
+            setUser({
+                id: parsed.sub ?? '',
+                email: parsed['email'] ?? '',
+                firstName: parsed['given_name'] ?? '',
+                lastName: parsed['family_name'] ?? '',
+                username: parsed['preferred_username'] ?? '',
+                active: true,
+                createdAt: '',
+            });
         }
         setLoading(false);
     }, []);
 
-    const login = async (email: string, password: string) => {
-        try {
-            // For now, we'll use a simple email lookup
-            // In production, you'd validate credentials properly
-            const userData = await userService.getUserByEmail(email);
-            setUser(userData);
-            localStorage.setItem('user', JSON.stringify(userData));
-        } catch (error) {
-            console.error('Login failed:', error);
-            throw error;
-        }
-    };
+    // Delegates to Keycloak; accepts legacy call signature (email, password) from LoginPage
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const login = (..._args: unknown[]) => keycloak.login();
 
-    const logout = () => {
-        setUser(null);
-        localStorage.removeItem('user');
-    };
+    const logout = () => keycloak.logout({ redirectUri: window.location.origin });
 
     return (
         <UserContext.Provider
@@ -59,7 +55,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
                 loading,
                 login,
                 logout,
-                isAuthenticated: !!user,
+                isAuthenticated: keycloak.authenticated ?? false,
             }}
         >
             {children}

@@ -1,23 +1,25 @@
 package org.osama.pomodoro;
 
 import org.osama.requests.PomodoroRequest;
+import org.osama.user.CurrentUserService;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/v1/pomodoro")
-@CrossOrigin(origins = "http://localhost:5173")
 public class PomodoroController {
     private final PomodoroService pomodoroService;
+    private final CurrentUserService currentUserService;
 
-    public PomodoroController(PomodoroService pomodoroService) {
+    public PomodoroController(PomodoroService pomodoroService, CurrentUserService currentUserService) {
         this.pomodoroService = pomodoroService;
+        this.currentUserService = currentUserService;
     }
 
     @PostMapping("/start")
     public void startPomodoro(@RequestBody PomodoroRequest pomodoroRequest) {
         pomodoroService.startPomodoro(pomodoroRequest.taskId, pomodoroRequest.focusDuration,
                 pomodoroRequest.shortBreakDuration, pomodoroRequest.longBreakDuration,
-                pomodoroRequest.numFocuses, pomodoroRequest.longBreakCooldown);
+                pomodoroRequest.numFocuses, pomodoroRequest.longBreakCooldown, currentUserService.getCurrentUserId());
     }
 
     @PostMapping("/end/{taskId}")

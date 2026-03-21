@@ -12,6 +12,8 @@ import org.osama.session.events.SessionUnpausedEvent;
 import org.osama.session.task.TaskSession;
 import org.osama.session.task.TaskSessionRepository;
 import org.osama.session.task.TaskSessionService;
+import org.osama.user.User;
+import org.osama.user.UserRepository;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import java.time.Duration;
@@ -32,6 +34,7 @@ public class PomodoroService {
     private final SchedulerConfig schedulerConfig;
     private final SimpMessagingTemplate simpMessagingTemplate;
     private final TaskSessionService taskSessionService;
+    private final UserRepository userRepository;
 
     private final Map<String, ScheduledFuture<?>> statusUpdateTasks = new ConcurrentHashMap<>();
 
@@ -41,7 +44,8 @@ public class PomodoroService {
                            ScheduleService scheduleService,
                            SchedulerConfig schedulerConfig,
                            SimpMessagingTemplate simpMessagingTemplate,
-                           TaskSessionService taskSessionService) {
+                           TaskSessionService taskSessionService,
+                           UserRepository userRepository) {
         this.pomodoroRepository = pomodoroRepository;
         this.scheduledJobRepository = scheduledJobRepository;
         this.taskSessionRepository = taskSessionRepository;
@@ -49,6 +53,7 @@ public class PomodoroService {
         this.schedulerConfig = schedulerConfig;
         this.simpMessagingTemplate = simpMessagingTemplate;
         this.taskSessionService = taskSessionService;
+        this.userRepository = userRepository;
     }
 
     // ============ Event Listeners ============
@@ -155,10 +160,10 @@ public class PomodoroService {
 
     public void startPomodoro(String taskId, int focusDuration,
                                   int shortBreakDuration, int longBreakDuration,
-                                  int numFocuses, int longBreakCooldown) {
+                                  int numFocuses, int longBreakCooldown, String userId) {
 
         createPomodoro(taskId, focusDuration, shortBreakDuration,
-                longBreakDuration, numFocuses, longBreakCooldown);
+                longBreakDuration, numFocuses, longBreakCooldown, userId);
 
         scheduleService.schedulePomoJobs(taskId);
         taskSessionService.startSession(taskId, true);
@@ -187,7 +192,10 @@ public class PomodoroService {
 
     public Pomodoro createPomodoro(String associatedTaskId, int focusDuration,
                                    int shortBreakDuration, int longBreakDuration,
-                                   int numFocuses, int longBreakCooldown) {
+                                   int numFocuses, int longBreakCooldown, String userId) {
+        User user = userRepository.findUserById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
+
         Pomodoro pomodoro = new Pomodoro();
         pomodoro.setPomodoroId(UUID.randomUUID().toString());
         pomodoro.setAssociatedTaskId(associatedTaskId);
@@ -201,6 +209,7 @@ public class PomodoroService {
         pomodoro.setSessionRunning(false);
         pomodoro.setCurrentFocusNumber(0);
         pomodoro.setSecondsPassedInSession(0);
+        pomodoro.setUser(user);
 
         return pomodoroRepository.save(pomodoro);
     }

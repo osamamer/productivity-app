@@ -9,6 +9,8 @@ import org.osama.session.task.TaskSessionService;
 import org.osama.task.Task;
 import org.osama.task.TaskRepository;
 import org.osama.task.TaskService;
+import org.osama.user.User;
+import org.osama.user.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
@@ -21,6 +23,8 @@ import static org.junit.jupiter.api.Assertions.*;
 @ActiveProfiles("test")
 @Transactional
 public class EndToEndTest {
+    private static final String TEST_USER_ID = "test-user-1";
+
     @Autowired
     private TaskService taskService;
     @Autowired
@@ -29,11 +33,22 @@ public class EndToEndTest {
     private TaskRepository taskRepository;
     @Autowired
     private DayService dayService;
+    @Autowired
+    private UserRepository userRepository;
 
     private Task testTask;
 
     @BeforeEach
     void setUp() {
+        User testUser = User.builder()
+                .id(TEST_USER_ID)
+                .email("test@test.com")
+                .firstName("Test")
+                .lastName("User")
+                .username("testuser")
+                .active(true)
+                .build();
+        userRepository.save(testUser);
         testTask = createTask();
     }
 
@@ -89,12 +104,12 @@ public class EndToEndTest {
 
     @Test
     void setDaySummary() {
-        dayService.setDaySummary("2024-02-15", "It was a shit day.");
+        dayService.setDaySummary("2024-02-15", "It was a shit day.", TEST_USER_ID);
     }
 
     @Test
     void setTodayRating() {
-        dayService.setTodayRating(5);
+        dayService.setTodayRating(5, TEST_USER_ID);
     }
 
     private Task createTask() {
@@ -102,6 +117,6 @@ public class EndToEndTest {
         taskRequest.setName("Do chores");
         taskRequest.setDescription("Vacuum nasty room");
         taskRequest.setScheduledPerformDateTime("2025-01-13T17:09:42.411");
-        return taskService.createTask(taskRequest);
+        return taskService.createTask(taskRequest, TEST_USER_ID);
     }
 }

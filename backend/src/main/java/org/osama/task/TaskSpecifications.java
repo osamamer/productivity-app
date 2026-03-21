@@ -50,9 +50,17 @@ public class TaskSpecifications {
         return (root, query, cb) -> cb.equal(root.get("tag"), tag);
     }
 
+    public static Specification<Task> hasUserId(String userId) {
+        return (root, query, cb) -> cb.equal(root.get("userId"), userId);
+    }
+
     // Composite specifications
     public static Specification<Task> matchesQuery(TaskQuery taskQuery) {
         Specification<Task> spec = Specification.where(null);
+
+        if (taskQuery.getUserId() != null) {
+            spec = spec.and(hasUserId(taskQuery.getUserId()));
+        }
 
         // Main tasks by default (unless parentId is specified)
         if (taskQuery.getParentId() == null) {

@@ -1,6 +1,7 @@
 package org.osama.pomodoro;
 
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.Data;
 import org.osama.user.User;
@@ -50,10 +51,8 @@ public class Pomodoro {
     @Column
     long secondsPassedInSession;
 
+    @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
-
-    @Column(name = "user_id", insertable = false, updatable = false)
-    private String userId;
 }

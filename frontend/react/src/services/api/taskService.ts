@@ -1,5 +1,6 @@
 import { Task } from '../../types/Task';
 import { TaskToCreate } from '../../types/TaskToCreate';
+import { getAuthHeaders } from '../utils/authHeaders';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 const TASK_URL = `${API_BASE_URL}/api/v1/tasks`;
@@ -11,7 +12,9 @@ export const taskService = {
     // ============ Task Queries ============
 
     async getAllMainTasks(): Promise<Task[]> {
-        const response = await fetch(`${TASK_URL}/main`);
+        const response = await fetch(`${TASK_URL}/main`, {
+            headers: getAuthHeaders(),
+        });
         if (!response.ok) {
             throw new Error('Failed to fetch all tasks');
         }
@@ -19,7 +22,9 @@ export const taskService = {
     },
 
     async getTodayTasks(): Promise<Task[]> {
-        const response = await fetch(`${TASK_URL}/today`);
+        const response = await fetch(`${TASK_URL}/today`, {
+            headers: getAuthHeaders(),
+        });
         if (!response.ok) {
             throw new Error('Failed to fetch today tasks');
         }
@@ -27,7 +32,9 @@ export const taskService = {
     },
 
     async getPastTasks(): Promise<Task[]> {
-        const response = await fetch(`${TASK_URL}?period=PAST`);
+        const response = await fetch(`${TASK_URL}?period=PAST`, {
+            headers: getAuthHeaders(),
+        });
         if (!response.ok) {
             throw new Error('Failed to fetch past tasks');
         }
@@ -35,7 +42,9 @@ export const taskService = {
     },
 
     async getFutureTasks(): Promise<Task[]> {
-        const response = await fetch(`${TASK_URL}?period=FUTURE`);
+        const response = await fetch(`${TASK_URL}?period=FUTURE`, {
+            headers: getAuthHeaders(),
+        });
         if (!response.ok) {
             throw new Error('Failed to fetch future tasks');
         }
@@ -43,7 +52,9 @@ export const taskService = {
     },
 
     async getHighestPriorityTask(): Promise<Task> {
-        const response = await fetch(`${TASK_URL}/highest-priority`);
+        const response = await fetch(`${TASK_URL}/highest-priority`, {
+            headers: getAuthHeaders(),
+        });
         if (!response.ok) {
             throw new Error('Failed to fetch highest priority task');
         }
@@ -51,7 +62,9 @@ export const taskService = {
     },
 
     async getSubtasks(taskId: string): Promise<Task[]> {
-        const response = await fetch(`${TASK_URL}/${taskId}/subtasks`);
+        const response = await fetch(`${TASK_URL}/${taskId}/subtasks`, {
+            headers: getAuthHeaders(),
+        });
         if (!response.ok) {
             throw new Error('Failed to fetch subtasks');
         }
@@ -73,6 +86,7 @@ export const taskService = {
             }),
             headers: {
                 'Content-Type': 'application/json; charset=UTF-8',
+                ...getAuthHeaders(),
             },
         });
 
@@ -88,6 +102,7 @@ export const taskService = {
             body: JSON.stringify(updates),
             headers: {
                 'Content-Type': 'application/json; charset=UTF-8',
+                ...getAuthHeaders(),
             },
         });
 
@@ -98,7 +113,9 @@ export const taskService = {
     },
 
     async getTask(taskId: string): Promise<Task> {
-        const response = await fetch(`${TASK_URL}/${taskId}`);
+        const response = await fetch(`${TASK_URL}/${taskId}`, {
+            headers: getAuthHeaders(),
+        });
         if (!response.ok) {
             throw new Error('Failed to fetch task');
         }
@@ -106,12 +123,9 @@ export const taskService = {
     },
 
     async toggleTaskCompletion(taskId: string): Promise<Task> {
-        // Get current state, then toggle
         const task = await this.getTask(taskId);
         return this.updateTask(taskId, { completed: !task.completed });
     },
-
-
 
     async updateDescription(taskId: string, description: string): Promise<Task> {
         return this.updateTask(taskId, { description });
@@ -120,6 +134,7 @@ export const taskService = {
     async deleteTask(taskId: string): Promise<void> {
         const response = await fetch(`${TASK_URL}/${taskId}`, {
             method: 'DELETE',
+            headers: getAuthHeaders(),
         });
         if (!response.ok) {
             throw new Error('Failed to delete task');
@@ -131,6 +146,7 @@ export const taskService = {
     async startSession(taskId: string): Promise<void> {
         const response = await fetch(`${SESSION_URL}/start/${taskId}`, {
             method: 'POST',
+            headers: getAuthHeaders(),
         });
         if (!response.ok) {
             throw new Error('Failed to start session');
@@ -140,6 +156,7 @@ export const taskService = {
     async pauseSession(taskId: string): Promise<void> {
         const response = await fetch(`${SESSION_URL}/pause/${taskId}`, {
             method: 'POST',
+            headers: getAuthHeaders(),
         });
         if (!response.ok) {
             throw new Error('Failed to pause session');
@@ -149,6 +166,7 @@ export const taskService = {
     async unpauseSession(taskId: string): Promise<void> {
         const response = await fetch(`${SESSION_URL}/unpause/${taskId}`, {
             method: 'POST',
+            headers: getAuthHeaders(),
         });
         if (!response.ok) {
             throw new Error('Failed to unpause session');
@@ -158,6 +176,7 @@ export const taskService = {
     async endSession(taskId: string): Promise<void> {
         const response = await fetch(`${SESSION_URL}/end/${taskId}`, {
             method: 'POST',
+            headers: getAuthHeaders(),
         });
         if (!response.ok) {
             throw new Error('Failed to end session');
@@ -186,6 +205,7 @@ export const taskService = {
             }),
             headers: {
                 'Content-Type': 'application/json; charset=UTF-8',
+                ...getAuthHeaders(),
             },
         });
 
@@ -198,6 +218,7 @@ export const taskService = {
     async endPomodoro(taskId: string): Promise<void> {
         const response = await fetch(`${POMODORO_URL}/end/${taskId}`, {
             method: 'POST',
+            headers: getAuthHeaders(),
         });
         if (!response.ok) {
             throw new Error('Failed to end pomodoro');
