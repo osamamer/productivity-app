@@ -38,3 +38,7 @@ databaseChangeLog:
   # Fix day_entity unique constraint to allow multiple users per date
   - include:
       file: db/changelog/changes/014-fix-day-entity-unique-constraint.yaml
+
+  # User-defined trackable statistics
+  - include:
+      file: db/changelog/changes/015-create-stat.yaml

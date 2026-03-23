@@ -1,0 +1,153 @@
+databaseChangeLog:
+  - changeSet:
+      id: 015-create-stat-definition
+      author: osama
+      comment: Create stat_definition table for user-defined trackable statistics
+      changes:
+        - createTable:
+            tableName: stat_definition
+            columns:
+              - column:
+                  name: id
+                  type: varchar(255)
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: name
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: text
+              - column:
+                  name: type
+                  type: varchar(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: min_value
+                  type: double precision
+              - column:
+                  name: max_value
+                  type: double precision
+              - column:
+                  name: user_id
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: stat_definition
+            baseColumnNames: user_id
+            referencedTableName: app_user
+            referencedColumnNames: id
+            constraintName: fk_stat_definition_user
+            onDelete: CASCADE
+            onUpdate: CASCADE
+      rollback:
+        - dropTable:
+            tableName: stat_definition
+
+  - changeSet:
+      id: 015-create-stat-entry
+      author: osama
+      comment: Create stat_entry table for daily stat values
+      changes:
+        - createTable:
+            tableName: stat_entry
+            columns:
+              - column:
+                  name: id
+                  type: varchar(255)
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: stat_definition_id
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: date
+                  type: date
+                  constraints:
+                    nullable: false
+              - column:
+                  name: value
+                  type: double precision
+                  constraints:
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: stat_entry
+            baseColumnNames: stat_definition_id
+            referencedTableName: stat_definition
+            referencedColumnNames: id
+            constraintName: fk_stat_entry_definition
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - addForeignKeyConstraint:
+            baseTableName: stat_entry
+            baseColumnNames: user_id
+            referencedTableName: app_user
+            referencedColumnNames: id
+            constraintName: fk_stat_entry_user
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - addUniqueConstraint:
+            tableName: stat_entry
+            columnNames: stat_definition_id, user_id, date
+            constraintName: uq_stat_entry_definition_user_date
+      rollback:
+        - dropTable:
+            tableName: stat_entry
+
+  - changeSet:
+      id: 015-create-stat-indexes
+      author: osama
+      comment: Add indexes for stat tables
+      changes:
+        - createIndex:
+            tableName: stat_definition
+            indexName: idx_app_stat_definition_user_id
+            ifNotExists: true
+            columns:
+              - column:
+                  name: user_id
+        - createIndex:
+            tableName: stat_entry
+            indexName: idx_app_stat_entry_definition_user_date
+            ifNotExists: true
+            columns:
+              - column:
+                  name: stat_definition_id
+              - column:
+                  name: user_id
+              - column:
+                  name: date
+                  descending: true
+        - createIndex:
+            tableName: stat_entry
+            indexName: idx_app_stat_entry_user_date
+            ifNotExists: true
+            columns:
+              - column:
+                  name: user_id
+              - column:
+                  name: date
+                  descending: true
+      rollback:
+        - dropIndex:
+            tableName: stat_definition
+            indexName: idx_app_stat_definition_user_id
+        - dropIndex:
+            tableName: stat_entry
+            indexName: idx_app_stat_entry_definition_user_date
+        - dropIndex:
+            tableName: stat_entry
+            indexName: idx_app_stat_entry_user_date
