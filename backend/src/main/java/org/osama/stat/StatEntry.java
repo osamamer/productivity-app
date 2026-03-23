@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.datatype.jsr310.deser.LocalDateDeserializer;
 import com.fasterxml.jackson.datatype.jsr310.ser.LocalDateSerializer;
 import jakarta.persistence.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.osama.user.User;
@@ -14,6 +16,8 @@ import java.time.LocalDate;
 @Data
 @NoArgsConstructor
 @Entity
+@Builder
+@AllArgsConstructor
 // Unique constraint: one entry per user per stat per day.
 @Table(uniqueConstraints = {
         @UniqueConstraint(columnNames = {"stat_definition_id", "user_id", "date"})
@@ -40,7 +44,7 @@ public class StatEntry {
     //   NUMBER  -> the number itself
     //   BOOLEAN -> 1.0 (true) or 0.0 (false)
     //   RANGE   -> the value, validated against StatDefinition.minValue / maxValue
-    @Column(nullable = false)
+    @Column(name = "stat_value", nullable = false)
     private double value;
 
     @ManyToOne(fetch = FetchType.LAZY)
