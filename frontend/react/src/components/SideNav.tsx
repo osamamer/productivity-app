@@ -8,7 +8,7 @@ import {
     Tooltip,
     Typography,
 } from "@mui/material";
-import { useState, useRef } from "react";
+import { useState } from "react";
 import HomeIcon from '@mui/icons-material/Home';
 import AssignmentIcon from '@mui/icons-material/Assignment';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
@@ -29,16 +29,6 @@ export function SideNav() {
     const { darkMode, toggleTheme } = useAppTheme();
     const { user, logout } = useUser();
     const [open, setOpen] = useState(false);
-    const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-    const handleMouseEnter = () => {
-        if (closeTimer.current) clearTimeout(closeTimer.current);
-        setOpen(true);
-    };
-
-    const handleMouseLeave = () => {
-        closeTimer.current = setTimeout(() => setOpen(false), 50);
-    };
 
     const getInitials = () => {
         if (!user) return '?';
@@ -51,8 +41,8 @@ export function SideNav() {
         <Drawer
             variant="permanent"
             anchor="left"
-            onMouseEnter={handleMouseEnter}
-            onMouseLeave={handleMouseLeave}
+            onMouseEnter={() => setOpen(true)}
+            onMouseLeave={() => setOpen(false)}
             sx={{
                 width: open ? EXPANDED_WIDTH : COLLAPSED_WIDTH,
                 flexShrink: 0,
@@ -83,57 +73,74 @@ export function SideNav() {
                 <Divider />
 
                 <Box sx={{
+                    height: 48,
                     display: 'flex',
-                    justifyContent: open ? 'flex-start' : 'center',
                     alignItems: 'center',
-                    px: open ? 2 : 0,
-                    py: 1,
+                    justifyContent: 'center',
+                    overflow: 'hidden',
+                    position: 'relative',
                 }}>
                     <Tooltip title={darkMode ? 'Light mode' : 'Dark mode'} placement="right">
                         <IconButton onClick={toggleTheme} size="small">
                             {darkMode ? <LightModeIcon /> : <NightlightIcon />}
                         </IconButton>
                     </Tooltip>
-                    {open && (
-                        <Typography variant="body2" sx={{ ml: 2 }}>
-                            {darkMode ? 'Light mode' : 'Dark mode'}
-                        </Typography>
-                    )}
+                    <Typography variant="body2" sx={{
+                        ml: 2,
+                        opacity: open ? 1 : 0,
+                        transition: 'opacity 0.2s ease',
+                        whiteSpace: 'nowrap',
+                        position: 'absolute',
+                        left: 48,
+                    }}>
+                        {darkMode ? 'Light mode' : 'Dark mode'}
+                    </Typography>
                 </Box>
 
                 <Divider />
 
                 {user && (
                     <Box sx={{
+                        height: 64,
                         display: 'flex',
                         alignItems: 'center',
-                        px: open ? 1.5 : 0,
-                        py: 1.5,
-                        justifyContent: open ? 'flex-start' : 'center',
-                        gap: 1.5,
+                        justifyContent: 'center',
+                        overflow: 'hidden',
+                        position: 'relative',
+                        px: 1.5,
                     }}>
                         <Tooltip title={open ? '' : `${user.firstName} ${user.lastName}`} placement="right">
                             <Avatar sx={{ width: 34, height: 34, bgcolor: 'primary.main', flexShrink: 0, fontSize: '0.8rem' }}>
                                 {getInitials()}
                             </Avatar>
                         </Tooltip>
-                        {open && (
-                            <>
-                                <Box sx={{ minWidth: 0, flexGrow: 1 }}>
-                                    <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                        {user.firstName} {user.lastName}
-                                    </Typography>
-                                    <Typography variant="caption" color="text.secondary" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
-                                        {user.email}
-                                    </Typography>
-                                </Box>
-                                <Tooltip title="Logout">
-                                    <IconButton onClick={logout} size="small" sx={{ flexShrink: 0 }}>
-                                        <LogoutIcon fontSize="small" />
-                                    </IconButton>
-                                </Tooltip>
-                            </>
-                        )}
+                        <Box sx={{
+                            minWidth: 0,
+                            flexGrow: 1,
+                            ml: 1.5,
+                            opacity: open ? 1 : 0,
+                            transition: 'opacity 0.2s ease',
+                        }}>
+                            <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {user.firstName} {user.lastName}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
+                                {user.email}
+                            </Typography>
+                        </Box>
+                        <Tooltip title="Logout">
+                            <IconButton
+                                onClick={logout}
+                                size="small"
+                                sx={{
+                                    flexShrink: 0,
+                                    opacity: open ? 1 : 0,
+                                    transition: 'opacity 0.2s ease',
+                                }}
+                            >
+                                <LogoutIcon fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
                     </Box>
                 )}
             </Box>
