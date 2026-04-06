@@ -87,6 +87,11 @@ export const AppThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => 
             secondary: {
                 main: '#F5E55F',
             },
+            success: {
+                main: '#22C55E',
+                light: '#4ADE80',
+                dark: '#16A34A',
+            },
             info: {
                 main: '#9FCAFA',
                 medium: '#FAEC66',
@@ -97,10 +102,11 @@ export const AppThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => 
             high: createColor('#FF614B'),
             background: {
                 default: '#1e2124',
-                paper: '#1e2124',
+                paper: '#26292d',
             },
             text: {
                 primary: '#FFFFFF',
+                secondary: 'rgba(255,255,255,0.6)',
             },
         } : {
             mode: 'light',
@@ -109,6 +115,11 @@ export const AppThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => 
             },
             secondary: {
                 main: '#F5E55F',
+            },
+            success: {
+                main: '#22C55E',
+                light: '#4ADE80',
+                dark: '#16A34A',
             },
             info: {
                 main: '#9FCAFA',
@@ -119,11 +130,12 @@ export const AppThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => 
             medium: createColor('#FAEC66'),
             high: createColor('#FF614B'),
             background: {
-                default: '#ffffff',
-                paper: '#f5f5f5',
+                default: '#F7F6FB',
+                paper: '#FFFFFF',
             },
             text: {
-                primary: '#000000',
+                primary: '#1A1A2E',
+                secondary: 'rgba(26,26,46,0.6)',
             },
         },
     });

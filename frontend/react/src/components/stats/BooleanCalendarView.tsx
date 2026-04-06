@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Typography, CircularProgress, Stack } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
+import HighlightOffIcon from '@mui/icons-material/HighlightOff';
 import { format, subDays, eachDayOfInterval, getDay } from 'date-fns';
 import { StatDefinition } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
@@ -27,7 +29,6 @@ export function BooleanCalendarView({ definition, dateRange, refreshKey }: Props
         const fromStr = format(from, 'yyyy-MM-dd');
         const toStr = format(to, 'yyyy-MM-dd');
 
-        // Pad the start so the first day aligns with its Mon-based column
         const allDays = eachDayOfInterval({ start: from, end: to });
         const startOffset = toMondayIndex(getDay(from));
         const padded: (Date | null)[] = [...Array(startOffset).fill(null), ...allDays];
@@ -49,20 +50,13 @@ export function BooleanCalendarView({ definition, dateRange, refreshKey }: Props
         );
     }
 
-    const getCellBg = (day: Date | null): string => {
-        if (!day) return 'transparent';
-        const key = format(day, 'yyyy-MM-dd');
-        if (!valueMap.has(key)) return theme.palette.action.disabledBackground;
-        return valueMap.get(key) === 1 ? theme.palette.success.main : theme.palette.error.main;
-    };
-
     const weeks: (Date | null)[][] = [];
     for (let i = 0; i < days.length; i += 7) weeks.push(days.slice(i, i + 7));
 
     const gridStyle = {
         display: 'grid',
         gridTemplateColumns: 'repeat(7, 1fr)',
-        gap: '2px',
+        gap: '4px',
     };
 
     return (
@@ -80,35 +74,81 @@ export function BooleanCalendarView({ definition, dateRange, refreshKey }: Props
 
             {/* Calendar grid — one row per week */}
             {weeks.map((week, wi) => (
-                <Box key={wi} sx={{ ...gridStyle, mb: '2px' }}>
+                <Box key={wi} sx={{ ...gridStyle, mb: '4px' }}>
                     {week.map((day, di) => {
                         const dateKey = day ? format(day, 'yyyy-MM-dd') : null;
                         const hasEntry = dateKey ? valueMap.has(dateKey) : false;
+                        const isYes = hasEntry && valueMap.get(dateKey!) === 1;
+                        const isNo = hasEntry && valueMap.get(dateKey!) !== 1;
+
                         return (
                             <Box
                                 key={di}
                                 title={day ? format(day, 'MMMM d, yyyy') : undefined}
                                 sx={{
-                                    height: 45,
+                                    height: 62,
+                                    minHeight: 52,
                                     borderRadius: 1,
-                                    bgcolor: getCellBg(day),
+                                    bgcolor: theme.palette.action.disabledBackground,
                                     display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    cursor: day ? 'default' : undefined,
+                                    alignItems: 'flex-end',
+                                    justifyContent: 'flex-start',
+                                    position: 'relative',
+                                    overflow: 'hidden',
+                                    opacity: day ? 1 : 0,
+                                    border: '1.5px solid',
+                                    borderColor: isYes
+                                        ? `${theme.palette.success.main}66`
+                                        : isNo
+                                        ? `${theme.palette.error.main}66`
+                                        : 'transparent',
                                 }}
                             >
                                 {day && (
-                                    <Typography
-                                        variant="caption"
-                                        sx={{
-                                            fontSize: 10,
-                                            color: hasEntry ? 'white' : 'text.secondary',
-                                            fontWeight: hasEntry ? 600 : 400,
-                                        }}
-                                    >
-                                        {format(day, 'd')}
-                                    </Typography>
+                                    <>
+                                        {/* Date number — bottom-left */}
+                                        <Typography
+                                            variant="caption"
+                                            sx={{
+                                                fontSize: 10,
+                                                color: 'text.secondary',
+                                                lineHeight: 1,
+                                                position: 'absolute',
+                                                bottom: 4,
+                                                left: 5,
+                                            }}
+                                        >
+                                            {format(day, 'd')}
+                                        </Typography>
+
+                                        {/* Stamp — top-right */}
+                                        {isYes && (
+                                            <CheckCircleOutlineIcon
+                                                sx={{
+                                                    fontSize: 20,
+                                                    color: theme.palette.success.main,
+                                                    transform: 'rotate(-12deg)',
+                                                    position: 'absolute',
+                                                    top: 3,
+                                                    right: 3,
+                                                    filter: `drop-shadow(0 0 2px ${theme.palette.success.main}55)`,
+                                                }}
+                                            />
+                                        )}
+                                        {isNo && (
+                                            <HighlightOffIcon
+                                                sx={{
+                                                    fontSize: 20,
+                                                    color: theme.palette.error.main,
+                                                    transform: 'rotate(12deg)',
+                                                    position: 'absolute',
+                                                    top: 3,
+                                                    right: 3,
+                                                    filter: `drop-shadow(0 0 2px ${theme.palette.error.main}55)`,
+                                                }}
+                                            />
+                                        )}
+                                    </>
                                 )}
                             </Box>
                         );
@@ -118,16 +158,18 @@ export function BooleanCalendarView({ definition, dateRange, refreshKey }: Props
 
             {/* Legend */}
             <Stack direction="row" spacing={2} sx={{ mt: 1.5 }}>
-                {[
-                    { color: 'success.main', label: 'Yes' },
-                    { color: 'error.main', label: 'No' },
-                    { color: 'action.disabledBackground', label: 'No data' },
-                ].map(({ color, label }) => (
-                    <Stack key={label} direction="row" spacing={0.5} alignItems="center">
-                        <Box sx={{ width: 12, height: 12, borderRadius: 0.5, bgcolor: color }} />
-                        <Typography variant="caption" color="text.secondary">{label}</Typography>
-                    </Stack>
-                ))}
+                <Stack direction="row" spacing={0.5} alignItems="center">
+                    <CheckCircleOutlineIcon sx={{ fontSize: 14, color: 'success.main', transform: 'rotate(-12deg)' }} />
+                    <Typography variant="caption" color="text.secondary">Yes</Typography>
+                </Stack>
+                <Stack direction="row" spacing={0.5} alignItems="center">
+                    <HighlightOffIcon sx={{ fontSize: 14, color: 'error.main', transform: 'rotate(12deg)' }} />
+                    <Typography variant="caption" color="text.secondary">No</Typography>
+                </Stack>
+                <Stack direction="row" spacing={0.5} alignItems="center">
+                    <Box sx={{ width: 12, height: 12, borderRadius: 0.5, bgcolor: 'action.disabledBackground' }} />
+                    <Typography variant="caption" color="text.secondary">No data</Typography>
+                </Stack>
             </Stack>
         </Box>
     );
