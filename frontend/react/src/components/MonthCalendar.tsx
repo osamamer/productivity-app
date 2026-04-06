@@ -1,4 +1,4 @@
-import { Box, Popover } from "@mui/material";
+import { Box, Popover, Tabs, Tab, Typography } from "@mui/material";
 import { HoverCardBox } from "./box/HoverCardBox.tsx";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin, { DateClickArg } from "@fullcalendar/interaction";
@@ -9,16 +9,25 @@ import { useTheme } from "@mui/material";
 import { EventMountArg } from '@fullcalendar/core';
 import { TaskToCreate } from "../types/TaskToCreate.tsx";
 import { SmartTaskInput } from "./input/SmartTaskInput.tsx";
+import { StatDefinition } from "../types/Stats.ts";
+import { DateStatCheckIn } from "./stats/DateStatCheckIn.tsx";
+import { format, isAfter, startOfDay } from "date-fns";
 
 type MonthCalenderProps = {
     tasks: Task[],
     onCreateTask: (task: TaskToCreate) => void,
+    statDefinitions?: StatDefinition[],
 }
 
-export function MonthCalendar({ tasks, onCreateTask }: MonthCalenderProps) {
+export function MonthCalendar({ tasks, onCreateTask, statDefinitions }: MonthCalenderProps) {
     const theme = useTheme();
     const [editingDate, setEditingDate] = useState<string | null>(null);
     const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
+    const [activeTab, setActiveTab] = useState(0);
+    const hasStats = statDefinitions && statDefinitions.length > 0;
+    const isFutureDate = editingDate
+        ? isAfter(startOfDay(new Date(editingDate + 'T12:00:00')), startOfDay(new Date()))
+        : true; // no date → hide stats tab (prevents flash during close animation)
 
     const calendarEvents = useMemo(() => {
         return tasks
@@ -50,6 +59,7 @@ export function MonthCalendar({ tasks, onCreateTask }: MonthCalenderProps) {
     const handleDateClick = (arg: DateClickArg) => {
         setEditingDate(arg.dateStr);
         setAnchorEl(arg.dayEl);
+        setActiveTab(0); // always open on Task tab
     };
 
     const handleTaskSubmit = (taskToCreate: TaskToCreate) => {
@@ -182,6 +192,7 @@ export function MonthCalendar({ tasks, onCreateTask }: MonthCalenderProps) {
                 onClose={() => {
                     setEditingDate(null);
                     setAnchorEl(null);
+                    setActiveTab(0);
                 }}
                 anchorOrigin={{
                     vertical: 'center',
@@ -203,12 +214,39 @@ export function MonthCalendar({ tasks, onCreateTask }: MonthCalenderProps) {
                     }
                 }}
             >
-                <Box sx={{ p: 2, minWidth: 300 }}>
-                    <SmartTaskInput
-                        onSubmit={handleTaskSubmit}
-                        initialDate={editingDate || undefined}
-                        autoFocus
-                    />
+                <Box sx={{ minWidth: 320, maxWidth: 400 }}>
+                    {editingDate && (
+                        <Typography variant="caption" color="text.secondary" sx={{ px: 2, pt: 1.5, display: 'block' }}>
+                            {format(new Date(editingDate + 'T12:00:00'), 'MMMM d, yyyy')}
+                        </Typography>
+                    )}
+                    {hasStats && !isFutureDate && (
+                        <Tabs
+                            value={activeTab}
+                            onChange={(_, v) => setActiveTab(v)}
+                            sx={{ px: 2, borderBottom: 1, borderColor: 'divider' }}
+                            variant="fullWidth"
+                        >
+                            <Tab label="Task" />
+                            <Tab label="Stats" />
+                        </Tabs>
+                    )}
+                    <Box sx={{ p: 2 }}>
+                        {activeTab === 0 && (
+                            <SmartTaskInput
+                                onSubmit={handleTaskSubmit}
+                                initialDate={editingDate || undefined}
+                                autoFocus={activeTab === 0}
+                            />
+                        )}
+                        {activeTab === 1 && hasStats && editingDate && (
+                            <DateStatCheckIn
+                                date={editingDate}
+                                definitions={statDefinitions!}
+                                onSaved={() => { setEditingDate(null); setAnchorEl(null); }}
+                            />
+                        )}
+                    </Box>
                 </Box>
             </Popover>
         </>

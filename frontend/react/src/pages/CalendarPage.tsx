@@ -2,10 +2,11 @@ import { Box } from "@mui/material";
 import {PageWrapper} from "../components/PageWrapper.tsx";
 import {MonthCalendar} from "../components/MonthCalendar.tsx";
 import {useTaskManager} from "../hooks/useTaskManager.ts";
-import {useEffect} from "react";
-import {useGlobalTasks} from "../contexts/TaskContext.tsx";
+import {useEffect, useState} from "react";
 import {taskService} from "../services/api";
 import {TaskToCreate} from "../types/TaskToCreate.tsx";
+import {StatDefinition} from "../types/Stats.ts";
+import {statService} from "../services/api/statService.ts";
 
 export function CalendarPage() {
     const {
@@ -14,8 +15,13 @@ export function CalendarPage() {
         addTaskToState,
     } = useTaskManager();
 
+    const [statDefinitions, setStatDefinitions] = useState<StatDefinition[]>([]);
+
     useEffect(() => {
         fetchAllTasks();
+        statService.getDefinitions()
+            .then(setStatDefinitions)
+            .catch(e => console.error('Failed to load stat definitions:', e));
     }, []);
 
     const handleCreateTask = async (taskToCreate: TaskToCreate) => {
@@ -37,6 +43,7 @@ export function CalendarPage() {
                 <MonthCalendar
                     tasks={allTasks}
                     onCreateTask={handleCreateTask}
+                    statDefinitions={statDefinitions}
                 />
             </Box>
         </PageWrapper>

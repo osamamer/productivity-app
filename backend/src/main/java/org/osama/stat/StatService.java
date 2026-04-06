@@ -8,7 +8,11 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
+import java.util.OptionalDouble;
 import java.util.UUID;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -90,6 +94,65 @@ public class StatService {
 
     public List<StatEntry> getTodayEntries(String userId) {
         return entryRepository.findAllByUserIdAndDate(userId, LocalDate.now());
+    }
+
+    public List<StatEntry> getEntriesByDate(LocalDate date, String userId) {
+        return entryRepository.findAllByUserIdAndDate(userId, date);
+    }
+
+    public StatSummaryResponse getSummary(String definitionId, String userId) {
+        StatDefinition def = definitionRepository.findByIdAndUserId(definitionId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("No such stat."));
+
+        LocalDate today = LocalDate.now();
+        LocalDate yearAgo = today.minusDays(364);
+        LocalDate startOfMonth = today.withDayOfMonth(1);
+
+        List<StatEntry> entries = entryRepository
+                .findAllByStatDefinitionIdAndUserIdAndDateBetween(definitionId, userId, yearAgo, today);
+
+        Map<LocalDate, Double> valueByDate = entries.stream()
+                .collect(Collectors.toMap(StatEntry::getDate, StatEntry::getValue));
+
+        int checkInStreak = computeStreak(today, valueByDate::containsKey);
+
+        Integer monthlyCheckIns = null;
+        Integer booleanStreak = null;
+        Double monthlyAverage = null;
+
+        if (def.getType() == StatType.BOOLEAN) {
+            monthlyCheckIns = (int) entries.stream()
+                    .filter(e -> !e.getDate().isBefore(startOfMonth))
+                    .count();
+            booleanStreak = computeStreak(today,
+                    date -> valueByDate.containsKey(date) && valueByDate.get(date) == 1.0);
+        }
+
+        if (def.getType() == StatType.NUMBER || def.getType() == StatType.RANGE) {
+            OptionalDouble avg = entries.stream()
+                    .filter(e -> !e.getDate().isBefore(startOfMonth))
+                    .mapToDouble(StatEntry::getValue)
+                    .average();
+            monthlyAverage = avg.isPresent() ? avg.getAsDouble() : null;
+        }
+
+        return new StatSummaryResponse(checkInStreak, monthlyCheckIns, booleanStreak, monthlyAverage);
+    }
+
+    /**
+     * Counts consecutive days ending at {@code today} for which {@code hasEntry} is true.
+     * If today itself has no entry, counts backwards from yesterday — the day isn't over yet.
+     */
+    private int computeStreak(LocalDate today, Predicate<LocalDate> hasEntry) {
+        LocalDate start = hasEntry.test(today) ? today : today.minusDays(1);
+        int streak = 0;
+        LocalDate cursor = start;
+        // Safety cap at 365 days (matches the data we fetched)
+        while (streak <= 365 && hasEntry.test(cursor)) {
+            streak++;
+            cursor = cursor.minusDays(1);
+        }
+        return streak;
     }
 
     private StatEntry createEntry(StatDefinition statDefinition, LocalDate date, User user) {

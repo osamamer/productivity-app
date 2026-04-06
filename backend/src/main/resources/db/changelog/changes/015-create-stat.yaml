@@ -52,6 +52,7 @@ databaseChangeLog:
   - changeSet:
       id: 015-create-stat-entry
       author: osama
+      validCheckSum: ANY
       comment: Create stat_entry table for daily stat values
       changes:
         - createTable:

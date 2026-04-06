@@ -70,6 +70,17 @@ public class StatController {
         return statService.getTodayEntries(currentUserService.getCurrentUserId());
     }
 
+    @GetMapping("/definitions/{id}/summary")
+    public StatSummaryResponse getSummary(@PathVariable String id) {
+        return statService.getSummary(id, currentUserService.getCurrentUserId());
+    }
+
+    @GetMapping("/entries/by-date")
+    public List<StatEntry> getEntriesByDate(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        return statService.getEntriesByDate(date, currentUserService.getCurrentUserId());
+    }
+
     // --- Request bodies ---
 
     @Data

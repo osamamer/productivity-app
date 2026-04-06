@@ -46,7 +46,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const login = (..._args: unknown[]) => keycloak.login();
 
-    const logout = () => keycloak.logout({ redirectUri: window.location.origin });
+    const logout = () => keycloak.logout({ redirectUri: window.location.origin + '/' });
 
     return (
         <UserContext.Provider
