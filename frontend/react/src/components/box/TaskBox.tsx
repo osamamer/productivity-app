@@ -25,23 +25,10 @@ export function TaskBox(props: props) {
 
     return (
         <HoverCardBox>
-            <Box sx={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'flex-start',
-                mb: 3,
-                gap: 2
-            }}>
-                <Typography
-                    color="text.primary"
-                    variant="h5"
-                    component="div"
-                >
-                    What's on your mind?
-                </Typography>
-                <Box sx={{ width: '50%' }}>
-                    <SmartTaskInput onSubmit={props.onSubmit} />
-                </Box>
+            <Typography variant="h5" sx={{ mb: 2 }}>Tasks</Typography>
+
+            <Box sx={{ mb: 3, maxWidth: 420 }}>
+                <SmartTaskInput onSubmit={props.onSubmit} />
             </Box>
 
             <TaskAccordion

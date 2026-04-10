@@ -1,6 +1,9 @@
-import { ListItemButton, ListItemIcon, ListItemText, Tooltip } from '@mui/material';
+import { Box, ListItemButton, ListItemText, Tooltip } from '@mui/material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { SvgIconComponent } from '@mui/icons-material';
+
+// Must match COLLAPSED_WIDTH in SideNav
+const ICON_ZONE_WIDTH = 64;
 
 type Props = {
     Icon: SvgIconComponent;
@@ -20,29 +23,32 @@ export function SideMenuButton({ Icon, text, targetPage, open }: Props) {
                 onClick={() => navigate(targetPage)}
                 selected={isActive}
                 sx={{
-                    minHeight: 48,
-                    justifyContent: open ? 'initial' : 'center',
+                    height: 56,
                     borderBottom: 0.5,
-                    py: 2,
                     alignItems: 'center',
+                    px: 0,
                 }}
             >
-                <ListItemIcon
-                    sx={{
-                        minWidth: 0,
-                        mr: open ? 3 : 0,
-                        justifyContent: 'center',
-                        color: isActive ? 'primary.main' : 'inherit',
-                    }}
-                >
+                {/* Fixed-width icon zone — icon never moves regardless of open state */}
+                <Box sx={{
+                    width: ICON_ZONE_WIDTH,
+                    flexShrink: 0,
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    color: isActive ? 'primary.main' : 'inherit',
+                }}>
                     <Icon />
-                </ListItemIcon>
-                {open && (
-                    <ListItemText
-                        primary={text}
-                        sx={{ color: isActive ? 'primary.main' : 'inherit' }}
-                    />
-                )}
+                </Box>
+                <ListItemText
+                    primary={text}
+                    sx={{
+                        opacity: open ? 1 : 0,
+                        transition: 'opacity 0.2s ease',
+                        color: isActive ? 'primary.main' : 'inherit',
+                        whiteSpace: 'nowrap',
+                    }}
+                />
             </ListItemButton>
         </Tooltip>
     );

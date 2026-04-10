@@ -1,222 +1,128 @@
-import React, {useEffect, useState} from 'react'
-import '../App.css'
-import {TodayBox} from "../components/box/TodayBox.tsx";
-import {TaskBox} from "../components/box/TaskBox.tsx";
-import {HighlightedTaskBox} from "../components/box/HighlightedTaskBox.tsx";
-import {HighestPriorityTaskBox} from "../components/box/HighestPriorityTaskBox.tsx";
-import {TaskToCreate} from "../types/TaskToCreate.tsx";
-import {Box} from "@mui/material";
-import {dayService, taskService} from "../services/api";
-import {useAppTheme} from "../contexts/ThemeContext";
-import {WeekCalendar} from "../components/WeekCalendar.tsx";
-import {PageWrapper} from "../components/PageWrapper.tsx";
-import {useGlobalTasks} from "../contexts/TaskContext.tsx";
+import React, { useEffect } from 'react'
+import { Box, Typography } from '@mui/material';
+import { taskService } from "../services/api";
+import { Task } from "../types/Task.tsx";
+import { PageWrapper } from "../components/PageWrapper.tsx";
+import { useGlobalTasks } from "../contexts/TaskContext.tsx";
+import { useUser } from "../contexts/UserContext.tsx";
+import { SmartTaskInput } from "../components/input/SmartTaskInput.tsx";
+import { FlatTaskRow } from "../components/FlatTaskRow.tsx";
+import { TaskToCreate } from "../types/TaskToCreate.tsx";
 
 export function HomePage() {
-    const theme = useAppTheme();
-    const [dialogOpen, setDialogOpen] =
-        useState<{ [key: string]: boolean }>({
-            dayDialog: false,
-            pomodoroDialog: false,
-            createTaskDialog: false,
-        });
+    const { user } = useUser();
 
     const {
         allTasks,
         todayTasks,
-        futureTasks,
         pastTasks,
-        highlightedTask,
-        loading,
-        error,
-        setHighlightedTask,
         fetchAllTasks,
         fetchTodayTasks,
         fetchFutureTasks,
         fetchPastTasks,
         addTaskToState,
         updateTaskInState,
-        removeTaskFromState,
     } = useGlobalTasks();
 
     useEffect(() => {
-        const fetchData = async () => {
-            await Promise.all([
-                fetchAllTasks(),
-                fetchTodayTasks(),
-                fetchFutureTasks(),
-                fetchPastTasks(),
-            ]);
-        };
-        fetchData();
+        Promise.all([fetchAllTasks(), fetchTodayTasks(), fetchFutureTasks(), fetchPastTasks()]);
+        // Fetch functions are stable context refs — intentional mount-only call.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-
-     async function createTask(task: TaskToCreate) {
+    async function createTask(task: TaskToCreate) {
         try {
-            const createdTask = await taskService.createTask(task);
-            addTaskToState(createdTask);
-            setHighlightedTask(createdTask);
+            const created = await taskService.createTask(task);
+            addTaskToState(created);
         } catch (err) {
             console.error('Error creating task:', err);
-            // Fallback: refetch if create doesn't return task
-            await Promise.all([
-                fetchAllTasks(),
-                fetchTodayTasks(),
-                fetchFutureTasks(),
-                fetchPastTasks(),
-            ]);
+            await Promise.all([fetchAllTasks(), fetchTodayTasks()]);
         }
     }
 
-    async function toggleTaskCompletion(taskId: string) {
-        // Optimistic update
-        const task = allTasks.find(t => t.taskId === taskId);
-        if (task) {
-            updateTaskInState(taskId, { completed: !task.completed });
-        }
-
+    async function updateTask(taskId: string, updates: Partial<Task>) {
+        updateTaskInState(taskId, updates);
         try {
-            await taskService.toggleTaskCompletion(taskId);
+            await taskService.updateTask(taskId, updates);
         } catch (err) {
-            console.error('Error toggling task:', err);
-            // Rollback
-            if (task) {
-                updateTaskInState(taskId, { completed: task.completed });
-            }
-        }
-    }
-
-
-
-    async function changeDescription(description: string, taskId: string) {
-        updateTaskInState(taskId, { description: description });
-
-        try {
-            await taskService.updateDescription(taskId, description);
-        } catch (err) {
-            console.error('Error updating description:', err);
+            console.error('Error updating task:', err);
             await fetchAllTasks();
         }
     }
 
-    async function startPomodoro(
-        taskId: string,
-        focusDuration: number,
-        shortBreakDuration: number,
-        longBreakDuration: number,
-        numFocuses: number,
-        longBreakCooldown: number
-    ) {
+    async function toggleTaskCompletion(taskId: string) {
+        const task = allTasks.find(t => t.taskId === taskId);
+        if (task) updateTaskInState(taskId, { completed: !task.completed });
         try {
-            await taskService.startPomodoro(
-                taskId,
-                focusDuration,
-                shortBreakDuration,
-                longBreakDuration,
-                numFocuses,
-                longBreakCooldown
-            );
+            await taskService.toggleTaskCompletion(taskId);
         } catch (err) {
-            console.error('Error starting pomodoro:', err);
+            console.error('Error toggling task:', err);
+            if (task) updateTaskInState(taskId, { completed: task.completed });
         }
     }
 
-
-    function getCurrentDateFormatted() {
-        const date = new Date();
-        const year = date.getFullYear();
-        const month = `0${date.getMonth() + 1}`.slice(-2);
-        const day = `0${date.getDate()}`.slice(-2);
-        return `${year}-${month}-${day}`;
-    }
-
-
-    const handleOpen = (dialogType: string) => {
-        setDialogOpen((prev) =>
-            ({...prev, [dialogType]: true}));
-    };
-
-// Handles closing for all modals
-    const handleClose = (dialogType: string) => {
-        setDialogOpen((prev) =>
-            ({...prev, [dialogType]: false}));
-    };
-
-
+    const hour = new Date().getHours();
+    const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+    const firstName = user?.firstName || user?.username || '';
+    const overdueCount = pastTasks.filter(t => !t.completed).length;
+    const visibleTasks = todayTasks.filter(t => !t.parentId);
 
     return (
-        <>
-            <PageWrapper>
-                <Box sx={{
-                    display: 'flex',
-                    flexWrap: 'wrap',
-                    gap: 2,
-                    height: '100%',
-                }}>
-                    <Box className="left-section"
-                         // sx={{width: '25%'}}
-                         sx={{
-                             display: 'flex',
-                             flexDirection: 'column',
-                             flex: { xs: '1 1 100%', md: '1 1 45%', lg: '1 1 18%' },
-                             minWidth: 0,
-                             gap: 4,
-                         }}
-                    >
-                        <TodayBox handleOpenDialog={handleOpen}/>
-                        {allTasks.length > 0 && (<HighestPriorityTaskBox tasks={allTasks}/>)}
-                    </Box>
+        <PageWrapper>
+            <Box sx={{ maxWidth: 600, mx: 'auto', pt: 10, pb: 8, px: 2 }}>
 
+                <Typography variant="h5" color="text.secondary" sx={{ mb: 4, fontWeight: 400 }}>
+                    {greeting}{firstName ? `, ${firstName}` : ''}.
+                </Typography>
 
-                    <Box className="center-section"
-                        sx={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: 4,
-                            flex: { xs: '1 1 100%', md: '1 1 45%', lg: '1 1 25%' },
-                            minWidth: 0
-                        }}
-                        >
-                        <TaskBox pastTasks={pastTasks}
-                                 todayTasks={todayTasks}
-                                 futureTasks={futureTasks} type={"Next week"}
-                                 toggleTaskCompletion={toggleTaskCompletion}
-                                 onDivClick={setHighlightedTask} handleButtonClick={handleOpen}
-                                 onSubmit={createTask}   />
-                    </Box>
-
-
-
-                    <Box className="right-section"
-                         // sx={{width: '40%'}}
-                         sx={{
-                             display: 'flex',
-                             flexDirection: 'column',
-                             gap: 4,
-                             flex: { xs: '1 1 100%', md: '1 1 100%', lg: '1 1 25%'  },
-                             minWidth: 0
-                         }}
-                    >
-                        {highlightedTask && (
-                            <HighlightedTaskBox
-                                key={highlightedTask.taskId}
-                                tasks={allTasks}
-                                task={highlightedTask}
-                                handleOpenDialog={handleOpen}
-                                toggleTaskCompletion={toggleTaskCompletion}
-                                handleChangeDescription={changeDescription}
-                            />
-                        )}
-                        <WeekCalendar tasks={allTasks} />
-
-
-                    </Box>
+                {/* Input — raised slightly off the page background */}
+                <Box
+                    sx={{
+                        backgroundColor: 'background.paper',
+                        borderRadius: 3,
+                        px: 2.5,
+                        py: 1.5,
+                        mb: 5,
+                        boxShadow: '0 2px 16px rgba(0,0,0,0.06)',
+                        '& .MuiInput-underline:before': { borderBottom: 'none' },
+                        '& .MuiInput-underline:after': { borderBottom: 'none' },
+                        '& .MuiInput-underline:hover:not(.Mui-disabled):before': { borderBottom: 'none' },
+                        '& .MuiInput-root': { fontSize: '1.1rem' },
+                    }}
+                >
+                    <SmartTaskInput onSubmit={createTask} />
                 </Box>
-            </PageWrapper>
 
-        </>
-    )
+                {/* Today's tasks */}
+                {visibleTasks.length > 0
+                    ? visibleTasks.map(task => (
+                        <FlatTaskRow
+                            key={task.taskId}
+                            task={task}
+                            onToggle={toggleTaskCompletion}
+                            onUpdate={updateTask}
+                        />
+                    ))
+                    : (
+                        <Typography variant="body1" color="text.secondary">
+                            Nothing scheduled for today.
+                        </Typography>
+                    )
+                }
+
+                {/* Overdue — mentioned below today's list, not listed */}
+                {overdueCount > 0 && (
+                    <Typography
+                        variant="body2"
+                        sx={{ mt: 4, color: 'warning.main', fontWeight: 500 }}
+                    >
+                        {overdueCount} task{overdueCount > 1 ? 's' : ''} from earlier still waiting.
+                    </Typography>
+                )}
+
+            </Box>
+        </PageWrapper>
+    );
 }
 
 export default HomePage

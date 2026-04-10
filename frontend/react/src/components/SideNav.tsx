@@ -72,26 +72,19 @@ export function SideNav() {
             <Box sx={{ width: '100%', pb: 1 }}>
                 <Divider />
 
-                <Box sx={{
-                    height: 48,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    overflow: 'hidden',
-                    position: 'relative',
-                }}>
-                    <Tooltip title={darkMode ? 'Light mode' : 'Dark mode'} placement="right">
-                        <IconButton onClick={toggleTheme} size="small">
-                            {darkMode ? <LightModeIcon /> : <NightlightIcon />}
-                        </IconButton>
-                    </Tooltip>
+                <Box sx={{ height: 48, display: 'flex', alignItems: 'center' }}>
+                    {/* Fixed icon zone — always COLLAPSED_WIDTH wide so icon never moves */}
+                    <Box sx={{ width: COLLAPSED_WIDTH, flexShrink: 0, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                        <Tooltip title={open ? '' : (darkMode ? 'Light mode' : 'Dark mode')} placement="right">
+                            <IconButton onClick={toggleTheme} size="small">
+                                {darkMode ? <LightModeIcon /> : <NightlightIcon />}
+                            </IconButton>
+                        </Tooltip>
+                    </Box>
                     <Typography variant="body2" sx={{
-                        ml: 2,
                         opacity: open ? 1 : 0,
                         transition: 'opacity 0.2s ease',
                         whiteSpace: 'nowrap',
-                        position: 'absolute',
-                        left: 48,
                     }}>
                         {darkMode ? 'Light mode' : 'Dark mode'}
                     </Typography>
@@ -100,24 +93,18 @@ export function SideNav() {
                 <Divider />
 
                 {user && (
-                    <Box sx={{
-                        height: 64,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        overflow: 'hidden',
-                        position: 'relative',
-                        px: 1.5,
-                    }}>
-                        <Tooltip title={open ? '' : `${user.firstName} ${user.lastName}`} placement="right">
-                            <Avatar sx={{ width: 34, height: 34, bgcolor: 'primary.main', flexShrink: 0, fontSize: '0.8rem' }}>
-                                {getInitials()}
-                            </Avatar>
-                        </Tooltip>
+                    <Box sx={{ height: 64, display: 'flex', alignItems: 'center', pr: 1 }}>
+                        {/* Fixed icon zone */}
+                        <Box sx={{ width: COLLAPSED_WIDTH, flexShrink: 0, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                            <Tooltip title={open ? '' : `${user.firstName} ${user.lastName}`} placement="right">
+                                <Avatar sx={{ width: 34, height: 34, bgcolor: 'primary.main', flexShrink: 0, fontSize: '0.8rem' }}>
+                                    {getInitials()}
+                                </Avatar>
+                            </Tooltip>
+                        </Box>
                         <Box sx={{
                             minWidth: 0,
                             flexGrow: 1,
-                            ml: 1.5,
                             opacity: open ? 1 : 0,
                             transition: 'opacity 0.2s ease',
                         }}>

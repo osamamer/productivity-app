@@ -47,12 +47,17 @@ interface PomodoroFormData {
 
 interface Props {
     task: Task | null;
+    onActiveChange?: (active: boolean) => void;
 }
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8080/ws';
 
-export function PomodoroTimer({ task }: Props) {
+export function PomodoroTimer({ task, onActiveChange }: Props) {
     const [status, setStatus] = useState<Pomodoro | null>(null);
+
+    useEffect(() => {
+        onActiveChange?.(Boolean(status?.active));
+    }, [status?.active, onActiveChange]);
     const [isConnected, setIsConnected] = useState(false);
     const [connectionError, setConnectionError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -440,9 +445,9 @@ export function PomodoroTimer({ task }: Props) {
                                 Session {status.currentFocusNumber} of {status.numFocuses}
                             </Typography>
 
-                            {/* Controls */}
-                            {status.sessionActive && (
-                                <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
+                            {/* Controls — stop is always available; play/pause only during focus */}
+                            <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
+                                {status.sessionActive && (
                                     <IconButton
                                         onClick={handleTogglePlayPause}
                                         color="primary"
@@ -450,30 +455,28 @@ export function PomodoroTimer({ task }: Props) {
                                         disabled={isLoading}
                                         sx={{
                                             backgroundColor: 'action.hover',
-                                            '&:hover': {
-                                                backgroundColor: 'action.selected',
-                                            },
+                                            '&:hover': { backgroundColor: 'action.selected' },
                                         }}
                                     >
                                         {status.sessionRunning ? <PauseIcon /> : <PlayArrowIcon />}
                                     </IconButton>
-                                    <IconButton
-                                        onClick={handleEndSession}
-                                        color="error"
-                                        size="large"
-                                        disabled={isLoading}
-                                        sx={{
-                                            backgroundColor: 'action.hover',
-                                            '&:hover': {
-                                                backgroundColor: 'error.light',
-                                                color: 'error.contrastText',
-                                            },
-                                        }}
-                                    >
-                                        <StopIcon />
-                                    </IconButton>
-                                </Box>
-                            )}
+                                )}
+                                <IconButton
+                                    onClick={handleEndSession}
+                                    color="error"
+                                    size="large"
+                                    disabled={isLoading}
+                                    sx={{
+                                        backgroundColor: 'action.hover',
+                                        '&:hover': {
+                                            backgroundColor: 'error.light',
+                                            color: 'error.contrastText',
+                                        },
+                                    }}
+                                >
+                                    <StopIcon />
+                                </IconButton>
+                            </Box>
                         </Box>
                     </>
                 )}

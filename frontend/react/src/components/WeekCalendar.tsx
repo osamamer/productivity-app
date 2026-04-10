@@ -60,7 +60,7 @@ export function WeekCalendar({ tasks }: TaskCalendarProps) {
     };
 
     return (
-        <HoverCardBox maximumHeight="250px">
+        <HoverCardBox>
             <Typography variant="h6" sx={{ mb: 2 }}>
                 This Week
             </Typography>
