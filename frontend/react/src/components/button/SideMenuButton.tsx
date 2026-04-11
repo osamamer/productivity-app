@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { SvgIconComponent } from '@mui/icons-material';
 
 // Must match COLLAPSED_WIDTH in SideNav
-const ICON_ZONE_WIDTH = 64;
+const ICON_ZONE_WIDTH = 60;
 
 type Props = {
     Icon: SvgIconComponent;
@@ -23,10 +23,10 @@ export function SideMenuButton({ Icon, text, targetPage, open }: Props) {
                 onClick={() => navigate(targetPage)}
                 selected={isActive}
                 sx={{
-                    height: 56,
-                    borderBottom: 0.5,
+                    minHeight: 46,
                     alignItems: 'center',
                     px: 0,
+                    py: 0.25,
                 }}
             >
                 {/* Fixed-width icon zone — icon never moves regardless of open state */}
@@ -38,10 +38,14 @@ export function SideMenuButton({ Icon, text, targetPage, open }: Props) {
                     alignItems: 'center',
                     color: isActive ? 'primary.main' : 'inherit',
                 }}>
-                    <Icon />
+                    <Icon sx={{ fontSize: 20 }} />
                 </Box>
                 <ListItemText
                     primary={text}
+                    primaryTypographyProps={{
+                        fontSize: '0.9rem',
+                        fontWeight: isActive ? 600 : 500,
+                    }}
                     sx={{
                         opacity: open ? 1 : 0,
                         transition: 'opacity 0.2s ease',

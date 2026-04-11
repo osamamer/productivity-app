@@ -88,11 +88,8 @@ export function DateStatCheckIn({ date, definitions, onSaved }: Props) {
     }
 
     return (
-        <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+        <Box sx={{ p: 2 }}>
             <Box sx={{
-                flexGrow: 1,
-                overflowY: 'auto',
-                p: 2,
                 '&::-webkit-scrollbar': {
                     width: '0.4em',
                 },
@@ -169,7 +166,7 @@ export function DateStatCheckIn({ date, definitions, onSaved }: Props) {
                 </Stack>
             </Box>
 
-            <Box sx={{ flexShrink: 0, p: 2, borderTop: 1, borderColor: 'divider' }}>
+            <Box sx={{ pt: 2, mt: 2, borderTop: 1, borderColor: 'divider' }}>
                 {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
                 {success && <Alert severity="success" sx={{ mb: 2 }}>Saved!</Alert>}
                 <Button

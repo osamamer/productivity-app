@@ -1,4 +1,4 @@
-import { Box, Popover, Tabs, Tab, Typography } from "@mui/material";
+import { Box, Dialog, DialogContent, Tabs, Tab, Typography } from "@mui/material";
 import { HoverCardBox } from "./box/HoverCardBox.tsx";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin, { DateClickArg } from "@fullcalendar/interaction";
@@ -22,7 +22,6 @@ type MonthCalenderProps = {
 export function MonthCalendar({ tasks, onCreateTask, statDefinitions }: MonthCalenderProps) {
     const theme = useTheme();
     const [editingDate, setEditingDate] = useState<string | null>(null);
-    const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
     const [activeTab, setActiveTab] = useState(0);
     const hasStats = statDefinitions && statDefinitions.length > 0;
     const isFutureDate = editingDate
@@ -58,7 +57,6 @@ export function MonthCalendar({ tasks, onCreateTask, statDefinitions }: MonthCal
 
     const handleDateClick = useCallback((arg: DateClickArg) => {
         setEditingDate(arg.dateStr);
-        setAnchorEl(arg.dayEl);
         setActiveTab(0);
     }, []);
 
@@ -76,7 +74,6 @@ export function MonthCalendar({ tasks, onCreateTask, statDefinitions }: MonthCal
 
         onCreateTask(finalTask);
         setEditingDate(null);
-        setAnchorEl(null);
     }, [editingDate, onCreateTask]);
 
     return (
@@ -97,10 +94,12 @@ export function MonthCalendar({ tasks, onCreateTask, statDefinitions }: MonthCal
                         },
                         '& .fc-daygrid-day': {
                             border: 'none',
+                            outline: `1px solid ${theme.palette.divider}`,
+                            outlineOffset: '-1px',
                             background: theme.palette.mode === 'dark'
                                 ? 'rgba(255, 255, 255, 0.03)'
                                 : 'rgba(0, 0, 0, 0.02)',
-                            margin: '2px',
+                            margin: '1px',
                             borderRadius: '0px',
                             transition: 'all 0.2s ease',
                             cursor: 'pointer',
@@ -181,22 +180,15 @@ export function MonthCalendar({ tasks, onCreateTask, statDefinitions }: MonthCal
                 </Box>
             </HoverCardBox>
 
-            <Popover
+            <Dialog
                 open={Boolean(editingDate)}
-                anchorEl={anchorEl}
                 onClose={() => {
                     setEditingDate(null);
-                    setAnchorEl(null);
                     setActiveTab(0);
                 }}
-                anchorOrigin={{
-                    vertical: 'bottom',
-                    horizontal: 'center',
-                }}
-                transformOrigin={{
-                    vertical: 'top',
-                    horizontal: 'center',
-                }}
+                fullWidth
+                maxWidth="xs"
+                scroll="paper"
                 slotProps={{
                     paper: {
                         sx: {
@@ -205,15 +197,13 @@ export function MonthCalendar({ tasks, onCreateTask, statDefinitions }: MonthCal
                                 : 'rgba(250, 250, 250, 0.98)',
                             backdropFilter: 'blur(10px)',
                             boxShadow: theme.shadows[8],
-                            width: 360,
+                            width: '100%',
                             maxHeight: '80vh',
-                            display: 'flex',
-                            flexDirection: 'column'
-                        }
-                    }
+                        },
+                    },
                 }}
             >
-                <Box sx={{ flexShrink: 0, pt: 2 }}>
+                <Box sx={{ pt: 2 }}>
                     {editingDate && (
                         <Typography variant="caption" color="text.secondary" sx={{ px: 2, display: 'block' }}>
                             {format(new Date(editingDate + 'T12:00:00'), 'MMMM d, yyyy')}
@@ -232,7 +222,7 @@ export function MonthCalendar({ tasks, onCreateTask, statDefinitions }: MonthCal
                     )}
                 </Box>
 
-                <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                <DialogContent dividers sx={{ p: 0 }}>
                     {activeTab === 0 && (
                         <Box sx={{ p: 2 }}>
                             <SmartTaskInput
@@ -246,11 +236,11 @@ export function MonthCalendar({ tasks, onCreateTask, statDefinitions }: MonthCal
                         <DateStatCheckIn
                             date={editingDate}
                             definitions={statDefinitions!}
-                            onSaved={() => { setEditingDate(null); setAnchorEl(null); }}
+                            onSaved={() => { setEditingDate(null); }}
                         />
                     )}
-                </Box>
-            </Popover>
+                </DialogContent>
+            </Dialog>
         </>
     );
 }

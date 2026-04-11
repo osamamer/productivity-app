@@ -22,8 +22,8 @@ import { SideMenuButton } from "./button/SideMenuButton";
 import { useAppTheme } from "../contexts/ThemeContext";
 import { useUser } from "../contexts/UserContext";
 
-const COLLAPSED_WIDTH = 64;
-const EXPANDED_WIDTH = 220;
+const COLLAPSED_WIDTH = 60;
+const EXPANDED_WIDTH = 208;
 
 export function SideNav() {
     const { darkMode, toggleTheme } = useAppTheme();
@@ -59,7 +59,7 @@ export function SideNav() {
             }}
         >
             {/* Nav items */}
-            <List sx={{ width: '100%', textAlign: 'center', mt: 1, flexGrow: 1 }}>
+            <List sx={{ width: '100%', textAlign: 'center', flexGrow: 1 }}>
                 <SideMenuButton Icon={HomeIcon}            text="Home"       targetPage="/"          open={open} />
                 <SideMenuButton Icon={AssignmentIcon}      text="Tasks"      targetPage="/tasks"     open={open} />
                 <SideMenuButton Icon={CalendarMonthIcon}   text="Calendar"   targetPage="/calendar"  open={open} />
@@ -72,16 +72,17 @@ export function SideNav() {
             <Box sx={{ width: '100%', pb: 1 }}>
                 <Divider />
 
-                <Box sx={{ height: 48, display: 'flex', alignItems: 'center' }}>
+                <Box sx={{ height: 44, display: 'flex', alignItems: 'center' }}>
                     {/* Fixed icon zone — always COLLAPSED_WIDTH wide so icon never moves */}
                     <Box sx={{ width: COLLAPSED_WIDTH, flexShrink: 0, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
                         <Tooltip title={open ? '' : (darkMode ? 'Light mode' : 'Dark mode')} placement="right">
-                            <IconButton onClick={toggleTheme} size="small">
-                                {darkMode ? <LightModeIcon /> : <NightlightIcon />}
+                            <IconButton onClick={toggleTheme} size="small" sx={{ p: 0.75 }}>
+                                {darkMode ? <LightModeIcon sx={{ fontSize: 19 }} /> : <NightlightIcon sx={{ fontSize: 19 }} />}
                             </IconButton>
                         </Tooltip>
                     </Box>
                     <Typography variant="body2" sx={{
+                        fontSize: '0.82rem',
                         opacity: open ? 1 : 0,
                         transition: 'opacity 0.2s ease',
                         whiteSpace: 'nowrap',
@@ -93,11 +94,11 @@ export function SideNav() {
                 <Divider />
 
                 {user && (
-                    <Box sx={{ height: 64, display: 'flex', alignItems: 'center', pr: 1 }}>
+                    <Box sx={{ height: 58, display: 'flex', alignItems: 'center', pr: 1 }}>
                         {/* Fixed icon zone */}
                         <Box sx={{ width: COLLAPSED_WIDTH, flexShrink: 0, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
                             <Tooltip title={open ? '' : `${user.firstName} ${user.lastName}`} placement="right">
-                                <Avatar sx={{ width: 34, height: 34, bgcolor: 'primary.main', flexShrink: 0, fontSize: '0.8rem' }}>
+                                <Avatar sx={{ width: 30, height: 30, bgcolor: 'primary.main', flexShrink: 0, fontSize: '0.72rem' }}>
                                     {getInitials()}
                                 </Avatar>
                             </Tooltip>
@@ -108,10 +109,10 @@ export function SideNav() {
                             opacity: open ? 1 : 0,
                             transition: 'opacity 0.2s ease',
                         }}>
-                            <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            <Typography variant="body2" sx={{ fontSize: '0.82rem', fontWeight: 600, lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                 {user.firstName} {user.lastName}
                             </Typography>
-                            <Typography variant="caption" color="text.secondary" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
+                            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.72rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
                                 {user.email}
                             </Typography>
                         </Box>
@@ -123,6 +124,7 @@ export function SideNav() {
                                     flexShrink: 0,
                                     opacity: open ? 1 : 0,
                                     transition: 'opacity 0.2s ease',
+                                    p: 0.75,
                                 }}
                             >
                                 <LogoutIcon fontSize="small" />

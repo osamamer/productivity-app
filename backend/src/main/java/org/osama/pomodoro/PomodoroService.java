@@ -171,13 +171,12 @@ public class PomodoroService {
     }
 
     public void endPomodoro(String taskId) {
-        Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(taskId).orElseThrow(() -> new IllegalStateException("No pomodoro found for task."));
-        if (pomodoro == null) {
-            log.warn("No pomodoro found for task: {}", taskId);
-            return;
-        }
+        Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(taskId)
+                .orElseThrow(() -> new IllegalStateException("No pomodoro found for task."));
 
-        taskSessionService.endSession(taskId);
+        if (taskSessionRepository.existsByAssociatedTaskIdAndActiveIsTrue(taskId)) {
+            taskSessionService.endSession(taskId);
+        }
 
         pomodoro.setSessionRunning(false);
         pomodoro.setSessionActive(false);

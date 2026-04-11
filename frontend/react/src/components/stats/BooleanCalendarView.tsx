@@ -89,7 +89,9 @@ export function BooleanCalendarView({ definition, dateRange, refreshKey }: Props
                                     height: 62,
                                     minHeight: 52,
                                     borderRadius: 1,
-                                    bgcolor: theme.palette.action.disabledBackground,
+                                    bgcolor: theme.palette.mode === 'dark'
+                                        ? theme.palette.background.default
+                                        : theme.palette.action.disabledBackground,
                                     display: 'flex',
                                     alignItems: 'flex-end',
                                     justifyContent: 'flex-start',
@@ -167,7 +169,7 @@ export function BooleanCalendarView({ definition, dateRange, refreshKey }: Props
                     <Typography variant="caption" color="text.secondary">No</Typography>
                 </Stack>
                 <Stack direction="row" spacing={0.5} alignItems="center">
-                    <Box sx={{ width: 12, height: 12, borderRadius: 0.5, bgcolor: 'action.disabledBackground' }} />
+                    <Box sx={{ width: 12, height: 12, borderRadius: 0.5, bgcolor: theme.palette.mode === 'dark' ? 'background.default' : 'action.disabledBackground' }} />
                     <Typography variant="caption" color="text.secondary">No data</Typography>
                 </Stack>
             </Stack>

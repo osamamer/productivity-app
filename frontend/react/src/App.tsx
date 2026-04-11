@@ -17,6 +17,7 @@ import {ProtectedRoute} from "./components/ProtectedRoute";
 import {TaskProvider} from "./contexts/TaskContext.tsx";
 import {UserProvider} from "./contexts/UserContext";
 import {StatsPage} from "./pages/StatsPage.tsx";
+import {SettingsPage} from "./pages/SettingsPage.tsx";
 
 
 function App() {
@@ -64,6 +65,14 @@ function App() {
                             element={
                                 <ProtectedRoute>
                                     <StatsPage/>
+                                </ProtectedRoute>
+                            }
+                        />
+                        <Route
+                            path="/settings"
+                            element={
+                                <ProtectedRoute>
+                                    <SettingsPage/>
                                 </ProtectedRoute>
                             }
                         />

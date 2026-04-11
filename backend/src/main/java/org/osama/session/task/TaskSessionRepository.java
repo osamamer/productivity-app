@@ -17,4 +17,6 @@ public interface TaskSessionRepository extends JpaRepository<TaskSession, String
     int countAllByAssociatedTaskIdAndActiveIsFalse(String taskId);
 
     boolean existsByAssociatedTaskIdAndRunningIsTrue(String taskId);
+
+    boolean existsByAssociatedTaskIdAndActiveIsTrue(String taskId);
 }

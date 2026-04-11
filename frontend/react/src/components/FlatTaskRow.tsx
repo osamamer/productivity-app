@@ -47,12 +47,13 @@ interface PomodoroForm {
     longBreakCooldown: number;
 }
 
-type ExpandedPanel = 'pomodoro' | 'details' | null;
-
 export type FlatTaskRowProps = {
     task: Task;
     onToggle: (taskId: string) => void;
     onUpdate: (taskId: string, updates: Partial<Task>) => Promise<void>;
+    expandedPanel: 'pomodoro' | 'details' | null;
+    onTogglePanel: (panel: 'pomodoro' | 'details') => void;
+    onAutoExpand: (panel: 'pomodoro') => void;
 };
 
 // ─── helpers ───────────────────────────────────────────────────────────────
@@ -85,17 +86,15 @@ function currentPriorityLabel(importance: number): string {
 
 // ─── component ─────────────────────────────────────────────────────────────
 
-export function FlatTaskRow({ task, onToggle, onUpdate }: FlatTaskRowProps) {
+export function FlatTaskRow({ task, onToggle, onUpdate, expandedPanel, onTogglePanel, onAutoExpand }: FlatTaskRowProps) {
     const theme = useTheme();
     // Use the lighter shade of primary throughout — softer on the eye
     const accent = theme.palette.primary.light;
     const lightBlue   = '#90caf9';
     const lightPurple = '#ce93d8';
 
-    const [expandedPanel, setExpandedPanel] = useState<ExpandedPanel>(null);
     const [pomodoroStatus, setPomodoroStatus] = useState<PomodoroStatus | null>(null);
     const [wsConnected, setWsConnected] = useState(false);
-    const [wsLoading, setWsLoading] = useState(false);
     const [actionLoading, setActionLoading] = useState(false);
 
     // Local description state — committed on blur to avoid an API call per keystroke
@@ -113,25 +112,10 @@ export function FlatTaskRow({ task, onToggle, onUpdate }: FlatTaskRowProps) {
     const stompRef = useRef<Client | null>(null);
     const subscriptionRef = useRef<StompSubscription | null>(null);
 
-    // On mount: check if this task already has an active pomodoro running.
-    // If so, pre-populate the status and auto-open the panel so the user
-    // doesn't have to manually open it after a page remount.
+    // On mount: connect WebSocket and subscribe to pomodoro updates for this task.
+    // Connecting on mount (not on panel open) means the panel opens into an already-live
+    // connection — no handshake delay, no "Connecting…" flicker.
     useEffect(() => {
-        taskService.getActivePomodoro(task.taskId)
-            .then(status => {
-                if (status?.active) {
-                    setPomodoroStatus(status as unknown as PomodoroStatus);
-                    setExpandedPanel('pomodoro');
-                }
-            })
-            .catch(e => console.error('Error checking pomodoro status:', e));
-    }, [task.taskId]);
-
-    // WebSocket connects only while the pomodoro panel is open
-    useEffect(() => {
-        if (expandedPanel !== 'pomodoro') return;
-
-        setWsLoading(true);
         const client = new Client({
             brokerURL: WS_URL,
             connectHeaders: { Authorization: `Bearer ${keycloak.token ?? ''}` },
@@ -142,7 +126,6 @@ export function FlatTaskRow({ task, onToggle, onUpdate }: FlatTaskRowProps) {
 
         client.onConnect = () => {
             setWsConnected(true);
-            setWsLoading(false);
             subscriptionRef.current = client.subscribe(
                 `/topic/pomodoro/${task.taskId}`,
                 (msg) => {
@@ -152,8 +135,8 @@ export function FlatTaskRow({ task, onToggle, onUpdate }: FlatTaskRowProps) {
             );
         };
 
-        client.onDisconnect = () => { setWsConnected(false); setWsLoading(false); };
-        client.onWebSocketError = () => { setWsConnected(false); setWsLoading(false); };
+        client.onDisconnect = () => { setWsConnected(false); };
+        client.onWebSocketError = () => { setWsConnected(false); };
 
         stompRef.current = client;
         client.activate();
@@ -163,11 +146,27 @@ export function FlatTaskRow({ task, onToggle, onUpdate }: FlatTaskRowProps) {
             client.deactivate();
             setWsConnected(false);
         };
-    }, [expandedPanel, task.taskId]);
+    }, [task.taskId]);
+
+    // On mount: check if this task already has an active pomodoro running and
+    // auto-open the panel so the user doesn't lose their session after a page remount.
+    useEffect(() => {
+        taskService.getActivePomodoro(task.taskId)
+            .then(status => {
+                if (status?.active) {
+                    setPomodoroStatus(status as unknown as PomodoroStatus);
+                    onAutoExpand('pomodoro');
+                }
+            })
+            .catch(e => console.error('Error checking pomodoro status:', e));
+    // onAutoExpand is a stable arrow function defined inline in the parent — intentionally
+    // omitted from deps to avoid re-running when the parent re-renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [task.taskId]);
 
     const togglePanel = useCallback((panel: 'pomodoro' | 'details') => {
-        setExpandedPanel(prev => prev === panel ? null : panel);
-    }, []);
+        onTogglePanel(panel);
+    }, [onTogglePanel]);
 
     const handleStart = async () => {
         setActionLoading(true);
@@ -295,16 +294,7 @@ export function FlatTaskRow({ task, onToggle, onUpdate }: FlatTaskRowProps) {
             {/* ── Pomodoro panel ── */}
             {expandedPanel === 'pomodoro' && (
                 <Box sx={{ px: 2, pb: 2, pt: 0.5 }}>
-                    {/* While WS is connecting and we have no status yet, show only the
-                        spinner — never flash the config form before we know the session state. */}
-                    {wsLoading && !pomodoroStatus ? (
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <CircularProgress size={14} />
-                            <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'left' }}>
-                                Connecting…
-                            </Typography>
-                        </Box>
-                    ) : !isActive ? (
+                    {!isActive ? (
                         <Box>
                             <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5, mb: 1.5 }}>
                                 {(
@@ -335,10 +325,10 @@ export function FlatTaskRow({ task, onToggle, onUpdate }: FlatTaskRowProps) {
                                 onClick={handleStart}
                                 startIcon={actionLoading ? <CircularProgress size={14} /> : <PlayArrowIcon />}
                                 sx={{
-                                    borderColor: lightPurple,
-                                    color: lightPurple,
+                                    borderColor: 'primary',
+                                    color: 'primary',
                                     '&:hover': {
-                                        borderColor: lightPurple,
+                                        borderColor: 'primary',
                                         backgroundColor: alpha(lightPurple, 0.08),
                                     },
                                 }}
@@ -476,11 +466,11 @@ export function FlatTaskRow({ task, onToggle, onUpdate }: FlatTaskRowProps) {
                     sx={{
                         position: 'absolute',
                         bottom: 0, left: 0, right: 0,
-                        height: 3,
+                        height: 2,
                         borderRadius: 0,
-                        backgroundColor: alpha(useGreenBar ? theme.palette.success.main : lightBlue, 0.15),
+                        backgroundColor: alpha(useGreenBar ? theme.palette.success.main : lightPurple, 0.15),
                         '& .MuiLinearProgress-bar': {
-                            backgroundColor: useGreenBar ? theme.palette.success.main : lightBlue,
+                            backgroundColor: useGreenBar ? theme.palette.success.main : lightPurple,
                             borderRadius: 0,
                         },
                     }}
