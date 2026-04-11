@@ -76,7 +76,7 @@ export function HomePage() {
     }
 
     const hour = new Date().getHours();
-    const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+    const greeting = hour < 5 ? 'Good wee hours' : hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
     const firstName = user?.firstName || user?.username || '';
     const overdueCount = pastTasks.filter(t => !t.completed).length;
     const visibleTasks = todayTasks.filter(t => !t.parentId);

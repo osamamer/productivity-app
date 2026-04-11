@@ -23,7 +23,7 @@ import { useAppTheme } from "../contexts/ThemeContext";
 import { useUser } from "../contexts/UserContext";
 
 const COLLAPSED_WIDTH = 60;
-const EXPANDED_WIDTH = 208;
+const EXPANDED_WIDTH = 175;
 
 export function SideNav() {
     const { darkMode, toggleTheme } = useAppTheme();
@@ -79,6 +79,7 @@ export function SideNav() {
                     alignItems: 'center',
                     transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
                     boxSizing: 'border-box',
+                    pt: 1,
                 },
             }}
         >

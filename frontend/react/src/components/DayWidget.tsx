@@ -13,7 +13,7 @@ import summaryIcon from '../assets/images/summary.png';
 // CSS rotation of the icon+stars container toward the page center.
 // Negative = counter-clockwise; the widget is top-right so -35° faces left-down.
 const hour = new Date().getHours();
-const isDay = true;
+const isDay = hour >= 6 && hour <= 20;
 const ROTATION_DEG = isDay ? 45 : 0;
 
 
