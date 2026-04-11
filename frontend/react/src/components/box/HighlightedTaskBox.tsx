@@ -98,7 +98,7 @@ export function HighlightedTaskBox(props: props) {
                 transition: 'border-color 0.3s',
             }}
         >
-        <HoverCardBox>
+        <HoverCardBox variant="paper" hover={false}>
             {props.label && (
                 <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 0.5, lineHeight: 1 }}>
                     {props.label}

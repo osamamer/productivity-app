@@ -155,7 +155,7 @@ export function TaskPage() {
                     gap: 3,
                 }}>
                     {/* Header Section */}
-                    <HoverCardBox>
+                    <HoverCardBox variant="paper" hover={false}>
                         <Box sx={{
                             display: 'flex',
                             flexDirection: 'column',
@@ -229,7 +229,7 @@ export function TaskPage() {
                     }}>
                         {/* Today's Tasks */}
                         <Box ref={todayRef}>
-                            <HoverCardBox>
+                            <HoverCardBox variant="paper" hover={false}>
                                 <Box sx={{ mb: 2 }}>
                                     <Box sx={{
                                         display: 'flex',
@@ -283,7 +283,7 @@ export function TaskPage() {
 
                         {/* Coming Up Tasks */}
                         <Box ref={comingUpRef}>
-                            <HoverCardBox>
+                            <HoverCardBox variant="paper" hover={false}>
                                 <Box sx={{ mb: 2 }}>
                                     <Box sx={{
                                         display: 'flex',
@@ -337,7 +337,7 @@ export function TaskPage() {
 
                         {/* Past Tasks (Leftovers) */}
                         <Box ref={leftoversRef}>
-                            <HoverCardBox>
+                            <HoverCardBox variant="paper" hover={false}>
                                 <Box sx={{ mb: 2 }}>
                                     <Box sx={{
                                         display: 'flex',
@@ -392,7 +392,7 @@ export function TaskPage() {
 
                     {/* Empty State */}
                     {!tasksExist && (
-                        <HoverCardBox>
+                        <HoverCardBox variant="paper" hover={false}>
                             <Typography
                                 variant="h5"
                                 sx={{
@@ -426,7 +426,7 @@ export function TaskPage() {
                             toggleTaskCompletion={toggleTaskCompletion}
                             />
                     ) : (
-                        <HoverCardBox>
+                        <HoverCardBox variant="paper" hover={false}>
                             <Typography
                                 variant="h6"
                                 color="text.secondary"
@@ -442,7 +442,7 @@ export function TaskPage() {
                     )}
 
                     {/* Task Statistics */}
-                    <HoverCardBox>
+                    <HoverCardBox variant="paper" hover={false}>
                         <Typography
                             variant="h6"
                             color="text.primary"

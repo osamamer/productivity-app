@@ -226,7 +226,7 @@ export function SmartTaskInput({ onSubmit, initialDate, autoFocus, parentId }: S
                     inputRef={inputRef}
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
-                    placeholder={ parentId ? "Add subtask..." : "Add task..."}
+                    placeholder={ parentId ? "Add subtask..." : "Add a task..."}
                     variant="standard"
                     fullWidth
                     sx={{

@@ -13,7 +13,7 @@ import summaryIcon from '../assets/images/summary.png';
 // CSS rotation of the icon+stars container toward the page center.
 // Negative = counter-clockwise; the widget is top-right so -35° faces left-down.
 const hour = new Date().getHours();
-const isDay = hour >= 6 && hour < 20;
+const isDay = true;
 const ROTATION_DEG = isDay ? 45 : 0;
 
 
@@ -94,7 +94,7 @@ function starState(i: number, rating: number): 'full' | 'half' | 'empty' {
 
 // ─── SVG sub-components ──────────────────────────────────────────────────────
 
-function SunSvg() {
+function SunSvg({ sunColor, glowColor }: { sunColor: string; glowColor: string }) {
     return (
         <svg
             width={CX * 2} height={CY * 2 + 8}
@@ -103,29 +103,29 @@ function SunSvg() {
             {SUN_RAYS.map((r, i) => (
                 <line key={i}
                     x1={r.x1} y1={r.y1} x2={r.x2} y2={r.y2}
-                    stroke="#FFD600" strokeWidth="3" strokeLinecap="round" opacity="0.85"
+                    stroke={sunColor} strokeWidth="3" strokeLinecap="round" opacity="0.8"
                 />
             ))}
             {/* outer glow */}
-            <circle cx={CX} cy={CY} r={SUN_R + 5} fill="#FFD600" opacity="0.10" />
+            <circle cx={CX} cy={CY} r={SUN_R + 5} fill={glowColor} opacity="0.08" />
             {/* body */}
-            <circle cx={CX} cy={CY} r={SUN_R} fill="#FFD600" />
+            <circle cx={CX} cy={CY} r={SUN_R} fill={sunColor} />
             {/* shine highlight */}
             <circle cx={CX - 6} cy={CY - 6} r={5} fill="rgba(255,255,255,0.28)" />
         </svg>
     );
 }
 
-function MoonSvg({ bgColor }: { bgColor: string }) {
+function MoonSvg({ bgColor, moonColor, glowColor }: { bgColor: string; moonColor: string; glowColor: string }) {
     return (
         <svg
             width={CX * 2} height={CY * 2 + 8}
             style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', overflow: 'visible' }}
         >
             {/* outer glow */}
-            <circle cx={CX} cy={CY} r={MOON_R + 5} fill="#CBD5E1" opacity="0.09" />
+            <circle cx={CX} cy={CY} r={MOON_R + 5} fill={glowColor} opacity="0.09" />
             {/* moon body */}
-            <circle cx={CX} cy={CY} r={MOON_R} fill="#CBD5E1" />
+            <circle cx={CX} cy={CY} r={MOON_R} fill={moonColor} />
             {/* crescent mask — must exactly match page background */}
             <circle cx={CX + MASK_DX} cy={CY + MASK_DY} r={MASK_R} fill={bgColor} />
         </svg>
@@ -168,10 +168,17 @@ export function DayWidget() {
     }
 
     const activeRating = hoveredRating ?? today?.rating ?? 0;
-    const starFillColor = isDay ? '#FFD600' : '#CBD5E1';
+    const sunColor = theme.palette.mode === 'light' ? '#F4B400' : '#FFD600';
+    const sunGlowColor = theme.palette.mode === 'light' ? '#F6C453' : '#FFD600';
+    const nightColor = theme.palette.mode === 'light' ? '#64748B' : '#CBD5E1';
+    const starFillColor = isDay ? sunColor : nightColor;
     const starGlow = isDay
-        ? 'drop-shadow(0 0 4px rgba(255,214,0,0.65))'
-        : 'drop-shadow(0 0 4px rgba(203,213,225,0.55))';
+        ? theme.palette.mode === 'light'
+            ? 'drop-shadow(0 0 4px rgba(244,180,0,0.35))'
+            : 'drop-shadow(0 0 4px rgba(255,214,0,0.65))'
+        : theme.palette.mode === 'light'
+            ? 'drop-shadow(0 0 4px rgba(100,116,139,0.4))'
+            : 'drop-shadow(0 0 4px rgba(203,213,225,0.55))';
     const bgColor = theme.palette.background.default;
 
     const inputSx = {
@@ -225,7 +232,7 @@ export function DayWidget() {
                     height: CONTAINER_H,
                 }}
             >
-                {isDay ? <SunSvg /> : <MoonSvg bgColor={bgColor} />}
+                {isDay ? <SunSvg sunColor={sunColor} glowColor={sunGlowColor} /> : <MoonSvg bgColor={bgColor} moonColor={nightColor} glowColor={nightColor} />}
 
                 {STAR_DEFS.map(({ rating, angleDeg, x, y }) => {
                     const state = starState(rating, activeRating);

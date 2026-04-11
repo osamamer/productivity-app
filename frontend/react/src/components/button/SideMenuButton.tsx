@@ -21,7 +21,6 @@ export function SideMenuButton({ Icon, text, targetPage, open }: Props) {
         <Tooltip title={open ? '' : text} placement="right">
             <ListItemButton
                 onClick={() => navigate(targetPage)}
-                selected={isActive}
                 sx={{
                     minHeight: 46,
                     alignItems: 'center',
@@ -44,12 +43,11 @@ export function SideMenuButton({ Icon, text, targetPage, open }: Props) {
                     primary={text}
                     primaryTypographyProps={{
                         fontSize: '0.9rem',
-                        fontWeight: isActive ? 600 : 500,
+                        fontWeight: 500,
                     }}
                     sx={{
                         opacity: open ? 1 : 0,
                         transition: 'opacity 0.2s ease',
-                        color: isActive ? 'primary.main' : 'inherit',
                         whiteSpace: 'nowrap',
                     }}
                 />

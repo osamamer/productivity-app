@@ -8,7 +8,7 @@ import {
     Tooltip,
     Typography,
 } from "@mui/material";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import HomeIcon from '@mui/icons-material/Home';
 import AssignmentIcon from '@mui/icons-material/Assignment';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
@@ -29,6 +29,30 @@ export function SideNav() {
     const { darkMode, toggleTheme } = useAppTheme();
     const { user, logout } = useUser();
     const [open, setOpen] = useState(false);
+    const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    useEffect(() => {
+        return () => {
+            if (closeTimer.current) {
+                clearTimeout(closeTimer.current);
+            }
+        };
+    }, []);
+
+    const handleMouseEnter = () => {
+        if (closeTimer.current) {
+            clearTimeout(closeTimer.current);
+            closeTimer.current = null;
+        }
+        setOpen(true);
+    };
+
+    const handleMouseLeave = () => {
+        closeTimer.current = setTimeout(() => {
+            setOpen(false);
+            closeTimer.current = null;
+        }, 80);
+    };
 
     const getInitials = () => {
         if (!user) return '?';
@@ -41,8 +65,8 @@ export function SideNav() {
         <Drawer
             variant="permanent"
             anchor="left"
-            onMouseEnter={() => setOpen(true)}
-            onMouseLeave={() => setOpen(false)}
+            onMouseEnter={handleMouseEnter}
+            onMouseLeave={handleMouseLeave}
             sx={{
                 width: open ? EXPANDED_WIDTH : COLLAPSED_WIDTH,
                 flexShrink: 0,
@@ -59,7 +83,7 @@ export function SideNav() {
             }}
         >
             {/* Nav items */}
-            <List sx={{ width: '100%', textAlign: 'center', flexGrow: 1 }}>
+            <List sx={{ width: '100%', textAlign: 'center', flexGrow: 1, py: 0 }}>
                 <SideMenuButton Icon={HomeIcon}            text="Home"       targetPage="/"          open={open} />
                 <SideMenuButton Icon={AssignmentIcon}      text="Tasks"      targetPage="/tasks"     open={open} />
                 <SideMenuButton Icon={CalendarMonthIcon}   text="Calendar"   targetPage="/calendar"  open={open} />

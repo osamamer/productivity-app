@@ -236,7 +236,7 @@ export function FlatTaskRow({ task, onToggle, onUpdate, expandedPanel, onToggleP
                 position: 'relative',
                 borderRadius: 1.5,
                 // Transparent border when idle keeps layout stable — no shift on activation
-                border: `1.5px solid ${isActive ? alpha(lightPurple, 0.7) : 'transparent'}`,
+                border: `1.5px solid ${isActive ? (useGreenBar ? theme.palette.success.main : alpha(lightPurple, 0.7)) : 'transparent'}`,
                 borderBottom: isActive ? 'none' : '1.5px solid transparent',
                 backgroundColor: isActive ? alpha(lightPurple, 0.04) : 'transparent',
                 transition: 'border-color 0.3s, background-color 0.3s',

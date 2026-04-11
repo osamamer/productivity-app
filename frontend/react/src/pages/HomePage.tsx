@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { Box, Typography } from '@mui/material';
+import { keyframes } from '@mui/system';
 import { taskService } from "../services/api";
 import { Task } from "../types/Task.tsx";
 import { PageWrapper } from "../components/PageWrapper.tsx";
@@ -11,6 +12,17 @@ import { TaskToCreate } from "../types/TaskToCreate.tsx";
 import { DayWidget } from "../components/DayWidget.tsx";
 
 type ActiveExpansion = { taskId: string; panel: 'pomodoro' | 'details' } | null;
+
+const greetingReveal = keyframes`
+    from {
+        opacity: 0;
+        transform: translateX(-32px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+`;
 
 export function HomePage() {
     const { user } = useUser();
@@ -75,7 +87,16 @@ export function HomePage() {
             <Box sx={{ position: 'relative', flex: 1 }}>
             <Box sx={{ maxWidth: 500, width: '100%', mx: 'auto', pt: 10, pb: 8, px: 2 }}>
 
-                <Typography variant="h4" color="text.secondary" sx={{ mb: 4, fontWeight: 400 }}>
+                <Typography
+                    variant="h4"
+                    color="text.secondary"
+                    sx={{
+                        mb: 4,
+                        fontWeight: 400,
+                        opacity: 0,
+                        animation: `${greetingReveal} 560ms cubic-bezier(0.22, 1, 0.36, 1) 120ms forwards`,
+                    }}
+                >
                     {greeting}{firstName ? `, ${firstName}` : ''}.
                 </Typography>
 
