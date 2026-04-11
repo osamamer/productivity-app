@@ -7,7 +7,7 @@ import { StatDefinition } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
 
 interface Props {
-    date: string; // 'YYYY-MM-DD'
+    date: string;
     definitions: StatDefinition[];
     onSaved: () => void;
 }
@@ -88,84 +88,100 @@ export function DateStatCheckIn({ date, definitions, onSaved }: Props) {
     }
 
     return (
-        <Box>
-            <Stack spacing={3}>
-                {definitions.map((def, i) => (
-                    <Box key={def.id}>
-                        {i > 0 && <Divider sx={{ mb: 3 }} />}
-                        <Typography variant="subtitle2" sx={{ mb: 0.5 }}>{def.name}</Typography>
-                        {def.description && (
-                            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
-                                {def.description}
-                            </Typography>
-                        )}
-                        {def.type === 'BOOLEAN' && (
-                            <ToggleButtonGroup
-                                value={values[def.id] === 1 ? 'yes' : values[def.id] === 0 ? 'no' : null}
-                                exclusive
-                                onChange={(_, v) => setValue(def.id, v === 'yes' ? 1 : v === 'no' ? 0 : null)}
-                                size="small"
-                            >
-                                <ToggleButton
-                                    value="yes"
-                                    sx={{ '&.Mui-selected': { bgcolor: 'success.main', color: 'white', '&:hover': { bgcolor: 'success.dark' } } }}
+        <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+            <Box sx={{
+                flexGrow: 1,
+                overflowY: 'auto',
+                p: 2,
+                '&::-webkit-scrollbar': {
+                    width: '0.4em',
+                },
+                '&::-webkit-scrollbar-thumb': {
+                    backgroundColor: 'rgba(0,0,0,.1)',
+                    borderRadius: '4px',
+                },
+            }}>
+                <Stack spacing={3}>
+                    {definitions.map((def, i) => (
+                        <Box key={def.id}>
+                            {i > 0 && <Divider sx={{ mb: 3 }} />}
+                            <Typography variant="subtitle2" sx={{ mb: 0.5 }}>{def.name}</Typography>
+                            {def.description && (
+                                <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+                                    {def.description}
+                                </Typography>
+                            )}
+                            {def.type === 'BOOLEAN' && (
+                                <ToggleButtonGroup
+                                    value={values[def.id] === 1 ? 'yes' : values[def.id] === 0 ? 'no' : null}
+                                    exclusive
+                                    onChange={(_, v) => setValue(def.id, v === 'yes' ? 1 : v === 'no' ? 0 : null)}
+                                    size="small"
                                 >
-                                    Yes
-                                </ToggleButton>
-                                <ToggleButton
-                                    value="no"
-                                    sx={{ '&.Mui-selected': { bgcolor: 'error.main', color: 'white', '&:hover': { bgcolor: 'error.dark' } } }}
-                                >
-                                    No
-                                </ToggleButton>
-                            </ToggleButtonGroup>
-                        )}
-                        {def.type === 'NUMBER' && (
-                            <TextField
-                                type="number"
-                                size="small"
-                                value={values[def.id] ?? ''}
-                                onChange={e => setValue(def.id, e.target.value === '' ? null : Number(e.target.value))}
-                                sx={{ width: 160 }}
-                            />
-                        )}
-                        {def.type === 'RANGE' && (
-                            <Box sx={{ px: 1, width: 260 }}>
-                                <Slider
-                                    value={values[def.id] ?? def.minValue ?? 0}
-                                    min={def.minValue}
-                                    max={def.maxValue}
-                                    step={1}
-                                    marks
-                                    valueLabelDisplay="auto"
-                                    onChange={(_, v) => setValue(def.id, v as number)}
-                                    color={touched.has(def.id) ? 'primary' : 'secondary'}
+                                    <ToggleButton
+                                        value="yes"
+                                        sx={{ '&.Mui-selected': { bgcolor: 'success.main', color: 'white', '&:hover': { bgcolor: 'success.dark' } } }}
+                                    >
+                                        Yes
+                                    </ToggleButton>
+                                    <ToggleButton
+                                        value="no"
+                                        sx={{ '&.Mui-selected': { bgcolor: 'error.main', color: 'white', '&:hover': { bgcolor: 'error.dark' } } }}
+                                    >
+                                        No
+                                    </ToggleButton>
+                                </ToggleButtonGroup>
+                            )}
+                            {def.type === 'NUMBER' && (
+                                <TextField
+                                    type="number"
+                                    size="small"
+                                    value={values[def.id] ?? ''}
+                                    onChange={e => setValue(def.id, e.target.value === '' ? null : Number(e.target.value))}
+                                    sx={{ width: 160 }}
                                 />
-                                <Stack direction="row" justifyContent="space-between">
-                                    <Typography variant="caption" color="text.secondary">{def.minValue}</Typography>
-                                    <Typography variant="caption" color="text.secondary">{def.maxValue}</Typography>
-                                </Stack>
-                                {!touched.has(def.id) && (
-                                    <Typography variant="caption" color="text.secondary">
-                                        Move the slider to record a value
-                                    </Typography>
-                                )}
-                            </Box>
-                        )}
-                    </Box>
-                ))}
-            </Stack>
-            {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
-            {success && <Alert severity="success" sx={{ mt: 2 }}>Saved!</Alert>}
-            <Button
-                variant="contained"
-                onClick={handleSave}
-                disabled={saving || touched.size === 0}
-                sx={{ mt: 3 }}
-                size="small"
-            >
-                {saving ? <CircularProgress size={18} color="inherit" /> : 'Save'}
-            </Button>
+                            )}
+                            {def.type === 'RANGE' && (
+                                <Box sx={{ px: 1, width: 260 }}>
+                                    <Slider
+                                        value={values[def.id] ?? def.minValue ?? 0}
+                                        min={def.minValue}
+                                        max={def.maxValue}
+                                        step={1}
+                                        marks
+                                        valueLabelDisplay="auto"
+                                        onChange={(_, v) => setValue(def.id, v as number)}
+                                        color={touched.has(def.id) ? 'primary' : 'secondary'}
+                                    />
+                                    <Stack direction="row" justifyContent="space-between">
+                                        <Typography variant="caption" color="text.secondary">{def.minValue}</Typography>
+                                        <Typography variant="caption" color="text.secondary">{def.maxValue}</Typography>
+                                    </Stack>
+                                    {!touched.has(def.id) && (
+                                        <Typography variant="caption" color="text.secondary">
+                                            Move the slider to record a value
+                                        </Typography>
+                                    )}
+                                </Box>
+                            )}
+                        </Box>
+                    ))}
+                </Stack>
+            </Box>
+
+            <Box sx={{ flexShrink: 0, p: 2, borderTop: 1, borderColor: 'divider' }}>
+                {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+                {success && <Alert severity="success" sx={{ mb: 2 }}>Saved!</Alert>}
+                <Button
+                    variant="contained"
+                    onClick={handleSave}
+                    disabled={saving || touched.size === 0}
+                    fullWidth
+                    size="small"
+                >
+                    {saving ? <CircularProgress size={18} color="inherit" /> : 'Save'}
+                </Button>
+            </Box>
         </Box>
     );
 }

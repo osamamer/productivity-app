@@ -3,7 +3,7 @@ import { HoverCardBox } from "./box/HoverCardBox.tsx";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin, { DateClickArg } from "@fullcalendar/interaction";
 import FullCalendar from "@fullcalendar/react";
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useCallback } from "react";
 import { Task } from "../types/Task.tsx";
 import { useTheme } from "@mui/material";
 import { EventMountArg } from '@fullcalendar/core';
@@ -27,7 +27,7 @@ export function MonthCalendar({ tasks, onCreateTask, statDefinitions }: MonthCal
     const hasStats = statDefinitions && statDefinitions.length > 0;
     const isFutureDate = editingDate
         ? isAfter(startOfDay(new Date(editingDate + 'T12:00:00')), startOfDay(new Date()))
-        : true; // no date → hide stats tab (prevents flash during close animation)
+        : true;
 
     const calendarEvents = useMemo(() => {
         return tasks
@@ -50,25 +50,21 @@ export function MonthCalendar({ tasks, onCreateTask, statDefinitions }: MonthCal
             }));
     }, [tasks]);
 
-    const handleEventDidMount = (info: EventMountArg) => {
+    const handleEventDidMount = useCallback((info: EventMountArg) => {
         const fullDescription = info.event.extendedProps.fullDescription;
         info.el.setAttribute('title', fullDescription);
         info.el.style.cursor = 'pointer';
-    };
+    }, []);
 
-    const handleDateClick = (arg: DateClickArg) => {
+    const handleDateClick = useCallback((arg: DateClickArg) => {
         setEditingDate(arg.dateStr);
         setAnchorEl(arg.dayEl);
-        setActiveTab(0); // always open on Task tab
-    };
+        setActiveTab(0);
+    }, []);
 
-    const handleTaskSubmit = (taskToCreate: TaskToCreate) => {
-        console.log('handleTaskSubmit called with:', taskToCreate); // DEBUG
-
-        // CRITICAL FIX: Always ensure proper datetime format
+    const handleTaskSubmit = useCallback((taskToCreate: TaskToCreate) => {
         let finalDateTime = taskToCreate.scheduledPerformDateTime;
 
-        // If no datetime OR if it's just a date without time, add the time
         if (!finalDateTime || !finalDateTime.includes('T')) {
             finalDateTime = `${editingDate}T12:00:00`;
         }
@@ -78,11 +74,10 @@ export function MonthCalendar({ tasks, onCreateTask, statDefinitions }: MonthCal
             scheduledPerformDateTime: finalDateTime
         };
 
-        console.log('Final task being created:', finalTask); // DEBUG
         onCreateTask(finalTask);
         setEditingDate(null);
         setAnchorEl(null);
-    };
+    }, [editingDate, onCreateTask]);
 
     return (
         <>
@@ -195,12 +190,12 @@ export function MonthCalendar({ tasks, onCreateTask, statDefinitions }: MonthCal
                     setActiveTab(0);
                 }}
                 anchorOrigin={{
-                    vertical: 'center',
-                    horizontal: 'left',
+                    vertical: 'bottom',
+                    horizontal: 'center',
                 }}
                 transformOrigin={{
                     vertical: 'top',
-                    horizontal: 'left',
+                    horizontal: 'center',
                 }}
                 slotProps={{
                     paper: {
@@ -210,13 +205,17 @@ export function MonthCalendar({ tasks, onCreateTask, statDefinitions }: MonthCal
                                 : 'rgba(250, 250, 250, 0.98)',
                             backdropFilter: 'blur(10px)',
                             boxShadow: theme.shadows[8],
+                            width: 360,
+                            maxHeight: '80vh',
+                            display: 'flex',
+                            flexDirection: 'column'
                         }
                     }
                 }}
             >
-                <Box sx={{ minWidth: 320, maxWidth: 400 }}>
+                <Box sx={{ flexShrink: 0, pt: 2 }}>
                     {editingDate && (
-                        <Typography variant="caption" color="text.secondary" sx={{ px: 2, pt: 1.5, display: 'block' }}>
+                        <Typography variant="caption" color="text.secondary" sx={{ px: 2, display: 'block' }}>
                             {format(new Date(editingDate + 'T12:00:00'), 'MMMM d, yyyy')}
                         </Typography>
                     )}
@@ -231,22 +230,25 @@ export function MonthCalendar({ tasks, onCreateTask, statDefinitions }: MonthCal
                             <Tab label="Stats" />
                         </Tabs>
                     )}
-                    <Box sx={{ p: 2 }}>
-                        {activeTab === 0 && (
+                </Box>
+
+                <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                    {activeTab === 0 && (
+                        <Box sx={{ p: 2 }}>
                             <SmartTaskInput
                                 onSubmit={handleTaskSubmit}
                                 initialDate={editingDate || undefined}
                                 autoFocus={activeTab === 0}
                             />
-                        )}
-                        {activeTab === 1 && hasStats && editingDate && (
-                            <DateStatCheckIn
-                                date={editingDate}
-                                definitions={statDefinitions!}
-                                onSaved={() => { setEditingDate(null); setAnchorEl(null); }}
-                            />
-                        )}
-                    </Box>
+                        </Box>
+                    )}
+                    {activeTab === 1 && hasStats && editingDate && (
+                        <DateStatCheckIn
+                            date={editingDate}
+                            definitions={statDefinitions!}
+                            onSaved={() => { setEditingDate(null); setAnchorEl(null); }}
+                        />
+                    )}
                 </Box>
             </Popover>
         </>

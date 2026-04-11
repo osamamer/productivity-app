@@ -2,6 +2,7 @@ package org.osama.pomodoro;
 
 import org.osama.requests.PomodoroRequest;
 import org.osama.user.CurrentUserService;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -25,5 +26,12 @@ public class PomodoroController {
     @PostMapping("/end/{taskId}")
     public void endPomodoro(@PathVariable String taskId) {
         pomodoroService.endPomodoro(taskId);
+    }
+
+    @GetMapping("/status/{taskId}")
+    public ResponseEntity<Pomodoro> getStatus(@PathVariable String taskId) {
+        return pomodoroService.getActivePomodoro(taskId)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.noContent().build());
     }
 }

@@ -1,4 +1,4 @@
-import React, {useEffect, useRef, useState} from 'react';
+import React, {useRef, useState} from 'react';
 import { Box, Typography, Chip, Stack, Divider } from '@mui/material';
 import { PageWrapper } from '../components/PageWrapper';
 import { useGlobalTasks } from '../contexts/TaskContext';
@@ -52,17 +52,6 @@ export function TaskPage() {
     const comingUpRef = useRef<HTMLDivElement>(null);
     const leftoversRef = useRef<HTMLDivElement>(null);
 
-    useEffect(() => {
-        const fetchData = async () => {
-            await Promise.all([
-                fetchAllTasks(),
-                fetchTodayTasks(),
-                fetchFutureTasks(),
-                fetchPastTasks(),
-            ]);
-        };
-        fetchData();
-    }, []);
 
     async function createTask(task: TaskToCreate) {
         try {

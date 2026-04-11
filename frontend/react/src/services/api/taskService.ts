@@ -225,4 +225,14 @@ export const taskService = {
         }
         console.log("Ended Pomodoro.");
     },
+
+    // Returns the active pomodoro status for a task, or null if none is running.
+    async getActivePomodoro(taskId: string): Promise<Record<string, unknown> | null> {
+        const response = await fetch(`${POMODORO_URL}/status/${taskId}`, {
+            headers: getAuthHeaders(),
+        });
+        if (response.status === 204) return null;
+        if (!response.ok) return null;
+        return response.json();
+    },
 };

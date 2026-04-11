@@ -113,6 +113,20 @@ export function FlatTaskRow({ task, onToggle, onUpdate }: FlatTaskRowProps) {
     const stompRef = useRef<Client | null>(null);
     const subscriptionRef = useRef<StompSubscription | null>(null);
 
+    // On mount: check if this task already has an active pomodoro running.
+    // If so, pre-populate the status and auto-open the panel so the user
+    // doesn't have to manually open it after a page remount.
+    useEffect(() => {
+        taskService.getActivePomodoro(task.taskId)
+            .then(status => {
+                if (status?.active) {
+                    setPomodoroStatus(status as unknown as PomodoroStatus);
+                    setExpandedPanel('pomodoro');
+                }
+            })
+            .catch(e => console.error('Error checking pomodoro status:', e));
+    }, [task.taskId]);
+
     // WebSocket connects only while the pomodoro panel is open
     useEffect(() => {
         if (expandedPanel !== 'pomodoro') return;
@@ -281,16 +295,16 @@ export function FlatTaskRow({ task, onToggle, onUpdate }: FlatTaskRowProps) {
             {/* ── Pomodoro panel ── */}
             {expandedPanel === 'pomodoro' && (
                 <Box sx={{ px: 2, pb: 2, pt: 0.5 }}>
-                    {wsLoading && (
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                    {/* While WS is connecting and we have no status yet, show only the
+                        spinner — never flash the config form before we know the session state. */}
+                    {wsLoading && !pomodoroStatus ? (
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             <CircularProgress size={14} />
                             <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'left' }}>
                                 Connecting…
                             </Typography>
                         </Box>
-                    )}
-
-                    {!isActive ? (
+                    ) : !isActive ? (
                         <Box>
                             <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5, mb: 1.5 }}>
                                 {(

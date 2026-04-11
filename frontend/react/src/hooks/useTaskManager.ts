@@ -17,8 +17,10 @@ export function useTaskManager() {
             setError(null);
             const tasks = await taskService.getAllMainTasks();
             setAllTasks(tasks);
-            if (tasks.length > 0 && !highlightedTask) {
-                setHighlightedTask(tasks[tasks.length - 1]);
+            // Functional update: only set highlighted task if one isn't already selected,
+            // without needing highlightedTask in the dependency array.
+            if (tasks.length > 0) {
+                setHighlightedTask(prev => prev ?? tasks[tasks.length - 1]);
             }
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to fetch tasks');
@@ -26,7 +28,7 @@ export function useTaskManager() {
         } finally {
             setLoading(false);
         }
-    }, [highlightedTask]);
+    }, []);
 
     const fetchTodayTasks = useCallback(async () => {
         try {
@@ -89,25 +91,28 @@ export function useTaskManager() {
         setFutureTasks(updateInList);
         setPastTasks(updateInList);
 
-        if (highlightedTask?.taskId === taskId) {
-            setHighlightedTask(prev => prev ? { ...prev, ...updates } : null);
-        }
-    }, [highlightedTask]);
+        // Functional update: check and update highlighted task without closing over it.
+        setHighlightedTask(prev => prev?.taskId === taskId ? { ...prev, ...updates } : prev);
+    }, []);
 
     const removeTaskFromState = useCallback((taskId: string) => {
         const filterTask = (tasks: Task[]) =>
             tasks.filter(task => task.taskId !== taskId);
 
-        setAllTasks(filterTask);
+        // Update allTasks via functional form so we have the latest list available
+        // to pick a replacement highlighted task — no need to close over allTasks.
+        setAllTasks(prev => {
+            const updated = filterTask(prev);
+            setHighlightedTask(highlighted => {
+                if (highlighted?.taskId !== taskId) return highlighted;
+                return updated.length > 0 ? updated[0] : null;
+            });
+            return updated;
+        });
         setTodayTasks(filterTask);
         setFutureTasks(filterTask);
         setPastTasks(filterTask);
-
-        if (highlightedTask?.taskId === taskId) {
-            const remaining = allTasks.filter(t => t.taskId !== taskId);
-            setHighlightedTask(remaining.length > 0 ? remaining[0] : null);
-        }
-    }, [highlightedTask, allTasks]);
+    }, []);
 
     return {
         // State

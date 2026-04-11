@@ -179,15 +179,17 @@ public class PomodoroService {
 
         taskSessionService.endSession(taskId);
 
-        sendAsyncUpdate(taskId);
-
         pomodoro.setSessionRunning(false);
         pomodoro.setSessionActive(false);
-        pomodoro.setActive(false);
         pomodoroRepository.save(pomodoro);
 
         scheduleService.deleteTaskJobs(taskId);
         pausePomodoroUpdates(taskId);
+        sendAsyncUpdate(taskId);
+
+        pomodoro.setActive(false);
+        pomodoroRepository.save(pomodoro);
+
     }
 
     public Pomodoro createPomodoro(String associatedTaskId, int focusDuration,
@@ -303,6 +305,9 @@ public class PomodoroService {
         log.debug("Sending async update for task: {}", taskId);
         Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(taskId).orElseThrow(() -> new IllegalStateException("No pomodoro found for task."));
         simpMessagingTemplate.convertAndSend("/topic/pomodoro/" + taskId, pomodoro);
+    }
 
+    public Optional<Pomodoro> getActivePomodoro(String taskId) {
+        return pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(taskId);
     }
 }

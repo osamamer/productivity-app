@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, ReactNode } from 'react';
 import keycloak from '../services/keycloak';
 
 interface UserInfo {
@@ -44,20 +44,20 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
     // Delegates to Keycloak; accepts legacy call signature (email, password) from LoginPage
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const login = (..._args: unknown[]) => keycloak.login();
+    const login = useCallback((..._args: unknown[]) => keycloak.login(), []);
 
-    const logout = () => keycloak.logout({ redirectUri: window.location.origin + '/' });
+    const logout = useCallback(() => keycloak.logout({ redirectUri: window.location.origin + '/' }), []);
+
+    const contextValue = useMemo(() => ({
+        user,
+        loading,
+        login,
+        logout,
+        isAuthenticated: keycloak.authenticated ?? false,
+    }), [user, loading, login, logout]);
 
     return (
-        <UserContext.Provider
-            value={{
-                user,
-                loading,
-                login,
-                logout,
-                isAuthenticated: keycloak.authenticated ?? false,
-            }}
-        >
+        <UserContext.Provider value={contextValue}>
             {children}
         </UserContext.Provider>
     );

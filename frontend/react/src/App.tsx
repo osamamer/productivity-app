@@ -14,7 +14,6 @@ import {MeditationPage} from "./pages/MeditationPage.jsx";
 import {LoginPage} from "./pages/LoginPage";
 import {ProtectedRoute} from "./components/ProtectedRoute";
 
-import { AppThemeProvider } from './contexts/ThemeContext';
 import {TaskProvider} from "./contexts/TaskContext.tsx";
 import {UserProvider} from "./contexts/UserContext";
 import {StatsPage} from "./pages/StatsPage.tsx";
@@ -23,59 +22,57 @@ import {StatsPage} from "./pages/StatsPage.tsx";
 function App() {
 
     return (
-        <AppThemeProvider>
-            <Router>
-                <UserProvider>
-                    <TaskProvider>
-                        <Routes>
-                            <Route path="/login" element={<LoginPage/>}/>
-                            <Route
-                                path="/"
-                                element={
-                                    <ProtectedRoute>
-                                        <HomePage/>
-                                    </ProtectedRoute>
-                                }
-                            />
-                            <Route
-                                path="/calendar"
-                                element={
-                                    <ProtectedRoute>
-                                        <CalendarPage/>
-                                    </ProtectedRoute>
-                                }
-                            />
-                            <Route
-                                path="/meditation"
-                                element={
-                                    <ProtectedRoute>
-                                        <MeditationPage/>
-                                    </ProtectedRoute>
-                                }
-                            />
-                            <Route
-                                path="/tasks"
-                                element={
-                                    <ProtectedRoute>
-                                        <TaskPage/>
-                                    </ProtectedRoute>
-                                }
-                            />
-                            <Route
-                                path="/stats"
-                                element={
-                                    <ProtectedRoute>
-                                        <StatsPage/>
-                                    </ProtectedRoute>
-                                }
-                            />
-                            {/* Catch all - redirect to home */}
-                            <Route path="*" element={<Navigate to="/" replace />} />
-                        </Routes>
-                    </TaskProvider>
-                </UserProvider>
-            </Router>
-        </AppThemeProvider>
+        <Router>
+            <UserProvider>
+                <TaskProvider>
+                    <Routes>
+                        <Route path="/login" element={<LoginPage/>}/>
+                        <Route
+                            path="/"
+                            element={
+                                <ProtectedRoute>
+                                    <HomePage/>
+                                </ProtectedRoute>
+                            }
+                        />
+                        <Route
+                            path="/calendar"
+                            element={
+                                <ProtectedRoute>
+                                    <CalendarPage/>
+                                </ProtectedRoute>
+                            }
+                        />
+                        <Route
+                            path="/meditation"
+                            element={
+                                <ProtectedRoute>
+                                    <MeditationPage/>
+                                </ProtectedRoute>
+                            }
+                        />
+                        <Route
+                            path="/tasks"
+                            element={
+                                <ProtectedRoute>
+                                    <TaskPage/>
+                                </ProtectedRoute>
+                            }
+                        />
+                        <Route
+                            path="/stats"
+                            element={
+                                <ProtectedRoute>
+                                    <StatsPage/>
+                                </ProtectedRoute>
+                            }
+                        />
+                        {/* Catch all - redirect to home */}
+                        <Route path="*" element={<Navigate to="/" replace />} />
+                    </Routes>
+                </TaskProvider>
+            </UserProvider>
+        </Router>
     );
 }
 

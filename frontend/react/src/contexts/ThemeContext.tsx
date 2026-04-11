@@ -1,5 +1,5 @@
 // src/contexts/ThemeContext.tsx
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, ReactNode } from 'react';
 import { ThemeProvider as MuiThemeProvider, createTheme, responsiveFontSizes } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 
@@ -61,90 +61,90 @@ export const AppThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => 
         localStorage.setItem('darkMode', JSON.stringify(darkMode));
     }, [darkMode]);
 
-    const toggleTheme = () => {
+    const toggleTheme = useCallback(() => {
         setDarkMode(prev => !prev);
-    };
+    }, []);
 
-    const setTheme = (mode: ThemeMode) => {
+    const setTheme = useCallback((mode: ThemeMode) => {
         setDarkMode(mode === 'dark');
-    };
+    }, []);
 
-    // Helper to create custom colors
-    const { palette: basePalette } = createTheme();
-    const { augmentColor } = basePalette;
-    const createColor = (mainColor: string) => augmentColor({ color: { main: mainColor } });
+    const theme = useMemo(() => {
+        const { palette: basePalette } = createTheme();
+        const { augmentColor } = basePalette;
+        const createColor = (mainColor: string) => augmentColor({ color: { main: mainColor } });
 
-    // Create theme based on mode
-    let theme = createTheme({
-        typography: {
-            fontFamily: 'Raleway, Arial, sans-serif',
-        },
-        palette: darkMode ? {
-            mode: 'dark',
-            primary: {
-                main: '#A395F2',
+        const t = createTheme({
+            typography: {
+                fontFamily: 'Raleway, Arial, sans-serif',
             },
-            secondary: {
-                main: '#F5E55F',
+            palette: darkMode ? {
+                mode: 'dark',
+                primary: {
+                    main: '#A395F2',
+                },
+                secondary: {
+                    main: '#F5E55F',
+                },
+                success: {
+                    main: '#22C55E',
+                    light: '#4ADE80',
+                    dark: '#16A34A',
+                },
+                info: {
+                    main: '#9FCAFA',
+                    medium: '#FAEC66',
+                    high: '#FF614B',
+                },
+                low: createColor('#9FCAFA'),
+                medium: createColor('#FAEC66'),
+                high: createColor('#FF614B'),
+                background: {
+                    default: '#1e2124',
+                    paper: '#26292d',
+                },
+                text: {
+                    primary: '#FFFFFF',
+                    secondary: 'rgba(255,255,255,0.6)',
+                },
+            } : {
+                mode: 'light',
+                primary: {
+                    main: '#946AF5',
+                },
+                secondary: {
+                    main: '#F5E55F',
+                },
+                success: {
+                    main: '#22C55E',
+                    light: '#4ADE80',
+                    dark: '#16A34A',
+                },
+                info: {
+                    main: '#9FCAFA',
+                    medium: '#FAEC66',
+                    high: '#FF614B',
+                },
+                low: createColor('#9FCAFA'),
+                medium: createColor('#FAEC66'),
+                high: createColor('#FF614B'),
+                background: {
+                    default: '#F7F6FB',
+                    paper: '#FFFFFF',
+                },
+                text: {
+                    primary: '#1A1A2E',
+                    secondary: 'rgba(26,26,46,0.6)',
+                },
             },
-            success: {
-                main: '#22C55E',
-                light: '#4ADE80',
-                dark: '#16A34A',
-            },
-            info: {
-                main: '#9FCAFA',
-                medium: '#FAEC66',
-                high: '#FF614B',
-            },
-            low: createColor('#9FCAFA'),
-            medium: createColor('#FAEC66'),
-            high: createColor('#FF614B'),
-            background: {
-                default: '#1e2124',
-                paper: '#26292d',
-            },
-            text: {
-                primary: '#FFFFFF',
-                secondary: 'rgba(255,255,255,0.6)',
-            },
-        } : {
-            mode: 'light',
-            primary: {
-                main: '#946AF5',
-            },
-            secondary: {
-                main: '#F5E55F',
-            },
-            success: {
-                main: '#22C55E',
-                light: '#4ADE80',
-                dark: '#16A34A',
-            },
-            info: {
-                main: '#9FCAFA',
-                medium: '#FAEC66',
-                high: '#FF614B',
-            },
-            low: createColor('#9FCAFA'),
-            medium: createColor('#FAEC66'),
-            high: createColor('#FF614B'),
-            background: {
-                default: '#F7F6FB',
-                paper: '#FFFFFF',
-            },
-            text: {
-                primary: '#1A1A2E',
-                secondary: 'rgba(26,26,46,0.6)',
-            },
-        },
-    });
+        });
+        return responsiveFontSizes(t);
+    }, [darkMode]);
 
-    // Apply responsive font sizes
-    theme = responsiveFontSizes(theme);
+    const contextValue = useMemo(() => ({ darkMode, toggleTheme, setTheme }), [darkMode, toggleTheme, setTheme]);
 
     return (
-        <ThemeContext.Provider value={{ darkMode, toggleTheme, setTheme }}>
+        <ThemeContext.Provider value={contextValue}>
             <MuiThemeProvider theme={theme}>
                 <CssBaseline />
                 {children}

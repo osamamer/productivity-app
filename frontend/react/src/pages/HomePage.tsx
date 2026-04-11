@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react'
+import React from 'react'
 import { Box, Typography } from '@mui/material';
 import { taskService } from "../services/api";
 import { Task } from "../types/Task.tsx";
@@ -18,17 +18,9 @@ export function HomePage() {
         pastTasks,
         fetchAllTasks,
         fetchTodayTasks,
-        fetchFutureTasks,
-        fetchPastTasks,
         addTaskToState,
         updateTaskInState,
     } = useGlobalTasks();
-
-    useEffect(() => {
-        Promise.all([fetchAllTasks(), fetchTodayTasks(), fetchFutureTasks(), fetchPastTasks()]);
-        // Fetch functions are stable context refs — intentional mount-only call.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
 
     async function createTask(task: TaskToCreate) {
         try {
@@ -71,7 +63,7 @@ export function HomePage() {
         <PageWrapper>
             <Box sx={{ maxWidth: 600, mx: 'auto', pt: 10, pb: 8, px: 2 }}>
 
-                <Typography variant="h5" color="text.secondary" sx={{ mb: 4, fontWeight: 400 }}>
+                <Typography variant="h4" color="text.secondary" sx={{ mb: 4, fontWeight: 400 }}>
                     {greeting}{firstName ? `, ${firstName}` : ''}.
                 </Typography>
 
