@@ -18,6 +18,7 @@ import java.util.UUID;
 public class UserService {
 
     private final UserRepository userRepository;
+    private final KeycloakAccountService keycloakAccountService;
 
     /**
      * Looks up the app User by Keycloak subject, creating one on first login.
@@ -145,5 +146,20 @@ public class UserService {
         }
         userRepository.deleteById(userId);
         log.info("Deleted user: {}", userId);
+    }
+
+    public void changePassword(String username, String keycloakUserId, String currentPassword, String newPassword) {
+        if (currentPassword == null || currentPassword.isBlank()) {
+            throw new IllegalArgumentException("Current password is required.");
+        }
+        if (newPassword == null || newPassword.isBlank()) {
+            throw new IllegalArgumentException("New password is required.");
+        }
+        if (currentPassword.equals(newPassword)) {
+            throw new IllegalArgumentException("New password must be different from the current password.");
+        }
+
+        keycloakAccountService.changePassword(username, keycloakUserId, currentPassword, newPassword);
+        log.info("Changed password for Keycloak user {}", keycloakUserId);
     }
 }

@@ -1,15 +1,18 @@
-import { SyntheticEvent, useEffect, useMemo, useState } from 'react';
-import { Box, Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Stack, Tab, Tabs, Typography } from '@mui/material';
+import { FormEvent, SyntheticEvent, useEffect, useMemo, useState } from 'react';
+import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Stack, Tab, Tabs, TextField, Typography } from '@mui/material';
 import LightModeIcon from '@mui/icons-material/LightMode';
 import NightlightIcon from '@mui/icons-material/Nightlight';
 import LogoutIcon from '@mui/icons-material/Logout';
 import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import SecurityOutlinedIcon from '@mui/icons-material/SecurityOutlined';
+import CheckIcon from '@mui/icons-material/Check';
 import { PageWrapper } from '../components/PageWrapper.tsx';
 import { useUser } from '../contexts/UserContext.tsx';
-import { useAppTheme } from '../contexts/ThemeContext.tsx';
+import { accentColorOptions, useAppTheme } from '../contexts/ThemeContext.tsx';
 import { useSearchParams } from 'react-router-dom';
+import { userService } from '../services/api/userService.ts';
+import axios from 'axios';
 
 const sectionCardSx = {
     backgroundColor: 'background.paper',
@@ -28,7 +31,7 @@ const sectionHeadingSx = {
 
 export function SettingsPage() {
     const { user, logout } = useUser();
-    const { darkMode, setTheme } = useAppTheme();
+    const { accentColor, darkMode, setAccentColor, setTheme } = useAppTheme();
     const [searchParams, setSearchParams] = useSearchParams();
     const initialTab = useMemo(() => {
         const tab = searchParams.get('tab');
@@ -38,15 +41,57 @@ export function SettingsPage() {
     }, [searchParams]);
     const [activeTab, setActiveTab] = useState(initialTab);
     const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
+    const [currentPassword, setCurrentPassword] = useState('');
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+    const [passwordError, setPasswordError] = useState<string | null>(null);
+    const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
+    const [passwordSaving, setPasswordSaving] = useState(false);
 
     useEffect(() => {
         setActiveTab(initialTab);
     }, [initialTab]);
 
+    const passwordsMatch = newPassword === confirmPassword;
+    const canSubmitPasswordChange = currentPassword.trim() !== '' && newPassword.trim() !== '' && confirmPassword.trim() !== '' && passwordsMatch;
+
     function handleTabChange(_event: SyntheticEvent, newValue: number) {
         setActiveTab(newValue);
         const tabName = newValue === 1 ? 'account' : newValue === 2 ? 'appearance' : 'general';
         setSearchParams(tabName === 'general' ? {} : { tab: tabName }, { replace: true });
+    }
+
+    async function handlePasswordSubmit(event: FormEvent<HTMLFormElement>) {
+        event.preventDefault();
+        setPasswordError(null);
+        setPasswordSuccess(null);
+
+        if (!passwordsMatch) {
+            setPasswordError('New password and confirmation must match.');
+            return;
+        }
+
+        if (currentPassword === newPassword) {
+            setPasswordError('Choose a new password that is different from your current password.');
+            return;
+        }
+
+        setPasswordSaving(true);
+        try {
+            await userService.changePassword({ currentPassword, newPassword });
+            setPasswordSuccess('Password updated.');
+            setCurrentPassword('');
+            setNewPassword('');
+            setConfirmPassword('');
+        } catch (error) {
+            if (axios.isAxiosError(error) && typeof error.response?.data === 'string') {
+                setPasswordError(error.response.data);
+            } else {
+                setPasswordError('Could not update password right now.');
+            }
+        } finally {
+            setPasswordSaving(false);
+        }
     }
 
     const displayName = user ? `${user.firstName} ${user.lastName}`.trim() || user.username : 'Unknown user';
@@ -162,6 +207,69 @@ export function SettingsPage() {
                                     </Typography>
                                 </Box>
                             </Stack>
+
+                            <Box
+                                component="form"
+                                onSubmit={handlePasswordSubmit}
+                                sx={{
+                                    mt: 3,
+                                    pt: 3,
+                                    borderTop: theme => `1px solid ${theme.palette.divider}`,
+                                }}
+                            >
+                                <Box sx={sectionHeadingSx}>
+                                    <SecurityOutlinedIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
+                                    <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                                        Change password
+                                    </Typography>
+                                </Box>
+
+                                <Typography variant="body2" color="text.secondary" sx={{ mb: 2, textAlign: 'left' }}>
+                                    Confirm your current password before choosing a new one.
+                                </Typography>
+
+                                <Stack spacing={1.5}>
+                                    {passwordError && <Alert severity="error">{passwordError}</Alert>}
+                                    {passwordSuccess && <Alert severity="success">{passwordSuccess}</Alert>}
+                                    <TextField
+                                        label="Current password"
+                                        type="password"
+                                        value={currentPassword}
+                                        onChange={(event) => setCurrentPassword(event.target.value)}
+                                        fullWidth
+                                        autoComplete="current-password"
+                                    />
+                                    <TextField
+                                        label="New password"
+                                        type="password"
+                                        value={newPassword}
+                                        onChange={(event) => setNewPassword(event.target.value)}
+                                        fullWidth
+                                        autoComplete="new-password"
+                                    />
+                                    <TextField
+                                        label="Confirm new password"
+                                        type="password"
+                                        value={confirmPassword}
+                                        onChange={(event) => setConfirmPassword(event.target.value)}
+                                        error={confirmPassword !== '' && !passwordsMatch}
+                                        helperText={confirmPassword !== '' && !passwordsMatch ? 'Passwords must match.' : ' '}
+                                        fullWidth
+                                        autoComplete="new-password"
+                                    />
+                                    <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>
+                                        <Button
+                                            type="submit"
+                                            variant="contained"
+                                            disabled={!canSubmitPasswordChange || passwordSaving}
+                                            sx={{ borderRadius: 2, py: 1.1, px: 2.5, textTransform: 'none' }}
+                                            startIcon={passwordSaving ? <CircularProgress size={18} color="inherit" /> : undefined}
+                                        >
+                                            {passwordSaving ? 'Updating...' : 'Update password'}
+                                        </Button>
+                                    </Box>
+                                </Stack>
+                            </Box>
                         </Box>
                         )}
 
@@ -175,7 +283,7 @@ export function SettingsPage() {
                             </Box>
 
                             <Typography variant="body2" color="text.secondary" sx={{ mb: 2, textAlign: 'left' }}>
-                                Choose the mode that stays out of the way.
+                                Choose the mode that stays out of the way, then pick the accent color that should carry buttons, highlights, and charts.
                             </Typography>
 
                             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
@@ -196,6 +304,39 @@ export function SettingsPage() {
                                     Dark
                                 </Button>
                             </Stack>
+
+                            <Box sx={{ mt: 2.5 }}>
+                                <Typography variant="subtitle2" sx={{ mb: 1.25, fontWeight: 600, textAlign: 'left' }}>
+                                    Theme color
+                                </Typography>
+                                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+                                    {accentColorOptions.map((option) => {
+                                        const selected = accentColor === option.value;
+                                        return (
+                                            <Button
+                                                key={option.value}
+                                                variant={selected ? 'contained' : 'outlined'}
+                                                onClick={() => setAccentColor(option.value)}
+                                                startIcon={
+                                                    <Box
+                                                        sx={{
+                                                            width: 14,
+                                                            height: 14,
+                                                            borderRadius: '50%',
+                                                            backgroundColor: option.swatch,
+                                                            border: '1px solid rgba(0,0,0,0.12)',
+                                                        }}
+                                                    />
+                                                }
+                                                endIcon={selected ? <CheckIcon /> : undefined}
+                                                sx={{ flex: 1, borderRadius: 2, py: 1.1, textTransform: 'none' }}
+                                            >
+                                                {option.label}
+                                            </Button>
+                                        );
+                                    })}
+                                </Stack>
+                            </Box>
                         </Box>
                         )}
                     </Stack>

@@ -1,17 +1,14 @@
 import React, {useRef, useState} from 'react';
-import { Box, Typography, Chip, Stack, Divider } from '@mui/material';
+import { Box, Typography } from '@mui/material';
 import { PageWrapper } from '../components/PageWrapper';
 import { useGlobalTasks } from '../contexts/TaskContext';
 import { TaskToCreate } from '../types/TaskToCreate';
-import { Task } from '../types/Task';
 import { taskService } from '../services/api';
-import { SmartTaskInput } from '../components/input/SmartTaskInput';
-import { TaskAccordion } from '../components/TaskAccordion';
-import { HoverCardBox } from '../components/box/HoverCardBox';
 import { HighlightedTaskBox } from '../components/box/HighlightedTaskBox';
-import TodayIcon from '@mui/icons-material/Today';
-import UpcomingIcon from '@mui/icons-material/EventAvailable';
-import HistoryIcon from '@mui/icons-material/History';
+import { TaskPageComposer } from '../components/task-page/TaskPageComposer.tsx';
+import { TaskPageSection } from '../components/task-page/TaskPageSection.tsx';
+import { TaskPageOverview } from '../components/task-page/TaskPageOverview.tsx';
+import { Task } from '../types/Task.tsx';
 
 export function TaskPage() {
     const {
@@ -20,8 +17,6 @@ export function TaskPage() {
         futureTasks,
         pastTasks,
         highlightedTask,
-        loading,
-        error,
         setHighlightedTask,
         fetchAllTasks,
         fetchTodayTasks,
@@ -29,7 +24,6 @@ export function TaskPage() {
         fetchPastTasks,
         addTaskToState,
         updateTaskInState,
-        removeTaskFromState,
     } = useGlobalTasks();
 
     const [dialogOpen, setDialogOpen] = useState<{ [key: string]: boolean }>({
@@ -47,6 +41,7 @@ export function TaskPage() {
         comingUp: false,
         leftovers: false,
     });
+    const [activeExpansion, setActiveExpansion] = useState<{ taskId: string; panel: 'pomodoro' | 'details' } | null>(null);
 
     const todayRef = useRef<HTMLDivElement>(null);
     const comingUpRef = useRef<HTMLDivElement>(null);
@@ -85,6 +80,26 @@ export function TaskPage() {
         }
     }
 
+    async function updateTask(taskId: string, updates: Partial<Task>) {
+        const originalTask = allTasks.find(task => task.taskId === taskId);
+        updateTaskInState(taskId, updates);
+
+        try {
+            await taskService.updateTask(taskId, updates);
+        } catch (err) {
+            console.error('Error updating task:', err);
+            if (originalTask) {
+                updateTaskInState(taskId, originalTask);
+            }
+            await Promise.all([
+                fetchAllTasks(),
+                fetchTodayTasks(),
+                fetchFutureTasks(),
+                fetchPastTasks(),
+            ]);
+        }
+    }
+
 
     async function changeDescription(description: string, taskId: string) {
         updateTaskInState(taskId, { description: description });
@@ -99,10 +114,6 @@ export function TaskPage() {
 
     const handleOpen = (dialogType: string) => {
         setDialogOpen((prev) => ({ ...prev, [dialogType]: true }));
-    };
-
-    const handleClose = (dialogType: string) => {
-        setDialogOpen((prev) => ({ ...prev, [dialogType]: false }));
     };
 
     const handleChipClick = (section: 'today' | 'comingUp' | 'leftovers') => {
@@ -137,284 +148,142 @@ export function TaskPage() {
     const completedTodayCount = todayTasks.filter(t => t.completed).length;
     const completedFutureCount = futureTasks.filter(t => t.completed).length;
     const completedPastCount = pastTasks.filter(t => t.completed).length;
+    const overduePendingCount = pastTasks.filter(t => !t.completed).length;
+    const highPriorityPendingCount = allTasks.filter(t => !t.completed && t.importance > 7).length;
+
+    function handleTogglePanel(taskId: string, panel: 'pomodoro' | 'details') {
+        const selectedTask = allTasks.find(task => task.taskId === taskId) ?? null;
+        setHighlightedTask(selectedTask);
+        setActiveExpansion(prev => (
+            prev?.taskId === taskId && prev.panel === panel ? null : { taskId, panel }
+        ));
+    }
+
+    function handleAutoExpand(taskId: string, panel: 'pomodoro') {
+        const selectedTask = allTasks.find(task => task.taskId === taskId) ?? null;
+        setHighlightedTask(selectedTask);
+        setActiveExpansion({ taskId, panel });
+    }
 
     return (
         <PageWrapper>
             <Box sx={{
                 display: 'flex',
-                gap: 3,
+                gap: { xs: 4, lg: 0 },
                 height: '100%',
                 flexWrap: 'wrap',
             }}>
-                {/* Main Task Management Section */}
                 <Box sx={{
                     flex: { xs: '1 1 100%', lg: '1 1 60%' },
                     minWidth: 0,
                     display: 'flex',
                     flexDirection: 'column',
                     gap: 3,
+                    pr: { lg: 4 },
                 }}>
-                    {/* Header Section */}
-                    <HoverCardBox variant="paper" hover={false}>
-                        <Box sx={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: 3,
-                        }}>
-                            <Box sx={{
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'center',
-                                flexWrap: 'wrap',
-                                gap: 2,
-                            }}>
-                                <Typography
-                                    color="text.primary"
-                                    variant="h4"
-                                    component="h1"
-                                    sx={{ fontWeight: 600 }}
-                                >
-                                    Tasks
-                                </Typography>
+                    <TaskPageComposer
+                        todayCount={todayTasks.length}
+                        upcomingCount={futureTasks.length}
+                        pastCount={pastTasks.length}
+                        expandedSections={expandedSections}
+                        onCreateTask={createTask}
+                        onToggleSection={handleChipClick}
+                    />
 
-                                <Stack direction="row" spacing={2}>
-                                    <Chip
-                                        icon={<TodayIcon />}
-                                        label={`${todayTasks.length} Today`}
-                                        color="primary"
-                                        variant={expandedSections.today ? "filled" : "outlined"}
-                                        onClick={() => handleChipClick('today')}
-                                        sx={{ cursor: 'pointer' }}
-                                    />
-                                    <Chip
-                                        icon={<UpcomingIcon />}
-                                        label={`${futureTasks.length} Upcoming`}
-                                        color="secondary"
-                                        variant={expandedSections.comingUp ? "filled" : "outlined"}
-                                        onClick={() => handleChipClick('comingUp')}
-                                        sx={{ cursor: 'pointer' }}
-                                    />
-                                    <Chip
-                                        icon={<HistoryIcon />}
-                                        label={`${pastTasks.length} Past`}
-                                        color="default"
-                                        variant={expandedSections.leftovers ? "filled" : "outlined"}
-                                        onClick={() => handleChipClick('leftovers')}
-                                        sx={{ cursor: 'pointer' }}
-                                    />
-                                </Stack>
-                            </Box>
-
-                            <Divider />
-
-                            {/* Smart Task Input */}
-                            <Box>
-                                <Typography
-                                    variant="h6"
-                                    color="text.secondary"
-                                    sx={{ mb: 2 }}
-                                >
-                                    What's on your mind?
-                                </Typography>
-                                <SmartTaskInput onSubmit={createTask} />
-                            </Box>
-                        </Box>
-                    </HoverCardBox>
-
-                    {/* Task Lists Section */}
                     <Box sx={{
                         display: 'flex',
                         flexDirection: 'column',
-                        gap: 2,
+                        gap: 3,
                     }}>
-                        {/* Today's Tasks */}
-                        <Box ref={todayRef}>
-                            <HoverCardBox variant="paper" hover={false}>
-                                <Box sx={{ mb: 2 }}>
-                                    <Box sx={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'space-between',
-                                        mb: 1,
-                                    }}>
-                                        <Typography
-                                            variant="h5"
-                                            color="text.primary"
-                                            sx={{
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: 1,
-                                            }}
-                                        >
-                                            <TodayIcon color="primary" />
-                                            Today
-                                        </Typography>
-                                        {todayTasksExist && (
-                                            <Typography variant="body2" color="text.secondary">
-                                                {completedTodayCount} of {todayTasks.length} completed
-                                            </Typography>
-                                        )}
-                                    </Box>
-                                </Box>
-                                <TaskAccordion
-                                    title=""
-                                    tasks={todayTasks}
-                                    expanded={expandedSections.today}
-                                    onChange={() => handleChipClick('today')}
-                                    toggleTaskCompletion={toggleTaskCompletion}
-                                    onTaskClick={setHighlightedTask}
-                                />
-                                {!todayTasksExist && (
-                                    <Typography
-                                        variant="body1"
-                                        sx={{
-                                            textAlign: 'center',
-                                            color: 'text.secondary',
-                                            fontStyle: 'italic',
-                                            py: 3,
-                                        }}
-                                    >
-                                        No tasks scheduled for today
-                                    </Typography>
-                                )}
-                            </HoverCardBox>
-                        </Box>
-
-
-                        {/* Coming Up Tasks */}
-                        <Box ref={comingUpRef}>
-                            <HoverCardBox variant="paper" hover={false}>
-                                <Box sx={{ mb: 2 }}>
-                                    <Box sx={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'space-between',
-                                        mb: 1,
-                                    }}>
-                                        <Typography
-                                            variant="h5"
-                                            color="text.primary"
-                                            sx={{
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: 1,
-                                            }}
-                                        >
-                                            <UpcomingIcon color="secondary" />
-                                            Coming Up
-                                        </Typography>
-                                        {futureTasksExist && (
-                                            <Typography variant="body2" color="text.secondary">
-                                                {completedFutureCount} of {futureTasks.length} completed
-                                            </Typography>
-                                        )}
-                                    </Box>
-                                </Box>
-                                <TaskAccordion
-                                    title=""
-                                    tasks={futureTasks}
-                                    expanded={expandedSections.comingUp}
-                                    onChange={() => handleChipClick('comingUp')}
-                                    toggleTaskCompletion={toggleTaskCompletion}
-                                    onTaskClick={setHighlightedTask}
-                                />
-                                {!futureTasksExist && (
-                                    <Typography
-                                        variant="body1"
-                                        sx={{
-                                            textAlign: 'center',
-                                            color: 'text.secondary',
-                                            fontStyle: 'italic',
-                                            py: 3,
-                                        }}
-                                    >
-                                        No upcoming tasks
-                                    </Typography>
-                                )}
-                            </HoverCardBox>
-                        </Box>
-
-
-                        {/* Past Tasks (Leftovers) */}
-                        <Box ref={leftoversRef}>
-                            <HoverCardBox variant="paper" hover={false}>
-                                <Box sx={{ mb: 2 }}>
-                                    <Box sx={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'space-between',
-                                        mb: 1,
-                                    }}>
-                                        <Typography
-                                            variant="h5"
-                                            color="text.primary"
-                                            sx={{
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: 1,
-                                            }}
-                                        >
-                                            <HistoryIcon />
-                                            Leftovers
-                                        </Typography>
-                                        {pastTasksExist && (
-                                            <Typography variant="body2" color="text.secondary">
-                                                {completedPastCount} of {pastTasks.length} completed
-                                            </Typography>
-                                        )}
-                                    </Box>
-                                </Box>
-                                <TaskAccordion
-                                    title=""
-                                    tasks={pastTasks}
-                                    expanded={expandedSections.leftovers}
-                                    onChange={() => handleChipClick('leftovers')}
-                                    toggleTaskCompletion={toggleTaskCompletion}
-                                    onTaskClick={setHighlightedTask}
-                                />
-                                {!pastTasksExist && (
-                                    <Typography
-                                        variant="body1"
-                                        sx={{
-                                            textAlign: 'center',
-                                            color: 'text.secondary',
-                                            fontStyle: 'italic',
-                                            py: 3,
-                                        }}
-                                    >
-                                        No overdue tasks
-                                    </Typography>
-                                )}
-                            </HoverCardBox>
-                        </Box>
-
+                        <TaskPageSection
+                            section="today"
+                            title="Today"
+                            tasks={todayTasks}
+                            completedCount={completedTodayCount}
+                            expanded={expandedSections.today}
+                            onToggle={handleChipClick}
+                            onTaskClick={setHighlightedTask}
+                            toggleTaskCompletion={toggleTaskCompletion}
+                            updateTask={updateTask}
+                            emptyMessage="No tasks scheduled for today"
+                            sectionRef={todayRef}
+                            activeExpansion={activeExpansion}
+                            onTogglePanel={handleTogglePanel}
+                            onAutoExpand={handleAutoExpand}
+                        />
+                        <TaskPageSection
+                            section="comingUp"
+                            title="Coming Up"
+                            tasks={futureTasks}
+                            completedCount={completedFutureCount}
+                            expanded={expandedSections.comingUp}
+                            onToggle={handleChipClick}
+                            onTaskClick={setHighlightedTask}
+                            toggleTaskCompletion={toggleTaskCompletion}
+                            updateTask={updateTask}
+                            emptyMessage="No upcoming tasks"
+                            sectionRef={comingUpRef}
+                            activeExpansion={activeExpansion}
+                            onTogglePanel={handleTogglePanel}
+                            onAutoExpand={handleAutoExpand}
+                        />
+                        <TaskPageSection
+                            section="leftovers"
+                            title="Leftovers"
+                            tasks={pastTasks}
+                            completedCount={completedPastCount}
+                            expanded={expandedSections.leftovers}
+                            onToggle={handleChipClick}
+                            onTaskClick={setHighlightedTask}
+                            toggleTaskCompletion={toggleTaskCompletion}
+                            updateTask={updateTask}
+                            emptyMessage="No overdue tasks"
+                            sectionRef={leftoversRef}
+                            activeExpansion={activeExpansion}
+                            onTogglePanel={handleTogglePanel}
+                            onAutoExpand={handleAutoExpand}
+                        />
                     </Box>
 
-                    {/* Empty State */}
                     {!tasksExist && (
-                        <HoverCardBox variant="paper" hover={false}>
-                            <Typography
-                                variant="h5"
-                                sx={{
-                                    textAlign: 'center',
-                                    color: 'text.secondary',
-                                    fontStyle: 'italic',
-                                    py: 8,
-                                }}
-                            >
-                                Nothing to do. Enjoy your free time! 🎉
-                            </Typography>
-                        </HoverCardBox>
+                        <Typography
+                            variant="h5"
+                            sx={{
+                                textAlign: 'left',
+                                color: 'text.secondary',
+                                fontStyle: 'italic',
+                                py: 4,
+                            }}
+                        >
+                            Nothing to do. Enjoy your free time!
+                        </Typography>
                     )}
                 </Box>
 
-                {/* Highlighted Task Section */}
+                <Box
+                    sx={{
+                        display: { xs: 'block', lg: 'flex' },
+                        flex: { xs: '1 1 100%', lg: '0 0 auto' },
+                        alignSelf: 'stretch',
+                    }}
+                >
+                    <Box
+                        sx={{
+                            width: { xs: '100%', lg: '1px' },
+                            height: { xs: '1px', lg: 'auto' },
+                            backgroundColor: 'divider',
+                            mb: { xs: 0, lg: 0 },
+                        }}
+                    />
+                </Box>
+
                 <Box sx={{
                     flex: { xs: '1 1 100%', lg: '1 1 35%' },
                     minWidth: 0,
                     display: 'flex',
                     flexDirection: 'column',
                     gap: 3,
+                    pl: { lg: 4 },
                 }}>
                     {highlightedTask ? (
                         <HighlightedTaskBox
@@ -426,71 +295,28 @@ export function TaskPage() {
                             toggleTaskCompletion={toggleTaskCompletion}
                             />
                     ) : (
-                        <HoverCardBox variant="paper" hover={false}>
-                            <Typography
-                                variant="h6"
-                                color="text.secondary"
-                                sx={{
-                                    textAlign: 'center',
-                                    py: 8,
-                                    fontStyle: 'italic',
-                                }}
-                            >
-                                Click on a task to view details
-                            </Typography>
-                        </HoverCardBox>
-                    )}
-
-                    {/* Task Statistics */}
-                    <HoverCardBox variant="paper" hover={false}>
                         <Typography
                             variant="h6"
-                            color="text.primary"
-                            sx={{ mb: 2 }}
+                            color="text.secondary"
+                            sx={{
+                                textAlign: 'left',
+                                py: 4,
+                                fontStyle: 'italic',
+                            }}
                         >
-                            Overview
+                            Click on a task to view details
                         </Typography>
-                        <Stack spacing={2}>
-                            <Box sx={{
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'center',
-                            }}>
-                                <Typography variant="body1" color="text.secondary">
-                                    Total Tasks
-                                </Typography>
-                                <Typography variant="h6" color="text.primary">
-                                    {allTasks.length}
-                                </Typography>
-                            </Box>
-                            <Divider />
-                            <Box sx={{
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'center',
-                            }}>
-                                <Typography variant="body1" color="text.secondary">
-                                    Completed
-                                </Typography>
-                                <Typography variant="h6" color="success.main">
-                                    {allTasks.filter(t => t.completed).length}
-                                </Typography>
-                            </Box>
-                            <Divider />
-                            <Box sx={{
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'center',
-                            }}>
-                                <Typography variant="body1" color="text.secondary">
-                                    Pending
-                                </Typography>
-                                <Typography variant="h6" color="warning.main">
-                                    {allTasks.filter(t => !t.completed).length}
-                                </Typography>
-                            </Box>
-                        </Stack>
-                    </HoverCardBox>
+                    )}
+
+                    <TaskPageOverview
+                        totalCount={allTasks.length}
+                        completedCount={allTasks.filter(t => t.completed).length}
+                        pendingCount={allTasks.filter(t => !t.completed).length}
+                        todayCount={todayTasks.length}
+                        upcomingCount={futureTasks.length}
+                        overdueCount={overduePendingCount}
+                        highPriorityCount={highPriorityPendingCount}
+                    />
                 </Box>
             </Box>
         </PageWrapper>

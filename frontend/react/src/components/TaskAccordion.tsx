@@ -1,5 +1,5 @@
 import React from 'react';
-import { Accordion, AccordionDetails, AccordionSummary, List, Typography } from '@mui/material';
+import { Accordion, AccordionDetails, AccordionSummary, List, SxProps, Theme, Typography } from '@mui/material';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 import { Task } from '../types/Task';
 import { TaskDiv } from './TaskDiv';
@@ -12,6 +12,11 @@ type TaskAccordionProps = {
     onChange?: (event: React.SyntheticEvent, isExpanded: boolean) => void;
     toggleTaskCompletion: (taskId: string) => void;
     onTaskClick: (task: Task) => void;
+    accordionSx?: SxProps<Theme>;
+    summarySx?: SxProps<Theme>;
+    detailsSx?: SxProps<Theme>;
+    listSx?: SxProps<Theme>;
+    renderTasks?: (tasks: Task[]) => React.ReactNode;
 };
 
 export function TaskAccordion({
@@ -21,7 +26,12 @@ export function TaskAccordion({
                                   expanded,
                                   onChange,
                                   toggleTaskCompletion,
-                                  onTaskClick
+                                  onTaskClick,
+                                  accordionSx,
+                                  summarySx,
+                                  detailsSx,
+                                  listSx,
+                                  renderTasks,
                               }: TaskAccordionProps) {
     if (!tasks || tasks.length === 0) return null;
     const accordionProps = expanded !== undefined
@@ -43,6 +53,7 @@ export function TaskAccordion({
                 '&.Mui-expanded': {
                     margin: '0 0 16px 0',
                 },
+                ...accordionSx,
             }}
         >
             <AccordionSummary
@@ -54,21 +65,26 @@ export function TaskAccordion({
                         borderBottomLeftRadius: 0,
                         borderBottomRightRadius: 0,
                     },
+                    ...summarySx,
                 }}
             >
                 <Typography variant="h6">{title}</Typography>
             </AccordionSummary>
-            <AccordionDetails sx={{ pt: 0, background: 'transparent' }}>
-                <List sx={{ py: 0 }}>
-                    {tasks.filter((task) => !task.parentId).map((task: Task) => (
-                        <TaskDiv
-                            key={task.taskId}
-                            task={task}
-                            toggleTaskCompletion={toggleTaskCompletion}
-                            onClick={onTaskClick}
-                        />
-                    ))}
-                </List>
+            <AccordionDetails sx={{ pt: 0, background: 'transparent', ...detailsSx }}>
+                {renderTasks ? (
+                    renderTasks(tasks.filter((task) => !task.parentId))
+                ) : (
+                    <List sx={{ py: 0, ...listSx }}>
+                        {tasks.filter((task) => !task.parentId).map((task: Task) => (
+                            <TaskDiv
+                                key={task.taskId}
+                                task={task}
+                                toggleTaskCompletion={toggleTaskCompletion}
+                                onClick={onTaskClick}
+                            />
+                        ))}
+                    </List>
+                )}
             </AccordionDetails>
         </Accordion>
     );

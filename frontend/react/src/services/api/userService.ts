@@ -1,4 +1,5 @@
 import axios from 'axios';
+import apiClient from '../utils/axiosConfig';
 
 const API_BASE_URL = 'http://localhost:8080/api/v1';
 
@@ -64,5 +65,12 @@ export const userService = {
 
     async deleteUser(userId: string) {
         await axios.delete(`${API_BASE_URL}/users/${userId}`);
+    },
+
+    async changePassword(passwords: {
+        currentPassword: string;
+        newPassword: string;
+    }) {
+        await apiClient.put('/api/v1/users/me/password', passwords);
     },
 };

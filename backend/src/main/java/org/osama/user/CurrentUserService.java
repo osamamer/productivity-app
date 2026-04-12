@@ -14,8 +14,12 @@ public class CurrentUserService {
 
     private final UserService userService;
 
+    public Jwt getCurrentJwt() {
+        return (Jwt) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+    }
+
     public User getCurrentUser() {
-        Jwt jwt = (Jwt) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        Jwt jwt = getCurrentJwt();
         try {
             return userService.getOrCreateFromJwt(jwt);
         } catch (DataIntegrityViolationException e) {

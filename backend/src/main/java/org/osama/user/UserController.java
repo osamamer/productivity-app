@@ -2,6 +2,7 @@ package org.osama.user;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
@@ -15,6 +16,7 @@ import java.util.List;
 @Slf4j
 public class UserController {
 
+    private final CurrentUserService currentUserService;
     private final UserService userService;
 
     @PostMapping
@@ -112,6 +114,21 @@ public class UserController {
         return ResponseEntity.noContent().build();
     }
 
+    @PutMapping("/me/password")
+    public ResponseEntity<Void> changePassword(@RequestBody ChangePasswordRequest request) {
+        User user = currentUserService.getCurrentUser();
+        String username = currentUserService.getCurrentJwt().getClaimAsString("preferred_username");
+
+        userService.changePassword(
+                username != null && !username.isBlank() ? username : user.getUsername(),
+                user.getKeycloakId(),
+                request.currentPassword(),
+                request.newPassword()
+        );
+
+        return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
+    }
+
     // DTOs
     public record CreateUserRequest(
             String email,
@@ -126,5 +143,10 @@ public class UserController {
             String firstName,
             String lastName,
             String username
+    ) {}
+
+    public record ChangePasswordRequest(
+            String currentPassword,
+            String newPassword
     ) {}
 }

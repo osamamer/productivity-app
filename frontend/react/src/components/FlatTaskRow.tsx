@@ -54,6 +54,9 @@ export type FlatTaskRowProps = {
     expandedPanel: 'pomodoro' | 'details' | null;
     onTogglePanel: (panel: 'pomodoro' | 'details') => void;
     onAutoExpand: (panel: 'pomodoro') => void;
+    showScheduledDate?: boolean;
+    onSelect?: (task: Task) => void;
+    deferPomodoroHydration?: boolean;
 };
 
 // ─── helpers ───────────────────────────────────────────────────────────────
@@ -84,9 +87,45 @@ function currentPriorityLabel(importance: number): string {
     return 'Low';
 }
 
+function formatScheduledDate(dateTime: string): string {
+    const date = new Date(dateTime);
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const taskDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    if (taskDate.getTime() === today.getTime()) return 'Today';
+    if (taskDate.getTime() === tomorrow.getTime()) return 'Tomorrow';
+    if (taskDate.getTime() === yesterday.getTime()) return 'Yesterday';
+
+    const daysDiff = Math.floor((taskDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    if (Math.abs(daysDiff) < 7) {
+        return date.toLocaleDateString('en-US', { weekday: 'long' });
+    }
+
+    if (date.getFullYear() !== now.getFullYear()) {
+        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    }
+
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
 // ─── component ─────────────────────────────────────────────────────────────
 
-export function FlatTaskRow({ task, onToggle, onUpdate, expandedPanel, onTogglePanel, onAutoExpand }: FlatTaskRowProps) {
+export function FlatTaskRow({
+    task,
+    onToggle,
+    onUpdate,
+    expandedPanel,
+    onTogglePanel,
+    onAutoExpand,
+    showScheduledDate = false,
+    onSelect,
+    deferPomodoroHydration = false,
+}: FlatTaskRowProps) {
     const theme = useTheme();
     // Use the lighter shade of primary throughout — softer on the eye
     const accent = theme.palette.primary.light;
@@ -96,6 +135,7 @@ export function FlatTaskRow({ task, onToggle, onUpdate, expandedPanel, onToggleP
     const [pomodoroStatus, setPomodoroStatus] = useState<PomodoroStatus | null>(null);
     const [wsConnected, setWsConnected] = useState(false);
     const [actionLoading, setActionLoading] = useState(false);
+    const [pomodoroHydrated, setPomodoroHydrated] = useState(!deferPomodoroHydration);
 
     // Local description state — committed on blur to avoid an API call per keystroke
     const [localName, setLocalName] = useState(task.name ?? '');
@@ -115,10 +155,20 @@ export function FlatTaskRow({ task, onToggle, onUpdate, expandedPanel, onToggleP
     const stompRef = useRef<Client | null>(null);
     const subscriptionRef = useRef<StompSubscription | null>(null);
 
+    useEffect(() => {
+        if (expandedPanel === 'pomodoro') {
+            setPomodoroHydrated(true);
+        }
+    }, [expandedPanel]);
+
     // On mount: connect WebSocket and subscribe to pomodoro updates for this task.
     // Connecting on mount (not on panel open) means the panel opens into an already-live
     // connection — no handshake delay, no "Connecting…" flicker.
     useEffect(() => {
+        if (!pomodoroHydrated) {
+            return;
+        }
+
         const client = new Client({
             brokerURL: WS_URL,
             connectHeaders: { Authorization: `Bearer ${keycloak.token ?? ''}` },
@@ -149,11 +199,15 @@ export function FlatTaskRow({ task, onToggle, onUpdate, expandedPanel, onToggleP
             client.deactivate();
             setWsConnected(false);
         };
-    }, [task.taskId]);
+    }, [pomodoroHydrated, task.taskId]);
 
     // On mount: check if this task already has an active pomodoro running and
     // auto-open the panel so the user doesn't lose their session after a page remount.
     useEffect(() => {
+        if (!pomodoroHydrated) {
+            return;
+        }
+
         taskService.getActivePomodoro(task.taskId)
             .then(status => {
                 if (status?.active) {
@@ -165,9 +219,12 @@ export function FlatTaskRow({ task, onToggle, onUpdate, expandedPanel, onToggleP
     // onAutoExpand is a stable arrow function defined inline in the parent — intentionally
     // omitted from deps to avoid re-running when the parent re-renders.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [task.taskId]);
+    }, [pomodoroHydrated, task.taskId]);
 
     const togglePanel = useCallback((panel: 'pomodoro' | 'details') => {
+        if (panel === 'pomodoro') {
+            setPomodoroHydrated(true);
+        }
         onTogglePanel(panel);
     }, [onTogglePanel]);
 
@@ -249,6 +306,7 @@ export function FlatTaskRow({ task, onToggle, onUpdate, expandedPanel, onToggleP
 
     const cbColor = checkboxColor(task.importance);
     const schedDate = task.scheduledPerformDateTime ? new Date(task.scheduledPerformDateTime) : null;
+    const scheduledLabel = task.scheduledPerformDateTime ? formatScheduledDate(task.scheduledPerformDateTime) : '';
 
     return (
         <Box
@@ -263,6 +321,7 @@ export function FlatTaskRow({ task, onToggle, onUpdate, expandedPanel, onToggleP
                 overflow: 'hidden',
                 mb: 0.25,
             }}
+            onClick={() => onSelect?.(task)}
         >
             {/* ── Main row ── */}
             <Box sx={{ display: 'flex', alignItems: 'center', py: 0.75, px: 0.5 }}>
@@ -307,7 +366,11 @@ export function FlatTaskRow({ task, onToggle, onUpdate, expandedPanel, onToggleP
                     />
                 ) : (
                     <Typography
-                        onClick={() => setIsEditingName(true)}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onSelect?.(task);
+                            setIsEditingName(true);
+                        }}
                         sx={{
                             flex: 1,
                             fontSize: '1.05rem',
@@ -322,6 +385,16 @@ export function FlatTaskRow({ task, onToggle, onUpdate, expandedPanel, onToggleP
                     </Typography>
                 )}
 
+                {showScheduledDate && scheduledLabel && (
+                    <Typography
+                        variant="body2"
+                        color="text.secondary"
+                        sx={{ mx: 1.5, minWidth: 84, textAlign: 'right', flexShrink: 0 }}
+                    >
+                        {scheduledLabel}
+                    </Typography>
+                )}
+
                 {task.importance > 7 && !task.completed && (
                     <Box sx={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: '#ef4444', mx: 1.5, flexShrink: 0 }} />
                 )}
@@ -330,7 +403,11 @@ export function FlatTaskRow({ task, onToggle, onUpdate, expandedPanel, onToggleP
                     <Tooltip title="Pomodoro">
                         <IconButton
                             size="small"
-                            onClick={() => togglePanel('pomodoro')}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onSelect?.(task);
+                                togglePanel('pomodoro');
+                            }}
                             color={expandedPanel === 'pomodoro' || isActive ? 'primary' : 'default'}
                         >
                             <TimerIcon sx={{ fontSize: '1.1rem' }} />
@@ -339,7 +416,11 @@ export function FlatTaskRow({ task, onToggle, onUpdate, expandedPanel, onToggleP
                     <Tooltip title="Details">
                         <IconButton
                             size="small"
-                            onClick={() => togglePanel('details')}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onSelect?.(task);
+                                togglePanel('details');
+                            }}
                             color={expandedPanel === 'details' ? 'primary' : 'default'}
                         >
                             <TuneIcon sx={{ fontSize: '1.1rem' }} />

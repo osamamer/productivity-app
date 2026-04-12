@@ -4,11 +4,46 @@ import { ThemeProvider as MuiThemeProvider, createTheme, responsiveFontSizes } f
 import CssBaseline from '@mui/material/CssBaseline';
 
 type ThemeMode = 'light' | 'dark';
+export type AccentColor = 'violet' | 'teal' | 'coral' | 'amber';
+
+const THEME_MODE_STORAGE_KEY = 'themeMode';
+const LEGACY_DARK_MODE_STORAGE_KEY = 'darkMode';
+const ACCENT_COLOR_STORAGE_KEY = 'accentColor';
+
+const accentPalettes: Record<AccentColor, {
+    label: string;
+    light: { main: string; light: string; dark: string; contrastText: string };
+    dark: { main: string; light: string; dark: string; contrastText: string };
+}> = {
+    violet: {
+        label: 'Violet',
+        light: { main: '#946AF5', light: '#B7A0FA', dark: '#6F44D8', contrastText: '#FFFFFF' },
+        dark: { main: '#A395F2', light: '#C6BCF7', dark: '#7A69D9', contrastText: '#111827' },
+    },
+    teal: {
+        label: 'Teal',
+        light: { main: '#0F9D8A', light: '#5BCBBE', dark: '#0A6F61', contrastText: '#FFFFFF' },
+        dark: { main: '#52CDBD', light: '#8DE2D6', dark: '#289A8C', contrastText: '#0F172A' },
+    },
+    coral: {
+        label: 'Coral',
+        light: { main: '#E56B6F', light: '#F09CA0', dark: '#C44F53', contrastText: '#FFFFFF' },
+        dark: { main: '#F08E84', light: '#F6B4AE', dark: '#D96A5F', contrastText: '#111827' },
+    },
+    amber: {
+        label: 'Amber',
+        light: { main: '#D18B00', light: '#E6B54D', dark: '#9E6700', contrastText: '#FFFFFF' },
+        dark: { main: '#F1B93A', light: '#F6D27D', dark: '#D99912', contrastText: '#111827' },
+    },
+};
 
 interface ThemeContextType {
     darkMode: boolean;
+    mode: ThemeMode;
+    accentColor: AccentColor;
     toggleTheme: () => void;
     setTheme: (mode: ThemeMode) => void;
+    setAccentColor: (color: AccentColor) => void;
 }
 
 // Extend MUI theme to include custom palette colors
@@ -48,31 +83,53 @@ interface ThemeProviderProps {
 }
 
 export const AppThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
-    const [darkMode, setDarkMode] = useState<boolean>(() => {
-        const saved = localStorage.getItem('darkMode');
-        if (saved !== null) {
-            return JSON.parse(saved);
+    const [mode, setMode] = useState<ThemeMode>(() => {
+        const savedMode = localStorage.getItem(THEME_MODE_STORAGE_KEY);
+        if (savedMode === 'light' || savedMode === 'dark') {
+            return savedMode;
         }
-        // Check system preference
-        return window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+        const legacyDarkMode = localStorage.getItem(LEGACY_DARK_MODE_STORAGE_KEY);
+        if (legacyDarkMode !== null) {
+            return JSON.parse(legacyDarkMode) ? 'dark' : 'light';
+        }
+
+        return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     });
+    const [accentColor, setAccentColorState] = useState<AccentColor>(() => {
+        const savedAccentColor = localStorage.getItem(ACCENT_COLOR_STORAGE_KEY);
+        return savedAccentColor === 'teal' || savedAccentColor === 'coral' || savedAccentColor === 'amber' || savedAccentColor === 'violet'
+            ? savedAccentColor
+            : 'violet';
+    });
+    const darkMode = mode === 'dark';
 
     useEffect(() => {
-        localStorage.setItem('darkMode', JSON.stringify(darkMode));
-    }, [darkMode]);
+        localStorage.setItem(THEME_MODE_STORAGE_KEY, mode);
+        localStorage.setItem(LEGACY_DARK_MODE_STORAGE_KEY, JSON.stringify(darkMode));
+    }, [darkMode, mode]);
+
+    useEffect(() => {
+        localStorage.setItem(ACCENT_COLOR_STORAGE_KEY, accentColor);
+    }, [accentColor]);
 
     const toggleTheme = useCallback(() => {
-        setDarkMode(prev => !prev);
+        setMode(prev => prev === 'dark' ? 'light' : 'dark');
     }, []);
 
     const setTheme = useCallback((mode: ThemeMode) => {
-        setDarkMode(mode === 'dark');
+        setMode(mode);
+    }, []);
+
+    const setAccentColor = useCallback((color: AccentColor) => {
+        setAccentColorState(color);
     }, []);
 
     const theme = useMemo(() => {
         const { palette: basePalette } = createTheme();
         const { augmentColor } = basePalette;
         const createColor = (mainColor: string) => augmentColor({ color: { main: mainColor } });
+        const primaryPalette = darkMode ? accentPalettes[accentColor].dark : accentPalettes[accentColor].light;
 
         const t = createTheme({
             typography: {
@@ -80,9 +137,7 @@ export const AppThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => 
             },
             palette: darkMode ? {
                 mode: 'dark',
-                primary: {
-                    main: '#A395F2',
-                },
+                primary: primaryPalette,
                 secondary: {
                     main: '#F5E55F',
                 },
@@ -109,9 +164,7 @@ export const AppThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => 
                 },
             } : {
                 mode: 'light',
-                primary: {
-                    main: '#946AF5',
-                },
+                primary: primaryPalette,
                 secondary: {
                     main: '#F5E55F',
                 },
@@ -168,9 +221,16 @@ export const AppThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => 
             },
         });
         return responsiveFontSizes(t);
-    }, [darkMode]);
+    }, [accentColor, darkMode]);
 
-    const contextValue = useMemo(() => ({ darkMode, toggleTheme, setTheme }), [darkMode, toggleTheme, setTheme]);
+    const contextValue = useMemo(() => ({
+        darkMode,
+        mode,
+        accentColor,
+        toggleTheme,
+        setTheme,
+        setAccentColor,
+    }), [accentColor, darkMode, mode, setAccentColor, setTheme, toggleTheme]);
 
     return (
         <ThemeContext.Provider value={contextValue}>
@@ -181,3 +241,9 @@ export const AppThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => 
         </ThemeContext.Provider>
     );
 };
+
+export const accentColorOptions = Object.entries(accentPalettes).map(([value, config]) => ({
+    value: value as AccentColor,
+    label: config.label,
+    swatch: config.light.main,
+}));

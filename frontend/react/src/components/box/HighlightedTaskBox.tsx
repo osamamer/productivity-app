@@ -3,7 +3,6 @@ import { Task } from "../../types/Task.tsx";
 import { alpha, Box, Typography } from "@mui/material";
 import AdjustIcon from '@mui/icons-material/Adjust';
 import EditableField from "../input/EditableField.tsx";
-import { HoverCardBox } from "./HoverCardBox";
 import PomodoroTimer from "../timer/PomodoroTimer.tsx";
 import DensityMediumRoundedIcon from '@mui/icons-material/DensityMediumRounded';
 import List from '@mui/material/List';
@@ -93,12 +92,12 @@ export function HighlightedTaskBox(props: props) {
     return (
         <Box
             sx={{
-                border: `2px solid ${isPomodoroRunning ? alpha(lightPurple, 0.7) : 'transparent'}`,
-                borderRadius: 2,
+                borderLeft: `2px solid ${isPomodoroRunning ? alpha(lightPurple, 0.8) : alpha(lightPurple, 0)}`,
+                pl: 2,
                 transition: 'border-color 0.3s',
             }}
         >
-        <HoverCardBox variant="paper" hover={false}>
+        <Box>
             {props.label && (
                 <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 0.5, lineHeight: 1 }}>
                     {props.label}
@@ -143,7 +142,7 @@ export function HighlightedTaskBox(props: props) {
             {showPomodoro && (
                 <PomodoroTimer task={props.task} onActiveChange={setIsPomodoroRunning} />
             )}
-        </HoverCardBox>
+        </Box>
         </Box>
     );
 }
