@@ -1,5 +1,5 @@
-import { SyntheticEvent, useState } from 'react';
-import { Box, Button, Stack, Tab, Tabs, Typography } from '@mui/material';
+import { SyntheticEvent, useEffect, useMemo, useState } from 'react';
+import { Box, Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Stack, Tab, Tabs, Typography } from '@mui/material';
 import LightModeIcon from '@mui/icons-material/LightMode';
 import NightlightIcon from '@mui/icons-material/Nightlight';
 import LogoutIcon from '@mui/icons-material/Logout';
@@ -9,6 +9,7 @@ import SecurityOutlinedIcon from '@mui/icons-material/SecurityOutlined';
 import { PageWrapper } from '../components/PageWrapper.tsx';
 import { useUser } from '../contexts/UserContext.tsx';
 import { useAppTheme } from '../contexts/ThemeContext.tsx';
+import { useSearchParams } from 'react-router-dom';
 
 const sectionCardSx = {
     backgroundColor: 'background.paper',
@@ -28,10 +29,24 @@ const sectionHeadingSx = {
 export function SettingsPage() {
     const { user, logout } = useUser();
     const { darkMode, setTheme } = useAppTheme();
-    const [activeTab, setActiveTab] = useState(0);
+    const [searchParams, setSearchParams] = useSearchParams();
+    const initialTab = useMemo(() => {
+        const tab = searchParams.get('tab');
+        if (tab === 'account') return 1;
+        if (tab === 'appearance') return 2;
+        return 0;
+    }, [searchParams]);
+    const [activeTab, setActiveTab] = useState(initialTab);
+    const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
+
+    useEffect(() => {
+        setActiveTab(initialTab);
+    }, [initialTab]);
 
     function handleTabChange(_event: SyntheticEvent, newValue: number) {
         setActiveTab(newValue);
+        const tabName = newValue === 1 ? 'account' : newValue === 2 ? 'appearance' : 'general';
+        setSearchParams(tabName === 'general' ? {} : { tab: tabName }, { replace: true });
     }
 
     const displayName = user ? `${user.firstName} ${user.lastName}`.trim() || user.username : 'Unknown user';
@@ -98,7 +113,7 @@ export function SettingsPage() {
                                     variant="outlined"
                                     color="inherit"
                                     startIcon={<LogoutIcon />}
-                                    onClick={logout}
+                                    onClick={() => setLogoutDialogOpen(true)}
                                     sx={{ borderRadius: 2, py: 1.1, textTransform: 'none' }}
                                 >
                                     Log out
@@ -186,6 +201,26 @@ export function SettingsPage() {
                     </Stack>
                 </Box>
             </Box>
+            <Dialog open={logoutDialogOpen} onClose={() => setLogoutDialogOpen(false)}>
+                <DialogTitle>Log out?</DialogTitle>
+                <DialogContent>
+                    <DialogContentText>
+                        You will be signed out of the app and returned to the login screen.
+                    </DialogContentText>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setLogoutDialogOpen(false)}>Cancel</Button>
+                    <Button
+                        color="error"
+                        onClick={() => {
+                            setLogoutDialogOpen(false);
+                            logout();
+                        }}
+                    >
+                        Log out
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </PageWrapper>
     );
 }

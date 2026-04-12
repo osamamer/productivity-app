@@ -137,6 +137,35 @@ export const AppThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => 
                     secondary: 'rgba(26,26,46,0.6)',
                 },
             },
+            components: {
+                MuiDialog: {
+                    styleOverrides: {
+                        paper: {
+                            backgroundImage: 'none',
+                            backgroundColor: darkMode ? '#1e2124' : '#FFFFFF',
+                            border: darkMode ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(26,26,46,0.08)',
+                        },
+                    },
+                },
+                MuiPopover: {
+                    styleOverrides: {
+                        paper: {
+                            backgroundImage: 'none',
+                            backgroundColor: darkMode ? '#1e2124' : '#FFFFFF',
+                            border: darkMode ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(26,26,46,0.08)',
+                        },
+                    },
+                },
+                MuiMenu: {
+                    styleOverrides: {
+                        paper: {
+                            backgroundImage: 'none',
+                            backgroundColor: darkMode ? '#1e2124' : '#FFFFFF',
+                            border: darkMode ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(26,26,46,0.08)',
+                        },
+                    },
+                },
+            },
         });
         return responsiveFontSizes(t);
     }, [darkMode]);

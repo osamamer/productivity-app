@@ -32,8 +32,7 @@ export function HomePage() {
         allTasks,
         todayTasks,
         pastTasks,
-        fetchAllTasks,
-        fetchTodayTasks,
+        refreshTaskBuckets,
         addTaskToState,
         updateTaskInState,
     } = useGlobalTasks();
@@ -44,17 +43,21 @@ export function HomePage() {
             addTaskToState(created);
         } catch (err) {
             console.error('Error creating task:', err);
-            await Promise.all([fetchAllTasks(), fetchTodayTasks()]);
+            await refreshTaskBuckets();
         }
     }
 
     async function updateTask(taskId: string, updates: Partial<Task>) {
+        const originalTask = allTasks.find(task => task.taskId === taskId);
         updateTaskInState(taskId, updates);
         try {
             await taskService.updateTask(taskId, updates);
         } catch (err) {
             console.error('Error updating task:', err);
-            await fetchAllTasks();
+            if (originalTask) {
+                updateTaskInState(taskId, originalTask);
+            }
+            await refreshTaskBuckets();
         }
     }
 

@@ -1,4 +1,4 @@
-import { Box, Dialog, DialogContent, Tabs, Tab, Typography } from "@mui/material";
+import { Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Tabs, Tab, TextField, Typography } from "@mui/material";
 import { HoverCardBox } from "./box/HoverCardBox.tsx";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin, { DateClickArg } from "@fullcalendar/interaction";
@@ -6,27 +6,51 @@ import FullCalendar from "@fullcalendar/react";
 import React, { useMemo, useState, useCallback } from "react";
 import { Task } from "../types/Task.tsx";
 import { useTheme } from "@mui/material";
-import { EventMountArg } from '@fullcalendar/core';
+import { EventClickArg, EventMountArg } from '@fullcalendar/core';
 import { TaskToCreate } from "../types/TaskToCreate.tsx";
 import { SmartTaskInput } from "./input/SmartTaskInput.tsx";
 import { StatDefinition } from "../types/Stats.ts";
 import { DateStatCheckIn } from "./stats/DateStatCheckIn.tsx";
 import { format, isAfter, startOfDay } from "date-fns";
+import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
+import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
+import { DateTimePicker } from "@mui/x-date-pickers/DateTimePicker";
 
 type MonthCalenderProps = {
     tasks: Task[],
     onCreateTask: (task: TaskToCreate) => void,
+    onUpdateTask: (taskId: string, updates: Partial<Task>) => Promise<void>,
     statDefinitions?: StatDefinition[],
 }
 
-export function MonthCalendar({ tasks, onCreateTask, statDefinitions }: MonthCalenderProps) {
+const PRIORITY_OPTIONS = [
+    { label: 'Low', value: 3, color: '#1976d2' },
+    { label: 'Medium', value: 6, color: '#eab308' },
+    { label: 'High', value: 9, color: '#ef4444' },
+];
+
+function priorityColor(importance: number): string {
+    if (importance > 7) return '#ef4444';
+    if (importance > 4) return '#eab308';
+    return '#1976d2';
+}
+
+export function MonthCalendar({ tasks, onCreateTask, onUpdateTask, statDefinitions }: MonthCalenderProps) {
     const theme = useTheme();
     const [editingDate, setEditingDate] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState(0);
+    const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+    const [taskDraft, setTaskDraft] = useState<Partial<Task> | null>(null);
+    const [taskSaveError, setTaskSaveError] = useState<string | null>(null);
+    const [taskSaving, setTaskSaving] = useState(false);
     const hasStats = statDefinitions && statDefinitions.length > 0;
     const isFutureDate = editingDate
         ? isAfter(startOfDay(new Date(editingDate + 'T12:00:00')), startOfDay(new Date()))
         : true;
+    const selectedTask = useMemo(
+        () => tasks.find(task => task.taskId === selectedTaskId) ?? null,
+        [selectedTaskId, tasks]
+    );
 
     const calendarEvents = useMemo(() => {
         return tasks
@@ -35,19 +59,17 @@ export function MonthCalendar({ tasks, onCreateTask, statDefinitions }: MonthCal
                 id: task.taskId,
                 title: task.name || 'Untitled Task',
                 date: new Date(task.scheduledPerformDateTime!).toISOString().split('T')[0],
-                backgroundColor: task.completed ? '#4caf50' :
-                    task.importance > 7
-                        ? '#ef4444'
-                        : task.importance > 4
-                            ? '#eab308'
-                            : '#1976d2',
-                borderColor: 'transparent',
+                backgroundColor: theme.palette.mode === 'dark'
+                    ? 'rgba(255, 255, 255, 0.04)'
+                    : 'rgba(255, 255, 255, 0.82)',
+                borderColor: task.completed ? '#4caf50' : priorityColor(task.importance),
+                textColor: theme.palette.text.primary,
                 extendedProps: {
                     fullDescription: task.name || 'Untitled Task',
                     completed: task.completed,
                 }
             }));
-    }, [tasks]);
+    }, [tasks, theme.palette.mode, theme.palette.text.primary]);
 
     const handleEventDidMount = useCallback((info: EventMountArg) => {
         const fullDescription = info.event.extendedProps.fullDescription;
@@ -59,6 +81,22 @@ export function MonthCalendar({ tasks, onCreateTask, statDefinitions }: MonthCal
         setEditingDate(arg.dateStr);
         setActiveTab(0);
     }, []);
+
+    const handleEventClick = useCallback((arg: EventClickArg) => {
+        const task = tasks.find(item => item.taskId === arg.event.id);
+        if (!task) return;
+
+        setTaskDraft({
+            name: task.name,
+            description: task.description ?? '',
+            importance: task.importance,
+            scheduledPerformDateTime: task.scheduledPerformDateTime,
+            tag: task.tag ?? '',
+            completed: task.completed,
+        });
+        setTaskSaveError(null);
+        setSelectedTaskId(task.taskId);
+    }, [tasks]);
 
     const handleTaskSubmit = useCallback((taskToCreate: TaskToCreate) => {
         let finalDateTime = taskToCreate.scheduledPerformDateTime;
@@ -75,6 +113,41 @@ export function MonthCalendar({ tasks, onCreateTask, statDefinitions }: MonthCal
         onCreateTask(finalTask);
         setEditingDate(null);
     }, [editingDate, onCreateTask]);
+
+    const closeTaskDialog = useCallback(() => {
+        setSelectedTaskId(null);
+        setTaskDraft(null);
+        setTaskSaveError(null);
+        setTaskSaving(false);
+    }, []);
+
+    const handleTaskDateChange = useCallback((newDate: Date | null) => {
+        if (!newDate) return;
+        const pad = (n: number) => String(n).padStart(2, '0');
+        const iso = `${newDate.getFullYear()}-${pad(newDate.getMonth() + 1)}-${pad(newDate.getDate())}T${pad(newDate.getHours())}:${pad(newDate.getMinutes())}:00`;
+        setTaskDraft(prev => prev ? { ...prev, scheduledPerformDateTime: iso } : prev);
+    }, []);
+
+    const handleTaskSave = useCallback(async () => {
+        if (!selectedTask || !taskDraft) return;
+
+        setTaskSaving(true);
+        setTaskSaveError(null);
+        try {
+            await onUpdateTask(selectedTask.taskId, {
+                name: taskDraft.name ?? '',
+                description: taskDraft.description ?? '',
+                importance: taskDraft.importance ?? selectedTask.importance,
+                scheduledPerformDateTime: taskDraft.scheduledPerformDateTime ?? selectedTask.scheduledPerformDateTime,
+            });
+            closeTaskDialog();
+        } catch (error) {
+            console.error('Failed to update task from month calendar:', error);
+            setTaskSaveError('Failed to save task changes. Please try again.');
+        } finally {
+            setTaskSaving(false);
+        }
+    }, [closeTaskDialog, onUpdateTask, selectedTask, taskDraft]);
 
     return (
         <>
@@ -134,7 +207,8 @@ export function MonthCalendar({ tasks, onCreateTask, statDefinitions }: MonthCal
                             padding: '12px 4px',
                         },
                         '& .fc-daygrid-event': {
-                            border: 'none',
+                            borderStyle: 'solid',
+                            borderWidth: '1px',
                             borderRadius: '6px',
                             padding: '4px 8px',
                             margin: '2px',
@@ -161,6 +235,48 @@ export function MonthCalendar({ tasks, onCreateTask, statDefinitions }: MonthCal
                                 background: `${theme.palette.primary.main} !important`,
                             },
                         },
+                        '& .fc-prev-button, & .fc-next-button': {
+                            background: 'transparent !important',
+                            border: 'none !important',
+                            boxShadow: 'none !important',
+                            color: `${theme.palette.text.secondary} !important`,
+                            padding: '0.3rem !important',
+                            minWidth: 'auto !important',
+                        },
+                        '& .fc-prev-button:hover, & .fc-next-button:hover': {
+                            background: 'transparent !important',
+                            color: `${theme.palette.text.primary} !important`,
+                        },
+                        '& .fc-prev-button .fc-icon, & .fc-next-button .fc-icon': {
+                            fontSize: '1.2rem',
+                            fontWeight: 700,
+                        },
+                        '& .fc-popover': {
+                            border: `1px solid ${theme.palette.divider}`,
+                            backgroundColor: `${theme.palette.background.default} !important`,
+                            color: theme.palette.text.primary,
+                            boxShadow: theme.shadows[8],
+                            borderRadius: '14px',
+                            overflow: 'hidden',
+                        },
+                        '& .fc-popover-header': {
+                            backgroundColor: theme.palette.mode === 'dark'
+                                ? 'rgba(255, 255, 255, 0.04)'
+                                : 'rgba(0, 0, 0, 0.03)',
+                            color: theme.palette.text.primary,
+                            borderBottom: `1px solid ${theme.palette.divider}`,
+                            padding: '10px 12px',
+                        },
+                        '& .fc-popover-body': {
+                            backgroundColor: `${theme.palette.background.default} !important`,
+                            padding: '6px',
+                        },
+                        '& .fc-more-popover .fc-daygrid-event-harness': {
+                            marginBottom: '4px',
+                        },
+                        '& .fc-popover-close': {
+                            color: `${theme.palette.text.secondary} !important`,
+                        },
                     }}
                 >
                     <FullCalendar
@@ -169,12 +285,16 @@ export function MonthCalendar({ tasks, onCreateTask, statDefinitions }: MonthCal
                         height="100%"
                         events={calendarEvents}
                         eventDidMount={handleEventDidMount}
+                        eventClick={handleEventClick}
                         dateClick={handleDateClick}
                         dayMaxEvents={4}
                         headerToolbar={{
                             left: 'prev,next today',
                             center: 'title',
                             right: ''
+                        }}
+                        buttonText={{
+                            today: 'Today',
                         }}
                     />
                 </Box>
@@ -240,6 +360,93 @@ export function MonthCalendar({ tasks, onCreateTask, statDefinitions }: MonthCal
                         />
                     )}
                 </DialogContent>
+            </Dialog>
+
+            <Dialog
+                open={Boolean(selectedTask && taskDraft)}
+                onClose={closeTaskDialog}
+                fullWidth
+                maxWidth="sm"
+            >
+                <DialogTitle>{selectedTask?.name || 'Task details'}</DialogTitle>
+                <DialogContent sx={{ pt: 1 }}>
+                    {taskDraft && selectedTask && (
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+                            <TextField
+                                label="Name"
+                                value={taskDraft.name ?? ''}
+                                onChange={(event) => setTaskDraft(prev => prev ? { ...prev, name: event.target.value } : prev)}
+                                fullWidth
+                            />
+
+                            <Box>
+                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75, textAlign: 'left' }}>
+                                    Priority
+                                </Typography>
+                                <Box sx={{ display: 'flex', gap: 1 }}>
+                                    {PRIORITY_OPTIONS.map(option => {
+                                        const selected = (taskDraft.importance ?? selectedTask.importance) === option.value;
+                                        return (
+                                            <Chip
+                                                key={option.label}
+                                                label={option.label}
+                                                onClick={() => setTaskDraft(prev => prev ? { ...prev, importance: option.value } : prev)}
+                                                sx={{
+                                                    borderColor: option.color,
+                                                    color: selected ? '#fff' : option.color,
+                                                    backgroundColor: selected ? option.color : 'transparent',
+                                                    border: `1px solid ${option.color}`,
+                                                    cursor: 'pointer',
+                                                    fontWeight: selected ? 600 : 400,
+                                                }}
+                                            />
+                                        );
+                                    })}
+                                </Box>
+                            </Box>
+
+                            <LocalizationProvider dateAdapter={AdapterDateFns}>
+                                <DateTimePicker
+                                    label="Scheduled"
+                                    value={taskDraft.scheduledPerformDateTime ? new Date(taskDraft.scheduledPerformDateTime) : null}
+                                    onChange={handleTaskDateChange}
+                                    ampm={false}
+                                    slotProps={{
+                                        textField: { size: 'small', fullWidth: true },
+                                    }}
+                                />
+                            </LocalizationProvider>
+
+                            <TextField
+                                label="Description"
+                                value={taskDraft.description ?? ''}
+                                onChange={(event) => setTaskDraft(prev => prev ? { ...prev, description: event.target.value } : prev)}
+                                multiline
+                                minRows={3}
+                                maxRows={8}
+                                fullWidth
+                            />
+
+                            {selectedTask.tag && (
+                                <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'left' }}>
+                                    Tag: <strong>{selectedTask.tag}</strong>
+                                </Typography>
+                            )}
+
+                            {taskSaveError && <Alert severity="error">{taskSaveError}</Alert>}
+                        </Box>
+                    )}
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={closeTaskDialog}>Cancel</Button>
+                    <Button
+                        variant="contained"
+                        onClick={() => void handleTaskSave()}
+                        disabled={taskSaving || !(taskDraft?.name ?? '').trim()}
+                    >
+                        {taskSaving ? 'Saving…' : 'Save'}
+                    </Button>
+                </DialogActions>
             </Dialog>
         </>
     );

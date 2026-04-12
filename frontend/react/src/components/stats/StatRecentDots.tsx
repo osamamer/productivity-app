@@ -8,6 +8,7 @@ import { useTheme, Theme } from '@mui/material/styles';
 import { format, subDays } from 'date-fns';
 import { StatDefinition } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
+import { KeyboardEvent } from 'react';
 
 const CIRCLE_SIZE = 28;
 
@@ -109,6 +110,17 @@ export function StatRecentDots({ definition, refreshKey, onEntryChanged }: Props
         }
     };
 
+    const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+        if (event.key !== 'Enter' || saving || editValue === null) return;
+
+        // Let multiline or composition-heavy inputs keep their default behavior.
+        const target = event.target as HTMLElement;
+        if (target.tagName === 'TEXTAREA') return;
+
+        event.preventDefault();
+        void handleSave();
+    };
+
     if (loading) {
         return <CircularProgress size={14} sx={{ mx: 1 }} />;
     }
@@ -192,7 +204,7 @@ export function StatRecentDots({ definition, refreshKey, onEntryChanged }: Props
                 }}
             >
                 {popover && (
-                    <Box>
+                    <Box onKeyDown={handleKeyDown}>
                         <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1.5 }}>
                             {definition.name} — {format(new Date(popover.date + 'T12:00:00'), 'EEEE, MMM d')}
                         </Typography>

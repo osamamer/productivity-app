@@ -98,6 +98,9 @@ export function FlatTaskRow({ task, onToggle, onUpdate, expandedPanel, onToggleP
     const [actionLoading, setActionLoading] = useState(false);
 
     // Local description state — committed on blur to avoid an API call per keystroke
+    const [localName, setLocalName] = useState(task.name ?? '');
+    const [isEditingName, setIsEditingName] = useState(false);
+    useEffect(() => { setLocalName(task.name ?? ''); }, [task.name]);
     const [localDesc, setLocalDesc] = useState(task.description ?? '');
     useEffect(() => { setLocalDesc(task.description ?? ''); }, [task.description]);
 
@@ -213,6 +216,23 @@ export function FlatTaskRow({ task, onToggle, onUpdate, expandedPanel, onToggleP
         }
     };
 
+    const handleNameCommit = () => {
+        const trimmed = localName.trim();
+        const fallbackName = task.name ?? '';
+
+        setIsEditingName(false);
+        setLocalName(trimmed || fallbackName);
+
+        if (trimmed && trimmed !== fallbackName) {
+            onUpdate(task.taskId, { name: trimmed });
+        }
+    };
+
+    const handleNameCancel = () => {
+        setLocalName(task.name ?? '');
+        setIsEditingName(false);
+    };
+
     const isActive  = Boolean(pomodoroStatus?.active);
     // Break: pomodoro started but not in a focus session
     const isBreak   = isActive && !pomodoroStatus!.sessionActive;
@@ -252,18 +272,55 @@ export function FlatTaskRow({ task, onToggle, onUpdate, expandedPanel, onToggleP
                     onChange={(e) => { e.stopPropagation(); onToggle(task.taskId); }}
                     sx={{ color: cbColor, '&.Mui-checked': { color: cbColor }, mr: 0.5 }}
                 />
-                <Typography
-                    sx={{
-                        flex: 1,
-                        fontSize: '1.05rem',
-                        lineHeight: 1.6,
-                        textAlign: 'left',
-                        color: task.completed ? 'text.disabled' : 'text.primary',
-                        textDecoration: task.completed ? 'line-through' : 'none',
-                    }}
-                >
-                    {task.name}
-                </Typography>
+                {isEditingName ? (
+                    <TextField
+                        value={localName}
+                        onChange={(e) => setLocalName(e.target.value)}
+                        onBlur={handleNameCommit}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleNameCommit();
+                            }
+                            if (e.key === 'Escape') {
+                                e.preventDefault();
+                                handleNameCancel();
+                            }
+                        }}
+                        variant="standard"
+                        autoFocus
+                        fullWidth
+                        inputProps={{
+                            style: {
+                                fontSize: '1.05rem',
+                                lineHeight: 1.6,
+                                textAlign: 'left',
+                            },
+                        }}
+                        sx={{
+                            flex: 1,
+                            '& .MuiInputBase-input': {
+                                color: task.completed ? 'text.disabled' : 'text.primary',
+                                textDecoration: task.completed ? 'line-through' : 'none',
+                            },
+                        }}
+                    />
+                ) : (
+                    <Typography
+                        onClick={() => setIsEditingName(true)}
+                        sx={{
+                            flex: 1,
+                            fontSize: '1.05rem',
+                            lineHeight: 1.6,
+                            textAlign: 'left',
+                            color: task.completed ? 'text.disabled' : 'text.primary',
+                            textDecoration: task.completed ? 'line-through' : 'none',
+                            cursor: 'text',
+                        }}
+                    >
+                        {task.name}
+                    </Typography>
+                )}
 
                 {task.importance > 7 && !task.completed && (
                     <Box sx={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: '#ef4444', mx: 1.5, flexShrink: 0 }} />

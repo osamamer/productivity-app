@@ -7,12 +7,17 @@ import {taskService} from "../services/api";
 import {TaskToCreate} from "../types/TaskToCreate.tsx";
 import {StatDefinition} from "../types/Stats.ts";
 import {statService} from "../services/api/statService.ts";
+import {Task} from "../types/Task.tsx";
 
 export function CalendarPage() {
     const {
         allTasks,
         fetchAllTasks,
+        fetchTodayTasks,
+        fetchFutureTasks,
+        fetchPastTasks,
         addTaskToState,
+        updateTaskInState,
     } = useGlobalTasks();
 
     const [statDefinitions, setStatDefinitions] = useState<StatDefinition[]>([]);
@@ -33,6 +38,27 @@ export function CalendarPage() {
         }
     };
 
+    const handleUpdateTask = async (taskId: string, updates: Partial<Task>) => {
+        const originalTask = allTasks.find(task => task.taskId === taskId);
+        if (!originalTask) return;
+
+        updateTaskInState(taskId, updates);
+
+        try {
+            await taskService.updateTask(taskId, updates);
+            await Promise.all([
+                fetchAllTasks(),
+                fetchTodayTasks(),
+                fetchFutureTasks(),
+                fetchPastTasks(),
+            ]);
+        } catch (err) {
+            console.error('Error updating task from calendar:', err);
+            updateTaskInState(taskId, originalTask);
+            throw err;
+        }
+    };
+
     return (
         <PageWrapper>
             <Box sx={{
@@ -42,6 +68,7 @@ export function CalendarPage() {
                 <MonthCalendar
                     tasks={allTasks}
                     onCreateTask={handleCreateTask}
+                    onUpdateTask={handleUpdateTask}
                     statDefinitions={statDefinitions}
                 />
             </Box>

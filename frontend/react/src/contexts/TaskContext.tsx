@@ -14,10 +14,7 @@ export function TaskProvider({ children }: TaskProviderProps) {
 
     // Fetch once when app loads
     useEffect(() => {
-        taskManager.fetchAllTasks();
-        taskManager.fetchTodayTasks();
-        taskManager.fetchFutureTasks();
-        taskManager.fetchPastTasks();
+        taskManager.refreshTaskBuckets();
     }, []);
 
     return (
