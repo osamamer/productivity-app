@@ -127,10 +127,8 @@ export function FlatTaskRow({
     deferPomodoroHydration = false,
 }: FlatTaskRowProps) {
     const theme = useTheme();
-    // Use the lighter shade of primary throughout — softer on the eye
     const accent = theme.palette.primary.light;
-    const lightBlue   = '#90caf9';
-    const lightPurple = '#ce93d8';
+    const activeAccent = theme.palette.primary.main;
 
     const [pomodoroStatus, setPomodoroStatus] = useState<PomodoroStatus | null>(null);
     const [wsConnected, setWsConnected] = useState(false);
@@ -314,9 +312,9 @@ export function FlatTaskRow({
                 position: 'relative',
                 borderRadius: 1.5,
                 // Transparent border when idle keeps layout stable — no shift on activation
-                border: `1.5px solid ${isActive ? (useGreenBar ? theme.palette.success.main : alpha(lightPurple, 0.7)) : 'transparent'}`,
+                border: `1.5px solid ${isActive ? (useGreenBar ? theme.palette.success.main : alpha(activeAccent, 0.7)) : 'transparent'}`,
                 borderBottom: isActive ? 'none' : '1.5px solid transparent',
-                backgroundColor: isActive ? alpha(lightPurple, 0.04) : 'transparent',
+                backgroundColor: isActive ? alpha(activeAccent, 0.05) : 'transparent',
                 transition: 'border-color 0.3s, background-color 0.3s',
                 overflow: 'hidden',
                 mb: 0.25,
@@ -467,7 +465,7 @@ export function FlatTaskRow({
                                     color: 'primary',
                                     '&:hover': {
                                         borderColor: 'primary',
-                                        backgroundColor: alpha(lightPurple, 0.08),
+                                        backgroundColor: alpha(activeAccent, 0.08),
                                     },
                                 }}
                             >
@@ -518,7 +516,7 @@ export function FlatTaskRow({
                                     </IconButton>
                                 )}
                                 <IconButton size="small" onClick={handleStop} disabled={actionLoading} color="error">
-                                    <StopIcon />
+                                    <StopIcon color="primary" />
                                 </IconButton>
                             </Box>
                         </Box>
@@ -606,9 +604,9 @@ export function FlatTaskRow({
                         bottom: 0, left: 0, right: 0,
                         height: 2,
                         borderRadius: 0,
-                        backgroundColor: alpha(useGreenBar ? theme.palette.success.main : lightPurple, 0.15),
+                        backgroundColor: alpha(useGreenBar ? theme.palette.success.main : activeAccent, 0.15),
                         '& .MuiLinearProgress-bar': {
-                            backgroundColor: useGreenBar ? theme.palette.success.main : lightPurple,
+                            backgroundColor: useGreenBar ? theme.palette.success.main : activeAccent,
                             borderRadius: 0,
                         },
                     }}
