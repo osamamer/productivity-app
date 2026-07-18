@@ -1,6 +1,7 @@
 package org.osama.task;
 
 
+import org.osama.exceptions.ResourceNotFoundException;
 import org.osama.requests.UpdateTaskRequest;
 import org.osama.requests.NewTaskRequest;
 import org.osama.session.task.TaskSession;
@@ -44,6 +45,15 @@ public class TaskService {
 
     public Optional<Task> getTask(String taskId) {
         return taskRepository.findTaskByTaskId(taskId);
+    }
+
+    public Optional<Task> getTaskForUser(String taskId, String userId) {
+        return taskRepository.findTaskByTaskIdAndUserId(taskId, userId);
+    }
+
+    public Task getTaskForUserOrThrow(String taskId, String userId) {
+        return getTaskForUser(taskId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("Task not found: " + taskId));
     }
 
     public List<Task> getSubtasks(String parentTaskId) {

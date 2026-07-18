@@ -193,15 +193,17 @@ export function StatsPage() {
                                                     refreshKey={chartRefreshKey}
                                                     onEntryChanged={() => setChartRefreshKey(k => k + 1)}
                                                 />
-                                                <Tooltip title="Delete stat and all its data">
-                                                    <IconButton
-                                                        size="small"
-                                                        onClick={e => { e.stopPropagation(); setDeleteTarget(def); }}
-                                                        sx={{ ml: 0.5, opacity: 0.5, '&:hover': { opacity: 1 } }}
-                                                    >
-                                                        <DeleteOutlineIcon sx={{ fontSize: 16 }} />
-                                                    </IconButton>
-                                                </Tooltip>
+                                                {!def.systemKey && (
+                                                    <Tooltip title="Delete stat and all its data">
+                                                        <IconButton
+                                                            size="small"
+                                                            onClick={e => { e.stopPropagation(); setDeleteTarget(def); }}
+                                                            sx={{ ml: 0.5, opacity: 0.5, '&:hover': { opacity: 1 } }}
+                                                        >
+                                                            <DeleteOutlineIcon sx={{ fontSize: 16 }} />
+                                                        </IconButton>
+                                                    </Tooltip>
+                                                )}
                                             </Stack>
                                         </Stack>
                                     </Box>

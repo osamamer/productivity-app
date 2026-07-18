@@ -35,16 +35,39 @@ public class StatService {
         User user = userRepository.findUserById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
 
+        validateDefinition(name, type, minValue, maxValue, userId);
+        return saveDefinition(name, description, type, minValue, maxValue, null, user);
+    }
+
+    StatDefinition createSystemDefinition(SystemStatDefinition systemStat, User user) {
+        validateDefinition(systemStat.name(), systemStat.type(), systemStat.minValue(),
+                systemStat.maxValue(), user.getId());
+        return saveDefinition(systemStat.name(), systemStat.description(), systemStat.type(),
+                systemStat.minValue(), systemStat.maxValue(), systemStat.systemKey(), user);
+    }
+
+    private void validateDefinition(String name, StatType type, Double minValue,
+                                    Double maxValue, String userId) {
         if (name == null || name.isBlank()) {
             throw new IllegalArgumentException("A stat must have a name.");
         }
-        if (type.equals(StatType.RANGE)) {
+        if (type == null) {
+            throw new IllegalArgumentException("A stat must have a type.");
+        }
+        if (definitionRepository.findByUserIdAndNameIgnoreCase(userId, name).isPresent()) {
+            throw new IllegalArgumentException("A stat with that name already exists.");
+        }
+        if (type == StatType.RANGE) {
             if (minValue == null || maxValue == null || minValue.isNaN()
                     || maxValue.isNaN() || minValue > maxValue) {
                 throw new IllegalArgumentException("Invalid range for stat.");
             }
         }
+    }
 
+    private StatDefinition saveDefinition(String name, String description, StatType type,
+                                          Double minValue, Double maxValue, String systemKey,
+                                          User user) {
         StatDefinition definition = new StatDefinition();
         definition.setId(UUID.randomUUID().toString());
         definition.setName(name);
@@ -52,6 +75,7 @@ public class StatService {
         definition.setType(type);
         definition.setMinValue(minValue);
         definition.setMaxValue(maxValue);
+        definition.setSystemKey(systemKey);
         definition.setUser(user);
         return definitionRepository.save(definition);
     }
@@ -63,6 +87,9 @@ public class StatService {
     public void deleteDefinition(String definitionId, String userId) {
         StatDefinition statDefinition = definitionRepository.findByIdAndUserId(definitionId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("No such stat."));
+        if (statDefinition.getSystemKey() != null) {
+            throw new IllegalArgumentException("Cannot delete a system stat.");
+        }
         definitionRepository.delete(statDefinition);
     }
 

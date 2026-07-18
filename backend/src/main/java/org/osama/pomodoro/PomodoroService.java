@@ -12,17 +12,23 @@ import org.osama.session.events.SessionUnpausedEvent;
 import org.osama.session.task.TaskSession;
 import org.osama.session.task.TaskSessionRepository;
 import org.osama.session.task.TaskSessionService;
+import org.osama.task.Task;
+import org.osama.task.TaskService;
 import org.osama.user.User;
 import org.osama.user.UserRepository;
+import org.springframework.context.event.EventListener;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
+
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
-import org.springframework.context.event.EventListener;
 
 @Slf4j
 @Service
@@ -34,6 +40,7 @@ public class PomodoroService {
     private final SchedulerConfig schedulerConfig;
     private final SimpMessagingTemplate simpMessagingTemplate;
     private final TaskSessionService taskSessionService;
+    private final TaskService taskService;
     private final UserRepository userRepository;
 
     private final Map<String, ScheduledFuture<?>> statusUpdateTasks = new ConcurrentHashMap<>();
@@ -45,6 +52,7 @@ public class PomodoroService {
                            SchedulerConfig schedulerConfig,
                            SimpMessagingTemplate simpMessagingTemplate,
                            TaskSessionService taskSessionService,
+                           TaskService taskService,
                            UserRepository userRepository) {
         this.pomodoroRepository = pomodoroRepository;
         this.scheduledJobRepository = scheduledJobRepository;
@@ -53,22 +61,20 @@ public class PomodoroService {
         this.schedulerConfig = schedulerConfig;
         this.simpMessagingTemplate = simpMessagingTemplate;
         this.taskSessionService = taskSessionService;
+        this.taskService = taskService;
         this.userRepository = userRepository;
     }
 
     // ============ Event Listeners ============
 
-    @EventListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void handleSessionStarted(SessionStartedEvent event) {
         if (!event.isPomodoro()) return;
 
         log.info("Handling session started event for pomodoro task: {}", event.getTaskId());
 
-        Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(event.getTaskId()).orElseThrow(() -> new IllegalStateException("No pomodoro found for task."));
-        if (pomodoro == null) {
-            log.warn("No pomodoro found for task: {}", event.getTaskId());
-            return;
-        }
+        Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(event.getTaskId())
+                .orElseThrow(() -> new IllegalStateException("No pomodoro found for task."));
 
         pomodoro.setCurrentFocusNumber(pomodoro.getCurrentFocusNumber() + 1);
         pomodoro.setSessionActive(true);
@@ -86,8 +92,8 @@ public class PomodoroService {
 
         log.info("Handling session paused event for pomodoro task: {}", event.getTaskId());
 
-        Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(event.getTaskId()).orElseThrow(() -> new IllegalStateException("No pomodoro found for task."));
-        if (pomodoro == null) return;
+        Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(event.getTaskId())
+                .orElseThrow(() -> new IllegalStateException("No pomodoro found for task."));
 
         pomodoro.setSessionRunning(false);
         String taskId = pomodoro.getAssociatedTaskId();
@@ -117,8 +123,8 @@ public class PomodoroService {
 
         log.info("Handling session unpaused event for pomodoro task: {}", event.getTaskId());
 
-        Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(event.getTaskId()).orElseThrow(() -> new IllegalStateException("No pomodoro found for task."));
-        if (pomodoro == null) return;
+        Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(event.getTaskId())
+                .orElseThrow(() -> new IllegalStateException("No pomodoro found for task."));
 
         // Shift scheduled jobs by pause duration
         scheduleService.shiftTaskJobDueDates(
@@ -140,8 +146,8 @@ public class PomodoroService {
 
         log.info("Handling session ended event for pomodoro task: {}", event.getTaskId());
 
-        Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(event.getTaskId()).orElseThrow(() -> new IllegalStateException("No pomodoro found for task."));
-        if (pomodoro == null) return;
+        Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(event.getTaskId())
+                .orElseThrow(() -> new IllegalStateException("No pomodoro found for task."));
 
         pomodoro.setSecondsPassedInSession(0);
         pomodoro.setSessionActive(false);
@@ -158,37 +164,46 @@ public class PomodoroService {
 
     // ============ Pomodoro-Specific Logic ============
 
+    @Transactional
     public void startPomodoro(String taskId, int focusDuration,
-                                  int shortBreakDuration, int longBreakDuration,
-                                  int numFocuses, int longBreakCooldown, String userId) {
+                              int shortBreakDuration, int longBreakDuration,
+                              int numFocuses, int longBreakCooldown, String userId) {
+        Task task = taskService.getTaskForUserOrThrow(taskId, userId);
+        validateStartRequest(task, focusDuration, shortBreakDuration, longBreakDuration,
+                numFocuses, longBreakCooldown, userId);
 
-        createPomodoro(taskId, focusDuration, shortBreakDuration,
+        createPomodoro(task.getTaskId(), focusDuration, shortBreakDuration,
                 longBreakDuration, numFocuses, longBreakCooldown, userId);
 
-        scheduleService.schedulePomoJobs(taskId);
-        taskSessionService.startSession(taskId, true);
-        startPomodoroUpdates(taskId);
+        scheduleService.schedulePomoJobs(task.getTaskId());
+        taskSessionService.startSession(task.getTaskId(), true);
     }
 
-    public void endPomodoro(String taskId) {
-        Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(taskId)
-                .orElseThrow(() -> new IllegalStateException("No pomodoro found for task."));
+    @Transactional
+    public void endPomodoro(String taskId, String userId) {
+        Task task = taskService.getTaskForUserOrThrow(taskId, userId);
 
-        if (taskSessionRepository.existsByAssociatedTaskIdAndActiveIsTrue(taskId)) {
-            taskSessionService.endSession(taskId);
+        Pomodoro pomodoro = getOwnedActivePomodoro(task.getTaskId(), userId);
+
+        if (taskSessionRepository.existsByAssociatedTaskIdAndActiveIsTrue(task.getTaskId())) {
+            taskSessionService.endSession(task.getTaskId());
         }
 
+        pomodoro.setActive(false);
         pomodoro.setSessionRunning(false);
         pomodoro.setSessionActive(false);
         pomodoroRepository.save(pomodoro);
 
-        scheduleService.deleteTaskJobs(taskId);
-        pausePomodoroUpdates(taskId);
-        sendAsyncUpdate(taskId);
+        scheduleService.deleteTaskJobs(task.getTaskId());
+        pausePomodoroUpdates(task.getTaskId());
+        sendUpdate(pomodoro);
+    }
 
-        pomodoro.setActive(false);
-        pomodoroRepository.save(pomodoro);
-
+    @Transactional
+    public void endPomodoro(String taskId) {
+        Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(taskId)
+                .orElseThrow(() -> new IllegalStateException("No pomodoro found for task."));
+        endPomodoro(taskId, pomodoro.getUser().getId());
     }
 
     public Pomodoro createPomodoro(String associatedTaskId, int focusDuration,
@@ -215,6 +230,37 @@ public class PomodoroService {
         return pomodoroRepository.save(pomodoro);
     }
 
+    private void validateStartRequest(Task task, int focusDuration,
+                                      int shortBreakDuration, int longBreakDuration,
+                                      int numFocuses, int longBreakCooldown, String userId) {
+        if (focusDuration <= 0) {
+            throw new IllegalArgumentException("Focus duration must be positive.");
+        }
+        if (shortBreakDuration <= 0) {
+            throw new IllegalArgumentException("Short break duration must be positive.");
+        }
+        if (longBreakDuration <= 0) {
+            throw new IllegalArgumentException("Long break duration must be positive.");
+        }
+        if (numFocuses <= 0) {
+            throw new IllegalArgumentException("Number of focuses must be positive.");
+        }
+        if (longBreakCooldown <= 0) {
+            throw new IllegalArgumentException("Long break cooldown must be positive.");
+        }
+        if (pomodoroRepository.existsByAssociatedTaskIdAndUserIdAndIsActiveIsTrue(task.getTaskId(), userId)) {
+            throw new IllegalStateException("Task already has an active pomodoro.");
+        }
+        if (taskSessionRepository.existsByAssociatedTaskIdAndActiveIsTrue(task.getTaskId())) {
+            throw new IllegalStateException("Cannot start a pomodoro while the task already has an active session.");
+        }
+    }
+
+    private Pomodoro getOwnedActivePomodoro(String taskId, String userId) {
+        return pomodoroRepository.findPomodoroByAssociatedTaskIdAndUserIdAndIsActiveIsTrue(taskId, userId)
+                .orElseThrow(() -> new IllegalStateException("No pomodoro found for task."));
+    }
+
     // ============ Update Management ============
 
     public void startPomodoroUpdates(String taskId) {
@@ -224,8 +270,8 @@ public class PomodoroService {
             return;
         }
 
-        Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(taskId).orElseThrow(() -> new IllegalStateException("No pomodoro found for task."));
-        if (pomodoro == null || !pomodoro.isActive()) {
+        Optional<Pomodoro> pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(taskId);
+        if (pomodoro.isEmpty()) {
             log.warn("Cannot start updates: pomodoro not found or inactive for task: {}", taskId);
             return;
         }
@@ -251,11 +297,13 @@ public class PomodoroService {
     }
 
     private void updateAndBroadcastPomodoro(String taskId) {
-        Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(taskId).orElseThrow(() -> new IllegalStateException("No pomodoro found for task."));
-        if (pomodoro == null) {
+        Optional<Pomodoro> activePomodoro =
+                pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(taskId);
+        if (activePomodoro.isEmpty()) {
             pausePomodoroUpdates(taskId);
             return;
         }
+        Pomodoro pomodoro = activePomodoro.get();
 
         Optional<TaskSession> activeSession = taskSessionRepository
                 .findSessionByAssociatedTaskIdAndActiveIsTrue(taskId);
@@ -302,11 +350,17 @@ public class PomodoroService {
 
     public void sendAsyncUpdate(String taskId) {
         log.debug("Sending async update for task: {}", taskId);
-        Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(taskId).orElseThrow(() -> new IllegalStateException("No pomodoro found for task."));
-        simpMessagingTemplate.convertAndSend("/topic/pomodoro/" + taskId, pomodoro);
+        Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(taskId)
+                .orElseThrow(() -> new IllegalStateException("No pomodoro found for task."));
+        sendUpdate(pomodoro);
     }
 
-    public Optional<Pomodoro> getActivePomodoro(String taskId) {
-        return pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(taskId);
+    public Optional<Pomodoro> getActivePomodoro(String taskId, String userId) {
+        Task task = taskService.getTaskForUserOrThrow(taskId, userId);
+        return pomodoroRepository.findPomodoroByAssociatedTaskIdAndUserIdAndIsActiveIsTrue(task.getTaskId(), userId);
+    }
+
+    private void sendUpdate(Pomodoro pomodoro) {
+        simpMessagingTemplate.convertAndSend("/topic/pomodoro/" + pomodoro.getAssociatedTaskId(), pomodoro);
     }
 }

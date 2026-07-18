@@ -42,3 +42,7 @@ databaseChangeLog:
   # User-defined trackable statistics
   - include:
       file: db/changelog/changes/015-create-stat.yaml
+
+  # Built-in stat metadata and constraints
+  - include:
+      file: db/changelog/changes/016-add-system-stat-constraints.yaml

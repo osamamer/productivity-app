@@ -2,6 +2,7 @@ package org.osama.user;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.osama.stat.SystemStatProvisioningService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,6 +20,7 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final KeycloakAccountService keycloakAccountService;
+    private final SystemStatProvisioningService systemStatProvisioningService;
 
     /**
      * Looks up the app User by Keycloak subject, creating one on first login.
@@ -67,6 +69,7 @@ public class UserService {
                 .build();
 
         user = userRepository.save(user);
+        systemStatProvisioningService.createMissingSystemStatsFor(user);
         log.info("Created user: {} with id: {}", username, user.getId());
         return user;
     }

@@ -33,6 +33,9 @@ public class StatDefinition {
     @Column
     private Double maxValue;
 
+    @Column(name = "system_key")
+    private String systemKey;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;

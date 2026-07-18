@@ -25,12 +25,12 @@ public class PomodoroController {
 
     @PostMapping("/end/{taskId}")
     public void endPomodoro(@PathVariable String taskId) {
-        pomodoroService.endPomodoro(taskId);
+        pomodoroService.endPomodoro(taskId, currentUserService.getCurrentUserId());
     }
 
     @GetMapping("/status/{taskId}")
     public ResponseEntity<Pomodoro> getStatus(@PathVariable String taskId) {
-        return pomodoroService.getActivePomodoro(taskId)
+        return pomodoroService.getActivePomodoro(taskId, currentUserService.getCurrentUserId())
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.noContent().build());
     }

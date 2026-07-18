@@ -3,6 +3,10 @@ package org.osama;
 import jakarta.transaction.Transactional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Execution;
+import org.junit.jupiter.api.parallel.ExecutionMode;
+import org.osama.exceptions.ResourceNotFoundException;
+import org.osama.pomodoro.PomodoroRepository;
 import org.osama.pomodoro.PomodoroService;
 import org.osama.scheduling.ScheduledJob;
 import org.osama.scheduling.ScheduledJobRepository;
@@ -21,11 +25,14 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @SpringBootTest
 @Transactional
 @ActiveProfiles("test")
+@Execution(ExecutionMode.SAME_THREAD)
 public class PomoTest {
 
     private static final String TEST_USER_ID = "test-user-1";
@@ -40,6 +47,8 @@ public class PomoTest {
     private TaskSessionService taskSessionService;
     @Autowired
     private PomodoroService pomodoroService;
+    @Autowired
+    private PomodoroRepository pomodoroRepository;
     @Autowired
     private UserRepository userRepository;
 
@@ -66,6 +75,35 @@ public class PomoTest {
         int numFocuses = 3;
         int longBreakCooldown = 2;
         pomodoroService.startPomodoro(task.getTaskId(), focusDuration, shortBreakDuration, longBreakDuration, numFocuses, longBreakCooldown, TEST_USER_ID);
+    }
+
+    @Test
+    void userCannotStartPomodoroForAnotherUsersTask() {
+        Task task = createTask();
+        User otherUser = User.builder()
+                .id("test-user-2")
+                .email("other@test.com")
+                .firstName("Other")
+                .lastName("User")
+                .username("otheruser")
+                .active(true)
+                .build();
+        userRepository.save(otherUser);
+
+        assertThrows(ResourceNotFoundException.class,
+                () -> pomodoroService.startPomodoro(task.getTaskId(), 25, 5, 15, 4, 4, otherUser.getId()));
+        assertFalse(pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(task.getTaskId()).isPresent());
+        assertTrue(scheduledJobRepository.findAllByAssociatedTaskId(task.getTaskId()).isEmpty());
+    }
+
+    @Test
+    void invalidPomodoroSettingsDoNotCreatePartialState() {
+        Task task = createTask();
+
+        assertThrows(IllegalArgumentException.class,
+                () -> pomodoroService.startPomodoro(task.getTaskId(), 0, 5, 15, 4, 4, TEST_USER_ID));
+        assertFalse(pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(task.getTaskId()).isPresent());
+        assertTrue(scheduledJobRepository.findAllByAssociatedTaskId(task.getTaskId()).isEmpty());
     }
     @Test
     void pomoUserInterventionTest() throws InterruptedException {

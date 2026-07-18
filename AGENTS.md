@@ -38,6 +38,7 @@ Feature packages follow a consistent pattern — each has an entity, repository,
 - `task/` — Task CRUD with filtering via JPA Specifications (`TaskSpecifications.java`)
 - `day/` — Daily rating/plan/summary (`DayEntity`, one per user per date)
 - `pomodoro/` — Pomodoro timer settings and state
+- `stat/` — User-defined tracking plus built-in mental-state stats provisioned from `SystemStatCatalog`; built-ins use a stable `systemKey` and cannot be deleted
 - `session/task/` and `session/meditation/` — Session tracking with start/pause/unpause/end lifecycle, published as Spring events via `ApplicationEventPublisher`
 - `scheduling/` — Automated job scheduling for pomodoro cycles (`TimedExecutorService`, `ScheduledJob`)
 - `user/` — User management backed by Keycloak (see Auth below)

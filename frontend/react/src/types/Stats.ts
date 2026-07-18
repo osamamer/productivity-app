@@ -7,6 +7,7 @@ export interface StatDefinition {
     type: StatType;
     minValue?: number;
     maxValue?: number;
+    systemKey?: string;
     userId: string;
 }
 

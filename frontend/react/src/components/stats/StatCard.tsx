@@ -38,13 +38,13 @@ export function StatCard({ definition, onDelete, refreshKey }: Props) {
                 titleTypographyProps={{ variant: 'subtitle1', fontWeight: 600 }}
                 subheader={definition.description}
                 subheaderTypographyProps={{ variant: 'caption' }}
-                action={
+                action={!definition.systemKey ? (
                     <Tooltip title="Delete stat and all its data">
                         <IconButton onClick={() => onDelete(definition.id)} size="small">
                             <DeleteOutlineIcon fontSize="small" />
                         </IconButton>
                     </Tooltip>
-                }
+                ) : null}
                 sx={{ pb: 0 }}
             />
             <CardContent>

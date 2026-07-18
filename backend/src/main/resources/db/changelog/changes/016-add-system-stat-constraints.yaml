@@ -1,0 +1,140 @@
+databaseChangeLog:
+  - changeSet:
+      id: 016-add-stat-definition-system-key
+      author: osama
+      comment: Add stable identity for built-in stat definitions
+      changes:
+        - addColumn:
+            tableName: stat_definition
+            columns:
+              - column:
+                  name: system_key
+                  type: varchar(100)
+      rollback:
+        - dropColumn:
+            tableName: stat_definition
+            columnName: system_key
+
+  - changeSet:
+      id: 016-backfill-system-stats
+      author: osama
+      comment: Provision the built-in mental state stats for existing users
+      changes:
+        - sql:
+            sql: |
+              UPDATE stat_definition
+              SET system_key = 'stimulation', name = 'Stimulation',
+                  description = 'How mentally or sensorially stimulated you feel.',
+                  type = 'RANGE', min_value = 1.0, max_value = 10.0
+              WHERE system_key IS NULL AND lower(name) = lower('Stimulation');
+
+              UPDATE stat_definition
+              SET system_key = 'hunger', name = 'Hunger',
+                  description = 'How physically hungry you feel.',
+                  type = 'RANGE', min_value = 1.0, max_value = 10.0
+              WHERE system_key IS NULL AND lower(name) = lower('Hunger');
+
+              UPDATE stat_definition
+              SET system_key = 'arousal', name = 'Arousal',
+                  description = 'How activated or physiologically keyed up you feel.',
+                  type = 'RANGE', min_value = 1.0, max_value = 10.0
+              WHERE system_key IS NULL AND lower(name) = lower('Arousal');
+
+              UPDATE stat_definition
+              SET system_key = 'valence', name = 'Valence',
+                  description = 'How pleasant or unpleasant your current state feels.',
+                  type = 'RANGE', min_value = 1.0, max_value = 10.0
+              WHERE system_key IS NULL AND lower(name) = lower('Valence');
+        - sql:
+            sql: |
+              INSERT INTO stat_definition
+                  (id, name, description, type, min_value, max_value, system_key, user_id)
+              SELECT concat('system-stat-', app_user.id, '-stimulation'),
+                     'Stimulation', 'How mentally or sensorially stimulated you feel.',
+                     'RANGE', 1.0, 10.0, 'stimulation', app_user.id
+              FROM app_user
+              WHERE NOT EXISTS (
+                  SELECT 1
+                  FROM stat_definition existing
+                  WHERE existing.user_id = app_user.id
+                    AND existing.system_key = 'stimulation'
+              );
+
+              INSERT INTO stat_definition
+                  (id, name, description, type, min_value, max_value, system_key, user_id)
+              SELECT concat('system-stat-', app_user.id, '-hunger'),
+                     'Hunger', 'How physically hungry you feel.',
+                     'RANGE', 1.0, 10.0, 'hunger', app_user.id
+              FROM app_user
+              WHERE NOT EXISTS (
+                  SELECT 1
+                  FROM stat_definition existing
+                  WHERE existing.user_id = app_user.id
+                    AND existing.system_key = 'hunger'
+              );
+
+              INSERT INTO stat_definition
+                  (id, name, description, type, min_value, max_value, system_key, user_id)
+              SELECT concat('system-stat-', app_user.id, '-arousal'),
+                     'Arousal', 'How activated or physiologically keyed up you feel.',
+                     'RANGE', 1.0, 10.0, 'arousal', app_user.id
+              FROM app_user
+              WHERE NOT EXISTS (
+                  SELECT 1
+                  FROM stat_definition existing
+                  WHERE existing.user_id = app_user.id
+                    AND existing.system_key = 'arousal'
+              );
+
+              INSERT INTO stat_definition
+                  (id, name, description, type, min_value, max_value, system_key, user_id)
+              SELECT concat('system-stat-', app_user.id, '-valence'),
+                     'Valence', 'How pleasant or unpleasant your current state feels.',
+                     'RANGE', 1.0, 10.0, 'valence', app_user.id
+              FROM app_user
+              WHERE NOT EXISTS (
+                  SELECT 1
+                  FROM stat_definition existing
+                  WHERE existing.user_id = app_user.id
+                    AND existing.system_key = 'valence'
+              );
+      rollback:
+        - sql:
+            sql: >
+              UPDATE stat_definition
+              SET system_key = NULL
+              WHERE system_key IN ('stimulation', 'hunger', 'arousal', 'valence');
+
+  - changeSet:
+      id: 016-add-stat-definition-case-insensitive-name-index
+      author: osama
+      dbms: postgresql
+      comment: Enforce one stat name per user regardless of case
+      changes:
+        - sql:
+            sql: >
+              CREATE UNIQUE INDEX IF NOT EXISTS idx_app_stat_definition_user_lower_name
+              ON stat_definition (user_id, lower(name));
+      rollback:
+        - sql:
+            sql: DROP INDEX IF EXISTS idx_app_stat_definition_user_lower_name;
+
+  - changeSet:
+      id: 016-add-stat-definition-system-key-index
+      author: osama
+      comment: Enforce one built-in stat per user
+      changes:
+        - createIndex:
+            tableName: stat_definition
+            indexName: idx_app_stat_definition_user_system_key
+            unique: true
+            ifNotExists: true
+            columns:
+              - column:
+                  name: user_id
+              - column:
+                  name: system_key
+      rollback:
+        - dropIndex:
+            tableName: stat_definition
+            indexName: idx_app_stat_definition_user_system_key
