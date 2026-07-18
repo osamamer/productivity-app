@@ -19,7 +19,9 @@ import org.osama.user.User;
 import org.osama.user.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.transaction.annotation.Propagation;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -75,6 +77,22 @@ public class PomoTest {
         int numFocuses = 3;
         int longBreakCooldown = 2;
         pomodoroService.startPomodoro(task.getTaskId(), focusDuration, shortBreakDuration, longBreakDuration, numFocuses, longBreakCooldown, TEST_USER_ID);
+    }
+
+    @Test
+    @org.springframework.transaction.annotation.Transactional(propagation = Propagation.NOT_SUPPORTED)
+    @DirtiesContext(methodMode = DirtiesContext.MethodMode.AFTER_METHOD)
+    void pomodoroStartsInACommittedFocusSession() {
+        Task task = createTask();
+
+        pomodoroService.startPomodoro(task.getTaskId(), 25, 5, 15, 4, 4, TEST_USER_ID);
+
+        var pomodoro = pomodoroRepository
+                .findPomodoroByAssociatedTaskIdAndUserIdAndIsActiveIsTrue(task.getTaskId(), TEST_USER_ID)
+                .orElseThrow();
+        assertTrue(pomodoro.isSessionActive());
+        assertTrue(pomodoro.isSessionRunning());
+        assertEquals(1, pomodoro.getCurrentFocusNumber());
     }
 
     @Test
