@@ -115,7 +115,7 @@ function formatScheduledDate(dateTime: string): string {
 
 // ─── component ─────────────────────────────────────────────────────────────
 
-export function FlatTaskRow({
+export const FlatTaskRow = React.memo(function FlatTaskRow({
     task,
     onToggle,
     onUpdate,
@@ -614,4 +614,4 @@ export function FlatTaskRow({
             )}
         </Box>
     );
-}
+});

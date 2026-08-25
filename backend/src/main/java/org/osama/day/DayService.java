@@ -43,6 +43,8 @@ public class DayService {
         today.setPlan(plan);
         today.setSummary(summary);
         dayRepository.save(today);
+        log.info("Daily info saved: userId={} date={} rating={} planProvided={} summaryProvided={}",
+                userId, today.getLocalDate(), rating, plan != null, summary != null);
     }
 
     public void setDayRating(String dateString, double rating, String userId) {
@@ -53,7 +55,7 @@ public class DayService {
         if (rating < 0) rating = 0;
         day.setRating(rating);
         dayRepository.save(day);
-        log.info("Day {} rating set to {}", dateString, rating);
+        log.info("Day rating saved: userId={} date={} rating={}", userId, localDate, rating);
     }
 
     public void setDaySummary(String dateString, String summary, String userId) {
@@ -62,6 +64,8 @@ public class DayService {
                 .orElse(createNewDay(localDate, userId));
         day.setSummary(summary);
         dayRepository.save(day);
+        log.info("Day summary saved: userId={} date={} summaryProvided={}",
+                userId, localDate, summary != null);
     }
 
     public void setDayPlan(String dateString, String plan, String userId) {
@@ -70,6 +74,8 @@ public class DayService {
                 .orElse(createNewDay(localDate, userId));
         day.setPlan(plan);
         dayRepository.save(day);
+        log.info("Day plan saved: userId={} date={} planProvided={}",
+                userId, localDate, plan != null);
     }
 
     public String getDaySummary(String dateString, String userId) {

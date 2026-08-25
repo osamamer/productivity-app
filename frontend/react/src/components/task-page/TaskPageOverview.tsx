@@ -11,7 +11,7 @@ type TaskPageOverviewProps = {
     highPriorityCount: number;
 };
 
-export function TaskPageOverview({
+export const TaskPageOverview = React.memo(function TaskPageOverview({
     totalCount,
     completedCount,
     pendingCount,
@@ -84,4 +84,4 @@ export function TaskPageOverview({
             </Stack>
         </Box>
     );
-}
+});

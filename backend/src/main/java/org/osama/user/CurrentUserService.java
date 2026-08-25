@@ -24,7 +24,8 @@ public class CurrentUserService {
             return userService.getOrCreateFromJwt(jwt);
         } catch (DataIntegrityViolationException e) {
             // Two requests raced to create the user on first login; the loser retries the find.
-            log.warn("Concurrent user creation detected for keycloakId={}, retrying lookup: {}", jwt.getSubject(), e.getMessage());
+            log.warn("Concurrent user creation detected for keycloakId={}, retrying lookup: {}",
+                    jwt.getSubject(), e.getMessage(), e);
             return userService.getUserByKeycloakId(jwt.getSubject())
                     .orElseThrow(() -> e);
         }

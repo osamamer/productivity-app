@@ -1,6 +1,7 @@
 package org.osama.task;
 
 
+import lombok.extern.slf4j.Slf4j;
 import org.osama.exceptions.ResourceNotFoundException;
 import org.osama.requests.UpdateTaskRequest;
 import org.osama.requests.NewTaskRequest;
@@ -18,6 +19,7 @@ import java.time.format.DateTimeParseException;
 import java.util.*;
 
 @Service
+@Slf4j
 public class TaskService {
     private final TaskRepository taskRepository;
     private final TaskSessionRepository taskSessionRepository;
@@ -100,6 +102,8 @@ public class TaskService {
             try {
                 task.setScheduledPerformDateTime(LocalDateTime.parse(request.getScheduledPerformDateTime()));
             } catch (DateTimeParseException e) {
+                log.warn("Task creation rejected because scheduledPerformDateTime is invalid: value={}",
+                        request.getScheduledPerformDateTime(), e);
                 throw new IllegalArgumentException("Invalid datetime format. Use ISO format: 2024-01-20T10:30:00", e);
             }
         } else {
@@ -114,38 +118,62 @@ public class TaskService {
         task.setCreationDateTime(LocalDateTime.now());
         task.setUser(user);
 
-        return taskRepository.save(task);
+        Task savedTask = taskRepository.save(task);
+        log.info("Task created: userId={} taskId={} parentTaskId={}",
+                userId, savedTask.getTaskId(), savedTask.getParentId());
+        return savedTask;
     }
 
     public Optional<Task> updateTask(String taskId, UpdateTaskRequest request) {
-        return taskRepository.findTaskByTaskId(taskId)
-                .map(task -> {
-                    if (request.getName() != null) {
-                        task.setName(request.getName());
-                    }
-                    if (request.getDescription() != null) {
-                        task.setDescription(request.getDescription());
-                    }
-                    if (request.getCompleted() != null) {
-                        task.setCompleted(request.getCompleted());
-                        if (request.getCompleted()) {
-                            task.setCompletionDateTime(LocalDateTime.now());
-                        }
-                    }
-                    if (request.getTag() != null) {
-                        task.setTag(request.getTag());
-                    }
-                    if (request.getImportance() != null) {
-                        task.setImportance(request.getImportance());
-                    }
-                    if (request.getScheduledPerformDateTime() != null) {
-                        task.setScheduledPerformDateTime(request.getScheduledPerformDateTime());
-                    }
-                    return taskRepository.save(task);
-                });
+        Optional<Task> existingTask = taskRepository.findTaskByTaskId(taskId);
+        if (existingTask.isEmpty()) {
+            log.warn("Task update ignored: taskId={} was not found", taskId);
+            return Optional.empty();
+        }
+
+        Task task = existingTask.get();
+        List<String> changedFields = new ArrayList<>();
+        if (request.getName() != null) {
+            task.setName(request.getName());
+            changedFields.add("name");
+        }
+        if (request.getDescription() != null) {
+            task.setDescription(request.getDescription());
+            changedFields.add("description");
+        }
+        if (request.getCompleted() != null) {
+            task.setCompleted(request.getCompleted());
+            changedFields.add("completed");
+            if (request.getCompleted()) {
+                task.setCompletionDateTime(LocalDateTime.now());
+            }
+        }
+        if (request.getTag() != null) {
+            task.setTag(request.getTag());
+            changedFields.add("tag");
+        }
+        if (request.getImportance() != null) {
+            task.setImportance(request.getImportance());
+            changedFields.add("importance");
+        }
+        if (request.getScheduledPerformDateTime() != null) {
+            task.setScheduledPerformDateTime(request.getScheduledPerformDateTime());
+            changedFields.add("scheduledPerformDateTime");
+        }
+
+        Task savedTask = taskRepository.save(task);
+        log.info("Task updated: userId={} taskId={} changedFields={}",
+                task.getUserId(), savedTask.getTaskId(), changedFields);
+        return Optional.of(savedTask);
     }
 
     public void deleteTask(String taskId) {
+        Optional<Task> taskToDelete = taskRepository.findTaskByTaskId(taskId);
+        if (taskToDelete.isEmpty()) {
+            log.warn("Task deletion ignored: taskId={} was not found", taskId);
+            return;
+        }
+
         // Delete subtasks first
         TaskQuery subtaskQuery = TaskQuery.builder()
                 .parentId(taskId)
@@ -155,6 +183,8 @@ public class TaskService {
 
         // Delete main task
         taskRepository.deleteTaskByTaskId(taskId);
+        log.info("Task deleted: userId={} taskId={} deletedSubtaskCount={}",
+                taskToDelete.get().getUserId(), taskId, subtasks.size());
     }
 
     // Convenience methods for common queries

@@ -28,6 +28,14 @@ cd frontend/react && npm run build    # Production build
 cd frontend/react && npm run lint     # ESLint (max-warnings 0)
 ```
 
+### Dev Coach CLI
+```bash
+./dev-coach/devcoach doctor                         # Check Java, Codex, Git, skill, and state storage
+./dev-coach/devcoach start "describe the change"   # Start a guided lesson session
+./dev-coach/devcoach resume                         # Resume this repository's session
+./backend/mvnw -f dev-coach/pom.xml test            # Run CLI tests
+```
+
 ## Architecture
 
 ### Backend (Spring Boot 3.1.3, Java 17, Maven)
@@ -92,6 +100,10 @@ All user-scoped entities (Task, DayEntity, MeditationSession, TaskSession, Pomod
 
 Docker services are defined in `deployment/docker-compose.yml`. Environment variables (DB credentials, Keycloak admin) live in `deployment/.env`.
 
+### Dev Coach
+
+`dev-coach/` is a standalone Java 17 CLI and does not depend on the Spring Boot application. It calls `codex exec` in a read-only sandbox, validates course/lesson/assessment responses against bundled JSON Schemas, and stores resumable state outside the repository. The repo-scoped `.agents/skills/guided-development/` skill defines the teaching and assessment workflow. Keep rendering and session control in the CLI; keep repository-aware teaching decisions in the skill and Codex adapter.
+
 ### CI/CD
 
 **Prefix all index names with `idx_app_` to avoid collisions with Keycloak.** Keycloak shares the same PostgreSQL database and creates its own indexes (e.g. `IDX_USER_EMAIL` on `USER_ENTITY`). PostgreSQL index names are unique per schema and case-insensitive, so a plain `idx_user_email` on our `app_user` table collides with Keycloak's index of the same name, causing one of them to fail on startup. Always use `idx_app_<table>_<column>` for our indexes.
@@ -126,6 +138,8 @@ Docker services are defined in `deployment/docker-compose.yml`. Environment vari
 **Real tests, minimal mocks.** Test actual behavior through real code paths. Only mock at true system boundaries (external services, network, filesystem). Never mock internal classes just to isolate a unit.
 
 **Always log caught exceptions with the exception object.** Use `logger.error("context: {}", e.getMessage(), e)` (Java) or equivalent so the full stack trace appears in the log. Never swallow exceptions silently or log only a generic message.
+
+**Backend event logging.** Log successful user-visible state changes at `INFO` with the user and resource identifiers plus relevant structured values. Keep read-only queries quiet, use `WARN` for rejected input or missing resources, and never log passwords, access tokens, or free-form private text unless the feature explicitly requires it (stat values are intentional audit data).
 
 **Don't add what wasn't asked for.** If the task is "write tests", don't modify production code without asking. Don't add features, abstractions, or considerations that weren't requested. When in doubt, ask first.
 

@@ -1,15 +1,18 @@
 package org.osama.stat;
 
+import lombok.extern.slf4j.Slf4j;
 import org.osama.user.User;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
+@Slf4j
 public class SystemStatProvisioningService {
 
     private final StatDefinitionRepository definitionRepository;
@@ -27,17 +30,28 @@ public class SystemStatProvisioningService {
                 .map(StatDefinition::getSystemKey)
                 .filter(Objects::nonNull)
                 .collect(Collectors.toSet());
+        int createdCount = 0;
+        int updatedCount = 0;
 
         for (SystemStatDefinition systemStat : SystemStatCatalog.MENTAL_STATE_STATS) {
             if (existingSystemKeys.contains(systemStat.systemKey())) {
                 continue;
             }
 
-            definitionRepository.findByUserIdAndNameIgnoreCase(user.getId(), systemStat.name())
-                    .ifPresentOrElse(
-                            definition -> applySystemDefinition(definition, systemStat),
-                            () -> statService.createSystemDefinition(systemStat, user)
-                    );
+            Optional<StatDefinition> existingDefinition =
+                    definitionRepository.findByUserIdAndNameIgnoreCase(user.getId(), systemStat.name());
+            if (existingDefinition.isPresent()) {
+                applySystemDefinition(existingDefinition.get(), systemStat);
+                updatedCount++;
+            } else {
+                statService.createSystemDefinition(systemStat, user);
+                createdCount++;
+            }
+        }
+
+        if (createdCount > 0 || updatedCount > 0) {
+            log.info("System stats provisioned: userId={} createdCount={} updatedCount={}",
+                    user.getId(), createdCount, updatedCount);
         }
     }
 

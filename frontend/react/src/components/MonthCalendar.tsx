@@ -1,4 +1,8 @@
-import { Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Tabs, Tab, TextField, Typography } from "@mui/material";
+import {
+    Alert, Box, Button, Checkbox, Chip, Dialog, DialogActions, DialogContent,
+    DialogTitle, Divider, FormControlLabel, FormGroup, Popover,
+    Stack, Switch, Tabs, Tab, TextField, ToggleButton, ToggleButtonGroup, Typography,
+} from "@mui/material";
 import { HoverCardBox } from "./box/HoverCardBox.tsx";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin, { DateClickArg } from "@fullcalendar/interaction";
@@ -6,21 +10,73 @@ import FullCalendar from "@fullcalendar/react";
 import React, { useMemo, useState, useCallback } from "react";
 import { Task } from "../types/Task.tsx";
 import { useTheme } from "@mui/material";
-import { EventClickArg, EventMountArg } from '@fullcalendar/core';
+import { DatesSetArg, EventClickArg, EventMountArg } from '@fullcalendar/core';
 import { TaskToCreate } from "../types/TaskToCreate.tsx";
 import { SmartTaskInput } from "./input/SmartTaskInput.tsx";
-import { StatDefinition } from "../types/Stats.ts";
+import { StatDefinition, StatEntry } from "../types/Stats.ts";
 import { DateStatCheckIn } from "./stats/DateStatCheckIn.tsx";
-import { format, isAfter, startOfDay } from "date-fns";
+import { statService } from "../services/api/statService.ts";
+import { addMonths, format, isAfter, startOfDay, startOfMonth, subDays } from "date-fns";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
 import { DateTimePicker } from "@mui/x-date-pickers/DateTimePicker";
+import FilterListIcon from '@mui/icons-material/FilterList';
 
 type MonthCalenderProps = {
     tasks: Task[],
     onCreateTask: (task: TaskToCreate) => void,
     onUpdateTask: (taskId: string, updates: Partial<Task>) => Promise<void>,
     statDefinitions?: StatDefinition[],
+}
+
+type TaskStatusFilter = 'all' | 'open' | 'completed';
+
+const CALENDAR_DISPLAY_PREFERENCES_KEY = 'calendar-display-preferences';
+
+type CalendarDisplayPreferences = {
+    showTasks: boolean;
+    showStats: boolean;
+    taskStatus: TaskStatusFilter;
+    priorityFilters: number[];
+    selectedStatIds: string[] | null;
+};
+
+const DEFAULT_CALENDAR_DISPLAY_PREFERENCES: CalendarDisplayPreferences = {
+    showTasks: true,
+    showStats: true,
+    taskStatus: 'all',
+    priorityFilters: [3, 6, 9],
+    selectedStatIds: null,
+};
+
+function readCalendarDisplayPreferences(): CalendarDisplayPreferences {
+    if (typeof window === 'undefined') return DEFAULT_CALENDAR_DISPLAY_PREFERENCES;
+
+    try {
+        const stored = window.localStorage.getItem(CALENDAR_DISPLAY_PREFERENCES_KEY);
+        if (!stored) return DEFAULT_CALENDAR_DISPLAY_PREFERENCES;
+
+        const parsed = JSON.parse(stored) as Partial<CalendarDisplayPreferences>;
+        return {
+            showTasks: typeof parsed.showTasks === 'boolean'
+                ? parsed.showTasks
+                : DEFAULT_CALENDAR_DISPLAY_PREFERENCES.showTasks,
+            showStats: typeof parsed.showStats === 'boolean'
+                ? parsed.showStats
+                : DEFAULT_CALENDAR_DISPLAY_PREFERENCES.showStats,
+            taskStatus: parsed.taskStatus === 'open' || parsed.taskStatus === 'completed'
+                ? parsed.taskStatus
+                : DEFAULT_CALENDAR_DISPLAY_PREFERENCES.taskStatus,
+            priorityFilters: Array.isArray(parsed.priorityFilters)
+                ? parsed.priorityFilters.filter(value => PRIORITY_OPTIONS.some(option => option.value === value))
+                : DEFAULT_CALENDAR_DISPLAY_PREFERENCES.priorityFilters,
+            selectedStatIds: Array.isArray(parsed.selectedStatIds)
+                ? parsed.selectedStatIds.filter((id): id is string => typeof id === 'string')
+                : null,
+        };
+    } catch {
+        return DEFAULT_CALENDAR_DISPLAY_PREFERENCES;
+    }
 }
 
 const PRIORITY_OPTIONS = [
@@ -35,15 +91,50 @@ function priorityColor(importance: number): string {
     return '#1976d2';
 }
 
+function priorityBucket(importance: number): number {
+    if (importance > 7) return 9;
+    if (importance > 4) return 6;
+    return 3;
+}
+
+function statEventValue(definition: StatDefinition, value: number): string {
+    if (definition.type === 'BOOLEAN') return value === 1 ? 'Yes' : 'No';
+    return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
 export function MonthCalendar({ tasks, onCreateTask, onUpdateTask, statDefinitions }: MonthCalenderProps) {
     const theme = useTheme();
+    const availableStatDefinitions = useMemo(() => statDefinitions ?? [], [statDefinitions]);
+    const [initialDisplayPreferences] = useState(readCalendarDisplayPreferences);
     const [editingDate, setEditingDate] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState(0);
     const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
     const [taskDraft, setTaskDraft] = useState<Partial<Task> | null>(null);
     const [taskSaveError, setTaskSaveError] = useState<string | null>(null);
     const [taskSaving, setTaskSaving] = useState(false);
-    const hasStats = statDefinitions && statDefinitions.length > 0;
+    const [showTasks, setShowTasks] = useState(initialDisplayPreferences.showTasks);
+    const [showStats, setShowStats] = useState(initialDisplayPreferences.showStats);
+    const [taskStatus, setTaskStatus] = useState<TaskStatusFilter>(initialDisplayPreferences.taskStatus);
+    const [priorityFilters, setPriorityFilters] = useState<number[]>(initialDisplayPreferences.priorityFilters);
+    // null means the user has not customized the list, so all definitions are
+    // immediately visible as soon as they arrive from the parent.
+    const [selectedStatIds, setSelectedStatIds] = useState<string[] | null>(initialDisplayPreferences.selectedStatIds);
+    const [filterAnchor, setFilterAnchor] = useState<HTMLElement | null>(null);
+    const [calendarRange, setCalendarRange] = useState({
+        start: startOfMonth(new Date()),
+        end: addMonths(startOfMonth(new Date()), 1),
+    });
+    const [statEntries, setStatEntries] = useState<StatEntry[]>([]);
+    const [statRefreshKey, setStatRefreshKey] = useState(0);
+    const selectedStatIdsForDisplay = useMemo(
+        () => selectedStatIds ?? availableStatDefinitions.map(definition => definition.id),
+        [availableStatDefinitions, selectedStatIds]
+    );
+    const selectedStatDefinitions = useMemo(
+        () => availableStatDefinitions.filter(definition => selectedStatIdsForDisplay.includes(definition.id)),
+        [availableStatDefinitions, selectedStatIdsForDisplay]
+    );
+    const hasVisibleStats = showStats && selectedStatDefinitions.length > 0;
     const isFutureDate = editingDate
         ? isAfter(startOfDay(new Date(editingDate + 'T12:00:00')), startOfDay(new Date()))
         : true;
@@ -52,10 +143,50 @@ export function MonthCalendar({ tasks, onCreateTask, onUpdateTask, statDefinitio
         [selectedTaskId, tasks]
     );
 
+    React.useEffect(() => {
+        try {
+            window.localStorage.setItem(CALENDAR_DISPLAY_PREFERENCES_KEY, JSON.stringify({
+                showTasks,
+                showStats,
+                taskStatus,
+                priorityFilters,
+                selectedStatIds,
+            } satisfies CalendarDisplayPreferences));
+        } catch {
+            // Preferences are optional; private browsing may make storage unavailable.
+        }
+    }, [priorityFilters, selectedStatIds, showStats, showTasks, taskStatus]);
+
+    React.useEffect(() => {
+        let cancelled = false;
+        if (!hasVisibleStats) {
+            setStatEntries([]);
+            return () => { cancelled = true; };
+        }
+
+        const from = format(calendarRange.start, 'yyyy-MM-dd');
+        const to = format(subDays(calendarRange.end, 1), 'yyyy-MM-dd');
+        Promise.all(selectedStatDefinitions.map(definition => statService.getEntries(definition.id, from, to)))
+            .then(entriesByDefinition => {
+                if (!cancelled) setStatEntries(entriesByDefinition.flat());
+            })
+            .catch(error => {
+                if (!cancelled) console.error('Failed to load calendar statistics:', error);
+            });
+
+        return () => { cancelled = true; };
+    }, [calendarRange.end, calendarRange.start, hasVisibleStats, selectedStatDefinitions, statRefreshKey]);
+
     const calendarEvents = useMemo(() => {
-        return tasks
-            .filter(task => task.scheduledPerformDateTime)
-            .map(task => ({
+        const taskEvents = showTasks
+            ? tasks
+                .filter(task => {
+                    if (!task.scheduledPerformDateTime) return false;
+                    if (taskStatus === 'open' && task.completed) return false;
+                    if (taskStatus === 'completed' && !task.completed) return false;
+                    return priorityFilters.includes(priorityBucket(task.importance));
+                })
+                .map(task => ({
                 id: task.taskId,
                 title: task.name || 'Untitled Task',
                 date: new Date(task.scheduledPerformDateTime!).toISOString().split('T')[0],
@@ -68,8 +199,37 @@ export function MonthCalendar({ tasks, onCreateTask, onUpdateTask, statDefinitio
                     fullDescription: task.name || 'Untitled Task',
                     completed: task.completed,
                 }
-            }));
-    }, [tasks, theme.palette.mode, theme.palette.text.primary]);
+                }))
+            : [];
+
+        const definitionById = new Map(availableStatDefinitions.map(definition => [definition.id, definition]));
+        const statEvents = hasVisibleStats
+            ? statEntries.flatMap(entry => {
+                if (!selectedStatIdsForDisplay.includes(entry.statDefinitionId)) return [];
+                const definition = definitionById.get(entry.statDefinitionId);
+                if (!definition) return [];
+                const value = statEventValue(definition, entry.value);
+                const color = definition.type === 'BOOLEAN'
+                    ? entry.value === 1 ? theme.palette.success.main : theme.palette.error.main
+                    : theme.palette.secondary.main;
+                return [{
+                    id: `stat-${entry.statDefinitionId}-${entry.date}`,
+                    title: `${definition.name}: ${value}`,
+                    date: entry.date,
+                    backgroundColor: `${color}20`,
+                    borderColor: color,
+                    textColor: theme.palette.text.primary,
+                    extendedProps: {
+                        eventType: 'stat',
+                        date: entry.date,
+                        fullDescription: `${definition.name}: ${value}`,
+                    },
+                }];
+            })
+            : [];
+
+        return [...taskEvents, ...statEvents];
+    }, [availableStatDefinitions, hasVisibleStats, priorityFilters, selectedStatIdsForDisplay, showTasks, statEntries, taskStatus, tasks, theme.palette.mode, theme.palette.secondary.main, theme.palette.text.primary, theme.palette.success.main, theme.palette.error.main]);
 
     const handleEventDidMount = useCallback((info: EventMountArg) => {
         const fullDescription = info.event.extendedProps.fullDescription;
@@ -78,11 +238,19 @@ export function MonthCalendar({ tasks, onCreateTask, onUpdateTask, statDefinitio
     }, []);
 
     const handleDateClick = useCallback((arg: DateClickArg) => {
+        const future = isAfter(startOfDay(new Date(arg.dateStr + 'T12:00:00')), startOfDay(new Date()));
+        if (!showTasks && (!hasVisibleStats || future)) return;
         setEditingDate(arg.dateStr);
-        setActiveTab(0);
-    }, []);
+        setActiveTab(!showTasks && hasVisibleStats && !future ? 1 : 0);
+    }, [hasVisibleStats, showTasks]);
 
     const handleEventClick = useCallback((arg: EventClickArg) => {
+        if (arg.event.extendedProps.eventType === 'stat') {
+            setEditingDate(arg.event.extendedProps.date ?? arg.event.startStr);
+            setActiveTab(1);
+            return;
+        }
+
         const task = tasks.find(item => item.taskId === arg.event.id);
         if (!task) return;
 
@@ -97,6 +265,28 @@ export function MonthCalendar({ tasks, onCreateTask, onUpdateTask, statDefinitio
         setTaskSaveError(null);
         setSelectedTaskId(task.taskId);
     }, [tasks]);
+
+    const handleDatesSet = useCallback((arg: DatesSetArg) => {
+        setCalendarRange(previous => previous.start.getTime() === arg.start.getTime()
+            && previous.end.getTime() === arg.end.getTime()
+            ? previous
+            : { start: arg.start, end: arg.end });
+    }, []);
+
+    const togglePriority = (priority: number) => {
+        setPriorityFilters(previous => previous.includes(priority)
+            ? previous.filter(value => value !== priority)
+            : [...previous, priority]);
+    };
+
+    const toggleStat = (statId: string) => {
+        setSelectedStatIds(previous => {
+            const selected = previous ?? availableStatDefinitions.map(definition => definition.id);
+            return selected.includes(statId)
+                ? selected.filter(id => id !== statId)
+                : [...selected, statId];
+        });
+    };
 
     const handleTaskSubmit = useCallback((taskToCreate: TaskToCreate) => {
         let finalDateTime = taskToCreate.scheduledPerformDateTime;
@@ -155,6 +345,125 @@ export function MonthCalendar({ tasks, onCreateTask, onUpdateTask, statDefinitio
                 <Box
                     sx={{
                         height: '100%',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        minHeight: 0,
+                    }}
+                >
+                    <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
+                        <Box>
+                            <Typography variant="h6" fontWeight={600}>Calendar</Typography>
+                            <Typography variant="caption" color="text.secondary">
+                                {showTasks ? 'Tasks' : 'Tasks hidden'} · {hasVisibleStats ? `${selectedStatDefinitions.length} stat${selectedStatDefinitions.length === 1 ? '' : 's'}` : 'Stats hidden'}
+                            </Typography>
+                        </Box>
+                        <Button
+                            size="small"
+                            variant="outlined"
+                            startIcon={<FilterListIcon />}
+                            onClick={event => setFilterAnchor(event.currentTarget)}
+                        >
+                            Display
+                        </Button>
+                    </Stack>
+
+                    <Popover
+                        open={Boolean(filterAnchor)}
+                        anchorEl={filterAnchor}
+                        onClose={() => setFilterAnchor(null)}
+                        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                        slotProps={{ paper: { sx: { p: 2, width: 320, maxHeight: '75vh' } } }}
+                    >
+                        <Typography variant="subtitle2" sx={{ mb: 1 }}>What should appear?</Typography>
+                        <FormGroup>
+                            <FormControlLabel
+                                control={<Switch checked={showTasks} onChange={event => setShowTasks(event.target.checked)} />}
+                                label="Show tasks"
+                            />
+                            <FormControlLabel
+                                control={<Switch checked={showStats} onChange={event => setShowStats(event.target.checked)} />}
+                                label="Show statistics"
+                            />
+                        </FormGroup>
+
+                        {showTasks && (
+                            <>
+                                <Divider sx={{ my: 1.5 }} />
+                                <Typography variant="caption" color="text.secondary">Task status</Typography>
+                                <ToggleButtonGroup
+                                    exclusive
+                                    fullWidth
+                                    size="small"
+                                    value={taskStatus}
+                                    onChange={(_, value: TaskStatusFilter | null) => value && setTaskStatus(value)}
+                                    sx={{ mt: 0.75 }}
+                                >
+                                    <ToggleButton value="all">All</ToggleButton>
+                                    <ToggleButton value="open">Open</ToggleButton>
+                                    <ToggleButton value="completed">Done</ToggleButton>
+                                </ToggleButtonGroup>
+
+                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
+                                    Priority levels
+                                </Typography>
+                                <Stack direction="row" spacing={0.25} sx={{ mt: 0.25 }}>
+                                    {PRIORITY_OPTIONS.map(option => (
+                                        <FormControlLabel
+                                            key={option.value}
+                                            control={
+                                                <Checkbox
+                                                    size="small"
+                                                    checked={priorityFilters.includes(option.value)}
+                                                    onChange={() => togglePriority(option.value)}
+                                                />
+                                            }
+                                            label={<Typography variant="caption">{option.label}</Typography>}
+                                            sx={{ mr: 0.5 }}
+                                        />
+                                    ))}
+                                </Stack>
+                            </>
+                        )}
+
+                        {showStats && availableStatDefinitions.length > 0 && (
+                            <>
+                                <Divider sx={{ my: 1.5 }} />
+                                <Stack direction="row" justifyContent="space-between" alignItems="center">
+                                    <Typography variant="caption" color="text.secondary">Statistics to show</Typography>
+                                    <Stack direction="row" spacing={0.25}>
+                                        <Button size="small" onClick={() => setSelectedStatIds(availableStatDefinitions.map(definition => definition.id))}>
+                                            All
+                                        </Button>
+                                        <Button size="small" onClick={() => setSelectedStatIds([])}>
+                                            None
+                                        </Button>
+                                    </Stack>
+                                </Stack>
+                                <FormGroup>
+                                    {availableStatDefinitions.map(definition => (
+                                        <FormControlLabel
+                                            key={definition.id}
+                                            control={
+                                                <Checkbox
+                                                    size="small"
+                                                    checked={selectedStatIdsForDisplay.includes(definition.id)}
+                                                    onChange={() => toggleStat(definition.id)}
+                                                />
+                                            }
+                                            label={<Typography variant="body2" noWrap>{definition.name}</Typography>}
+                                        />
+                                    ))}
+                                </FormGroup>
+                            </>
+                        )}
+                    </Popover>
+
+                    <Box
+                        sx={{
+                            flex: 1,
+                            minHeight: 0,
+                            height: '100%',
                         '& .fc': {
                             height: '100%',
                             fontFamily: theme.typography.fontFamily,
@@ -277,8 +586,8 @@ export function MonthCalendar({ tasks, onCreateTask, onUpdateTask, statDefinitio
                         '& .fc-popover-close': {
                             color: `${theme.palette.text.secondary} !important`,
                         },
-                    }}
-                >
+                        }}
+                    >
                     <FullCalendar
                         plugins={[dayGridPlugin, interactionPlugin]}
                         initialView="dayGridMonth"
@@ -287,6 +596,7 @@ export function MonthCalendar({ tasks, onCreateTask, onUpdateTask, statDefinitio
                         eventDidMount={handleEventDidMount}
                         eventClick={handleEventClick}
                         dateClick={handleDateClick}
+                        datesSet={handleDatesSet}
                         dayMaxEvents={4}
                         headerToolbar={{
                             left: 'prev,next today',
@@ -297,6 +607,7 @@ export function MonthCalendar({ tasks, onCreateTask, onUpdateTask, statDefinitio
                             today: 'Today',
                         }}
                     />
+                    </Box>
                 </Box>
             </HoverCardBox>
 
@@ -329,7 +640,7 @@ export function MonthCalendar({ tasks, onCreateTask, onUpdateTask, statDefinitio
                             {format(new Date(editingDate + 'T12:00:00'), 'MMMM d, yyyy')}
                         </Typography>
                     )}
-                    {hasStats && !isFutureDate && (
+                    {showTasks && hasVisibleStats && !isFutureDate && (
                         <Tabs
                             value={activeTab}
                             onChange={(_, v) => setActiveTab(v)}
@@ -343,7 +654,7 @@ export function MonthCalendar({ tasks, onCreateTask, onUpdateTask, statDefinitio
                 </Box>
 
                 <DialogContent dividers sx={{ p: 0 }}>
-                    {activeTab === 0 && (
+                    {activeTab === 0 && showTasks && (
                         <Box sx={{ p: 2 }}>
                             <SmartTaskInput
                                 onSubmit={handleTaskSubmit}
@@ -352,11 +663,14 @@ export function MonthCalendar({ tasks, onCreateTask, onUpdateTask, statDefinitio
                             />
                         </Box>
                     )}
-                    {activeTab === 1 && hasStats && editingDate && (
+                    {activeTab === 1 && hasVisibleStats && editingDate && (
                         <DateStatCheckIn
                             date={editingDate}
-                            definitions={statDefinitions!}
-                            onSaved={() => { setEditingDate(null); }}
+                            definitions={selectedStatDefinitions}
+                            onSaved={() => {
+                                setStatRefreshKey(key => key + 1);
+                                setEditingDate(null);
+                            }}
                         />
                     )}
                 </DialogContent>

@@ -1,8 +1,6 @@
 package org.osama.requests;
 
 import lombok.Data;
-import org.osama.session.meditation.MeditationSessionService;
-
 import javax.validation.constraints.Max;
 import javax.validation.constraints.Min;
 import javax.validation.constraints.NotNull;
@@ -14,10 +12,15 @@ public class StartMeditationRequest {
     @NotNull
     @Min(0)
     @Max(MAX_BELLS)
-    private int numIntervalBells;
+    private Integer numIntervalBells;
 
+    @NotNull
     @Min(MIN_MOOD)
     @Max(MAX_MOOD)
-    private int mood;
+    private Integer mood;
+
+    @NotNull
+    @Min(1)
+    private Integer intendedLength;
 
 }

@@ -48,28 +48,35 @@ function pluralDays(n: number): string {
 }
 
 export function StatSummaryBar({ definition, refreshKey }: Props) {
-    const [summary, setSummary] = useState<StatSummary | null>(null);
-    const [loading, setLoading] = useState(true);
+    const [summaryState, setSummaryState] = useState<{ definitionId: string; summary: StatSummary } | null>(() => {
+        const summary = statService.getCachedSummary(definition.id);
+        return summary ? { definitionId: definition.id, summary } : null;
+    });
+    const cachedSummary = statService.getCachedSummary(definition.id);
+    const summary = summaryState?.definitionId === definition.id
+        ? summaryState.summary
+        : cachedSummary ?? null;
 
     useEffect(() => {
-        setLoading(true);
+        let cancelled = false;
         statService.getSummary(definition.id)
-            .then(setSummary)
+            .then(nextSummary => {
+                if (!cancelled) setSummaryState({ definitionId: definition.id, summary: nextSummary });
+            })
             .catch(e => console.error('Failed to fetch stat summary:', e))
-            .finally(() => setLoading(false));
+        return () => { cancelled = true; };
     }, [definition.id, refreshKey]);
 
-    if (loading) {
+    if (!summary) {
+        const tileCount = definition.type === 'BOOLEAN' ? 3 : 2;
         return (
             <Stack direction="row" spacing={1.5} sx={{ mb: 2 }}>
-                {[1, 2, 3].map(i => (
-                    <Skeleton key={i} variant="rounded" height={58} sx={{ flex: 1 }} />
+                {Array.from({ length: tileCount }, (_, index) => (
+                    <Skeleton key={index} variant="rounded" height={58} sx={{ flex: 1 }} />
                 ))}
             </Stack>
         );
     }
-
-    if (!summary) return null;
 
     const tiles: TileProps[] = [];
 

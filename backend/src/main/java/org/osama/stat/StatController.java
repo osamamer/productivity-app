@@ -44,6 +44,12 @@ public class StatController {
         statService.deleteDefinition(id, currentUserService.getCurrentUserId());
     }
 
+    @PutMapping("/definitions/order")
+    public List<StatDefinition> reorderDefinitions(@RequestBody ReorderDefinitionsRequest request) {
+        return statService.reorderDefinitions(request.definitionIds,
+                currentUserService.getCurrentUserId());
+    }
+
     // --- Stat Entries ---
 
     @PostMapping("/entries")
@@ -98,5 +104,10 @@ public class StatController {
         @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
         LocalDate date;
         double value;
+    }
+
+    @Data
+    public static class ReorderDefinitionsRequest {
+        List<String> definitionIds;
     }
 }

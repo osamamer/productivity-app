@@ -1,0 +1,42 @@
+databaseChangeLog:
+  - changeSet:
+      id: 017-add-stat-display-order
+      author: osama
+      comment: Persist each user's preferred statistics order
+      changes:
+        - addColumn:
+            tableName: stat_definition
+            columns:
+              - column:
+                  name: display_order
+                  type: int
+        - sql:
+            sql: |
+              UPDATE stat_definition definition
+              SET display_order = ordered.display_order
+              FROM (
+                  SELECT id,
+                         ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY name, id) - 1 AS display_order
+                  FROM stat_definition
+              ) ordered
+              WHERE definition.id = ordered.id;
+        - addNotNullConstraint:
+            tableName: stat_definition
+            columnName: display_order
+            columnDataType: int
+        - createIndex:
+            tableName: stat_definition
+            indexName: idx_app_stat_definition_user_display_order
+            ifNotExists: true
+            columns:
+              - column:
+                  name: user_id
+              - column:
+                  name: display_order
+      rollback:
+        - dropIndex:
+            tableName: stat_definition
+            indexName: idx_app_stat_definition_user_display_order
+        - dropColumn:
+            tableName: stat_definition
+            columnName: display_order

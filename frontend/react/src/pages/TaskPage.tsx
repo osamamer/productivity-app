@@ -1,4 +1,4 @@
-import React, {useRef, useState} from 'react';
+import React, {useCallback, useMemo, useRef, useState} from 'react';
 import { Box, Typography } from '@mui/material';
 import { PageWrapper } from '../components/PageWrapper';
 import { useGlobalTasks } from '../contexts/TaskContext';
@@ -19,18 +19,9 @@ export function TaskPage() {
         highlightedTask,
         setHighlightedTask,
         fetchAllTasks,
-        fetchTodayTasks,
-        fetchFutureTasks,
-        fetchPastTasks,
         addTaskToState,
         updateTaskInState,
     } = useGlobalTasks();
-
-    const [dialogOpen, setDialogOpen] = useState<{ [key: string]: boolean }>({
-        dayDialog: false,
-        pomodoroDialog: false,
-        createTaskDialog: false,
-    });
 
     const [expandedSections, setExpandedSections] = useState<{
         today: boolean;
@@ -46,42 +37,40 @@ export function TaskPage() {
     const todayRef = useRef<HTMLDivElement>(null);
     const comingUpRef = useRef<HTMLDivElement>(null);
     const leftoversRef = useRef<HTMLDivElement>(null);
+    const allTasksRef = useRef(allTasks);
+    const expandedSectionsRef = useRef(expandedSections);
+    allTasksRef.current = allTasks;
+    expandedSectionsRef.current = expandedSections;
 
-
-    async function createTask(task: TaskToCreate) {
+    const createTask = useCallback(async (task: TaskToCreate) => {
         try {
             const createdTask = await taskService.createTask(task);
             addTaskToState(createdTask);
             setHighlightedTask(createdTask);
         } catch (err) {
             console.error('Error creating task:', err);
-            await Promise.all([
-                fetchAllTasks(),
-                fetchTodayTasks(),
-                fetchFutureTasks(),
-                fetchPastTasks(),
-            ]);
+            await fetchAllTasks();
         }
-    }
+    }, [addTaskToState, fetchAllTasks, setHighlightedTask]);
 
-    async function toggleTaskCompletion(taskId: string) {
-        const task = allTasks.find(t => t.taskId === taskId);
+    const toggleTaskCompletion = useCallback(async (taskId: string) => {
+        const task = allTasksRef.current.find(t => t.taskId === taskId);
         if (task) {
             updateTaskInState(taskId, { completed: !task.completed });
         }
 
         try {
-            await taskService.toggleTaskCompletion(taskId);
+            await taskService.toggleTaskCompletion(taskId, task ? !task.completed : undefined);
         } catch (err) {
             console.error('Error toggling task:', err);
             if (task) {
                 updateTaskInState(taskId, { completed: task.completed });
             }
         }
-    }
+    }, [updateTaskInState]);
 
-    async function updateTask(taskId: string, updates: Partial<Task>) {
-        const originalTask = allTasks.find(task => task.taskId === taskId);
+    const updateTask = useCallback(async (taskId: string, updates: Partial<Task>) => {
+        const originalTask = allTasksRef.current.find(task => task.taskId === taskId);
         updateTaskInState(taskId, updates);
 
         try {
@@ -91,17 +80,11 @@ export function TaskPage() {
             if (originalTask) {
                 updateTaskInState(taskId, originalTask);
             }
-            await Promise.all([
-                fetchAllTasks(),
-                fetchTodayTasks(),
-                fetchFutureTasks(),
-                fetchPastTasks(),
-            ]);
+            await fetchAllTasks();
         }
-    }
+    }, [fetchAllTasks, updateTaskInState]);
 
-
-    async function changeDescription(description: string, taskId: string) {
+    const changeDescription = useCallback(async (description: string, taskId: string) => {
         updateTaskInState(taskId, { description: description });
 
         try {
@@ -110,13 +93,10 @@ export function TaskPage() {
             console.error('Error updating description:', err);
             await fetchAllTasks();
         }
-    }
+    }, [fetchAllTasks, updateTaskInState]);
 
-    const handleOpen = (dialogType: string) => {
-        setDialogOpen((prev) => ({ ...prev, [dialogType]: true }));
-    };
-
-    const handleChipClick = (section: 'today' | 'comingUp' | 'leftovers') => {
+    const handleChipClick = useCallback((section: 'today' | 'comingUp' | 'leftovers') => {
+        const wasExpanded = expandedSectionsRef.current[section];
         setExpandedSections(prev => ({
             ...prev,
             [section]: !prev[section],
@@ -129,7 +109,7 @@ export function TaskPage() {
             leftovers: leftoversRef,
         };
 
-        if (!expandedSections[section]) {
+        if (!wasExpanded) {
             setTimeout(() => {
                 refs[section].current?.scrollIntoView({
                     behavior: 'smooth',
@@ -137,33 +117,57 @@ export function TaskPage() {
                 });
             }, 100);
         }
-
-    };
+    }, []);
 
     const todayTasksExist = Array.isArray(todayTasks) && todayTasks.length > 0;
     const futureTasksExist = Array.isArray(futureTasks) && futureTasks.length > 0;
     const pastTasksExist = Array.isArray(pastTasks) && pastTasks.length > 0;
     const tasksExist = todayTasksExist || futureTasksExist || pastTasksExist;
 
-    const completedTodayCount = todayTasks.filter(t => t.completed).length;
-    const completedFutureCount = futureTasks.filter(t => t.completed).length;
-    const completedPastCount = pastTasks.filter(t => t.completed).length;
-    const overduePendingCount = pastTasks.filter(t => !t.completed).length;
-    const highPriorityPendingCount = allTasks.filter(t => !t.completed && t.importance > 7).length;
+    const taskCounts = useMemo(() => {
+        const counts = {
+            completedToday: 0,
+            completedFuture: 0,
+            completedPast: 0,
+            overduePending: 0,
+            completed: 0,
+            highPriorityPending: 0,
+        };
 
-    function handleTogglePanel(taskId: string, panel: 'pomodoro' | 'details') {
-        const selectedTask = allTasks.find(task => task.taskId === taskId) ?? null;
+        for (const task of todayTasks) {
+            if (task.completed) counts.completedToday += 1;
+        }
+        for (const task of futureTasks) {
+            if (task.completed) counts.completedFuture += 1;
+        }
+        for (const task of pastTasks) {
+            if (task.completed) {
+                counts.completedPast += 1;
+            } else {
+                counts.overduePending += 1;
+            }
+        }
+        for (const task of allTasks) {
+            if (task.completed) counts.completed += 1;
+            if (!task.completed && task.importance > 7) counts.highPriorityPending += 1;
+        }
+
+        return counts;
+    }, [allTasks, todayTasks, futureTasks, pastTasks]);
+
+    const handleTogglePanel = useCallback((taskId: string, panel: 'pomodoro' | 'details') => {
+        const selectedTask = allTasksRef.current.find(task => task.taskId === taskId) ?? null;
         setHighlightedTask(selectedTask);
         setActiveExpansion(prev => (
             prev?.taskId === taskId && prev.panel === panel ? null : { taskId, panel }
         ));
-    }
+    }, [setHighlightedTask]);
 
-    function handleAutoExpand(taskId: string, panel: 'pomodoro') {
-        const selectedTask = allTasks.find(task => task.taskId === taskId) ?? null;
+    const handleAutoExpand = useCallback((taskId: string, panel: 'pomodoro') => {
+        const selectedTask = allTasksRef.current.find(task => task.taskId === taskId) ?? null;
         setHighlightedTask(selectedTask);
         setActiveExpansion({ taskId, panel });
-    }
+    }, [setHighlightedTask]);
 
     return (
         <PageWrapper>
@@ -199,7 +203,7 @@ export function TaskPage() {
                             section="today"
                             title="Today"
                             tasks={todayTasks}
-                            completedCount={completedTodayCount}
+                            completedCount={taskCounts.completedToday}
                             expanded={expandedSections.today}
                             onToggle={handleChipClick}
                             onTaskClick={setHighlightedTask}
@@ -215,7 +219,7 @@ export function TaskPage() {
                             section="comingUp"
                             title="Coming Up"
                             tasks={futureTasks}
-                            completedCount={completedFutureCount}
+                            completedCount={taskCounts.completedFuture}
                             expanded={expandedSections.comingUp}
                             onToggle={handleChipClick}
                             onTaskClick={setHighlightedTask}
@@ -231,7 +235,7 @@ export function TaskPage() {
                             section="leftovers"
                             title="Leftovers"
                             tasks={pastTasks}
-                            completedCount={completedPastCount}
+                            completedCount={taskCounts.completedPast}
                             expanded={expandedSections.leftovers}
                             onToggle={handleChipClick}
                             onTaskClick={setHighlightedTask}
@@ -288,9 +292,7 @@ export function TaskPage() {
                     {highlightedTask ? (
                         <HighlightedTaskBox
                             key={highlightedTask.taskId}
-                            tasks={allTasks}
                             task={highlightedTask}
-                            handleOpenDialog={handleOpen}
                             handleChangeDescription={changeDescription}
                             toggleTaskCompletion={toggleTaskCompletion}
                             />
@@ -310,12 +312,12 @@ export function TaskPage() {
 
                     <TaskPageOverview
                         totalCount={allTasks.length}
-                        completedCount={allTasks.filter(t => t.completed).length}
-                        pendingCount={allTasks.filter(t => !t.completed).length}
+                        completedCount={taskCounts.completed}
+                        pendingCount={allTasks.length - taskCounts.completed}
                         todayCount={todayTasks.length}
                         upcomingCount={futureTasks.length}
-                        overdueCount={overduePendingCount}
-                        highPriorityCount={highPriorityPendingCount}
+                        overdueCount={taskCounts.overduePending}
+                        highPriorityCount={taskCounts.highPriorityPending}
                     />
                 </Box>
             </Box>

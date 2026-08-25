@@ -46,3 +46,7 @@ databaseChangeLog:
   # Built-in stat metadata and constraints
   - include:
       file: db/changelog/changes/016-add-system-stat-constraints.yaml
+
+  # User-customized statistics order
+  - include:
+      file: db/changelog/changes/017-add-stat-display-order.yaml

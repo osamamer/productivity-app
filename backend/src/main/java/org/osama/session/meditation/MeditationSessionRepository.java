@@ -8,4 +8,8 @@ public interface MeditationSessionRepository extends JpaRepository<MeditationSes
     Optional<MeditationSession> findMeditationSessionByActiveIsTrue();
     Optional<MeditationSession> findMeditationSessionByIdAndActiveIsTrue(String sessionId);
     Optional<MeditationSession> findMeditationSessionByIdAndRunningIsTrue(String sessionId);
+    Optional<MeditationSession> findByIdAndUserId(String sessionId, String userId);
+    Optional<MeditationSession> findByUserIdAndActiveIsTrue(String userId);
+    Optional<MeditationSession> findByIdAndActiveIsTrueAndUserId(String sessionId, String userId);
+    Optional<MeditationSession> findByIdAndRunningIsTrueAndUserId(String sessionId, String userId);
 }

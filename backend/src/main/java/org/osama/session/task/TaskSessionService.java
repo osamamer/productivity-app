@@ -5,6 +5,7 @@ import org.osama.session.events.SessionEndedEvent;
 import org.osama.session.events.SessionPausedEvent;
 import org.osama.session.events.SessionStartedEvent;
 import org.osama.session.events.SessionUnpausedEvent;
+import org.osama.task.Task;
 import org.osama.task.TaskRepository;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -28,7 +29,7 @@ public class TaskSessionService {
     }
 
     public TaskSession startSession(String taskId, boolean isPomodoro) {
-        taskRepository.findTaskByTaskId(taskId)
+        Task task = taskRepository.findTaskByTaskId(taskId)
                 .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
 
         // Validate no active session exists
@@ -50,7 +51,8 @@ public class TaskSessionService {
         taskSession.setPomodoro(isPomodoro);
 
         TaskSession savedTaskSession = taskSessionRepository.save(taskSession);
-        log.info("Started session [{}] for task [{}]", savedTaskSession.getSessionId(), taskId);
+        log.info("Task session started: userId={} sessionId={} taskId={} pomodoro={}",
+                task.getUserId(), savedTaskSession.getSessionId(), taskId, isPomodoro);
 
         // Publish event (Pomodoro will listen to this)
         eventPublisher.publishEvent(new SessionStartedEvent(
@@ -64,7 +66,7 @@ public class TaskSessionService {
     }
 
     public void pauseSession(String taskId) {
-        taskRepository.findTaskByTaskId(taskId)
+        Task task = taskRepository.findTaskByTaskId(taskId)
                 .orElseThrow(() -> new IllegalArgumentException("Cannot pause session. Task not found: " + taskId));
 
         TaskSession taskSession = taskSessionRepository.findSessionByAssociatedTaskIdAndRunningIsTrue(taskId)
@@ -77,7 +79,8 @@ public class TaskSessionService {
         taskSession.setLastPauseTime(LocalDateTime.now());
         taskSessionRepository.save(taskSession);
 
-        log.info("Paused session [{}] for task [{}]", taskSession.getSessionId(), taskId);
+        log.info("Task session paused: userId={} sessionId={} taskId={} totalTime={}",
+                task.getUserId(), taskSession.getSessionId(), taskId, taskSession.getTotalSessionTime());
 
         // Publish event
         eventPublisher.publishEvent(new SessionPausedEvent(
@@ -89,7 +92,7 @@ public class TaskSessionService {
     }
 
     public void unpauseSession(String taskId) {
-        taskRepository.findTaskByTaskId(taskId)
+        Task task = taskRepository.findTaskByTaskId(taskId)
                 .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
 
         // Verify no running session
@@ -108,7 +111,8 @@ public class TaskSessionService {
         taskSession.setLastUnpauseTime(LocalDateTime.now());
         taskSessionRepository.save(taskSession);
 
-        log.info("Unpaused session [{}] for task [{}]", taskSession.getSessionId(), taskId);
+        log.info("Task session unpaused: userId={} sessionId={} taskId={}",
+                task.getUserId(), taskSession.getSessionId(), taskId);
 
         // Publish event
         eventPublisher.publishEvent(new SessionUnpausedEvent(
@@ -121,7 +125,7 @@ public class TaskSessionService {
     }
 
     public void endSession(String taskId) {
-        taskRepository.findTaskByTaskId(taskId)
+        Task task = taskRepository.findTaskByTaskId(taskId)
                 .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
 
         TaskSession taskSession = taskSessionRepository.findSessionByAssociatedTaskIdAndActiveIsTrue(taskId)
@@ -138,8 +142,8 @@ public class TaskSessionService {
         taskSession.setActive(false);
         taskSessionRepository.save(taskSession);
 
-        log.info("Ended session [{}] for task [{}]. Total time: {}",
-                taskSession.getSessionId(), taskId, taskSession.getTotalSessionTime());
+        log.info("Task session ended: userId={} sessionId={} taskId={} totalTime={}",
+                task.getUserId(), taskSession.getSessionId(), taskId, taskSession.getTotalSessionTime());
 
         // Publish event
         eventPublisher.publishEvent(new SessionEndedEvent(

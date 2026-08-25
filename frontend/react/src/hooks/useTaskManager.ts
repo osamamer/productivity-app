@@ -1,6 +1,14 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Task } from '../types/Task';
 import { taskService } from '../services/api';
+
+type TaskState = {
+    allTasks: Task[];
+    todayTasks: Task[];
+    futureTasks: Task[];
+    pastTasks: Task[];
+    highlightedTask: Task | null;
+};
 
 function startOfToday(): Date {
     const today = new Date();
@@ -37,42 +45,93 @@ function splitTasksByDate(tasks: Task[]) {
     );
 }
 
+function reuseTaskList(previous: Task[], next: Task[]): Task[] {
+    if (previous.length !== next.length) return next;
+
+    for (let index = 0; index < previous.length; index += 1) {
+        if (previous[index] !== next[index]) return next;
+    }
+
+    return previous;
+}
+
+function withTaskBuckets(previous: TaskState, allTasks: Task[]): TaskState {
+    const grouped = splitTasksByDate(allTasks);
+
+    return {
+        ...previous,
+        allTasks,
+        todayTasks: reuseTaskList(previous.todayTasks, grouped.today),
+        futureTasks: reuseTaskList(previous.futureTasks, grouped.future),
+        pastTasks: reuseTaskList(previous.pastTasks, grouped.past),
+    };
+}
+
 export function useTaskManager() {
-    const [allTasks, setAllTasks] = useState<Task[]>([]);
-    const [todayTasks, setTodayTasks] = useState<Task[]>([]);
-    const [futureTasks, setFutureTasks] = useState<Task[]>([]);
-    const [pastTasks, setPastTasks] = useState<Task[]>([]);
-    const [highlightedTask, setHighlightedTask] = useState<Task | null>(null);
+    const [taskState, setTaskState] = useState<TaskState>({
+        allTasks: [],
+        todayTasks: [],
+        futureTasks: [],
+        pastTasks: [],
+        highlightedTask: null,
+    });
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const allTasksRequestRef = useRef<Promise<void> | null>(null);
+
+    const {
+        allTasks,
+        todayTasks,
+        futureTasks,
+        pastTasks,
+        highlightedTask,
+    } = taskState;
+
+    const setHighlightedTask = useCallback((task: Task | null) => {
+        setTaskState(prev => ({ ...prev, highlightedTask: task }));
+    }, []);
 
     const fetchAllTasks = useCallback(async () => {
-        try {
-            setLoading(true);
-            setError(null);
-            const tasks = await taskService.getAllMainTasks();
-            setAllTasks(tasks);
-            const grouped = splitTasksByDate(tasks);
-            setTodayTasks(grouped.today);
-            setFutureTasks(grouped.future);
-            setPastTasks(grouped.past);
-            // Functional update: only set highlighted task if one isn't already selected,
-            // without needing highlightedTask in the dependency array.
-            if (tasks.length > 0) {
-                setHighlightedTask(prev => prev ?? tasks[tasks.length - 1]);
+        if (allTasksRequestRef.current) {
+            return allTasksRequestRef.current;
+        }
+
+        const request = (async () => {
+            try {
+                setLoading(true);
+                setError(null);
+                const tasks = await taskService.getAllMainTasks();
+                setTaskState(prev => {
+                    const next = withTaskBuckets(prev, tasks);
+                    return {
+                        ...next,
+                        // Keep the user's current selection across refreshes. On the
+                        // first load, select the same fallback task as before.
+                        highlightedTask: prev.highlightedTask ?? tasks[tasks.length - 1] ?? null,
+                    };
+                });
+            } catch (err) {
+                setError(err instanceof Error ? err.message : 'Failed to fetch tasks');
+                console.error('Error fetching all tasks:', err);
+            } finally {
+                setLoading(false);
             }
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to fetch tasks');
-            console.error('Error fetching all tasks:', err);
+        })();
+
+        allTasksRequestRef.current = request;
+        try {
+            await request;
         } finally {
-            setLoading(false);
+            if (allTasksRequestRef.current === request) {
+                allTasksRequestRef.current = null;
+            }
         }
     }, []);
 
     const fetchTodayTasks = useCallback(async () => {
         try {
             const tasks = await taskService.getTodayTasks();
-            setTodayTasks(tasks);
+            setTaskState(prev => ({ ...prev, todayTasks: tasks }));
         } catch (err) {
             console.error('Error fetching today tasks:', err);
         }
@@ -81,7 +140,7 @@ export function useTaskManager() {
     const fetchFutureTasks = useCallback(async () => {
         try {
             const tasks = await taskService.getFutureTasks();
-            setFutureTasks(tasks);
+            setTaskState(prev => ({ ...prev, futureTasks: tasks }));
         } catch (err) {
             console.error('Error fetching future tasks:', err);
         }
@@ -90,7 +149,7 @@ export function useTaskManager() {
     const fetchPastTasks = useCallback(async () => {
         try {
             const tasks = await taskService.getPastTasks();
-            setPastTasks(tasks);
+            setTaskState(prev => ({ ...prev, pastTasks: tasks }));
         } catch (err) {
             console.error('Error fetching past tasks:', err);
         }
@@ -128,60 +187,50 @@ export function useTaskManager() {
     }, [refreshTaskBuckets]);
 
     const addTaskToState = useCallback((task: Task) => {
-        setAllTasks(prev => {
-            const updated = [task, ...prev];
-            const grouped = splitTasksByDate(updated);
-            setTodayTasks(grouped.today);
-            setFutureTasks(grouped.future);
-            setPastTasks(grouped.past);
-            return updated;
-        });
-
-        setHighlightedTask(prev => {
-            if (!prev) {  // If there's no highlighted task
-                return task;  // Set the new task
-            }
-            return prev;
+        setTaskState(prev => {
+            const next = withTaskBuckets(prev, [task, ...prev.allTasks]);
+            return {
+                ...next,
+                highlightedTask: prev.highlightedTask ?? task,
+            };
         });
     }, []);
 
     const updateTaskInState = useCallback((taskId: string, updates: Partial<Task>) => {
-        setAllTasks(prev => {
-            const updated = prev.map(task =>
-                task.taskId === taskId ? { ...task, ...updates } : task
-            );
-            const grouped = splitTasksByDate(updated);
-            setTodayTasks(grouped.today);
-            setFutureTasks(grouped.future);
-            setPastTasks(grouped.past);
-            return updated;
-        });
+        setTaskState(prev => {
+            const taskIndex = prev.allTasks.findIndex(task => task.taskId === taskId);
+            if (taskIndex === -1) return prev;
 
-        // Functional update: check and update highlighted task without closing over it.
-        setHighlightedTask(prev => prev?.taskId === taskId ? { ...prev, ...updates } : prev);
+            const updatedTask = { ...prev.allTasks[taskIndex], ...updates };
+            const updatedTasks = [...prev.allTasks];
+            updatedTasks[taskIndex] = updatedTask;
+            const next = withTaskBuckets(prev, updatedTasks);
+
+            return {
+                ...next,
+                highlightedTask: prev.highlightedTask?.taskId === taskId
+                    ? { ...prev.highlightedTask, ...updates }
+                    : prev.highlightedTask,
+            };
+        });
     }, []);
 
     const removeTaskFromState = useCallback((taskId: string) => {
-        const filterTask = (tasks: Task[]) =>
-            tasks.filter(task => task.taskId !== taskId);
+        setTaskState(prev => {
+            const updatedTasks = prev.allTasks.filter(task => task.taskId !== taskId);
+            if (updatedTasks.length === prev.allTasks.length) return prev;
 
-        // Update allTasks via functional form so we have the latest list available
-        // to pick a replacement highlighted task — no need to close over allTasks.
-        setAllTasks(prev => {
-            const updated = filterTask(prev);
-            const grouped = splitTasksByDate(updated);
-            setTodayTasks(grouped.today);
-            setFutureTasks(grouped.future);
-            setPastTasks(grouped.past);
-            setHighlightedTask(highlighted => {
-                if (highlighted?.taskId !== taskId) return highlighted;
-                return updated.length > 0 ? updated[0] : null;
-            });
-            return updated;
+            const next = withTaskBuckets(prev, updatedTasks);
+            return {
+                ...next,
+                highlightedTask: prev.highlightedTask?.taskId === taskId
+                    ? updatedTasks[0] ?? null
+                    : prev.highlightedTask,
+            };
         });
     }, []);
 
-    return {
+    return useMemo(() => ({
         // State
         allTasks,
         todayTasks,
@@ -202,5 +251,22 @@ export function useTaskManager() {
         addTaskToState,
         updateTaskInState,
         removeTaskFromState,
-    };
+    }), [
+        allTasks,
+        todayTasks,
+        futureTasks,
+        pastTasks,
+        highlightedTask,
+        loading,
+        error,
+        setHighlightedTask,
+        fetchAllTasks,
+        fetchTodayTasks,
+        fetchFutureTasks,
+        fetchPastTasks,
+        refreshTaskBuckets,
+        addTaskToState,
+        updateTaskInState,
+        removeTaskFromState,
+    ]);
 }

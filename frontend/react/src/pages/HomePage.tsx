@@ -65,7 +65,7 @@ export function HomePage() {
         const task = allTasks.find(t => t.taskId === taskId);
         if (task) updateTaskInState(taskId, { completed: !task.completed });
         try {
-            await taskService.toggleTaskCompletion(taskId);
+            await taskService.toggleTaskCompletion(taskId, task ? !task.completed : undefined);
         } catch (err) {
             console.error('Error toggling task:', err);
             if (task) updateTaskInState(taskId, { completed: task.completed });

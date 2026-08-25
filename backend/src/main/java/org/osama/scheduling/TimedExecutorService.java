@@ -45,9 +45,22 @@ public class TimedExecutorService {
     private void doJob(ScheduledJob scheduledJob) {
         log.info("Performing {} job with ID [{}]", scheduledJob.getJobType(), scheduledJob.getJobId());
         Consumer<String> function = jobMap.get(scheduledJob.getJobType());
-        function.accept(scheduledJob.getAssociatedTaskId());
-        scheduledJob.setScheduled(false);
-        scheduledJobRepository.save(scheduledJob);
+        if (function == null) {
+            log.error("Scheduled job has no handler: jobId={} jobType={} taskId={}",
+                    scheduledJob.getJobId(), scheduledJob.getJobType(), scheduledJob.getAssociatedTaskId());
+            return;
+        }
+
+        try {
+            function.accept(scheduledJob.getAssociatedTaskId());
+            scheduledJob.setScheduled(false);
+            scheduledJobRepository.save(scheduledJob);
+            log.info("Scheduled job completed: jobId={} jobType={} taskId={}",
+                    scheduledJob.getJobId(), scheduledJob.getJobType(), scheduledJob.getAssociatedTaskId());
+        } catch (Exception e) {
+            log.error("Scheduled job failed: jobId={} jobType={} taskId={}",
+                    scheduledJob.getJobId(), scheduledJob.getJobType(), scheduledJob.getAssociatedTaskId(), e);
+        }
     }
 
     private Map<JobType, Consumer<String>> createJobMap() {

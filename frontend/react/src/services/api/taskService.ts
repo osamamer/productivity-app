@@ -122,9 +122,9 @@ export const taskService = {
         return response.json();
     },
 
-    async toggleTaskCompletion(taskId: string): Promise<Task> {
-        const task = await this.getTask(taskId);
-        return this.updateTask(taskId, { completed: !task.completed });
+    async toggleTaskCompletion(taskId: string, completed?: boolean): Promise<Task> {
+        const nextCompleted = completed ?? !(await this.getTask(taskId)).completed;
+        return this.updateTask(taskId, { completed: nextCompleted });
     },
 
     async updateDescription(taskId: string, description: string): Promise<Task> {

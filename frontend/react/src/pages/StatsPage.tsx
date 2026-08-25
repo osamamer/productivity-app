@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-    Box, Button, Collapse, Typography, CircularProgress, Alert, Stack,
+    Box, Button, Typography, CircularProgress, Alert, Stack,
     Tooltip, IconButton, Dialog, DialogTitle, DialogContent,
     DialogContentText, DialogActions,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 import { PageWrapper } from '../components/PageWrapper';
 import { CreateStatForm } from '../components/stats/CreateStatForm';
 import { StatRecentDots } from '../components/stats/StatRecentDots';
@@ -23,6 +24,9 @@ export function StatsPage() {
     const [showCreateForm, setShowCreateForm] = useState(false);
     const [chartRefreshKey, setChartRefreshKey] = useState(0);
     const [deleteTarget, setDeleteTarget] = useState<StatDefinition | null>(null);
+    const [draggedId, setDraggedId] = useState<string | null>(null);
+    const [reorderSaving, setReorderSaving] = useState(false);
+    const [orderError, setOrderError] = useState<string | null>(null);
 
     const loadDefinitions = useCallback(() => {
         setLoading(true);
@@ -42,6 +46,10 @@ export function StatsPage() {
     }, []);
 
     useEffect(() => { loadDefinitions(); }, [loadDefinitions]);
+
+    const handleEntryChanged = useCallback(() => {
+        setChartRefreshKey(key => key + 1);
+    }, []);
 
     const handleCreated = (def: StatDefinition) => {
         setDefinitions(prev => [...prev, def]);
@@ -70,6 +78,34 @@ export function StatsPage() {
 
     const selectedDef = definitions.find(d => d.id === selectedId) ?? null;
 
+    const handleDefinitionDrop = async (targetId: string) => {
+        if (!draggedId || draggedId === targetId || reorderSaving) return;
+
+        const previous = definitions;
+        const draggedIndex = previous.findIndex(def => def.id === draggedId);
+        const targetIndex = previous.findIndex(def => def.id === targetId);
+        if (draggedIndex < 0 || targetIndex < 0) return;
+
+        const next = [...previous];
+        const [dragged] = next.splice(draggedIndex, 1);
+        next.splice(draggedIndex < targetIndex ? targetIndex - 1 : targetIndex, 0, dragged);
+        setDefinitions(next);
+        setDraggedId(null);
+        setOrderError(null);
+        setReorderSaving(true);
+
+        try {
+            const persisted = await statService.reorderDefinitions(next.map(def => def.id));
+            setDefinitions(persisted);
+        } catch (e) {
+            console.error('Failed to reorder stat definitions:', e);
+            setDefinitions(previous);
+            setOrderError('Failed to save the statistics order.');
+        } finally {
+            setReorderSaving(false);
+        }
+    };
+
     return (
         <PageWrapper>
             <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%' }}>
@@ -87,14 +123,20 @@ export function StatsPage() {
                     </Button>
                 </Stack>
 
-                <Collapse in={showCreateForm} sx={{ flexShrink: 0 }}>
-                    <Box sx={{ mb: 2 }}>
+                <Dialog
+                    open={showCreateForm}
+                    onClose={() => setShowCreateForm(false)}
+                    fullWidth
+                    maxWidth="xs"
+                >
+                    <DialogTitle>Add statistic</DialogTitle>
+                    <DialogContent dividers sx={{ p: 1.5 }}>
                         <CreateStatForm
                             onCreated={handleCreated}
                             onCancel={() => setShowCreateForm(false)}
                         />
-                    </Box>
-                </Collapse>
+                    </DialogContent>
+                </Dialog>
 
                 {loading && (
                     <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}>
@@ -102,6 +144,7 @@ export function StatsPage() {
                     </Box>
                 )}
                 {error && <Alert severity="error">{error}</Alert>}
+                {orderError && <Alert severity="error" sx={{ mb: 1.5 }}>{orderError}</Alert>}
 
                 {!loading && !error && definitions.length === 0 && (
                     <Box sx={{ textAlign: 'center', py: 10 }}>
@@ -136,6 +179,11 @@ export function StatsPage() {
                                 return (
                                     <Box
                                         key={def.id}
+                                        draggable={!reorderSaving}
+                                        onDragStart={() => setDraggedId(def.id)}
+                                        onDragEnd={() => setDraggedId(null)}
+                                        onDragOver={event => event.preventDefault()}
+                                        onDrop={() => { void handleDefinitionDrop(def.id); }}
                                         onClick={() => setSelectedId(def.id)}
                                         sx={{
                                             px: 2,
@@ -153,6 +201,7 @@ export function StatsPage() {
                                                 ? `3px solid ${theme.palette.primary.main}`
                                                 : '3px solid transparent',
                                             transition: 'background-color 0.15s, border-left-color 0.15s',
+                                            opacity: draggedId === def.id ? 0.45 : 1,
                                             '&:hover': {
                                                 bgcolor: isSelected
                                                     ? theme.palette.mode === 'dark'
@@ -188,10 +237,16 @@ export function StatsPage() {
                                                 )}
                                             </Box>
                                             <Stack direction="row" alignItems="center" spacing={0.5} sx={{ flexShrink: 0 }}>
+                                                <Tooltip title="Drag to reorder">
+                                                    <DragIndicatorIcon
+                                                        aria-label={`Reorder ${def.name}`}
+                                                        sx={{ color: 'text.secondary', cursor: 'grab', fontSize: 20 }}
+                                                    />
+                                                </Tooltip>
                                                 <StatRecentDots
                                                     definition={def}
                                                     refreshKey={chartRefreshKey}
-                                                    onEntryChanged={() => setChartRefreshKey(k => k + 1)}
+                                                    onEntryChanged={handleEntryChanged}
                                                 />
                                                 {!def.systemKey && (
                                                     <Tooltip title="Delete stat and all its data">
@@ -215,10 +270,11 @@ export function StatsPage() {
                         <Box sx={{ flex: 1, overflowY: 'auto', minWidth: 0 }}>
                             {selectedDef ? (
                                 <StatCard
-                                    key={selectedDef.id}
+                                    key={selectedDef.type === 'BOOLEAN' ? 'calendar' : 'numeric-chart'}
                                     definition={selectedDef}
                                     onDelete={id => setDeleteTarget(definitions.find(d => d.id === id) ?? null)}
                                     refreshKey={chartRefreshKey}
+                                    onEntryChanged={handleEntryChanged}
                                 />
                             ) : (
                                 <Box sx={{

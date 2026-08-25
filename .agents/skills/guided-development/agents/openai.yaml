@@ -1,0 +1,4 @@
+interface:
+  display_name: "Guided Development"
+  short_description: "Teach repository changes as verified, incremental lessons"
+  default_prompt: "Use $guided-development to turn this development goal into a repository-grounded lesson sequence."

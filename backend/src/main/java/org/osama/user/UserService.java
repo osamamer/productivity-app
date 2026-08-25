@@ -9,7 +9,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.security.oauth2.jwt.Jwt;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -103,12 +105,14 @@ public class UserService {
     public User updateUser(String userId, String email, String firstName, String lastName, String username) {
         User user = userRepository.findUserById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
+        List<String> changedFields = new ArrayList<>();
 
         if (email != null && !email.equals(user.getEmail())) {
             if (userRepository.findUserByEmail(email).isPresent()) {
                 throw new IllegalArgumentException("Email already taken: " + email);
             }
             user.setEmail(email);
+            changedFields.add("email");
         }
 
         if (username != null && !username.equals(user.getUsername())) {
@@ -116,12 +120,25 @@ public class UserService {
                 throw new IllegalArgumentException("Username already taken: " + username);
             }
             user.setUsername(username);
+            changedFields.add("username");
         }
 
-        if (firstName != null) user.setFirstName(firstName);
-        if (lastName != null) user.setLastName(lastName);
+        if (firstName != null) {
+            if (!Objects.equals(firstName, user.getFirstName())) {
+                changedFields.add("firstName");
+            }
+            user.setFirstName(firstName);
+        }
+        if (lastName != null) {
+            if (!Objects.equals(lastName, user.getLastName())) {
+                changedFields.add("lastName");
+            }
+            user.setLastName(lastName);
+        }
 
-        return userRepository.save(user);
+        User savedUser = userRepository.save(user);
+        log.info("User profile updated: userId={} changedFields={}", userId, changedFields);
+        return savedUser;
     }
 
     @Transactional

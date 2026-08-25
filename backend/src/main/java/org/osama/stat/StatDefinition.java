@@ -36,6 +36,9 @@ public class StatDefinition {
     @Column(name = "system_key")
     private String systemKey;
 
+    @Column(name = "display_order", nullable = false)
+    private Integer displayOrder;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;

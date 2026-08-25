@@ -19,7 +19,7 @@ type TaskPageComposerProps = {
     onToggleSection: (section: 'today' | 'comingUp' | 'leftovers') => void;
 };
 
-export function TaskPageComposer({
+export const TaskPageComposer = React.memo(function TaskPageComposer({
     todayCount,
     upcomingCount,
     pastCount,
@@ -83,4 +83,4 @@ export function TaskPageComposer({
             </Box>
         </Box>
     );
-}
+});

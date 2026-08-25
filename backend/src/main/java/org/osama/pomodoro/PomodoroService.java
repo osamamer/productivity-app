@@ -179,6 +179,8 @@ public class PomodoroService {
 
         scheduleService.schedulePomoJobs(task.getTaskId());
         taskSessionService.startSession(task.getTaskId(), true);
+        log.info("Pomodoro started: userId={} taskId={} focusDuration={} shortBreakDuration={} longBreakDuration={} numFocuses={} longBreakCooldown={}",
+                userId, taskId, focusDuration, shortBreakDuration, longBreakDuration, numFocuses, longBreakCooldown);
     }
 
     @Transactional
@@ -199,6 +201,8 @@ public class PomodoroService {
         scheduleService.deleteTaskJobs(task.getTaskId());
         pausePomodoroUpdates(task.getTaskId());
         sendUpdate(pomodoro);
+        log.info("Pomodoro ended: userId={} taskId={} completedFocusCount={}",
+                userId, taskId, pomodoro.getCurrentFocusNumber());
     }
 
     @Transactional
@@ -229,7 +233,11 @@ public class PomodoroService {
         pomodoro.setSecondsPassedInSession(0);
         pomodoro.setUser(user);
 
-        return pomodoroRepository.save(pomodoro);
+        Pomodoro savedPomodoro = pomodoroRepository.save(pomodoro);
+        log.info("Pomodoro configured: userId={} pomodoroId={} taskId={} focusDuration={} shortBreakDuration={} longBreakDuration={} numFocuses={} longBreakCooldown={}",
+                userId, savedPomodoro.getPomodoroId(), associatedTaskId, focusDuration,
+                shortBreakDuration, longBreakDuration, numFocuses, longBreakCooldown);
+        return savedPomodoro;
     }
 
     private void validateStartRequest(Task task, int focusDuration,

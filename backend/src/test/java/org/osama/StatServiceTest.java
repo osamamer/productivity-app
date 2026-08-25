@@ -13,6 +13,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -168,8 +169,32 @@ public class StatServiceTest {
         assertEquals(42.5, entries.get(0).getValue());
     }
 
+    @Test
+    void definitionsCanBeReorderedAndOrderIsReturnedPersistently() {
+        StatDefinition first = createNamedStatDefinition("First", StatType.NUMBER);
+        StatDefinition second = createNamedStatDefinition("Second", StatType.BOOLEAN);
+        StatDefinition third = createNamedStatDefinition("Third", StatType.RANGE, 1.0, 10.0);
+
+        statService.reorderDefinitions(List.of(third.getId(), first.getId(), second.getId()), TEST_USER_ID);
+
+        assertEquals(List.of(third.getId(), first.getId(), second.getId()),
+                statService.getDefinitions(TEST_USER_ID).stream().map(StatDefinition::getId).toList());
+        assertEquals(0, definitionRepository.findById(third.getId()).orElseThrow().getDisplayOrder());
+        assertEquals(1, definitionRepository.findById(first.getId()).orElseThrow().getDisplayOrder());
+        assertEquals(2, definitionRepository.findById(second.getId()).orElseThrow().getDisplayOrder());
+    }
+
     StatDefinition createStatDefinition(StatType statType, Double minValue, Double maxValue) {
         return statService.createDefinition("name", "description",
                 statType, minValue, maxValue, TEST_USER_ID);
+    }
+
+    private StatDefinition createNamedStatDefinition(String name, StatType type) {
+        return createNamedStatDefinition(name, type, null, null);
+    }
+
+    private StatDefinition createNamedStatDefinition(String name, StatType type,
+                                                     Double minValue, Double maxValue) {
+        return statService.createDefinition(name, "description", type, minValue, maxValue, TEST_USER_ID);
     }
 }

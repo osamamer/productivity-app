@@ -47,7 +47,7 @@ interface Props {
     onEntryChanged?: () => void;
 }
 
-export function StatRecentDots({ definition, refreshKey, onEntryChanged }: Props) {
+export const StatRecentDots = React.memo(function StatRecentDots({ definition, refreshKey, onEntryChanged }: Props) {
     const theme = useTheme();
     const [valueMap, setValueMap] = useState<Map<string, number>>(new Map());
     const [loading, setLoading] = useState(true);
@@ -61,7 +61,6 @@ export function StatRecentDots({ definition, refreshKey, onEntryChanged }: Props
     const fetchDots = () => {
         const today = new Date();
         const from = subDays(today, 4);
-        setLoading(true);
         statService
             .getEntries(definition.id, format(from, 'yyyy-MM-dd'), format(today, 'yyyy-MM-dd'))
             .then(entries => setValueMap(new Map(entries.map(e => [e.date, e.value]))))
@@ -191,6 +190,7 @@ export function StatRecentDots({ definition, refreshKey, onEntryChanged }: Props
                 open={Boolean(popover)}
                 anchorEl={popover?.anchorEl}
                 onClose={closePopover}
+                transitionDuration={0}
                 anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
                 transformOrigin={{ vertical: 'top', horizontal: 'center' }}
                 slotProps={{
@@ -280,4 +280,4 @@ export function StatRecentDots({ definition, refreshKey, onEntryChanged }: Props
             </Popover>
         </>
     );
-}
+});

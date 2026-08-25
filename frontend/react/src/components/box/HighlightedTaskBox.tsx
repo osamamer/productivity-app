@@ -13,15 +13,13 @@ import IconButton from '@mui/material/IconButton';
 import { TaskDiv } from "../TaskDiv.tsx";
 
 type props = {
-    tasks: Task[];
     task: Task | null;
     label?: string;
-    handleOpenDialog?: (dialogType: string) => void;
     handleChangeDescription: (description: string, taskId: string) => void;
     toggleTaskCompletion: (taskId: string) => void;
 };
 
-export function HighlightedTaskBox(props: props) {
+export const HighlightedTaskBox = React.memo(function HighlightedTaskBox(props: props) {
     const [showPomodoro, setShowPomodoro] = useState(false);
     const [isPomodoroRunning, setIsPomodoroRunning] = useState(false);
     const [subTasks, setSubTasks] = useState<Task[]>([]);
@@ -145,4 +143,4 @@ export function HighlightedTaskBox(props: props) {
         </Box>
         </Box>
     );
-}
+});

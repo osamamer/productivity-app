@@ -28,6 +28,8 @@ public class ScheduleService {
         int n = 2* pomodoro.getNumFocuses() -1;
         int timeElapsed = 0;
         int breaksTaken = 0;
+        log.info("Scheduling pomodoro jobs: userId={} taskId={} focusCount={}",
+                user.getId(), taskId, pomodoro.getNumFocuses());
         for (int i = 0; i < n; i++) {
             if (i % 2 == 0) { // Meaning that are in an even iteration in which the task is active
                 if (i == n - 1) {
@@ -60,7 +62,7 @@ public class ScheduleService {
             job.setScheduled(false);
             scheduledJobRepository.save(job);
         });
-        log.info("Unscheduled jobs for task with ID [{}]", taskId);
+        log.info("Pomodoro jobs unscheduled: taskId={} count={}", taskId, taskJobs.size());
     }
     public void rescheduleTaskJobs(String taskId) { // For when the user unpauses
         List<ScheduledJob> taskJobs = scheduledJobRepository.findAllByAssociatedTaskId(taskId);
@@ -68,13 +70,13 @@ public class ScheduleService {
             job.setScheduled(true);
             scheduledJobRepository.save(job);
         });
-        log.info("Rescheduled jobs for task with ID [{}]", taskId);
+        log.info("Pomodoro jobs rescheduled: taskId={} count={}", taskId, taskJobs.size());
 
     }
     public void deleteTaskJobs(String taskId) {
         List<ScheduledJob> taskJobs = scheduledJobRepository.findAllByAssociatedTaskId(taskId);
         scheduledJobRepository.deleteAll(taskJobs);
-        log.info("Deleted all jobs for task with ID [{}]", taskId);
+        log.info("Pomodoro jobs deleted: taskId={} count={}", taskId, taskJobs.size());
     }
 
         public void shiftTaskJobDueDates(String taskId, int shift) {

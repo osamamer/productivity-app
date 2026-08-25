@@ -11,11 +11,12 @@ interface TaskProviderProps {
 
 export function TaskProvider({ children }: TaskProviderProps) {
     const taskManager = useTaskManager();
+    const { refreshTaskBuckets } = taskManager;
 
     // Fetch once when app loads
     useEffect(() => {
-        taskManager.refreshTaskBuckets();
-    }, []);
+        refreshTaskBuckets();
+    }, [refreshTaskBuckets]);
 
     return (
         <TaskContext.Provider value={taskManager}>

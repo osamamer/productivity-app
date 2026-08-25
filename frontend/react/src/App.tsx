@@ -10,7 +10,7 @@ import {BrowserRouter as Router, Routes, Route, Navigate} from "react-router-dom
 import {HomePage} from "./pages/HomePage.jsx";
 import {CalendarPage} from "./pages/CalendarPage.jsx";
 import {TaskPage} from "./pages/TaskPage.jsx";
-import {MeditationPage} from "./pages/MeditationPage.jsx";
+import {MeditationPage} from "./pages/MeditationPage.tsx";
 import {LoginPage} from "./pages/LoginPage";
 import {ProtectedRoute} from "./components/ProtectedRoute";
 

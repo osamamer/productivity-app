@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Accordion, AccordionDetails, AccordionSummary, List, SxProps, Theme, Typography } from '@mui/material';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 import { Task } from '../types/Task';
@@ -31,8 +31,12 @@ export function TaskAccordion({
                                   summarySx,
                                   detailsSx,
                                   listSx,
-                                  renderTasks,
-                              }: TaskAccordionProps) {
+    renderTasks,
+}: TaskAccordionProps) {
+    const visibleTasks = useMemo(
+        () => expanded === false ? [] : (tasks ?? []).filter((task) => !task.parentId),
+        [expanded, tasks]
+    );
     if (!tasks || tasks.length === 0) return null;
     const accordionProps = expanded !== undefined
         ? { expanded: expanded, onChange: onChange }
@@ -70,22 +74,26 @@ export function TaskAccordion({
             >
                 <Typography variant="h6">{title}</Typography>
             </AccordionSummary>
-            <AccordionDetails sx={{ pt: 0, background: 'transparent', ...detailsSx }}>
-                {renderTasks ? (
-                    renderTasks(tasks.filter((task) => !task.parentId))
-                ) : (
-                    <List sx={{ py: 0, ...listSx }}>
-                        {tasks.filter((task) => !task.parentId).map((task: Task) => (
-                            <TaskDiv
-                                key={task.taskId}
-                                task={task}
-                                toggleTaskCompletion={toggleTaskCompletion}
-                                onClick={onTaskClick}
-                            />
-                        ))}
-                    </List>
-                )}
-            </AccordionDetails>
+            {/* Controlled accordions can skip mounting hidden rows. This matters on the
+                task page because collapsed sections may contain hundreds of rows. */}
+            {expanded !== false && (
+                <AccordionDetails sx={{ pt: 0, background: 'transparent', ...detailsSx }}>
+                    {renderTasks ? (
+                        renderTasks(visibleTasks)
+                    ) : (
+                        <List sx={{ py: 0, ...listSx }}>
+                            {visibleTasks.map((task: Task) => (
+                                <TaskDiv
+                                    key={task.taskId}
+                                    task={task}
+                                    toggleTaskCompletion={toggleTaskCompletion}
+                                    onClick={onTaskClick}
+                                />
+                            ))}
+                        </List>
+                    )}
+                </AccordionDetails>
+            )}
         </Accordion>
     );
 }

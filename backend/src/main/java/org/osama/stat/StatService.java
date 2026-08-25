@@ -5,11 +5,14 @@ import org.osama.exceptions.ResourceNotFoundException;
 import org.osama.user.User;
 import org.osama.user.UserRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.OptionalDouble;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -76,12 +79,42 @@ public class StatService {
         definition.setMinValue(minValue);
         definition.setMaxValue(maxValue);
         definition.setSystemKey(systemKey);
+        definition.setDisplayOrder(nextDisplayOrder(user.getId()));
         definition.setUser(user);
-        return definitionRepository.save(definition);
+        StatDefinition savedDefinition = definitionRepository.save(definition);
+        log.info("Stat definition created: userId={} statDefinitionId={} name={} type={} systemKey={}",
+                user.getId(), savedDefinition.getId(), savedDefinition.getName(),
+                savedDefinition.getType(), savedDefinition.getSystemKey());
+        return savedDefinition;
     }
 
     public List<StatDefinition> getDefinitions(String userId) {
-        return definitionRepository.findAllByUserId(userId);
+        return definitionRepository.findAllByUserIdOrderByDisplayOrderAsc(userId);
+    }
+
+    @Transactional
+    public List<StatDefinition> reorderDefinitions(List<String> definitionIds, String userId) {
+        List<StatDefinition> definitions = definitionRepository.findAllByUserId(userId);
+        Set<String> existingIds = definitions.stream()
+                .map(StatDefinition::getId)
+                .collect(Collectors.toSet());
+
+        if (definitionIds == null || definitionIds.size() != definitions.size()
+                || definitionIds.stream().anyMatch(id -> id == null)
+                || definitionIds.stream().distinct().count() != definitionIds.size()
+                || !existingIds.equals(Set.copyOf(definitionIds))) {
+            throw new IllegalArgumentException("The reorder list must contain every stat exactly once.");
+        }
+
+        Map<String, StatDefinition> definitionsById = definitions.stream()
+                .collect(Collectors.toMap(StatDefinition::getId, definition -> definition));
+        for (int index = 0; index < definitionIds.size(); index++) {
+            definitionsById.get(definitionIds.get(index)).setDisplayOrder(index);
+        }
+        definitionRepository.saveAll(definitions);
+        log.info("Stat definitions reordered: userId={} count={} orderedDefinitionIds={}",
+                userId, definitions.size(), definitionIds);
+        return getDefinitions(userId);
     }
 
     public void deleteDefinition(String definitionId, String userId) {
@@ -91,6 +124,8 @@ public class StatService {
             throw new IllegalArgumentException("Cannot delete a system stat.");
         }
         definitionRepository.delete(statDefinition);
+        log.info("Stat definition deleted: userId={} statDefinitionId={} name={}",
+                userId, definitionId, statDefinition.getName());
     }
 
     public StatEntry recordEntry(String statDefinitionId, LocalDate date, double value, String userId) {
@@ -102,13 +137,17 @@ public class StatService {
         User user = userRepository.findUserById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
 
-        StatEntry statEntry = entryRepository.findByStatDefinitionIdAndUserIdAndDate(statDefinitionId,
+        Optional<StatEntry> existingEntry = entryRepository.findByStatDefinitionIdAndUserIdAndDate(statDefinitionId,
                 userId,
-                date)
-                .orElse(createEntry(definition, date, user));
+                date);
+        Double previousValue = existingEntry.map(StatEntry::getValue).orElse(null);
+        StatEntry statEntry = existingEntry.orElseGet(() -> createEntry(definition, date, user));
         statEntry.setValue(value);
-        entryRepository.save(statEntry);
-        return statEntry;
+        StatEntry savedEntry = entryRepository.save(statEntry);
+        log.info("Stat value {}: userId={} statDefinitionId={} statName={} date={} value={} previousValue={}",
+                previousValue == null ? "recorded" : "updated",
+                userId, definition.getId(), definition.getName(), date, value, previousValue);
+        return savedEntry;
     }
 
     public List<StatEntry> getEntries(String statDefinitionId, LocalDate from, LocalDate to, String userId) {
@@ -189,6 +228,15 @@ public class StatService {
                 .date(date)
                 .user(user)
                 .build();
+    }
+
+    private int nextDisplayOrder(String userId) {
+        return definitionRepository.findAllByUserId(userId).stream()
+                .map(StatDefinition::getDisplayOrder)
+                .filter(order -> order != null)
+                .max(Integer::compareTo)
+                .map(order -> order + 1)
+                .orElse(0);
     }
 
     private void validateValue(StatDefinition statDefinition, Double value) {

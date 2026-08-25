@@ -8,6 +8,7 @@ export interface StatDefinition {
     minValue?: number;
     maxValue?: number;
     systemKey?: string;
+    displayOrder: number;
     userId: string;
 }
 

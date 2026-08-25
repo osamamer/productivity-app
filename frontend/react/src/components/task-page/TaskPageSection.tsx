@@ -26,13 +26,55 @@ type TaskPageSectionProps = {
     onAutoExpand: (taskId: string, panel: 'pomodoro') => void;
 };
 
+type TaskPageRowProps = {
+    task: Task;
+    expandedPanel: 'pomodoro' | 'details' | null;
+    onToggle: (taskId: string) => void;
+    onUpdate: (taskId: string, updates: Partial<Task>) => Promise<void>;
+    onSelect: (task: Task) => void;
+    onTogglePanel: (taskId: string, panel: 'pomodoro' | 'details') => void;
+    onAutoExpand: (taskId: string, panel: 'pomodoro') => void;
+};
+
+const TaskPageRow = React.memo(function TaskPageRow({
+    task,
+    expandedPanel,
+    onToggle,
+    onUpdate,
+    onSelect,
+    onTogglePanel,
+    onAutoExpand,
+}: TaskPageRowProps) {
+    const handleTogglePanel = React.useCallback((panel: 'pomodoro' | 'details') => {
+        onTogglePanel(task.taskId, panel);
+    }, [onTogglePanel, task.taskId]);
+
+    const handleAutoExpand = React.useCallback((panel: 'pomodoro') => {
+        onAutoExpand(task.taskId, panel);
+    }, [onAutoExpand, task.taskId]);
+
+    return (
+        <FlatTaskRow
+            task={task}
+            onToggle={onToggle}
+            onUpdate={onUpdate}
+            expandedPanel={expandedPanel}
+            onTogglePanel={handleTogglePanel}
+            onAutoExpand={handleAutoExpand}
+            onSelect={onSelect}
+            showScheduledDate
+            deferPomodoroHydration
+        />
+    );
+});
+
 const sectionIcons = {
     today: <TodayIcon color="primary" />,
     comingUp: <UpcomingIcon color="secondary" />,
     leftovers: <HistoryIcon />,
 };
 
-export function TaskPageSection({
+export const TaskPageSection = React.memo(function TaskPageSection({
     section,
     title,
     tasks,
@@ -99,20 +141,18 @@ export function TaskPageSection({
                 renderTasks={(visibleTasks) => (
                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, }}>
                         {visibleTasks.map(task => (
-                            <FlatTaskRow
+                            <TaskPageRow
                                 key={task.taskId}
                                 task={task}
                                 onToggle={toggleTaskCompletion}
                                 onUpdate={updateTask}
                                 expandedPanel={activeExpansion?.taskId === task.taskId ? activeExpansion.panel : null}
-                            onTogglePanel={(panel) => onTogglePanel(task.taskId, panel)}
-                            onAutoExpand={(panel) => onAutoExpand(task.taskId, panel)}
-                            onSelect={onTaskClick}
-                            showScheduledDate
-                            deferPomodoroHydration
-                        />
-                    ))}
-                </Box>
+                                onTogglePanel={onTogglePanel}
+                                onAutoExpand={onAutoExpand}
+                                onSelect={onTaskClick}
+                            />
+                        ))}
+                    </Box>
                 )}
             />
 
@@ -131,4 +171,4 @@ export function TaskPageSection({
             )}
         </Box>
     );
-}
+});

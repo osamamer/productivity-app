@@ -148,7 +148,7 @@ export function DateStatCheckIn({ date, definitions, onSaved }: Props) {
                                         marks
                                         valueLabelDisplay="auto"
                                         onChange={(_, v) => setValue(def.id, v as number)}
-                                        color={touched.has(def.id) ? 'primary' : 'secondary'}
+                                        color="primary"
                                     />
                                     <Stack direction="row" justifyContent="space-between">
                                         <Typography variant="caption" color="text.secondary">{def.minValue}</Typography>

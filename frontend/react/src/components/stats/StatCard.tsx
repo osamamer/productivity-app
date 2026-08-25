@@ -26,9 +26,10 @@ interface Props {
     definition: StatDefinition;
     onDelete: (id: string) => void;
     refreshKey: number;
+    onEntryChanged?: () => void;
 }
 
-export function StatCard({ definition, onDelete, refreshKey }: Props) {
+export function StatCard({ definition, onDelete, refreshKey, onEntryChanged }: Props) {
     const [dateRange, setDateRange] = useState(30);
 
     return (
@@ -45,7 +46,7 @@ export function StatCard({ definition, onDelete, refreshKey }: Props) {
                         </IconButton>
                     </Tooltip>
                 ) : null}
-                sx={{ pb: 0 }}
+                sx={{ pb: 0, minHeight: 72 }}
             />
             <CardContent>
                 <StatSummaryBar definition={definition} refreshKey={refreshKey} />
@@ -64,9 +65,18 @@ export function StatCard({ definition, onDelete, refreshKey }: Props) {
                     ))}
                 </Stack>
                 {definition.type === 'BOOLEAN' ? (
-                    <BooleanCalendarView definition={definition} dateRange={dateRange} refreshKey={refreshKey} />
+                    <BooleanCalendarView
+                        definition={definition}
+                        dateRange={dateRange}
+                        refreshKey={refreshKey}
+                        onEntryChanged={onEntryChanged}
+                    />
                 ) : (
-                    <StatLineChart definition={definition} dateRange={dateRange} refreshKey={refreshKey} />
+                    <StatLineChart
+                        definition={definition}
+                        dateRange={dateRange}
+                        refreshKey={refreshKey}
+                    />
                 )}
             </CardContent>
         </Card>
