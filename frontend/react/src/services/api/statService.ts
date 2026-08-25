@@ -181,7 +181,8 @@ export const statService = {
             headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getAuthHeaders() },
         });
         if (!response.ok) throw new Error('Failed to record stat entry');
-        const entry = await response.json() as StatEntry;
+        const responseEntry = await response.json() as StatEntry;
+        const entry = { ...responseEntry, statDefinitionId: req.statDefinitionId };
         cacheRecordedEntry(entry);
         summaryCache.delete(req.statDefinitionId);
         return entry;

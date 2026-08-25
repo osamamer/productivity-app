@@ -1,6 +1,8 @@
 #!/bin/bash
 set -e
 
+compose=(docker compose --env-file deployment/.env -f deployment/docker-compose.yml -p productivity-app)
+
 kill_port() {
   local port=$1
   local pids=$(lsof -ti:$port 2>/dev/null)
@@ -12,7 +14,7 @@ kill_port() {
 }
 
 echo "🛑 Stopping any running Docker containers..."
-docker compose -f deployment/docker-compose.yml -p productivity-app down 2>/dev/null || true
+"${compose[@]}" down 2>/dev/null || true
 
 echo "⏳ Waiting for containers to fully stop..."
 sleep 3
@@ -32,7 +34,7 @@ sudo brew services stop postgresql 2>/dev/null || true  # macOS
 sleep 2
 
 echo "🐳 Starting Docker containers..."
-docker compose -f deployment/docker-compose.yml -p productivity-app up -d
+"${compose[@]}" up -d
 
 echo "⏳ Waiting for containers to be healthy..."
 sleep 5
@@ -63,6 +65,13 @@ echo "   Frontend PID: $FRONTEND_PID"
 echo ""
 echo "Press Ctrl+C to stop everything"
 
-trap "echo '🛑 Shutting down...'; kill $BACKEND_PID $FRONTEND_PID 2>/dev/null; docker compose -f deployment/docker-compose.yml -p productivity-app down; exit 0" SIGINT
+shutdown() {
+  echo "🛑 Shutting down..."
+  kill "$BACKEND_PID" "$FRONTEND_PID" 2>/dev/null || true
+  "${compose[@]}" down
+  exit 0
+}
+
+trap shutdown SIGINT
 
 wait

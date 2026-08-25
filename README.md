@@ -15,6 +15,26 @@ Rerun the app after making changes to the backend:
 ./rerun-after-changes.sh
 ```
 
+## Local databases
+
+The application and Keycloak use separate databases in the same PostgreSQL container. A fresh PostgreSQL volume creates the database named by `KEYCLOAK_DB` automatically.
+
+For an existing installation that still has both sets of tables in `POSTGRES_DB`, run the one-time migration while the app is stopped:
+
+```sh
+./deployment/migrate-keycloak-database.sh
+```
+
+The script creates a full backup before copying Keycloak's tables and refuses to overwrite a non-empty target database. Keep the backup and `postgres_data` volume until application data and Keycloak login have been verified.
+
+After verification, archive the old copied Keycloak tables outside the application's `public` schema so IntelliJ shows only application tables there:
+
+```sh
+./deployment/archive-legacy-keycloak-tables.sh --confirm
+```
+
+This cleanup requires a migration backup and a non-empty realm in the new Keycloak database. It moves tables to the reversible `legacy_keycloak` schema; it does not delete data, remove the PostgreSQL volume, or remove the backup.
+
 ## Dev Coach
 
 `dev-coach` turns a development goal into repository-grounded lessons backed by Codex. It explains the current concept, identifies the code target, reveals progressive hints, and assesses the current working tree without editing it.
