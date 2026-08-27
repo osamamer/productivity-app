@@ -29,6 +29,7 @@ import {
     MeditationSoundId,
     meditationSoundscape,
 } from './meditationSounds.ts';
+import { MeditationNavigationGuard } from './MeditationNavigationGuard.tsx';
 
 const DURATION_OPTIONS = [5, 10, 15, 20, 30];
 const MIN_MOOD = 1;
@@ -398,6 +399,16 @@ export function MeditationTimer() {
                     </Button>
                 </DialogActions>
             </Dialog>
+
+            <MeditationNavigationGuard
+                session={session}
+                onSessionEnded={() => {
+                    setSession(null);
+                    meditationSoundscape.stop();
+                    soundStartedByUserRef.current = false;
+                }}
+                onError={message => setError(message || null)}
+            />
         </Box>
     );
 }

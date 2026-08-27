@@ -4,19 +4,21 @@ import { ReactNode } from "react";
 
 interface PageWrapperProps {
     children: ReactNode;
+    hideNavigation?: boolean;
+    flush?: boolean;
 }
 
-export function PageWrapper({ children }: PageWrapperProps) {
+export function PageWrapper({ children, hideNavigation = false, flush = false }: PageWrapperProps) {
     return (
         <Box sx={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
-            <SideNav />
+            {!hideNavigation && <SideNav />}
             <Box sx={{
                 flexGrow: 1,
                 display: 'flex',
                 flexDirection: 'column',
                 height: '100vh',
                 overflowY: 'auto',
-                padding: 2,
+                padding: flush ? 0 : 2,
             }}>
                 {children}
             </Box>

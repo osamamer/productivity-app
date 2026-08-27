@@ -50,3 +50,11 @@ databaseChangeLog:
   # User-customized statistics order
   - include:
       file: db/changelog/changes/017-add-stat-display-order.yaml
+
+  # User-owned notes
+  - include:
+      file: db/changelog/changes/018-create-note.yaml
+
+  # Store note HTML directly in PostgreSQL TEXT instead of large objects
+  - include:
+      file: db/changelog/changes/019-inline-note-content.yaml

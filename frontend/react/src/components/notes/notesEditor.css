@@ -1,0 +1,101 @@
+.notes-rich-editor .ql-toolbar.ql-snow {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    width: fit-content;
+    max-width: 100%;
+    margin-bottom: 20px;
+    padding: 6px 8px;
+    border: 1px solid rgba(127, 127, 127, 0.2);
+    border-radius: 10px;
+    backdrop-filter: blur(10px);
+    color: var(--notes-toolbar-foreground);
+}
+
+.notes-rich-editor .ql-container.ql-snow {
+    border: 0;
+    font-family: Raleway, Arial, sans-serif;
+}
+
+.notes-rich-editor .ql-editor {
+    min-height: 440px;
+    padding: 0;
+    color: inherit;
+    font-size: 1.05rem;
+    line-height: 1.75;
+    text-align: left;
+}
+
+.notes-rich-editor .ql-editor.ql-blank::before {
+    left: 0;
+    color: rgba(127, 127, 127, 0.7);
+    font-style: normal;
+}
+
+.notes-rich-editor .ql-editor h1,
+.notes-rich-editor .ql-editor h2,
+.notes-rich-editor .ql-editor h3 {
+    margin-top: 1.3em;
+    margin-bottom: 0.45em;
+    letter-spacing: -0.025em;
+}
+
+.notes-rich-editor .ql-editor blockquote {
+    margin: 1.25em 0;
+    padding: 0.25em 0 0.25em 1.25em;
+    border-left: 3px solid currentColor;
+    opacity: 0.78;
+}
+
+.notes-rich-editor .ql-editor pre.ql-syntax {
+    border-radius: 8px;
+    padding: 14px 16px;
+}
+
+.notes-rich-editor .ql-toolbar button,
+.notes-rich-editor .ql-toolbar .ql-picker-label {
+    border-radius: 5px;
+    color: var(--notes-toolbar-foreground);
+    transition: background-color 120ms ease, color 120ms ease;
+}
+
+.notes-rich-editor .ql-toolbar button:hover,
+.notes-rich-editor .ql-toolbar button:focus-visible,
+.notes-rich-editor .ql-toolbar .ql-picker-label:hover {
+    background-color: var(--notes-toolbar-hover);
+    color: var(--notes-toolbar-foreground-strong);
+}
+
+.notes-rich-editor .ql-toolbar button.ql-active {
+    background-color: var(--notes-toolbar-active);
+    color: var(--notes-toolbar-foreground-strong);
+}
+
+.notes-rich-editor .ql-toolbar .ql-picker,
+.notes-rich-editor .ql-toolbar .ql-picker-item {
+    color: var(--notes-toolbar-foreground-strong);
+}
+
+.notes-rich-editor .ql-toolbar .ql-picker-options {
+    background-color: var(--notes-toolbar-surface);
+    border-color: var(--notes-toolbar-border) !important;
+    border-radius: 7px;
+}
+
+.notes-rich-editor .ql-toolbar .ql-picker-item:hover,
+.notes-rich-editor .ql-toolbar .ql-picker-item.ql-selected {
+    background-color: var(--notes-toolbar-hover);
+}
+
+.notes-rich-editor .ql-toolbar .ql-stroke,
+.notes-rich-editor .ql-toolbar .ql-stroke-miter {
+    stroke: currentColor !important;
+}
+
+.notes-rich-editor .ql-toolbar .ql-fill,
+.notes-rich-editor .ql-toolbar .ql-stroke.ql-fill {
+    fill: currentColor !important;
+}

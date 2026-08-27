@@ -1,0 +1,28 @@
+databaseChangeLog:
+  - changeSet:
+      id: 019-inline-note-content
+      author: osama
+      dbms: postgresql
+      comment: Move note HTML from PostgreSQL large objects into the note content TEXT column
+      changes:
+        - sql:
+            splitStatements: false
+            stripComments: false
+            sql: |
+              DO $migration$
+              DECLARE
+                  large_object_id oid;
+              BEGIN
+                  FOR large_object_id IN
+                      SELECT DISTINCT metadata.oid
+                      FROM pg_largeobject_metadata metadata
+                      JOIN note ON note.content = metadata.oid::text
+                  LOOP
+                      UPDATE note
+                      SET content = convert_from(lo_get(large_object_id), 'UTF8')
+                      WHERE content = large_object_id::text;
+
+                      PERFORM lo_unlink(large_object_id);
+                  END LOOP;
+              END
+              $migration$;

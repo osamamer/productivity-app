@@ -51,6 +51,16 @@ export const meditationService = {
         if (!response.ok) throw new Error('Failed to finish meditation session');
         return response.json();
     },
+
+    endSessionOnUnload(sessionId: string): void {
+        void fetch(`${MEDITATION_URL}/${sessionId}/end`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            keepalive: true,
+        }).catch(error => {
+            console.error('Failed to finish meditation session while leaving the app', error);
+        });
+    },
 };
 
 async function updateSession(path: string, errorMessage: string): Promise<MeditationSession> {

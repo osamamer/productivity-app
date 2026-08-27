@@ -58,7 +58,7 @@ WebSocket (STOMP) is configured in `WebSocketConfig.java`. The frontend connects
 - **Production**: PostgreSQL on port 5432 (via Docker)
 - **Tests**: H2 in-memory; Liquibase disabled; `spring.jpa.hibernate.ddl-auto=create-drop`
 - **Migrations**: Liquibase YAML files in `backend/src/main/resources/db/changelog/changes/`; master file is `db.changelog-master.yaml`
-- Dev profile uses `spring.liquibase.drop-first=true` (schema is recreated on every start)
+- Dev applies Liquibase migrations incrementally with `spring.liquibase.drop-first=false`; PostgreSQL data persists in the named `postgres_data` Docker volume across normal app restarts
 
 ### Auth / User Identity
 
@@ -87,6 +87,7 @@ All user-scoped entities (Task, DayEntity, MeditationSession, TaskSession, Pomod
 - **Forms**: Formik + Yup
 - **Calendar**: FullCalendar
 - **Routing**: React Router v6 (`App.tsx`)
+- **Notes**: `pages/NotesPage.tsx` and `components/notes/`; the frontend calls the planned authenticated API through `services/api/notesService.ts`, with its backend contract tracked in `backend/NOTES_BACKEND_TODO.md`
 
 ### Services / Ports
 
@@ -113,6 +114,8 @@ Docker services are defined in `deployment/docker-compose.yml`. Environment vari
 **Never hardcode credentials in `.properties` files.** All secrets (DB user/password, etc.) live in `deployment/.env` and are referenced via `${ENV_VAR}` placeholders in `application-dev.properties`. `run-app.sh` sources `.env` before starting the backend so Spring Boot can resolve them.
 
 **Always activate the `dev` profile when running locally.** Without `-Dspring-boot.run.profiles=dev`, Spring Boot uses the default profile which has no datasource config — it silently falls back to an in-memory H2 database, losing all data on restart, and no `issuer-uri` is set so the JwtDecoder bean cannot be created. `run-app.sh` passes this flag automatically; when running manually always include it.
+
+**Never enable Liquibase `drop-first` in the dev profile.** Local development data must survive restarts and schema changes must be delivered as forward Liquibase changesets. Docker Compose uses the named `postgres_data` volume; normal `docker compose down` is safe, but `docker compose down -v` intentionally deletes that data.
 
 **Spring Security `requestMatchers` with multiple servlets.** The H2 dependency is on the runtime classpath (needed for tests), which causes Spring Boot to register an H2 console servlet alongside the `DispatcherServlet`. This makes `requestMatchers(String)` throw an ambiguity error at startup. Always use `AntPathRequestMatcher` explicitly in `SecurityConfig`:
 ```java
@@ -144,6 +147,10 @@ Docker services are defined in `deployment/docker-compose.yml`. Environment vari
 **Don't add what wasn't asked for.** If the task is "write tests", don't modify production code without asking. Don't add features, abstractions, or considerations that weren't requested. When in doubt, ask first.
 
 **Add new files to git — always, unless there's a clear reason not to.** When creating a new file, stage it with `git add`. Only skip this if the file contains secrets, is generated/build output, or is otherwise intentionally untracked.
+
+**Explain completed work.** After implementing a feature or non-trivial change, show the user the important parts of the code and explain the design, including anything interesting, non-obvious, or worth learning from. Keep the handoff focused on the decisions that help the user understand and maintain the change.
+
+**Frontend-first backend handoffs.** When asked to finish a frontend and leave backend TODOs, build the frontend against the authenticated API as though that backend already exists. Also create compile-ready backend scaffolding—entities, DTOs, repositories, controllers, service signatures, migrations, and test structure—so the remaining TODOs cover meaningful behavior rather than boilerplate. Never substitute browser persistence unless the user explicitly requests an offline or local-first mode.
 
 ## Mistakes
 
