@@ -6,6 +6,7 @@ import {
 import { format } from 'date-fns';
 import { StatDefinition } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
+import { celebrateStatLogged } from '../../services/statCelebration';
 
 interface Props {
     definitions: StatDefinition[];
@@ -67,6 +68,7 @@ export function TodayCheckIn({ definitions, onSaved }: Props) {
                     statService.recordEntry({ statDefinitionId: d.id, date: today, value: values[d.id]! })
                 )
             );
+            celebrateStatLogged();
             setSuccess(true);
             onSaved();
         } catch (e) {

@@ -44,9 +44,11 @@ Package root: `org.osama`
 
 Feature packages follow a consistent pattern — each has an entity, repository, service, and controller:
 - `task/` — Task CRUD with filtering via JPA Specifications (`TaskSpecifications.java`)
+- `taskgroup/` — User-owned groups that relate multiple tasks independently of subtasks
+- `mentalthread/` — User-owned unresolved concerns with acting/ruminating/planned/pending attention states, subjective load history, closure outcomes, and daily capacity check-ins
 - `day/` — Daily rating/plan/summary (`DayEntity`, one per user per date)
 - `pomodoro/` — Pomodoro timer settings and state
-- `stat/` — User-defined tracking plus built-in mental-state stats provisioned from `SystemStatCatalog`; built-ins use a stable `systemKey` and cannot be deleted
+- `stat/` — User-defined tracking plus built-in mental-state and meditation activity stats provisioned from `SystemStatCatalog`; built-ins use a stable `systemKey` and cannot be deleted
 - `session/task/` and `session/meditation/` — Session tracking with start/pause/unpause/end lifecycle, published as Spring events via `ApplicationEventPublisher`
 - `scheduling/` — Automated job scheduling for pomodoro cycles (`TimedExecutorService`, `ScheduledJob`)
 - `user/` — User management backed by Keycloak (see Auth below)
@@ -57,7 +59,7 @@ WebSocket (STOMP) is configured in `WebSocketConfig.java`. The frontend connects
 
 - **Production**: PostgreSQL on port 5432 (via Docker)
 - **Tests**: H2 in-memory; Liquibase disabled; `spring.jpa.hibernate.ddl-auto=create-drop`
-- **Migrations**: Liquibase YAML files in `backend/src/main/resources/db/changelog/changes/`; master file is `db.changelog-master.yaml`
+- **Migrations**: Liquibase YAML files in `backend/src/main/resources/db/changelog/changes/`; master file is `db.changelog-master.yaml`. Mental threads, load history, and daily capacity check-ins are persisted by the latest migration.
 - Dev applies Liquibase migrations incrementally with `spring.liquibase.drop-first=false`; PostgreSQL data persists in the named `postgres_data` Docker volume across normal app restarts
 
 ### Auth / User Identity
@@ -77,17 +79,18 @@ Keycloak (port 7070) is the identity provider. The backend validates JWTs as an 
 2. Create client `productivity-app-frontend`: type = Public, valid redirect URIs = `http://localhost:5173/*`, web origins = `http://localhost:5173`.
 3. In that client's settings, ensure the token includes `email`, `given_name`, `family_name`, `preferred_username` claims (add mappers under Client scopes if needed). The backend falls back gracefully if claims are absent, but user display will be degraded.
 
-All user-scoped entities (Task, DayEntity, MeditationSession, TaskSession, Pomodoro) have a mandatory `user` foreign key. Users are auto-provisioned on first API call — no manual user creation is needed.
+All user-scoped entities (Task, DayEntity, MeditationSession, TaskSession, Pomodoro, MentalThread, MentalCapacityCheckIn) have a mandatory `user` foreign key. Users are auto-provisioned on first API call — no manual user creation is needed.
 
 ### Frontend (React 18, TypeScript, Vite)
 
 - **State**: React Context — `UserContext` (auth), `TaskContext` (tasks), `ThemeContext`
-- **API layer**: `frontend/react/src/services/api/` — `taskService.ts`, `dayService.ts`, `userService.ts`; all wrap Axios with `getAuthHeaders()`
+- **API layer**: `frontend/react/src/services/api/` — feature services such as `taskService.ts`, `dayService.ts`, and `mentalThreadService.ts`; authenticated requests use `getAuthHeaders()`
 - **UI**: Material-UI (MUI) v7
 - **Forms**: Formik + Yup
 - **Calendar**: FullCalendar
 - **Routing**: React Router v6 (`App.tsx`)
 - **Notes**: `pages/NotesPage.tsx` and `components/notes/`; the frontend calls the planned authenticated API through `services/api/notesService.ts`, with its backend contract tracked in `backend/NOTES_BACKEND_TODO.md`
+- **Mental threads**: `pages/MentalThreadsPage.tsx` and `components/mental-threads/`; the dashboard keeps total subjective load separate from the user's daily capacity check-in
 
 ### Services / Ports
 
@@ -143,6 +146,8 @@ Docker services are defined in `deployment/docker-compose.yml`. Environment vari
 **Always log caught exceptions with the exception object.** Use `logger.error("context: {}", e.getMessage(), e)` (Java) or equivalent so the full stack trace appears in the log. Never swallow exceptions silently or log only a generic message.
 
 **Backend event logging.** Log successful user-visible state changes at `INFO` with the user and resource identifiers plus relevant structured values. Keep read-only queries quiet, use `WARN` for rejected input or missing resources, and never log passwords, access tokens, or free-form private text unless the feature explicitly requires it (stat values are intentional audit data).
+
+**Prefer direct manipulation over obvious instructional UI.** Do not add permanent helper text, drag handles, or mode-launch buttons for interactions users can perform directly on the content. Make the content itself draggable/selectable, provide immediate visual feedback, and reveal contextual actions only after they become relevant. Keep grouped items inline with the list they organize, and let focus modes fully remove distractions until the user explicitly reveals them.
 
 **Don't add what wasn't asked for.** If the task is "write tests", don't modify production code without asking. Don't add features, abstractions, or considerations that weren't requested. When in doubt, ask first.
 

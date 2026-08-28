@@ -58,3 +58,11 @@ databaseChangeLog:
   # Store note HTML directly in PostgreSQL TEXT instead of large objects
   - include:
       file: db/changelog/changes/019-inline-note-content.yaml
+
+  # User-defined task order and independent task groups
+  - include:
+      file: db/changelog/changes/020-add-task-order-and-groups.yaml
+
+  # Open concerns, their subjective load history, and daily mental capacity
+  - include:
+      file: db/changelog/changes/021-create-mental-thread.yaml

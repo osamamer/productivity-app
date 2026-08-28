@@ -12,11 +12,13 @@ import org.osama.user.UserRepository;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -37,9 +39,11 @@ public class TaskService {
 
         // Add sorting
         Sort sort = Sort.by(
+                Sort.Order.asc("displayOrder"),
                 Sort.Order.asc("completed"),
                 Sort.Order.desc("importance"),
-                Sort.Order.desc("creationDateTime")
+                Sort.Order.desc("creationDateTime"),
+                Sort.Order.asc("taskId")
         );
 
         return taskRepository.findAll(spec, sort);
@@ -82,12 +86,14 @@ public class TaskService {
         User user = userRepository.findUserById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
 
-        // Validate parent exists if this is a subtask
-        if (request.getParentId() != null && !request.getParentId().isBlank()) {
-            taskRepository.findTaskByTaskId(request.getParentId())
-                    .orElseThrow(() -> new IllegalArgumentException(
-                            "Parent task not found: " + request.getParentId()
-                    ));
+        String requestedParentId = request.getParentId();
+        String parentId = requestedParentId != null && requestedParentId.isBlank()
+                ? null
+                : requestedParentId;
+        if (parentId != null) {
+            String validatedParentId = parentId;
+            taskRepository.findTaskByTaskIdAndUserId(validatedParentId, userId)
+                    .orElseThrow(() -> new IllegalArgumentException("Parent task not found: " + validatedParentId));
         }
 
         Task task = new Task();
@@ -111,9 +117,10 @@ public class TaskService {
             task.setScheduledPerformDateTime(LocalDateTime.now());
         }
 
-        task.setParentId(request.getParentId()); // null is fine for main tasks
+        task.setParentId(parentId); // null is fine for main tasks
         task.setTag(request.getTag()); // null is fine
         task.setImportance(request.getImportance()); // primitive int defaults to 0
+        task.setDisplayOrder(nextDisplayOrder(userId, parentId));
         task.setCompleted(false);
         task.setCreationDateTime(LocalDateTime.now());
         task.setUser(user);
@@ -206,7 +213,56 @@ public class TaskService {
                 .userId(userId)
                 .build();
 
-        return findTasks(query).stream().findFirst(); // Already sorted by importance
+        Sort prioritySort = Sort.by(
+                Sort.Order.asc("completed"),
+                Sort.Order.desc("importance"),
+                Sort.Order.desc("creationDateTime"),
+                Sort.Order.asc("taskId")
+        );
+        return taskRepository.findAll(TaskSpecifications.matchesQuery(query), prioritySort)
+                .stream()
+                .findFirst();
+    }
+
+    @Transactional
+    public List<Task> reorderMainTasks(List<String> taskIds, String userId) {
+        if (taskIds == null || taskIds.stream().anyMatch(Objects::isNull)
+                || taskIds.size() != taskIds.stream().distinct().count()) {
+            throw new IllegalArgumentException("The task reorder list must contain unique task IDs.");
+        }
+
+        List<Task> allMainTasks = taskRepository.findAllByUserIdAndParentIdIsNullOrderByDisplayOrderAsc(userId);
+        Map<String, Task> tasksById = allMainTasks.stream()
+                .collect(Collectors.toMap(Task::getTaskId, task -> task));
+
+        if (taskIds.stream().anyMatch(taskId -> !tasksById.containsKey(taskId))) {
+            throw new IllegalArgumentException("The reorder list contains a task that does not belong to the user.");
+        }
+
+        List<Task> selectedTasks = taskIds.stream().map(tasksById::get).toList();
+        List<Integer> selectedPositions = new ArrayList<>();
+        for (int index = 0; index < allMainTasks.size(); index++) {
+            if (taskIds.contains(allMainTasks.get(index).getTaskId())) {
+                selectedPositions.add(index);
+            }
+        }
+        for (int index = 0; index < selectedPositions.size(); index++) {
+            allMainTasks.set(selectedPositions.get(index), selectedTasks.get(index));
+        }
+        for (int index = 0; index < allMainTasks.size(); index++) {
+            allMainTasks.get(index).setDisplayOrder(index);
+        }
+
+        taskRepository.saveAll(allMainTasks);
+        log.info("Tasks reordered: userId={} count={} orderedTaskIds={}", userId, taskIds.size(), taskIds);
+        return allMainTasks;
+    }
+
+    private int nextDisplayOrder(String userId, String parentId) {
+        Optional<Task> lastTask = parentId == null
+                ? taskRepository.findTopByUserIdAndParentIdIsNullOrderByDisplayOrderDesc(userId)
+                : taskRepository.findTopByUserIdAndParentIdOrderByDisplayOrderDesc(userId, parentId);
+        return lastTask.map(task -> task.getDisplayOrder() + 1).orElse(0);
     }
 
 }

@@ -5,6 +5,7 @@ import {
 } from '@mui/material';
 import { StatDefinition } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
+import { celebrateStatLogged } from '../../services/statCelebration';
 
 interface Props {
     date: string;
@@ -68,6 +69,7 @@ export function DateStatCheckIn({ date, definitions, onSaved }: Props) {
                     statService.recordEntry({ statDefinitionId: d.id, date, value: values[d.id]! })
                 )
             );
+            celebrateStatLogged();
             setSuccess(true);
             onSaved();
         } catch (e) {

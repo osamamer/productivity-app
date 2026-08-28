@@ -1,0 +1,212 @@
+databaseChangeLog:
+  - changeSet:
+      id: 021-create-mental-thread
+      author: osama
+      comment: Create user-owned mental threads with subjective load history
+      changes:
+        - createTable:
+            tableName: mental_thread
+            columns:
+              - column:
+                  name: thread_id
+                  type: varchar(255)
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: title
+                  type: varchar(160)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: text
+              - column:
+                  name: status
+                  type: varchar(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: attention_state
+                  type: varchar(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: desired_resolution
+                  type: text
+              - column:
+                  name: closure_type
+                  type: varchar(20)
+              - column:
+                  name: resolution_summary
+                  type: text
+              - column:
+                  name: opened_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+              - column:
+                  name: target_close_date
+                  type: date
+              - column:
+                  name: hard_deadline_date
+                  type: date
+              - column:
+                  name: next_review_date
+                  type: date
+              - column:
+                  name: closed_at
+                  type: timestamp
+              - column:
+                  name: current_mental_load
+                  type: int
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+              - column:
+                  name: version
+                  type: bigint
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: mental_thread
+            baseColumnNames: user_id
+            referencedTableName: app_user
+            referencedColumnNames: id
+            constraintName: fk_app_mental_thread_user
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - createIndex:
+            tableName: mental_thread
+            indexName: idx_app_mental_thread_user_status
+            ifNotExists: true
+            columns:
+              - column:
+                  name: user_id
+              - column:
+                  name: status
+              - column:
+                  name: target_close_date
+
+        - createTable:
+            tableName: mental_thread_load_entry
+            columns:
+              - column:
+                  name: entry_id
+                  type: varchar(255)
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: thread_id
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: load
+                  type: int
+                  constraints:
+                    nullable: false
+              - column:
+                  name: reason
+                  type: varchar(500)
+              - column:
+                  name: recorded_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: mental_thread_load_entry
+            baseColumnNames: thread_id
+            referencedTableName: mental_thread
+            referencedColumnNames: thread_id
+            constraintName: fk_app_mental_thread_load_entry_thread
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - createIndex:
+            tableName: mental_thread_load_entry
+            indexName: idx_app_mental_thread_load_entry_thread_recorded
+            ifNotExists: true
+            columns:
+              - column:
+                  name: thread_id
+              - column:
+                  name: recorded_at
+
+        - createTable:
+            tableName: mental_capacity_check_in
+            columns:
+              - column:
+                  name: check_in_id
+                  type: varchar(255)
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: check_in_date
+                  type: date
+                  constraints:
+                    nullable: false
+              - column:
+                  name: capacity
+                  type: int
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: mental_capacity_check_in
+            baseColumnNames: user_id
+            referencedTableName: app_user
+            referencedColumnNames: id
+            constraintName: fk_app_mental_capacity_user
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - addUniqueConstraint:
+            tableName: mental_capacity_check_in
+            columnNames: user_id, check_in_date
+            constraintName: uq_app_mental_capacity_user_date
+        - createIndex:
+            tableName: mental_capacity_check_in
+            indexName: idx_app_mental_capacity_user_date
+            ifNotExists: true
+            columns:
+              - column:
+                  name: user_id
+              - column:
+                  name: check_in_date
+      rollback:
+        - dropTable:
+            tableName: mental_capacity_check_in
+        - dropTable:
+            tableName: mental_thread_load_entry
+        - dropTable:
+            tableName: mental_thread

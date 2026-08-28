@@ -1,0 +1,317 @@
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+    Alert,
+    Box,
+    CircularProgress,
+    IconButton,
+    Stack,
+    Tooltip,
+    Typography,
+} from '@mui/material';
+import { alpha, useTheme } from '@mui/material/styles';
+import SelfImprovementIcon from '@mui/icons-material/SelfImprovement';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
+import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
+import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import { addMonths, eachDayOfInterval, endOfMonth, format, getDay, isAfter, startOfMonth } from 'date-fns';
+import { statService } from '../../services/api/statService';
+import { StatDefinition, StatEntry, StatSummary } from '../../types/Stats';
+
+const MEDITATED_SYSTEM_KEY = 'meditated';
+const MEDITATION_MINUTES_SYSTEM_KEY = 'meditation_minutes';
+
+interface MeditationStatsData {
+    meditatedSummary: StatSummary;
+    minutesSummary: StatSummary;
+    meditatedEntries: StatEntry[];
+}
+
+interface MetricProps {
+    icon: ReactNode;
+    label: string;
+    value: string;
+    tint: string;
+}
+
+function Metric({ icon, label, value, tint }: MetricProps) {
+    return (
+        <Box sx={{
+            p: { xs: 1.5, sm: 2 },
+            minWidth: 0,
+        }}>
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ color: tint, mb: 1 }}>
+                {icon}
+                <Typography variant="caption" color="text.secondary" noWrap>{label}</Typography>
+            </Stack>
+            <Typography variant="h5" fontWeight={700} lineHeight={1.1} noWrap>
+                {value}
+            </Typography>
+        </Box>
+    );
+}
+
+function formatMinutes(value: number): string {
+    const rounded = Math.round(value);
+    if (rounded < 60) return `${rounded} min`;
+    const hours = Math.floor(rounded / 60);
+    const minutes = rounded % 60;
+    return minutes === 0 ? `${hours} hr` : `${hours} hr ${minutes} min`;
+}
+
+function findSystemDefinition(definitions: StatDefinition[], systemKey: string): StatDefinition | undefined {
+    return definitions.find(definition => definition.systemKey === systemKey);
+}
+
+export function MeditationStats() {
+    const theme = useTheme();
+    const [data, setData] = useState<MeditationStatsData | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(false);
+    const [monthOffset, setMonthOffset] = useState(0);
+    const period = useMemo(() => {
+        const today = new Date();
+        const from = addMonths(startOfMonth(today), monthOffset);
+        const monthEnd = endOfMonth(from);
+        const to = monthOffset === 0 && isAfter(monthEnd, today) ? today : monthEnd;
+        return {
+            from: format(from, 'yyyy-MM-dd'),
+            to: format(to, 'yyyy-MM-dd'),
+            monthStart: from,
+            monthEnd,
+        };
+    }, [monthOffset]);
+
+    useEffect(() => {
+        let cancelled = false;
+        setLoading(true);
+        statService.getDefinitions()
+            .then(async definitions => {
+                const meditated = findSystemDefinition(definitions, MEDITATED_SYSTEM_KEY);
+                const minutes = findSystemDefinition(definitions, MEDITATION_MINUTES_SYSTEM_KEY);
+                if (!meditated || !minutes) return;
+
+                const [meditatedSummary, minutesSummary, meditatedEntries] = await Promise.all([
+                    statService.getSummary(meditated.id, period.from, period.to),
+                    statService.getSummary(minutes.id, period.from, period.to),
+                    statService.getEntries(meditated.id, period.from, period.to),
+                ]);
+                if (!cancelled) setData({ meditatedSummary, minutesSummary, meditatedEntries });
+            })
+            .catch(fetchError => {
+                console.error('Failed to load meditation stats:', fetchError);
+                if (!cancelled) setError(true);
+            })
+            .finally(() => {
+                if (!cancelled) setLoading(false);
+            });
+
+        return () => { cancelled = true; };
+    }, [period.from, period.to]);
+
+    if (loading) {
+        return (
+            <Box sx={{ display: 'grid', minHeight: 480, placeItems: 'center' }}>
+                <Stack direction="row" justifyContent="center">
+                    <CircularProgress size={24} />
+                </Stack>
+            </Box>
+        );
+    }
+
+    if (error) return <Alert severity="warning" sx={{ m: { xs: 2, sm: 3, lg: 4 } }}>Your meditation history could not be loaded.</Alert>;
+    if (!data) return null;
+
+    const yesDates = new Set(
+        data.meditatedEntries.filter(entry => entry.value === 1).map(entry => entry.date),
+    );
+    const monthDays = eachDayOfInterval({ start: period.monthStart, end: period.monthEnd });
+    const leadingEmptyDays = (getDay(period.monthStart) + 6) % 7;
+    const calendarDays: (Date | null)[] = [
+        ...Array.from({ length: leadingEmptyDays }, () => null),
+        ...monthDays,
+    ];
+    while (calendarDays.length % 7 !== 0) calendarDays.push(null);
+    const today = new Date();
+    const yesCount = data.meditatedSummary.periodYesCount ?? 0;
+    const totalMinutes = data.minutesSummary.periodTotal ?? 0;
+
+    return (
+        <Box
+            sx={{
+                width: '100%',
+                p: { xs: 2, sm: 3, lg: 4 },
+            }}
+        >
+            <Stack spacing={2.5}>
+                <Stack
+                    direction="row"
+                    alignItems="center"
+                    justifyContent="space-between"
+                    spacing={2}
+                    useFlexGap
+                    sx={{ flexWrap: 'wrap' }}
+                >
+                    <Stack direction="row" spacing={1.25} alignItems="center">
+                        <Box sx={{
+                            width: 40,
+                            height: 40,
+                            borderRadius: '50%',
+                            display: 'grid',
+                            placeItems: 'center',
+                            color: theme.palette.primary.main,
+                            bgcolor: alpha(theme.palette.primary.main, 0.1),
+                        }}>
+                            <SelfImprovementIcon />
+                        </Box>
+                        <Box>
+                            <Typography variant="h6" fontWeight={600}>Your practice</Typography>
+                            <Typography variant="body2" color="text.secondary">A gentle look back at this month</Typography>
+                        </Box>
+                    </Stack>
+                    <Stack direction="row" spacing={0.25} alignItems="center">
+                        <IconButton
+                            size="small"
+                            aria-label="Previous month"
+                            title="Previous month"
+                            onClick={() => setMonthOffset(offset => offset - 1)}
+                        >
+                            <ChevronLeftIcon fontSize="small" />
+                        </IconButton>
+                        <Stack direction="row" spacing={0.5} alignItems="center" sx={{ color: 'text.secondary', minWidth: 132, justifyContent: 'center' }}>
+                            <CalendarMonthIcon sx={{ fontSize: 18 }} />
+                            <Typography variant="caption">{format(period.monthStart, 'MMMM yyyy')}</Typography>
+                        </Stack>
+                        <IconButton
+                            size="small"
+                            aria-label="Next month"
+                            title="Next month"
+                            disabled={monthOffset >= 0}
+                            onClick={() => setMonthOffset(offset => Math.min(0, offset + 1))}
+                        >
+                            <ChevronRightIcon fontSize="small" />
+                        </IconButton>
+                    </Stack>
+                </Stack>
+
+                <Box sx={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    border: `1px solid ${theme.palette.divider}`,
+                    borderRadius: 3,
+                    overflow: 'hidden',
+                }}>
+                    <Metric
+                        icon={<CheckCircleOutlineIcon fontSize="small" />}
+                        label="Meditated"
+                        value={`${yesCount} ${yesCount === 1 ? 'day' : 'days'}`}
+                        tint={theme.palette.success.main}
+                    />
+                    <Box sx={{ borderLeft: `1px solid ${theme.palette.divider}` }}>
+                        <Metric
+                            icon={<AccessTimeIcon fontSize="small" />}
+                            label="Meditation minutes"
+                            value={formatMinutes(totalMinutes)}
+                            tint={theme.palette.primary.main}
+                        />
+                    </Box>
+                </Box>
+
+                <Box>
+                    <Stack direction="row" justifyContent="space-between" alignItems="baseline" sx={{ mb: 1 }}>
+                        <Typography variant="subtitle2">Practice calendar</Typography>
+                        <Typography variant="caption" color="text.secondary">Mon – Sun</Typography>
+                    </Stack>
+                    <Box sx={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
+                        borderTop: `1px solid ${theme.palette.divider}`,
+                        borderLeft: `1px solid ${theme.palette.divider}`,
+                    }}>
+                        {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => (
+                            <Typography
+                                key={day}
+                                variant="caption"
+                                color="text.secondary"
+                                sx={{
+                                    py: 0.75,
+                                    textAlign: 'center',
+                                    fontSize: 10,
+                                    borderRight: `1px solid ${theme.palette.divider}`,
+                                    borderBottom: `1px solid ${theme.palette.divider}`,
+                                }}
+                            >
+                                {day}
+                            </Typography>
+                        ))}
+                        {calendarDays.map((date, index) => {
+                            if (!date) {
+                                return (
+                                    <Box
+                                        key={`empty-${index}`}
+                                        sx={{
+                                            aspectRatio: '1',
+                                            borderRight: `1px solid ${theme.palette.divider}`,
+                                            borderBottom: `1px solid ${theme.palette.divider}`,
+                                        }}
+                                    />
+                                );
+                            }
+                            const key = format(date, 'yyyy-MM-dd');
+                            const future = isAfter(date, today);
+                            const practiced = !future && yesDates.has(key);
+                            return (
+                                <Tooltip key={key} title={future ? format(date, 'MMMM d') : `${format(date, 'MMMM d')}: ${practiced ? 'Meditated' : 'No session'}`}>
+                                    <Box sx={{
+                                        aspectRatio: '1',
+                                        minHeight: { xs: 30, sm: 38 },
+                                        position: 'relative',
+                                        bgcolor: 'transparent',
+                                        borderRight: `1px solid ${theme.palette.divider}`,
+                                        borderBottom: `1px solid ${theme.palette.divider}`,
+                                        boxShadow: practiced ? `inset 0 0 0 2px ${theme.palette.success.main}` : 'none',
+                                        opacity: future ? 0.45 : 1,
+                                        display: 'grid',
+                                        placeItems: 'center',
+                                        transition: 'background-color 120ms ease',
+                                        '&:hover': {
+                                            bgcolor: alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.08 : 0.04),
+                                        },
+                                    }}>
+                                        <Typography
+                                            variant="caption"
+                                            sx={{
+                                                position: practiced ? 'absolute' : 'static',
+                                                top: practiced ? 3 : 'auto',
+                                                left: practiced ? 5 : 'auto',
+                                                fontSize: 10,
+                                                color: 'text.secondary',
+                                            }}
+                                        >
+                                            {format(date, 'd')}
+                                        </Typography>
+                                        {practiced && <CheckRoundedIcon sx={{ fontSize: 19, color: 'success.main' }} />}
+                                    </Box>
+                                </Tooltip>
+                            );
+                        })}
+                    </Box>
+                    <Stack direction="row" spacing={1.5} sx={{ mt: 1.25 }}>
+                        <Stack direction="row" spacing={0.5} alignItems="center">
+                            <Box sx={{ width: 12, height: 12, display: 'grid', placeItems: 'center', border: `1px solid ${theme.palette.success.main}` }}>
+                                <CheckRoundedIcon sx={{ fontSize: 10, color: 'success.main' }} />
+                            </Box>
+                            <Typography variant="caption" color="text.secondary">Meditated</Typography>
+                        </Stack>
+                        <Stack direction="row" spacing={0.5} alignItems="center">
+                            <Box sx={{ width: 12, height: 12, border: `1px solid ${theme.palette.divider}` }} />
+                            <Typography variant="caption" color="text.secondary">No session</Typography>
+                        </Stack>
+                    </Stack>
+                </Box>
+            </Stack>
+        </Box>
+    );
+}

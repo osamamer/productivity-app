@@ -63,6 +63,12 @@ public class TaskController {
         return ResponseEntity.ok(tasks);
     }
 
+    @PutMapping("/order")
+    public ResponseEntity<List<Task>> reorderTasks(@RequestBody ReorderTasksRequest request) {
+        return ResponseEntity.ok(taskService.reorderMainTasks(
+                request.getTaskIds(), currentUserService.getCurrentUserId()));
+    }
+
     // ============ Single Task Operations ============
 
     @GetMapping("/{taskId}")

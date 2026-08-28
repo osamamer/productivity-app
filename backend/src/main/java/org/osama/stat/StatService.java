@@ -7,6 +7,7 @@ import org.osama.user.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -150,6 +151,30 @@ public class StatService {
         return savedEntry;
     }
 
+    @Transactional
+    public void recordCompletedMeditation(LocalDate date, Duration duration, String userId) {
+        if (duration == null || duration.isNegative()) {
+            throw new IllegalArgumentException("Meditation duration cannot be null or negative.");
+        }
+
+        StatDefinition meditatedDefinition = getSystemDefinition(
+                userId, SystemStatCatalog.MEDITATED_SYSTEM_KEY);
+        StatDefinition minutesDefinition = getSystemDefinition(
+                userId, SystemStatCatalog.MEDITATION_MINUTES_SYSTEM_KEY);
+
+        recordEntry(meditatedDefinition.getId(), date, 1.0, userId);
+
+        double existingMinutes = entryRepository
+                .findByStatDefinitionIdAndUserIdAndDate(minutesDefinition.getId(), userId, date)
+                .map(StatEntry::getValue)
+                .orElse(0.0);
+        double sessionMinutes = duration.toMillis() / 60_000.0;
+        recordEntry(minutesDefinition.getId(), date, existingMinutes + sessionMinutes, userId);
+
+        log.info("Meditation stats recorded: userId={} date={} sessionMinutes={} dailyMinutes={}",
+                userId, date, sessionMinutes, existingMinutes + sessionMinutes);
+    }
+
     public List<StatEntry> getEntries(String statDefinitionId, LocalDate from, LocalDate to, String userId) {
         definitionRepository.findByIdAndUserId(statDefinitionId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("No such stat exists."));
@@ -166,55 +191,59 @@ public class StatService {
         return entryRepository.findAllByUserIdAndDate(userId, date);
     }
 
-    public StatSummaryResponse getSummary(String definitionId, String userId) {
+    public StatSummaryResponse getSummary(String definitionId, LocalDate from, LocalDate to, String userId) {
         StatDefinition def = definitionRepository.findByIdAndUserId(definitionId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("No such stat."));
 
-        LocalDate today = LocalDate.now();
-        LocalDate yearAgo = today.minusDays(364);
-        LocalDate startOfMonth = today.withDayOfMonth(1);
+        if (from == null || to == null || from.isAfter(to)) {
+            throw new IllegalArgumentException("The summary period must have a valid start and end date.");
+        }
 
         List<StatEntry> entries = entryRepository
-                .findAllByStatDefinitionIdAndUserIdAndDateBetween(definitionId, userId, yearAgo, today);
+                .findAllByStatDefinitionIdAndUserIdAndDateBetween(definitionId, userId, from, to);
 
         Map<LocalDate, Double> valueByDate = entries.stream()
                 .collect(Collectors.toMap(StatEntry::getDate, StatEntry::getValue));
 
-        int checkInStreak = computeStreak(today, valueByDate::containsKey);
+        int checkInStreak = computeStreak(to, from, valueByDate::containsKey);
 
-        Integer monthlyCheckIns = null;
+        Integer periodYesCount = null;
         Integer booleanStreak = null;
-        Double monthlyAverage = null;
+        Double periodAverage = null;
+        Double periodTotal = null;
 
         if (def.getType() == StatType.BOOLEAN) {
-            monthlyCheckIns = (int) entries.stream()
-                    .filter(e -> !e.getDate().isBefore(startOfMonth))
+            periodYesCount = (int) entries.stream()
+                    .filter(entry -> entry.getValue() == 1.0)
                     .count();
-            booleanStreak = computeStreak(today,
+            booleanStreak = computeStreak(to, from,
                     date -> valueByDate.containsKey(date) && valueByDate.get(date) == 1.0);
         }
 
         if (def.getType() == StatType.NUMBER || def.getType() == StatType.RANGE) {
             OptionalDouble avg = entries.stream()
-                    .filter(e -> !e.getDate().isBefore(startOfMonth))
                     .mapToDouble(StatEntry::getValue)
                     .average();
-            monthlyAverage = avg.isPresent() ? avg.getAsDouble() : null;
+            periodAverage = avg.isPresent() ? avg.getAsDouble() : null;
+            periodTotal = entries.stream()
+                    .mapToDouble(StatEntry::getValue)
+                    .sum();
         }
 
-        return new StatSummaryResponse(checkInStreak, monthlyCheckIns, booleanStreak, monthlyAverage);
+        return new StatSummaryResponse(checkInStreak, periodYesCount, booleanStreak, periodAverage, periodTotal);
     }
 
     /**
-     * Counts consecutive days ending at {@code today} for which {@code hasEntry} is true.
-     * If today itself has no entry, counts backwards from yesterday — the day isn't over yet.
+     * Counts consecutive days ending at {@code endDate} for which {@code hasEntry} is true.
+     * If the end date itself has no entry, counts backwards from the previous day.
      */
-    private int computeStreak(LocalDate today, Predicate<LocalDate> hasEntry) {
-        LocalDate start = hasEntry.test(today) ? today : today.minusDays(1);
+    private int computeStreak(LocalDate endDate, LocalDate lowerBound, Predicate<LocalDate> hasEntry) {
+        LocalDate start = hasEntry.test(endDate) ? endDate : endDate.minusDays(1);
+        if (start.isBefore(lowerBound)) return 0;
+
         int streak = 0;
         LocalDate cursor = start;
-        // Safety cap at 365 days (matches the data we fetched)
-        while (streak <= 365 && hasEntry.test(cursor)) {
+        while (!cursor.isBefore(lowerBound) && hasEntry.test(cursor)) {
             streak++;
             cursor = cursor.minusDays(1);
         }
@@ -228,6 +257,12 @@ public class StatService {
                 .date(date)
                 .user(user)
                 .build();
+    }
+
+    private StatDefinition getSystemDefinition(String userId, String systemKey) {
+        return definitionRepository.findByUserIdAndSystemKey(userId, systemKey)
+                .orElseThrow(() -> new IllegalStateException(
+                        "Missing system stat definition: " + systemKey));
     }
 
     private int nextDisplayOrder(String userId) {

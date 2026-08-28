@@ -5,8 +5,9 @@ package org.osama.stat;
  * Fields that don't apply to the definition's type are null.
  */
 public record StatSummaryResponse(
-        int checkInStreak,         // consecutive days with any entry, ending today (all types)
-        Integer monthlyCheckIns,   // total entries this calendar month (BOOLEAN only)
-        Integer booleanStreak,     // consecutive days with value=1, ending today (BOOLEAN only)
-        Double monthlyAverage      // average value this calendar month (NUMBER / RANGE only)
+        int checkInStreak,         // consecutive days with any entry, ending at the selected period's end
+        Integer periodYesCount,    // entries with value=1 in the selected period (BOOLEAN only)
+        Integer booleanStreak,     // consecutive days with value=1, ending at the selected period's end
+        Double periodAverage,      // average value in the selected period (NUMBER / RANGE only)
+        Double periodTotal         // sum of values in the selected period (NUMBER / RANGE only)
 ) {}

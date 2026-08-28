@@ -15,6 +15,10 @@ function entryCacheKey(definitionId: string, from: string, to: string): string {
     return `${definitionId}:${from}:${to}`;
 }
 
+function summaryCacheKey(definitionId: string, from: string, to: string): string {
+    return `${definitionId}:${from}:${to}`;
+}
+
 function invalidateEntryCache(definitionId?: string): void {
     if (!definitionId) {
         entryCache.clear();
@@ -28,6 +32,13 @@ function invalidateEntryCache(definitionId?: string): void {
 
 function invalidateDefinitionsCache(): void {
     definitionsCache = null;
+}
+
+function invalidateSummaryCache(definitionId: string): void {
+    const prefix = `${definitionId}:`;
+    for (const key of summaryCache.keys()) {
+        if (key.startsWith(prefix)) summaryCache.delete(key);
+    }
 }
 
 function cacheRecordedEntry(entry: StatEntry): void {
@@ -86,7 +97,7 @@ export const statService = {
         if (!response.ok) throw new Error('Failed to delete stat definition');
         invalidateDefinitionsCache();
         invalidateEntryCache(id);
-        summaryCache.delete(id);
+        invalidateSummaryCache(id);
     },
 
     async reorderDefinitions(definitionIds: string[]): Promise<StatDefinition[]> {
@@ -137,14 +148,16 @@ export const statService = {
         return response.json();
     },
 
-    async getSummary(definitionId: string): Promise<StatSummary> {
-        const cachedSummary = summaryCache.get(definitionId);
+    async getSummary(definitionId: string, from: string, to: string): Promise<StatSummary> {
+        const key = summaryCacheKey(definitionId, from, to);
+        const cachedSummary = summaryCache.get(key);
         if (cachedSummary) return cachedSummary;
 
-        const pendingRequest = summaryRequests.get(definitionId);
+        const pendingRequest = summaryRequests.get(key);
         if (pendingRequest) return pendingRequest;
 
-        const request = fetch(`${STATS_URL}/definitions/${definitionId}/summary`, {
+        const params = new URLSearchParams({ from, to });
+        const request = fetch(`${STATS_URL}/definitions/${definitionId}/summary?${params}`, {
             headers: getAuthHeaders(),
         })
             .then(response => {
@@ -152,20 +165,20 @@ export const statService = {
                 return response.json() as Promise<StatSummary>;
             })
             .then(summary => {
-                summaryCache.set(definitionId, summary);
+                summaryCache.set(key, summary);
                 return summary;
             });
 
-        summaryRequests.set(definitionId, request);
+        summaryRequests.set(key, request);
         try {
             return await request;
         } finally {
-            if (summaryRequests.get(definitionId) === request) summaryRequests.delete(definitionId);
+            if (summaryRequests.get(key) === request) summaryRequests.delete(key);
         }
     },
 
-    getCachedSummary(definitionId: string): StatSummary | undefined {
-        return summaryCache.get(definitionId);
+    getCachedSummary(definitionId: string, from: string, to: string): StatSummary | undefined {
+        return summaryCache.get(summaryCacheKey(definitionId, from, to));
     },
 
     async getEntriesByDate(date: string): Promise<StatEntry[]> {
@@ -184,7 +197,7 @@ export const statService = {
         const responseEntry = await response.json() as StatEntry;
         const entry = { ...responseEntry, statDefinitionId: req.statDefinitionId };
         cacheRecordedEntry(entry);
-        summaryCache.delete(req.statDefinitionId);
+        invalidateSummaryCache(req.statDefinitionId);
         return entry;
     },
 };

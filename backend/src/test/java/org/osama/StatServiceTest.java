@@ -169,6 +169,43 @@ public class StatServiceTest {
         assertEquals(42.5, entries.get(0).getValue());
     }
 
+    // --- Timeframe summaries ---
+
+    @Test
+    void numericSummaryUsesRequestedPeriodForAverageAndTotal() {
+        StatDefinition statDefinition = createStatDefinition(StatType.NUMBER, null, null);
+        LocalDate today = LocalDate.now();
+        statService.recordEntry(statDefinition.getId(), today.minusDays(2), 1.0, TEST_USER_ID);
+        statService.recordEntry(statDefinition.getId(), today.minusDays(1), 2.0, TEST_USER_ID);
+        statService.recordEntry(statDefinition.getId(), today, 10.0, TEST_USER_ID);
+
+        StatSummaryResponse summary = statService.getSummary(
+                statDefinition.getId(), today.minusDays(1), today, TEST_USER_ID);
+
+        assertEquals(2, summary.checkInStreak());
+        assertNull(summary.periodYesCount());
+        assertEquals(6.0, summary.periodAverage(), 0.0001);
+        assertEquals(12.0, summary.periodTotal(), 0.0001);
+    }
+
+    @Test
+    void booleanSummaryCountsAndBoundsStreaksToRequestedPeriod() {
+        StatDefinition statDefinition = createStatDefinition(StatType.BOOLEAN, null, null);
+        LocalDate today = LocalDate.now();
+        statService.recordEntry(statDefinition.getId(), today.minusDays(2), 1.0, TEST_USER_ID);
+        statService.recordEntry(statDefinition.getId(), today.minusDays(1), 0.0, TEST_USER_ID);
+        statService.recordEntry(statDefinition.getId(), today, 1.0, TEST_USER_ID);
+
+        StatSummaryResponse summary = statService.getSummary(
+                statDefinition.getId(), today.minusDays(1), today, TEST_USER_ID);
+
+        assertEquals(2, summary.checkInStreak());
+        assertEquals(1, summary.periodYesCount());
+        assertEquals(1, summary.booleanStreak());
+        assertNull(summary.periodAverage());
+        assertNull(summary.periodTotal());
+    }
+
     @Test
     void definitionsCanBeReorderedAndOrderIsReturnedPersistently() {
         StatDefinition first = createNamedStatDefinition("First", StatType.NUMBER);

@@ -1,0 +1,144 @@
+databaseChangeLog:
+  - changeSet:
+      id: 020-add-task-display-order
+      author: osama
+      comment: Persist the user-defined order of tasks
+      changes:
+        - addColumn:
+            tableName: task
+            columns:
+              - column:
+                  name: display_order
+                  type: int
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+        - sql:
+            sql: |
+              UPDATE task
+              SET display_order = ordered.display_order
+              FROM (
+                  SELECT task_id,
+                         ROW_NUMBER() OVER (
+                             PARTITION BY user_id, parent_id
+                             ORDER BY completed, importance DESC, creation_date_time DESC, task_id
+                         ) - 1 AS display_order
+                  FROM task
+              ) ordered
+              WHERE task.task_id = ordered.task_id;
+        - createIndex:
+            tableName: task
+            indexName: idx_app_task_user_parent_display_order
+            ifNotExists: true
+            columns:
+              - column:
+                  name: user_id
+              - column:
+                  name: parent_id
+              - column:
+                  name: display_order
+      rollback:
+        - dropIndex:
+            tableName: task
+            indexName: idx_app_task_user_parent_display_order
+        - dropColumn:
+            tableName: task
+            columnName: display_order
+
+  - changeSet:
+      id: 020-create-task-groups
+      author: osama
+      comment: Create user-owned task groups as an independent task relationship
+      changes:
+        - createTable:
+            tableName: task_group
+            columns:
+              - column:
+                  name: group_id
+                  type: varchar(255)
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: name
+                  type: varchar(120)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: display_order
+                  type: int
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+        - createTable:
+            tableName: task_group_task
+            columns:
+              - column:
+                  name: group_id
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: task_id
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+        - addPrimaryKey:
+            tableName: task_group_task
+            columnNames: group_id, task_id
+            constraintName: pk_app_task_group_task
+        - addForeignKeyConstraint:
+            baseTableName: task_group
+            baseColumnNames: user_id
+            referencedTableName: app_user
+            referencedColumnNames: id
+            constraintName: fk_app_task_group_user
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - addForeignKeyConstraint:
+            baseTableName: task_group_task
+            baseColumnNames: group_id
+            referencedTableName: task_group
+            referencedColumnNames: group_id
+            constraintName: fk_app_task_group_task_group
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - addForeignKeyConstraint:
+            baseTableName: task_group_task
+            baseColumnNames: task_id
+            referencedTableName: task
+            referencedColumnNames: task_id
+            constraintName: fk_app_task_group_task_task
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - createIndex:
+            tableName: task_group
+            indexName: idx_app_task_group_user_display_order
+            ifNotExists: true
+            columns:
+              - column:
+                  name: user_id
+              - column:
+                  name: display_order
+        - createIndex:
+            tableName: task_group_task
+            indexName: idx_app_task_group_task_task_id
+            ifNotExists: true
+            columns:
+              - column:
+                  name: task_id
+      rollback:
+        - dropTable:
+            tableName: task_group_task
+        - dropTable:
+            tableName: task_group

@@ -31,6 +31,21 @@ export const taskService = {
         return response.json();
     },
 
+    async reorderTasks(taskIds: string[]): Promise<Task[]> {
+        const response = await fetch(`${TASK_URL}/order`, {
+            method: 'PUT',
+            body: JSON.stringify({ taskIds }),
+            headers: {
+                'Content-Type': 'application/json; charset=UTF-8',
+                ...getAuthHeaders(),
+            },
+        });
+        if (!response.ok) {
+            throw new Error('Failed to reorder tasks');
+        }
+        return response.json();
+    },
+
     async getPastTasks(): Promise<Task[]> {
         const response = await fetch(`${TASK_URL}?period=PAST`, {
             headers: getAuthHeaders(),

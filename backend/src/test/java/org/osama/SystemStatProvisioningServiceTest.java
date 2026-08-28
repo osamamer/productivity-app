@@ -65,11 +65,26 @@ class SystemStatProvisioningServiceTest {
                 .map(StatDefinition::getSystemKey)
                 .collect(Collectors.toSet());
 
-        assertEquals(SystemStatCatalog.MENTAL_STATE_STATS.size(), definitions.size());
-        assertEquals(Set.of("stimulation", "hunger", "arousal", "valence"), systemKeys);
-        assertTrue(definitions.stream().allMatch(definition -> definition.getType() == StatType.RANGE));
-        assertTrue(definitions.stream().allMatch(definition -> definition.getMinValue() == 1.0));
-        assertTrue(definitions.stream().allMatch(definition -> definition.getMaxValue() == 10.0));
+        assertEquals(SystemStatCatalog.SYSTEM_STATS.size(), definitions.size());
+        assertEquals(Set.of(
+                "stimulation", "hunger", "arousal", "valence",
+                SystemStatCatalog.MEDITATED_SYSTEM_KEY,
+                SystemStatCatalog.MEDITATION_MINUTES_SYSTEM_KEY
+        ), systemKeys);
+        assertTrue(definitions.stream()
+                .filter(definition -> SystemStatCatalog.MENTAL_STATE_STATS.stream()
+                        .anyMatch(systemStat -> systemStat.systemKey().equals(definition.getSystemKey())))
+                .allMatch(definition -> definition.getType() == StatType.RANGE
+                        && definition.getMinValue() == 1.0
+                        && definition.getMaxValue() == 10.0));
+        assertEquals(StatType.BOOLEAN, definitionRepository
+                .findByUserIdAndSystemKey(TEST_USER_ID, SystemStatCatalog.MEDITATED_SYSTEM_KEY)
+                .orElseThrow()
+                .getType());
+        assertEquals(StatType.NUMBER, definitionRepository
+                .findByUserIdAndSystemKey(TEST_USER_ID, SystemStatCatalog.MEDITATION_MINUTES_SYSTEM_KEY)
+                .orElseThrow()
+                .getType());
     }
 
     @Test
@@ -83,7 +98,7 @@ class SystemStatProvisioningServiceTest {
         assertEquals("valence", adopted.getSystemKey());
         assertEquals("Valence", adopted.getName());
         assertEquals(StatType.RANGE, adopted.getType());
-        assertEquals(SystemStatCatalog.MENTAL_STATE_STATS.size(),
+        assertEquals(SystemStatCatalog.SYSTEM_STATS.size(),
                 definitionRepository.findAllByUserId(TEST_USER_ID).size());
     }
 
@@ -111,7 +126,7 @@ class SystemStatProvisioningServiceTest {
         User createdUser = userService.createUser(
                 "new-system-stats@test.com", "New", "User", "newsystemstats", "keycloak-system-stats");
 
-        assertEquals(SystemStatCatalog.MENTAL_STATE_STATS.size(),
+        assertEquals(SystemStatCatalog.SYSTEM_STATS.size(),
                 definitionRepository.findAllByUserId(createdUser.getId()).size());
     }
 }

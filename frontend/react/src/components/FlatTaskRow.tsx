@@ -56,6 +56,16 @@ export type FlatTaskRowProps = {
     onAutoExpand: (panel: 'pomodoro') => void;
     showScheduledDate?: boolean;
     onSelect?: (task: Task) => void;
+    selected?: boolean;
+    onSelectionClick?: (task: Task, event: React.MouseEvent<HTMLElement>) => void;
+    reorderable?: boolean;
+    onDragStart?: (task: Task) => void;
+    onDragOver?: (task: Task) => void;
+    onDrop?: (task: Task) => void;
+    onDragEnd?: () => void;
+    isDragging?: boolean;
+    isDragTarget?: boolean;
+    onPomodoroActiveChange?: (taskId: string, active: boolean) => void;
     deferPomodoroHydration?: boolean;
 };
 
@@ -124,6 +134,16 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     onAutoExpand,
     showScheduledDate = false,
     onSelect,
+    selected = false,
+    onSelectionClick,
+    reorderable = false,
+    onDragStart,
+    onDragOver,
+    onDrop,
+    onDragEnd,
+    isDragging = false,
+    isDragTarget = false,
+    onPomodoroActiveChange,
     deferPomodoroHydration = false,
 }: FlatTaskRowProps) {
     const theme = useTheme();
@@ -233,6 +253,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                 task.taskId, form.focusDuration, form.shortBreakDuration,
                 form.longBreakDuration, form.numFocuses, form.longBreakCooldown,
             );
+            onPomodoroActiveChange?.(task.taskId, true);
         } catch (e) { console.error('Error starting pomodoro:', e); }
         finally { setActionLoading(false); }
     };
@@ -254,6 +275,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         try {
             await taskService.endPomodoro(task.taskId);
             setPomodoroStatus(null);
+            onPomodoroActiveChange?.(task.taskId, false);
         } catch (e) { console.error('Error stopping pomodoro:', e); }
         finally { setActionLoading(false); }
     };
@@ -289,6 +311,14 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     };
 
     const isActive  = Boolean(pomodoroStatus?.active);
+    const activePomodoro = pomodoroStatus?.active;
+
+    useEffect(() => {
+        if (activePomodoro !== undefined) {
+            onPomodoroActiveChange?.(task.taskId, activePomodoro);
+        }
+    }, [activePomodoro, onPomodoroActiveChange, task.taskId]);
+
     // Break: pomodoro started but not in a focus session
     const isBreak   = isActive && !pomodoroStatus!.sessionActive;
     // Paused: in a focus session but timer is not ticking
@@ -306,27 +336,76 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     const schedDate = task.scheduledPerformDateTime ? new Date(task.scheduledPerformDateTime) : null;
     const scheduledLabel = task.scheduledPerformDateTime ? formatScheduledDate(task.scheduledPerformDateTime) : '';
 
+    const handleRowSelection = (event: React.MouseEvent<HTMLElement>) => {
+        onSelectionClick?.(task, event);
+        onSelect?.(task);
+    };
+
     return (
         <Box
+            draggable={reorderable}
             sx={{
                 position: 'relative',
                 borderRadius: 1.5,
-                // Transparent border when idle keeps layout stable — no shift on activation
-                border: `1.5px solid ${isActive ? (useGreenBar ? theme.palette.success.main : alpha(activeAccent, 0.7)) : 'transparent'}`,
-                borderBottom: isActive ? 'none' : '1.5px solid transparent',
-                backgroundColor: isActive ? alpha(activeAccent, 0.05) : 'transparent',
-                transition: 'border-color 0.3s, background-color 0.3s',
+                border: `1.5px solid ${
+                    isActive
+                        ? (useGreenBar ? theme.palette.success.main : alpha(activeAccent, 0.7))
+                        : selected
+                            ? alpha(activeAccent, 0.38)
+                            : 'transparent'
+                }`,
+                borderBottom: isActive ? 'none' : undefined,
+                backgroundColor: isActive
+                    ? alpha(activeAccent, 0.05)
+                    : selected
+                        ? alpha(activeAccent, 0.09)
+                        : isDragTarget
+                            ? alpha(activeAccent, 0.045)
+                            : 'transparent',
                 overflow: 'hidden',
                 mb: 0.25,
+                opacity: isDragging ? 0.42 : 1,
+                transform: isDragging ? 'scale(0.985)' : 'scale(1)',
+                boxShadow: isDragging ? `0 10px 24px ${alpha(activeAccent, 0.18)}` : 'none',
+                transition: 'opacity 0.16s, transform 0.16s, box-shadow 0.16s, border-color 0.2s, background-color 0.2s',
+                '&::before': isDragTarget ? {
+                    content: '""',
+                    position: 'absolute',
+                    top: 0,
+                    left: 10,
+                    right: 10,
+                    height: 2,
+                    borderRadius: 2,
+                    backgroundColor: 'primary.main',
+                    zIndex: 2,
+                } : undefined,
             }}
-            onClick={() => onSelect?.(task)}
+            onClick={handleRowSelection}
+            onDragStart={(event) => {
+                if (!reorderable) return;
+                event.dataTransfer.effectAllowed = 'move';
+                event.dataTransfer.setData('text/plain', task.taskId);
+                onDragStart?.(task);
+            }}
+            onDragOver={(event) => {
+                if (!reorderable) return;
+                event.preventDefault();
+                event.dataTransfer.dropEffect = 'move';
+                onDragOver?.(task);
+            }}
+            onDrop={(event) => {
+                if (!reorderable) return;
+                event.preventDefault();
+                onDrop?.(task);
+            }}
+            onDragEnd={onDragEnd}
         >
             {/* ── Main row ── */}
             <Box sx={{ display: 'flex', alignItems: 'center', py: 0.75, px: 0.5 }}>
                 <Checkbox
                     size="small"
                     checked={task.completed}
-                    onChange={(e) => { e.stopPropagation(); onToggle(task.taskId); }}
+                    onChange={() => onToggle(task.taskId)}
                     sx={{ color: cbColor, '&.Mui-checked': { color: cbColor }, mr: 0.5 }}
                 />
                 {isEditingName ? (
@@ -366,7 +445,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                     <Typography
                         onClick={(e) => {
                             e.stopPropagation();
-                            onSelect?.(task);
+                            handleRowSelection(e);
                             setIsEditingName(true);
                         }}
                         sx={{
@@ -376,7 +455,6 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             textAlign: 'left',
                             color: task.completed ? 'text.disabled' : 'text.primary',
                             textDecoration: task.completed ? 'line-through' : 'none',
-                            cursor: 'text',
                         }}
                     >
                         {task.name}
@@ -403,7 +481,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             size="small"
                             onClick={(e) => {
                                 e.stopPropagation();
-                                onSelect?.(task);
+                                handleRowSelection(e);
                                 togglePanel('pomodoro');
                             }}
                             color={expandedPanel === 'pomodoro' || isActive ? 'primary' : 'default'}
@@ -416,7 +494,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             size="small"
                             onClick={(e) => {
                                 e.stopPropagation();
-                                onSelect?.(task);
+                                handleRowSelection(e);
                                 togglePanel('details');
                             }}
                             color={expandedPanel === 'details' ? 'primary' : 'default'}

@@ -9,6 +9,7 @@ import HighlightOffIcon from '@mui/icons-material/HighlightOff';
 import { format, subDays, eachDayOfInterval, getDay } from 'date-fns';
 import { StatDefinition } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
+import { celebrateStatLogged } from '../../services/statCelebration';
 
 // Week starts on Monday. Offset maps JS getDay() (0=Sun) to Mon-based index (0=Mon, 6=Sun).
 const toMondayIndex = (jsDay: number) => (jsDay + 6) % 7;
@@ -91,6 +92,7 @@ export function BooleanCalendarView({ definition, dateRange, refreshKey, onEntry
                 date: popover.date,
                 value: editValue,
             });
+            celebrateStatLogged();
             setValueState(previous => previous.key === dataKey
                 ? { ...previous, values: new Map(previous.values).set(popover.date, editValue) }
                 : previous);

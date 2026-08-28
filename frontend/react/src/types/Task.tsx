@@ -10,4 +10,5 @@ export interface Task   {
     parentId: string;
     tag: string;
     importance: number;
+    displayOrder: number;
 }

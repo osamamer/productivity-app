@@ -15,6 +15,12 @@ import { StatCard } from '../components/stats/StatCard';
 import { StatDefinition } from '../types/Stats';
 import { statService } from '../services/api/statService';
 
+const MEDITATION_SYSTEM_KEYS = new Set(['meditated', 'meditation_minutes']);
+
+function isMeditationStat(definition: StatDefinition): boolean {
+    return definition.systemKey !== undefined && MEDITATION_SYSTEM_KEYS.has(definition.systemKey);
+}
+
 export function StatsPage() {
     const theme = useTheme();
     const [definitions, setDefinitions] = useState<StatDefinition[]>([]);
@@ -34,8 +40,9 @@ export function StatsPage() {
             .then(defs => {
                 setDefinitions(defs);
                 setSelectedId(prev => {
-                    if (prev && defs.some(d => d.id === prev)) return prev;
-                    return defs[0]?.id ?? null;
+                    const visibleDefs = defs.filter(definition => !isMeditationStat(definition));
+                    if (prev && visibleDefs.some(d => d.id === prev)) return prev;
+                    return visibleDefs[0]?.id ?? null;
                 });
             })
             .catch(e => {
@@ -63,9 +70,10 @@ export function StatsPage() {
             await statService.deleteDefinition(deleteTarget.id);
             setDefinitions(prev => {
                 const next = prev.filter(d => d.id !== deleteTarget.id);
+                const nextVisible = next.filter(definition => !isMeditationStat(definition));
                 setSelectedId(current => {
                     if (current !== deleteTarget.id) return current;
-                    return next[0]?.id ?? null;
+                    return nextVisible[0]?.id ?? null;
                 });
                 return next;
             });
@@ -76,19 +84,22 @@ export function StatsPage() {
         }
     };
 
-    const selectedDef = definitions.find(d => d.id === selectedId) ?? null;
+    const visibleDefinitions = definitions.filter(definition => !isMeditationStat(definition));
+    const selectedDef = visibleDefinitions.find(d => d.id === selectedId) ?? null;
 
     const handleDefinitionDrop = async (targetId: string) => {
         if (!draggedId || draggedId === targetId || reorderSaving) return;
 
         const previous = definitions;
-        const draggedIndex = previous.findIndex(def => def.id === draggedId);
-        const targetIndex = previous.findIndex(def => def.id === targetId);
+        const visiblePrevious = previous.filter(definition => !isMeditationStat(definition));
+        const draggedIndex = visiblePrevious.findIndex(def => def.id === draggedId);
+        const targetIndex = visiblePrevious.findIndex(def => def.id === targetId);
         if (draggedIndex < 0 || targetIndex < 0) return;
 
-        const next = [...previous];
-        const [dragged] = next.splice(draggedIndex, 1);
-        next.splice(draggedIndex < targetIndex ? targetIndex - 1 : targetIndex, 0, dragged);
+        const nextVisible = [...visiblePrevious];
+        const [dragged] = nextVisible.splice(draggedIndex, 1);
+        nextVisible.splice(draggedIndex < targetIndex ? targetIndex - 1 : targetIndex, 0, dragged);
+        const next = [...nextVisible, ...previous.filter(isMeditationStat)];
         setDefinitions(next);
         setDraggedId(null);
         setOrderError(null);
@@ -146,7 +157,7 @@ export function StatsPage() {
                 {error && <Alert severity="error">{error}</Alert>}
                 {orderError && <Alert severity="error" sx={{ mb: 1.5 }}>{orderError}</Alert>}
 
-                {!loading && !error && definitions.length === 0 && (
+                {!loading && !error && visibleDefinitions.length === 0 && (
                     <Box sx={{ textAlign: 'center', py: 10 }}>
                         <Typography variant="h6" color="text.secondary">No stats yet</Typography>
                         <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
@@ -155,7 +166,7 @@ export function StatsPage() {
                     </Box>
                 )}
 
-                {!loading && !error && definitions.length > 0 && (
+                {!loading && !error && visibleDefinitions.length > 0 && (
                     <Box sx={{
                         display: 'flex',
                         flex: 1,
@@ -174,7 +185,7 @@ export function StatsPage() {
                             display: 'flex',
                             flexDirection: 'column',
                         }}>
-                            {definitions.map((def, i) => {
+                            {visibleDefinitions.map((def, i) => {
                                 const isSelected = def.id === selectedId;
                                 return (
                                     <Box
@@ -189,7 +200,7 @@ export function StatsPage() {
                                             px: 2,
                                             py: 1.5,
                                             cursor: 'pointer',
-                                            borderBottom: i < definitions.length - 1
+                                            borderBottom: i < visibleDefinitions.length - 1
                                                 ? `1px solid ${theme.palette.divider}`
                                                 : 'none',
                                             bgcolor: isSelected

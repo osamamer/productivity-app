@@ -16,6 +16,7 @@ import {UserProvider} from "./contexts/UserContext";
 import {StatsPage} from "./pages/StatsPage.tsx";
 import {SettingsPage} from "./pages/SettingsPage.tsx";
 import {NotesPage} from "./pages/NotesPage.tsx";
+import {MentalThreadsPage} from "./pages/MentalThreadsPage.tsx";
 
 
 function AppProviders() {
@@ -78,6 +79,14 @@ const routes = [
                 element: (
                     <ProtectedRoute>
                         <NotesPage/>
+                    </ProtectedRoute>
+                ),
+            },
+            {
+                path: "/mental-threads",
+                element: (
+                    <ProtectedRoute>
+                        <MentalThreadsPage/>
                     </ProtectedRoute>
                 ),
             },

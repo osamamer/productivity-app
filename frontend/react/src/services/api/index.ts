@@ -4,3 +4,4 @@ export { userService } from './userService.ts';
 export { statService } from './statService';
 export { meditationService } from './meditationService';
 export { notesService } from './notesService';
+export { taskGroupService } from './taskGroupService';

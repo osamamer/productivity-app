@@ -8,6 +8,7 @@ import { useTheme } from '@mui/material/styles';
 import { format, parseISO, subDays, eachDayOfInterval } from 'date-fns';
 import { StatDefinition, StatEntry } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
+import { celebrateStatLogged } from '../../services/statCelebration';
 
 interface ChartPoint {
     date: string;
@@ -19,6 +20,7 @@ interface Props {
     definition: StatDefinition;
     dateRange: number;
     refreshKey: number;
+    onEntryChanged?: () => void;
 }
 
 function buildChartPoints(from: Date, to: Date, entries: StatEntry[]): ChartPoint[] {
@@ -29,7 +31,7 @@ function buildChartPoints(from: Date, to: Date, entries: StatEntry[]): ChartPoin
     });
 }
 
-export function StatLineChart({ definition, dateRange, refreshKey }: Props) {
+export function StatLineChart({ definition, dateRange, refreshKey, onEntryChanged }: Props) {
     const theme = useTheme();
     const to = new Date();
     const from = subDays(to, dateRange - 1);
@@ -162,7 +164,9 @@ export function StatLineChart({ definition, dateRange, refreshKey }: Props) {
                 date,
                 value,
             });
+            celebrateStatLogged();
             handleSaved(date, value);
+            onEntryChanged?.();
         } catch (error) {
             console.error('Failed to save chart stat entry:', error);
             setSaveError('Failed to save this value.');

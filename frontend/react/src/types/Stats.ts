@@ -37,7 +37,8 @@ export interface RecordEntryRequest {
 
 export interface StatSummary {
     checkInStreak: number;
-    monthlyCheckIns: number | null;   // BOOLEAN only
+    periodYesCount: number | null;    // BOOLEAN only
     booleanStreak: number | null;     // BOOLEAN only
-    monthlyAverage: number | null;    // NUMBER / RANGE only
+    periodAverage: number | null;     // NUMBER / RANGE only
+    periodTotal: number | null;       // NUMBER / RANGE only
 }

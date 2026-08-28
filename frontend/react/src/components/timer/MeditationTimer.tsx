@@ -9,7 +9,6 @@ import {
     DialogContent,
     DialogTitle,
     MenuItem,
-    Paper,
     Slider,
     Stack,
     TextField,
@@ -319,14 +318,14 @@ export function MeditationTimer() {
 
     if (isLoading) {
         return (
-            <Box sx={{ display: 'grid', minHeight: '70vh', placeItems: 'center' }}>
+            <Box sx={{ display: 'grid', minHeight: 480, placeItems: 'center' }}>
                 <CircularProgress />
             </Box>
         );
     }
 
     return (
-        <Box sx={{ maxWidth: 920, width: '100%', mx: 'auto', pt: { xs: 3, md: 8 }, pb: 8, px: { xs: 1, md: 3 } }}>
+        <Box sx={{ width: '100%', p: { xs: 2, sm: 3, lg: 4 } }}>
             <Stack spacing={3}>
                 <Box sx={{ textAlign: 'left' }}>
                     <Typography variant="h4" sx={{ fontWeight: 400, mb: 1 }}>
@@ -452,7 +451,7 @@ function StartMeditation({
                 </Alert>
             )}
 
-            <Paper elevation={0} sx={{ p: { xs: 2.5, md: 4 }, borderRadius: 4, bgcolor: 'background.paper', textAlign: 'left' }}>
+            <Box sx={{ py: { xs: 1, md: 2 }, textAlign: 'left' }}>
                 <Stack spacing={3}>
                     <Box>
                         <Typography variant="h6" sx={{ mb: 0.5 }}>Settle in</Typography>
@@ -541,7 +540,7 @@ function StartMeditation({
                         {actionLoading ? 'Starting…' : 'Begin meditation'}
                     </Button>
                 </Stack>
-            </Paper>
+            </Box>
 
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'text.secondary', px: 1 }}>
                 <SelfImprovementIcon fontSize="small" />
@@ -581,7 +580,7 @@ function ActiveMeditation({
     onFinish,
 }: ActiveMeditationProps) {
     return (
-        <Paper elevation={0} sx={{ p: { xs: 2.5, md: 5 }, borderRadius: 4, bgcolor: 'background.paper' }}>
+        <Box sx={{ py: { xs: 1, md: 2 } }}>
             <Stack spacing={3} alignItems="center">
                 <Box sx={{ position: 'relative', display: 'inline-flex' }}>
                     <CircularProgress
@@ -667,7 +666,7 @@ function ActiveMeditation({
                     </Button>
                 </Stack>
             </Stack>
-        </Paper>
+        </Box>
     );
 }
 

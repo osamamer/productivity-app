@@ -2,6 +2,7 @@ package org.osama.session.meditation;
 
 import jakarta.transaction.Transactional;
 import lombok.extern.slf4j.Slf4j;
+import org.osama.session.events.MeditationSessionEndedEvent;
 import org.osama.user.User;
 import org.osama.user.UserRepository;
 import org.springframework.context.ApplicationEventPublisher;
@@ -135,7 +136,14 @@ public class MeditationSessionService {
         }
         log.info("Meditation session ended: userId={} sessionId={} totalTime={} moodAfter={}",
                 userId, session.getId(), session.getTotalSessionTime(), moodAfter);
-        return meditationSessionRepository.save(session);
+        MeditationSession savedSession = meditationSessionRepository.save(session);
+        eventPublisher.publishEvent(new MeditationSessionEndedEvent(
+                savedSession.getId(),
+                savedSession.getUser().getId(),
+                savedSession.getTotalSessionTime(),
+                savedSession.getEndTime()
+        ));
+        return savedSession;
     }
 
     public MeditationSession endSession(String sessionId) {

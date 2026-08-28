@@ -9,6 +9,7 @@ import { format, subDays } from 'date-fns';
 import { StatDefinition } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
 import { KeyboardEvent } from 'react';
+import { celebrateStatLogged } from '../../services/statCelebration';
 
 const CIRCLE_SIZE = 28;
 
@@ -98,6 +99,7 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                 date: popover.date,
                 value: editValue,
             });
+            celebrateStatLogged();
             setValueMap(prev => new Map(prev).set(popover.date, editValue));
             onEntryChanged?.();
             closePopover();

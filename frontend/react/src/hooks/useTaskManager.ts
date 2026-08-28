@@ -230,6 +230,24 @@ export function useTaskManager() {
         });
     }, []);
 
+    const reorderTasksInState = useCallback((orderedTaskIds: string[]) => {
+        setTaskState(prev => {
+            const orderedTaskIdSet = new Set(orderedTaskIds);
+            const reorderedTasks = prev.allTasks.filter(task => orderedTaskIdSet.has(task.taskId));
+            const taskById = new Map(reorderedTasks.map(task => [task.taskId, task]));
+            let nextSelectedTask = 0;
+
+            const updatedTasks = prev.allTasks.map(task => {
+                if (!orderedTaskIdSet.has(task.taskId)) return task;
+                const reorderedTask = taskById.get(orderedTaskIds[nextSelectedTask]);
+                nextSelectedTask += 1;
+                return reorderedTask ?? task;
+            });
+
+            return withTaskBuckets(prev, updatedTasks);
+        });
+    }, []);
+
     return useMemo(() => ({
         // State
         allTasks,
@@ -251,6 +269,7 @@ export function useTaskManager() {
         addTaskToState,
         updateTaskInState,
         removeTaskFromState,
+        reorderTasksInState,
     }), [
         allTasks,
         todayTasks,
@@ -268,5 +287,6 @@ export function useTaskManager() {
         addTaskToState,
         updateTaskInState,
         removeTaskFromState,
+        reorderTasksInState,
     ]);
 }

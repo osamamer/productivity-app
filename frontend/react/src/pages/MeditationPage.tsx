@@ -1,13 +1,43 @@
-import { Box } from '@mui/material';
+import { Box, Paper } from '@mui/material';
 import { PageWrapper } from '../components/PageWrapper.tsx';
 import MeditationTimer from '../components/timer/MeditationTimer.tsx';
+import { MeditationStats } from '../components/timer/MeditationStats.tsx';
 
 export function MeditationPage() {
     return (
         <PageWrapper>
-            <Box sx={{ minHeight: '100%', width: '100%' }}>
-                <MeditationTimer />
-            </Box>
+            <Paper
+                elevation={0}
+                sx={{
+                    width: '100%',
+                    maxWidth: 1600,
+                    mx: 'auto',
+                    my: 'auto',
+                    borderRadius: 4,
+                    overflow: 'hidden',
+                    bgcolor: 'background.paper',
+                    border: theme => `1px solid ${theme.palette.divider}`,
+                    display: 'grid',
+                    gridTemplateColumns: {
+                        xs: 'minmax(0, 1fr)',
+                        md: 'minmax(0, 4fr) minmax(400px, 3fr)',
+                    },
+                    alignItems: 'stretch',
+                }}
+            >
+                <Box sx={{ minWidth: 0 }}>
+                    <MeditationTimer />
+                </Box>
+                <Box
+                    sx={{
+                        minWidth: 0,
+                        borderTop: theme => ({ xs: `1px solid ${theme.palette.divider}`, md: 0 }),
+                        borderLeft: theme => ({ xs: 0, md: `1px solid ${theme.palette.divider}` }),
+                    }}
+                >
+                    <MeditationStats />
+                </Box>
+            </Paper>
         </PageWrapper>
     );
 }

@@ -77,8 +77,11 @@ public class StatController {
     }
 
     @GetMapping("/definitions/{id}/summary")
-    public StatSummaryResponse getSummary(@PathVariable String id) {
-        return statService.getSummary(id, currentUserService.getCurrentUserId());
+    public StatSummaryResponse getSummary(
+            @PathVariable String id,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return statService.getSummary(id, from, to, currentUserService.getCurrentUserId());
     }
 
     @GetMapping("/entries/by-date")

@@ -49,7 +49,7 @@ export function StatCard({ definition, onDelete, refreshKey, onEntryChanged }: P
                 sx={{ pb: 0, minHeight: 72 }}
             />
             <CardContent>
-                <StatSummaryBar definition={definition} refreshKey={refreshKey} />
+                <StatSummaryBar definition={definition} dateRange={dateRange} refreshKey={refreshKey} />
                 <Stack direction="row" spacing={0.5} sx={{ mb: 2 }}>
                     {(definition.type === 'BOOLEAN' ? CALENDAR_DATE_RANGES : CHART_DATE_RANGES).map(r => (
                         <ToggleButton
@@ -76,6 +76,7 @@ export function StatCard({ definition, onDelete, refreshKey, onEntryChanged }: P
                         definition={definition}
                         dateRange={dateRange}
                         refreshKey={refreshKey}
+                        onEntryChanged={onEntryChanged}
                     />
                 )}
             </CardContent>

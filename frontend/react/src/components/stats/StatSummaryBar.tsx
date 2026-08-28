@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Stack, Typography, Skeleton } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
+import { format, subDays } from 'date-fns';
 import { StatDefinition, StatSummary } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
 
@@ -35,6 +36,7 @@ function SummaryTile({ label, value }: TileProps) {
 
 interface Props {
     definition: StatDefinition;
+    dateRange: number;
     refreshKey: number;
 }
 
@@ -47,28 +49,50 @@ function pluralDays(n: number): string {
     return `${n} ${n === 1 ? 'day' : 'days'}`;
 }
 
-export function StatSummaryBar({ definition, refreshKey }: Props) {
-    const [summaryState, setSummaryState] = useState<{ definitionId: string; summary: StatSummary } | null>(() => {
-        const summary = statService.getCachedSummary(definition.id);
-        return summary ? { definitionId: definition.id, summary } : null;
+function getPeriodWindow(dateRange: number): { from: string; to: string; key: string } {
+    const to = new Date();
+    const from = subDays(to, dateRange - 1);
+    return {
+        from: format(from, 'yyyy-MM-dd'),
+        to: format(to, 'yyyy-MM-dd'),
+        key: `${format(from, 'yyyy-MM-dd')}:${format(to, 'yyyy-MM-dd')}`,
+    };
+}
+
+function formatPeriod(dateRange: number): string {
+    switch (dateRange) {
+        case 7: return '7d';
+        case 30: return '30d';
+        case 90: return '3m';
+        case 365: return '1y';
+        default: return `${dateRange}d`;
+    }
+}
+
+export function StatSummaryBar({ definition, dateRange, refreshKey }: Props) {
+    const period = getPeriodWindow(dateRange);
+    const [summaryState, setSummaryState] = useState<{ key: string; summary: StatSummary } | null>(() => {
+        const summary = statService.getCachedSummary(definition.id, period.from, period.to);
+        return summary ? { key: `${definition.id}:${period.key}`, summary } : null;
     });
-    const cachedSummary = statService.getCachedSummary(definition.id);
-    const summary = summaryState?.definitionId === definition.id
+    const cachedSummary = statService.getCachedSummary(definition.id, period.from, period.to);
+    const summary = summaryState?.key === `${definition.id}:${period.key}`
         ? summaryState.summary
         : cachedSummary ?? null;
 
     useEffect(() => {
         let cancelled = false;
-        statService.getSummary(definition.id)
+        const summaryKey = `${definition.id}:${period.key}`;
+        statService.getSummary(definition.id, period.from, period.to)
             .then(nextSummary => {
-                if (!cancelled) setSummaryState({ definitionId: definition.id, summary: nextSummary });
+                if (!cancelled) setSummaryState({ key: summaryKey, summary: nextSummary });
             })
             .catch(e => console.error('Failed to fetch stat summary:', e))
         return () => { cancelled = true; };
-    }, [definition.id, refreshKey]);
+    }, [definition.id, period.from, period.key, period.to, refreshKey]);
 
     if (!summary) {
-        const tileCount = definition.type === 'BOOLEAN' ? 3 : 2;
+        const tileCount = 3;
         return (
             <Stack direction="row" spacing={1.5} sx={{ mb: 2 }}>
                 {Array.from({ length: tileCount }, (_, index) => (
@@ -79,27 +103,32 @@ export function StatSummaryBar({ definition, refreshKey }: Props) {
     }
 
     const tiles: TileProps[] = [];
+    const periodLabel = formatPeriod(dateRange);
 
     tiles.push({
-        label: 'Check-in streak',
+        label: `Check-in streak · ${periodLabel}`,
         value: pluralDays(summary.checkInStreak),
     });
 
     if (definition.type === 'BOOLEAN') {
         tiles.push({
-            label: 'Yes streak',
+            label: `Yes streak · ${periodLabel}`,
             value: pluralDays(summary.booleanStreak ?? 0),
         });
         tiles.push({
-            label: 'This month',
-            value: `${summary.monthlyCheckIns ?? 0} check-ins`,
+            label: `Yes · ${periodLabel}`,
+            value: String(summary.periodYesCount ?? 0),
         });
     }
 
     if (definition.type === 'NUMBER' || definition.type === 'RANGE') {
         tiles.push({
-            label: 'Monthly avg',
-            value: summary.monthlyAverage !== null ? formatAverage(summary.monthlyAverage) : '—',
+            label: `Average · ${periodLabel}`,
+            value: summary.periodAverage !== null ? formatAverage(summary.periodAverage) : '—',
+        });
+        tiles.push({
+            label: `Total · ${periodLabel}`,
+            value: summary.periodTotal !== null ? formatAverage(summary.periodTotal) : '—',
         });
     }
 
