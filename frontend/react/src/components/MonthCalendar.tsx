@@ -16,16 +16,22 @@ import { SmartTaskInput } from "./input/SmartTaskInput.tsx";
 import { StatDefinition, StatEntry } from "../types/Stats.ts";
 import { DateStatCheckIn } from "./stats/DateStatCheckIn.tsx";
 import { statService } from "../services/api/statService.ts";
-import { addMonths, format, isAfter, startOfDay, startOfMonth, subDays } from "date-fns";
+import { addDays, addMonths, format, isAfter, startOfDay, startOfMonth, subDays } from "date-fns";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
 import { DateTimePicker } from "@mui/x-date-pickers/DateTimePicker";
 import FilterListIcon from '@mui/icons-material/FilterList';
+import { CalendarEvent, CalendarEventInput } from "../types/CalendarEvent.ts";
+import { CalendarEventForm } from "./calendar/CalendarEventForm.tsx";
 
 type MonthCalenderProps = {
     tasks: Task[],
+    events: CalendarEvent[],
     onCreateTask: (task: TaskToCreate) => void,
     onUpdateTask: (taskId: string, updates: Partial<Task>) => Promise<void>,
+    onCreateEvent: (event: CalendarEventInput) => Promise<void>,
+    onUpdateEvent: (eventId: string, event: CalendarEventInput) => Promise<void>,
+    onDeleteEvent: (eventId: string) => Promise<void>,
     statDefinitions?: StatDefinition[],
 }
 
@@ -102,12 +108,17 @@ function statEventValue(definition: StatDefinition, value: number): string {
     return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
-export function MonthCalendar({ tasks, onCreateTask, onUpdateTask, statDefinitions }: MonthCalenderProps) {
+type CreateTab = 'event' | 'task' | 'stats';
+
+export function MonthCalendar({
+    tasks, events, onCreateTask, onUpdateTask, onCreateEvent, onUpdateEvent, onDeleteEvent, statDefinitions,
+}: MonthCalenderProps) {
     const theme = useTheme();
     const availableStatDefinitions = useMemo(() => statDefinitions ?? [], [statDefinitions]);
     const [initialDisplayPreferences] = useState(readCalendarDisplayPreferences);
     const [editingDate, setEditingDate] = useState<string | null>(null);
-    const [activeTab, setActiveTab] = useState(0);
+    const [activeTab, setActiveTab] = useState<CreateTab>('event');
+    const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
     const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
     const [taskDraft, setTaskDraft] = useState<Partial<Task> | null>(null);
     const [taskSaveError, setTaskSaveError] = useState<string | null>(null);
@@ -141,6 +152,10 @@ export function MonthCalendar({ tasks, onCreateTask, onUpdateTask, statDefinitio
     const selectedTask = useMemo(
         () => tasks.find(task => task.taskId === selectedTaskId) ?? null,
         [selectedTaskId, tasks]
+    );
+    const selectedCalendarEvent = useMemo(
+        () => events.find(event => event.id === selectedEventId) ?? null,
+        [events, selectedEventId]
     );
 
     React.useEffect(() => {
@@ -178,6 +193,23 @@ export function MonthCalendar({ tasks, onCreateTask, onUpdateTask, statDefinitio
     }, [calendarRange.end, calendarRange.start, hasVisibleStats, selectedStatDefinitions, statRefreshKey]);
 
     const calendarEvents = useMemo(() => {
+        const eventEntries = events.map(event => ({
+            id: event.id,
+            title: event.title,
+            start: event.allDay ? event.startDate! : event.startTime!,
+            end: event.allDay
+                ? format(addDays(new Date(`${event.endDate}T12:00:00`), 1), 'yyyy-MM-dd')
+                : event.endTime!,
+            allDay: event.allDay,
+            backgroundColor: theme.palette.mode === 'dark' ? 'rgba(156, 39, 176, 0.22)' : 'rgba(156, 39, 176, 0.12)',
+            borderColor: theme.palette.secondary.main,
+            textColor: theme.palette.text.primary,
+            extendedProps: {
+                eventType: 'calendarEvent',
+                fullDescription: event.description || event.title,
+            },
+        }));
+
         const taskEvents = showTasks
             ? tasks
                 .filter(task => {
@@ -228,8 +260,8 @@ export function MonthCalendar({ tasks, onCreateTask, onUpdateTask, statDefinitio
             })
             : [];
 
-        return [...taskEvents, ...statEvents];
-    }, [availableStatDefinitions, hasVisibleStats, priorityFilters, selectedStatIdsForDisplay, showTasks, statEntries, taskStatus, tasks, theme.palette.mode, theme.palette.secondary.main, theme.palette.text.primary, theme.palette.success.main, theme.palette.error.main]);
+        return [...eventEntries, ...taskEvents, ...statEvents];
+    }, [availableStatDefinitions, events, hasVisibleStats, priorityFilters, selectedStatIdsForDisplay, showTasks, statEntries, taskStatus, tasks, theme.palette.mode, theme.palette.secondary.main, theme.palette.text.primary, theme.palette.success.main, theme.palette.error.main]);
 
     const handleEventDidMount = useCallback((info: EventMountArg) => {
         const fullDescription = info.event.extendedProps.fullDescription;
@@ -238,16 +270,18 @@ export function MonthCalendar({ tasks, onCreateTask, onUpdateTask, statDefinitio
     }, []);
 
     const handleDateClick = useCallback((arg: DateClickArg) => {
-        const future = isAfter(startOfDay(new Date(arg.dateStr + 'T12:00:00')), startOfDay(new Date()));
-        if (!showTasks && (!hasVisibleStats || future)) return;
         setEditingDate(arg.dateStr);
-        setActiveTab(!showTasks && hasVisibleStats && !future ? 1 : 0);
-    }, [hasVisibleStats, showTasks]);
+        setActiveTab('event');
+    }, []);
 
     const handleEventClick = useCallback((arg: EventClickArg) => {
+        if (arg.event.extendedProps.eventType === 'calendarEvent') {
+            setSelectedEventId(arg.event.id);
+            return;
+        }
         if (arg.event.extendedProps.eventType === 'stat') {
             setEditingDate(arg.event.extendedProps.date ?? arg.event.startStr);
-            setActiveTab(1);
+            setActiveTab('stats');
             return;
         }
 
@@ -615,10 +649,10 @@ export function MonthCalendar({ tasks, onCreateTask, onUpdateTask, statDefinitio
                 open={Boolean(editingDate)}
                 onClose={() => {
                     setEditingDate(null);
-                    setActiveTab(0);
+                    setActiveTab('event');
                 }}
                 fullWidth
-                maxWidth="xs"
+                maxWidth="sm"
                 scroll="paper"
                 slotProps={{
                     paper: {
@@ -640,30 +674,41 @@ export function MonthCalendar({ tasks, onCreateTask, onUpdateTask, statDefinitio
                             {format(new Date(editingDate + 'T12:00:00'), 'MMMM d, yyyy')}
                         </Typography>
                     )}
-                    {showTasks && hasVisibleStats && !isFutureDate && (
+                    {(showTasks || (hasVisibleStats && !isFutureDate)) && (
                         <Tabs
                             value={activeTab}
-                            onChange={(_, v) => setActiveTab(v)}
+                            onChange={(_, value: CreateTab) => setActiveTab(value)}
                             sx={{ px: 2, borderBottom: 1, borderColor: 'divider' }}
                             variant="fullWidth"
                         >
-                            <Tab label="Task" />
-                            <Tab label="Stats" />
+                            <Tab value="event" label="Event" />
+                            {showTasks && <Tab value="task" label="Task" />}
+                            {hasVisibleStats && !isFutureDate && <Tab value="stats" label="Stats" />}
                         </Tabs>
                     )}
                 </Box>
 
                 <DialogContent dividers sx={{ p: 0 }}>
-                    {activeTab === 0 && showTasks && (
+                    {activeTab === 'event' && editingDate && (
+                        <CalendarEventForm
+                            initialDate={editingDate}
+                            onSave={async event => {
+                                await onCreateEvent(event);
+                                setEditingDate(null);
+                            }}
+                            onCancel={() => setEditingDate(null)}
+                        />
+                    )}
+                    {activeTab === 'task' && showTasks && (
                         <Box sx={{ p: 2 }}>
                             <SmartTaskInput
                                 onSubmit={handleTaskSubmit}
                                 initialDate={editingDate || undefined}
-                                autoFocus={activeTab === 0}
+                                autoFocus={activeTab === 'task'}
                             />
                         </Box>
                     )}
-                    {activeTab === 1 && hasVisibleStats && editingDate && (
+                    {activeTab === 'stats' && hasVisibleStats && editingDate && (
                         <DateStatCheckIn
                             date={editingDate}
                             definitions={selectedStatDefinitions}
@@ -671,6 +716,34 @@ export function MonthCalendar({ tasks, onCreateTask, onUpdateTask, statDefinitio
                                 setStatRefreshKey(key => key + 1);
                                 setEditingDate(null);
                             }}
+                        />
+                    )}
+                </DialogContent>
+            </Dialog>
+
+            <Dialog
+                open={Boolean(selectedCalendarEvent)}
+                onClose={() => setSelectedEventId(null)}
+                fullWidth
+                maxWidth="sm"
+            >
+                <DialogTitle>{selectedCalendarEvent?.title || 'Event details'}</DialogTitle>
+                <DialogContent sx={{ p: 0 }}>
+                    {selectedCalendarEvent && (
+                        <CalendarEventForm
+                            key={selectedCalendarEvent.id}
+                            initialDate={selectedCalendarEvent.startDate
+                                ?? format(new Date(selectedCalendarEvent.startTime!), 'yyyy-MM-dd')}
+                            event={selectedCalendarEvent}
+                            onSave={async event => {
+                                await onUpdateEvent(selectedCalendarEvent.id, event);
+                                setSelectedEventId(null);
+                            }}
+                            onDelete={async () => {
+                                await onDeleteEvent(selectedCalendarEvent.id);
+                                setSelectedEventId(null);
+                            }}
+                            onCancel={() => setSelectedEventId(null)}
                         />
                     )}
                 </DialogContent>

@@ -10,7 +10,7 @@ export function MeditationPage() {
                 elevation={0}
                 sx={{
                     width: '100%',
-                    maxWidth: 1600,
+                    maxWidth: 1400,
                     mx: 'auto',
                     my: 'auto',
                     borderRadius: 4,
@@ -20,7 +20,7 @@ export function MeditationPage() {
                     display: 'grid',
                     gridTemplateColumns: {
                         xs: 'minmax(0, 1fr)',
-                        md: 'minmax(0, 4fr) minmax(400px, 3fr)',
+                        md: 'minmax(0, 3fr) minmax(380px, 2fr)',
                     },
                     alignItems: 'stretch',
                 }}

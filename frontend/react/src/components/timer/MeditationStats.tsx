@@ -27,6 +27,14 @@ interface MeditationStatsData {
     meditatedSummary: StatSummary;
     minutesSummary: StatSummary;
     meditatedEntries: StatEntry[];
+    period: MeditationPeriod;
+}
+
+interface MeditationPeriod {
+    from: string;
+    to: string;
+    monthStart: Date;
+    monthEnd: Date;
 }
 
 interface MetricProps {
@@ -71,7 +79,7 @@ export function MeditationStats() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
     const [monthOffset, setMonthOffset] = useState(0);
-    const period = useMemo(() => {
+    const period = useMemo<MeditationPeriod>(() => {
         const today = new Date();
         const from = addMonths(startOfMonth(today), monthOffset);
         const monthEnd = endOfMonth(from);
@@ -87,6 +95,7 @@ export function MeditationStats() {
     useEffect(() => {
         let cancelled = false;
         setLoading(true);
+        setError(false);
         statService.getDefinitions()
             .then(async definitions => {
                 const meditated = findSystemDefinition(definitions, MEDITATED_SYSTEM_KEY);
@@ -98,7 +107,7 @@ export function MeditationStats() {
                     statService.getSummary(minutes.id, period.from, period.to),
                     statService.getEntries(meditated.id, period.from, period.to),
                 ]);
-                if (!cancelled) setData({ meditatedSummary, minutesSummary, meditatedEntries });
+                if (!cancelled) setData({ meditatedSummary, minutesSummary, meditatedEntries, period });
             })
             .catch(fetchError => {
                 console.error('Failed to load meditation stats:', fetchError);
@@ -109,11 +118,11 @@ export function MeditationStats() {
             });
 
         return () => { cancelled = true; };
-    }, [period.from, period.to]);
+    }, [period]);
 
-    if (loading) {
+    if (loading && !data) {
         return (
-            <Box sx={{ display: 'grid', minHeight: 480, placeItems: 'center' }}>
+            <Box sx={{ display: 'grid', minHeight: 360, placeItems: 'center' }}>
                 <Stack direction="row" justifyContent="center">
                     <CircularProgress size={24} />
                 </Stack>
@@ -121,19 +130,19 @@ export function MeditationStats() {
         );
     }
 
-    if (error) return <Alert severity="warning" sx={{ m: { xs: 2, sm: 3, lg: 4 } }}>Your meditation history could not be loaded.</Alert>;
+    if (error && !data) return <Alert severity="warning" sx={{ m: { xs: 2, sm: 3, lg: 4 } }}>Your meditation history could not be loaded.</Alert>;
     if (!data) return null;
 
     const yesDates = new Set(
         data.meditatedEntries.filter(entry => entry.value === 1).map(entry => entry.date),
     );
-    const monthDays = eachDayOfInterval({ start: period.monthStart, end: period.monthEnd });
-    const leadingEmptyDays = (getDay(period.monthStart) + 6) % 7;
+    const monthDays = eachDayOfInterval({ start: data.period.monthStart, end: data.period.monthEnd });
+    const leadingEmptyDays = (getDay(data.period.monthStart) + 6) % 7;
     const calendarDays: (Date | null)[] = [
         ...Array.from({ length: leadingEmptyDays }, () => null),
         ...monthDays,
     ];
-    while (calendarDays.length % 7 !== 0) calendarDays.push(null);
+    while (calendarDays.length < 42) calendarDays.push(null);
     const today = new Date();
     const yesCount = data.meditatedSummary.periodYesCount ?? 0;
     const totalMinutes = data.minutesSummary.periodTotal ?? 0;
@@ -176,19 +185,20 @@ export function MeditationStats() {
                             size="small"
                             aria-label="Previous month"
                             title="Previous month"
+                            disabled={loading}
                             onClick={() => setMonthOffset(offset => offset - 1)}
                         >
                             <ChevronLeftIcon fontSize="small" />
                         </IconButton>
                         <Stack direction="row" spacing={0.5} alignItems="center" sx={{ color: 'text.secondary', minWidth: 132, justifyContent: 'center' }}>
                             <CalendarMonthIcon sx={{ fontSize: 18 }} />
-                            <Typography variant="caption">{format(period.monthStart, 'MMMM yyyy')}</Typography>
+                            <Typography variant="caption">{format(data.period.monthStart, 'MMMM yyyy')}</Typography>
                         </Stack>
                         <IconButton
                             size="small"
                             aria-label="Next month"
                             title="Next month"
-                            disabled={monthOffset >= 0}
+                            disabled={loading || monthOffset >= 0}
                             onClick={() => setMonthOffset(offset => Math.min(0, offset + 1))}
                         >
                             <ChevronRightIcon fontSize="small" />
@@ -252,7 +262,7 @@ export function MeditationStats() {
                                     <Box
                                         key={`empty-${index}`}
                                         sx={{
-                                            aspectRatio: '1',
+                                            height: { xs: 32, sm: 38 },
                                             borderRight: `1px solid ${theme.palette.divider}`,
                                             borderBottom: `1px solid ${theme.palette.divider}`,
                                         }}
@@ -265,8 +275,7 @@ export function MeditationStats() {
                             return (
                                 <Tooltip key={key} title={future ? format(date, 'MMMM d') : `${format(date, 'MMMM d')}: ${practiced ? 'Meditated' : 'No session'}`}>
                                     <Box sx={{
-                                        aspectRatio: '1',
-                                        minHeight: { xs: 30, sm: 38 },
+                                        height: { xs: 32, sm: 38 },
                                         position: 'relative',
                                         bgcolor: 'transparent',
                                         borderRight: `1px solid ${theme.palette.divider}`,

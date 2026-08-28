@@ -1,0 +1,34 @@
+export type CalendarEvent = {
+    id: string;
+    title: string;
+    description: string;
+    allDay: boolean;
+    startDate: string | null;
+    endDate: string | null;
+    startTime: string | null;
+    endTime: string | null;
+    timeZone: string;
+    reminderMinutesBefore: number | null;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type CalendarEventInput = {
+    title: string;
+    description: string;
+    allDay: boolean;
+    startDate: string | null;
+    endDate: string | null;
+    startTime: string | null;
+    endTime: string | null;
+    timeZone: string;
+    reminderMinutesBefore: number | null;
+};
+
+export type ReminderNotification = {
+    reminderId: string;
+    eventId: string;
+    title: string;
+    eventStart: string;
+    allDay: boolean;
+};

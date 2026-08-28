@@ -5,3 +5,5 @@ export { statService } from './statService';
 export { meditationService } from './meditationService';
 export { notesService } from './notesService';
 export { taskGroupService } from './taskGroupService';
+export { eventService } from './eventService';
+export { reminderService } from './reminderService';

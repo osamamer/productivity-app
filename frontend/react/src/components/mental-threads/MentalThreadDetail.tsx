@@ -287,7 +287,17 @@ export function MentalThreadDetail({
                             variant="outlined"
                             startIcon={<ReplayRoundedIcon />}
                             onClick={onReopen}
-                            sx={{ alignSelf: { xs: 'center', sm: 'auto' }, flexShrink: 0 }}
+                            sx={{
+                                alignSelf: { xs: 'center', sm: 'auto' },
+                                flexShrink: 0,
+                                color: attentionStateDetails.PENDING.color,
+                                bgcolor: alpha(attentionStateDetails.PENDING.color, 0.06),
+                                borderColor: alpha(attentionStateDetails.PENDING.color, 0.45),
+                                '&:hover': {
+                                    bgcolor: alpha(attentionStateDetails.PENDING.color, 0.11),
+                                    borderColor: attentionStateDetails.PENDING.color,
+                                },
+                            }}
                         >
                             Reopen
                         </Button>

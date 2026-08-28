@@ -17,12 +17,14 @@ import {StatsPage} from "./pages/StatsPage.tsx";
 import {SettingsPage} from "./pages/SettingsPage.tsx";
 import {NotesPage} from "./pages/NotesPage.tsx";
 import {MentalThreadsPage} from "./pages/MentalThreadsPage.tsx";
+import {ReminderNotifications} from "./components/calendar/ReminderNotifications.tsx";
 
 
 function AppProviders() {
     return (
         <UserProvider>
             <TaskProvider>
+                <ReminderNotifications/>
                 <Outlet/>
             </TaskProvider>
         </UserProvider>

@@ -220,8 +220,8 @@ public class MentalThreadService {
                 Comparator.nullsLast(Comparator.reverseOrder())
         );
         return Comparator.comparing(MentalThread::getStatus)
-                .thenComparing(targetDateOrder)
                 .thenComparing(loadOrder)
+                .thenComparing(targetDateOrder)
                 .thenComparing(updatedOrder);
     }
 

@@ -3,11 +3,12 @@ import {PageWrapper} from "../components/PageWrapper.tsx";
 import {MonthCalendar} from "../components/MonthCalendar.tsx";
 import {useGlobalTasks} from "../contexts/TaskContext.tsx";
 import {useEffect, useState} from "react";
-import {taskService} from "../services/api";
+import {eventService, taskService} from "../services/api";
 import {TaskToCreate} from "../types/TaskToCreate.tsx";
 import {StatDefinition} from "../types/Stats.ts";
 import {statService} from "../services/api/statService.ts";
 import {Task} from "../types/Task.tsx";
+import {CalendarEvent, CalendarEventInput} from "../types/CalendarEvent.ts";
 
 export function CalendarPage() {
     const {
@@ -21,12 +22,34 @@ export function CalendarPage() {
     } = useGlobalTasks();
 
     const [statDefinitions, setStatDefinitions] = useState<StatDefinition[]>([]);
+    const [events, setEvents] = useState<CalendarEvent[]>([]);
 
     useEffect(() => {
         statService.getDefinitions()
             .then(setStatDefinitions)
             .catch(e => console.error('Failed to load stat definitions:', e));
     }, []);
+
+    useEffect(() => {
+        eventService.getEvents()
+            .then(setEvents)
+            .catch(e => console.error('Failed to load calendar events:', e));
+    }, []);
+
+    const handleCreateEvent = async (input: CalendarEventInput) => {
+        const created = await eventService.createEvent(input);
+        setEvents(current => [...current, created]);
+    };
+
+    const handleUpdateEvent = async (eventId: string, input: CalendarEventInput) => {
+        const updated = await eventService.updateEvent(eventId, input);
+        setEvents(current => current.map(event => event.id === eventId ? updated : event));
+    };
+
+    const handleDeleteEvent = async (eventId: string) => {
+        await eventService.deleteEvent(eventId);
+        setEvents(current => current.filter(event => event.id !== eventId));
+    };
 
     const handleCreateTask = async (taskToCreate: TaskToCreate) => {
         try {
@@ -67,8 +90,12 @@ export function CalendarPage() {
             }}>
                 <MonthCalendar
                     tasks={allTasks}
+                    events={events}
                     onCreateTask={handleCreateTask}
                     onUpdateTask={handleUpdateTask}
+                    onCreateEvent={handleCreateEvent}
+                    onUpdateEvent={handleUpdateEvent}
+                    onDeleteEvent={handleDeleteEvent}
                     statDefinitions={statDefinitions}
                 />
             </Box>

@@ -1,0 +1,154 @@
+databaseChangeLog:
+  - changeSet:
+      id: 022-create-calendar-event
+      author: codex
+      comment: Create user-owned calendar events and make the reminder skeleton deliverable
+      changes:
+        - createTable:
+            tableName: calendar_event
+            columns:
+              - column:
+                  name: event_id
+                  type: varchar(255)
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: title
+                  type: varchar(200)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: text
+              - column:
+                  name: all_day
+                  type: boolean
+                  constraints:
+                    nullable: false
+              - column:
+                  name: start_date
+                  type: date
+              - column:
+                  name: end_date
+                  type: date
+              - column:
+                  name: start_time
+                  type: timestamp with time zone
+              - column:
+                  name: end_time
+                  type: timestamp with time zone
+              - column:
+                  name: time_zone
+                  type: varchar(80)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamp with time zone
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamp with time zone
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: calendar_event
+            baseColumnNames: user_id
+            referencedTableName: app_user
+            referencedColumnNames: id
+            constraintName: fk_app_calendar_event_user
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - createIndex:
+            tableName: calendar_event
+            indexName: idx_app_calendar_event_user_start
+            ifNotExists: true
+            columns:
+              - column:
+                  name: user_id
+              - column:
+                  name: start_date
+              - column:
+                  name: start_time
+        - dropForeignKeyConstraint:
+            baseTableName: reminder
+            constraintName: fk_reminder_task
+        - dropNotNullConstraint:
+            tableName: reminder
+            columnName: task_id
+            columnDataType: varchar(255)
+        - addForeignKeyConstraint:
+            baseTableName: reminder
+            baseColumnNames: task_id
+            referencedTableName: task
+            referencedColumnNames: task_id
+            constraintName: fk_reminder_task
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - addColumn:
+            tableName: reminder
+            columns:
+              - column:
+                  name: event_id
+                  type: varchar(255)
+              - column:
+                  name: minutes_before
+                  type: integer
+                  defaultValueNumeric: 1440
+                  constraints:
+                    nullable: false
+              - column:
+                  name: dispatched_at
+                  type: timestamp with time zone
+              - column:
+                  name: acknowledged_at
+                  type: timestamp with time zone
+        - modifyDataType:
+            tableName: reminder
+            columnName: date_time
+            newDataType: timestamp with time zone
+        - addForeignKeyConstraint:
+            baseTableName: reminder
+            baseColumnNames: event_id
+            referencedTableName: calendar_event
+            referencedColumnNames: event_id
+            constraintName: fk_app_reminder_event
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - addUniqueConstraint:
+            tableName: reminder
+            columnNames: event_id
+            constraintName: uq_app_reminder_event
+        - createIndex:
+            tableName: reminder
+            indexName: idx_app_reminder_due_delivery
+            ifNotExists: true
+            columns:
+              - column:
+                  name: date_time
+              - column:
+                  name: dispatched_at
+              - column:
+                  name: acknowledged_at
+      rollback:
+        - dropColumn:
+            tableName: reminder
+            columnName: acknowledged_at
+        - dropColumn:
+            tableName: reminder
+            columnName: dispatched_at
+        - dropColumn:
+            tableName: reminder
+            columnName: minutes_before
+        - dropColumn:
+            tableName: reminder
+            columnName: event_id
+        - dropTable:
+            tableName: calendar_event
