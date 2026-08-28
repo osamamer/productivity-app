@@ -123,6 +123,19 @@ public class PomoTest {
         assertFalse(pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(task.getTaskId()).isPresent());
         assertTrue(scheduledJobRepository.findAllByAssociatedTaskId(task.getTaskId()).isEmpty());
     }
+
+    @Test
+    void userHasAtMostOneActivePomodoroAcrossTasks() {
+        Task firstTask = createTask();
+        Task secondTask = createTask();
+        pomodoroService.startPomodoro(firstTask.getTaskId(), 25, 5, 15, 4, 4, TEST_USER_ID);
+
+        assertEquals(firstTask.getTaskId(), pomodoroService.getActivePomodoro(TEST_USER_ID)
+                .orElseThrow()
+                .getAssociatedTaskId());
+        assertThrows(IllegalStateException.class,
+                () -> pomodoroService.startPomodoro(secondTask.getTaskId(), 25, 5, 15, 4, 4, TEST_USER_ID));
+    }
     @Test
     void pomoUserInterventionTest() throws InterruptedException {
         Task task = createTask();

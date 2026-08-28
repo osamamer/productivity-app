@@ -1,8 +1,9 @@
 import { FormEvent, SyntheticEvent, useEffect, useMemo, useState } from 'react';
-import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Stack, Tab, Tabs, TextField, Typography } from '@mui/material';
+import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Stack, Switch, Tab, Tabs, TextField, Typography } from '@mui/material';
 import LightModeIcon from '@mui/icons-material/LightMode';
 import NightlightIcon from '@mui/icons-material/Nightlight';
 import LogoutIcon from '@mui/icons-material/Logout';
+import HomeOutlinedIcon from '@mui/icons-material/HomeOutlined';
 import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import SecurityOutlinedIcon from '@mui/icons-material/SecurityOutlined';
@@ -13,6 +14,7 @@ import { accentColorOptions, useAppTheme } from '../contexts/ThemeContext.tsx';
 import { useSearchParams } from 'react-router-dom';
 import { userService } from '../services/api/userService.ts';
 import axios from 'axios';
+import { SHOW_COMPLETED_HOME_TASKS_STORAGE_KEY } from '../services/utils/homePreferences.ts';
 
 const sectionCardSx = {
     backgroundColor: 'background.paper',
@@ -28,6 +30,8 @@ const sectionHeadingSx = {
     gap: 1,
     mb: 1.5,
 };
+
+const showCompletedTasksDescription = 'Keep completed tasks visible in today\'s Home list.';
 
 export function SettingsPage() {
     const { user, logout } = useUser();
@@ -47,10 +51,17 @@ export function SettingsPage() {
     const [passwordError, setPasswordError] = useState<string | null>(null);
     const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
     const [passwordSaving, setPasswordSaving] = useState(false);
+    const [showCompletedHomeTasks, setShowCompletedHomeTasks] = useState(() => (
+        localStorage.getItem(SHOW_COMPLETED_HOME_TASKS_STORAGE_KEY) !== 'false'
+    ));
 
     useEffect(() => {
         setActiveTab(initialTab);
     }, [initialTab]);
+
+    useEffect(() => {
+        localStorage.setItem(SHOW_COMPLETED_HOME_TASKS_STORAGE_KEY, String(showCompletedHomeTasks));
+    }, [showCompletedHomeTasks]);
 
     const passwordsMatch = newPassword === confirmPassword;
     const canSubmitPasswordChange = currentPassword.trim() !== '' && newPassword.trim() !== '' && confirmPassword.trim() !== '' && passwordsMatch;
@@ -142,28 +153,55 @@ export function SettingsPage() {
 
                     <Stack spacing={2.5}>
                         {activeTab === 0 && (
-                            <Box sx={sectionCardSx}>
-                                <Box sx={sectionHeadingSx}>
-                                    <SecurityOutlinedIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
-                                    <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                                        Session
+                            <>
+                                <Box sx={sectionCardSx}>
+                                    <Box sx={sectionHeadingSx}>
+                                        <SecurityOutlinedIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
+                                        <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                                            Session
+                                        </Typography>
+                                    </Box>
+
+                                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2, textAlign: 'left' }}>
+                                        Authentication is handled through Keycloak. Signing out ends the current app session and returns you to login.
                                     </Typography>
+
+                                    <Button
+                                        variant="outlined"
+                                        color="inherit"
+                                        startIcon={<LogoutIcon />}
+                                        onClick={() => setLogoutDialogOpen(true)}
+                                        sx={{ borderRadius: 2, py: 1.1, textTransform: 'none' }}
+                                    >
+                                        Log out
+                                    </Button>
                                 </Box>
 
-                                <Typography variant="body2" color="text.secondary" sx={{ mb: 2, textAlign: 'left' }}>
-                                    Authentication is handled through Keycloak. Signing out ends the current app session and returns you to login.
-                                </Typography>
+                                <Box sx={sectionCardSx}>
+                                    <Box sx={sectionHeadingSx}>
+                                        <HomeOutlinedIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
+                                        <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                                            Home page
+                                        </Typography>
+                                    </Box>
 
-                                <Button
-                                    variant="outlined"
-                                    color="inherit"
-                                    startIcon={<LogoutIcon />}
-                                    onClick={() => setLogoutDialogOpen(true)}
-                                    sx={{ borderRadius: 2, py: 1.1, textTransform: 'none' }}
-                                >
-                                    Log out
-                                </Button>
-                            </Box>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
+                                        <Box sx={{ textAlign: 'left' }}>
+                                            <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                                                Show completed tasks
+                                            </Typography>
+                                            <Typography variant="body2" color="text.secondary">
+                                                {showCompletedTasksDescription}
+                                            </Typography>
+                                        </Box>
+                                        <Switch
+                                            checked={showCompletedHomeTasks}
+                                            onChange={(event) => setShowCompletedHomeTasks(event.target.checked)}
+                                            inputProps={{ 'aria-label': 'Show completed tasks on the Home page' }}
+                                        />
+                                    </Box>
+                                </Box>
+                            </>
                         )}
 
                         {activeTab === 1 && (

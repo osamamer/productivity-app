@@ -7,6 +7,9 @@ import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.osama.exceptions.ResourceNotFoundException;
 import org.osama.user.User;
 import org.osama.user.UserRepository;
+import org.osama.requests.NewTaskRequest;
+import org.osama.task.Task;
+import org.osama.task.TaskService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.context.annotation.Import;
@@ -25,7 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @DataJpaTest
 @ActiveProfiles("test")
-@Import(MentalThreadService.class)
+@Import({MentalThreadService.class, TaskService.class})
 @Execution(ExecutionMode.SAME_THREAD)
 @TestExecutionListeners(
         listeners = {
@@ -42,6 +45,9 @@ class MentalThreadServiceTest {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private TaskService taskService;
 
     @BeforeEach
     void setUp() {
@@ -69,6 +75,7 @@ class MentalThreadServiceTest {
         assertEquals(8, created.currentMentalLoad());
         assertEquals(1, history.size());
         assertEquals(8, history.getFirst().load());
+        assertEquals(AttentionState.RUMINATING, history.getFirst().attentionState());
     }
 
     @Test
@@ -92,7 +99,27 @@ class MentalThreadServiceTest {
         List<MentalThreadLoadEntryResponse> history = mentalThreadService.getLoadHistory(created.id(), USER_ID);
         assertEquals(2, history.size());
         assertEquals(4, history.getLast().load());
+        assertEquals(AttentionState.ACTING, history.getLast().attentionState());
         assertEquals("I can act on it now", history.getLast().reason());
+    }
+
+    @Test
+    void changingAttentionStateAtTheSameLoadAddsAColorableHistoryEntry() {
+        MentalThreadResponse created = mentalThreadService.createThread(
+                createRequest("Decide how to respond", AttentionState.RUMINATING, 5),
+                USER_ID
+        );
+
+        mentalThreadService.updateThread(
+                created.id(),
+                updateRequest(created, AttentionState.ACTING, 5, "I am taking action now"),
+                USER_ID
+        );
+
+        List<MentalThreadLoadEntryResponse> history = mentalThreadService.getLoadHistory(created.id(), USER_ID);
+        assertEquals(2, history.size());
+        assertEquals(5, history.getLast().load());
+        assertEquals(AttentionState.ACTING, history.getLast().attentionState());
     }
 
     @Test
@@ -120,7 +147,7 @@ class MentalThreadServiceTest {
     }
 
     @Test
-    void closingAndReopeningPreservesLoadWhileClearingTheOldResolution() {
+    void closingClearsLoadAndReopeningRestoresThePreviousLoad() {
         MentalThreadResponse created = mentalThreadService.createThread(
                 createRequest("Repair a relationship", AttentionState.PLANNED, 7),
                 USER_ID
@@ -131,10 +158,16 @@ class MentalThreadServiceTest {
                 new CloseMentalThreadRequest(ClosureType.RESOLVED, "We talked and agreed on a boundary"),
                 USER_ID
         );
-        MentalThreadResponse reopened = mentalThreadService.reopenThread(created.id(), USER_ID);
 
         assertEquals(MentalThreadStatus.CLOSED, closed.status());
         assertEquals(ClosureType.RESOLVED, closed.closureType());
+        assertEquals(0, closed.currentMentalLoad());
+        List<MentalThreadLoadEntryResponse> closedHistory = mentalThreadService.getLoadHistory(created.id(), USER_ID);
+        assertEquals(2, closedHistory.size());
+        assertEquals(0, closedHistory.getLast().load());
+        assertEquals(AttentionState.PLANNED, closedHistory.getLast().attentionState());
+
+        MentalThreadResponse reopened = mentalThreadService.reopenThread(created.id(), USER_ID);
         assertEquals(7, reopened.currentMentalLoad());
         assertEquals(MentalThreadStatus.OPEN, reopened.status());
         assertNull(reopened.closureType());
@@ -171,6 +204,43 @@ class MentalThreadServiceTest {
         mentalThreadService.deleteThread(created.id(), USER_ID);
 
         assertTrue(mentalThreadService.getThreads(USER_ID, true).isEmpty());
+    }
+
+    @Test
+    void aTaskCreatedFromAThreadKeepsTheThreadConnection() {
+        MentalThreadResponse thread = mentalThreadService.createThread(
+                createRequest("Prepare for a difficult conversation", AttentionState.ACTING, 7),
+                USER_ID
+        );
+        NewTaskRequest request = new NewTaskRequest();
+        request.setName("Write down the boundary I need");
+        request.setMentalThreadId(thread.id());
+
+        Task task = taskService.createTask(request, USER_ID);
+
+        assertEquals(thread.id(), task.getMentalThreadId());
+    }
+
+    @Test
+    void aTaskCannotBeConnectedToAnotherUsersThread() {
+        String otherUserId = "other-thread-user";
+        userRepository.save(User.builder()
+                .id(otherUserId)
+                .email("other-threads@example.com")
+                .firstName("Other")
+                .lastName("User")
+                .username("other-thread-user")
+                .active(true)
+                .build());
+        MentalThreadResponse otherThread = mentalThreadService.createThread(
+                createRequest("A private thread", AttentionState.ACTING, 4),
+                otherUserId
+        );
+        NewTaskRequest request = new NewTaskRequest();
+        request.setName("Try to cross the user boundary");
+        request.setMentalThreadId(otherThread.id());
+
+        assertThrows(IllegalArgumentException.class, () -> taskService.createTask(request, USER_ID));
     }
 
     private CreateMentalThreadRequest createRequest(String title, AttentionState attentionState, int load) {

@@ -22,7 +22,7 @@ import SelfImprovementIcon from '@mui/icons-material/SelfImprovement';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import SettingsIcon from '@mui/icons-material/Settings';
 import EditNoteRoundedIcon from '@mui/icons-material/EditNoteRounded';
-import HubRoundedIcon from '@mui/icons-material/HubRounded';
+import PsychologyIcon from '@mui/icons-material/Psychology';
 import NightlightIcon from '@mui/icons-material/Nightlight';
 import LightModeIcon from '@mui/icons-material/LightMode';
 import LogoutIcon from '@mui/icons-material/Logout';
@@ -109,7 +109,7 @@ export function SideNav() {
                 <List sx={{ width: '100%', textAlign: 'center', flexGrow: 1, py: 0 }}>
                     <SideMenuButton Icon={DashboardRoundedIcon} text="Home" targetPage="/" />
                     <SideMenuButton Icon={AssignmentIcon} text="Tasks" targetPage="/tasks" />
-                    <SideMenuButton Icon={HubRoundedIcon} text="Mental threads" targetPage="/mental-threads" />
+                    <SideMenuButton Icon={PsychologyIcon} text="Mental threads" targetPage="/mental-threads" />
                     <SideMenuButton Icon={EditNoteRoundedIcon} text="Notes" targetPage="/notes" />
                     <SideMenuButton Icon={CalendarMonthIcon} text="Calendar" targetPage="/calendar" />
                     <SideMenuButton Icon={SelfImprovementIcon} text="Meditation" targetPage="/meditation" />

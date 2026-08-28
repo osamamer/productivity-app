@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import {
     Box, Typography, Stack, TextField, ToggleButton, ToggleButtonGroup,
     Slider, Button, Alert, CircularProgress, Divider,
@@ -20,6 +20,7 @@ export function DateStatCheckIn({ date, definitions, onSaved }: Props) {
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState(false);
+    const celebrationAnchorRef = useRef<HTMLElement | null>(null);
 
     useEffect(() => {
         if (definitions.length === 0) {
@@ -69,7 +70,8 @@ export function DateStatCheckIn({ date, definitions, onSaved }: Props) {
                     statService.recordEntry({ statDefinitionId: d.id, date, value: values[d.id]! })
                 )
             );
-            celebrateStatLogged();
+            const hasYesValue = toSave.some(d => d.type === 'BOOLEAN' && values[d.id] === 1);
+            if (hasYesValue) celebrateStatLogged(celebrationAnchorRef.current);
             setSuccess(true);
             onSaved();
         } catch (e) {
@@ -119,6 +121,7 @@ export function DateStatCheckIn({ date, definitions, onSaved }: Props) {
                                 >
                                     <ToggleButton
                                         value="yes"
+                                        onClick={event => { celebrationAnchorRef.current = event.currentTarget; }}
                                         sx={{ '&.Mui-selected': { bgcolor: 'success.main', color: 'white', '&:hover': { bgcolor: 'success.dark' } } }}
                                     >
                                         Yes

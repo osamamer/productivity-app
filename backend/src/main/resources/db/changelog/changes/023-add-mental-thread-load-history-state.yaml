@@ -1,0 +1,33 @@
+databaseChangeLog:
+  - changeSet:
+      id: 023-add-mental-thread-load-history-state
+      author: codex
+      comment: Preserve the attention state associated with each mental load history entry
+      changes:
+        - addColumn:
+            tableName: mental_thread_load_entry
+            columns:
+              - column:
+                  name: attention_state
+                  type: varchar(20)
+        - sql:
+            sql: >-
+              UPDATE mental_thread_load_entry entry
+              SET attention_state = (
+                SELECT thread.attention_state
+                FROM mental_thread thread
+                WHERE thread.thread_id = entry.thread_id
+              )
+        - addNotNullConstraint:
+            tableName: mental_thread_load_entry
+            columnName: attention_state
+            columnDataType: varchar(20)
+        - sql:
+            sql: >-
+              UPDATE mental_thread
+              SET current_mental_load = 0
+              WHERE status = 'CLOSED'
+      rollback:
+        - dropColumn:
+            tableName: mental_thread_load_entry
+            columnName: attention_state

@@ -46,6 +46,12 @@ public class TaskGroupController {
         return groupService.replaceTasks(groupId, request.getTaskIds(), currentUserService.getCurrentUserId());
     }
 
+    @DeleteMapping("/{groupId}/tasks/{taskId}")
+    public ResponseEntity<Void> removeTask(@PathVariable String groupId, @PathVariable String taskId) {
+        groupService.removeTask(groupId, taskId, currentUserService.getCurrentUserId());
+        return ResponseEntity.noContent().build();
+    }
+
     @DeleteMapping("/{groupId}")
     public ResponseEntity<Void> deleteGroup(@PathVariable String groupId) {
         groupService.deleteGroup(groupId, currentUserService.getCurrentUserId());

@@ -11,4 +11,5 @@ export interface Task   {
     tag: string;
     importance: number;
     displayOrder: number;
+    mentalThreadId: string | null;
 }

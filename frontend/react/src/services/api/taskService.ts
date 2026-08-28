@@ -1,6 +1,7 @@
 import { Task } from '../../types/Task';
 import { TaskToCreate } from '../../types/TaskToCreate';
 import { getAuthHeaders } from '../utils/authHeaders';
+import { PomodoroStatus } from '../../types/PomodoroStatus';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 const TASK_URL = `${API_BASE_URL}/api/v1/tasks`;
@@ -98,6 +99,7 @@ export const taskService = {
                 tag: task.tag,
                 importance: task.importance,
                 parentId: task.parentId,
+                mentalThreadId: task.mentalThreadId,
             }),
             headers: {
                 'Content-Type': 'application/json; charset=UTF-8',
@@ -241,9 +243,9 @@ export const taskService = {
         console.log("Ended Pomodoro.");
     },
 
-    // Returns the active pomodoro status for a task, or null if none is running.
-    async getActivePomodoro(taskId: string): Promise<Record<string, unknown> | null> {
-        const response = await fetch(`${POMODORO_URL}/status/${taskId}`, {
+    // Returns the current user's active pomodoro, or null if none is running.
+    async getActivePomodoro(): Promise<PomodoroStatus | null> {
+        const response = await fetch(`${POMODORO_URL}/status`, {
             headers: getAuthHeaders(),
         });
         if (response.status === 204) return null;

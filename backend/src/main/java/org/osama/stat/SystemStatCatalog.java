@@ -7,6 +7,7 @@ public final class SystemStatCatalog {
 
     public static final String MEDITATED_SYSTEM_KEY = "meditated";
     public static final String MEDITATION_MINUTES_SYSTEM_KEY = "meditation_minutes";
+    public static final String SLEEP_HOURS_SYSTEM_KEY = "sleep_hours";
 
     public static final List<SystemStatDefinition> MENTAL_STATE_STATS = List.of(
             range("stimulation", "Stimulation", "How mentally or sensorially stimulated you feel."),
@@ -20,8 +21,12 @@ public final class SystemStatCatalog {
             number(MEDITATION_MINUTES_SYSTEM_KEY, "Meditation minutes", "Total meditation time completed that day, in minutes.")
     );
 
+    public static final List<SystemStatDefinition> DAILY_LIFE_STATS = List.of(
+            number(SLEEP_HOURS_SYSTEM_KEY, "Sleep", "How many hours you slept the previous night.")
+    );
+
     public static final List<SystemStatDefinition> SYSTEM_STATS = Stream
-            .concat(MENTAL_STATE_STATS.stream(), MEDITATION_STATS.stream())
+            .concat(Stream.concat(MENTAL_STATE_STATS.stream(), MEDITATION_STATS.stream()), DAILY_LIFE_STATS.stream())
             .toList();
 
     private SystemStatCatalog() {

@@ -1,5 +1,8 @@
 import { AttentionState, ClosureType } from '../../types/MentalThread.ts';
 
+export const resolvedThreadColor = '#2F9D74';
+export const closedThreadColor = '#6B7280';
+
 export const attentionStateDetails: Record<AttentionState, {
     label: string;
     description: string;

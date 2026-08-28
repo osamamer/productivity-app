@@ -43,12 +43,12 @@ cd frontend/react && npm run lint     # ESLint (max-warnings 0)
 Package root: `org.osama`
 
 Feature packages follow a consistent pattern — each has an entity, repository, service, and controller:
-- `task/` — Task CRUD with filtering via JPA Specifications (`TaskSpecifications.java`)
+- `task/` — Task CRUD with filtering via JPA Specifications (`TaskSpecifications.java`); tasks may optionally originate from a mental thread
 - `taskgroup/` — User-owned groups that relate multiple tasks independently of subtasks
-- `mentalthread/` — User-owned unresolved concerns with acting/ruminating/planned/pending attention states, subjective load history, closure outcomes, and daily capacity check-ins
+- `mentalthread/` — User-owned unresolved concerns with acting/ruminating/planned/pending attention states, subjective load history, closure outcomes, daily capacity check-ins, and connected next-action tasks
 - `day/` — Daily rating/plan/summary (`DayEntity`, one per user per date)
 - `pomodoro/` — Pomodoro timer settings and state
-- `stat/` — User-defined tracking plus built-in mental-state and meditation activity stats provisioned from `SystemStatCatalog`; built-ins use a stable `systemKey` and cannot be deleted
+- `stat/` — User-defined tracking plus built-in mental-state, meditation activity, and sleep stats provisioned from `SystemStatCatalog`; built-ins use a stable `systemKey`, cannot be deleted, and expose server-side personal correlation insights
 - `session/task/` and `session/meditation/` — Session tracking with start/pause/unpause/end lifecycle, published as Spring events via `ApplicationEventPublisher`
 - `scheduling/` — Automated job scheduling for pomodoro cycles (`TimedExecutorService`, `ScheduledJob`)
 - `user/` — User management backed by Keycloak (see Auth below)
@@ -59,7 +59,7 @@ WebSocket (STOMP) is configured in `WebSocketConfig.java`. The frontend connects
 
 - **Production**: PostgreSQL on port 5432 (via Docker)
 - **Tests**: H2 in-memory; Liquibase disabled; `spring.jpa.hibernate.ddl-auto=create-drop`
-- **Migrations**: Liquibase YAML files in `backend/src/main/resources/db/changelog/changes/`; master file is `db.changelog-master.yaml`. Mental threads, load history, and daily capacity check-ins are persisted by the latest migration.
+- **Migrations**: Liquibase YAML files in `backend/src/main/resources/db/changelog/changes/`; master file is `db.changelog-master.yaml`. Mental threads, load history, daily capacity check-ins, task connections, and the Sleep system stat are persisted by the latest migrations.
 - Dev applies Liquibase migrations incrementally with `spring.liquibase.drop-first=false`; PostgreSQL data persists in the named `postgres_data` Docker volume across normal app restarts
 
 ### Auth / User Identity

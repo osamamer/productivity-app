@@ -34,4 +34,11 @@ public class PomodoroController {
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.noContent().build());
     }
+
+    @GetMapping("/status")
+    public ResponseEntity<Pomodoro> getStatus() {
+        return pomodoroService.getActivePomodoro(currentUserService.getCurrentUserId())
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.noContent().build());
+    }
 }

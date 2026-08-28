@@ -2,6 +2,8 @@ package org.osama.mentalthread;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
@@ -33,6 +35,10 @@ public class MentalThreadLoadEntry {
 
     @Column(nullable = false)
     private int load;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "attention_state", nullable = false, length = 20)
+    private AttentionState attentionState;
 
     @Column(length = 500)
     private String reason;

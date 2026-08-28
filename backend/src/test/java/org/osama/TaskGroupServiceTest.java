@@ -96,6 +96,32 @@ class TaskGroupServiceTest {
         assertEquals(List.of(second.getTaskId(), fourth.getTaskId()), groups.get(1).taskIds());
     }
 
+    @Test
+    void removeTask_updatesMembershipWithoutChangingTaskHierarchy() {
+        Task first = createTask(TEST_USER_ID, "First");
+        Task second = createTask(TEST_USER_ID, "Second");
+        Task third = createTask(TEST_USER_ID, "Third");
+        TaskGroupResponse group = taskGroupService.createGroup(
+                "Morning routine", List.of(first.getTaskId(), second.getTaskId(), third.getTaskId()), TEST_USER_ID);
+
+        taskGroupService.removeTask(group.groupId(), second.getTaskId(), TEST_USER_ID);
+
+        assertEquals(List.of(first.getTaskId(), third.getTaskId()), taskGroupService.getGroups(TEST_USER_ID).get(0).taskIds());
+        assertNull(second.getParentId());
+    }
+
+    @Test
+    void removeTask_dissolvesAGroupThatWouldHaveOnlyOneTask() {
+        Task first = createTask(TEST_USER_ID, "First");
+        Task second = createTask(TEST_USER_ID, "Second");
+        TaskGroupResponse group = taskGroupService.createGroup(
+                "Morning routine", List.of(first.getTaskId(), second.getTaskId()), TEST_USER_ID);
+
+        taskGroupService.removeTask(group.groupId(), second.getTaskId(), TEST_USER_ID);
+
+        assertEquals(0, taskGroupService.getGroups(TEST_USER_ID).size());
+    }
+
     private Task createTask(String userId, String name) {
         NewTaskRequest request = new NewTaskRequest();
         request.setName(name);

@@ -18,8 +18,16 @@ import ReplayRoundedIcon from '@mui/icons-material/ReplayRounded';
 import TaskAltRoundedIcon from '@mui/icons-material/TaskAltRounded';
 import CheckCircleOutlineRoundedIcon from '@mui/icons-material/CheckCircleOutlineRounded';
 import { MentalThread, MentalThreadLoadEntry } from '../../types/MentalThread.ts';
+import { Task } from '../../types/Task.tsx';
+import { TaskToCreate } from '../../types/TaskToCreate.tsx';
 import { mentalThreadService } from '../../services/api/mentalThreadService.ts';
-import { attentionStateDetails, closureTypeLabels } from './mentalThreadPresentation.ts';
+import { ThreadTasksSection } from './ThreadTasksSection.tsx';
+import {
+    attentionStateDetails,
+    closedThreadColor,
+    closureTypeLabels,
+    resolvedThreadColor,
+} from './mentalThreadPresentation.ts';
 
 interface MentalThreadDetailProps {
     thread: MentalThread;
@@ -27,17 +35,25 @@ interface MentalThreadDetailProps {
     onCloseThread: () => void;
     onReopen: () => void;
     onDelete: () => void;
+    tasks: Task[];
+    onCreateTask: (task: TaskToCreate) => Promise<void>;
+    onToggleTask: (task: Task) => Promise<void>;
 }
 
 interface LoadHistoryState {
     threadId: string;
     mentalLoad: number;
+    updatedAt: string;
     entries: MentalThreadLoadEntry[];
     loading: boolean;
     error: string | null;
 }
 
-const loadHistoryCache = new Map<string, { mentalLoad: number; entries: MentalThreadLoadEntry[] }>();
+const loadHistoryCache = new Map<string, {
+    mentalLoad: number;
+    updatedAt: string;
+    entries: MentalThreadLoadEntry[];
+}>();
 
 function formatDate(date: string | null): string {
     if (!date) return 'Not set';
@@ -61,25 +77,53 @@ export function MentalThreadDetail({
     onCloseThread,
     onReopen,
     onDelete,
+    tasks,
+    onCreateTask,
+    onToggleTask,
 }: MentalThreadDetailProps) {
-    const [loadHistoryState, setLoadHistoryState] = useState<LoadHistoryState>({
-        threadId: thread.id,
-        mentalLoad: thread.currentMentalLoad,
-        entries: [],
-        loading: true,
-        error: null,
-    });
-    const presentation = attentionStateDetails[thread.attentionState];
-    const isResolved = thread.status === 'CLOSED' && thread.closureType === 'RESOLVED';
-    const cachedHistory = loadHistoryCache.get(thread.id);
-    const stateMatchesThread = loadHistoryState.threadId === thread.id
-        && loadHistoryState.mentalLoad === thread.currentMentalLoad;
-    const visibleHistory: LoadHistoryState = stateMatchesThread
-        ? loadHistoryState
-        : cachedHistory?.mentalLoad === thread.currentMentalLoad
+    const [loadHistoryState, setLoadHistoryState] = useState<LoadHistoryState>(() => {
+        const cached = loadHistoryCache.get(thread.id);
+        return cached?.mentalLoad === thread.currentMentalLoad
             ? {
                 threadId: thread.id,
                 mentalLoad: thread.currentMentalLoad,
+                updatedAt: thread.updatedAt,
+                entries: cached.entries,
+                loading: false,
+                error: null,
+            }
+            : {
+                threadId: thread.id,
+                mentalLoad: thread.currentMentalLoad,
+                updatedAt: thread.updatedAt,
+                entries: [],
+                loading: true,
+                error: null,
+            };
+    });
+    const [showHistoryLoading, setShowHistoryLoading] = useState(false);
+    const presentation = attentionStateDetails[thread.attentionState];
+    const isClosed = thread.status === 'CLOSED';
+    const isResolved = thread.status === 'CLOSED' && thread.closureType === 'RESOLVED';
+    const currentStateColor = isResolved
+        ? resolvedThreadColor
+        : isClosed ? closedThreadColor : presentation.color;
+    const currentStateLabel = isClosed ? 'Closed' : presentation.label;
+    const currentStateDescription = isClosed
+        ? 'This thread is closed and no longer contributes to open mental load.'
+        : presentation.description;
+    const cachedHistory = loadHistoryCache.get(thread.id);
+    const stateMatchesThread = loadHistoryState.threadId === thread.id
+        && loadHistoryState.mentalLoad === thread.currentMentalLoad
+        && loadHistoryState.updatedAt === thread.updatedAt;
+    const visibleHistory: LoadHistoryState = stateMatchesThread
+        ? loadHistoryState
+        : cachedHistory?.mentalLoad === thread.currentMentalLoad
+            && cachedHistory.updatedAt === thread.updatedAt
+            ? {
+                threadId: thread.id,
+                mentalLoad: thread.currentMentalLoad,
+                updatedAt: thread.updatedAt,
                 entries: cachedHistory.entries,
                 loading: false,
                 error: null,
@@ -87,14 +131,33 @@ export function MentalThreadDetail({
             : {
                 threadId: thread.id,
                 mentalLoad: thread.currentMentalLoad,
+                updatedAt: thread.updatedAt,
                 entries: [],
                 loading: true,
                 error: null,
             };
 
     useEffect(() => {
+        if (!visibleHistory.loading) {
+            setShowHistoryLoading(false);
+            return;
+        }
+
+        const timeoutId = window.setTimeout(() => setShowHistoryLoading(true), 200);
+        return () => window.clearTimeout(timeoutId);
+    }, [visibleHistory.loading, visibleHistory.threadId, visibleHistory.mentalLoad, visibleHistory.updatedAt]);
+
+    useEffect(() => {
         const cached = loadHistoryCache.get(thread.id);
-        if (cached?.mentalLoad === thread.currentMentalLoad) {
+        if (cached?.mentalLoad === thread.currentMentalLoad && cached.updatedAt === thread.updatedAt) {
+            setLoadHistoryState({
+                threadId: thread.id,
+                mentalLoad: thread.currentMentalLoad,
+                updatedAt: thread.updatedAt,
+                entries: cached.entries,
+                loading: false,
+                error: null,
+            });
             return;
         }
 
@@ -102,16 +165,22 @@ export function MentalThreadDetail({
         setLoadHistoryState({
             threadId: thread.id,
             mentalLoad: thread.currentMentalLoad,
+            updatedAt: thread.updatedAt,
             entries: [],
             loading: true,
             error: null,
         });
         mentalThreadService.getLoadHistory(thread.id, controller.signal)
             .then(entries => {
-                loadHistoryCache.set(thread.id, { mentalLoad: thread.currentMentalLoad, entries });
+                loadHistoryCache.set(thread.id, {
+                    mentalLoad: thread.currentMentalLoad,
+                    updatedAt: thread.updatedAt,
+                    entries,
+                });
                 setLoadHistoryState({
                     threadId: thread.id,
                     mentalLoad: thread.currentMentalLoad,
+                    updatedAt: thread.updatedAt,
                     entries,
                     loading: false,
                     error: null,
@@ -122,13 +191,14 @@ export function MentalThreadDetail({
                 setLoadHistoryState({
                     threadId: thread.id,
                     mentalLoad: thread.currentMentalLoad,
+                    updatedAt: thread.updatedAt,
                     entries: [],
                     loading: false,
                     error: error instanceof Error ? error.message : 'Failed to load history',
                 });
             });
         return () => controller.abort();
-    }, [thread.id, thread.currentMentalLoad]);
+    }, [thread.id, thread.currentMentalLoad, thread.updatedAt]);
 
     return (
         <Box sx={{ p: { xs: 1.5, md: 2 }, textAlign: 'left' }}>
@@ -141,14 +211,14 @@ export function MentalThreadDetail({
                             label={thread.status === 'CLOSED'
                                 ? thread.closureType ? closureTypeLabels[thread.closureType] : 'Closed'
                                 : presentation.label}
-                            sx={theme => ({
-                                color: isResolved ? theme.palette.success.main : presentation.color,
-                                bgcolor: alpha(isResolved ? theme.palette.success.main : presentation.color, 0.1),
+                            sx={{
+                                color: currentStateColor,
+                                bgcolor: alpha(currentStateColor, 0.1),
                                 fontWeight: 700,
                                 '& .MuiChip-icon': {
-                                    color: isResolved ? theme.palette.success.main : presentation.color,
+                                    color: currentStateColor,
                                 },
-                            })}
+                            }}
                         />
                         <Typography variant="caption" color="text.secondary">
                             Opened {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(thread.openedAt))}
@@ -174,18 +244,18 @@ export function MentalThreadDetail({
 
             <Paper
                 variant="outlined"
-                sx={{ mt: 1.5, p: 1.5, borderRadius: 2.5, bgcolor: alpha(presentation.color, 0.035) }}
+                sx={{ mt: 1.5, p: 1.5, borderRadius: 2.5, bgcolor: alpha(currentStateColor, 0.035) }}
             >
                 <Stack direction="row" justifyContent="space-between" alignItems="center">
                     <Box>
                         <Typography variant="caption" color="text.secondary">Current mental load</Typography>
-                        <Typography variant="h4" fontWeight={750} color={presentation.color}>
+                        <Typography variant="h4" fontWeight={750} color={currentStateColor}>
                             {thread.currentMentalLoad}<Typography component="span" color="text.secondary">/10</Typography>
                         </Typography>
                     </Box>
                     <Box sx={{ maxWidth: 360, textAlign: 'right' }}>
-                        <Typography variant="subtitle2">{presentation.label}</Typography>
-                        <Typography variant="caption" color="text.secondary">{presentation.description}</Typography>
+                        <Typography variant="subtitle2" color={currentStateColor}>{currentStateLabel}</Typography>
+                        <Typography variant="caption" color="text.secondary">{currentStateDescription}</Typography>
                     </Box>
                 </Stack>
             </Paper>
@@ -204,6 +274,13 @@ export function MentalThreadDetail({
                     </Typography>
                 </Box>
             </Box>
+
+            <ThreadTasksSection
+                tasks={tasks}
+                canAddTasks={thread.status === 'OPEN'}
+                onCreate={onCreateTask}
+                onToggle={onToggleTask}
+            />
 
             <Divider sx={{ my: 1.5 }} />
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' }, gap: 1.5 }}>
@@ -227,7 +304,9 @@ export function MentalThreadDetail({
                         <Typography variant="overline" color="text.secondary">Load history</Typography>
                         {visibleHistory.loading ? (
                             <Box sx={{ minHeight: 76, display: 'flex', alignItems: 'center' }}>
-                                <Typography variant="caption" color="text.secondary">Loading history…</Typography>
+                                {showHistoryLoading && (
+                                    <Typography variant="caption" color="text.secondary">Loading history…</Typography>
+                                )}
                             </Box>
                         ) : visibleHistory.error ? (
                             <Alert severity="warning" sx={{ mt: 0.5, minHeight: 68 }}>{visibleHistory.error}</Alert>
@@ -237,16 +316,22 @@ export function MentalThreadDetail({
                             </Box>
                         ) : (
                             <Stack direction="row" spacing={1} sx={{ mt: 0.5, minHeight: 76, overflowX: 'auto', pb: 1 }}>
-                                {visibleHistory.entries.map((entry, index) => (
+                                {visibleHistory.entries.map((entry, index) => {
+                                    const entryPresentation = attentionStateDetails[entry.attentionState];
+                                    return (
                                     <Paper
                                         key={entry.id}
                                         variant="outlined"
                                         sx={{ width: 112, flexShrink: 0, p: 1, borderRadius: 2, position: 'relative' }}
+                                        aria-label={`${entryPresentation.label}, load ${entry.load} out of 10`}
                                     >
                                         {index < visibleHistory.entries.length - 1 && (
                                             <Box sx={{ position: 'absolute', right: -9, top: 25, width: 9, borderTop: 1, borderColor: 'divider' }} />
                                         )}
-                                        <Typography variant="h6" fontWeight={750} color={presentation.color}>{entry.load}/10</Typography>
+                                        <Typography variant="h6" fontWeight={750} color={entryPresentation.color}>{entry.load}/10</Typography>
+                                        <Typography variant="caption" color={entryPresentation.color} display="block">
+                                            {entryPresentation.label}
+                                        </Typography>
                                         <Typography variant="caption" color="text.secondary" display="block">
                                             {new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' })
                                                 .format(new Date(entry.recordedAt))}
@@ -257,7 +342,8 @@ export function MentalThreadDetail({
                                             </Typography>
                                         )}
                                     </Paper>
-                                ))}
+                                    );
+                                })}
                             </Stack>
                         )}
                     </Box>

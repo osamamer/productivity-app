@@ -20,7 +20,7 @@ import {
     Typography,
 } from '@mui/material';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
-import HubRoundedIcon from '@mui/icons-material/HubRounded';
+import PsychologyIcon from '@mui/icons-material/Psychology';
 import { PageWrapper } from '../components/PageWrapper.tsx';
 import { MentalLoadOverview } from '../components/mental-threads/MentalLoadOverview.tsx';
 import { MentalThreadList } from '../components/mental-threads/MentalThreadList.tsx';
@@ -29,6 +29,10 @@ import { MentalThreadFormDialog } from '../components/mental-threads/MentalThrea
 import { CloseMentalThreadDialog } from '../components/mental-threads/CloseMentalThreadDialog.tsx';
 import { attentionStateDetails, attentionStates } from '../components/mental-threads/mentalThreadPresentation.ts';
 import { useMentalThreadsWorkspace } from '../hooks/useMentalThreadsWorkspace.ts';
+import { useGlobalTasks } from '../contexts/TaskContext.tsx';
+import { taskService } from '../services/api/taskService.ts';
+import { Task } from '../types/Task.tsx';
+import { TaskToCreate } from '../types/TaskToCreate.tsx';
 import {
     AttentionState,
     CloseMentalThreadInput,
@@ -39,6 +43,11 @@ import {
 type StateFilter = AttentionState | 'ALL';
 
 export function MentalThreadsPage() {
+    const {
+        allTasks,
+        addTaskToState,
+        updateTaskInState,
+    } = useGlobalTasks();
     const {
         threads,
         summary,
@@ -70,6 +79,12 @@ export function MentalThreadsPage() {
     const selectedThread = useMemo(
         () => visibleThreads.find(thread => thread.id === selectedId) ?? null,
         [selectedId, visibleThreads],
+    );
+    const selectedThreadTasks = useMemo(
+        () => selectedThread
+            ? allTasks.filter(task => task.mentalThreadId === selectedThread.id)
+            : [],
+        [allTasks, selectedThread],
     );
 
     useEffect(() => {
@@ -104,6 +119,20 @@ export function MentalThreadsPage() {
             setDeletingThread(null);
             setSelectedId(null);
         }
+    };
+
+    const handleCreateTask = async (task: TaskToCreate) => {
+        if (!selectedThread) return;
+        const createdTask = await taskService.createTask({
+            ...task,
+            mentalThreadId: selectedThread.id,
+        });
+        addTaskToState(createdTask);
+    };
+
+    const handleToggleTask = async (task: Task) => {
+        const updated = await taskService.updateTask(task.taskId, { completed: !task.completed });
+        updateTaskInState(task.taskId, updated);
     };
 
     return (
@@ -220,12 +249,15 @@ export function MentalThreadsPage() {
                                         onCloseThread={() => setClosingThread(selectedThread)}
                                         onReopen={() => void handleReopen()}
                                         onDelete={() => setDeletingThread(selectedThread)}
+                                        tasks={selectedThreadTasks}
+                                        onCreateTask={handleCreateTask}
+                                        onToggleTask={handleToggleTask}
                                     />
                                 </Box>
                             ) : (
                                 <Box sx={{ display: 'grid', placeItems: 'center', p: 4 }}>
                                     <Box sx={{ maxWidth: 400, textAlign: 'center' }}>
-                                        <HubRoundedIcon color="primary" sx={{ fontSize: 52, opacity: 0.75 }} />
+                                        <PsychologyIcon color="primary" sx={{ fontSize: 52, opacity: 0.75 }} />
                                         <Typography variant="h6" fontWeight={700} sx={{ mt: 1 }}>
                                             What keeps resurfacing?
                                         </Typography>
@@ -256,6 +288,7 @@ export function MentalThreadsPage() {
                 <DialogContent>
                     <DialogContentText>
                         “{deletingThread?.title}” and its load history will be permanently deleted.
+                        Connected tasks will remain in Tasks.
                     </DialogContentText>
                 </DialogContent>
                 <DialogActions>

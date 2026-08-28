@@ -1,0 +1,50 @@
+databaseChangeLog:
+  - changeSet:
+      id: 025-add-sleep-system-stat
+      author: osama
+      comment: Add Sleep as a built-in daily stat for every user
+      validCheckSum:
+        - 8:2b02d849940ae831a5a4abcd1651d0bc
+      changes:
+        - sql:
+            sql: |
+              UPDATE stat_definition definition
+              SET system_key = 'sleep_hours',
+                  name = 'Sleep',
+                  description = 'How many hours you slept the previous night.',
+                  type = 'NUMBER',
+                  min_value = NULL,
+                  max_value = NULL
+              WHERE system_key IS NULL
+                AND lower(name) = lower('Sleep')
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM stat_definition existing
+                    WHERE existing.user_id = definition.user_id
+                      AND existing.system_key = 'sleep_hours'
+                );
+        - sql:
+            sql: |
+              INSERT INTO stat_definition
+                  (id, name, description, type, min_value, max_value, system_key, display_order, user_id)
+              SELECT concat('system-stat-', app_user.id, '-sleep-hours'),
+                     'Sleep', 'How many hours you slept the previous night.',
+                     'NUMBER', NULL, NULL, 'sleep_hours',
+                     COALESCE((
+                         SELECT MAX(existing.display_order) + 1
+                         FROM stat_definition existing
+                         WHERE existing.user_id = app_user.id
+                     ), 0),
+                     app_user.id
+              FROM app_user
+              WHERE NOT EXISTS (
+                  SELECT 1
+                  FROM stat_definition existing
+                  WHERE existing.user_id = app_user.id
+                    AND existing.system_key = 'sleep_hours'
+              );
+      rollback:
+        - sql:
+            sql: |
+              DELETE FROM stat_definition
+              WHERE system_key = 'sleep_hours';

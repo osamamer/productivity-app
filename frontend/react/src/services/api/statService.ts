@@ -1,4 +1,4 @@
-import { StatDefinition, StatEntry, StatSummary, CreateDefinitionRequest, RecordEntryRequest } from '../../types/Stats';
+import { StatDefinition, StatEntry, StatSummary, StatInsights, CreateDefinitionRequest, RecordEntryRequest } from '../../types/Stats';
 import { getAuthHeaders } from '../utils/authHeaders';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
@@ -8,6 +8,8 @@ const entryCache = new Map<string, StatEntry[]>();
 const entryRequests = new Map<string, Promise<StatEntry[]>>();
 const summaryCache = new Map<string, StatSummary>();
 const summaryRequests = new Map<string, Promise<StatSummary>>();
+const insightsCache = new Map<string, StatInsights>();
+const insightsRequests = new Map<string, Promise<StatInsights>>();
 let definitionsCache: StatDefinition[] | null = null;
 let definitionsRequest: Promise<StatDefinition[]> | null = null;
 
@@ -16,6 +18,10 @@ function entryCacheKey(definitionId: string, from: string, to: string): string {
 }
 
 function summaryCacheKey(definitionId: string, from: string, to: string): string {
+    return `${definitionId}:${from}:${to}`;
+}
+
+function insightsCacheKey(definitionId: string, from: string, to: string): string {
     return `${definitionId}:${from}:${to}`;
 }
 
@@ -32,6 +38,7 @@ function invalidateEntryCache(definitionId?: string): void {
 
 function invalidateDefinitionsCache(): void {
     definitionsCache = null;
+    insightsCache.clear();
 }
 
 function invalidateSummaryCache(definitionId: string): void {
@@ -39,6 +46,10 @@ function invalidateSummaryCache(definitionId: string): void {
     for (const key of summaryCache.keys()) {
         if (key.startsWith(prefix)) summaryCache.delete(key);
     }
+}
+
+function invalidateInsightsCache(): void {
+    insightsCache.clear();
 }
 
 function cacheRecordedEntry(entry: StatEntry): void {
@@ -98,6 +109,7 @@ export const statService = {
         invalidateDefinitionsCache();
         invalidateEntryCache(id);
         invalidateSummaryCache(id);
+        invalidateInsightsCache();
     },
 
     async reorderDefinitions(definitionIds: string[]): Promise<StatDefinition[]> {
@@ -181,6 +193,35 @@ export const statService = {
         return summaryCache.get(summaryCacheKey(definitionId, from, to));
     },
 
+    async getInsights(definitionId: string, from: string, to: string): Promise<StatInsights> {
+        const key = insightsCacheKey(definitionId, from, to);
+        const cachedInsights = insightsCache.get(key);
+        if (cachedInsights) return cachedInsights;
+
+        const pendingRequest = insightsRequests.get(key);
+        if (pendingRequest) return pendingRequest;
+
+        const params = new URLSearchParams({ from, to });
+        const request = fetch(`${STATS_URL}/definitions/${definitionId}/insights?${params}`, {
+            headers: getAuthHeaders(),
+        })
+            .then(response => {
+                if (!response.ok) throw new Error('Failed to fetch stat insights');
+                return response.json() as Promise<StatInsights>;
+            })
+            .then(insights => {
+                insightsCache.set(key, insights);
+                return insights;
+            });
+
+        insightsRequests.set(key, request);
+        try {
+            return await request;
+        } finally {
+            if (insightsRequests.get(key) === request) insightsRequests.delete(key);
+        }
+    },
+
     async getEntriesByDate(date: string): Promise<StatEntry[]> {
         const response = await fetch(`${STATS_URL}/entries/by-date?date=${date}`, { headers: getAuthHeaders() });
         if (!response.ok) throw new Error(`Failed to fetch entries for ${date}`);
@@ -198,6 +239,7 @@ export const statService = {
         const entry = { ...responseEntry, statDefinitionId: req.statDefinitionId };
         cacheRecordedEntry(entry);
         invalidateSummaryCache(req.statDefinitionId);
+        invalidateInsightsCache();
         return entry;
     },
 };

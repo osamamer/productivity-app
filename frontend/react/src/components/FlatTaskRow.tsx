@@ -25,19 +25,9 @@ import { Client, StompSubscription } from '@stomp/stompjs';
 import keycloak from '../services/keycloak';
 import { taskService } from '../services/api';
 import { Task } from '../types/Task';
+import { PomodoroStatus } from '../types/PomodoroStatus';
 
 // ─── types ─────────────────────────────────────────────────────────────────
-
-interface PomodoroStatus {
-    taskId: string;
-    active: boolean;
-    sessionActive: boolean;
-    sessionRunning: boolean;
-    secondsPassedInSession: number;
-    secondsUntilNextTransition: number;
-    currentFocusNumber: number;
-    numFocuses: number;
-}
 
 interface PomodoroForm {
     focusDuration: number;
@@ -60,13 +50,18 @@ export type FlatTaskRowProps = {
     onSelectionClick?: (task: Task, event: React.MouseEvent<HTMLElement>) => void;
     reorderable?: boolean;
     onDragStart?: (task: Task) => void;
-    onDragOver?: (task: Task) => void;
-    onDrop?: (task: Task) => void;
+    onDragOver?: (task: Task, event: React.DragEvent<HTMLElement>) => void;
+    onDrop?: (task: Task, event: React.DragEvent<HTMLElement>) => void;
     onDragEnd?: () => void;
     isDragging?: boolean;
     isDragTarget?: boolean;
+    dragTargetEdge?: 'before' | 'after';
+    isGroupDropTarget?: boolean;
     onPomodoroActiveChange?: (taskId: string, active: boolean) => void;
+    onPomodoroFocusStart?: (taskId: string) => void;
     deferPomodoroHydration?: boolean;
+    initialPomodoroStatus?: PomodoroStatus | null;
+    expectedPomodoroActive?: boolean;
 };
 
 // ─── helpers ───────────────────────────────────────────────────────────────
@@ -143,14 +138,19 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     onDragEnd,
     isDragging = false,
     isDragTarget = false,
+    dragTargetEdge = 'before',
+    isGroupDropTarget = false,
     onPomodoroActiveChange,
+    onPomodoroFocusStart,
     deferPomodoroHydration = false,
+    initialPomodoroStatus = null,
+    expectedPomodoroActive = false,
 }: FlatTaskRowProps) {
     const theme = useTheme();
     const accent = theme.palette.primary.light;
     const activeAccent = theme.palette.primary.main;
 
-    const [pomodoroStatus, setPomodoroStatus] = useState<PomodoroStatus | null>(null);
+    const [pomodoroStatus, setPomodoroStatus] = useState<PomodoroStatus | null>(initialPomodoroStatus);
     const [wsConnected, setWsConnected] = useState(false);
     const [actionLoading, setActionLoading] = useState(false);
     const [pomodoroHydrated, setPomodoroHydrated] = useState(!deferPomodoroHydration);
@@ -172,16 +172,24 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
 
     const stompRef = useRef<Client | null>(null);
     const subscriptionRef = useRef<StompSubscription | null>(null);
+    const previousSessionRunningRef = useRef<boolean | undefined>(initialPomodoroStatus?.sessionRunning);
+    const pomodoroEndedRef = useRef(false);
+    const onPomodoroActiveChangeRef = useRef(onPomodoroActiveChange);
 
     useEffect(() => {
-        if (expandedPanel === 'pomodoro') {
+        onPomodoroActiveChangeRef.current = onPomodoroActiveChange;
+    }, [onPomodoroActiveChange]);
+
+    useEffect(() => {
+        if (expandedPanel === 'pomodoro' || initialPomodoroStatus?.active) {
             setPomodoroHydrated(true);
         }
-    }, [expandedPanel]);
+        if (initialPomodoroStatus?.active) {
+            setPomodoroStatus(initialPomodoroStatus);
+        }
+    }, [expandedPanel, initialPomodoroStatus]);
 
-    // On mount: connect WebSocket and subscribe to pomodoro updates for this task.
-    // Connecting on mount (not on panel open) means the panel opens into an already-live
-    // connection — no handshake delay, no "Connecting…" flicker.
+    // Subscribe only once this row's pomodoro is relevant.
     useEffect(() => {
         if (!pomodoroHydrated) {
             return;
@@ -200,7 +208,16 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
             subscriptionRef.current = client.subscribe(
                 `/topic/pomodoro/${task.taskId}`,
                 (msg) => {
-                    try { setPomodoroStatus(JSON.parse(msg.body)); }
+                    try {
+                        const nextStatus: PomodoroStatus = JSON.parse(msg.body);
+                        if (!nextStatus.active) {
+                            pomodoroEndedRef.current = true;
+                            setPomodoroStatus(null);
+                            onPomodoroActiveChangeRef.current?.(task.taskId, false);
+                        } else if (!pomodoroEndedRef.current) {
+                            setPomodoroStatus(nextStatus);
+                        }
+                    }
                     catch (e) { console.error('Error parsing pomodoro message:', e); }
                 }
             );
@@ -219,25 +236,33 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         };
     }, [pomodoroHydrated, task.taskId]);
 
-    // On mount: check if this task already has an active pomodoro running and
-    // auto-open the panel so the user doesn't lose their session after a page remount.
+    // Auto-open an active timer after hydration.
     useEffect(() => {
         if (!pomodoroHydrated) {
             return;
         }
 
-        taskService.getActivePomodoro(task.taskId)
+        if (initialPomodoroStatus?.active) {
+            onAutoExpand('pomodoro');
+            return;
+        }
+
+        taskService.getActivePomodoro()
             .then(status => {
-                if (status?.active) {
-                    setPomodoroStatus(status as unknown as PomodoroStatus);
+                if (status?.active && status.associatedTaskId === task.taskId) {
+                    setPomodoroStatus(status);
                     onAutoExpand('pomodoro');
+                } else if (expectedPomodoroActive) {
+                    pomodoroEndedRef.current = true;
+                    setPomodoroStatus(null);
+                    onPomodoroActiveChangeRef.current?.(task.taskId, false);
                 }
             })
             .catch(e => console.error('Error checking pomodoro status:', e));
     // onAutoExpand is a stable arrow function defined inline in the parent — intentionally
     // omitted from deps to avoid re-running when the parent re-renders.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [pomodoroHydrated, task.taskId]);
+    }, [expectedPomodoroActive, initialPomodoroStatus, pomodoroHydrated, task.taskId]);
 
     const togglePanel = useCallback((panel: 'pomodoro' | 'details') => {
         if (panel === 'pomodoro') {
@@ -248,13 +273,17 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
 
     const handleStart = async () => {
         setActionLoading(true);
+        pomodoroEndedRef.current = false;
         try {
             await taskService.startPomodoro(
                 task.taskId, form.focusDuration, form.shortBreakDuration,
                 form.longBreakDuration, form.numFocuses, form.longBreakCooldown,
             );
             onPomodoroActiveChange?.(task.taskId, true);
-        } catch (e) { console.error('Error starting pomodoro:', e); }
+        } catch (e) {
+            pomodoroEndedRef.current = true;
+            console.error('Error starting pomodoro:', e);
+        }
         finally { setActionLoading(false); }
     };
 
@@ -272,11 +301,15 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
 
     const handleStop = async () => {
         setActionLoading(true);
+        pomodoroEndedRef.current = true;
         try {
             await taskService.endPomodoro(task.taskId);
             setPomodoroStatus(null);
             onPomodoroActiveChange?.(task.taskId, false);
-        } catch (e) { console.error('Error stopping pomodoro:', e); }
+        } catch (e) {
+            pomodoroEndedRef.current = false;
+            console.error('Error stopping pomodoro:', e);
+        }
         finally { setActionLoading(false); }
     };
 
@@ -312,12 +345,21 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
 
     const isActive  = Boolean(pomodoroStatus?.active);
     const activePomodoro = pomodoroStatus?.active;
+    const sessionRunning = pomodoroStatus?.sessionRunning;
 
     useEffect(() => {
         if (activePomodoro !== undefined) {
             onPomodoroActiveChange?.(task.taskId, activePomodoro);
         }
     }, [activePomodoro, onPomodoroActiveChange, task.taskId]);
+
+    useEffect(() => {
+        const wasRunning = previousSessionRunningRef.current;
+        previousSessionRunningRef.current = sessionRunning;
+        if (wasRunning === false && sessionRunning === true) {
+            onPomodoroFocusStart?.(task.taskId);
+        }
+    }, [onPomodoroFocusStart, sessionRunning, task.taskId]);
 
     // Break: pomodoro started but not in a focus session
     const isBreak   = isActive && !pomodoroStatus!.sessionActive;
@@ -359,7 +401,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                     ? alpha(activeAccent, 0.05)
                     : selected
                         ? alpha(activeAccent, 0.09)
-                        : isDragTarget
+                        : isDragTarget || isGroupDropTarget
                             ? alpha(activeAccent, 0.045)
                             : 'transparent',
                 overflow: 'hidden',
@@ -368,10 +410,11 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                 transform: isDragging ? 'scale(0.985)' : 'scale(1)',
                 boxShadow: isDragging ? `0 10px 24px ${alpha(activeAccent, 0.18)}` : 'none',
                 transition: 'opacity 0.16s, transform 0.16s, box-shadow 0.16s, border-color 0.2s, background-color 0.2s',
-                '&::before': isDragTarget ? {
+                '&::before': isDragTarget && !isGroupDropTarget ? {
                     content: '""',
                     position: 'absolute',
-                    top: 0,
+                    top: dragTargetEdge === 'before' ? 0 : 'auto',
+                    bottom: dragTargetEdge === 'after' ? 0 : 'auto',
                     left: 10,
                     right: 10,
                     height: 2,
@@ -383,6 +426,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
             onClick={handleRowSelection}
             onDragStart={(event) => {
                 if (!reorderable) return;
+                event.stopPropagation();
                 event.dataTransfer.effectAllowed = 'move';
                 event.dataTransfer.setData('text/plain', task.taskId);
                 onDragStart?.(task);
@@ -391,12 +435,13 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                 if (!reorderable) return;
                 event.preventDefault();
                 event.dataTransfer.dropEffect = 'move';
-                onDragOver?.(task);
+                onDragOver?.(task, event);
             }}
             onDrop={(event) => {
                 if (!reorderable) return;
                 event.preventDefault();
-                onDrop?.(task);
+                event.stopPropagation();
+                onDrop?.(task, event);
             }}
             onDragEnd={onDragEnd}
         >

@@ -13,10 +13,13 @@ import java.util.List;
 public class StatController {
 
     private final StatService statService;
+    private final StatInsightService statInsightService;
     private final CurrentUserService currentUserService;
 
-    public StatController(StatService statService, CurrentUserService currentUserService) {
+    public StatController(StatService statService, StatInsightService statInsightService,
+                          CurrentUserService currentUserService) {
         this.statService = statService;
+        this.statInsightService = statInsightService;
         this.currentUserService = currentUserService;
     }
 
@@ -82,6 +85,14 @@ public class StatController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
         return statService.getSummary(id, from, to, currentUserService.getCurrentUserId());
+    }
+
+    @GetMapping("/definitions/{id}/insights")
+    public StatInsightsResponse getInsights(
+            @PathVariable String id,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return statInsightService.getInsights(id, from, to, currentUserService.getCurrentUserId());
     }
 
     @GetMapping("/entries/by-date")

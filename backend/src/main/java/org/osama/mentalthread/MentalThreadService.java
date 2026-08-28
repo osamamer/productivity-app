@@ -79,6 +79,7 @@ public class MentalThreadService {
         MentalThread mentalThread = findOwnedThread(threadId, userId);
         ensureOpen(mentalThread);
         int previousLoad = mentalThread.getCurrentMentalLoad();
+        AttentionState previousAttentionState = mentalThread.getAttentionState();
 
         mentalThread.setTitle(validateRequiredText(request.title(), "Title", 160));
         mentalThread.setDescription(normalizeOptionalText(request.description(), "Description", 5000));
@@ -90,7 +91,8 @@ public class MentalThreadService {
         mentalThread.setCurrentMentalLoad(validateRating(request.currentMentalLoad(), "Mental load"));
 
         MentalThread savedThread = mentalThreadRepository.save(mentalThread);
-        if (previousLoad != request.currentMentalLoad()) {
+        if (previousLoad != request.currentMentalLoad()
+                || previousAttentionState != request.attentionState()) {
             recordLoad(savedThread, request.currentMentalLoad(), request.loadReason());
         }
         log.info("Mental thread updated: userId={} threadId={} attentionState={} mentalLoad={}",
@@ -107,8 +109,10 @@ public class MentalThreadService {
         mentalThread.setResolutionSummary(validateRequiredText(
                 request.resolutionSummary(), "Resolution summary", 5000));
         mentalThread.setClosedAt(LocalDateTime.now());
+        mentalThread.setCurrentMentalLoad(0);
 
         MentalThread savedThread = mentalThreadRepository.save(mentalThread);
+        recordLoad(savedThread, 0, null);
         log.info("Mental thread closed: userId={} threadId={} closureType={}",
                 userId, threadId, request.closureType());
         return MentalThreadResponse.from(savedThread);
@@ -120,12 +124,19 @@ public class MentalThreadService {
         if (mentalThread.getStatus() == MentalThreadStatus.OPEN) {
             throw new IllegalArgumentException("Mental thread is already open: " + threadId);
         }
+        int restoredLoad = loadEntryRepository.findAllByMentalThreadIdOrderByRecordedAtAsc(threadId).stream()
+                .filter(entry -> entry.getLoad() > 0)
+                .reduce((first, second) -> second)
+                .map(MentalThreadLoadEntry::getLoad)
+                .orElse(1);
         mentalThread.setStatus(MentalThreadStatus.OPEN);
         mentalThread.setClosureType(null);
         mentalThread.setResolutionSummary(null);
         mentalThread.setClosedAt(null);
+        mentalThread.setCurrentMentalLoad(restoredLoad);
 
         MentalThread savedThread = mentalThreadRepository.save(mentalThread);
+        recordLoad(savedThread, restoredLoad, null);
         log.info("Mental thread reopened: userId={} threadId={}", userId, threadId);
         return MentalThreadResponse.from(savedThread);
     }
@@ -199,6 +210,7 @@ public class MentalThreadService {
                 .id(UUID.randomUUID().toString())
                 .mentalThread(mentalThread)
                 .load(load)
+                .attentionState(mentalThread.getAttentionState())
                 .reason(normalizeOptionalText(reason, "Load reason", 500))
                 .build());
     }

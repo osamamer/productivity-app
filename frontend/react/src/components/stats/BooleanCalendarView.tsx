@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import {
     Box, Typography, CircularProgress, Stack, Popover,
     ToggleButton, ToggleButtonGroup, Button, Alert,
@@ -43,6 +43,7 @@ export function BooleanCalendarView({ definition, dateRange, refreshKey, onEntry
     const [editValue, setEditValue] = useState<number | null>(null);
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
+    const celebrationAnchorRef = useRef<HTMLElement | null>(null);
 
     const allDays = eachDayOfInterval({ start: from, end: to });
     const startOffset = toMondayIndex(getDay(from));
@@ -73,6 +74,7 @@ export function BooleanCalendarView({ definition, dateRange, refreshKey, onEntry
         event.stopPropagation();
         setEditValue(valueMap.get(date) ?? null);
         setSaveError(null);
+        celebrationAnchorRef.current = null;
         setPopover({ anchorEl: event.currentTarget, date });
     };
 
@@ -92,7 +94,7 @@ export function BooleanCalendarView({ definition, dateRange, refreshKey, onEntry
                 date: popover.date,
                 value: editValue,
             });
-            celebrateStatLogged();
+            if (editValue === 1) celebrateStatLogged(celebrationAnchorRef.current);
             setValueState(previous => previous.key === dataKey
                 ? { ...previous, values: new Map(previous.values).set(popover.date, editValue) }
                 : previous);
@@ -261,6 +263,7 @@ export function BooleanCalendarView({ definition, dateRange, refreshKey, onEntry
                         >
                             <ToggleButton
                                 value="yes"
+                                onClick={event => { celebrationAnchorRef.current = event.currentTarget; }}
                                 sx={{ '&.Mui-selected': { bgcolor: 'success.main', color: 'white', '&:hover': { bgcolor: 'success.dark' } } }}
                             >
                                 Yes

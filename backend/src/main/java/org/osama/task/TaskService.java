@@ -3,6 +3,9 @@ package org.osama.task;
 
 import lombok.extern.slf4j.Slf4j;
 import org.osama.exceptions.ResourceNotFoundException;
+import org.osama.mentalthread.MentalThread;
+import org.osama.mentalthread.MentalThreadRepository;
+import org.osama.mentalthread.MentalThreadStatus;
 import org.osama.requests.UpdateTaskRequest;
 import org.osama.requests.NewTaskRequest;
 import org.osama.session.task.TaskSession;
@@ -26,12 +29,14 @@ public class TaskService {
     private final TaskRepository taskRepository;
     private final TaskSessionRepository taskSessionRepository;
     private final UserRepository userRepository;
+    private final MentalThreadRepository mentalThreadRepository;
 
     public TaskService(TaskRepository taskRepository, TaskSessionRepository taskSessionRepository,
-                       UserRepository userRepository) {
+                       UserRepository userRepository, MentalThreadRepository mentalThreadRepository) {
         this.taskRepository = taskRepository;
         this.taskSessionRepository = taskSessionRepository;
         this.userRepository = userRepository;
+        this.mentalThreadRepository = mentalThreadRepository;
     }
 
     public List<Task> findTasks(TaskQuery query) {
@@ -96,6 +101,15 @@ public class TaskService {
                     .orElseThrow(() -> new IllegalArgumentException("Parent task not found: " + validatedParentId));
         }
 
+        String mentalThreadId = normalizeOptionalId(request.getMentalThreadId());
+        if (mentalThreadId != null) {
+            MentalThread mentalThread = mentalThreadRepository.findByIdAndUserId(mentalThreadId, userId)
+                    .orElseThrow(() -> new IllegalArgumentException("Mental thread not found: " + mentalThreadId));
+            if (mentalThread.getStatus() != MentalThreadStatus.OPEN) {
+                throw new IllegalArgumentException("Tasks can only be added to an open mental thread.");
+            }
+        }
+
         Task task = new Task();
         task.setTaskId(UUID.randomUUID().toString());
         task.setName(request.getName());
@@ -121,13 +135,14 @@ public class TaskService {
         task.setTag(request.getTag()); // null is fine
         task.setImportance(request.getImportance()); // primitive int defaults to 0
         task.setDisplayOrder(nextDisplayOrder(userId, parentId));
+        task.setMentalThreadId(mentalThreadId);
         task.setCompleted(false);
         task.setCreationDateTime(LocalDateTime.now());
         task.setUser(user);
 
         Task savedTask = taskRepository.save(task);
-        log.info("Task created: userId={} taskId={} parentTaskId={}",
-                userId, savedTask.getTaskId(), savedTask.getParentId());
+        log.info("Task created: userId={} taskId={} parentTaskId={} mentalThreadId={}",
+                userId, savedTask.getTaskId(), savedTask.getParentId(), savedTask.getMentalThreadId());
         return savedTask;
     }
 
@@ -263,6 +278,10 @@ public class TaskService {
                 ? taskRepository.findTopByUserIdAndParentIdIsNullOrderByDisplayOrderDesc(userId)
                 : taskRepository.findTopByUserIdAndParentIdOrderByDisplayOrderDesc(userId, parentId);
         return lastTask.map(task -> task.getDisplayOrder() + 1).orElse(0);
+    }
+
+    private String normalizeOptionalId(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
 }

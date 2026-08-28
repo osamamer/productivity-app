@@ -8,7 +8,6 @@ import { useTheme } from '@mui/material/styles';
 import { format, parseISO, subDays, eachDayOfInterval } from 'date-fns';
 import { StatDefinition, StatEntry } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
-import { celebrateStatLogged } from '../../services/statCelebration';
 
 interface ChartPoint {
     date: string;
@@ -164,7 +163,6 @@ export function StatLineChart({ definition, dateRange, refreshKey, onEntryChange
                 date,
                 value,
             });
-            celebrateStatLogged();
             handleSaved(date, value);
             onEntryChanged?.();
         } catch (error) {

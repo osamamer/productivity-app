@@ -10,7 +10,11 @@ import {
 } from '@mui/material';
 import CheckCircleOutlineRoundedIcon from '@mui/icons-material/CheckCircleOutlineRounded';
 import { MentalThread } from '../../types/MentalThread.ts';
-import { attentionStateDetails, closureTypeLabels } from './mentalThreadPresentation.ts';
+import {
+    attentionStateDetails,
+    closureTypeLabels,
+    resolvedThreadColor,
+} from './mentalThreadPresentation.ts';
 
 interface MentalThreadListProps {
     threads: MentalThread[];
@@ -38,6 +42,7 @@ const MentalThreadRow = memo(function MentalThreadRow({
 }: MentalThreadRowProps) {
     const presentation = attentionStateDetails[thread.attentionState];
     const isResolved = thread.status === 'CLOSED' && thread.closureType === 'RESOLVED';
+    const loadColor = isResolved ? resolvedThreadColor : presentation.color;
 
     return (
         <ListItemButton
@@ -49,9 +54,9 @@ const MentalThreadRow = memo(function MentalThreadRow({
                 py: 1.25,
                 borderBottom: isLast ? 0 : 1,
                 borderColor: 'divider',
-                borderLeft: `3px solid ${isSelected ? presentation.color : 'transparent'}`,
-                '&.Mui-selected': { bgcolor: alpha(presentation.color, 0.08) },
-                '&.Mui-selected:hover': { bgcolor: alpha(presentation.color, 0.12) },
+                borderLeft: `3px solid ${isSelected ? loadColor : 'transparent'}`,
+                '&.Mui-selected': { bgcolor: alpha(loadColor, 0.08) },
+                '&.Mui-selected:hover': { bgcolor: alpha(loadColor, 0.12) },
             }}
         >
             <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1.5}>
@@ -80,19 +85,25 @@ const MentalThreadRow = memo(function MentalThreadRow({
                         )}
                     </Stack>
                 </Box>
-                <Typography variant="subtitle2" fontWeight={750} color={presentation.color}>
+                <Typography variant="subtitle2" fontWeight={750} color={loadColor}>
                     {thread.currentMentalLoad}<Typography component="span" variant="caption" color="text.secondary">/10</Typography>
                 </Typography>
             </Stack>
             <Box
                 aria-label={`Mental load ${thread.currentMentalLoad} out of 10`}
-                sx={{ mt: 1, height: 6, borderRadius: 3, bgcolor: 'action.hover', overflow: 'hidden' }}
+                sx={{
+                    mt: 1,
+                    height: 6,
+                    borderRadius: 3,
+                    bgcolor: isResolved ? alpha(loadColor, 0.16) : 'action.hover',
+                    overflow: 'hidden',
+                }}
             >
                 <Box sx={{
                     width: `${thread.currentMentalLoad * 10}%`,
                     height: '100%',
                     borderRadius: 3,
-                    bgcolor: presentation.color,
+                    bgcolor: loadColor,
                 }} />
             </Box>
         </ListItemButton>

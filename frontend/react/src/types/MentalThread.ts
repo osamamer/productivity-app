@@ -36,6 +36,7 @@ export interface MentalThreadInput {
 export interface MentalThreadLoadEntry {
     id: string;
     load: number;
+    attentionState: AttentionState;
     reason: string | null;
     recordedAt: string;
 }

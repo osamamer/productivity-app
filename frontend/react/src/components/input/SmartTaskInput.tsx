@@ -31,6 +31,7 @@ type SmartTaskInputProps = {
     initialDate?: string;
     autoFocus?: boolean;
     parentId?: string;
+    placeholder?: string;
 };
 
 type TaskMetadata = {
@@ -39,7 +40,7 @@ type TaskMetadata = {
     tag: string;
 };
 
-export function SmartTaskInput({ onSubmit, initialDate, autoFocus, parentId }: SmartTaskInputProps) {
+export function SmartTaskInput({ onSubmit, initialDate, autoFocus, parentId, placeholder }: SmartTaskInputProps) {
     const [input, setInput] = useState('');
     const [metadata, setMetadata] = useState<TaskMetadata>({
         importance: 0,
@@ -226,7 +227,7 @@ export function SmartTaskInput({ onSubmit, initialDate, autoFocus, parentId }: S
                     inputRef={inputRef}
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
-                    placeholder={ parentId ? "Add subtask..." : "Add a task..."}
+                    placeholder={placeholder ?? (parentId ? "Add subtask..." : "Add a task...")}
                     variant="standard"
                     fullWidth
                     sx={{

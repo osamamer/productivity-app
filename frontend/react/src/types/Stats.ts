@@ -42,3 +42,29 @@ export interface StatSummary {
     periodAverage: number | null;     // NUMBER / RANGE only
     periodTotal: number | null;       // NUMBER / RANGE only
 }
+
+export type CorrelationStrength = 'STRONG' | 'MODERATE' | 'MILD' | 'NONE' | 'INSUFFICIENT_DATA' | 'NO_VARIATION';
+export type CorrelationDirection = 'POSITIVE' | 'NEGATIVE' | 'NONE';
+
+export interface StatCorrelation {
+    statDefinitionId: string;
+    statName: string;
+    statType: StatType;
+    overlapDays: number;
+    correlation: number | null;
+    strength: CorrelationStrength;
+    direction: CorrelationDirection;
+    meaningful: boolean;
+    otherAverageWhenDriverHigher: number | null;
+    otherAverageWhenDriverLower: number | null;
+    insight: string;
+}
+
+export interface StatInsights {
+    statDefinitionId: string;
+    statName: string;
+    from: string;
+    to: string;
+    recordedDays: number;
+    correlations: StatCorrelation[];
+}

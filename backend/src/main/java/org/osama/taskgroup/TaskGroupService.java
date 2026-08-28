@@ -79,6 +79,27 @@ public class TaskGroupService {
     }
 
     @Transactional
+    public void removeTask(String groupId, String taskId, String userId) {
+        TaskGroup group = getGroupOrThrow(groupId, userId);
+        boolean removed = group.getTasks().removeIf(task -> task.getTaskId().equals(taskId));
+        if (!removed) {
+            return;
+        }
+
+        if (group.getTasks().size() < 2) {
+            group.getTasks().clear();
+            groupRepository.delete(group);
+            log.info("Task removed from group and group deleted: userId={} groupId={} taskId={}",
+                    userId, groupId, taskId);
+            return;
+        }
+
+        TaskGroup savedGroup = groupRepository.save(group);
+        log.info("Task removed from group: userId={} groupId={} taskId={} remainingTaskCount={}",
+                userId, groupId, taskId, savedGroup.getTasks().size());
+    }
+
+    @Transactional
     public void deleteGroup(String groupId, String userId) {
         TaskGroup group = getGroupOrThrow(groupId, userId);
         group.getTasks().clear();

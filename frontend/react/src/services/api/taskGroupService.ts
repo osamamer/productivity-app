@@ -28,6 +28,31 @@ export const taskGroupService = {
         return response.json();
     },
 
+    async replaceTasks(groupId: string, taskIds: string[]): Promise<TaskGroup> {
+        const response = await fetch(`${GROUP_URL}/${groupId}/tasks`, {
+            method: 'PUT',
+            body: JSON.stringify({ taskIds }),
+            headers: {
+                'Content-Type': 'application/json; charset=UTF-8',
+                ...getAuthHeaders(),
+            },
+        });
+        if (!response.ok) {
+            throw new Error('Failed to update task group membership');
+        }
+        return response.json();
+    },
+
+    async removeTask(groupId: string, taskId: string): Promise<void> {
+        const response = await fetch(`${GROUP_URL}/${groupId}/tasks/${taskId}`, {
+            method: 'DELETE',
+            headers: getAuthHeaders(),
+        });
+        if (!response.ok) {
+            throw new Error('Failed to remove task from group');
+        }
+    },
+
     async deleteGroup(groupId: string): Promise<void> {
         const response = await fetch(`${GROUP_URL}/${groupId}`, {
             method: 'DELETE',

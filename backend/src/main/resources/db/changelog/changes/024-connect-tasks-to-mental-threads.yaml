@@ -1,0 +1,34 @@
+databaseChangeLog:
+  - changeSet:
+      id: 024-connect-tasks-to-mental-threads
+      author: osama
+      comment: Let tasks originate from a mental thread without sharing their lifecycle
+      changes:
+        - addColumn:
+            tableName: task
+            columns:
+              - column:
+                  name: mental_thread_id
+                  type: varchar(255)
+        - addForeignKeyConstraint:
+            baseTableName: task
+            baseColumnNames: mental_thread_id
+            referencedTableName: mental_thread
+            referencedColumnNames: thread_id
+            constraintName: fk_app_task_mental_thread
+            onDelete: SET NULL
+            onUpdate: CASCADE
+        - createIndex:
+            tableName: task
+            indexName: idx_app_task_mental_thread
+            ifNotExists: true
+            columns:
+              - column:
+                  name: mental_thread_id
+      rollback:
+        - dropForeignKeyConstraint:
+            baseTableName: task
+            constraintName: fk_app_task_mental_thread
+        - dropColumn:
+            tableName: task
+            columnName: mental_thread_id

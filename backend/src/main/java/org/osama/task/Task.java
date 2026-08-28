@@ -63,6 +63,9 @@ public class Task {
     @Column(name = "display_order", nullable = false)
     private int displayOrder;
 
+    @Column(name = "mental_thread_id")
+    private String mentalThreadId;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;

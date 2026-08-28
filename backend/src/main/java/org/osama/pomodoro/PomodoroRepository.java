@@ -11,7 +11,11 @@ public interface PomodoroRepository extends JpaRepository<Pomodoro, String> {
 
     Optional<Pomodoro> findPomodoroByAssociatedTaskIdAndUserIdAndIsActiveIsTrue(String associatedTaskId, String userId);
 
+    Optional<Pomodoro> findPomodoroByUserIdAndIsActiveIsTrue(String userId);
+
     boolean existsByAssociatedTaskIdAndUserIdAndIsActiveIsTrue(String associatedTaskId, String userId);
+
+    boolean existsByUserIdAndIsActiveIsTrue(String userId);
 
     Pomodoro findPomodoroByPomodoroId(String pomodoroId);
 }

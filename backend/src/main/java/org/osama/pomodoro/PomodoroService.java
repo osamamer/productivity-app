@@ -258,8 +258,8 @@ public class PomodoroService {
         if (longBreakCooldown <= 0) {
             throw new IllegalArgumentException("Long break cooldown must be positive.");
         }
-        if (pomodoroRepository.existsByAssociatedTaskIdAndUserIdAndIsActiveIsTrue(task.getTaskId(), userId)) {
-            throw new IllegalStateException("Task already has an active pomodoro.");
+        if (pomodoroRepository.existsByUserIdAndIsActiveIsTrue(userId)) {
+            throw new IllegalStateException("Cannot start a pomodoro while another pomodoro is active.");
         }
         if (taskSessionRepository.existsByAssociatedTaskIdAndActiveIsTrue(task.getTaskId())) {
             throw new IllegalStateException("Cannot start a pomodoro while the task already has an active session.");
@@ -368,6 +368,10 @@ public class PomodoroService {
     public Optional<Pomodoro> getActivePomodoro(String taskId, String userId) {
         Task task = taskService.getTaskForUserOrThrow(taskId, userId);
         return pomodoroRepository.findPomodoroByAssociatedTaskIdAndUserIdAndIsActiveIsTrue(task.getTaskId(), userId);
+    }
+
+    public Optional<Pomodoro> getActivePomodoro(String userId) {
+        return pomodoroRepository.findPomodoroByUserIdAndIsActiveIsTrue(userId);
     }
 
     private void sendUpdate(Pomodoro pomodoro) {

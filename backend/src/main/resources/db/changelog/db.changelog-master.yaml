@@ -70,3 +70,15 @@ databaseChangeLog:
   # Calendar events and persisted system-notification reminders
   - include:
       file: db/changelog/changes/022-create-calendar-event.yaml
+
+  # Preserve the attention state for each mental load history entry
+  - include:
+      file: db/changelog/changes/023-add-mental-thread-load-history-state.yaml
+
+  # Tasks created as concrete next actions for a mental thread
+  - include:
+      file: db/changelog/changes/024-connect-tasks-to-mental-threads.yaml
+
+  # Add Sleep as a built-in daily stat
+  - include:
+      file: db/changelog/changes/025-add-sleep-system-stat.yaml

@@ -5,4 +5,5 @@ export interface TaskToCreate   {
     tag: string;
     importance: number;
     parentId?: string;
+    mentalThreadId?: string;
 }

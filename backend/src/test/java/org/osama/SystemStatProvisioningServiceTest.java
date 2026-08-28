@@ -69,7 +69,8 @@ class SystemStatProvisioningServiceTest {
         assertEquals(Set.of(
                 "stimulation", "hunger", "arousal", "valence",
                 SystemStatCatalog.MEDITATED_SYSTEM_KEY,
-                SystemStatCatalog.MEDITATION_MINUTES_SYSTEM_KEY
+                SystemStatCatalog.MEDITATION_MINUTES_SYSTEM_KEY,
+                SystemStatCatalog.SLEEP_HOURS_SYSTEM_KEY
         ), systemKeys);
         assertTrue(definitions.stream()
                 .filter(definition -> SystemStatCatalog.MENTAL_STATE_STATS.stream()
@@ -83,6 +84,10 @@ class SystemStatProvisioningServiceTest {
                 .getType());
         assertEquals(StatType.NUMBER, definitionRepository
                 .findByUserIdAndSystemKey(TEST_USER_ID, SystemStatCatalog.MEDITATION_MINUTES_SYSTEM_KEY)
+                .orElseThrow()
+                .getType());
+        assertEquals(StatType.NUMBER, definitionRepository
+                .findByUserIdAndSystemKey(TEST_USER_ID, SystemStatCatalog.SLEEP_HOURS_SYSTEM_KEY)
                 .orElseThrow()
                 .getType());
     }

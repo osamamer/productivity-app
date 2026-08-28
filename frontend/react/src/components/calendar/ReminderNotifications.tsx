@@ -4,10 +4,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import keycloak from '../../services/keycloak';
 import { reminderService } from '../../services/api/reminderService';
 import { ReminderNotification } from '../../types/CalendarEvent';
+import { useUser } from '../../contexts/UserContext';
 
 const WS_URL = (import.meta.env.VITE_WS_URL || `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`);
 
 export function ReminderNotifications() {
+    const { loading: userLoading, isAuthenticated } = useUser();
     const handled = useRef(new Set<string>());
     const [fallbackMessage, setFallbackMessage] = useState<string | null>(null);
 
@@ -42,6 +44,8 @@ export function ReminderNotifications() {
     }, []);
 
     useEffect(() => {
+        if (userLoading || !isAuthenticated) return;
+
         let active = true;
         const loadPending = () => reminderService.getPending()
             .then(reminders => active && reminders.forEach(reminder => void deliver(reminder)))
@@ -66,13 +70,12 @@ export function ReminderNotifications() {
         };
         client.onWebSocketError = error => console.error('Reminder WebSocket error:', error);
         client.activate();
-        void loadPending();
 
         return () => {
             active = false;
             void client.deactivate();
         };
-    }, [deliver]);
+    }, [deliver, isAuthenticated, userLoading]);
 
     return (
         <Snackbar open={Boolean(fallbackMessage)} autoHideDuration={10000}

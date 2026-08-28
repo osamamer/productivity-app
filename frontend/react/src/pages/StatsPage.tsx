@@ -283,6 +283,7 @@ export function StatsPage() {
                                 <StatCard
                                     key={selectedDef.type === 'BOOLEAN' ? 'calendar' : 'numeric-chart'}
                                     definition={selectedDef}
+                                    definitions={definitions}
                                     onDelete={id => setDeleteTarget(definitions.find(d => d.id === id) ?? null)}
                                     refreshKey={chartRefreshKey}
                                     onEntryChanged={handleEntryChanged}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import {
     Box, Stack, Tooltip, Typography, CircularProgress, Popover,
     ToggleButton, ToggleButtonGroup, TextField, Slider, Button,
@@ -58,6 +58,7 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
     const [editValue, setEditValue] = useState<number | null>(null);
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
+    const celebrationAnchorRef = useRef<HTMLElement | null>(null);
 
     const fetchDots = () => {
         const today = new Date();
@@ -80,6 +81,7 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
         const existing = valueMap.get(date);
         setEditValue(existing ?? null);
         setSaveError(null);
+        celebrationAnchorRef.current = null;
         setPopover({ anchorEl: e.currentTarget, date });
     };
 
@@ -99,7 +101,9 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                 date: popover.date,
                 value: editValue,
             });
-            celebrateStatLogged();
+            if (definition.type === 'BOOLEAN' && editValue === 1) {
+                celebrateStatLogged(celebrationAnchorRef.current);
+            }
             setValueMap(prev => new Map(prev).set(popover.date, editValue));
             onEntryChanged?.();
             closePopover();
@@ -220,6 +224,7 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                             >
                                 <ToggleButton
                                     value="yes"
+                                    onClick={event => { celebrationAnchorRef.current = event.currentTarget; }}
                                     sx={{ '&.Mui-selected': { bgcolor: 'success.main', color: 'white', '&:hover': { bgcolor: 'success.dark' } } }}
                                 >
                                     Yes
