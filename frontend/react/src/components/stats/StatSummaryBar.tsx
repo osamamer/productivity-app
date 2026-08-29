@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Stack, Typography, Skeleton } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import { format, subDays } from 'date-fns';
-import { StatDefinition, StatSummary } from '../../types/Stats';
+import { differenceInCalendarDays, format, parseISO, subDays } from 'date-fns';
+import { StatDefinition, StatEntry, StatSummary } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
 
 interface TileProps {
@@ -49,6 +49,25 @@ function pluralDays(n: number): string {
     return `${n} ${n === 1 ? 'day' : 'days'}`;
 }
 
+function computeLongestBooleanStreak(entries: StatEntry[]): number {
+    const yesDates = entries
+        .filter(entry => entry.value === 1)
+        .map(entry => entry.date)
+        .sort();
+
+    let longest = 0;
+    let current = 0;
+    let previousDate: string | null = null;
+    for (const date of yesDates) {
+        current = previousDate && differenceInCalendarDays(parseISO(date), parseISO(previousDate)) === 1
+            ? current + 1
+            : 1;
+        longest = Math.max(longest, current);
+        previousDate = date;
+    }
+    return longest;
+}
+
 function getPeriodWindow(dateRange: number): { from: string; to: string; key: string } {
     const to = new Date();
     const from = subDays(to, dateRange - 1);
@@ -59,37 +78,43 @@ function getPeriodWindow(dateRange: number): { from: string; to: string; key: st
     };
 }
 
-function formatPeriod(dateRange: number): string {
-    switch (dateRange) {
-        case 7: return '7d';
-        case 30: return '30d';
-        case 90: return '3m';
-        case 365: return '1y';
-        default: return `${dateRange}d`;
-    }
-}
-
 export function StatSummaryBar({ definition, dateRange, refreshKey }: Props) {
     const period = getPeriodWindow(dateRange);
+    const periodKey = `${definition.id}:${period.key}`;
     const [summaryState, setSummaryState] = useState<{ key: string; summary: StatSummary } | null>(() => {
         const summary = statService.getCachedSummary(definition.id, period.from, period.to);
-        return summary ? { key: `${definition.id}:${period.key}`, summary } : null;
+        return summary ? { key: periodKey, summary } : null;
+    });
+    const [entryState, setEntryState] = useState<{ key: string; entries: StatEntry[] } | null>(() => {
+        const entries = statService.getCachedEntries(definition.id, period.from, period.to);
+        return entries ? { key: periodKey, entries } : null;
     });
     const cachedSummary = statService.getCachedSummary(definition.id, period.from, period.to);
-    const summary = summaryState?.key === `${definition.id}:${period.key}`
+    const summary = summaryState?.key === periodKey
         ? summaryState.summary
         : cachedSummary ?? null;
+    const entries = entryState?.key === periodKey ? entryState.entries : null;
 
     useEffect(() => {
         let cancelled = false;
-        const summaryKey = `${definition.id}:${period.key}`;
+        const summaryKey = periodKey;
         statService.getSummary(definition.id, period.from, period.to)
             .then(nextSummary => {
                 if (!cancelled) setSummaryState({ key: summaryKey, summary: nextSummary });
             })
             .catch(e => console.error('Failed to fetch stat summary:', e))
         return () => { cancelled = true; };
-    }, [definition.id, period.from, period.key, period.to, refreshKey]);
+    }, [definition.id, period.from, period.key, period.to, periodKey, refreshKey]);
+
+    useEffect(() => {
+        let cancelled = false;
+        statService.getEntries(definition.id, period.from, period.to)
+            .then(nextEntries => {
+                if (!cancelled) setEntryState({ key: periodKey, entries: nextEntries });
+            })
+            .catch(e => console.error('Failed to fetch stat entries for summary:', e));
+        return () => { cancelled = true; };
+    }, [definition.id, period.from, period.to, periodKey, refreshKey]);
 
     if (!summary) {
         const tileCount = 3;
@@ -103,31 +128,38 @@ export function StatSummaryBar({ definition, dateRange, refreshKey }: Props) {
     }
 
     const tiles: TileProps[] = [];
-    const periodLabel = formatPeriod(dateRange);
-
-    tiles.push({
-        label: `Check-in streak · ${periodLabel}`,
-        value: pluralDays(summary.checkInStreak),
-    });
+    const derivedLongestBooleanStreak = entries ? computeLongestBooleanStreak(entries) : null;
+    const derivedPeriodHighest = entries && entries.length > 0
+        ? Math.max(...entries.map(entry => entry.value))
+        : null;
+    const periodHighest = summary.periodHighest ?? derivedPeriodHighest;
 
     if (definition.type === 'BOOLEAN') {
         tiles.push({
-            label: `Yes streak · ${periodLabel}`,
+            label: 'streak',
             value: pluralDays(summary.booleanStreak ?? 0),
         });
         tiles.push({
-            label: `Yes · ${periodLabel}`,
-            value: String(summary.periodYesCount ?? 0),
+            label: 'performed',
+            value: `${summary.periodYesCount ?? 0} ${summary.periodYesCount === 1 ? 'time' : 'times'}`,
+        });
+        tiles.push({
+            label: 'longest streak',
+            value: pluralDays(summary.longestBooleanStreak ?? derivedLongestBooleanStreak ?? 0),
         });
     }
 
     if (definition.type === 'NUMBER' || definition.type === 'RANGE') {
         tiles.push({
-            label: `Average · ${periodLabel}`,
+            label: 'Highest',
+            value: periodHighest != null ? formatAverage(periodHighest) : '—',
+        });
+        tiles.push({
+            label: 'Average',
             value: summary.periodAverage !== null ? formatAverage(summary.periodAverage) : '—',
         });
         tiles.push({
-            label: `Total · ${periodLabel}`,
+            label: 'Total',
             value: summary.periodTotal !== null ? formatAverage(summary.periodTotal) : '—',
         });
     }

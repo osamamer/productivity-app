@@ -39,8 +39,10 @@ export interface StatSummary {
     checkInStreak: number;
     periodYesCount: number | null;    // BOOLEAN only
     booleanStreak: number | null;     // BOOLEAN only
+    longestBooleanStreak?: number | null; // BOOLEAN only
     periodAverage: number | null;     // NUMBER / RANGE only
     periodTotal: number | null;       // NUMBER / RANGE only
+    periodHighest?: number | null;     // NUMBER / RANGE only
 }
 
 export type CorrelationStrength = 'STRONG' | 'MODERATE' | 'MILD' | 'NONE' | 'INSUFFICIENT_DATA' | 'NO_VARIATION';

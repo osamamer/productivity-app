@@ -1,6 +1,7 @@
 package org.osama.stat;
 
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Stream;
 
 public final class SystemStatCatalog {
@@ -9,12 +10,24 @@ public final class SystemStatCatalog {
     public static final String MEDITATION_MINUTES_SYSTEM_KEY = "meditation_minutes";
     public static final String SLEEP_HOURS_SYSTEM_KEY = "sleep_hours";
 
+    // These definitions are captured by combined check-ins rather than daily stat entries.
     public static final List<SystemStatDefinition> MENTAL_STATE_STATS = List.of(
-            range("stimulation", "Stimulation", "How mentally or sensorially stimulated you feel."),
-            range("hunger", "Hunger", "How physically hungry you feel."),
-            range("arousal", "Arousal", "How activated or physiologically keyed up you feel."),
-            range("valence", "Valence", "How pleasant or unpleasant your current state feels.")
+            range("energy", "Energy", "How much physical and mental energy you have."),
+            range("activation", "Activation", "How keyed up or activated your body feels."),
+            range("stimulation_hunger", "Stimulation Hunger", "How strongly you want more stimulation."),
+            range("clarity", "Clarity", "How clear and organized your mind feels."),
+            range("valence", "Valence", "How pleasant or unpleasant your current state feels."),
+            range("emotional_load", "Emotional Load", "How much emotional weight you are carrying.")
     );
+
+    private static final Set<String> LEGACY_MENTAL_STATE_SYSTEM_KEYS = Set.of(
+            "stimulation", "hunger", "arousal"
+    );
+
+    private static final Set<String> MENTAL_STATE_SYSTEM_KEYS = Stream.concat(
+                    MENTAL_STATE_STATS.stream().map(SystemStatDefinition::systemKey),
+                    LEGACY_MENTAL_STATE_SYSTEM_KEYS.stream())
+            .collect(java.util.stream.Collectors.toUnmodifiableSet());
 
     public static final List<SystemStatDefinition> MEDITATION_STATS = List.of(
             yesNo(MEDITATED_SYSTEM_KEY, "Meditated", "Whether you completed a meditation session that day."),
@@ -26,10 +39,14 @@ public final class SystemStatCatalog {
     );
 
     public static final List<SystemStatDefinition> SYSTEM_STATS = Stream
-            .concat(Stream.concat(MENTAL_STATE_STATS.stream(), MEDITATION_STATS.stream()), DAILY_LIFE_STATS.stream())
+            .concat(MEDITATION_STATS.stream(), DAILY_LIFE_STATS.stream())
             .toList();
 
     private SystemStatCatalog() {
+    }
+
+    public static boolean isMentalStateSystemKey(String systemKey) {
+        return systemKey != null && MENTAL_STATE_SYSTEM_KEYS.contains(systemKey);
     }
 
     private static SystemStatDefinition range(String systemKey, String name, String description) {

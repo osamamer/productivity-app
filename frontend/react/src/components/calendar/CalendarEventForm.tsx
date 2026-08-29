@@ -3,6 +3,7 @@ import {
 } from '@mui/material';
 import { useMemo, useState } from 'react';
 import { CalendarEvent, CalendarEventInput } from '../../types/CalendarEvent';
+import { requestSystemNotificationPermission } from '../../services/systemNotifications';
 
 type Props = {
     initialDate: string;
@@ -32,12 +33,6 @@ function localTimePart(value: string | null | undefined, fallback: string): stri
     if (!value) return fallback;
     const date = new Date(value);
     return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
-}
-
-export async function requestSystemNotificationPermission(): Promise<void> {
-    if ('Notification' in window && Notification.permission === 'default') {
-        await Notification.requestPermission();
-    }
 }
 
 export function CalendarEventForm({ initialDate, event, onSave, onCancel, onDelete }: Props) {

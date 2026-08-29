@@ -9,6 +9,7 @@ import {
     DialogContent,
     DialogTitle,
     IconButton,
+    Popover,
     TextField,
     Typography,
 } from '@mui/material';
@@ -17,6 +18,11 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import GroupWorkIcon from '@mui/icons-material/GroupWork';
 import VisibilityIcon from '@mui/icons-material/Visibility';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
+import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
+import HistoryIcon from '@mui/icons-material/History';
+import LinkOffIcon from '@mui/icons-material/LinkOff';
+import ReplayIcon from '@mui/icons-material/Replay';
 import { taskGroupService, taskService } from '../services/api';
 import { Task } from '../types/Task';
 import { TaskGroup } from '../types/TaskGroup';
@@ -31,9 +37,11 @@ import { getShowCompletedHomeTasks } from '../services/utils/homePreferences';
 import { PomodoroStatus } from '../types/PomodoroStatus';
 
 type ActiveExpansion = { taskId: string; panel: 'pomodoro' | 'details' } | null;
-type FocusVisibility = 'all' | 'fading' | 'hidden' | 'revealing';
+type FocusVisibility = 'all' | 'fading' | 'sliding' | 'hidden' | 'revealing';
 type DropEdge = 'before' | 'after';
 type GroupDropIntent = DropEdge | 'inside';
+type BulkAction = 'complete' | 'reopen' | 'move-to-today';
+type DeleteRequest = { kind: 'single' | 'bulk'; tasks: Task[]; anchorEl: HTMLElement };
 type TaskListItem =
     | { kind: 'task'; task: Task }
     | { kind: 'group'; group: TaskGroup; tasks: Task[] };
@@ -49,25 +57,21 @@ const greetingReveal = keyframes`
     }
 `;
 
-const focusTaskReveal = keyframes`
+const focusTaskSlide = keyframes`
     from {
-        opacity: 0.65;
-        transform: translateY(10px) scale(0.985);
+        transform: translateY(var(--focus-task-offset, 0px));
     }
     to {
-        opacity: 1;
-        transform: translateY(0) scale(1);
+        transform: translateY(0);
     }
 `;
 
 const tasksFadeAway = keyframes`
     from {
         opacity: 1;
-        transform: translateY(0);
     }
     to {
         opacity: 0;
-        transform: translateY(9px);
     }
 `;
 
@@ -79,6 +83,25 @@ const tasksFadeBack = keyframes`
     to {
         opacity: 1;
         transform: translateY(0);
+    }
+`;
+
+const buttonFadeIn = keyframes`
+    from { opacity: 0; }
+    to { opacity: 1; }
+`;
+
+const TASKS_FADE_DURATION_MS = 140;
+const FOCUS_TASK_SLIDE_DURATION_MS = 650;
+
+const groupReveal = keyframes`
+    from {
+        opacity: 0;
+        transform: translateY(-5px) scale(0.99);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
     }
 `;
 
@@ -118,16 +141,37 @@ function buildTaskListItems(tasks: Task[], groups: TaskGroup[]): TaskListItem[] 
     return items;
 }
 
+function formatLocalDateTime(date: Date): string {
+    const pad = (value: number) => String(value).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+        + `T${pad(date.getHours())}:${pad(date.getMinutes())}:00`;
+}
+
+function moveTaskDateToToday(task: Task): string {
+    const today = new Date();
+    const scheduledDate = task.scheduledPerformDateTime
+        ? new Date(task.scheduledPerformDateTime)
+        : today;
+    const nextDate = Number.isNaN(scheduledDate.getTime()) ? today : scheduledDate;
+    nextDate.setFullYear(today.getFullYear(), today.getMonth(), today.getDate());
+    return formatLocalDateTime(nextDate);
+}
+
 export function HomePage() {
     const { user } = useUser();
     const [activeExpansion, setActiveExpansion] = useState<ActiveExpansion>(null);
     const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
+    const [showOlderTasks, setShowOlderTasks] = useState(false);
+    const [bulkActionLoading, setBulkActionLoading] = useState(false);
+    const [deleteRequest, setDeleteRequest] = useState<DeleteRequest | null>(null);
+    const [deleteSubmitting, setDeleteSubmitting] = useState(false);
     const [groupDialogOpen, setGroupDialogOpen] = useState(false);
     const [groupName, setGroupName] = useState('');
     const [groupSubmitting, setGroupSubmitting] = useState(false);
     const [groups, setGroups] = useState<TaskGroup[] | null>(null);
     const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(() => new Set());
     const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
+    const [draggedTaskIds, setDraggedTaskIds] = useState<string[]>([]);
     const [draggedGroupId, setDraggedGroupId] = useState<string | null>(null);
     const [dragTargetTaskId, setDragTargetTaskId] = useState<string | null>(null);
     const [dragTargetGroupId, setDragTargetGroupId] = useState<string | null>(null);
@@ -139,8 +183,13 @@ export function HomePage() {
     const [pomodoroStatusResolved, setPomodoroStatusResolved] = useState(false);
     const [pomodoroTaskMinimized, setPomodoroTaskMinimized] = useState(false);
     const [focusVisibility, setFocusVisibility] = useState<FocusVisibility>('all');
+    const [focusTaskOffset, setFocusTaskOffset] = useState(0);
     const selectionAnchorRef = useRef<string | null>(null);
     const activePomodoroTaskIdRef = useRef<string | null>(null);
+    const focusVisibilityRef = useRef<FocusVisibility>('all');
+    const focusTaskSourceTopRef = useRef<number | null>(null);
+    const latestPomodoroStatusRef = useRef<PomodoroStatus | null>(null);
+    const taskListTopRef = useRef<HTMLDivElement | null>(null);
     const focusTransitionTimerRef = useRef<number | null>(null);
     const temporarilyCollapsedGroupIdRef = useRef<string | null>(null);
 
@@ -151,12 +200,25 @@ export function HomePage() {
         refreshTaskBuckets,
         addTaskToState,
         updateTaskInState,
+        removeTaskFromState,
         reorderTasksInState,
     } = useGlobalTasks();
 
     const visibleTasks = useMemo(
         () => todayTasks.filter(task => !task.parentId && (getShowCompletedHomeTasks() || !task.completed)),
         [todayTasks],
+    );
+    const olderTasks = useMemo(
+        () => pastTasks.filter(task => !task.parentId && (getShowCompletedHomeTasks() || !task.completed)),
+        [pastTasks],
+    );
+    const selectedTasks = useMemo(
+        () => allTasks.filter(task => selectedTaskIds.includes(task.taskId)),
+        [allTasks, selectedTaskIds],
+    );
+    const selectedOlderTasks = useMemo(
+        () => selectedTasks.filter(task => olderTasks.some(olderTask => olderTask.taskId === task.taskId)),
+        [olderTasks, selectedTasks],
     );
     const activePomodoroTask = useMemo(
         () => visibleTasks.find(task => task.taskId === activePomodoroTaskId) ?? null,
@@ -172,9 +234,14 @@ export function HomePage() {
             : visibleTasks,
         [focusedPomodoroTask, visibleTasks],
     );
+    const tasksInTransition = focusVisibility === 'fading' ? visibleTasks : tasksBelowFocus;
     const taskListItems = useMemo(
-        () => buildTaskListItems(tasksBelowFocus, groups ?? []),
-        [groups, tasksBelowFocus],
+        () => buildTaskListItems(tasksInTransition, groups ?? []),
+        [groups, tasksInTransition],
+    );
+    const olderTaskListItems = useMemo(
+        () => buildTaskListItems(olderTasks, groups ?? []),
+        [groups, olderTasks],
     );
     const renderedTaskIds = useMemo(() => {
         const taskIds = focusedPomodoroTask ? [focusedPomodoroTask.taskId] : [];
@@ -185,14 +252,41 @@ export function HomePage() {
                 taskIds.push(...item.tasks.map(task => task.taskId));
             }
         });
+        if (showOlderTasks) {
+            olderTaskListItems.forEach(item => {
+                if (item.kind === 'task') {
+                    taskIds.push(item.task.taskId);
+                } else if (!collapsedGroupIds.has(item.group.groupId)) {
+                    taskIds.push(...item.tasks.map(task => task.taskId));
+                }
+            });
+        }
         return taskIds;
-    }, [focusedPomodoroTask, collapsedGroupIds, taskListItems]);
+    }, [focusedPomodoroTask, collapsedGroupIds, olderTaskListItems, showOlderTasks, taskListItems]);
 
     const clearFocusTransitionTimer = useCallback(() => {
         if (focusTransitionTimerRef.current !== null) {
             window.clearTimeout(focusTransitionTimerRef.current);
             focusTransitionTimerRef.current = null;
         }
+    }, []);
+
+    const rememberFocusTaskPosition = useCallback((taskId: string) => {
+        const taskRow = Array.from(document.querySelectorAll<HTMLElement>('[data-task-id]'))
+            .find(element => element.dataset.taskId === taskId);
+        focusTaskSourceTopRef.current = taskRow?.getBoundingClientRect().top ?? null;
+    }, []);
+
+    const finishFocusTransition = useCallback(() => {
+        const sourceTop = focusTaskSourceTopRef.current;
+        const targetTop = taskListTopRef.current?.getBoundingClientRect().top;
+        setFocusTaskOffset(sourceTop !== null && targetTop !== undefined ? sourceTop - targetTop : 0);
+        setInitialPomodoroStatus(latestPomodoroStatusRef.current);
+        setFocusVisibility('sliding');
+        focusTransitionTimerRef.current = window.setTimeout(() => {
+            setFocusVisibility('hidden');
+            focusTransitionTimerRef.current = null;
+        }, FOCUS_TASK_SLIDE_DURATION_MS);
     }, []);
 
     const refreshGroups = useCallback(async () => {
@@ -211,6 +305,10 @@ export function HomePage() {
     }, [refreshGroups]);
 
     useEffect(() => () => clearFocusTransitionTimer(), [clearFocusTransitionTimer]);
+
+    useEffect(() => {
+        focusVisibilityRef.current = focusVisibility;
+    }, [focusVisibility]);
 
     async function createTask(task: TaskToCreate) {
         try {
@@ -242,6 +340,91 @@ export function HomePage() {
         } catch (err) {
             console.error('Error toggling task:', err);
             if (task) updateTaskInState(taskId, { completed: task.completed });
+        }
+    }
+
+    function removeTasksFromGroups(taskIds: string[]) {
+        const taskIdSet = new Set(taskIds);
+        setGroups(previous => (previous ?? [])
+            .map(group => ({
+                ...group,
+                taskIds: group.taskIds.filter(taskId => !taskIdSet.has(taskId)),
+            }))
+            .filter(group => group.taskIds.length >= 2));
+    }
+
+    function deleteTask(task: Task, anchorEl: HTMLElement) {
+        setDeleteRequest({ kind: 'single', tasks: [task], anchorEl });
+    }
+
+    function requestBulkDelete(anchorEl: HTMLElement) {
+        if (bulkActionLoading || selectedTasks.length === 0) return;
+        setDeleteRequest({ kind: 'bulk', tasks: selectedTasks, anchorEl });
+    }
+
+    function closeDeleteRequest() {
+        if (!deleteSubmitting) setDeleteRequest(null);
+    }
+
+    async function confirmDelete() {
+        if (!deleteRequest || deleteSubmitting) return;
+
+        const request = deleteRequest;
+        setDeleteSubmitting(true);
+        if (request.kind === 'bulk') setBulkActionLoading(true);
+        try {
+            await Promise.all(request.tasks.map(task => taskService.deleteTask(task.taskId)));
+            request.tasks.forEach(task => removeTaskFromState(task.taskId));
+            removeTasksFromGroups(request.tasks.map(task => task.taskId));
+            if (request.kind === 'bulk') {
+                clearSelection();
+            } else {
+                const [task] = request.tasks;
+                setSelectedTaskIds(previous => previous.filter(taskId => taskId !== task.taskId));
+                setActiveExpansion(previous => previous?.taskId === task.taskId ? null : previous);
+            }
+        } catch (err) {
+            console.error(`Error deleting ${request.kind === 'bulk' ? 'selected tasks' : 'task'}:`, err);
+            await refreshTaskBuckets();
+        } finally {
+            setDeleteSubmitting(false);
+            if (request.kind === 'bulk') setBulkActionLoading(false);
+            setDeleteRequest(null);
+        }
+    }
+
+    async function performBulkAction(action: BulkAction) {
+        const tasksToUpdate = action === 'move-to-today' ? selectedOlderTasks : selectedTasks;
+        if (bulkActionLoading || tasksToUpdate.length === 0) return;
+
+        setBulkActionLoading(true);
+        try {
+            const updatedTasks = await Promise.all(tasksToUpdate.map(task => {
+                if (action === 'move-to-today') {
+                    return taskService.updateTask(task.taskId, {
+                        scheduledPerformDateTime: moveTaskDateToToday(task),
+                    });
+                }
+
+                return taskService.updateTask(task.taskId, {
+                    completed: action === 'complete',
+                });
+            }));
+            updatedTasks.forEach(updatedTask => updateTaskInState(updatedTask.taskId, updatedTask));
+            clearSelection();
+        } catch (err) {
+            console.error(`Error applying bulk task action (${action}):`, err);
+            await refreshTaskBuckets();
+        } finally {
+            setBulkActionLoading(false);
+        }
+    }
+
+    function toggleOlderTasks() {
+        setShowOlderTasks(previous => !previous);
+        if (showOlderTasks) {
+            const olderTaskIds = new Set(olderTasks.map(task => task.taskId));
+            setSelectedTaskIds(previous => previous.filter(taskId => !olderTaskIds.has(taskId)));
         }
     }
 
@@ -289,20 +472,22 @@ export function HomePage() {
             if (activePomodoroTaskIdRef.current === taskId) return;
 
             clearFocusTransitionTimer();
+            rememberFocusTaskPosition(taskId);
             activePomodoroTaskIdRef.current = taskId;
             setActivePomodoroTaskId(taskId);
             setPomodoroTaskMinimized(false);
             setSelectedTaskIds([]);
+            setShowOlderTasks(false);
             if (options?.animate === false) {
                 setFocusVisibility('hidden');
                 return;
             }
 
             setFocusVisibility('fading');
-            focusTransitionTimerRef.current = window.setTimeout(() => {
-                setFocusVisibility('hidden');
-                focusTransitionTimerRef.current = null;
-            }, 280);
+            focusTransitionTimerRef.current = window.setTimeout(
+                finishFocusTransition,
+                TASKS_FADE_DURATION_MS,
+            );
             return;
         }
 
@@ -315,17 +500,19 @@ export function HomePage() {
         if (activePomodoroTaskIdRef.current !== taskId) return;
 
         activePomodoroTaskIdRef.current = null;
+        latestPomodoroStatusRef.current = null;
         setActivePomodoroTaskId(null);
         setInitialPomodoroStatus(null);
         setPomodoroTaskMinimized(false);
         setFocusVisibility('all');
-    }, [clearFocusTransitionTimer]);
+    }, [clearFocusTransitionTimer, finishFocusTransition, rememberFocusTaskPosition]);
 
     useEffect(() => {
         let cancelled = false;
         taskService.getActivePomodoro()
             .then(status => {
                 if (cancelled || !status?.active) return;
+                latestPomodoroStatusRef.current = status;
                 setInitialPomodoroStatus(status);
                 handlePomodoroActiveChange(status.associatedTaskId, true, { animate: false });
             })
@@ -342,14 +529,28 @@ export function HomePage() {
     const handlePomodoroFocusStart = useCallback((taskId: string) => {
         if (activePomodoroTaskIdRef.current !== taskId) return;
         if (pomodoroTaskMinimized) return;
+        if (
+            focusVisibilityRef.current === 'hidden'
+            || focusVisibilityRef.current === 'fading'
+            || focusVisibilityRef.current === 'sliding'
+        ) return;
 
         clearFocusTransitionTimer();
+        rememberFocusTaskPosition(taskId);
+        setShowOlderTasks(false);
         setFocusVisibility('fading');
-        focusTransitionTimerRef.current = window.setTimeout(() => {
-            setFocusVisibility('hidden');
-            focusTransitionTimerRef.current = null;
-        }, 280);
-    }, [clearFocusTransitionTimer, pomodoroTaskMinimized]);
+        focusTransitionTimerRef.current = window.setTimeout(
+            finishFocusTransition,
+            TASKS_FADE_DURATION_MS,
+        );
+    }, [clearFocusTransitionTimer, finishFocusTransition, pomodoroTaskMinimized, rememberFocusTaskPosition]);
+
+    const handlePomodoroStatusChange = useCallback((taskId: string, status: PomodoroStatus) => {
+        const activeTaskId = activePomodoroTaskIdRef.current;
+        if (activeTaskId === null || activeTaskId === taskId) {
+            latestPomodoroStatusRef.current = status;
+        }
+    }, []);
 
     const showAllTasks = useCallback(() => {
         clearFocusTransitionTimer();
@@ -379,6 +580,7 @@ export function HomePage() {
             });
             temporarilyCollapsedGroupIdRef.current = null;
         }
+        setDraggedTaskIds([]);
         setDraggedTaskId(null);
         setDraggedGroupId(null);
         setDragTargetTaskId(null);
@@ -396,41 +598,51 @@ export function HomePage() {
         });
     }, [refreshTaskBuckets, reorderTasksInState]);
 
-    const applyUpdatedGroup = useCallback((updatedGroup: TaskGroup, movedTaskId: string) => {
+    const applyUpdatedGroup = useCallback((updatedGroup: TaskGroup, movedTaskIds: string[]) => {
+        const movedTaskIdSet = new Set(movedTaskIds);
         setGroups(previous => (previous ?? [])
             .map(group => group.groupId === updatedGroup.groupId
                 ? updatedGroup
-                : { ...group, taskIds: group.taskIds.filter(taskId => taskId !== movedTaskId) })
+                : { ...group, taskIds: group.taskIds.filter(taskId => !movedTaskIdSet.has(taskId)) })
             .filter(group => group.taskIds.length >= 2));
     }, []);
 
-    const addTaskToGroup = useCallback(async (targetGroup: TaskGroup, taskId: string) => {
-        if (targetGroup.taskIds.includes(taskId)) return;
+    const addTasksToGroup = useCallback(async (targetGroup: TaskGroup, taskIds: string[]) => {
+        const taskIdsToAdd = taskIds.filter(taskId => !targetGroup.taskIds.includes(taskId));
+        if (taskIdsToAdd.length === 0) return;
 
-        minimizePomodoroTask(taskId);
+        minimizePomodoroTask(taskIdsToAdd[0]);
 
         try {
             const updatedGroup = await taskGroupService.replaceTasks(
                 targetGroup.groupId,
-                [...targetGroup.taskIds, taskId],
+                [...targetGroup.taskIds, ...taskIdsToAdd],
             );
-            applyUpdatedGroup(updatedGroup, taskId);
+            applyUpdatedGroup(updatedGroup, taskIdsToAdd);
         } catch (err) {
             console.error('Error adding task to group:', err);
             await refreshGroups();
         }
     }, [applyUpdatedGroup, minimizePomodoroTask, refreshGroups]);
 
-    const removeTaskFromGroup = useCallback(async (sourceGroup: TaskGroup, taskId: string) => {
+    const removeTasksFromGroup = useCallback(async (sourceGroup: TaskGroup, taskIds: string[]) => {
+        const taskIdsInGroup = taskIds.filter(taskId => sourceGroup.taskIds.includes(taskId));
+        if (taskIdsInGroup.length === 0) return;
+
+        const remainingTaskIds = sourceGroup.taskIds.filter(taskId => !taskIdsInGroup.includes(taskId));
         try {
-            await taskGroupService.removeTask(sourceGroup.groupId, taskId);
-            setGroups(previous => (previous ?? [])
-                .map(group => group.groupId === sourceGroup.groupId
-                    ? { ...group, taskIds: group.taskIds.filter(existingTaskId => existingTaskId !== taskId) }
+            if (remainingTaskIds.length >= 2) {
+                await taskGroupService.replaceTasks(sourceGroup.groupId, remainingTaskIds);
+            } else {
+                await taskGroupService.deleteGroup(sourceGroup.groupId);
+            }
+            setGroups(previous => remainingTaskIds.length >= 2
+                ? (previous ?? []).map(group => group.groupId === sourceGroup.groupId
+                    ? { ...group, taskIds: remainingTaskIds }
                     : group)
-                .filter(group => group.taskIds.length >= 2));
+                : (previous ?? []).filter(group => group.groupId !== sourceGroup.groupId));
         } catch (err) {
-            console.error('Error removing task from group:', err);
+            console.error('Error removing dragged tasks from group:', err);
             await refreshGroups();
         }
     }, [refreshGroups]);
@@ -459,27 +671,33 @@ export function HomePage() {
             return;
         }
 
-        if (!draggedTaskId || draggedTaskId === targetTask.taskId) {
+        const draggedIds = draggedTaskIds.length > 0
+            ? draggedTaskIds
+            : draggedTaskId ? [draggedTaskId] : [];
+        if (draggedIds.length === 0 || draggedIds.includes(targetTask.taskId)) {
             finishDragging();
             return;
         }
 
-        const sourceGroup = groups?.find(group => group.taskIds.includes(draggedTaskId));
+        const draggedIdSet = new Set(draggedIds);
         const targetGroup = groups?.find(group => group.taskIds.includes(targetTask.taskId));
         const orderedTaskIds = visibleTasks.map(task => task.taskId);
-        const sourceIndex = orderedTaskIds.indexOf(draggedTaskId);
-        if (sourceIndex === -1 || !orderedTaskIds.includes(targetTask.taskId)) return;
+        const movedTaskIds = orderedTaskIds.filter(taskId => draggedIdSet.has(taskId));
+        if (movedTaskIds.length === 0 || !orderedTaskIds.includes(targetTask.taskId)) return;
 
-        orderedTaskIds.splice(sourceIndex, 1);
-        const targetIndex = orderedTaskIds.indexOf(targetTask.taskId);
-        orderedTaskIds.splice(targetIndex + (edge === 'after' ? 1 : 0), 0, draggedTaskId);
-        minimizePomodoroTask(draggedTaskId);
-        persistTaskOrder(orderedTaskIds);
-        if (sourceGroup && sourceGroup.groupId !== targetGroup?.groupId) {
-            void removeTaskFromGroup(sourceGroup, draggedTaskId);
-        }
-        finishDragging();
-    }, [draggedGroupId, draggedTaskId, finishDragging, groups, minimizePomodoroTask, persistTaskOrder, removeTaskFromGroup, reorderGroupRelativeToTask, visibleTasks]);
+        const orderWithoutMovedTasks = orderedTaskIds.filter(taskId => !draggedIdSet.has(taskId));
+        const targetIndex = orderWithoutMovedTasks.indexOf(targetTask.taskId);
+        orderWithoutMovedTasks.splice(targetIndex + (edge === 'after' ? 1 : 0), 0, ...movedTaskIds);
+        minimizePomodoroTask(draggedTaskId ?? movedTaskIds[0]);
+        persistTaskOrder(orderWithoutMovedTasks);
+
+        const sourceGroups = (groups ?? []).filter(group =>
+            group.groupId !== targetGroup?.groupId && movedTaskIds.some(taskId => group.taskIds.includes(taskId)),
+        );
+        sourceGroups.forEach(sourceGroup => {
+            void removeTasksFromGroup(sourceGroup, movedTaskIds);
+        });
+    }, [draggedGroupId, draggedTaskId, draggedTaskIds, finishDragging, groups, minimizePomodoroTask, persistTaskOrder, removeTasksFromGroup, reorderGroupRelativeToTask, visibleTasks]);
 
     const reorderRelativeToGroup = useCallback((taskIds: string[], targetGroup: TaskGroup, edge: DropEdge) => {
         const orderedTaskIds = visibleTasks.map(task => task.taskId);
@@ -497,9 +715,14 @@ export function HomePage() {
     }, [persistTaskOrder, visibleTasks]);
 
     const handleDropOnGroup = useCallback((targetGroup: TaskGroup, intent: GroupDropIntent) => {
+        const draggedIds = draggedTaskIds.length > 0
+            ? draggedTaskIds
+            : draggedTaskId ? [draggedTaskId] : [];
+
         if (intent === 'inside') {
-            if (draggedTaskId && !targetGroup.taskIds.includes(draggedTaskId)) {
-                void addTaskToGroup(targetGroup, draggedTaskId);
+            const taskIdsToAdd = draggedIds.filter(taskId => !targetGroup.taskIds.includes(taskId));
+            if (taskIdsToAdd.length > 0) {
+                void addTasksToGroup(targetGroup, taskIdsToAdd);
             }
             finishDragging();
             return;
@@ -517,14 +740,24 @@ export function HomePage() {
             return;
         }
 
-        if (draggedTaskId) {
-            const sourceGroup = groups?.find(group => group.taskIds.includes(draggedTaskId));
-            reorderRelativeToGroup([draggedTaskId], targetGroup, intent);
-            minimizePomodoroTask(draggedTaskId);
-            if (sourceGroup) void removeTaskFromGroup(sourceGroup, draggedTaskId);
+        if (draggedIds.length > 0) {
+            const draggedIdSet = new Set(draggedIds);
+            const movedTaskIds = visibleTasks
+                .map(task => task.taskId)
+                .filter(taskId => draggedIdSet.has(taskId));
+            if (movedTaskIds.length > 0) {
+                reorderRelativeToGroup(movedTaskIds, targetGroup, intent);
+                minimizePomodoroTask(draggedTaskId ?? movedTaskIds[0]);
+                const sourceGroups = (groups ?? []).filter(group =>
+                    group.groupId !== targetGroup.groupId && movedTaskIds.some(taskId => group.taskIds.includes(taskId)),
+                );
+                sourceGroups.forEach(sourceGroup => {
+                    void removeTasksFromGroup(sourceGroup, movedTaskIds);
+                });
+            }
         }
         finishDragging();
-    }, [addTaskToGroup, draggedGroupId, draggedTaskId, finishDragging, groups, minimizePomodoroTask, removeTaskFromGroup, reorderRelativeToGroup, visibleTasks]);
+    }, [addTasksToGroup, draggedGroupId, draggedTaskId, draggedTaskIds, finishDragging, groups, minimizePomodoroTask, removeTasksFromGroup, reorderRelativeToGroup, visibleTasks]);
 
     const handleDropAtBottom = useCallback(() => {
         const orderedTaskIds = visibleTasks.map(task => task.taskId);
@@ -541,21 +774,27 @@ export function HomePage() {
             return;
         }
 
-        if (draggedTaskId) {
-            const sourceIndex = orderedTaskIds.indexOf(draggedTaskId);
-            if (sourceIndex !== -1) {
-                orderedTaskIds.splice(sourceIndex, 1);
-                orderedTaskIds.push(draggedTaskId);
-                minimizePomodoroTask(draggedTaskId);
-                persistTaskOrder(orderedTaskIds);
-                const sourceGroup = groups?.find(group => group.taskIds.includes(draggedTaskId));
-                if (sourceGroup) {
-                    void removeTaskFromGroup(sourceGroup, draggedTaskId);
-                }
+        const draggedIds = draggedTaskIds.length > 0
+            ? draggedTaskIds
+            : draggedTaskId ? [draggedTaskId] : [];
+        if (draggedIds.length > 0) {
+            const draggedIdSet = new Set(draggedIds);
+            const movedTaskIds = orderedTaskIds.filter(taskId => draggedIdSet.has(taskId));
+            if (movedTaskIds.length > 0) {
+                const orderWithoutMovedTasks = orderedTaskIds.filter(taskId => !draggedIdSet.has(taskId));
+                const nextOrder = [...orderWithoutMovedTasks, ...movedTaskIds];
+                minimizePomodoroTask(draggedTaskId ?? movedTaskIds[0]);
+                persistTaskOrder(nextOrder);
+                const sourceGroups = (groups ?? []).filter(group =>
+                    movedTaskIds.some(taskId => group.taskIds.includes(taskId)),
+                );
+                sourceGroups.forEach(sourceGroup => {
+                    void removeTasksFromGroup(sourceGroup, movedTaskIds);
+                });
             }
         }
         finishDragging();
-    }, [draggedGroupId, draggedTaskId, finishDragging, groups, minimizePomodoroTask, persistTaskOrder, removeTaskFromGroup, visibleTasks]);
+    }, [draggedGroupId, draggedTaskId, draggedTaskIds, finishDragging, groups, minimizePomodoroTask, persistTaskOrder, removeTasksFromGroup, visibleTasks]);
 
     const handleDropAtTop = useCallback(() => {
         const orderedTaskIds = visibleTasks.map(task => task.taskId);
@@ -574,14 +813,28 @@ export function HomePage() {
             return;
         }
 
-        if (draggedTaskId) {
-            const sourceGroup = groups?.find(group => group.taskIds.includes(draggedTaskId));
-            persistTaskOrder([draggedTaskId, ...orderedTaskIds.filter(taskId => taskId !== draggedTaskId)]);
-            minimizePomodoroTask(draggedTaskId);
-            if (sourceGroup) void removeTaskFromGroup(sourceGroup, draggedTaskId);
+        const draggedIds = draggedTaskIds.length > 0
+            ? draggedTaskIds
+            : draggedTaskId ? [draggedTaskId] : [];
+        if (draggedIds.length > 0) {
+            const draggedIdSet = new Set(draggedIds);
+            const movedTaskIds = orderedTaskIds.filter(taskId => draggedIdSet.has(taskId));
+            if (movedTaskIds.length > 0) {
+                persistTaskOrder([
+                    ...movedTaskIds,
+                    ...orderedTaskIds.filter(taskId => !draggedIdSet.has(taskId)),
+                ]);
+                minimizePomodoroTask(draggedTaskId ?? movedTaskIds[0]);
+                const sourceGroups = (groups ?? []).filter(group =>
+                    movedTaskIds.some(taskId => group.taskIds.includes(taskId)),
+                );
+                sourceGroups.forEach(sourceGroup => {
+                    void removeTasksFromGroup(sourceGroup, movedTaskIds);
+                });
+            }
         }
         finishDragging();
-    }, [draggedGroupId, draggedTaskId, finishDragging, groups, minimizePomodoroTask, persistTaskOrder, removeTaskFromGroup, visibleTasks]);
+    }, [draggedGroupId, draggedTaskId, draggedTaskIds, finishDragging, groups, minimizePomodoroTask, persistTaskOrder, removeTasksFromGroup, visibleTasks]);
 
     function taskDropEdge(event: React.DragEvent<HTMLElement>): DropEdge {
         const bounds = event.currentTarget.getBoundingClientRect();
@@ -597,7 +850,7 @@ export function HomePage() {
     }
 
     function keepDragTargetInView(event: React.DragEvent<HTMLElement>) {
-        if (!draggedTaskId && !draggedGroupId) return;
+        if (draggedTaskIds.length === 0 && !draggedTaskId && !draggedGroupId) return;
 
         const scrollContainer = event.currentTarget.parentElement;
         if (!scrollContainer) return;
@@ -667,7 +920,12 @@ export function HomePage() {
         });
     }
 
-    function renderTaskRow(task: Task, containingGroup?: TaskGroup) {
+    function renderTaskRow(
+        task: Task,
+        containingGroup?: TaskGroup,
+        options: { reorderable?: boolean; showScheduledDate?: boolean } = {},
+    ) {
+        const reorderable = options.reorderable ?? true;
         return (
             <FlatTaskRow
                 key={task.taskId}
@@ -677,9 +935,11 @@ export function HomePage() {
                 expandedPanel={activeExpansion?.taskId === task.taskId ? activeExpansion.panel : null}
                 onTogglePanel={(panel) => handleTogglePanel(task.taskId, panel)}
                 onAutoExpand={(panel) => setActiveExpansion({ taskId: task.taskId, panel })}
+                onDelete={deleteTask}
                 selected={selectedTaskIds.includes(task.taskId)}
                 onSelectionClick={handleTaskSelection}
-                reorderable
+                showScheduledDate={options.showScheduledDate}
+                reorderable={reorderable}
                 onDragStart={(draggedTask) => {
                     if (draggedTask.taskId === activePomodoroTaskIdRef.current) {
                         clearFocusTransitionTimer();
@@ -687,6 +947,12 @@ export function HomePage() {
                         setInitialPomodoroStatus(null);
                         setFocusVisibility('all');
                     }
+                    const visibleTaskIds = visibleTasks.map(task => task.taskId);
+                    const selectedVisibleTaskIds = visibleTaskIds.filter(taskId => selectedTaskIds.includes(taskId));
+                    const taskIdsToDrag = selectedVisibleTaskIds.includes(draggedTask.taskId)
+                        ? selectedVisibleTaskIds
+                        : [draggedTask.taskId];
+                    setDraggedTaskIds(taskIdsToDrag);
                     setDraggedTaskId(draggedTask.taskId);
                     setDraggedGroupId(null);
                     setDragTargetTaskId(null);
@@ -696,12 +962,15 @@ export function HomePage() {
                     setDragTargetBottom(false);
                 }}
                 onDragOver={(dragTargetTask, event) => {
-                    if ((draggedTaskId && draggedTaskId !== dragTargetTask.taskId) || draggedGroupId) {
+                    const currentDraggedTaskIds = draggedTaskIds.length > 0
+                        ? draggedTaskIds
+                        : draggedTaskId ? [draggedTaskId] : [];
+                    if ((currentDraggedTaskIds.length > 0 && !currentDraggedTaskIds.includes(dragTargetTask.taskId)) || draggedGroupId) {
                         const addingToExpandedGroup = Boolean(
                             containingGroup
-                            && draggedTaskId
+                            && currentDraggedTaskIds.length > 0
                             && !draggedGroupId
-                            && !containingGroup.taskIds.includes(draggedTaskId),
+                            && currentDraggedTaskIds.some(taskId => !containingGroup.taskIds.includes(taskId)),
                         );
                         if (addingToExpandedGroup) {
                             setDragTargetTaskId(dragTargetTask.taskId);
@@ -721,20 +990,24 @@ export function HomePage() {
                     }
                 }}
                 onDrop={(droppedTask, event) => {
-                    if (containingGroup && draggedTaskId && !draggedGroupId
-                        && !containingGroup.taskIds.includes(draggedTaskId)) {
-                        void addTaskToGroup(containingGroup, draggedTaskId);
+                    const currentDraggedTaskIds = draggedTaskIds.length > 0
+                        ? draggedTaskIds
+                        : draggedTaskId ? [draggedTaskId] : [];
+                    if (containingGroup && currentDraggedTaskIds.length > 0 && !draggedGroupId
+                        && currentDraggedTaskIds.some(taskId => !containingGroup.taskIds.includes(taskId))) {
+                        void addTasksToGroup(containingGroup, currentDraggedTaskIds);
                         finishDragging();
                         return;
                     }
                     handleDropOnTask(droppedTask, taskDropEdge(event));
                 }}
                 onDragEnd={finishDragging}
-                isDragging={draggedTaskId === task.taskId}
+                isDragging={draggedTaskIds.includes(task.taskId) || draggedTaskId === task.taskId}
                 isDragTarget={dragTargetTaskId === task.taskId}
                 dragTargetEdge={dragTargetPosition === 'after' ? 'after' : 'before'}
                 isGroupDropTarget={dragTargetTaskId === task.taskId && dragTargetPosition === 'inside'}
                 onPomodoroActiveChange={handlePomodoroActiveChange}
+                onPomodoroStatusChange={handlePomodoroStatusChange}
                 onPomodoroFocusStart={handlePomodoroFocusStart}
                 deferPomodoroHydration={task.taskId !== activePomodoroTaskId}
                 initialPomodoroStatus={task.taskId === activePomodoroTaskId ? initialPomodoroStatus : null}
@@ -743,18 +1016,29 @@ export function HomePage() {
         );
     }
 
-    function renderTaskList(items: TaskListItem[]) {
+    function renderTaskList(
+        items: TaskListItem[],
+        options: { reorderable?: boolean; showScheduledDate?: boolean } = {},
+    ) {
+        const reorderable = options.reorderable ?? true;
         return items.map(item => {
-            if (item.kind === 'task') return renderTaskRow(item.task);
+            if (item.kind === 'task') return renderTaskRow(item.task, undefined, options);
 
             const collapsed = collapsedGroupIds.has(item.group.groupId);
             const groupDragging = draggedGroupId === item.group.groupId;
             const groupDragTarget = dragTargetGroupId === item.group.groupId;
             return (
-                <Box key={item.group.groupId} sx={{ mb: 0.4 }}>
+                <Box
+                    key={item.group.groupId}
+                    sx={{
+                        mb: 0.4,
+                        animation: `${groupReveal} 170ms cubic-bezier(0.22, 1, 0.36, 1)`,
+                    }}
+                >
                     <Box
-                        draggable
-                        onDragStart={(event) => {
+                        data-task-group-header="true"
+                        draggable={reorderable}
+                        onDragStart={reorderable ? (event) => {
                             event.dataTransfer.effectAllowed = 'move';
                             event.dataTransfer.setData('text/plain', `group:${item.group.groupId}`);
                             if (!collapsed) {
@@ -764,17 +1048,18 @@ export function HomePage() {
                                 temporarilyCollapsedGroupIdRef.current = null;
                             }
                             setDraggedGroupId(item.group.groupId);
+                            setDraggedTaskIds([]);
                             setDraggedTaskId(null);
                             setDragTargetGroupId(null);
                             setDragTargetTaskId(null);
                             setDragTargetPosition(null);
                             setDragTargetTop(false);
                             setDragTargetBottom(false);
-                        }}
-                        onDragOver={(event) => {
+                        } : undefined}
+                        onDragOver={reorderable ? (event) => {
                             event.preventDefault();
                             event.dataTransfer.dropEffect = 'move';
-                            if (draggedGroupId !== item.group.groupId || draggedTaskId) {
+                            if (draggedGroupId !== item.group.groupId || draggedTaskIds.length > 0 || draggedTaskId) {
                                 const intent = draggedGroupId ? taskDropEdge(event) : groupDropIntent(event);
                                 setDragTargetGroupId(item.group.groupId);
                                 setDragTargetTaskId(null);
@@ -782,14 +1067,14 @@ export function HomePage() {
                                 setDragTargetTop(false);
                                 setDragTargetBottom(false);
                             }
-                        }}
-                        onDrop={(event) => {
+                        } : undefined}
+                        onDrop={reorderable ? (event) => {
                             event.preventDefault();
                             event.stopPropagation();
                             const intent = draggedGroupId ? taskDropEdge(event) : groupDropIntent(event);
                             handleDropOnGroup(item.group, intent);
-                        }}
-                        onDragEnd={finishDragging}
+                        } : undefined}
+                        onDragEnd={reorderable ? finishDragging : undefined}
                         sx={{
                             position: 'relative',
                             display: 'flex',
@@ -833,13 +1118,19 @@ export function HomePage() {
                                 {item.tasks.length}
                             </Typography>
                         </Typography>
-                        <Button size="small" color="inherit" onClick={() => deleteGroup(item.group)}>
-                            Ungroup
-                        </Button>
+                        <IconButton
+                            size="small"
+                            color="inherit"
+                            aria-label={`Ungroup ${item.group.name}`}
+                            title="Ungroup"
+                            onClick={() => deleteGroup(item.group)}
+                        >
+                            <LinkOffIcon fontSize="small" />
+                        </IconButton>
                     </Box>
                     <Collapse in={!collapsed} timeout={210} unmountOnExit>
                         <Box sx={{ ml: 1.7, pl: 1.1, borderLeft: '1px solid', borderColor: 'divider' }}>
-                            {item.tasks.map(task => renderTaskRow(task, item.group))}
+                            {item.tasks.map(task => renderTaskRow(task, item.group, options))}
                         </Box>
                     </Collapse>
                 </Box>
@@ -851,7 +1142,10 @@ export function HomePage() {
     const greeting = hour < 5 ? 'Good wee hours' : hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
     const firstName = user?.firstName || user?.username || '';
     const overdueCount = pastTasks.filter(task => !task.completed).length;
-    const showTasksBelowFocus = !focusedPomodoroTask || focusVisibility !== 'hidden';
+    const showTasksBelowFocus = !focusedPomodoroTask
+        || focusVisibility === 'all'
+        || focusVisibility === 'fading'
+        || focusVisibility === 'revealing';
 
     return (
         <PageWrapper>
@@ -904,24 +1198,75 @@ export function HomePage() {
                             }}
                         >
                             <Typography variant="body2" color="text.secondary" sx={{ mr: 'auto' }}>
-                                {selectedTaskIds.length} selected
+                                {selectedTasks.length} selected
                             </Typography>
-                            <Button size="small" color="inherit" onClick={clearSelection}>Clear</Button>
-                            <Button
+                            <IconButton
                                 size="small"
-                                variant="contained"
-                                startIcon={<GroupWorkIcon />}
-                                onClick={() => setGroupDialogOpen(true)}
+                                color="inherit"
+                                aria-label={selectedTasks.length > 0 && selectedTasks.every(task => task.completed)
+                                    ? 'Reopen selected tasks'
+                                    : 'Complete selected tasks'}
+                                title={selectedTasks.length > 0 && selectedTasks.every(task => task.completed)
+                                    ? 'Reopen selected tasks'
+                                    : 'Complete selected tasks'}
+                                onClick={() => performBulkAction(
+                                    selectedTasks.length > 0 && selectedTasks.every(task => task.completed)
+                                        ? 'reopen'
+                                        : 'complete',
+                                )}
+                                disabled={bulkActionLoading || selectedTasks.length === 0}
                             >
-                                Group
-                            </Button>
+                                {selectedTasks.length > 0 && selectedTasks.every(task => task.completed)
+                                    ? <ReplayIcon fontSize="small" />
+                                    : <CheckCircleOutlineIcon fontSize="small" color="success" />}
+                            </IconButton>
+                            {selectedOlderTasks.length > 0 && (
+                                <Button
+                                    size="small"
+                                    onClick={() => performBulkAction('move-to-today')}
+                                    disabled={bulkActionLoading}
+                                >
+                                    Move to today
+                                </Button>
+                            )}
+                            {selectedTaskIds.length > 1 && (
+                                <IconButton
+                                    size="small"
+                                    color="inherit"
+                                    aria-label="Group selected tasks"
+                                    title="Group selected tasks"
+                                    onClick={() => setGroupDialogOpen(true)}
+                                    disabled={bulkActionLoading}
+                                >
+                                    <GroupWorkIcon fontSize="small" />
+                                </IconButton>
+                            )}
+                            <IconButton
+                                size="small"
+                                color="error"
+                                aria-label="Delete selected tasks"
+                                title="Delete selected tasks"
+                                onClick={event => requestBulkDelete(event.currentTarget)}
+                                disabled={bulkActionLoading || selectedTasks.length === 0}
+                            >
+                                <DeleteSweepIcon fontSize="small" />
+                            </IconButton>
                         </Box>
                     )}
 
+                    <Box ref={taskListTopRef} sx={{ height: 0 }} />
+
                     {pomodoroStatusResolved && groups !== null && visibleTasks.length > 0 ? (
                         <>
-                            {focusedPomodoroTask && (
-                                <Box sx={{ animation: `${focusTaskReveal} 280ms cubic-bezier(0.22, 1, 0.36, 1)` }}>
+                            {focusedPomodoroTask && focusVisibility !== 'fading' && (
+                                <Box
+                                    sx={{
+                                        '--focus-task-offset': `${focusTaskOffset}px`,
+                                        animation: focusVisibility === 'sliding' && focusTaskOffset !== 0
+                                            ? `${focusTaskSlide} ${FOCUS_TASK_SLIDE_DURATION_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`
+                                            : 'none',
+                                    }}
+                                >
                                     {renderTaskRow(focusedPomodoroTask)}
                                 </Box>
                             )}
@@ -931,7 +1276,11 @@ export function HomePage() {
                                     size="small"
                                     startIcon={<VisibilityIcon />}
                                     onClick={showAllTasks}
-                                    sx={{ mt: 1, mb: 0.75 }}
+                                    sx={{
+                                        mt: 1,
+                                        mb: 0.75,
+                                        animation: `${buttonFadeIn} 220ms ease-out`,
+                                    }}
                                 >
                                     Show all tasks
                                 </Button>
@@ -940,18 +1289,21 @@ export function HomePage() {
                             {showTasksBelowFocus && (
                                 <Box
                                     sx={{
-                                        animation: focusVisibility === 'fading'
-                                            ? `${tasksFadeAway} 280ms ease-in forwards`
-                                            : focusVisibility === 'revealing'
-                                                ? `${tasksFadeBack} 260ms ease-out`
+                                        animation: focusVisibility === 'revealing'
+                                            ? `${tasksFadeBack} 260ms ease-out`
+                                            : 'none',
+                                        '& [data-task-id]:not([data-pomodoro-focus-task="true"]), & [data-task-group-header="true"]': {
+                                            animation: focusVisibility === 'fading'
+                                                ? `${tasksFadeAway} ${TASKS_FADE_DURATION_MS}ms ease-out forwards`
                                                 : 'none',
+                                        },
                                         pointerEvents: focusVisibility === 'fading' ? 'none' : 'auto',
                                     }}
                                 >
                                     <Box
                                         aria-hidden="true"
                                         onDragOver={(event) => {
-                                            if (!draggedTaskId && !draggedGroupId) return;
+                                            if (draggedTaskIds.length === 0 && !draggedTaskId && !draggedGroupId) return;
                                             event.preventDefault();
                                             event.dataTransfer.dropEffect = 'move';
                                             setDragTargetTop(true);
@@ -985,7 +1337,7 @@ export function HomePage() {
                                         <Box
                                             aria-hidden="true"
                                             onDragOver={(event) => {
-                                                if (!draggedTaskId && !draggedGroupId) return;
+                                                if (draggedTaskIds.length === 0 && !draggedTaskId && !draggedGroupId) return;
                                                 event.preventDefault();
                                                 event.dataTransfer.dropEffect = 'move';
                                                 setDragTargetBottom(true);
@@ -1024,12 +1376,86 @@ export function HomePage() {
                         </Typography>
                     ) : null}
 
-                    {overdueCount > 0 && (
-                        <Typography variant="body2" sx={{ mt: 4, color: 'warning.main', fontWeight: 500 }}>
-                            {overdueCount} task{overdueCount > 1 ? 's' : ''} from earlier still waiting.
-                        </Typography>
+                    {pomodoroStatusResolved && groups !== null && focusVisibility === 'all'
+                        && showOlderTasks && olderTasks.length > 0 && (
+                        <Box
+                            onClick={event => event.stopPropagation()}
+                            sx={{ mt: 3, pt: 2, borderTop: '1px solid', borderColor: 'divider' }}
+                        >
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                                <HistoryIcon color="action" fontSize="small" />
+                                <Typography variant="subtitle2" color="text.secondary">
+                                    Older tasks
+                                </Typography>
+                                <Typography variant="caption" color="text.disabled">
+                                    {olderTasks.length}
+                                </Typography>
+                            </Box>
+                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
+                                {renderTaskList(olderTaskListItems, {
+                                    reorderable: false,
+                                    showScheduledDate: true,
+                                })}
+                            </Box>
+                        </Box>
+                    )}
+
+                    {olderTasks.length > 0 && focusVisibility === 'all' && (
+                        <Button
+                            variant="text"
+                            size="small"
+                            color={overdueCount > 0 ? 'warning' : 'inherit'}
+                            startIcon={<HistoryIcon />}
+                            onClick={event => {
+                                event.stopPropagation();
+                                toggleOlderTasks();
+                            }}
+                            sx={{ mt: 3, alignSelf: 'flex-start' }}
+                        >
+                            {showOlderTasks ? 'Hide older tasks' : `View older tasks (${olderTasks.length})`}
+                        </Button>
                     )}
                 </Box>
+
+                <Popover
+                    open={deleteRequest !== null}
+                    anchorEl={deleteRequest?.anchorEl}
+                    onClose={closeDeleteRequest}
+                    anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                    transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                    slotProps={{
+                        paper: {
+                            sx: {
+                                p: 1.5,
+                                width: 270,
+                                maxWidth: 'calc(100vw - 32px)',
+                                borderRadius: 2.5,
+                            },
+                        },
+                    }}
+                >
+                    {deleteRequest && (
+                        <Box>
+                            <Typography variant="body2" sx={{ mb: 1.25 }}>
+                                {deleteRequest.kind === 'bulk'
+                                    ? `Delete ${deleteRequest.tasks.length} selected task${deleteRequest.tasks.length > 1 ? 's' : ''} and their subtasks?`
+                                    : `Delete “${deleteRequest.tasks[0].name}” and its subtasks?`}
+                            </Typography>
+                            <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 0.75 }}>
+                                <Button size="small" onClick={closeDeleteRequest} disabled={deleteSubmitting}>Cancel</Button>
+                                <Button
+                                    size="small"
+                                    color="error"
+                                    variant="contained"
+                                    onClick={() => void confirmDelete()}
+                                    disabled={deleteSubmitting}
+                                >
+                                    {deleteSubmitting ? <CircularProgress size={16} color="inherit" /> : 'Delete'}
+                                </Button>
+                            </Box>
+                        </Box>
+                    )}
+                </Popover>
 
                 <Dialog
                     open={groupDialogOpen}

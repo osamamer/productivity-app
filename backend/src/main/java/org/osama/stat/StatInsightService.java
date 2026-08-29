@@ -41,6 +41,7 @@ public class StatInsightService {
                         Collectors.toMap(StatEntry::getDate, StatEntry::getValue)));
 
         List<StatCorrelationResponse> correlations = definitions.stream()
+                .filter(definition -> !SystemStatCatalog.isMentalStateSystemKey(definition.getSystemKey()))
                 .filter(definition -> !definition.getId().equals(driver.getId()))
                 .map(definition -> correlate(driver, definition,
                         valuesByDefinition.getOrDefault(driver.getId(), Map.of()),

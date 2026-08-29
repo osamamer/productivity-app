@@ -15,10 +15,22 @@ import { StatCard } from '../components/stats/StatCard';
 import { StatDefinition } from '../types/Stats';
 import { statService } from '../services/api/statService';
 
-const MEDITATION_SYSTEM_KEYS = new Set(['meditated', 'meditation_minutes']);
+const DEDICATED_SYSTEM_KEYS = new Set([
+    'meditated',
+    'meditation_minutes',
+    'energy',
+    'activation',
+    'stimulation_hunger',
+    'clarity',
+    'stimulation',
+    'hunger',
+    'arousal',
+    'valence',
+    'emotional_load',
+]);
 
-function isMeditationStat(definition: StatDefinition): boolean {
-    return definition.systemKey !== undefined && MEDITATION_SYSTEM_KEYS.has(definition.systemKey);
+function isDedicatedStat(definition: StatDefinition): boolean {
+    return definition.systemKey !== undefined && DEDICATED_SYSTEM_KEYS.has(definition.systemKey);
 }
 
 export function StatsPage() {
@@ -40,7 +52,7 @@ export function StatsPage() {
             .then(defs => {
                 setDefinitions(defs);
                 setSelectedId(prev => {
-                    const visibleDefs = defs.filter(definition => !isMeditationStat(definition));
+                    const visibleDefs = defs.filter(definition => !isDedicatedStat(definition));
                     if (prev && visibleDefs.some(d => d.id === prev)) return prev;
                     return visibleDefs[0]?.id ?? null;
                 });
@@ -70,7 +82,7 @@ export function StatsPage() {
             await statService.deleteDefinition(deleteTarget.id);
             setDefinitions(prev => {
                 const next = prev.filter(d => d.id !== deleteTarget.id);
-                const nextVisible = next.filter(definition => !isMeditationStat(definition));
+                const nextVisible = next.filter(definition => !isDedicatedStat(definition));
                 setSelectedId(current => {
                     if (current !== deleteTarget.id) return current;
                     return nextVisible[0]?.id ?? null;
@@ -84,14 +96,14 @@ export function StatsPage() {
         }
     };
 
-    const visibleDefinitions = definitions.filter(definition => !isMeditationStat(definition));
+    const visibleDefinitions = definitions.filter(definition => !isDedicatedStat(definition));
     const selectedDef = visibleDefinitions.find(d => d.id === selectedId) ?? null;
 
     const handleDefinitionDrop = async (targetId: string) => {
         if (!draggedId || draggedId === targetId || reorderSaving) return;
 
         const previous = definitions;
-        const visiblePrevious = previous.filter(definition => !isMeditationStat(definition));
+        const visiblePrevious = previous.filter(definition => !isDedicatedStat(definition));
         const draggedIndex = visiblePrevious.findIndex(def => def.id === draggedId);
         const targetIndex = visiblePrevious.findIndex(def => def.id === targetId);
         if (draggedIndex < 0 || targetIndex < 0) return;
@@ -99,7 +111,7 @@ export function StatsPage() {
         const nextVisible = [...visiblePrevious];
         const [dragged] = nextVisible.splice(draggedIndex, 1);
         nextVisible.splice(draggedIndex < targetIndex ? targetIndex - 1 : targetIndex, 0, dragged);
-        const next = [...nextVisible, ...previous.filter(isMeditationStat)];
+        const next = [...nextVisible, ...previous.filter(isDedicatedStat)];
         setDefinitions(next);
         setDraggedId(null);
         setOrderError(null);
@@ -283,7 +295,7 @@ export function StatsPage() {
                                 <StatCard
                                     key={selectedDef.type === 'BOOLEAN' ? 'calendar' : 'numeric-chart'}
                                     definition={selectedDef}
-                                    definitions={definitions}
+                                    comparisonDefinitions={visibleDefinitions}
                                     onDelete={id => setDeleteTarget(definitions.find(d => d.id === id) ?? null)}
                                     refreshKey={chartRefreshKey}
                                     onEntryChanged={handleEntryChanged}

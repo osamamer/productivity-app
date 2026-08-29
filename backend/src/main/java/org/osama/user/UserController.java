@@ -89,6 +89,21 @@ public class UserController {
         return ResponseEntity.ok(UserResponse.from(updatedUser));
     }
 
+    @GetMapping("/me/preferences")
+    public UserPreferencesResponse getMyPreferences() {
+        return UserPreferencesResponse.from(currentUserService.getCurrentUser());
+    }
+
+    @PatchMapping("/me/preferences")
+    public UserPreferencesResponse updateMyPreferences(@RequestBody UpdatePreferencesRequest request) {
+        User updatedUser = userService.updatePreferences(
+                currentUserService.getCurrentUserId(),
+                request.includeUnloggedNumericDaysAsZero(),
+                request.autoStartPomodoroSessions()
+        );
+        return UserPreferencesResponse.from(updatedUser);
+    }
+
     @PatchMapping("/{userId}/deactivate")
     public ResponseEntity<UserResponse> deactivateUser(@PathVariable String userId) {
         userService.deactivateUser(userId);
@@ -149,4 +164,21 @@ public class UserController {
             String currentPassword,
             String newPassword
     ) {}
+
+    public record UpdatePreferencesRequest(
+            Boolean includeUnloggedNumericDaysAsZero,
+            Boolean autoStartPomodoroSessions
+    ) {}
+
+    public record UserPreferencesResponse(
+            boolean includeUnloggedNumericDaysAsZero,
+            boolean autoStartPomodoroSessions
+    ) {
+        static UserPreferencesResponse from(User user) {
+            return new UserPreferencesResponse(
+                    Boolean.TRUE.equals(user.getIncludeUnloggedNumericDaysAsZero()),
+                    !Boolean.FALSE.equals(user.getAutoStartPomodoroSessions())
+            );
+        }
+    }
 }

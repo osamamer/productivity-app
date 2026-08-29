@@ -18,6 +18,7 @@ import TuneIcon from '@mui/icons-material/Tune';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
 import StopIcon from '@mui/icons-material/Stop';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
@@ -26,16 +27,17 @@ import keycloak from '../services/keycloak';
 import { taskService } from '../services/api';
 import { Task } from '../types/Task';
 import { PomodoroStatus } from '../types/PomodoroStatus';
+import { requestSystemNotificationPermission } from '../services/systemNotifications';
+import {
+    createPomodoroFormDefaults,
+    getPomodoroConfig,
+    isPomodoroFormDefaults,
+    NORMAL_POMODORO_CONFIG,
+    PomodoroConfig,
+    PomodoroFormValues,
+} from '../services/api/pomodoroConfigService';
 
 // ─── types ─────────────────────────────────────────────────────────────────
-
-interface PomodoroForm {
-    focusDuration: number;
-    shortBreakDuration: number;
-    longBreakDuration: number;
-    numFocuses: number;
-    longBreakCooldown: number;
-}
 
 export type FlatTaskRowProps = {
     task: Task;
@@ -44,6 +46,7 @@ export type FlatTaskRowProps = {
     expandedPanel: 'pomodoro' | 'details' | null;
     onTogglePanel: (panel: 'pomodoro' | 'details') => void;
     onAutoExpand: (panel: 'pomodoro') => void;
+    onDelete?: (task: Task, anchorEl: HTMLElement) => void;
     showScheduledDate?: boolean;
     onSelect?: (task: Task) => void;
     selected?: boolean;
@@ -58,6 +61,7 @@ export type FlatTaskRowProps = {
     dragTargetEdge?: 'before' | 'after';
     isGroupDropTarget?: boolean;
     onPomodoroActiveChange?: (taskId: string, active: boolean) => void;
+    onPomodoroStatusChange?: (taskId: string, status: PomodoroStatus) => void;
     onPomodoroFocusStart?: (taskId: string) => void;
     deferPomodoroHydration?: boolean;
     initialPomodoroStatus?: PomodoroStatus | null;
@@ -78,6 +82,14 @@ function formatSeconds(seconds: number): string {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
     return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function isWaitingForPhase(status: PomodoroStatus | null): boolean {
+    return status?.phase === 'WAITING_FOR_BREAK' || status?.phase === 'WAITING_FOR_FOCUS';
+}
+
+function isBreakPhase(status: PomodoroStatus): boolean {
+    return status.phase ? status.phase === 'BREAK' : !status.sessionActive;
 }
 
 const PRIORITY_OPTIONS = [
@@ -127,6 +139,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     expandedPanel,
     onTogglePanel,
     onAutoExpand,
+    onDelete,
     showScheduledDate = false,
     onSelect,
     selected = false,
@@ -141,6 +154,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     dragTargetEdge = 'before',
     isGroupDropTarget = false,
     onPomodoroActiveChange,
+    onPomodoroStatusChange,
     onPomodoroFocusStart,
     deferPomodoroHydration = false,
     initialPomodoroStatus = null,
@@ -151,6 +165,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     const activeAccent = theme.palette.primary.main;
 
     const [pomodoroStatus, setPomodoroStatus] = useState<PomodoroStatus | null>(initialPomodoroStatus);
+    const [pomodoroConfig, setPomodoroConfig] = useState<PomodoroConfig>(NORMAL_POMODORO_CONFIG);
     const [wsConnected, setWsConnected] = useState(false);
     const [actionLoading, setActionLoading] = useState(false);
     const [pomodoroHydrated, setPomodoroHydrated] = useState(!deferPomodoroHydration);
@@ -162,23 +177,45 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     const [localDesc, setLocalDesc] = useState(task.description ?? '');
     useEffect(() => { setLocalDesc(task.description ?? ''); }, [task.description]);
 
-    const [form, setForm] = useState<PomodoroForm>({
-        focusDuration: 25,
-        shortBreakDuration: 5,
-        longBreakDuration: 15,
-        numFocuses: 4,
-        longBreakCooldown: 4,
-    });
+    const [form, setForm] = useState<PomodoroFormValues>(() =>
+        createPomodoroFormDefaults(NORMAL_POMODORO_CONFIG)
+    );
+
+    useEffect(() => {
+        if (!pomodoroHydrated) return;
+
+        let cancelled = false;
+        getPomodoroConfig()
+            .then(config => {
+                if (cancelled) return;
+                setPomodoroConfig(config);
+                setForm(previous =>
+                    isPomodoroFormDefaults(previous, NORMAL_POMODORO_CONFIG)
+                        ? createPomodoroFormDefaults(config)
+                        : previous
+                );
+            })
+            .catch(error => console.error('Failed to load Pomodoro configuration:', error));
+
+        return () => {
+            cancelled = true;
+        };
+    }, [pomodoroHydrated]);
 
     const stompRef = useRef<Client | null>(null);
     const subscriptionRef = useRef<StompSubscription | null>(null);
     const previousSessionRunningRef = useRef<boolean | undefined>(initialPomodoroStatus?.sessionRunning);
     const pomodoroEndedRef = useRef(false);
     const onPomodoroActiveChangeRef = useRef(onPomodoroActiveChange);
+    const onPomodoroStatusChangeRef = useRef(onPomodoroStatusChange);
 
     useEffect(() => {
         onPomodoroActiveChangeRef.current = onPomodoroActiveChange;
     }, [onPomodoroActiveChange]);
+
+    useEffect(() => {
+        onPomodoroStatusChangeRef.current = onPomodoroStatusChange;
+    }, [onPomodoroStatusChange]);
 
     useEffect(() => {
         if (expandedPanel === 'pomodoro' || initialPomodoroStatus?.active) {
@@ -216,6 +253,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             onPomodoroActiveChangeRef.current?.(task.taskId, false);
                         } else if (!pomodoroEndedRef.current) {
                             setPomodoroStatus(nextStatus);
+                            onPomodoroStatusChangeRef.current?.(task.taskId, nextStatus);
                         }
                     }
                     catch (e) { console.error('Error parsing pomodoro message:', e); }
@@ -251,6 +289,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
             .then(status => {
                 if (status?.active && status.associatedTaskId === task.taskId) {
                     setPomodoroStatus(status);
+                    onPomodoroStatusChangeRef.current?.(task.taskId, status);
                     onAutoExpand('pomodoro');
                 } else if (expectedPomodoroActive) {
                     pomodoroEndedRef.current = true;
@@ -275,9 +314,15 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         setActionLoading(true);
         pomodoroEndedRef.current = false;
         try {
+            try {
+                await requestSystemNotificationPermission();
+            } catch (error) {
+                console.error('Failed to request Pomodoro notification permission:', error);
+            }
             await taskService.startPomodoro(
                 task.taskId, form.focusDuration, form.shortBreakDuration,
                 form.longBreakDuration, form.numFocuses, form.longBreakCooldown,
+                pomodoroConfig.secondsMode,
             );
             onPomodoroActiveChange?.(task.taskId, true);
         } catch (e) {
@@ -290,7 +335,9 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     const handlePlayPause = async () => {
         setActionLoading(true);
         try {
-            if (pomodoroStatus?.sessionRunning) {
+            if (isWaitingForPhase(pomodoroStatus)) {
+                await taskService.startNextPomodoroPhase(task.taskId);
+            } else if (pomodoroStatus?.sessionRunning) {
                 await taskService.pauseSession(task.taskId);
             } else {
                 await taskService.unpauseSession(task.taskId);
@@ -362,7 +409,8 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     }, [onPomodoroFocusStart, sessionRunning, task.taskId]);
 
     // Break: pomodoro started but not in a focus session
-    const isBreak   = isActive && !pomodoroStatus!.sessionActive;
+    const waitingForPhase = isWaitingForPhase(pomodoroStatus);
+    const isBreak   = isActive && isBreakPhase(pomodoroStatus!);
     // Paused: in a focus session but timer is not ticking
     const isPaused  = isActive && pomodoroStatus!.sessionActive && !pomodoroStatus!.sessionRunning;
     // Both states share the green "at rest" colour on the progress bar
@@ -385,6 +433,8 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
 
     return (
         <Box
+            data-task-id={task.taskId}
+            data-pomodoro-focus-task={expectedPomodoroActive ? 'true' : undefined}
             draggable={reorderable}
             sx={{
                 position: 'relative',
@@ -471,6 +521,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                         variant="standard"
                         autoFocus
                         fullWidth
+                        multiline
                         inputProps={{
                             style: {
                                 fontSize: '1.05rem',
@@ -480,6 +531,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                         }}
                         sx={{
                             flex: 1,
+                            minWidth: 0,
                             '& .MuiInputBase-input': {
                                 color: task.completed ? 'text.disabled' : 'text.primary',
                                 textDecoration: task.completed ? 'line-through' : 'none',
@@ -495,6 +547,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                         }}
                         sx={{
                             flex: 1,
+                            minWidth: 0,
                             fontSize: '1.05rem',
                             lineHeight: 1.6,
                             textAlign: 'left',
@@ -547,6 +600,21 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             <TuneIcon sx={{ fontSize: '1.1rem' }} />
                         </IconButton>
                     </Tooltip>
+                    {onDelete && (
+                        <Tooltip title="Delete task">
+                            <IconButton
+                                size="small"
+                                aria-label={`Delete ${task.name}`}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onDelete(task, e.currentTarget);
+                                }}
+                                color="error"
+                            >
+                                <DeleteOutlineIcon sx={{ fontSize: '1.1rem' }} />
+                            </IconButton>
+                        </Tooltip>
+                    )}
                 </Box>
             </Box>
 
@@ -558,9 +626,9 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5, mb: 1.5 }}>
                                 {(
                                     [
-                                        { key: 'focusDuration',      label: 'Focus (min)'       },
-                                        { key: 'shortBreakDuration', label: 'Short break (min)' },
-                                        { key: 'longBreakDuration',  label: 'Long break (min)'  },
+                                        { key: 'focusDuration',      label: `Focus (${pomodoroConfig.durationUnit})`       },
+                                        { key: 'shortBreakDuration', label: `Short break (${pomodoroConfig.durationUnit})` },
+                                        { key: 'longBreakDuration',  label: `Long break (${pomodoroConfig.durationUnit})`  },
                                         { key: 'numFocuses',         label: 'Sessions'          },
                                     ] as const
                                 ).map(({ key, label }) => (
@@ -608,10 +676,12 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                         color: isBreak ? 'success.main' : accent,
                                     }}
                                 >
-                                    {isBreak ? 'Break' : 'Focus'}
+                                    {waitingForPhase
+                                        ? (pomodoroStatus!.phase === 'WAITING_FOR_BREAK' ? 'Break ready' : 'Focus ready')
+                                        : isBreak ? 'Break' : 'Focus'}
                                 </Typography>
                                 <Typography variant="h4" sx={{ fontWeight: 700, lineHeight: 1 }}>
-                                    {formatSeconds(pomodoroStatus!.secondsUntilNextTransition)}
+                                    {waitingForPhase ? 'Ready' : formatSeconds(pomodoroStatus!.secondsUntilNextTransition)}
                                 </Typography>
                             </Box>
 
@@ -632,10 +702,9 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             </Box>
 
                             <Box sx={{ display: 'flex', gap: 0.5, ml: 'auto' }}>
-                                {/* Play/pause only shown during focus — not during break */}
-                                {!isBreak && (
+                                {(waitingForPhase || !isBreak) && (
                                     <IconButton size="small" onClick={handlePlayPause} disabled={actionLoading} color="primary">
-                                        {pomodoroStatus!.sessionRunning ? <PauseIcon /> : <PlayArrowIcon />}
+                                        {!waitingForPhase && pomodoroStatus!.sessionRunning ? <PauseIcon /> : <PlayArrowIcon />}
                                     </IconButton>
                                 )}
                                 <IconButton size="small" onClick={handleStop} disabled={actionLoading} color="error">

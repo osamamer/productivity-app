@@ -19,6 +19,15 @@ import StopIcon from '@mui/icons-material/Stop';
 import TimerIcon from '@mui/icons-material/Timer';
 import FreeBreakfastIcon from '@mui/icons-material/FreeBreakfast';
 import { taskService } from '../../services/api';
+import { requestSystemNotificationPermission } from '../../services/systemNotifications';
+import {
+    createPomodoroFormDefaults,
+    getPomodoroConfig,
+    isPomodoroFormDefaults,
+    NORMAL_POMODORO_CONFIG,
+    PomodoroConfig,
+    PomodoroFormValues,
+} from '../../services/api/pomodoroConfigService';
 
 interface Task {
     taskId: string;
@@ -35,14 +44,7 @@ interface Pomodoro {
     secondsUntilNextTransition: number;
     currentFocusNumber: number;
     numFocuses: number;
-}
-
-interface PomodoroFormData {
-    focusDuration: number;
-    shortBreakDuration: number;
-    longBreakDuration: number;
-    numFocuses: number;
-    longBreakCooldown: number;
+    phase?: 'FOCUS' | 'BREAK' | 'WAITING_FOR_BREAK' | 'WAITING_FOR_FOCUS';
 }
 
 interface Props {
@@ -53,25 +55,48 @@ const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8080/ws';
 
 export function CustomTimer({ task }: Props) {
     const [status, setStatus] = useState<Pomodoro | null>(null);
+    const [pomodoroConfig, setPomodoroConfig] = useState<PomodoroConfig>(NORMAL_POMODORO_CONFIG);
     const [isConnected, setIsConnected] = useState(false);
     const [connectionError, setConnectionError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const stompClientRef = useRef<Client | null>(null);
 
-    const [formData, setFormData] = useState<PomodoroFormData>({
-        focusDuration: 25,
-        shortBreakDuration: 5,
-        longBreakDuration: 15,
-        numFocuses: 4,
-        longBreakCooldown: 4
-    });
+    const [formData, setFormData] = useState<PomodoroFormValues>(() =>
+        createPomodoroFormDefaults(NORMAL_POMODORO_CONFIG)
+    );
+
+    const waitingForPhase = status?.phase === 'WAITING_FOR_BREAK' || status?.phase === 'WAITING_FOR_FOCUS';
+    const isBreakPhase = status?.phase
+        ? status.phase === 'BREAK' || status.phase === 'WAITING_FOR_BREAK'
+        : Boolean(status && !status.sessionActive);
+
+    useEffect(() => {
+        let cancelled = false;
+        getPomodoroConfig()
+            .then(config => {
+                if (cancelled) return;
+                setPomodoroConfig(config);
+                setFormData(previous =>
+                    isPomodoroFormDefaults(previous, NORMAL_POMODORO_CONFIG)
+                        ? createPomodoroFormDefaults(config)
+                        : previous
+                );
+            })
+            .catch(error => console.error('Failed to load Pomodoro configuration:', error));
+
+        return () => {
+            cancelled = true;
+        };
+    }, []);
 
     const handleTogglePlayPause = async () => {
         if (!task) return;
 
         setIsLoading(true);
         try {
-            if (status?.sessionRunning) {
+            if (waitingForPhase) {
+                await taskService.startNextPomodoroPhase(task.taskId);
+            } else if (status?.sessionRunning) {
                 await taskService.pauseSession(task.taskId);
             } else {
                 await taskService.unpauseSession(task.taskId);
@@ -223,6 +248,11 @@ export function CustomTimer({ task }: Props) {
 
         setIsLoading(true);
         try {
+            try {
+                await requestSystemNotificationPermission();
+            } catch (error) {
+                console.error('Failed to request Pomodoro notification permission:', error);
+            }
             console.log('Starting pomodoro with data:', formData);
             await taskService.startPomodoro(
                 task.taskId,
@@ -230,7 +260,8 @@ export function CustomTimer({ task }: Props) {
                 formData.shortBreakDuration,
                 formData.longBreakDuration,
                 formData.numFocuses,
-                formData.longBreakCooldown
+                formData.longBreakCooldown,
+                pomodoroConfig.secondsMode
             );
             console.log('Pomodoro started successfully');
         } catch (error) {
@@ -247,12 +278,7 @@ export function CustomTimer({ task }: Props) {
         return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
     };
 
-    const isBreakTime = () => {
-        if (status) {
-            return !status.sessionActive;
-        }
-        return true;
-    };
+    const isBreakTime = () => isBreakPhase;
 
     const getProgressPercentage = () => {
         if (!status) return 0;
@@ -294,7 +320,7 @@ export function CustomTimer({ task }: Props) {
                         <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
                             <TextField
                                 name="focusDuration"
-                                label="Focus (min)"
+                                label={`Focus (${pomodoroConfig.durationUnit})`}
                                 type="number"
                                 size="small"
                                 value={formData.focusDuration}
@@ -304,7 +330,7 @@ export function CustomTimer({ task }: Props) {
                             />
                             <TextField
                                 name="shortBreakDuration"
-                                label="Short Break (min)"
+                                label={`Short Break (${pomodoroConfig.durationUnit})`}
                                 type="number"
                                 size="small"
                                 value={formData.shortBreakDuration}
@@ -314,7 +340,7 @@ export function CustomTimer({ task }: Props) {
                             />
                             <TextField
                                 name="longBreakDuration"
-                                label="Long Break (min)"
+                                label={`Long Break (${pomodoroConfig.durationUnit})`}
                                 type="number"
                                 size="small"
                                 value={formData.longBreakDuration}
@@ -391,7 +417,7 @@ export function CustomTimer({ task }: Props) {
                                         <TimerIcon sx={{ fontSize: 32, color: 'primary.main', mb: 1 }} />
                                     )}
                                     <Typography variant="h3" component="div" fontWeight="bold">
-                                        {formatTime(status.secondsUntilNextTransition)}
+                                        {waitingForPhase ? 'Ready' : formatTime(status.secondsUntilNextTransition)}
                                     </Typography>
                                 </Box>
                             </Box>
@@ -411,7 +437,9 @@ export function CustomTimer({ task }: Props) {
 
                             {/* Status Chip */}
                             <Chip
-                                label={isBreakTime() ? 'Break Time' : 'Focus Time'}
+                                label={waitingForPhase
+                                    ? (status.phase === 'WAITING_FOR_BREAK' ? 'Break Ready' : 'Focus Ready')
+                                    : isBreakTime() ? 'Break Time' : 'Focus Time'}
                                 color={isBreakTime() ? 'success' : 'primary'}
                                 icon={isBreakTime() ? <FreeBreakfastIcon /> : <TimerIcon />}
                                 sx={{ mb: 2 }}
@@ -445,7 +473,7 @@ export function CustomTimer({ task }: Props) {
                             </Typography>
 
                             {/* Controls */}
-                            {status.sessionActive && (
+                            {(status.sessionActive || waitingForPhase) && (
                                 <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
                                     <IconButton
                                         onClick={handleTogglePlayPause}
@@ -459,7 +487,7 @@ export function CustomTimer({ task }: Props) {
                                             },
                                         }}
                                     >
-                                        {status.sessionRunning ? <PauseIcon /> : <PlayArrowIcon />}
+                                        {!waitingForPhase && status.sessionRunning ? <PauseIcon /> : <PlayArrowIcon />}
                                     </IconButton>
                                     <IconButton
                                         onClick={handleEndSession}

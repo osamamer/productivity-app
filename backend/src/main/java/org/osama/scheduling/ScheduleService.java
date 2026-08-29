@@ -3,6 +3,7 @@ package org.osama.scheduling;
 import lombok.extern.slf4j.Slf4j;
 import org.osama.pomodoro.Pomodoro;
 import org.osama.pomodoro.PomodoroRepository;
+import org.osama.pomodoro.PomodoroSettings;
 import org.osama.user.User;
 import org.springframework.stereotype.Service;
 
@@ -15,18 +16,30 @@ import java.util.UUID;
 public class ScheduleService {
     private final ScheduledJobRepository scheduledJobRepository;
     private final PomodoroRepository pomodoroRepository;
+    private final PomodoroSettings pomodoroSettings;
 
-    public ScheduleService(ScheduledJobRepository scheduledJobRepository, PomodoroRepository pomodoroRepository) {
+    public ScheduleService(ScheduledJobRepository scheduledJobRepository,
+                           PomodoroRepository pomodoroRepository,
+                           PomodoroSettings pomodoroSettings) {
         this.scheduledJobRepository = scheduledJobRepository;
         this.pomodoroRepository = pomodoroRepository;
+        this.pomodoroSettings = pomodoroSettings;
     }
 
     public void schedulePomoJobs(String taskId) {
+        schedulePomoJobs(taskId, pomodoroSettings.isDevSecondsMode());
+    }
+
+    public void schedulePomoJobs(String taskId, boolean secondsMode) {
         Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(taskId).orElseThrow(
                 () -> new IllegalStateException("No active pomodoro found for task: " + taskId));
         User user = pomodoro.getUser();
+        if (!pomodoro.isAutoStartSessions()) {
+            scheduleFocusEnd(taskId, pomodoro, secondsMode);
+            return;
+        }
         int n = 2* pomodoro.getNumFocuses() -1;
-        int timeElapsed = 0;
+        long timeElapsedSeconds = 0;
         int breaksTaken = 0;
         log.info("Scheduling pomodoro jobs: userId={} taskId={} focusCount={}",
                 user.getId(), taskId, pomodoro.getNumFocuses());
@@ -34,27 +47,61 @@ public class ScheduleService {
             if (i % 2 == 0) { // Meaning that are in an even iteration in which the task is active
                 if (i == n - 1) {
                     createScheduledJob(JobType.END_POMODORO,
-                            LocalDateTime.now().plusMinutes(timeElapsed + pomodoro.getFocusDuration()), pomodoro.getAssociatedTaskId(), user);
+                            LocalDateTime.now().plusSeconds(timeElapsedSeconds
+                                    + pomodoroSettings.durationInSeconds(pomodoro.getFocusDuration(), secondsMode)),
+                            pomodoro.getAssociatedTaskId(), user);
                     break;
                 }
                 createScheduledJob(JobType.END_SESSION,
-                        LocalDateTime.now().plusMinutes(timeElapsed + pomodoro.getFocusDuration()), pomodoro.getAssociatedTaskId(), user);
-                timeElapsed += pomodoro.getFocusDuration();
+                        LocalDateTime.now().plusSeconds(timeElapsedSeconds
+                                + pomodoroSettings.durationInSeconds(pomodoro.getFocusDuration(), secondsMode)),
+                        pomodoro.getAssociatedTaskId(), user);
+                timeElapsedSeconds += pomodoroSettings.durationInSeconds(pomodoro.getFocusDuration(), secondsMode);
             }
             else { // Meaning that we are in an odd iteration in which we are taking a break
                 breaksTaken++;
                 if (breaksTaken % pomodoro.getLongBreakCooldown() != 0) { // Short break
                     createScheduledJob(JobType.START_SESSION,
-                            LocalDateTime.now().plusMinutes(timeElapsed + pomodoro.getShortBreakDuration()), pomodoro.getAssociatedTaskId(), user);
-                    timeElapsed += pomodoro.getShortBreakDuration();
+                            LocalDateTime.now().plusSeconds(timeElapsedSeconds
+                                    + pomodoroSettings.durationInSeconds(pomodoro.getShortBreakDuration(), secondsMode)),
+                            pomodoro.getAssociatedTaskId(), user);
+                    timeElapsedSeconds += pomodoroSettings.durationInSeconds(pomodoro.getShortBreakDuration(), secondsMode);
                 }
                 else { // Long break
                     createScheduledJob(JobType.START_SESSION,
-                            LocalDateTime.now().plusMinutes(timeElapsed + pomodoro.getLongBreakDuration()), pomodoro.getAssociatedTaskId(), user);
-                    timeElapsed += pomodoro.getLongBreakDuration();
+                            LocalDateTime.now().plusSeconds(timeElapsedSeconds
+                                    + pomodoroSettings.durationInSeconds(pomodoro.getLongBreakDuration(), secondsMode)),
+                            pomodoro.getAssociatedTaskId(), user);
+                    timeElapsedSeconds += pomodoroSettings.durationInSeconds(pomodoro.getLongBreakDuration(), secondsMode);
                 }
             }
         }
+    }
+
+    public void scheduleFocusEnd(String taskId) {
+        Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(taskId)
+                .orElseThrow(() -> new IllegalStateException("No active pomodoro found for task: " + taskId));
+        scheduleFocusEnd(taskId, pomodoro, pomodoro.isSecondsMode());
+    }
+
+    public void scheduleBreakEnd(String taskId) {
+        Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(taskId)
+                .orElseThrow(() -> new IllegalStateException("No active pomodoro found for task: " + taskId));
+        long breakDuration = pomodoro.getCurrentFocusNumber() % pomodoro.getLongBreakCooldown() == 0
+                ? pomodoroSettings.durationInSeconds(pomodoro.getLongBreakDuration(), pomodoro.isSecondsMode())
+                : pomodoroSettings.durationInSeconds(pomodoro.getShortBreakDuration(), pomodoro.isSecondsMode());
+        createScheduledJob(JobType.START_SESSION,
+                LocalDateTime.now().plusSeconds(breakDuration), taskId, pomodoro.getUser());
+        log.info("Scheduled manual Pomodoro break end: userId={} taskId={} durationSeconds={}",
+                pomodoro.getUser().getId(), taskId, breakDuration);
+    }
+
+    private void scheduleFocusEnd(String taskId, Pomodoro pomodoro, boolean secondsMode) {
+        long focusDuration = pomodoroSettings.durationInSeconds(pomodoro.getFocusDuration(), secondsMode);
+        createScheduledJob(JobType.END_SESSION,
+                LocalDateTime.now().plusSeconds(focusDuration), taskId, pomodoro.getUser());
+        log.info("Scheduled manual Pomodoro focus end: userId={} taskId={} durationSeconds={}",
+                pomodoro.getUser().getId(), taskId, focusDuration);
     }
     public void unscheduleTaskJobs(String taskId) {
         List<ScheduledJob> taskJobs = scheduledJobRepository.findAllByAssociatedTaskId(taskId);

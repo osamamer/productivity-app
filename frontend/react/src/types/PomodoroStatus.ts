@@ -1,3 +1,5 @@
+export type PomodoroPhase = 'FOCUS' | 'BREAK' | 'WAITING_FOR_BREAK' | 'WAITING_FOR_FOCUS';
+
 export interface PomodoroStatus {
     associatedTaskId: string;
     active: boolean;
@@ -7,4 +9,5 @@ export interface PomodoroStatus {
     secondsUntilNextTransition: number;
     currentFocusNumber: number;
     numFocuses: number;
+    phase?: PomodoroPhase;
 }

@@ -21,6 +21,7 @@ export function TaskPage() {
         fetchAllTasks,
         addTaskToState,
         updateTaskInState,
+        removeTaskFromState,
     } = useGlobalTasks();
 
     const [expandedSections, setExpandedSections] = useState<{
@@ -94,6 +95,21 @@ export function TaskPage() {
             await fetchAllTasks();
         }
     }, [fetchAllTasks, updateTaskInState]);
+
+    const deleteTask = useCallback(async (task: Task) => {
+        if (!window.confirm(`Delete “${task.name}” and its subtasks?`)) return;
+
+        try {
+            await taskService.deleteTask(task.taskId);
+            removeTaskFromState(task.taskId);
+            if (highlightedTask?.taskId === task.taskId) {
+                setHighlightedTask(null);
+            }
+        } catch (err) {
+            console.error('Error deleting task:', err);
+            await fetchAllTasks();
+        }
+    }, [fetchAllTasks, highlightedTask, removeTaskFromState, setHighlightedTask]);
 
     const handleChipClick = useCallback((section: 'today' | 'comingUp' | 'leftovers') => {
         const wasExpanded = expandedSectionsRef.current[section];
@@ -209,6 +225,7 @@ export function TaskPage() {
                             onTaskClick={setHighlightedTask}
                             toggleTaskCompletion={toggleTaskCompletion}
                             updateTask={updateTask}
+                            deleteTask={deleteTask}
                             emptyMessage="No tasks scheduled for today"
                             sectionRef={todayRef}
                             activeExpansion={activeExpansion}
@@ -225,6 +242,7 @@ export function TaskPage() {
                             onTaskClick={setHighlightedTask}
                             toggleTaskCompletion={toggleTaskCompletion}
                             updateTask={updateTask}
+                            deleteTask={deleteTask}
                             emptyMessage="No upcoming tasks"
                             sectionRef={comingUpRef}
                             activeExpansion={activeExpansion}
@@ -241,6 +259,7 @@ export function TaskPage() {
                             onTaskClick={setHighlightedTask}
                             toggleTaskCompletion={toggleTaskCompletion}
                             updateTask={updateTask}
+                            deleteTask={deleteTask}
                             emptyMessage="No overdue tasks"
                             sectionRef={leftoversRef}
                             activeExpansion={activeExpansion}

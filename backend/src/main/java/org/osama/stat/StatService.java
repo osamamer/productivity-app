@@ -9,10 +9,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.OptionalDouble;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Predicate;
@@ -90,12 +90,16 @@ public class StatService {
     }
 
     public List<StatDefinition> getDefinitions(String userId) {
-        return definitionRepository.findAllByUserIdOrderByDisplayOrderAsc(userId);
+        return definitionRepository.findAllByUserIdOrderByDisplayOrderAsc(userId).stream()
+                .filter(this::isDailyStatDefinition)
+                .toList();
     }
 
     @Transactional
     public List<StatDefinition> reorderDefinitions(List<String> definitionIds, String userId) {
-        List<StatDefinition> definitions = definitionRepository.findAllByUserId(userId);
+        List<StatDefinition> definitions = definitionRepository.findAllByUserId(userId).stream()
+                .filter(this::isDailyStatDefinition)
+                .toList();
         Set<String> existingIds = definitions.stream()
                 .map(StatDefinition::getId)
                 .collect(Collectors.toSet());
@@ -132,6 +136,10 @@ public class StatService {
     public StatEntry recordEntry(String statDefinitionId, LocalDate date, double value, String userId) {
         StatDefinition definition = definitionRepository.findByIdAndUserId(statDefinitionId, userId)
                 .orElseThrow(() -> new IllegalArgumentException("Stat definition not found: " + statDefinitionId));
+
+        if (!isDailyStatDefinition(definition)) {
+            throw new IllegalArgumentException("Mental state ratings must be recorded as a combined check-in.");
+        }
 
         validateValue(definition, value);
 
@@ -194,6 +202,8 @@ public class StatService {
     public StatSummaryResponse getSummary(String definitionId, LocalDate from, LocalDate to, String userId) {
         StatDefinition def = definitionRepository.findByIdAndUserId(definitionId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("No such stat."));
+        User user = userRepository.findUserById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("No such user."));
 
         if (from == null || to == null || from.isAfter(to)) {
             throw new IllegalArgumentException("The summary period must have a valid start and end date.");
@@ -209,8 +219,10 @@ public class StatService {
 
         Integer periodYesCount = null;
         Integer booleanStreak = null;
+        Integer longestBooleanStreak = null;
         Double periodAverage = null;
         Double periodTotal = null;
+        Double periodHighest = null;
 
         if (def.getType() == StatType.BOOLEAN) {
             periodYesCount = (int) entries.stream()
@@ -218,19 +230,28 @@ public class StatService {
                     .count();
             booleanStreak = computeStreak(to, from,
                     date -> valueByDate.containsKey(date) && valueByDate.get(date) == 1.0);
+            longestBooleanStreak = computeLongestStreak(from, to,
+                    date -> valueByDate.containsKey(date) && valueByDate.get(date) == 1.0);
         }
 
         if (def.getType() == StatType.NUMBER || def.getType() == StatType.RANGE) {
-            OptionalDouble avg = entries.stream()
-                    .mapToDouble(StatEntry::getValue)
-                    .average();
-            periodAverage = avg.isPresent() ? avg.getAsDouble() : null;
             periodTotal = entries.stream()
                     .mapToDouble(StatEntry::getValue)
                     .sum();
+            periodHighest = entries.stream()
+                    .map(StatEntry::getValue)
+                    .max(Double::compareTo)
+                    .orElse(null);
+            if (Boolean.TRUE.equals(user.getIncludeUnloggedNumericDaysAsZero())) {
+                long periodDays = ChronoUnit.DAYS.between(from, to) + 1;
+                periodAverage = periodTotal / periodDays;
+            } else if (!entries.isEmpty()) {
+                periodAverage = periodTotal / entries.size();
+            }
         }
 
-        return new StatSummaryResponse(checkInStreak, periodYesCount, booleanStreak, periodAverage, periodTotal);
+        return new StatSummaryResponse(checkInStreak, periodYesCount, booleanStreak, longestBooleanStreak,
+                periodAverage, periodTotal, periodHighest);
     }
 
     /**
@@ -248,6 +269,23 @@ public class StatService {
             cursor = cursor.minusDays(1);
         }
         return streak;
+    }
+
+    private int computeLongestStreak(LocalDate lowerBound, LocalDate upperBound,
+                                     Predicate<LocalDate> hasEntry) {
+        int longest = 0;
+        int current = 0;
+        LocalDate cursor = lowerBound;
+        while (!cursor.isAfter(upperBound)) {
+            if (hasEntry.test(cursor)) {
+                current++;
+                longest = Math.max(longest, current);
+            } else {
+                current = 0;
+            }
+            cursor = cursor.plusDays(1);
+        }
+        return longest;
     }
 
     private StatEntry createEntry(StatDefinition statDefinition, LocalDate date, User user) {
@@ -272,6 +310,10 @@ public class StatService {
                 .max(Integer::compareTo)
                 .map(order -> order + 1)
                 .orElse(0);
+    }
+
+    private boolean isDailyStatDefinition(StatDefinition definition) {
+        return !SystemStatCatalog.isMentalStateSystemKey(definition.getSystemKey());
     }
 
     private void validateValue(StatDefinition statDefinition, Double value) {

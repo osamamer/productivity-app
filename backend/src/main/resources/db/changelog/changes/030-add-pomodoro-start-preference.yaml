@@ -1,0 +1,52 @@
+databaseChangeLog:
+  - changeSet:
+      id: 030-add-pomodoro-start-preference
+      author: osama
+      comment: Store whether Pomodoro breaks and focus sessions start automatically
+      changes:
+        - addColumn:
+            tableName: app_user
+            columns:
+              - column:
+                  name: auto_start_pomodoro_sessions
+                  type: boolean
+                  defaultValueBoolean: true
+                  constraints:
+                    nullable: false
+      rollback:
+        - dropColumn:
+            tableName: app_user
+            columnName: auto_start_pomodoro_sessions
+  - changeSet:
+      id: 030-add-pomodoro-phase-state
+      author: osama
+      comment: Store Pomodoro phase and per-session start behavior
+      changes:
+        - addColumn:
+            tableName: pomodoro
+            columns:
+              - column:
+                  name: phase
+                  type: varchar(32)
+              - column:
+                  name: auto_start_sessions
+                  type: boolean
+                  defaultValueBoolean: true
+                  constraints:
+                    nullable: false
+              - column:
+                  name: seconds_mode
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+      rollback:
+        - dropColumn:
+            tableName: pomodoro
+            columnName: seconds_mode
+        - dropColumn:
+            tableName: pomodoro
+            columnName: auto_start_sessions
+        - dropColumn:
+            tableName: pomodoro
+            columnName: phase

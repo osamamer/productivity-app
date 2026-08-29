@@ -193,6 +193,19 @@ export const statService = {
         return summaryCache.get(summaryCacheKey(definitionId, from, to));
     },
 
+    clearSummaryCache(): void {
+        summaryCache.clear();
+    },
+
+    clearDataCache(): void {
+        entryCache.clear();
+        summaryCache.clear();
+        insightsCache.clear();
+        entryRequests.clear();
+        summaryRequests.clear();
+        insightsRequests.clear();
+    },
+
     async getInsights(definitionId: string, from: string, to: string): Promise<StatInsights> {
         const key = insightsCacheKey(definitionId, from, to);
         const cachedInsights = insightsCache.get(key);

@@ -125,7 +125,11 @@ function playIntervalBell() {
     oscillator.addEventListener('ended', () => void context.close(), { once: true });
 }
 
-export function MeditationTimer() {
+interface MeditationTimerProps {
+    onSessionCompleted: () => void;
+}
+
+export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
     const [session, setSession] = useState<MeditationSession | null>(null);
     const [elapsed, setElapsed] = useState(0);
     const [moodBefore, setMoodBefore] = useState(5);
@@ -305,6 +309,7 @@ export function MeditationTimer() {
             meditationSoundscape.stop();
             soundStartedByUserRef.current = false;
             setFinishDialogOpen(false);
+            onSessionCompleted();
         } catch (finishError) {
             setError(finishError instanceof Error ? finishError.message : 'Could not finish meditation.');
         } finally {
@@ -405,6 +410,7 @@ export function MeditationTimer() {
                     setSession(null);
                     meditationSoundscape.stop();
                     soundStartedByUserRef.current = false;
+                    onSessionCompleted();
                 }}
                 onError={message => setError(message || null)}
             />

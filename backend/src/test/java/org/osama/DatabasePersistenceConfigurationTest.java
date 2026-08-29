@@ -20,5 +20,7 @@ class DatabasePersistenceConfigurationTest {
 
         assertThat(properties.getProperty("spring.liquibase.drop-first")).isEqualTo("false");
         assertThat(properties.getProperty("spring.jpa.hibernate.ddl-auto")).isEqualTo("validate");
+        assertThat(properties.getProperty("app.pomodoro.dev-seconds-mode"))
+                .isEqualTo("${POMODORO_DEV_SECONDS_MODE:false}");
     }
 }

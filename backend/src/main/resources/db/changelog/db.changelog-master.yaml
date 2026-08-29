@@ -82,3 +82,23 @@ databaseChangeLog:
   # Add Sleep as a built-in daily stat
   - include:
       file: db/changelog/changes/025-add-sleep-system-stat.yaml
+
+  # Store the user's numeric stat averaging preference
+  - include:
+      file: db/changelog/changes/026-add-unlogged-numeric-days-preference.yaml
+
+  # Associate automatically created task groups with their mental thread
+  - include:
+      file: db/changelog/changes/027-associate-mental-thread-task-groups.yaml
+
+  # Multiple-per-day combined mental-state tracking
+  - include:
+      file: db/changelog/changes/028-create-mental-state-check-in.yaml
+
+  # Replace legacy mental-state signals with the current six-dimensional model
+  - include:
+      file: db/changelog/changes/029-update-mental-state-signals.yaml
+
+  # Store whether Pomodoro breaks and focus sessions start automatically
+  - include:
+      file: db/changelog/changes/030-add-pomodoro-start-preference.yaml

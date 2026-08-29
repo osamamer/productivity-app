@@ -2,6 +2,7 @@ package org.osama.taskgroup;
 
 import lombok.extern.slf4j.Slf4j;
 import org.osama.exceptions.ResourceNotFoundException;
+import org.osama.mentalthread.MentalThread;
 import org.osama.task.Task;
 import org.osama.task.TaskRepository;
 import org.osama.user.User;
@@ -9,6 +10,7 @@ import org.osama.user.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -54,6 +56,19 @@ public class TaskGroupService {
         TaskGroup savedGroup = groupRepository.save(group);
         log.info("Task group created: userId={} groupId={} taskCount={}",
                 userId, savedGroup.getGroupId(), savedGroup.getTasks().size());
+        return TaskGroupResponse.from(savedGroup);
+    }
+
+    @Transactional
+    public TaskGroupResponse addTaskToDefaultMentalThreadGroup(Task task, MentalThread mentalThread, String userId) {
+        TaskGroup group = groupRepository
+                .findByUserIdAndMentalThreadId(userId, mentalThread.getId())
+                .orElseGet(() -> createDefaultGroup(mentalThread, userId));
+
+        group.getTasks().add(task);
+        TaskGroup savedGroup = groupRepository.save(group);
+        log.info("Task added to mental-thread group: userId={} groupId={} taskId={} mentalThreadId={}",
+                userId, savedGroup.getGroupId(), task.getTaskId(), mentalThread.getId());
         return TaskGroupResponse.from(savedGroup);
     }
 
@@ -107,6 +122,28 @@ public class TaskGroupService {
         log.info("Task group deleted: userId={} groupId={}", userId, groupId);
     }
 
+    @Transactional
+    public void removeTasksFromGroups(Collection<String> taskIds, String userId) {
+        if (taskIds == null || taskIds.isEmpty()) {
+            return;
+        }
+
+        LinkedHashSet<String> taskIdsToRemove = new LinkedHashSet<>(taskIds);
+        groupRepository.findAllByUserIdOrderByDisplayOrderAsc(userId).stream()
+                .filter(group -> group.getTasks().removeIf(task -> taskIdsToRemove.contains(task.getTaskId())))
+                .forEach(group -> {
+                    // Manual groups need at least two tasks; mental-thread groups can remain
+                    // as an empty/default container for the next connected task.
+                    if (group.getMentalThreadId() == null && group.getTasks().size() < 2) {
+                        group.getTasks().clear();
+                        groupRepository.delete(group);
+                    } else {
+                        groupRepository.save(group);
+                    }
+                });
+        log.info("Task group memberships removed: userId={} taskCount={}", userId, taskIdsToRemove.size());
+    }
+
     private TaskGroup getGroupOrThrow(String groupId, String userId) {
         return groupRepository.findByGroupIdAndUserId(groupId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Task group not found: " + groupId));
@@ -151,6 +188,24 @@ public class TaskGroupService {
             throw new IllegalArgumentException("Task group names must be 120 characters or fewer.");
         }
         return name.trim();
+    }
+
+    private TaskGroup createDefaultGroup(MentalThread mentalThread, String userId) {
+        User user = userRepository.findUserById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
+
+        TaskGroup group = new TaskGroup();
+        group.setGroupId(UUID.randomUUID().toString());
+        group.setUser(user);
+        group.setMentalThreadId(mentalThread.getId());
+        group.setName(defaultGroupName(mentalThread));
+        group.setDisplayOrder(nextDisplayOrder(userId));
+        return group;
+    }
+
+    private String defaultGroupName(MentalThread mentalThread) {
+        String title = mentalThread.getTitle().trim();
+        return title.length() <= 120 ? title : title.substring(0, 117) + "...";
     }
 
     private int nextDisplayOrder(String userId) {

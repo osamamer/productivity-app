@@ -17,7 +17,9 @@ import {StatsPage} from "./pages/StatsPage.tsx";
 import {SettingsPage} from "./pages/SettingsPage.tsx";
 import {NotesPage} from "./pages/NotesPage.tsx";
 import {MentalThreadsPage} from "./pages/MentalThreadsPage.tsx";
+import {MentalStatePage} from "./pages/MentalStatePage.tsx";
 import {ReminderNotifications} from "./components/calendar/ReminderNotifications.tsx";
+import {PomodoroNotifications} from "./components/timer/PomodoroNotifications.tsx";
 
 
 function AppProviders() {
@@ -25,6 +27,7 @@ function AppProviders() {
         <UserProvider>
             <TaskProvider>
                 <ReminderNotifications/>
+                <PomodoroNotifications/>
                 <Outlet/>
             </TaskProvider>
         </UserProvider>
@@ -89,6 +92,14 @@ const routes = [
                 element: (
                     <ProtectedRoute>
                         <MentalThreadsPage/>
+                    </ProtectedRoute>
+                ),
+            },
+            {
+                path: "/mental-state",
+                element: (
+                    <ProtectedRoute>
+                        <MentalStatePage/>
                     </ProtectedRoute>
                 ),
             },

@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.osama.requests.NewTaskRequest;
+import org.osama.requests.UpdateTaskRequest;
 import org.osama.task.Task;
 import org.osama.task.TaskService;
 import org.osama.taskgroup.TaskGroupResponse;
@@ -20,8 +21,10 @@ import java.time.LocalDate;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -118,6 +121,46 @@ class TaskGroupServiceTest {
                 "Morning routine", List.of(first.getTaskId(), second.getTaskId()), TEST_USER_ID);
 
         taskGroupService.removeTask(group.groupId(), second.getTaskId(), TEST_USER_ID);
+
+        assertEquals(0, taskGroupService.getGroups(TEST_USER_ID).size());
+    }
+
+    @Test
+    void taskMutationsAreScopedToTheCurrentUser() {
+        Task otherUserTask = createTask(OTHER_USER_ID, "Other user's task");
+        UpdateTaskRequest request = new UpdateTaskRequest();
+        request.setName("Should not change");
+
+        assertTrue(taskService.updateTask(otherUserTask.getTaskId(), request, TEST_USER_ID).isEmpty());
+        taskService.deleteTask(otherUserTask.getTaskId(), TEST_USER_ID);
+
+        assertTrue(taskService.getTaskForUser(otherUserTask.getTaskId(), OTHER_USER_ID).isPresent());
+        assertEquals("Other user's task", taskService.getTaskForUser(
+                otherUserTask.getTaskId(), OTHER_USER_ID).orElseThrow().getName());
+    }
+
+    @Test
+    void deletingATaskAlsoRemovesItsSubtasks() {
+        Task parent = createTask(TEST_USER_ID, "Parent");
+        NewTaskRequest subtaskRequest = new NewTaskRequest();
+        subtaskRequest.setName("Child");
+        subtaskRequest.setParentId(parent.getTaskId());
+        subtaskRequest.setScheduledPerformDateTime(LocalDate.now().atTime(10, 0).toString());
+        Task child = taskService.createTask(subtaskRequest, TEST_USER_ID);
+
+        taskService.deleteTask(parent.getTaskId(), TEST_USER_ID);
+
+        assertFalse(taskService.getTaskForUser(parent.getTaskId(), TEST_USER_ID).isPresent());
+        assertFalse(taskService.getTaskForUser(child.getTaskId(), TEST_USER_ID).isPresent());
+    }
+
+    @Test
+    void deletingATaskAlsoRemovesItFromItsTaskGroup() {
+        Task first = createTask(TEST_USER_ID, "First");
+        Task second = createTask(TEST_USER_ID, "Second");
+        taskGroupService.createGroup("Together", List.of(first.getTaskId(), second.getTaskId()), TEST_USER_ID);
+
+        taskService.deleteTask(first.getTaskId(), TEST_USER_ID);
 
         assertEquals(0, taskGroupService.getGroups(TEST_USER_ID).size());
     }

@@ -47,11 +47,12 @@ Feature packages follow a consistent pattern — each has an entity, repository,
 - `taskgroup/` — User-owned groups that relate multiple tasks independently of subtasks
 - `mentalthread/` — User-owned unresolved concerns with acting/ruminating/planned/pending attention states, subjective load history, closure outcomes, daily capacity check-ins, and connected next-action tasks
 - `day/` — Daily rating/plan/summary (`DayEntity`, one per user per date)
-- `pomodoro/` — Pomodoro timer settings and state
-- `stat/` — User-defined tracking plus built-in mental-state, meditation activity, and sleep stats provisioned from `SystemStatCatalog`; built-ins use a stable `systemKey`, cannot be deleted, and expose server-side personal correlation insights
+- `pomodoro/` — Pomodoro timer settings, persisted phase state, and automatic/manual phase transitions
+- `stat/` — Daily user-defined tracking plus built-in meditation activity and sleep stats provisioned from `SystemStatCatalog`; built-ins use a stable `systemKey`, cannot be deleted, and expose server-side personal correlation insights
+- `mentalstate/` — Timestamped, multiple-per-day check-ins that capture energy, activation, stimulation hunger, clarity, valence, and emotional load together and generate deterministic state guidance
 - `session/task/` and `session/meditation/` — Session tracking with start/pause/unpause/end lifecycle, published as Spring events via `ApplicationEventPublisher`
 - `scheduling/` — Automated job scheduling for pomodoro cycles (`TimedExecutorService`, `ScheduledJob`)
-- `user/` — User management backed by Keycloak (see Auth below)
+- `user/` — User management and persisted preferences backed by Keycloak (see Auth below)
 
 WebSocket (STOMP) is configured in `WebSocketConfig.java`. The frontend connects via `/ws` (proxied by Vite).
 
@@ -91,6 +92,7 @@ All user-scoped entities (Task, DayEntity, MeditationSession, TaskSession, Pomod
 - **Routing**: React Router v6 (`App.tsx`)
 - **Notes**: `pages/NotesPage.tsx` and `components/notes/`; the frontend calls the planned authenticated API through `services/api/notesService.ts`, with its backend contract tracked in `backend/NOTES_BACKEND_TODO.md`
 - **Mental threads**: `pages/MentalThreadsPage.tsx` and `components/mental-threads/`; the dashboard keeps total subjective load separate from the user's daily capacity check-in
+- **Mental state**: `pages/MentalStatePage.tsx` and `components/mental-state/`; each check-in records six signals together, calculates private derived scores on the backend, returns only state and suggested actions, and supports multiple entries per day
 
 ### Services / Ports
 

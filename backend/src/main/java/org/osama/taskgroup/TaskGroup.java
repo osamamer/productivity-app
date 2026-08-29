@@ -37,6 +37,9 @@ public class TaskGroup {
     @Column(name = "user_id", insertable = false, updatable = false)
     private String userId;
 
+    @Column(name = "mental_thread_id")
+    private String mentalThreadId;
+
     @Column(nullable = false, length = 120)
     private String name;
 

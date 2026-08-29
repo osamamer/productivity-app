@@ -43,6 +43,7 @@ public class PomodoroService {
     private final TaskSessionService taskSessionService;
     private final TaskService taskService;
     private final UserRepository userRepository;
+    private final PomodoroSettings pomodoroSettings;
 
     private final Map<String, ScheduledFuture<?>> statusUpdateTasks = new ConcurrentHashMap<>();
 
@@ -54,7 +55,8 @@ public class PomodoroService {
                            SimpMessagingTemplate simpMessagingTemplate,
                            TaskSessionService taskSessionService,
                            TaskService taskService,
-                           UserRepository userRepository) {
+                           UserRepository userRepository,
+                           PomodoroSettings pomodoroSettings) {
         this.pomodoroRepository = pomodoroRepository;
         this.scheduledJobRepository = scheduledJobRepository;
         this.taskSessionRepository = taskSessionRepository;
@@ -64,6 +66,17 @@ public class PomodoroService {
         this.taskSessionService = taskSessionService;
         this.taskService = taskService;
         this.userRepository = userRepository;
+        this.pomodoroSettings = pomodoroSettings;
+    }
+
+    public PomodoroConfigResponse getConfig() {
+        return new PomodoroConfigResponse(
+                pomodoroSettings.isDevSecondsMode(),
+                pomodoroSettings.getDurationUnit(),
+                pomodoroSettings.getDefaultFocusDuration(),
+                pomodoroSettings.getDefaultShortBreakDuration(),
+                pomodoroSettings.getDefaultLongBreakDuration()
+        );
     }
 
     // ============ Event Listeners ============
@@ -81,6 +94,7 @@ public class PomodoroService {
         pomodoro.setCurrentFocusNumber(pomodoro.getCurrentFocusNumber() + 1);
         pomodoro.setSessionActive(true);
         pomodoro.setSessionRunning(true);
+        pomodoro.setPhase(PomodoroPhase.FOCUS);
         pomodoroRepository.save(pomodoro);
 
         pausePomodoroUpdates(event.getTaskId());
@@ -154,13 +168,22 @@ public class PomodoroService {
         pomodoro.setSecondsPassedInSession(0);
         pomodoro.setSessionActive(false);
         pomodoro.setSessionRunning(false);
+        if (pomodoro.getCurrentFocusNumber() < pomodoro.getNumFocuses()) {
+            pomodoro.setPhase(pomodoro.isAutoStartSessions()
+                    ? PomodoroPhase.BREAK
+                    : PomodoroPhase.WAITING_FOR_BREAK);
+        }
         pomodoroRepository.save(pomodoro);
 
         pausePomodoroUpdates(event.getTaskId());
 
         // Continue updates if more focus sessions remain
-        if (pomodoro.getCurrentFocusNumber() < pomodoro.getNumFocuses()) {
+        if (pomodoro.getCurrentFocusNumber() < pomodoro.getNumFocuses()
+                && pomodoro.isAutoStartSessions()) {
             startPomodoroUpdates(event.getTaskId());
+        }
+        if (pomodoro.getCurrentFocusNumber() < pomodoro.getNumFocuses()) {
+            sendAsyncUpdate(event.getTaskId());
         }
     }
 
@@ -170,17 +193,30 @@ public class PomodoroService {
     public void startPomodoro(String taskId, int focusDuration,
                               int shortBreakDuration, int longBreakDuration,
                               int numFocuses, int longBreakCooldown, String userId) {
+        startPomodoro(taskId, focusDuration, shortBreakDuration, longBreakDuration,
+                numFocuses, longBreakCooldown, null, userId);
+    }
+
+    @Transactional
+    public void startPomodoro(String taskId, int focusDuration,
+                              int shortBreakDuration, int longBreakDuration,
+                              int numFocuses, int longBreakCooldown,
+                              Boolean secondsMode, String userId) {
         Task task = taskService.getTaskForUserOrThrow(taskId, userId);
         validateStartRequest(task, focusDuration, shortBreakDuration, longBreakDuration,
                 numFocuses, longBreakCooldown, userId);
 
-        createPomodoro(task.getTaskId(), focusDuration, shortBreakDuration,
+        Pomodoro pomodoro = createPomodoro(task.getTaskId(), focusDuration, shortBreakDuration,
                 longBreakDuration, numFocuses, longBreakCooldown, userId);
 
-        scheduleService.schedulePomoJobs(task.getTaskId());
+        boolean effectiveSecondsMode = secondsMode != null ? secondsMode : pomodoroSettings.isDevSecondsMode();
+        pomodoro.setSecondsMode(effectiveSecondsMode);
+        pomodoroRepository.save(pomodoro);
+        scheduleService.schedulePomoJobs(task.getTaskId(), effectiveSecondsMode);
         taskSessionService.startSession(task.getTaskId(), true);
-        log.info("Pomodoro started: userId={} taskId={} focusDuration={} shortBreakDuration={} longBreakDuration={} numFocuses={} longBreakCooldown={}",
-                userId, taskId, focusDuration, shortBreakDuration, longBreakDuration, numFocuses, longBreakCooldown);
+        log.info("Pomodoro started: userId={} taskId={} focusDuration={} shortBreakDuration={} longBreakDuration={} numFocuses={} longBreakCooldown={} secondsMode={}",
+                userId, taskId, focusDuration, shortBreakDuration, longBreakDuration, numFocuses, longBreakCooldown,
+                effectiveSecondsMode);
     }
 
     @Transactional
@@ -203,6 +239,66 @@ public class PomodoroService {
         sendUpdate(pomodoro);
         log.info("Pomodoro ended: userId={} taskId={} completedFocusCount={}",
                 userId, taskId, pomodoro.getCurrentFocusNumber());
+    }
+
+    @Transactional
+    public void startNextPhase(String taskId, String userId) {
+        Task task = taskService.getTaskForUserOrThrow(taskId, userId);
+        Pomodoro pomodoro = getOwnedActivePomodoro(task.getTaskId(), userId);
+        if (pomodoro.isAutoStartSessions()) {
+            throw new IllegalStateException("This Pomodoro is configured to start phases automatically.");
+        }
+
+        PomodoroPhase phase = currentPhase(pomodoro);
+        if (phase == PomodoroPhase.WAITING_FOR_BREAK) {
+            pomodoro.setPhase(PomodoroPhase.BREAK);
+            pomodoro.setSecondsPassedInSession(0);
+            pomodoro.setSecondsUntilNextTransition(0);
+            pomodoroRepository.save(pomodoro);
+            scheduleService.scheduleBreakEnd(task.getTaskId());
+            startPomodoroUpdates(task.getTaskId());
+            sendUpdate(pomodoro);
+            log.info("Pomodoro break started manually: userId={} taskId={} focusNumber={}",
+                    userId, taskId, pomodoro.getCurrentFocusNumber());
+            return;
+        }
+
+        if (phase == PomodoroPhase.WAITING_FOR_FOCUS) {
+            pomodoro.setPhase(PomodoroPhase.FOCUS);
+            pomodoro.setSecondsPassedInSession(0);
+            pomodoro.setSecondsUntilNextTransition(0);
+            pomodoroRepository.save(pomodoro);
+            scheduleService.scheduleFocusEnd(task.getTaskId());
+            taskSessionService.startSession(task.getTaskId(), true);
+            log.info("Pomodoro focus started manually: userId={} taskId={} nextFocusNumber={}",
+                    userId, taskId, pomodoro.getCurrentFocusNumber() + 1);
+            return;
+        }
+
+        throw new IllegalStateException("Pomodoro is not waiting for a phase to start.");
+    }
+
+    @Transactional
+    public void advanceFromBreak(String taskId) {
+        Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(taskId)
+                .orElseThrow(() -> new IllegalStateException("No active pomodoro found for task."));
+        if (pomodoro.isAutoStartSessions()) {
+            taskSessionService.startSession(taskId, true);
+            return;
+        }
+
+        if (currentPhase(pomodoro) != PomodoroPhase.BREAK) {
+            return;
+        }
+
+        pomodoro.setPhase(PomodoroPhase.WAITING_FOR_FOCUS);
+        pomodoro.setSecondsPassedInSession(0);
+        pomodoro.setSecondsUntilNextTransition(0);
+        pomodoroRepository.save(pomodoro);
+        pausePomodoroUpdates(taskId);
+        sendUpdate(pomodoro);
+        log.info("Pomodoro waiting for manual focus start: taskId={} focusNumber={}",
+                taskId, pomodoro.getCurrentFocusNumber() + 1);
     }
 
     @Transactional
@@ -231,6 +327,8 @@ public class PomodoroService {
         pomodoro.setSessionRunning(false);
         pomodoro.setCurrentFocusNumber(0);
         pomodoro.setSecondsPassedInSession(0);
+        pomodoro.setPhase(PomodoroPhase.FOCUS);
+        pomodoro.setAutoStartSessions(!Boolean.FALSE.equals(user.getAutoStartPomodoroSessions()));
         pomodoro.setUser(user);
 
         Pomodoro savedPomodoro = pomodoroRepository.save(pomodoro);
@@ -269,6 +367,13 @@ public class PomodoroService {
     private Pomodoro getOwnedActivePomodoro(String taskId, String userId) {
         return pomodoroRepository.findPomodoroByAssociatedTaskIdAndUserIdAndIsActiveIsTrue(taskId, userId)
                 .orElseThrow(() -> new IllegalStateException("No pomodoro found for task."));
+    }
+
+    private PomodoroPhase currentPhase(Pomodoro pomodoro) {
+        if (pomodoro.getPhase() != null) {
+            return pomodoro.getPhase();
+        }
+        return pomodoro.isSessionActive() ? PomodoroPhase.FOCUS : PomodoroPhase.BREAK;
     }
 
     // ============ Update Management ============

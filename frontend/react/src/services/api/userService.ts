@@ -3,6 +3,11 @@ import apiClient from '../utils/axiosConfig';
 
 const API_BASE_URL = 'http://localhost:8080/api/v1';
 
+export interface UserPreferences {
+    includeUnloggedNumericDaysAsZero: boolean;
+    autoStartPomodoroSessions: boolean;
+}
+
 export const userService = {
     async createUser(userData: {
         email: string;
@@ -72,5 +77,15 @@ export const userService = {
         newPassword: string;
     }) {
         await apiClient.put('/api/v1/users/me/password', passwords);
+    },
+
+    async getPreferences(): Promise<UserPreferences> {
+        const response = await apiClient.get<UserPreferences>('/api/v1/users/me/preferences');
+        return response.data;
+    },
+
+    async updatePreferences(preferences: Partial<UserPreferences>): Promise<UserPreferences> {
+        const response = await apiClient.patch<UserPreferences>('/api/v1/users/me/preferences', preferences);
+        return response.data;
     },
 };

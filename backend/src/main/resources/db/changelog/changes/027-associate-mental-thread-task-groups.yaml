@@ -1,0 +1,34 @@
+databaseChangeLog:
+  - changeSet:
+      id: 027-associate-mental-thread-task-groups
+      author: osama
+      comment: Associate default task groups with the mental thread that created them
+      changes:
+        - addColumn:
+            tableName: task_group
+            columns:
+              - column:
+                  name: mental_thread_id
+                  type: varchar(255)
+        - addForeignKeyConstraint:
+            baseTableName: task_group
+            baseColumnNames: mental_thread_id
+            referencedTableName: mental_thread
+            referencedColumnNames: thread_id
+            constraintName: fk_app_task_group_mental_thread
+            onDelete: SET NULL
+            onUpdate: CASCADE
+        - addUniqueConstraint:
+            tableName: task_group
+            columnNames: user_id, mental_thread_id
+            constraintName: uq_app_task_group_user_mental_thread
+      rollback:
+        - dropUniqueConstraint:
+            tableName: task_group
+            constraintName: uq_app_task_group_user_mental_thread
+        - dropForeignKeyConstraint:
+            baseTableName: task_group
+            constraintName: fk_app_task_group_mental_thread
+        - dropColumn:
+            tableName: task_group
+            columnName: mental_thread_id

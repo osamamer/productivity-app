@@ -186,6 +186,29 @@ public class StatServiceTest {
         assertNull(summary.periodYesCount());
         assertEquals(6.0, summary.periodAverage(), 0.0001);
         assertEquals(12.0, summary.periodTotal(), 0.0001);
+        assertEquals(10.0, summary.periodHighest(), 0.0001);
+    }
+
+    @Test
+    void numericSummaryCanIncludeUnloggedDaysAsZeroWhenPreferenceIsEnabled() {
+        StatDefinition statDefinition = createStatDefinition(StatType.NUMBER, null, null);
+        LocalDate today = LocalDate.now();
+        statService.recordEntry(statDefinition.getId(), today.minusDays(2), 2.0, TEST_USER_ID);
+        statService.recordEntry(statDefinition.getId(), today, 4.0, TEST_USER_ID);
+
+        StatSummaryResponse loggedDaysOnly = statService.getSummary(
+                statDefinition.getId(), today.minusDays(2), today, TEST_USER_ID);
+        assertEquals(3.0, loggedDaysOnly.periodAverage(), 0.0001);
+
+        User user = userRepository.findUserById(TEST_USER_ID).orElseThrow();
+        user.setIncludeUnloggedNumericDaysAsZero(true);
+        userRepository.save(user);
+
+        StatSummaryResponse includingUnloggedDays = statService.getSummary(
+                statDefinition.getId(), today.minusDays(2), today, TEST_USER_ID);
+
+        assertEquals(2.0, includingUnloggedDays.periodAverage(), 0.0001);
+        assertEquals(6.0, includingUnloggedDays.periodTotal(), 0.0001);
     }
 
     @Test
@@ -202,8 +225,28 @@ public class StatServiceTest {
         assertEquals(2, summary.checkInStreak());
         assertEquals(1, summary.periodYesCount());
         assertEquals(1, summary.booleanStreak());
+        assertEquals(1, summary.longestBooleanStreak());
         assertNull(summary.periodAverage());
         assertNull(summary.periodTotal());
+    }
+
+    @Test
+    void booleanSummaryReportsLongestYesStreakWithinRequestedPeriod() {
+        StatDefinition statDefinition = createStatDefinition(StatType.BOOLEAN, null, null);
+        LocalDate today = LocalDate.now();
+        statService.recordEntry(statDefinition.getId(), today.minusDays(5), 1.0, TEST_USER_ID);
+        statService.recordEntry(statDefinition.getId(), today.minusDays(4), 1.0, TEST_USER_ID);
+        statService.recordEntry(statDefinition.getId(), today.minusDays(3), 0.0, TEST_USER_ID);
+        statService.recordEntry(statDefinition.getId(), today.minusDays(2), 1.0, TEST_USER_ID);
+        statService.recordEntry(statDefinition.getId(), today.minusDays(1), 1.0, TEST_USER_ID);
+        statService.recordEntry(statDefinition.getId(), today, 1.0, TEST_USER_ID);
+
+        StatSummaryResponse summary = statService.getSummary(
+                statDefinition.getId(), today.minusDays(5), today, TEST_USER_ID);
+
+        assertEquals(5, summary.periodYesCount());
+        assertEquals(3, summary.booleanStreak());
+        assertEquals(3, summary.longestBooleanStreak());
     }
 
     @Test

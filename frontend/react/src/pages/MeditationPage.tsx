@@ -1,9 +1,12 @@
+import { useState } from 'react';
 import { Box, Paper } from '@mui/material';
 import { PageWrapper } from '../components/PageWrapper.tsx';
 import MeditationTimer from '../components/timer/MeditationTimer.tsx';
 import { MeditationStats } from '../components/timer/MeditationStats.tsx';
 
 export function MeditationPage() {
+    const [statsRefreshKey, setStatsRefreshKey] = useState(0);
+
     return (
         <PageWrapper>
             <Paper
@@ -26,7 +29,7 @@ export function MeditationPage() {
                 }}
             >
                 <Box sx={{ minWidth: 0 }}>
-                    <MeditationTimer />
+                    <MeditationTimer onSessionCompleted={() => setStatsRefreshKey(key => key + 1)} />
                 </Box>
                 <Box
                     sx={{
@@ -35,7 +38,7 @@ export function MeditationPage() {
                         borderLeft: theme => ({ xs: 0, md: `1px solid ${theme.palette.divider}` }),
                     }}
                 >
-                    <MeditationStats />
+                    <MeditationStats refreshKey={statsRefreshKey} />
                 </Box>
             </Paper>
         </PageWrapper>

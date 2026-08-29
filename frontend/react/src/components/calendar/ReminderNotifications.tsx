@@ -1,10 +1,10 @@
 import { Alert, Snackbar } from '@mui/material';
-import { Client } from '@stomp/stompjs';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import keycloak from '../../services/keycloak';
 import { reminderService } from '../../services/api/reminderService';
 import { ReminderNotification } from '../../types/CalendarEvent';
 import { useUser } from '../../contexts/UserContext';
+import { showSystemNotification } from '../../services/systemNotifications';
+import { createAuthenticatedStompClient } from '../../services/authenticatedStompClient';
 
 const WS_URL = (import.meta.env.VITE_WS_URL || `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`);
 
@@ -20,11 +20,11 @@ export function ReminderNotifications() {
         const eventTime = reminder.allDay
             ? 'All day'
             : new Date(reminder.eventStart).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
-        if ('Notification' in window && Notification.permission === 'granted') {
-            const notification = new Notification(reminder.title, {
-                body: `Event reminder · ${eventTime}`,
-                tag: `event-reminder-${reminder.reminderId}`,
-            });
+        const notification = showSystemNotification(reminder.title, {
+            body: `Event reminder · ${eventTime}`,
+            tag: `event-reminder-${reminder.reminderId}`,
+        });
+        if (notification) {
             notification.onclick = () => {
                 window.focus();
                 window.history.pushState(null, '', '/calendar');
@@ -51,13 +51,7 @@ export function ReminderNotifications() {
             .then(reminders => active && reminders.forEach(reminder => void deliver(reminder)))
             .catch(error => console.error('Failed to retrieve pending reminders:', error));
 
-        const client = new Client({
-            brokerURL: WS_URL,
-            connectHeaders: { Authorization: `Bearer ${keycloak.token ?? ''}` },
-            reconnectDelay: 5000,
-            heartbeatIncoming: 10000,
-            heartbeatOutgoing: 10000,
-        });
+        const client = createAuthenticatedStompClient(WS_URL);
         client.onConnect = () => {
             client.subscribe('/user/queue/reminders', message => {
                 try {
@@ -69,10 +63,20 @@ export function ReminderNotifications() {
             void loadPending();
         };
         client.onWebSocketError = error => console.error('Reminder WebSocket error:', error);
+        client.onStompError = frame => console.error('Reminder STOMP error:', frame.headers.message);
+
+        void loadPending();
+        const recoveryInterval = window.setInterval(loadPending, 30_000);
+        const recoverWhenVisible = () => {
+            if (document.visibilityState === 'visible') void loadPending();
+        };
+        document.addEventListener('visibilitychange', recoverWhenVisible);
         client.activate();
 
         return () => {
             active = false;
+            window.clearInterval(recoveryInterval);
+            document.removeEventListener('visibilitychange', recoverWhenVisible);
             void client.deactivate();
         };
     }, [deliver, isAuthenticated, userLoading]);

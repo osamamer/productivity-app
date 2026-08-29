@@ -208,7 +208,8 @@ export const taskService = {
         shortBreakDuration: number,
         longBreakDuration: number,
         numFocuses: number,
-        longBreakCooldown: number
+        longBreakCooldown: number,
+        secondsMode: boolean
     ): Promise<void> {
         const response = await fetch(`${POMODORO_URL}/start`, {
             method: 'POST',
@@ -219,6 +220,7 @@ export const taskService = {
                 longBreakDuration,
                 numFocuses,
                 longBreakCooldown,
+                secondsMode,
             }),
             headers: {
                 'Content-Type': 'application/json; charset=UTF-8',
@@ -241,6 +243,16 @@ export const taskService = {
             throw new Error('Failed to end pomodoro');
         }
         console.log("Ended Pomodoro.");
+    },
+
+    async startNextPomodoroPhase(taskId: string): Promise<void> {
+        const response = await fetch(`${POMODORO_URL}/phase/start/${taskId}`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+        });
+        if (!response.ok) {
+            throw new Error('Failed to start the next Pomodoro phase');
+        }
     },
 
     // Returns the current user's active pomodoro, or null if none is running.

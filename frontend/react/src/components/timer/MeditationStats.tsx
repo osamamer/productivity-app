@@ -73,7 +73,11 @@ function findSystemDefinition(definitions: StatDefinition[], systemKey: string):
     return definitions.find(definition => definition.systemKey === systemKey);
 }
 
-export function MeditationStats() {
+interface MeditationStatsProps {
+    refreshKey: number;
+}
+
+export function MeditationStats({ refreshKey }: MeditationStatsProps) {
     const theme = useTheme();
     const [data, setData] = useState<MeditationStatsData | null>(null);
     const [loading, setLoading] = useState(true);
@@ -94,6 +98,7 @@ export function MeditationStats() {
 
     useEffect(() => {
         let cancelled = false;
+        if (refreshKey > 0) statService.clearDataCache();
         setLoading(true);
         setError(false);
         statService.getDefinitions()
@@ -118,7 +123,7 @@ export function MeditationStats() {
             });
 
         return () => { cancelled = true; };
-    }, [period]);
+    }, [period, refreshKey]);
 
     if (loading && !data) {
         return (

@@ -7,4 +7,5 @@ public class PomodoroRequest {
     public int longBreakDuration;
     public int numFocuses;
     public int longBreakCooldown;
+    public Boolean secondsMode;
 }

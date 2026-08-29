@@ -3,7 +3,7 @@ import {
     AreaChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip,
     ResponsiveContainer, ReferenceLine, type MouseHandlerDataParam,
 } from 'recharts';
-import { Box, CircularProgress, TextField } from '@mui/material';
+import { Box, CircularProgress, TextField, Typography } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { format, parseISO, subDays, eachDayOfInterval } from 'date-fns';
 import { StatDefinition, StatEntry } from '../../types/Stats';
@@ -12,41 +12,154 @@ import { statService } from '../../services/api/statService';
 interface ChartPoint {
     date: string;
     value: number | undefined;
+    comparisonValue: number | undefined;
     hoverTarget: number;
+    periodEnd?: string;
 }
 
 interface Props {
     definition: StatDefinition;
+    comparisonDefinition?: StatDefinition;
     dateRange: number;
     refreshKey: number;
     onEntryChanged?: () => void;
 }
 
-function buildChartPoints(from: Date, to: Date, entries: StatEntry[]): ChartPoint[] {
+function valueForDate(
+    entriesByDate: Map<string, number>,
+    date: string,
+    definition?: StatDefinition,
+): number | undefined {
+    return entriesByDate.get(date) ?? (definition?.type === 'BOOLEAN' ? 0 : undefined);
+}
+
+function buildChartPoints(
+    from: Date,
+    to: Date,
+    entries: StatEntry[],
+    definition: StatDefinition,
+    comparisonEntries: StatEntry[],
+    comparisonDefinition?: StatDefinition,
+): ChartPoint[] {
     const entryMap = new Map(entries.map(entry => [entry.date, entry.value]));
+    const comparisonEntryMap = new Map(comparisonEntries.map(entry => [entry.date, entry.value]));
     return eachDayOfInterval({ start: from, end: to }).map(day => {
         const date = format(day, 'yyyy-MM-dd');
-        return { date, value: entryMap.get(date), hoverTarget: 0 };
+        return {
+            date,
+            value: valueForDate(entryMap, date, definition),
+            comparisonValue: valueForDate(comparisonEntryMap, date, comparisonDefinition),
+            hoverTarget: 0,
+        };
     });
 }
 
-export function StatLineChart({ definition, dateRange, refreshKey, onEntryChanged }: Props) {
+function average(values: number[]): number | undefined {
+    return values.length > 0
+        ? values.reduce((total, value) => total + value, 0) / values.length
+        : undefined;
+}
+
+function buildWeeklyChartPoints(
+    from: Date,
+    to: Date,
+    entries: StatEntry[],
+    definition: StatDefinition,
+    comparisonEntries: StatEntry[],
+    comparisonDefinition?: StatDefinition,
+): ChartPoint[] {
+    const days = eachDayOfInterval({ start: from, end: to });
+    const entriesByDate = new Map(entries.map(entry => [entry.date, entry.value]));
+    const comparisonEntriesByDate = new Map(comparisonEntries.map(entry => [entry.date, entry.value]));
+    const points: ChartPoint[] = [];
+
+    for (let index = 0; index < days.length; index += 7) {
+        const week = days.slice(index, index + 7);
+        const values = week
+            .map(day => valueForDate(entriesByDate, format(day, 'yyyy-MM-dd'), definition))
+            .filter((value): value is number => value !== undefined);
+        const comparisonValues = week
+            .map(day => valueForDate(
+                comparisonEntriesByDate,
+                format(day, 'yyyy-MM-dd'),
+                comparisonDefinition,
+            ))
+            .filter((value): value is number => value !== undefined);
+
+        points.push({
+            date: format(week[0], 'yyyy-MM-dd'),
+            periodEnd: format(week[week.length - 1], 'yyyy-MM-dd'),
+            value: average(values),
+            comparisonValue: average(comparisonValues),
+            hoverTarget: 0,
+        });
+    }
+
+    return points;
+}
+
+function formatChartValue(value: number): string {
+    return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function formatPointValue(value: number | undefined, definition: StatDefinition, averaged: boolean): string {
+    if (value === undefined) return 'No data';
+    if (definition.type === 'BOOLEAN') return averaged ? `${Math.round(value * 100)}% yes` : value === 1 ? 'Yes' : 'No';
+    return averaged ? `Average ${formatChartValue(value)}` : formatChartValue(value);
+}
+
+function chartDomain(definition: StatDefinition): [number | string, number | string] {
+    if (definition.type === 'BOOLEAN') return [0, 1];
+    if (definition.type === 'RANGE') return [0, definition.maxValue!];
+    return [0, 'auto'];
+}
+
+function formatAxisValue(value: number, definition: StatDefinition): string {
+    if (definition.type !== 'BOOLEAN') return formatChartValue(value);
+    if (value === 0) return 'No';
+    if (value === 1) return 'Yes';
+    return '';
+}
+
+export function StatLineChart({
+    definition,
+    comparisonDefinition,
+    dateRange,
+    refreshKey,
+    onEntryChanged,
+}: Props) {
     const theme = useTheme();
     const to = new Date();
     const from = subDays(to, dateRange - 1);
     const fromStr = format(from, 'yyyy-MM-dd');
     const toStr = format(to, 'yyyy-MM-dd');
-    const dataKey = `${definition.id}:${fromStr}:${toStr}`;
+    const isYearView = dateRange >= 365;
+    const comparisonId = comparisonDefinition?.id;
+    const createChartPoints = (entries: StatEntry[], comparisonEntries: StatEntry[]) => isYearView
+        ? buildWeeklyChartPoints(
+            from,
+            to,
+            entries,
+            definition,
+            comparisonEntries,
+            comparisonDefinition,
+        )
+        : buildChartPoints(from, to, entries, definition, comparisonEntries, comparisonDefinition);
+    const dataKey = `${definition.id}:${comparisonId ?? 'none'}:${fromStr}:${toStr}`;
     const cachedEntries = statService.getCachedEntries(definition.id, fromStr, toStr);
+    const cachedComparisonEntries = comparisonId
+        ? statService.getCachedEntries(comparisonId, fromStr, toStr)
+        : [];
+    const hasCachedData = Boolean(cachedEntries && cachedComparisonEntries);
     const [dataState, setDataState] = useState<{ key: string; points: ChartPoint[] }>(() => ({
         key: dataKey,
-        points: buildChartPoints(from, to, cachedEntries ?? []),
+        points: createChartPoints(cachedEntries ?? [], cachedComparisonEntries ?? []),
     }));
-    const [loadingKey, setLoadingKey] = useState<string | null>(cachedEntries ? null : dataKey);
+    const [loadingKey, setLoadingKey] = useState<string | null>(hasCachedData ? null : dataKey);
     const data = dataState.key === dataKey
         ? dataState.points
-        : buildChartPoints(from, to, cachedEntries ?? []);
-    const loading = loadingKey === dataKey || (dataState.key !== dataKey && !cachedEntries);
+        : createChartPoints(cachedEntries ?? [], cachedComparisonEntries ?? []);
+    const loading = loadingKey === dataKey || (dataState.key !== dataKey && !hasCachedData);
     const [hoveredPoint, setHoveredPoint] = useState<ChartPoint | null>(null);
     const [editorPosition, setEditorPosition] = useState<{ left: number; top: number } | null>(null);
     const [editValue, setEditValue] = useState('');
@@ -60,24 +173,47 @@ export function StatLineChart({ definition, dateRange, refreshKey, onEntryChange
 
     useEffect(() => {
         let cancelled = false;
-        if (!statService.getCachedEntries(definition.id, fromStr, toStr)) setLoadingKey(dataKey);
+        const primaryEntries = statService.getCachedEntries(definition.id, fromStr, toStr);
+        const comparisonEntries = comparisonId
+            ? statService.getCachedEntries(comparisonId, fromStr, toStr)
+            : [];
+        if (!primaryEntries || !comparisonEntries) setLoadingKey(dataKey);
         setHoveredPoint(null);
         setEditorPosition(null);
-        statService.getEntries(definition.id, fromStr, toStr)
-            .then(entries => {
+        Promise.all([
+            statService.getEntries(definition.id, fromStr, toStr),
+            comparisonId ? statService.getEntries(comparisonId, fromStr, toStr) : Promise.resolve([]),
+        ])
+            .then(([entries, nextComparisonEntries]) => {
                 if (!cancelled) {
                     setDataState({
                         key: dataKey,
-                        points: buildChartPoints(parseISO(fromStr), parseISO(toStr), entries),
+                        points: isYearView
+                            ? buildWeeklyChartPoints(
+                                parseISO(fromStr),
+                                parseISO(toStr),
+                                entries,
+                                definition,
+                                nextComparisonEntries,
+                                comparisonDefinition,
+                            )
+                            : buildChartPoints(
+                                parseISO(fromStr),
+                                parseISO(toStr),
+                                entries,
+                                definition,
+                                nextComparisonEntries,
+                                comparisonDefinition,
+                            ),
                     });
                 }
             })
-            .catch(e => console.error('Failed to fetch stat entries for chart:', e))
+            .catch(e => console.error('Failed to fetch stat entries for chart comparison:', e))
             .finally(() => {
                 if (!cancelled) setLoadingKey(current => current === dataKey ? null : current);
             });
         return () => { cancelled = true; };
-    }, [dataKey, definition.id, fromStr, refreshKey, toStr]);
+    }, [comparisonDefinition, comparisonId, dataKey, definition, fromStr, isYearView, refreshKey, toStr]);
 
     useEffect(() => {
         setEditValue(hoveredPoint?.value === undefined ? '' : String(hoveredPoint.value));
@@ -89,15 +225,18 @@ export function StatLineChart({ definition, dateRange, refreshKey, onEntryChange
         if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     }, []);
 
-    const yDomain: [number | string, number | string] = definition.type === 'RANGE'
-        ? [definition.minValue!, definition.maxValue!]
-        : ['auto', 'auto'];
+    const yDomain = chartDomain(definition);
+    const comparisonYDomain = comparisonDefinition ? chartDomain(comparisonDefinition) : undefined;
 
-    const tickFormat = dateRange <= 7
+    const tickFormat = isYearView
+        ? (d: string) => format(parseISO(d), 'MMM')
+        : dateRange <= 7
         ? (d: string) => format(parseISO(d), 'EEE')
         : (d: string) => format(parseISO(d), 'MMM d');
 
     const gradientId = `gradient-${definition.id}`;
+    const primaryColor = theme.palette.primary.main;
+    const comparisonColor = theme.palette.secondary.main;
 
     const handleSaved = (date: string, value: number) => {
         setDataState(previous => previous.key === dataKey
@@ -218,6 +357,18 @@ export function StatLineChart({ definition, dateRange, refreshKey, onEntryChange
 
     return (
         <Box sx={{ position: 'relative' }}>
+            {comparisonDefinition && (
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mb: 1 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                        <Box sx={{ width: 18, borderTop: `3px solid ${primaryColor}`, borderRadius: 1 }} />
+                        <Typography variant="caption" fontWeight={600}>{definition.name}</Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                        <Box sx={{ width: 18, borderTop: `3px solid ${comparisonColor}`, borderRadius: 1 }} />
+                        <Typography variant="caption" fontWeight={600}>{comparisonDefinition.name}</Typography>
+                    </Box>
+                </Box>
+            )}
             <Box
                 ref={chartRef}
                 onMouseEnter={handleChartEnter}
@@ -227,30 +378,45 @@ export function StatLineChart({ definition, dateRange, refreshKey, onEntryChange
                 <ResponsiveContainer width="100%" height={200}>
                 <AreaChart
                     data={data}
-                    margin={{ top: 5, right: 10, left: 0, bottom: 5 }}
+                    margin={{ top: 5, right: comparisonDefinition ? 0 : 10, left: 0, bottom: 5 }}
                     onMouseMove={handleChartMouseMove}
                 >
                 <defs>
                     <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={theme.palette.primary.main} stopOpacity={0.3} />
-                        <stop offset="95%" stopColor={theme.palette.primary.main} stopOpacity={0} />
+                        <stop offset="5%" stopColor={primaryColor} stopOpacity={comparisonDefinition ? 0.12 : 0.3} />
+                        <stop offset="95%" stopColor={primaryColor} stopOpacity={0} />
                     </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke={theme.palette.divider} />
                 <XAxis
                     dataKey="date"
                     tickFormatter={tickFormat}
+                    minTickGap={isYearView ? 28 : 5}
                     tick={{ fontSize: 11, fill: theme.palette.text.secondary }}
                     axisLine={{ stroke: theme.palette.divider }}
                     tickLine={false}
                 />
                 <YAxis
+                    yAxisId="primary"
                     domain={yDomain}
-                    tick={{ fontSize: 11, fill: theme.palette.text.secondary }}
+                    tickFormatter={value => formatAxisValue(value, definition)}
+                    tick={{ fontSize: 11, fill: comparisonDefinition ? primaryColor : theme.palette.text.secondary }}
                     axisLine={false}
                     tickLine={false}
                     width={35}
                 />
+                {comparisonDefinition && (
+                    <YAxis
+                        yAxisId="comparison"
+                        orientation="right"
+                        domain={comparisonYDomain}
+                        tickFormatter={value => formatAxisValue(value, comparisonDefinition)}
+                        tick={{ fontSize: 11, fill: comparisonColor }}
+                        axisLine={false}
+                        tickLine={false}
+                        width={35}
+                    />
+                )}
                 <YAxis yAxisId="hover" hide domain={[0, 1]} />
                 <Tooltip
                     content={() => null}
@@ -258,20 +424,33 @@ export function StatLineChart({ definition, dateRange, refreshKey, onEntryChange
                 />
                 {definition.type === 'RANGE' && (
                     <>
-                        <ReferenceLine y={definition.minValue} stroke={theme.palette.error.main} strokeDasharray="4 4" strokeOpacity={0.6} />
-                        <ReferenceLine y={definition.maxValue} stroke={theme.palette.success.main} strokeDasharray="4 4" strokeOpacity={0.6} />
+                        <ReferenceLine yAxisId="primary" y={definition.minValue} stroke={theme.palette.error.main} strokeDasharray="4 4" strokeOpacity={0.6} />
+                        <ReferenceLine yAxisId="primary" y={definition.maxValue} stroke={theme.palette.success.main} strokeDasharray="4 4" strokeOpacity={0.6} />
                     </>
                 )}
                 <Area
-                    type="monotone"
+                    yAxisId="primary"
+                    type={definition.type === 'BOOLEAN' ? 'stepAfter' : 'monotone'}
                     dataKey="value"
-                    stroke={theme.palette.primary.main}
+                    stroke={primaryColor}
                     fill={`url(#${gradientId})`}
                     strokeWidth={2}
-                    dot={{ r: 3, fill: theme.palette.primary.main }}
+                    dot={isYearView ? false : { r: 3, fill: primaryColor }}
                     activeDot={{ r: 5 }}
                     connectNulls={true}
                 />
+                {comparisonDefinition && (
+                    <Line
+                        yAxisId="comparison"
+                        type={comparisonDefinition.type === 'BOOLEAN' ? 'stepAfter' : 'monotone'}
+                        dataKey="comparisonValue"
+                        stroke={comparisonColor}
+                        strokeWidth={2}
+                        dot={isYearView ? false : { r: 3, fill: comparisonColor }}
+                        activeDot={{ r: 5 }}
+                        connectNulls={true}
+                    />
+                )}
                 <Line
                     type="linear"
                     dataKey="hoverTarget"
@@ -293,7 +472,7 @@ export function StatLineChart({ definition, dateRange, refreshKey, onEntryChange
                 />
             )}
 
-            {hoveredPoint && editorPosition && dataState.key === dataKey && (
+            {hoveredPoint && editorPosition && dataState.key === dataKey && !isYearView && definition.type !== 'BOOLEAN' && (
                 <Box
                     onMouseEnter={handleEditorEnter}
                     onMouseLeave={handleEditorLeave}
@@ -311,6 +490,16 @@ export function StatLineChart({ definition, dateRange, refreshKey, onEntryChange
                         boxShadow: 2,
                     }}
                 >
+                    {comparisonDefinition && (
+                        <Box sx={{ px: 0.5, pb: 0.5, minWidth: 150 }}>
+                            <Typography variant="caption" color="text.secondary" display="block">
+                                {format(parseISO(hoveredPoint.date), 'MMM d, yyyy')}
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: comparisonColor }} display="block" noWrap>
+                                {comparisonDefinition.name}: {formatPointValue(hoveredPoint.comparisonValue, comparisonDefinition, false)}
+                            </Typography>
+                        </Box>
+                    )}
                     <TextField
                         size="small"
                         type="number"
@@ -336,6 +525,48 @@ export function StatLineChart({ definition, dateRange, refreshKey, onEntryChange
                         title={saveError ?? undefined}
                         sx={{ width: 102 }}
                     />
+                </Box>
+            )}
+
+            {hoveredPoint && editorPosition && dataState.key === dataKey && (isYearView || definition.type === 'BOOLEAN') && (
+                <Box
+                    sx={{
+                        position: 'absolute',
+                        left: editorPosition.left,
+                        top: editorPosition.top,
+                        zIndex: 2,
+                        px: 1,
+                        py: 0.75,
+                        backgroundColor: 'background.paper',
+                        border: 1,
+                        borderColor: 'divider',
+                        borderRadius: 1,
+                        boxShadow: 2,
+                        pointerEvents: 'none',
+                    }}
+                >
+                    <Typography variant="caption" color="text.secondary" display="block" noWrap>
+                        {isYearView ? (
+                            <>
+                                {format(parseISO(hoveredPoint.date), 'MMM d')}
+                                {' – '}
+                                {format(parseISO(hoveredPoint.periodEnd ?? hoveredPoint.date), 'MMM d')}
+                            </>
+                        ) : format(parseISO(hoveredPoint.date), 'MMM d, yyyy')}
+                    </Typography>
+                    <Typography variant="body2" fontWeight={600} sx={{ color: comparisonDefinition ? primaryColor : 'text.primary' }}>
+                        {comparisonDefinition && `${definition.name}: `}
+                        {formatPointValue(hoveredPoint.value, definition, isYearView)}
+                    </Typography>
+                    {comparisonDefinition && (
+                        <Typography variant="body2" fontWeight={600} sx={{ color: comparisonColor }}>
+                            {comparisonDefinition.name}: {formatPointValue(
+                                hoveredPoint.comparisonValue,
+                                comparisonDefinition,
+                                isYearView,
+                            )}
+                        </Typography>
+                    )}
                 </Box>
             )}
         </Box>

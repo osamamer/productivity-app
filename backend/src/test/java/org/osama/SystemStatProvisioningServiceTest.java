@@ -67,17 +67,10 @@ class SystemStatProvisioningServiceTest {
 
         assertEquals(SystemStatCatalog.SYSTEM_STATS.size(), definitions.size());
         assertEquals(Set.of(
-                "stimulation", "hunger", "arousal", "valence",
                 SystemStatCatalog.MEDITATED_SYSTEM_KEY,
                 SystemStatCatalog.MEDITATION_MINUTES_SYSTEM_KEY,
                 SystemStatCatalog.SLEEP_HOURS_SYSTEM_KEY
         ), systemKeys);
-        assertTrue(definitions.stream()
-                .filter(definition -> SystemStatCatalog.MENTAL_STATE_STATS.stream()
-                        .anyMatch(systemStat -> systemStat.systemKey().equals(definition.getSystemKey())))
-                .allMatch(definition -> definition.getType() == StatType.RANGE
-                        && definition.getMinValue() == 1.0
-                        && definition.getMaxValue() == 10.0));
         assertEquals(StatType.BOOLEAN, definitionRepository
                 .findByUserIdAndSystemKey(TEST_USER_ID, SystemStatCatalog.MEDITATED_SYSTEM_KEY)
                 .orElseThrow()
@@ -95,14 +88,14 @@ class SystemStatProvisioningServiceTest {
     @Test
     void provisioningAdoptsAUserDefinitionWhoseNameMatchesABuiltInStat() {
         StatDefinition existing = statService.createDefinition(
-                "vAlEnCe", "custom", StatType.NUMBER, null, null, TEST_USER_ID);
+                "sLeEp", "custom", StatType.NUMBER, null, null, TEST_USER_ID);
 
         provisioningService.createMissingSystemStatsFor(user);
 
         StatDefinition adopted = definitionRepository.findById(existing.getId()).orElseThrow();
-        assertEquals("valence", adopted.getSystemKey());
-        assertEquals("Valence", adopted.getName());
-        assertEquals(StatType.RANGE, adopted.getType());
+        assertEquals(SystemStatCatalog.SLEEP_HOURS_SYSTEM_KEY, adopted.getSystemKey());
+        assertEquals("Sleep", adopted.getName());
+        assertEquals(StatType.NUMBER, adopted.getType());
         assertEquals(SystemStatCatalog.SYSTEM_STATS.size(),
                 definitionRepository.findAllByUserId(TEST_USER_ID).size());
     }

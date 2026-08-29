@@ -16,16 +16,27 @@ public class PomodoroController {
         this.currentUserService = currentUserService;
     }
 
+    @GetMapping("/config")
+    public PomodoroConfigResponse getConfig() {
+        return pomodoroService.getConfig();
+    }
+
     @PostMapping("/start")
     public void startPomodoro(@RequestBody PomodoroRequest pomodoroRequest) {
         pomodoroService.startPomodoro(pomodoroRequest.taskId, pomodoroRequest.focusDuration,
                 pomodoroRequest.shortBreakDuration, pomodoroRequest.longBreakDuration,
-                pomodoroRequest.numFocuses, pomodoroRequest.longBreakCooldown, currentUserService.getCurrentUserId());
+                pomodoroRequest.numFocuses, pomodoroRequest.longBreakCooldown,
+                pomodoroRequest.secondsMode, currentUserService.getCurrentUserId());
     }
 
     @PostMapping("/end/{taskId}")
     public void endPomodoro(@PathVariable String taskId) {
         pomodoroService.endPomodoro(taskId, currentUserService.getCurrentUserId());
+    }
+
+    @PostMapping("/phase/start/{taskId}")
+    public void startNextPhase(@PathVariable String taskId) {
+        pomodoroService.startNextPhase(taskId, currentUserService.getCurrentUserId());
     }
 
     @GetMapping("/status/{taskId}")

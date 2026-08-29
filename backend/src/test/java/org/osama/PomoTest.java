@@ -10,6 +10,7 @@ import org.osama.pomodoro.PomodoroRepository;
 import org.osama.pomodoro.PomodoroService;
 import org.osama.scheduling.ScheduledJob;
 import org.osama.scheduling.ScheduledJobRepository;
+import org.osama.scheduling.ScheduleService;
 import org.osama.scheduling.TimedExecutorService;
 import org.osama.requests.NewTaskRequest;
 import org.osama.session.task.TaskSessionService;
@@ -52,6 +53,8 @@ public class PomoTest {
     @Autowired
     private PomodoroRepository pomodoroRepository;
     @Autowired
+    private ScheduleService scheduleService;
+    @Autowired
     private UserRepository userRepository;
 
     @BeforeEach
@@ -77,6 +80,22 @@ public class PomoTest {
         int numFocuses = 3;
         int longBreakCooldown = 2;
         pomodoroService.startPomodoro(task.getTaskId(), focusDuration, shortBreakDuration, longBreakDuration, numFocuses, longBreakCooldown, TEST_USER_ID);
+    }
+
+    @Test
+    void secondsModeSchedulesPomodoroDurationsInSeconds() {
+        Task task = createTask();
+        pomodoroService.createPomodoro(task.getTaskId(), 10, 10, 10, 2, 4, TEST_USER_ID);
+
+        scheduleService.schedulePomoJobs(task.getTaskId(), true);
+
+        List<ScheduledJob> jobs = scheduledJobRepository.findAllByAssociatedTaskId(task.getTaskId()).stream()
+                .sorted(java.util.Comparator.comparing(ScheduledJob::getDueDate))
+                .toList();
+        assertEquals(3, jobs.size());
+        assertDurationAroundTenSeconds(jobs.get(0).getDueDate(), LocalDateTime.now());
+        assertDurationAroundTenSeconds(jobs.get(1).getDueDate(), jobs.get(0).getDueDate());
+        assertDurationAroundTenSeconds(jobs.get(2).getDueDate(), jobs.get(1).getDueDate());
     }
 
     @Test
@@ -166,5 +185,11 @@ public class PomoTest {
         taskRequest.setScheduledPerformDateTime("2017-01-13T17:09:42.411");
 
         return taskService.createTask(taskRequest, TEST_USER_ID);
+    }
+
+    private void assertDurationAroundTenSeconds(LocalDateTime later, LocalDateTime earlier) {
+        long durationMillis = java.time.Duration.between(earlier, later).toMillis();
+        assertTrue(durationMillis >= 9_500 && durationMillis <= 10_500,
+                "expected about 10 seconds but was " + durationMillis + " ms");
     }
 }

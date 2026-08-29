@@ -11,4 +11,6 @@ public interface TaskGroupRepository extends JpaRepository<TaskGroup, String> {
     Optional<TaskGroup> findByGroupIdAndUserId(String groupId, String userId);
 
     Optional<TaskGroup> findTopByUserIdOrderByDisplayOrderDesc(String userId);
+
+    Optional<TaskGroup> findByUserIdAndMentalThreadId(String userId, String mentalThreadId);
 }

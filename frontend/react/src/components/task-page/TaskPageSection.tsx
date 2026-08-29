@@ -19,6 +19,7 @@ type TaskPageSectionProps = {
     onTaskClick: (task: Task) => void;
     toggleTaskCompletion: (taskId: string) => void;
     updateTask: (taskId: string, updates: Partial<Task>) => Promise<void>;
+    deleteTask: (task: Task) => void;
     emptyMessage: string;
     sectionRef?: React.RefObject<HTMLDivElement>;
     activeExpansion: { taskId: string; panel: 'pomodoro' | 'details' } | null;
@@ -31,6 +32,7 @@ type TaskPageRowProps = {
     expandedPanel: 'pomodoro' | 'details' | null;
     onToggle: (taskId: string) => void;
     onUpdate: (taskId: string, updates: Partial<Task>) => Promise<void>;
+    onDelete: (task: Task) => void;
     onSelect: (task: Task) => void;
     onTogglePanel: (taskId: string, panel: 'pomodoro' | 'details') => void;
     onAutoExpand: (taskId: string, panel: 'pomodoro') => void;
@@ -41,6 +43,7 @@ const TaskPageRow = React.memo(function TaskPageRow({
     expandedPanel,
     onToggle,
     onUpdate,
+    onDelete,
     onSelect,
     onTogglePanel,
     onAutoExpand,
@@ -61,6 +64,7 @@ const TaskPageRow = React.memo(function TaskPageRow({
             expandedPanel={expandedPanel}
             onTogglePanel={handleTogglePanel}
             onAutoExpand={handleAutoExpand}
+            onDelete={onDelete}
             onSelect={onSelect}
             showScheduledDate
             deferPomodoroHydration
@@ -84,6 +88,7 @@ export const TaskPageSection = React.memo(function TaskPageSection({
     onTaskClick,
     toggleTaskCompletion,
     updateTask,
+    deleteTask,
     emptyMessage,
     sectionRef,
     activeExpansion,
@@ -146,6 +151,7 @@ export const TaskPageSection = React.memo(function TaskPageSection({
                                 task={task}
                                 onToggle={toggleTaskCompletion}
                                 onUpdate={updateTask}
+                                onDelete={deleteTask}
                                 expandedPanel={activeExpansion?.taskId === task.taskId ? activeExpansion.panel : null}
                                 onTogglePanel={onTogglePanel}
                                 onAutoExpand={onAutoExpand}

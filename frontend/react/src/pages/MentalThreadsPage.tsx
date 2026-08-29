@@ -141,8 +141,12 @@ export function MentalThreadsPage() {
                 width: '100%',
                 maxWidth: 1500,
                 mx: 'auto',
+                height: '100%',
+                minHeight: 0,
+                display: 'flex',
+                flexDirection: 'column',
             }}>
-                <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={2} sx={{ mb: 1 }}>
+                <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={2} sx={{ mb: 1, flexShrink: 0 }}>
                     <Box sx={{ textAlign: 'left' }}>
                         <Typography variant="h6" fontWeight={720}>Mental threads</Typography>
                         <Typography variant="caption" color="text.secondary">
@@ -162,7 +166,7 @@ export function MentalThreadsPage() {
                 </Stack>
 
                 {loading ? (
-                    <Box sx={{ display: 'grid', placeItems: 'center', minHeight: 320 }}>
+                    <Box sx={{ flex: 1, minHeight: 0, display: 'grid', placeItems: 'center' }}>
                         <CircularProgress size={32} />
                     </Box>
                 ) : error ? (
@@ -175,8 +179,10 @@ export function MentalThreadsPage() {
                 ) : summary && (<>
                     <Box sx={{
                         mt: 1.5,
+                        flex: 1,
+                        minHeight: 0,
                         display: 'grid',
-                        gridTemplateRows: 'auto auto 1fr',
+                        gridTemplateRows: 'auto auto minmax(0, 1fr)',
                         border: 1,
                         borderColor: 'divider',
                         borderRadius: 3,
@@ -221,9 +227,13 @@ export function MentalThreadsPage() {
                         <Box sx={{
                             display: 'grid',
                             gridTemplateColumns: { xs: '1fr', md: 'minmax(320px, 420px) minmax(0, 1fr)' },
-                            minHeight: 390,
+                            gridTemplateRows: { xs: 'minmax(0, 1fr) minmax(0, 1fr)', md: 'minmax(0, 1fr)' },
+                            minHeight: 0,
+                            overflow: 'hidden',
                         }}>
                             <Box sx={{
+                                minHeight: 0,
+                                overflowY: 'auto',
                                 bgcolor: 'background.default',
                                 borderRightWidth: { xs: 0, md: 1 },
                                 borderRightStyle: 'solid',
@@ -239,7 +249,7 @@ export function MentalThreadsPage() {
                                 />
                             </Box>
                             {selectedThread ? (
-                                <Box sx={{ minWidth: 0 }}>
+                                <Box sx={{ minWidth: 0, minHeight: 0, overflowY: 'auto' }}>
                                     <MentalThreadDetail
                                         thread={selectedThread}
                                         onEdit={() => {

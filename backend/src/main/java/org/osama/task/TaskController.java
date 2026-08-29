@@ -73,7 +73,7 @@ public class TaskController {
 
     @GetMapping("/{taskId}")
     public ResponseEntity<Task> getTask(@PathVariable String taskId) {
-        return taskService.getTask(taskId)
+        return taskService.getTaskForUser(taskId, currentUserService.getCurrentUserId())
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
@@ -95,14 +95,14 @@ public class TaskController {
             @PathVariable String taskId,
             @RequestBody @Valid UpdateTaskRequest request
     ) {
-        return taskService.updateTask(taskId, request)
+        return taskService.updateTask(taskId, request, currentUserService.getCurrentUserId())
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
 
     @DeleteMapping("/{taskId}")
     public ResponseEntity<Void> deleteTask(@PathVariable String taskId) {
-        taskService.deleteTask(taskId);
+        taskService.deleteTask(taskId, currentUserService.getCurrentUserId());
         return ResponseEntity.noContent().build();
     }
 
@@ -110,12 +110,13 @@ public class TaskController {
 
     @GetMapping("/{taskId}/subtasks")
     public ResponseEntity<List<Task>> getSubtasks(@PathVariable String taskId) {
+        String userId = currentUserService.getCurrentUserId();
         // Verify parent task exists
-        if (taskService.getTask(taskId).isEmpty()) {
+        if (taskService.getTaskForUser(taskId, userId).isEmpty()) {
             return ResponseEntity.notFound().build();
         }
 
-        List<Task> subtasks = taskService.getSubtasks(taskId);
+        List<Task> subtasks = taskService.getSubtasks(taskId, userId);
         return ResponseEntity.ok(subtasks);
     }
 

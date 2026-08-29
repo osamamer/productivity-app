@@ -142,6 +142,37 @@ public class UserService {
     }
 
     @Transactional
+    public User updatePreferences(String userId, Boolean includeUnloggedNumericDaysAsZero) {
+        return updatePreferences(userId, includeUnloggedNumericDaysAsZero, null);
+    }
+
+    @Transactional
+    public User updatePreferences(String userId, Boolean includeUnloggedNumericDaysAsZero,
+                                  Boolean autoStartPomodoroSessions) {
+        if (includeUnloggedNumericDaysAsZero == null && autoStartPomodoroSessions == null) {
+            throw new IllegalArgumentException("At least one user preference is required.");
+        }
+
+        User user = userRepository.findUserById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
+        boolean numericPreferenceChanged = includeUnloggedNumericDaysAsZero != null
+                && !Objects.equals(user.getIncludeUnloggedNumericDaysAsZero(), includeUnloggedNumericDaysAsZero);
+        boolean pomodoroPreferenceChanged = autoStartPomodoroSessions != null
+                && !Objects.equals(user.getAutoStartPomodoroSessions(), autoStartPomodoroSessions);
+        if (includeUnloggedNumericDaysAsZero != null) {
+            user.setIncludeUnloggedNumericDaysAsZero(includeUnloggedNumericDaysAsZero);
+        }
+        if (autoStartPomodoroSessions != null) {
+            user.setAutoStartPomodoroSessions(autoStartPomodoroSessions);
+        }
+        User savedUser = userRepository.save(user);
+        log.info("User preferences updated: userId={} includeUnloggedNumericDaysAsZero={} autoStartPomodoroSessions={} changed={}",
+                userId, savedUser.getIncludeUnloggedNumericDaysAsZero(), savedUser.getAutoStartPomodoroSessions(),
+                numericPreferenceChanged || pomodoroPreferenceChanged);
+        return savedUser;
+    }
+
+    @Transactional
     public void deactivateUser(String userId) {
         User user = userRepository.findUserById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));

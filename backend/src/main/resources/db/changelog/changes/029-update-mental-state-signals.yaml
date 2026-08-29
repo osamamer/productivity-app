@@ -1,0 +1,109 @@
+databaseChangeLog:
+  - changeSet:
+      id: 029-update-mental-state-signals
+      author: osama
+      validCheckSum: 8:2a3e699ccc05581e89851f7203426d30
+      comment: Replace the legacy mental-state signals with the six-dimensional check-in model; new dimensions in legacy snapshots start neutral
+      changes:
+        - addColumn:
+            tableName: mental_state_check_in
+            columns:
+              - column:
+                  name: energy
+                  type: int
+              - column:
+                  name: activation
+                  type: int
+              - column:
+                  name: stimulation_hunger
+                  type: int
+              - column:
+                  name: clarity
+                  type: int
+              - column:
+                  name: emotional_load
+                  type: int
+        - sql:
+            sql: |
+              UPDATE mental_state_check_in
+              SET energy = 5,
+                  activation = arousal,
+                  stimulation_hunger = 5,
+                  clarity = 5,
+                  emotional_load = 5
+              WHERE energy IS NULL;
+        - addNotNullConstraint:
+            tableName: mental_state_check_in
+            columnName: energy
+            columnDataType: int
+        - addNotNullConstraint:
+            tableName: mental_state_check_in
+            columnName: activation
+            columnDataType: int
+        - addNotNullConstraint:
+            tableName: mental_state_check_in
+            columnName: stimulation_hunger
+            columnDataType: int
+        - addNotNullConstraint:
+            tableName: mental_state_check_in
+            columnName: clarity
+            columnDataType: int
+        - addNotNullConstraint:
+            tableName: mental_state_check_in
+            columnName: emotional_load
+            columnDataType: int
+        - dropColumn:
+            tableName: mental_state_check_in
+            columnName: stimulation
+        - dropColumn:
+            tableName: mental_state_check_in
+            columnName: hunger
+        - dropColumn:
+            tableName: mental_state_check_in
+            columnName: arousal
+      rollback:
+        - addColumn:
+            tableName: mental_state_check_in
+            columns:
+              - column:
+                  name: stimulation
+                  type: int
+              - column:
+                  name: hunger
+                  type: int
+              - column:
+                  name: arousal
+                  type: int
+        - sql:
+            sql: |
+              UPDATE mental_state_check_in
+              SET stimulation = stimulation_hunger,
+                  hunger = stimulation_hunger,
+                  arousal = activation;
+        - addNotNullConstraint:
+            tableName: mental_state_check_in
+            columnName: stimulation
+            columnDataType: int
+        - addNotNullConstraint:
+            tableName: mental_state_check_in
+            columnName: hunger
+            columnDataType: int
+        - addNotNullConstraint:
+            tableName: mental_state_check_in
+            columnName: arousal
+            columnDataType: int
+        - dropColumn:
+            tableName: mental_state_check_in
+            columnName: energy
+        - dropColumn:
+            tableName: mental_state_check_in
+            columnName: activation
+        - dropColumn:
+            tableName: mental_state_check_in
+            columnName: stimulation_hunger
+        - dropColumn:
+            tableName: mental_state_check_in
+            columnName: clarity
+        - dropColumn:
+            tableName: mental_state_check_in
+            columnName: emotional_load

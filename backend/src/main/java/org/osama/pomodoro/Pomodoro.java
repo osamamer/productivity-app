@@ -27,6 +27,16 @@ public class Pomodoro {
     @Column
     boolean isSessionRunning;
 
+    @Enumerated(EnumType.STRING)
+    @Column
+    private PomodoroPhase phase;
+
+    @Column(nullable = false)
+    private boolean autoStartSessions = true;
+
+    @Column(nullable = false)
+    private boolean secondsMode;
+
     @Column
     int focusDuration;
 

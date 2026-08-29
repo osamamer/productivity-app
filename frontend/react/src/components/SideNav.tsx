@@ -23,6 +23,7 @@ import BarChartIcon from '@mui/icons-material/BarChart';
 import SettingsIcon from '@mui/icons-material/Settings';
 import EditNoteRoundedIcon from '@mui/icons-material/EditNoteRounded';
 import PsychologyIcon from '@mui/icons-material/Psychology';
+import MoodIcon from '@mui/icons-material/Mood';
 import NightlightIcon from '@mui/icons-material/Nightlight';
 import LightModeIcon from '@mui/icons-material/LightMode';
 import LogoutIcon from '@mui/icons-material/Logout';
@@ -110,6 +111,7 @@ export function SideNav() {
                     <SideMenuButton Icon={DashboardRoundedIcon} text="Home" targetPage="/" />
                     <SideMenuButton Icon={AssignmentIcon} text="Tasks" targetPage="/tasks" />
                     <SideMenuButton Icon={PsychologyIcon} text="Mental threads" targetPage="/mental-threads" />
+                    <SideMenuButton Icon={MoodIcon} text="Mental state" targetPage="/mental-state" />
                     <SideMenuButton Icon={EditNoteRoundedIcon} text="Notes" targetPage="/notes" />
                     <SideMenuButton Icon={CalendarMonthIcon} text="Calendar" targetPage="/calendar" />
                     <SideMenuButton Icon={SelfImprovementIcon} text="Meditation" targetPage="/meditation" />

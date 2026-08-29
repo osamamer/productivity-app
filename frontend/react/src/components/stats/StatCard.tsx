@@ -1,12 +1,14 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     Card, CardContent, CardHeader, IconButton,
-    ToggleButton, Stack, Tooltip,
+    FormControl, InputLabel, MenuItem, Select, Stack,
+    ToggleButton, Tooltip,
 } from '@mui/material';
-import { useState } from 'react';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import { format, subDays } from 'date-fns';
 import { StatDefinition } from '../../types/Stats';
+import { statService } from '../../services/api/statService';
 import { StatLineChart } from './StatLineChart';
 import { BooleanCalendarView } from './BooleanCalendarView';
 import { StatSummaryBar } from './StatSummaryBar';
@@ -26,23 +28,76 @@ const CALENDAR_DATE_RANGES = [
 
 interface Props {
     definition: StatDefinition;
-    definitions: StatDefinition[];
+    comparisonDefinitions: StatDefinition[];
     onDelete: (id: string) => void;
     refreshKey: number;
     onEntryChanged?: () => void;
 }
 
-export function StatCard({ definition, definitions, onDelete, refreshKey, onEntryChanged }: Props) {
+export function StatCard({
+    definition,
+    comparisonDefinitions,
+    onDelete,
+    refreshKey,
+    onEntryChanged,
+}: Props) {
     const [dateRange, setDateRange] = useState(30);
     const [insightsOpen, setInsightsOpen] = useState(false);
+    const [insightsAvailable, setInsightsAvailable] = useState(false);
+    const [comparisonId, setComparisonId] = useState('');
+    const availableComparisons = comparisonDefinitions.filter(item => item.id !== definition.id);
+    const comparisonDefinition = availableComparisons.find(item => item.id === comparisonId);
+    const comparisonIds = comparisonDefinitions.map(item => item.id).join(':');
+
+    useEffect(() => {
+        let cancelled = false;
+        setInsightsAvailable(false);
+        const to = new Date();
+        const from = subDays(to, 89);
+        statService.getInsights(
+            definition.id,
+            format(from, 'yyyy-MM-dd'),
+            format(to, 'yyyy-MM-dd'),
+        )
+            .then(insights => {
+                if (!cancelled) {
+                    setInsightsAvailable(insights.correlations.some(correlation => correlation.meaningful));
+                }
+            })
+            .catch(error => {
+                console.error('Failed to check stat insights availability:', error);
+                if (!cancelled) setInsightsAvailable(false);
+            });
+
+        return () => { cancelled = true; };
+    }, [comparisonDefinitions.length, comparisonIds, definition.id, refreshKey]);
+
+    useEffect(() => {
+        const comparisonStillAvailable = comparisonDefinitions.some(
+            item => item.id === comparisonId && item.id !== definition.id,
+        );
+        if (comparisonId && !comparisonStillAvailable) {
+            setComparisonId('');
+        }
+    }, [comparisonDefinitions, comparisonId, definition.id]);
+
+    useEffect(() => {
+        if (!comparisonDefinition && definition.type === 'BOOLEAN' && dateRange > 30) {
+            setDateRange(30);
+        }
+    }, [comparisonDefinition, dateRange, definition.type]);
+
+    const dateRanges = definition.type === 'BOOLEAN' && !comparisonDefinition
+        ? CALENDAR_DATE_RANGES
+        : CHART_DATE_RANGES;
 
     return (
         <Card variant="outlined">
             <CardHeader
-                avatar={
-                    <Tooltip title={`See insights about ${definition.name}`}>
+                avatar={insightsAvailable ? (
+                    <Tooltip title={`See insights about this statistic`}>
                         <IconButton
-                            aria-label={`See insights about ${definition.name}`}
+                            aria-label={`See insights about this statistic`}
                             onClick={() => setInsightsOpen(true)}
                             size="small"
                             color="primary"
@@ -50,7 +105,7 @@ export function StatCard({ definition, definitions, onDelete, refreshKey, onEntr
                             <AutoAwesomeIcon fontSize="small" />
                         </IconButton>
                     </Tooltip>
-                }
+                ) : undefined}
                 title={definition.name}
                 titleTypographyProps={{ variant: 'subtitle1', fontWeight: 600 }}
                 subheader={definition.description}
@@ -66,21 +121,44 @@ export function StatCard({ definition, definitions, onDelete, refreshKey, onEntr
             />
             <CardContent>
                 <StatSummaryBar definition={definition} dateRange={dateRange} refreshKey={refreshKey} />
-                <Stack direction="row" spacing={0.5} sx={{ mb: 2 }}>
-                    {(definition.type === 'BOOLEAN' ? CALENDAR_DATE_RANGES : CHART_DATE_RANGES).map(r => (
-                        <ToggleButton
-                            key={r.value}
-                            value={r.value}
-                            selected={dateRange === r.value}
-                            onChange={() => setDateRange(r.value)}
-                            size="small"
-                            sx={{ px: 1.5, py: 0.25, fontSize: 12, lineHeight: 1.5 }}
+                <Stack
+                    direction={{ xs: 'column', sm: 'row' }}
+                    alignItems={{ xs: 'stretch', sm: 'center' }}
+                    justifyContent="space-between"
+                    spacing={1.5}
+                    sx={{ mb: 2 }}
+                >
+                    <Stack direction="row" spacing={0.5}>
+                        {dateRanges.map(r => (
+                            <ToggleButton
+                                key={r.value}
+                                value={r.value}
+                                selected={dateRange === r.value}
+                                onChange={() => setDateRange(r.value)}
+                                size="small"
+                                sx={{ px: 1.5, py: 0.25, fontSize: 12, lineHeight: 1.5 }}
+                            >
+                                {r.label}
+                            </ToggleButton>
+                        ))}
+                    </Stack>
+                    <FormControl size="small" sx={{ minWidth: { sm: 220 } }} disabled={availableComparisons.length === 0}>
+                        <InputLabel id="stat-overlay-label">Overlay stat</InputLabel>
+                        <Select
+                            labelId="stat-overlay-label"
+                            value={comparisonId}
+                            label="Overlay stat"
+                            onChange={event => setComparisonId(event.target.value)}
+                            inputProps={{ 'aria-label': `Overlay another stat on ${definition.name}` }}
                         >
-                            {r.label}
-                        </ToggleButton>
-                    ))}
+                            <MenuItem value="">None</MenuItem>
+                            {availableComparisons.map(item => (
+                                <MenuItem key={item.id} value={item.id}>{item.name}</MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
                 </Stack>
-                {definition.type === 'BOOLEAN' ? (
+                {definition.type === 'BOOLEAN' && !comparisonDefinition ? (
                     <BooleanCalendarView
                         definition={definition}
                         dateRange={dateRange}
@@ -90,6 +168,7 @@ export function StatCard({ definition, definitions, onDelete, refreshKey, onEntr
                 ) : (
                     <StatLineChart
                         definition={definition}
+                        comparisonDefinition={comparisonDefinition}
                         dateRange={dateRange}
                         refreshKey={refreshKey}
                         onEntryChanged={onEntryChanged}
@@ -100,7 +179,6 @@ export function StatCard({ definition, definitions, onDelete, refreshKey, onEntr
                 open={insightsOpen}
                 onClose={() => setInsightsOpen(false)}
                 definition={definition}
-                definitions={definitions}
             />
         </Card>
     );

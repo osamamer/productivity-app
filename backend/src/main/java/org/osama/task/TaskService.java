@@ -10,6 +10,7 @@ import org.osama.requests.UpdateTaskRequest;
 import org.osama.requests.NewTaskRequest;
 import org.osama.session.task.TaskSession;
 import org.osama.session.task.TaskSessionRepository;
+import org.osama.taskgroup.TaskGroupService;
 import org.osama.user.User;
 import org.osama.user.UserRepository;
 import org.springframework.data.domain.Sort;
@@ -30,13 +31,16 @@ public class TaskService {
     private final TaskSessionRepository taskSessionRepository;
     private final UserRepository userRepository;
     private final MentalThreadRepository mentalThreadRepository;
+    private final TaskGroupService taskGroupService;
 
     public TaskService(TaskRepository taskRepository, TaskSessionRepository taskSessionRepository,
-                       UserRepository userRepository, MentalThreadRepository mentalThreadRepository) {
+                       UserRepository userRepository, MentalThreadRepository mentalThreadRepository,
+                       TaskGroupService taskGroupService) {
         this.taskRepository = taskRepository;
         this.taskSessionRepository = taskSessionRepository;
         this.userRepository = userRepository;
         this.mentalThreadRepository = mentalThreadRepository;
+        this.taskGroupService = taskGroupService;
     }
 
     public List<Task> findTasks(TaskQuery query) {
@@ -67,9 +71,10 @@ public class TaskService {
                 .orElseThrow(() -> new ResourceNotFoundException("Task not found: " + taskId));
     }
 
-    public List<Task> getSubtasks(String parentTaskId) {
+    public List<Task> getSubtasks(String parentTaskId, String userId) {
         TaskQuery query = TaskQuery.builder()
                 .parentId(parentTaskId)
+                .userId(userId)
                 .build();
         return findTasks(query);
     }
@@ -82,6 +87,7 @@ public class TaskService {
         return totalDuration;
     }
 
+    @Transactional
     public Task createTask(NewTaskRequest request, String userId) {
         // Validate required field
         if (request.getName() == null || request.getName().isBlank()) {
@@ -102,8 +108,9 @@ public class TaskService {
         }
 
         String mentalThreadId = normalizeOptionalId(request.getMentalThreadId());
+        MentalThread mentalThread = null;
         if (mentalThreadId != null) {
-            MentalThread mentalThread = mentalThreadRepository.findByIdAndUserId(mentalThreadId, userId)
+            mentalThread = mentalThreadRepository.findByIdAndUserId(mentalThreadId, userId)
                     .orElseThrow(() -> new IllegalArgumentException("Mental thread not found: " + mentalThreadId));
             if (mentalThread.getStatus() != MentalThreadStatus.OPEN) {
                 throw new IllegalArgumentException("Tasks can only be added to an open mental thread.");
@@ -141,13 +148,16 @@ public class TaskService {
         task.setUser(user);
 
         Task savedTask = taskRepository.save(task);
+        if (mentalThread != null) {
+            taskGroupService.addTaskToDefaultMentalThreadGroup(savedTask, mentalThread, userId);
+        }
         log.info("Task created: userId={} taskId={} parentTaskId={} mentalThreadId={}",
                 userId, savedTask.getTaskId(), savedTask.getParentId(), savedTask.getMentalThreadId());
         return savedTask;
     }
 
-    public Optional<Task> updateTask(String taskId, UpdateTaskRequest request) {
-        Optional<Task> existingTask = taskRepository.findTaskByTaskId(taskId);
+    public Optional<Task> updateTask(String taskId, UpdateTaskRequest request, String userId) {
+        Optional<Task> existingTask = taskRepository.findTaskByTaskIdAndUserId(taskId, userId);
         if (existingTask.isEmpty()) {
             log.warn("Task update ignored: taskId={} was not found", taskId);
             return Optional.empty();
@@ -189,8 +199,9 @@ public class TaskService {
         return Optional.of(savedTask);
     }
 
-    public void deleteTask(String taskId) {
-        Optional<Task> taskToDelete = taskRepository.findTaskByTaskId(taskId);
+    @Transactional
+    public void deleteTask(String taskId, String userId) {
+        Optional<Task> taskToDelete = taskRepository.findTaskByTaskIdAndUserId(taskId, userId);
         if (taskToDelete.isEmpty()) {
             log.warn("Task deletion ignored: taskId={} was not found", taskId);
             return;
@@ -199,14 +210,18 @@ public class TaskService {
         // Delete subtasks first
         TaskQuery subtaskQuery = TaskQuery.builder()
                 .parentId(taskId)
+                .userId(userId)
                 .build();
         List<Task> subtasks = findTasks(subtaskQuery);
+        List<String> deletedTaskIds = new ArrayList<>(subtasks.stream().map(Task::getTaskId).toList());
+        deletedTaskIds.add(taskId);
+        taskGroupService.removeTasksFromGroups(deletedTaskIds, userId);
         subtasks.forEach(subtask -> taskRepository.deleteTaskByTaskId(subtask.getTaskId()));
 
         // Delete main task
         taskRepository.deleteTaskByTaskId(taskId);
         log.info("Task deleted: userId={} taskId={} deletedSubtaskCount={}",
-                taskToDelete.get().getUserId(), taskId, subtasks.size());
+                userId, taskId, subtasks.size());
     }
 
     // Convenience methods for common queries

@@ -1,4 +1,4 @@
-import { FormEvent, SyntheticEvent, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, FormEvent, SyntheticEvent, useEffect, useMemo, useState } from 'react';
 import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Stack, Switch, Tab, Tabs, TextField, Typography } from '@mui/material';
 import LightModeIcon from '@mui/icons-material/LightMode';
 import NightlightIcon from '@mui/icons-material/Nightlight';
@@ -6,7 +6,9 @@ import LogoutIcon from '@mui/icons-material/Logout';
 import HomeOutlinedIcon from '@mui/icons-material/HomeOutlined';
 import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
+import QueryStatsOutlinedIcon from '@mui/icons-material/QueryStatsOutlined';
 import SecurityOutlinedIcon from '@mui/icons-material/SecurityOutlined';
+import TimerOutlinedIcon from '@mui/icons-material/TimerOutlined';
 import CheckIcon from '@mui/icons-material/Check';
 import { PageWrapper } from '../components/PageWrapper.tsx';
 import { useUser } from '../contexts/UserContext.tsx';
@@ -15,6 +17,8 @@ import { useSearchParams } from 'react-router-dom';
 import { userService } from '../services/api/userService.ts';
 import axios from 'axios';
 import { SHOW_COMPLETED_HOME_TASKS_STORAGE_KEY } from '../services/utils/homePreferences.ts';
+import { statService } from '../services/api/statService.ts';
+import { getPomodoroConfig, setPomodoroSecondsModePreference } from '../services/api/pomodoroConfigService.ts';
 
 const sectionCardSx = {
     backgroundColor: 'background.paper',
@@ -32,6 +36,9 @@ const sectionHeadingSx = {
 };
 
 const showCompletedTasksDescription = 'Keep completed tasks visible in today\'s Home list.';
+const numericStatsAverageDescription = 'Include days without a logged numeric value as 0 when calculating averages.';
+const pomodoroAutoStartDescription = 'Start each break and focus session automatically, or wait for you to start the next phase.';
+const pomodoroSecondsModeDescription = 'Use 10-second focus and break durations instead of the normal 25/5/15-minute defaults.';
 
 export function SettingsPage() {
     const { user, logout } = useUser();
@@ -54,6 +61,15 @@ export function SettingsPage() {
     const [showCompletedHomeTasks, setShowCompletedHomeTasks] = useState(() => (
         localStorage.getItem(SHOW_COMPLETED_HOME_TASKS_STORAGE_KEY) !== 'false'
     ));
+    const [includeUnloggedNumericDaysAsZero, setIncludeUnloggedNumericDaysAsZero] = useState(false);
+    const [userPreferencesLoading, setUserPreferencesLoading] = useState(true);
+    const [numericStatsPreferenceSaving, setNumericStatsPreferenceSaving] = useState(false);
+    const [numericStatsPreferenceError, setNumericStatsPreferenceError] = useState<string | null>(null);
+    const [pomodoroSecondsMode, setPomodoroSecondsMode] = useState(false);
+    const [autoStartPomodoroSessions, setAutoStartPomodoroSessions] = useState(true);
+    const [pomodoroPreferenceSaving, setPomodoroPreferenceSaving] = useState(false);
+    const [pomodoroConfigLoading, setPomodoroConfigLoading] = useState(true);
+    const [pomodoroConfigError, setPomodoroConfigError] = useState<string | null>(null);
 
     useEffect(() => {
         setActiveTab(initialTab);
@@ -62,6 +78,41 @@ export function SettingsPage() {
     useEffect(() => {
         localStorage.setItem(SHOW_COMPLETED_HOME_TASKS_STORAGE_KEY, String(showCompletedHomeTasks));
     }, [showCompletedHomeTasks]);
+
+    useEffect(() => {
+        let cancelled = false;
+        userService.getPreferences()
+            .then(preferences => {
+                if (!cancelled) {
+                    setIncludeUnloggedNumericDaysAsZero(preferences.includeUnloggedNumericDaysAsZero);
+                    setAutoStartPomodoroSessions(preferences.autoStartPomodoroSessions !== false);
+                }
+            })
+            .catch(error => {
+                console.error('Failed to load user preferences:', error);
+                if (!cancelled) setNumericStatsPreferenceError('Could not load user preferences right now.');
+            })
+            .finally(() => {
+                if (!cancelled) setUserPreferencesLoading(false);
+            });
+        return () => { cancelled = true; };
+    }, []);
+
+    useEffect(() => {
+        let cancelled = false;
+        getPomodoroConfig()
+            .then(config => {
+                if (!cancelled) setPomodoroSecondsMode(config.secondsMode);
+            })
+            .catch(error => {
+                console.error('Failed to load Pomodoro configuration:', error);
+                if (!cancelled) setPomodoroConfigError('Could not load Pomodoro settings right now.');
+            })
+            .finally(() => {
+                if (!cancelled) setPomodoroConfigLoading(false);
+            });
+        return () => { cancelled = true; };
+    }, []);
 
     const passwordsMatch = newPassword === confirmPassword;
     const canSubmitPasswordChange = currentPassword.trim() !== '' && newPassword.trim() !== '' && confirmPassword.trim() !== '' && passwordsMatch;
@@ -102,6 +153,49 @@ export function SettingsPage() {
             }
         } finally {
             setPasswordSaving(false);
+        }
+    }
+
+    async function handleNumericStatsPreferenceChange(event: ChangeEvent<HTMLInputElement>) {
+        const nextValue = event.target.checked;
+        const previousValue = includeUnloggedNumericDaysAsZero;
+        setIncludeUnloggedNumericDaysAsZero(nextValue);
+        setNumericStatsPreferenceSaving(true);
+        setNumericStatsPreferenceError(null);
+
+        try {
+            await userService.updatePreferences({ includeUnloggedNumericDaysAsZero: nextValue });
+            statService.clearSummaryCache();
+        } catch (error) {
+            console.error('Failed to update statistics preferences:', error);
+            setIncludeUnloggedNumericDaysAsZero(previousValue);
+            setNumericStatsPreferenceError('Could not save this preference right now.');
+        } finally {
+            setNumericStatsPreferenceSaving(false);
+        }
+    }
+
+    function handlePomodoroSecondsModeChange(event: ChangeEvent<HTMLInputElement>) {
+        const nextValue = event.target.checked;
+        setPomodoroSecondsMode(nextValue);
+        setPomodoroSecondsModePreference(nextValue);
+    }
+
+    async function handleAutoStartPomodoroSessionsChange(event: ChangeEvent<HTMLInputElement>) {
+        const nextValue = event.target.checked;
+        const previousValue = autoStartPomodoroSessions;
+        setAutoStartPomodoroSessions(nextValue);
+        setPomodoroPreferenceSaving(true);
+        setPomodoroConfigError(null);
+
+        try {
+            await userService.updatePreferences({ autoStartPomodoroSessions: nextValue });
+        } catch (error) {
+            console.error('Failed to update Pomodoro preferences:', error);
+            setAutoStartPomodoroSessions(previousValue);
+            setPomodoroConfigError('Could not save this preference right now.');
+        } finally {
+            setPomodoroPreferenceSaving(false);
         }
     }
 
@@ -198,6 +292,84 @@ export function SettingsPage() {
                                             checked={showCompletedHomeTasks}
                                             onChange={(event) => setShowCompletedHomeTasks(event.target.checked)}
                                             inputProps={{ 'aria-label': 'Show completed tasks on the Home page' }}
+                                        />
+                                    </Box>
+                                </Box>
+
+                                <Box sx={sectionCardSx}>
+                                    <Box sx={sectionHeadingSx}>
+                                        <QueryStatsOutlinedIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
+                                        <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                                            Statistics
+                                        </Typography>
+                                    </Box>
+
+                                    {numericStatsPreferenceError && (
+                                        <Alert severity="warning" sx={{ mb: 2 }}>
+                                            {numericStatsPreferenceError}
+                                        </Alert>
+                                    )}
+                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
+                                        <Box sx={{ textAlign: 'left' }}>
+                                            <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                                                Count unlogged days as zero
+                                            </Typography>
+                                            <Typography variant="body2" color="text.secondary">
+                                                {numericStatsAverageDescription}
+                                            </Typography>
+                                        </Box>
+                                        <Switch
+                                            checked={includeUnloggedNumericDaysAsZero}
+                                            onChange={handleNumericStatsPreferenceChange}
+                                            disabled={userPreferencesLoading || numericStatsPreferenceSaving}
+                                            inputProps={{ 'aria-label': 'Count unlogged days as zero in numeric stat averages' }}
+                                        />
+                                    </Box>
+                                </Box>
+
+                                <Box sx={sectionCardSx}>
+                                    <Box sx={sectionHeadingSx}>
+                                        <TimerOutlinedIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
+                                        <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                                            Pomodoro
+                                        </Typography>
+                                    </Box>
+
+                                    {pomodoroConfigError && (
+                                        <Alert severity="warning" sx={{ mb: 2 }}>
+                                            {pomodoroConfigError}
+                                        </Alert>
+                                    )}
+                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mb: 2 }}>
+                                        <Box sx={{ textAlign: 'left' }}>
+                                            <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                                                Automatically start breaks and focus sessions
+                                            </Typography>
+                                            <Typography variant="body2" color="text.secondary">
+                                                {pomodoroAutoStartDescription}
+                                            </Typography>
+                                        </Box>
+                                        <Switch
+                                            checked={autoStartPomodoroSessions}
+                                            onChange={handleAutoStartPomodoroSessionsChange}
+                                            disabled={userPreferencesLoading || pomodoroPreferenceSaving}
+                                            inputProps={{ 'aria-label': 'Automatically start Pomodoro breaks and focus sessions' }}
+                                        />
+                                    </Box>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
+                                        <Box sx={{ textAlign: 'left' }}>
+                                            <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                                                Use short Pomodoro durations
+                                            </Typography>
+                                            <Typography variant="body2" color="text.secondary">
+                                                {pomodoroSecondsModeDescription}
+                                            </Typography>
+                                        </Box>
+                                        <Switch
+                                            checked={pomodoroSecondsMode}
+                                            onChange={handlePomodoroSecondsModeChange}
+                                            disabled={pomodoroConfigLoading}
+                                            inputProps={{ 'aria-label': 'Use short Pomodoro durations in seconds' }}
                                         />
                                     </Box>
                                 </Box>

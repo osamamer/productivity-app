@@ -10,6 +10,8 @@ import org.osama.user.UserRepository;
 import org.osama.requests.NewTaskRequest;
 import org.osama.task.Task;
 import org.osama.task.TaskService;
+import org.osama.taskgroup.TaskGroupResponse;
+import org.osama.taskgroup.TaskGroupService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.context.annotation.Import;
@@ -28,7 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @DataJpaTest
 @ActiveProfiles("test")
-@Import({MentalThreadService.class, TaskService.class})
+@Import({MentalThreadService.class, TaskService.class, TaskGroupService.class})
 @Execution(ExecutionMode.SAME_THREAD)
 @TestExecutionListeners(
         listeners = {
@@ -48,6 +50,9 @@ class MentalThreadServiceTest {
 
     @Autowired
     private TaskService taskService;
+
+    @Autowired
+    private TaskGroupService taskGroupService;
 
     @BeforeEach
     void setUp() {
@@ -219,6 +224,28 @@ class MentalThreadServiceTest {
         Task task = taskService.createTask(request, USER_ID);
 
         assertEquals(thread.id(), task.getMentalThreadId());
+    }
+
+    @Test
+    void tasksCreatedFromTheSameThreadShareAnAutomaticallyCreatedGroup() {
+        MentalThreadResponse thread = mentalThreadService.createThread(
+                createRequest("Prepare for a difficult conversation", AttentionState.ACTING, 7),
+                USER_ID
+        );
+        NewTaskRequest firstRequest = new NewTaskRequest();
+        firstRequest.setName("Write down the boundary I need");
+        firstRequest.setMentalThreadId(thread.id());
+        NewTaskRequest secondRequest = new NewTaskRequest();
+        secondRequest.setName("Schedule time to talk");
+        secondRequest.setMentalThreadId(thread.id());
+
+        Task firstTask = taskService.createTask(firstRequest, USER_ID);
+        Task secondTask = taskService.createTask(secondRequest, USER_ID);
+
+        List<TaskGroupResponse> groups = taskGroupService.getGroups(USER_ID);
+        assertEquals(1, groups.size());
+        assertEquals(thread.title(), groups.getFirst().name());
+        assertEquals(List.of(firstTask.getTaskId(), secondTask.getTaskId()), groups.getFirst().taskIds());
     }
 
     @Test
