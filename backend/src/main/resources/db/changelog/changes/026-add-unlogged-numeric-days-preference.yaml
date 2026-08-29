@@ -1,0 +1,19 @@
+databaseChangeLog:
+  - changeSet:
+      id: 026-add-unlogged-numeric-days-preference
+      author: osama
+      comment: Store whether numeric stat averages include unlogged days as zero
+      changes:
+        - addColumn:
+            tableName: app_user
+            columns:
+              - column:
+                  name: include_unlogged_numeric_days_as_zero
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+      rollback:
+        - dropColumn:
+            tableName: app_user
+            columnName: include_unlogged_numeric_days_as_zero
