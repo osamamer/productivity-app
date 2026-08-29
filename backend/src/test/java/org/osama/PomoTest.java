@@ -1,6 +1,7 @@
 package org.osama;
 
 import jakarta.transaction.Transactional;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Execution;
@@ -8,6 +9,8 @@ import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.osama.exceptions.ResourceNotFoundException;
 import org.osama.pomodoro.PomodoroRepository;
 import org.osama.pomodoro.PomodoroService;
+import org.osama.pomodoro.PomodoroPhase;
+import org.osama.scheduling.JobType;
 import org.osama.scheduling.ScheduledJob;
 import org.osama.scheduling.ScheduledJobRepository;
 import org.osama.scheduling.ScheduleService;
@@ -20,12 +23,13 @@ import org.osama.user.User;
 import org.osama.user.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Propagation;
 
 import java.time.LocalDateTime;
+import java.time.Duration;
 import java.util.List;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -38,7 +42,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Execution(ExecutionMode.SAME_THREAD)
 public class PomoTest {
 
-    private static final String TEST_USER_ID = "test-user-1";
+    private String testUserId;
 
     @Autowired
     private TimedExecutorService timedExecutorService;
@@ -59,15 +63,23 @@ public class PomoTest {
 
     @BeforeEach
     void setUp() {
+        testUserId = "test-user-" + UUID.randomUUID();
         User testUser = User.builder()
-                .id(TEST_USER_ID)
-                .email("test@test.com")
+                .id(testUserId)
+                .email(testUserId + "@test.com")
                 .firstName("Test")
                 .lastName("User")
-                .username("testuser")
+                .username(testUserId)
                 .active(true)
                 .build();
         userRepository.save(testUser);
+    }
+
+    @AfterEach
+    void tearDown() {
+        pomodoroService.getActivePomodoro(testUserId)
+                .ifPresent(pomodoro -> pomodoroService.endPomodoro(
+                        pomodoro.getAssociatedTaskId(), testUserId));
     }
 
 
@@ -79,13 +91,13 @@ public class PomoTest {
         int longBreakDuration = 2;
         int numFocuses = 3;
         int longBreakCooldown = 2;
-        pomodoroService.startPomodoro(task.getTaskId(), focusDuration, shortBreakDuration, longBreakDuration, numFocuses, longBreakCooldown, TEST_USER_ID);
+        pomodoroService.startPomodoro(task.getTaskId(), focusDuration, shortBreakDuration, longBreakDuration, numFocuses, longBreakCooldown, testUserId);
     }
 
     @Test
     void secondsModeSchedulesPomodoroDurationsInSeconds() {
         Task task = createTask();
-        pomodoroService.createPomodoro(task.getTaskId(), 10, 10, 10, 2, 4, TEST_USER_ID);
+        pomodoroService.createPomodoro(task.getTaskId(), 10, 10, 10, 2, 4, testUserId);
 
         scheduleService.schedulePomoJobs(task.getTaskId(), true);
 
@@ -100,14 +112,13 @@ public class PomoTest {
 
     @Test
     @org.springframework.transaction.annotation.Transactional(propagation = Propagation.NOT_SUPPORTED)
-    @DirtiesContext(methodMode = DirtiesContext.MethodMode.AFTER_METHOD)
     void pomodoroStartsInACommittedFocusSession() {
         Task task = createTask();
 
-        pomodoroService.startPomodoro(task.getTaskId(), 25, 5, 15, 4, 4, TEST_USER_ID);
+        pomodoroService.startPomodoro(task.getTaskId(), 25, 5, 15, 4, 4, testUserId);
 
         var pomodoro = pomodoroRepository
-                .findPomodoroByAssociatedTaskIdAndUserIdAndIsActiveIsTrue(task.getTaskId(), TEST_USER_ID)
+                .findPomodoroByAssociatedTaskIdAndUserIdAndIsActiveIsTrue(task.getTaskId(), testUserId)
                 .orElseThrow();
         assertTrue(pomodoro.isSessionActive());
         assertTrue(pomodoro.isSessionRunning());
@@ -138,7 +149,7 @@ public class PomoTest {
         Task task = createTask();
 
         assertThrows(IllegalArgumentException.class,
-                () -> pomodoroService.startPomodoro(task.getTaskId(), 0, 5, 15, 4, 4, TEST_USER_ID));
+                () -> pomodoroService.startPomodoro(task.getTaskId(), 0, 5, 15, 4, 4, testUserId));
         assertFalse(pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(task.getTaskId()).isPresent());
         assertTrue(scheduledJobRepository.findAllByAssociatedTaskId(task.getTaskId()).isEmpty());
     }
@@ -147,13 +158,13 @@ public class PomoTest {
     void userHasAtMostOneActivePomodoroAcrossTasks() {
         Task firstTask = createTask();
         Task secondTask = createTask();
-        pomodoroService.startPomodoro(firstTask.getTaskId(), 25, 5, 15, 4, 4, TEST_USER_ID);
+        pomodoroService.startPomodoro(firstTask.getTaskId(), 25, 5, 15, 4, 4, testUserId);
 
-        assertEquals(firstTask.getTaskId(), pomodoroService.getActivePomodoro(TEST_USER_ID)
+        assertEquals(firstTask.getTaskId(), pomodoroService.getActivePomodoro(testUserId)
                 .orElseThrow()
                 .getAssociatedTaskId());
         assertThrows(IllegalStateException.class,
-                () -> pomodoroService.startPomodoro(secondTask.getTaskId(), 25, 5, 15, 4, 4, TEST_USER_ID));
+                () -> pomodoroService.startPomodoro(secondTask.getTaskId(), 25, 5, 15, 4, 4, testUserId));
     }
     @Test
     void pomoUserInterventionTest() throws InterruptedException {
@@ -164,7 +175,7 @@ public class PomoTest {
         int numFocuses = 3;
         int longBreakCooldown = 2;
         long pauseTime = 1000;
-        pomodoroService.startPomodoro(task.getTaskId(), focusDuration, shortBreakDuration, longBreakDuration, numFocuses, longBreakCooldown, TEST_USER_ID);
+        pomodoroService.startPomodoro(task.getTaskId(), focusDuration, shortBreakDuration, longBreakDuration, numFocuses, longBreakCooldown, testUserId);
         List<LocalDateTime> oldDueDates = scheduledJobRepository.findAllByAssociatedTaskId(task.getTaskId()).stream().map(ScheduledJob::getDueDate).toList();;
         Thread.sleep(1000);
         taskSessionService.pauseSession(task.getTaskId());
@@ -174,9 +185,68 @@ public class PomoTest {
         for (LocalDateTime date:newDueDates) {
             System.out.println(date);
         }
+        Duration actualShift = Duration.between(oldDueDates.get(0), newDueDates.get(0));
+        assertTrue(actualShift.toMillis() >= pauseTime && actualShift.toMillis() < pauseTime + 500);
         for (int i = 0; i < oldDueDates.size(); i++) {
-            assertEquals(oldDueDates.get(i).plusSeconds(pauseTime/1000), newDueDates.get(i));
+            assertEquals(actualShift, Duration.between(oldDueDates.get(i), newDueDates.get(i)));
         }
+    }
+
+    @Test
+    void resumingDoesNotReactivateCompletedJobs() {
+        Task task = createTask();
+        pomodoroService.createPomodoro(task.getTaskId(), 10, 10, 10, 2, 4, testUserId);
+        scheduleService.schedulePomoJobs(task.getTaskId(), true);
+
+        List<ScheduledJob> jobs = scheduledJobRepository.findAllByAssociatedTaskId(task.getTaskId()).stream()
+                .sorted(java.util.Comparator.comparing(ScheduledJob::getDueDate))
+                .toList();
+        ScheduledJob completedJob = jobs.get(0);
+        LocalDateTime completedDueDate = LocalDateTime.now().minusSeconds(1);
+        completedJob.setDueDate(completedDueDate);
+        completedJob.setScheduled(false);
+        scheduledJobRepository.save(completedJob);
+
+        LocalDateTime pauseStartedAt = LocalDateTime.now();
+        scheduleService.unscheduleTaskJobs(task.getTaskId());
+        scheduleService.resumeTaskJobs(task.getTaskId(), pauseStartedAt, Duration.ofSeconds(5));
+
+        ScheduledJob unchangedCompletedJob = scheduledJobRepository.findById(completedJob.getJobId()).orElseThrow();
+        assertFalse(unchangedCompletedJob.isScheduled());
+        assertEquals(completedDueDate, unchangedCompletedJob.getDueDate());
+        assertTrue(scheduledJobRepository.findAllByScheduledIsTrueAndAssociatedTaskId(task.getTaskId()).size() > 0);
+    }
+
+    @Test
+    @org.springframework.transaction.annotation.Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void endingAnAutomaticBreakEarlyPreservesTheNextFocusDuration() {
+        Task task = createTask();
+        pomodoroService.startPomodoro(task.getTaskId(), 10, 10, 20, 3, 2, true, testUserId);
+
+        ScheduledJob firstFocusEnd = scheduledJobRepository
+                .findAllByScheduledIsTrueAndAssociatedTaskId(task.getTaskId())
+                .stream()
+                .min(java.util.Comparator.comparing(ScheduledJob::getDueDate))
+                .orElseThrow();
+        firstFocusEnd.setScheduled(false);
+        scheduledJobRepository.save(firstFocusEnd);
+        taskSessionService.endSession(task.getTaskId());
+
+        pomodoroService.finishBreakEarly(task.getTaskId(), testUserId);
+
+        var pomodoro = pomodoroRepository
+                .findPomodoroByAssociatedTaskIdAndUserIdAndIsActiveIsTrue(task.getTaskId(), testUserId)
+                .orElseThrow();
+        List<ScheduledJob> pendingJobs = scheduledJobRepository
+                .findAllByScheduledIsTrueAndAssociatedTaskId(task.getTaskId())
+                .stream()
+                .sorted(java.util.Comparator.comparing(ScheduledJob::getDueDate))
+                .toList();
+        assertEquals(PomodoroPhase.FOCUS, pomodoro.getPhase());
+        assertEquals(2, pomodoro.getCurrentFocusNumber());
+        assertEquals(3, pendingJobs.size());
+        assertEquals(JobType.END_SESSION, pendingJobs.get(0).getJobType());
+        assertDurationAroundTenSeconds(pendingJobs.get(0).getDueDate(), LocalDateTime.now());
     }
     public Task createTask() {
         NewTaskRequest taskRequest = new NewTaskRequest();
@@ -184,7 +254,7 @@ public class PomoTest {
         taskRequest.setDescription("Vacuum nasty room");
         taskRequest.setScheduledPerformDateTime("2017-01-13T17:09:42.411");
 
-        return taskService.createTask(taskRequest, TEST_USER_ID);
+        return taskService.createTask(taskRequest, testUserId);
     }
 
     private void assertDurationAroundTenSeconds(LocalDateTime later, LocalDateTime earlier) {

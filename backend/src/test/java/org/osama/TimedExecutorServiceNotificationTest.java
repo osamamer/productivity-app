@@ -28,6 +28,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.inOrder;
 
 @ExtendWith(MockitoExtension.class)
 class TimedExecutorServiceNotificationTest {
@@ -63,7 +64,9 @@ class TimedExecutorServiceNotificationTest {
     void notifiesWhenFocusEndsAutomatically() {
         runJob(JobType.END_SESSION);
 
-        verify(taskSessionService).endSession("task-1");
+        var order = inOrder(scheduledJobRepository, taskSessionService);
+        order.verify(scheduledJobRepository).save(any(ScheduledJob.class));
+        order.verify(taskSessionService).endSession("task-1");
         verifyNotification(PomodoroTransition.FOCUS_ENDED);
     }
 
@@ -106,8 +109,8 @@ class TimedExecutorServiceNotificationTest {
 
         Task task = new Task();
         task.setName("Write tests");
-        when(scheduledJobRepository.findAllByScheduledIsTrueAndDueDateBetween(
-                any(LocalDateTime.class), any(LocalDateTime.class))).thenReturn(List.of(job));
+        when(scheduledJobRepository.findAllByScheduledIsTrueAndDueDateLessThanEqualOrderByDueDateAsc(
+                any(LocalDateTime.class))).thenReturn(List.of(job));
         if (jobType == JobType.END_SESSION || jobType == JobType.START_SESSION || jobType == JobType.END_POMODORO) {
             when(taskRepository.findTaskByTaskId("task-1")).thenReturn(Optional.of(task));
             when(userRepository.findUserById("user-1")).thenReturn(Optional.of(user));

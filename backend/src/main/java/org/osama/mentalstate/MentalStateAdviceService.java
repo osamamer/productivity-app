@@ -76,31 +76,31 @@ public class MentalStateAdviceService {
     private List<String> suggestedActions(DerivedScores scores, int energy, int activation,
                                           int clarity, int emotionalLoad) {
         if (scores.moodRepairNeed() >= 5) {
-            return List.of("EMOTIONAL REPAIR MODE: do not isolate in passive stimulation. Seek warmth, softness, or emotional grounding. Walk outside, message/call someone, comforting show/music, journal, café, shower, gentle game/book, low-pressure human contact.");
+            return List.of("Focus on feeling grounded before trying to be productive. Reach out to someone or choose something gentle and comforting, like a walk, a shower, music, journaling, or a low-pressure show.");
         }
         if (scores.dysregulationScore() >= 6 && scores.recoveryNeed() >= 6) {
-            return List.of("WIRED/TIRED RESET: no stimulation chasing. Walk, shower, food/water, dim lights. Reassess soon.");
+            return List.of("Your body may be tired while your system is still switched on. Step away from stimulating content, then try some water or food, a short walk, a shower, and dimmer lights. Check in again when you feel steadier.");
         }
         if (scores.compulsiveVulnerability() >= 7) {
-            return List.of("DOPAMINE GUARDRAILS: phone away, no reels/vape/music spiral. Choose controlled stimulation: walk, gym, café, friend, book.");
+            return List.of("Make it harder to fall into a stimulation spiral for a while. Put your phone away and choose one contained activity, such as a walk, the gym, a café, a book, or time with a friend.");
         }
         if (scores.recoveryNeed() >= 7) {
-            return List.of("TRUE RECOVERY: eat, hydrate, rest, sleep/nap, low sensory input.");
+            return List.of("Give yourself permission to recover before asking yourself to do more. Eat something, drink some water, and rest in a quiet, low-sensory space.");
         }
         if (scores.productiveCapacity() >= 7) {
-            return List.of("DEEP WORK WINDOW: do the important thing now.");
+            return List.of("You have a good window for focused work. Choose the most important thing and give it your full attention for a while.");
         }
         if (scores.productiveCapacity() >= 6
                 && energy >= 4
                 && clarity >= 5
                 && activation <= 6
                 && emotionalLoad <= 6) {
-            return List.of("ALMOST READY: light boost first—coffee/tea, water, snack, sunlight, 5–10 min walk. Then start a 25-min work sprint.");
+            return List.of("You may just need a small boost before getting started. Try some water, tea or coffee, a snack, sunlight, or a short walk, then begin with a 25-minute work sprint.");
         }
         if (scores.meaningfulEngagementPotential() >= 5) {
-            return List.of("HEALTHY STIMULATION: social, movement, fiction, creative work, focused game/show.");
+            return List.of("Choose something engaging that leaves you feeling better afterward. Social time, movement, fiction, creative work, or a focused game or show could all fit.");
         }
-        return List.of("MAINTENANCE MODE: clean, shower, simple admin, prepare food, calm media.");
+        return List.of("Keep things simple for now. Take care of one small practical task, such as tidying up, showering, making food, or handling an easy bit of admin, then settle into something calm.");
     }
 
     private record DerivedScores(

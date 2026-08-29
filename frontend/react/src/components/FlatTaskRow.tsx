@@ -18,6 +18,7 @@ import TuneIcon from '@mui/icons-material/Tune';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
 import StopIcon from '@mui/icons-material/Stop';
+import SkipNextIcon from '@mui/icons-material/SkipNext';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
@@ -79,8 +80,9 @@ function checkboxColor(importance: number): string {
 }
 
 function formatSeconds(seconds: number): string {
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
+    const safeSeconds = Math.max(0, Math.floor(seconds));
+    const m = Math.floor(safeSeconds / 60);
+    const s = safeSeconds % 60;
     return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
@@ -89,7 +91,9 @@ function isWaitingForPhase(status: PomodoroStatus | null): boolean {
 }
 
 function isBreakPhase(status: PomodoroStatus): boolean {
-    return status.phase ? status.phase === 'BREAK' : !status.sessionActive;
+    return status.phase
+        ? status.phase === 'BREAK' || status.phase === 'WAITING_FOR_BREAK'
+        : !status.sessionActive;
 }
 
 const PRIORITY_OPTIONS = [
@@ -360,6 +364,16 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         finally { setActionLoading(false); }
     };
 
+    const handleFinishBreak = async () => {
+        setActionLoading(true);
+        try {
+            await taskService.finishPomodoroBreak(task.taskId);
+        } catch (e) {
+            console.error('Error ending Pomodoro break:', e);
+        }
+        finally { setActionLoading(false); }
+    };
+
     const handleDateChange = (newDate: Date | null) => {
         if (!newDate) return;
         const pad = (n: number) => String(n).padStart(2, '0');
@@ -417,8 +431,10 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     const useGreenBar = isBreak || isPaused;
     const progressPct = pomodoroStatus
         ? (() => {
-            const total = pomodoroStatus.secondsPassedInSession + pomodoroStatus.secondsUntilNextTransition;
-            return total > 0 ? (pomodoroStatus.secondsPassedInSession / total) * 100 : 0;
+            const passed = Math.max(0, pomodoroStatus.secondsPassedInSession);
+            const remaining = Math.max(0, pomodoroStatus.secondsUntilNextTransition);
+            const total = passed + remaining;
+            return total > 0 ? Math.min(100, (passed / total) * 100) : 0;
         })()
         : 0;
 
@@ -706,6 +722,20 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                     <IconButton size="small" onClick={handlePlayPause} disabled={actionLoading} color="primary">
                                         {!waitingForPhase && pomodoroStatus!.sessionRunning ? <PauseIcon /> : <PlayArrowIcon />}
                                     </IconButton>
+                                )}
+                                {pomodoroStatus!.phase === 'BREAK' && (
+                                    <Tooltip title="End break and start the next focus session">
+                                        <span>
+                                            <IconButton
+                                                size="small"
+                                                onClick={handleFinishBreak}
+                                                disabled={actionLoading}
+                                                color="success"
+                                            >
+                                                <SkipNextIcon />
+                                            </IconButton>
+                                        </span>
+                                    </Tooltip>
                                 )}
                                 <IconButton size="small" onClick={handleStop} disabled={actionLoading} color="error">
                                     <StopIcon color="primary" />

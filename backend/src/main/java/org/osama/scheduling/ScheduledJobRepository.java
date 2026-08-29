@@ -10,6 +10,7 @@ import java.util.List;
 public interface ScheduledJobRepository extends JpaRepository<ScheduledJob, String> {
     List<ScheduledJob> findAllByDueDateBetween(LocalDateTime intervalStart, LocalDateTime intervalEnd);
     List<ScheduledJob> findAllByScheduledIsTrueAndDueDateBetween(LocalDateTime intervalStart, LocalDateTime intervalEnd);
+    List<ScheduledJob> findAllByScheduledIsTrueAndDueDateLessThanEqualOrderByDueDateAsc(LocalDateTime dueDate);
     List<ScheduledJob> findAllByAssociatedTaskId(String taskId);
     List<ScheduledJob> findAllByScheduledIsTrueAndAssociatedTaskId(String taskId);
     List<ScheduledJob> findAllByScheduledIsFalseAndAssociatedTaskId(String taskId);

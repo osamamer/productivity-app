@@ -7,6 +7,7 @@ import { MentalStateScale } from './MentalStateScale';
 
 interface MentalStateCheckInFormProps {
     onSaved: (checkIn: MentalStateCheckIn) => void;
+    embedded?: boolean;
 }
 
 const INITIAL_STATE: MentalStateCheckInRequest = {
@@ -18,7 +19,7 @@ const INITIAL_STATE: MentalStateCheckInRequest = {
     emotionalLoad: 5,
 };
 
-export function MentalStateCheckInForm({ onSaved }: MentalStateCheckInFormProps) {
+export function MentalStateCheckInForm({ onSaved, embedded = false }: MentalStateCheckInFormProps) {
     const [values, setValues] = useState<MentalStateCheckInRequest>(INITIAL_STATE);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -41,13 +42,8 @@ export function MentalStateCheckInForm({ onSaved }: MentalStateCheckInFormProps)
         }
     }
 
-    return (
-        <Paper
-            component="form"
-            onSubmit={handleSubmit}
-            elevation={0}
-            sx={{ p: { xs: 2, sm: 2.5 }, border: 1, borderColor: 'divider', borderRadius: 3, textAlign: 'left' }}
-        >
+    const content = (
+        <>
             <Typography variant="h6" fontWeight={700}>How are you right now?</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 2.5 }}>
                 Rate each signal from 1 to 10. Check in again whenever your state changes.
@@ -117,6 +113,25 @@ export function MentalStateCheckInForm({ onSaved }: MentalStateCheckInFormProps)
                     {saving ? 'Checking in…' : 'See my state'}
                 </Button>
             </Stack>
+        </>
+    );
+
+    if (embedded) {
+        return (
+            <Box component="form" onSubmit={handleSubmit} sx={{ p: { xs: 2, sm: 2.5 } }}>
+                {content}
+            </Box>
+        );
+    }
+
+    return (
+        <Paper
+            component="form"
+            onSubmit={handleSubmit}
+            elevation={0}
+            sx={{ p: { xs: 2, sm: 2.5 }, border: 1, borderColor: 'divider', borderRadius: 3, textAlign: 'left' }}
+        >
+            {content}
         </Paper>
     );
 }

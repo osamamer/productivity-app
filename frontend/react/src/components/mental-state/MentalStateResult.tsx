@@ -1,12 +1,15 @@
-import { Alert, Box, Chip, Paper, Stack, Typography } from '@mui/material';
+import { Alert, Box, Button, Chip, Paper, Stack, Typography } from '@mui/material';
 import TipsAndUpdatesOutlinedIcon from '@mui/icons-material/TipsAndUpdatesOutlined';
 import { MentalStateCheckIn } from '../../types/MentalState';
 
 interface MentalStateResultProps {
     checkIn: MentalStateCheckIn | null;
+    isCurrent?: boolean;
+    embedded?: boolean;
+    onRecheck?: () => void;
 }
 
-export function MentalStateResult({ checkIn }: MentalStateResultProps) {
+export function MentalStateResult({ checkIn, isCurrent = true, embedded = false, onRecheck }: MentalStateResultProps) {
     if (!checkIn) {
         return (
             <Paper elevation={0} sx={{ p: 2.5, border: 1, borderColor: 'divider', borderRadius: 3, textAlign: 'left' }}>
@@ -18,11 +21,13 @@ export function MentalStateResult({ checkIn }: MentalStateResultProps) {
         );
     }
 
-    return (
-        <Paper elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, border: 1, borderColor: 'divider', borderRadius: 3, textAlign: 'left' }}>
+    const content = (
+        <>
             <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2} flexWrap="wrap">
                 <Box>
-                    <Typography variant="overline" color="text.secondary">Your state</Typography>
+                    <Typography variant="overline" color="text.secondary">
+                        {isCurrent ? 'Your current state' : 'Past state'}
+                    </Typography>
                     <Typography variant="h5" fontWeight={750}>{checkIn.state}</Typography>
                 </Box>
                 <Chip
@@ -32,18 +37,37 @@ export function MentalStateResult({ checkIn }: MentalStateResultProps) {
             </Stack>
 
             <Alert severity="info" icon={<TipsAndUpdatesOutlinedIcon />} sx={{ mt: 2.5, alignItems: 'flex-start', textAlign: 'left' }}>
-                <Typography fontWeight={700} sx={{ mb: 0.75, textAlign: 'left' }}>What may help now</Typography>
-                <Box component="ul" sx={{ m: 0, pl: 2.5, display: 'grid', gap: 0.75, textAlign: 'left' }}>
+                <Typography fontWeight={700} sx={{ mb: 0.75, textAlign: 'left' }}>
+                    {isCurrent ? 'What may help now' : 'Recommendation for this check-in'}
+                </Typography>
+                <Stack spacing={1}>
                     {checkIn.suggestedActions.map(item => (
-                        <Typography component="li" variant="body2" key={item} sx={{ textAlign: 'left' }}>
+                        <Typography component="p" variant="body2" key={item} sx={{ m: 0, textAlign: 'left' }}>
                             {item}
                         </Typography>
                     ))}
-                </Box>
+                </Stack>
             </Alert>
             <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1.25 }}>
                 Reflective guidance based on your check-in, not a diagnosis or emergency assessment.
             </Typography>
+            {onRecheck && (
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
+                    <Button variant="outlined" onClick={onRecheck}>
+                        Recheck my state
+                    </Button>
+                </Box>
+            )}
+        </>
+    );
+
+    if (embedded) {
+        return <Box sx={{ p: { xs: 2, sm: 2.5 } }}>{content}</Box>;
+    }
+
+    return (
+        <Paper elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, border: 1, borderColor: 'divider', borderRadius: 3, textAlign: 'left' }}>
+            {content}
         </Paper>
     );
 }

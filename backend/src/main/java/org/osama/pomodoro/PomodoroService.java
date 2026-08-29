@@ -26,7 +26,6 @@ import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
@@ -115,16 +114,14 @@ public class PomodoroService {
         String taskId = pomodoro.getAssociatedTaskId();
         Optional<TaskSession> activeSession = taskSessionRepository
                 .findSessionByAssociatedTaskIdAndActiveIsTrue(taskId);
-        List<ScheduledJob> pastJobs = scheduledJobRepository
-                .findAllByScheduledIsFalseAndAssociatedTaskId(taskId);
         Optional<ScheduledJob> nextJob = scheduledJobRepository
                 .findAllByScheduledIsTrueAndAssociatedTaskId(taskId)
                 .stream()
                 .min(Comparator.comparing(ScheduledJob::getDueDate));
-        pomodoro.setSecondsPassedInSession(calculateSecondsPassedInSession(activeSession, pastJobs));
+        pomodoro.setSecondsPassedInSession(calculateFocusSecondsPassed(activeSession));
         if (nextJob.isPresent()) {
-            long secondsUntilNext = ChronoUnit.SECONDS.between(LocalDateTime.now(), nextJob.get().getDueDate());
-            pomodoro.setSecondsUntilNextTransition(secondsUntilNext);
+            pomodoro.setSecondsUntilNextTransition(
+                    calculateSecondsUntil(nextJob.get().getDueDate(), LocalDateTime.now()));
         }
         pomodoroRepository.save(pomodoro);
 
@@ -142,12 +139,8 @@ public class PomodoroService {
         Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(event.getTaskId())
                 .orElseThrow(() -> new IllegalStateException("No pomodoro found for task."));
 
-        // Shift scheduled jobs by pause duration
-        scheduleService.shiftTaskJobDueDates(
-                event.getTaskId(),
-                (int) event.getPauseDuration().toSeconds()
-        );
-        scheduleService.rescheduleTaskJobs(event.getTaskId());
+        LocalDateTime pauseStartedAt = event.getTimestamp().minus(event.getPauseDuration());
+        scheduleService.resumeTaskJobs(event.getTaskId(), pauseStartedAt, event.getPauseDuration());
 
         pomodoro.setSessionRunning(true);
         pomodoroRepository.save(pomodoro);
@@ -302,6 +295,29 @@ public class PomodoroService {
     }
 
     @Transactional
+    public void finishBreakEarly(String taskId, String userId) {
+        Task task = taskService.getTaskForUserOrThrow(taskId, userId);
+        Pomodoro pomodoro = getOwnedActivePomodoro(task.getTaskId(), userId);
+        if (currentPhase(pomodoro) != PomodoroPhase.BREAK) {
+            throw new IllegalStateException("Pomodoro is not in an active break.");
+        }
+        if (pomodoro.getCurrentFocusNumber() >= pomodoro.getNumFocuses()) {
+            throw new IllegalStateException("Pomodoro has no remaining focus sessions.");
+        }
+
+        pausePomodoroUpdates(taskId);
+        scheduleService.finishBreakEarly(taskId);
+        pomodoro.setPhase(PomodoroPhase.FOCUS);
+        pomodoro.setSecondsPassedInSession(0);
+        pomodoro.setSecondsUntilNextTransition(
+                pomodoroSettings.durationInSeconds(pomodoro.getFocusDuration(), pomodoro.isSecondsMode()));
+        pomodoroRepository.save(pomodoro);
+        taskSessionService.startSession(taskId, true);
+        log.info("Pomodoro next focus started after early break: userId={} taskId={} nextFocusNumber={}",
+                userId, taskId, pomodoro.getCurrentFocusNumber() + 1);
+    }
+
+    @Transactional
     public void endPomodoro(String taskId) {
         Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(taskId)
                 .orElseThrow(() -> new IllegalStateException("No pomodoro found for task."));
@@ -422,8 +438,6 @@ public class PomodoroService {
 
         Optional<TaskSession> activeSession = taskSessionRepository
                 .findSessionByAssociatedTaskIdAndActiveIsTrue(taskId);
-        List<ScheduledJob> pastJobs = scheduledJobRepository
-                .findAllByScheduledIsFalseAndAssociatedTaskId(taskId);
         Optional<ScheduledJob> nextJob = scheduledJobRepository
                 .findAllByScheduledIsTrueAndAssociatedTaskId(taskId)
                 .stream()
@@ -435,8 +449,9 @@ public class PomodoroService {
         }
 
         // Calculate progress
-        long secondsPassed = calculateSecondsPassedInSession(activeSession, pastJobs);
-        long secondsUntilNext = ChronoUnit.SECONDS.between(LocalDateTime.now(), nextJob.get().getDueDate());
+        LocalDateTime now = LocalDateTime.now();
+        long secondsUntilNext = calculateSecondsUntil(nextJob.get().getDueDate(), now);
+        long secondsPassed = calculateSecondsPassed(pomodoro, activeSession, secondsUntilNext);
 
         pomodoro.setSecondsPassedInSession(secondsPassed);
         pomodoro.setSecondsUntilNextTransition(secondsUntilNext);
@@ -445,8 +460,7 @@ public class PomodoroService {
         simpMessagingTemplate.convertAndSend("/topic/pomodoro/" + taskId, pomodoro);
     }
 
-    private long calculateSecondsPassedInSession(Optional<TaskSession> activeSession,
-                                                 List<ScheduledJob> pastJobs) {
+    private long calculateFocusSecondsPassed(Optional<TaskSession> activeSession) {
         if (activeSession.isPresent()) {
             TaskSession taskSession = activeSession.get();
             long totalSeconds = taskSession.getTotalSessionTime().toSeconds();
@@ -454,11 +468,26 @@ public class PomodoroService {
                 totalSeconds += Duration.between(taskSession.getLastUnpauseTime(), LocalDateTime.now()).toSeconds();
             }
             return totalSeconds;
-        } else if (!pastJobs.isEmpty()) {
-            ScheduledJob previousJob = pastJobs.stream()
-                    .max(Comparator.comparing(ScheduledJob::getDueDate))
-                    .get();
-            return Duration.between(previousJob.getDueDate(), LocalDateTime.now()).toSeconds();
+        }
+        return 0;
+    }
+
+    private long calculateSecondsUntil(LocalDateTime dueDate, LocalDateTime now) {
+        long millisUntilDue = Duration.between(now, dueDate).toMillis();
+        return millisUntilDue <= 0 ? 0 : (millisUntilDue + 999) / 1000;
+    }
+
+    private long calculateSecondsPassed(Pomodoro pomodoro,
+                                        Optional<TaskSession> activeSession,
+                                        long secondsUntilNext) {
+        if (currentPhase(pomodoro) == PomodoroPhase.FOCUS) {
+            return calculateFocusSecondsPassed(activeSession);
+        }
+        if (currentPhase(pomodoro) == PomodoroPhase.BREAK) {
+            long breakDuration = pomodoro.getCurrentFocusNumber() % pomodoro.getLongBreakCooldown() == 0
+                    ? pomodoroSettings.durationInSeconds(pomodoro.getLongBreakDuration(), pomodoro.isSecondsMode())
+                    : pomodoroSettings.durationInSeconds(pomodoro.getShortBreakDuration(), pomodoro.isSecondsMode());
+            return Math.max(0, Math.min(breakDuration, breakDuration - secondsUntilNext));
         }
         return 0;
     }
@@ -467,6 +496,14 @@ public class PomodoroService {
         log.debug("Sending async update for task: {}", taskId);
         Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(taskId)
                 .orElseThrow(() -> new IllegalStateException("No pomodoro found for task."));
+        PomodoroPhase phase = currentPhase(pomodoro);
+        boolean hasPendingTransition = !scheduledJobRepository
+                .findAllByScheduledIsTrueAndAssociatedTaskId(taskId)
+                .isEmpty();
+        if (hasPendingTransition && (phase == PomodoroPhase.FOCUS || phase == PomodoroPhase.BREAK)) {
+            updateAndBroadcastPomodoro(taskId);
+            return;
+        }
         sendUpdate(pomodoro);
     }
 

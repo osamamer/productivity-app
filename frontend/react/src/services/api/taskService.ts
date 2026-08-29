@@ -255,6 +255,16 @@ export const taskService = {
         }
     },
 
+    async finishPomodoroBreak(taskId: string): Promise<void> {
+        const response = await fetch(`${POMODORO_URL}/phase/finish-break/${taskId}`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+        });
+        if (!response.ok) {
+            throw new Error('Failed to end the Pomodoro break');
+        }
+    },
+
     // Returns the current user's active pomodoro, or null if none is running.
     async getActivePomodoro(): Promise<PomodoroStatus | null> {
         const response = await fetch(`${POMODORO_URL}/status`, {

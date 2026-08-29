@@ -7,7 +7,9 @@ import org.osama.pomodoro.PomodoroSettings;
 import org.osama.user.User;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
@@ -98,42 +100,77 @@ public class ScheduleService {
 
     private void scheduleFocusEnd(String taskId, Pomodoro pomodoro, boolean secondsMode) {
         long focusDuration = pomodoroSettings.durationInSeconds(pomodoro.getFocusDuration(), secondsMode);
-        createScheduledJob(JobType.END_SESSION,
+        JobType jobType = pomodoro.getCurrentFocusNumber() + 1 >= pomodoro.getNumFocuses()
+                ? JobType.END_POMODORO
+                : JobType.END_SESSION;
+        createScheduledJob(jobType,
                 LocalDateTime.now().plusSeconds(focusDuration), taskId, pomodoro.getUser());
-        log.info("Scheduled manual Pomodoro focus end: userId={} taskId={} durationSeconds={}",
-                pomodoro.getUser().getId(), taskId, focusDuration);
+        log.info("Scheduled manual Pomodoro focus end: userId={} taskId={} durationSeconds={} jobType={}",
+                pomodoro.getUser().getId(), taskId, focusDuration, jobType);
     }
+
     public void unscheduleTaskJobs(String taskId) {
-        List<ScheduledJob> taskJobs = scheduledJobRepository.findAllByAssociatedTaskId(taskId);
+        List<ScheduledJob> taskJobs = scheduledJobRepository.findAllByScheduledIsTrueAndAssociatedTaskId(taskId);
         taskJobs.forEach((job) -> {
             job.setScheduled(false);
             scheduledJobRepository.save(job);
         });
         log.info("Pomodoro jobs unscheduled: taskId={} count={}", taskId, taskJobs.size());
     }
-    public void rescheduleTaskJobs(String taskId) { // For when the user unpauses
-        List<ScheduledJob> taskJobs = scheduledJobRepository.findAllByAssociatedTaskId(taskId);
-        taskJobs.forEach((job) -> {
+
+    public void resumeTaskJobs(String taskId, LocalDateTime pauseStartedAt, Duration pauseDuration) {
+        List<ScheduledJob> pausedJobs = scheduledJobRepository
+                .findAllByScheduledIsFalseAndAssociatedTaskId(taskId)
+                .stream()
+                .filter(job -> !job.getDueDate().isBefore(pauseStartedAt))
+                .toList();
+        pausedJobs.forEach(job -> {
+            job.setDueDate(job.getDueDate().plus(pauseDuration));
             job.setScheduled(true);
             scheduledJobRepository.save(job);
         });
-        log.info("Pomodoro jobs rescheduled: taskId={} count={}", taskId, taskJobs.size());
-
+        log.info("Pomodoro jobs resumed: taskId={} count={} pauseDuration={}",
+                taskId, pausedJobs.size(), pauseDuration);
     }
+
+    public void finishBreakEarly(String taskId) {
+        Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(taskId)
+                .orElseThrow(() -> new IllegalStateException("No active pomodoro found for task: " + taskId));
+        List<ScheduledJob> pendingJobs = scheduledJobRepository
+                .findAllByScheduledIsTrueAndAssociatedTaskId(taskId)
+                .stream()
+                .sorted(Comparator.comparing(ScheduledJob::getDueDate))
+                .toList();
+        if (pendingJobs.isEmpty() || pendingJobs.get(0).getJobType() != JobType.START_SESSION) {
+            throw new IllegalStateException("Pomodoro break does not have a pending end.");
+        }
+
+        ScheduledJob breakEndJob = pendingJobs.get(0);
+        Duration remainingBreak = Duration.between(LocalDateTime.now(), breakEndJob.getDueDate());
+        if (remainingBreak.isNegative()) {
+            remainingBreak = Duration.ZERO;
+        }
+        scheduledJobRepository.delete(breakEndJob);
+
+        if (pomodoro.isAutoStartSessions()) {
+            Duration scheduleShift = remainingBreak.negated();
+            pendingJobs.stream().skip(1).forEach(job -> {
+                job.setDueDate(job.getDueDate().plus(scheduleShift));
+                scheduledJobRepository.save(job);
+            });
+        } else {
+            scheduleFocusEnd(taskId, pomodoro, pomodoro.isSecondsMode());
+        }
+        log.info("Pomodoro break ended early: userId={} taskId={} remainingBreak={}",
+                pomodoro.getUser().getId(), taskId, remainingBreak);
+    }
+
     public void deleteTaskJobs(String taskId) {
         List<ScheduledJob> taskJobs = scheduledJobRepository.findAllByAssociatedTaskId(taskId);
         scheduledJobRepository.deleteAll(taskJobs);
         log.info("Pomodoro jobs deleted: taskId={} count={}", taskId, taskJobs.size());
     }
 
-        public void shiftTaskJobDueDates(String taskId, int shift) {
-        List<ScheduledJob> taskJobs = scheduledJobRepository.findAllByAssociatedTaskId(taskId);
-        taskJobs.forEach((job) -> {
-            job.setDueDate(job.getDueDate().plusSeconds(shift));
-            scheduledJobRepository.save(job);
-            log.info("Shifted {} job to {}", job.getJobType(), job.getDueDate());
-        });
-    }
     private ScheduledJob createScheduledJob(JobType jobType, LocalDateTime dueDate, String taskId, User user) {
         ScheduledJob scheduledJob = new ScheduledJob();
         scheduledJob.setJobId(UUID.randomUUID().toString());

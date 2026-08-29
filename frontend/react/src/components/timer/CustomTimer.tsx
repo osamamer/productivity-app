@@ -11,6 +11,7 @@ import {
     IconButton,
     CircularProgress,
     Chip,
+    Tooltip,
 } from '@mui/material';
 import { HoverCardBox } from '../box/HoverCardBox.tsx';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
@@ -18,6 +19,7 @@ import PauseIcon from '@mui/icons-material/Pause';
 import StopIcon from '@mui/icons-material/Stop';
 import TimerIcon from '@mui/icons-material/Timer';
 import FreeBreakfastIcon from '@mui/icons-material/FreeBreakfast';
+import SkipNextIcon from '@mui/icons-material/SkipNext';
 import { taskService } from '../../services/api';
 import { requestSystemNotificationPermission } from '../../services/systemNotifications';
 import {
@@ -124,6 +126,20 @@ export function CustomTimer({ task }: Props) {
         }
     };
 
+    const handleFinishBreak = async () => {
+        if (!task) return;
+
+        setIsLoading(true);
+        try {
+            await taskService.finishPomodoroBreak(task.taskId);
+        } catch (error) {
+            console.error('Error ending Pomodoro break:', error);
+            setConnectionError(error instanceof Error ? error.message : 'Failed to end break');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     const subscribeToTask = useCallback((taskId: string) => {
         const client = stompClientRef.current;
         if (!client?.active) {
@@ -176,10 +192,6 @@ export function CustomTimer({ task }: Props) {
             console.log('STOMP Client Connected:', frame);
             setIsConnected(true);
             setConnectionError(null);
-
-            if (task?.taskId) {
-                subscribeToTask(task.taskId);
-            }
         };
 
         client.onDisconnect = () => {
@@ -209,7 +221,7 @@ export function CustomTimer({ task }: Props) {
                 client.deactivate();
             }
         };
-    }, [task?.taskId, subscribeToTask]);
+    }, []);
 
     useEffect(() => {
         const cleanup = connectWebSocket();
@@ -273,8 +285,9 @@ export function CustomTimer({ task }: Props) {
     };
 
     const formatTime = (seconds: number): string => {
-        const minutes = Math.floor(seconds / 60);
-        const remainingSeconds = seconds % 60;
+        const safeSeconds = Math.max(0, Math.floor(seconds));
+        const minutes = Math.floor(safeSeconds / 60);
+        const remainingSeconds = safeSeconds % 60;
         return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
     };
 
@@ -282,8 +295,10 @@ export function CustomTimer({ task }: Props) {
 
     const getProgressPercentage = () => {
         if (!status) return 0;
-        const total = status.secondsPassedInSession + status.secondsUntilNextTransition;
-        return total > 0 ? (status.secondsPassedInSession / total) * 100 : 0;
+        const passed = Math.max(0, status.secondsPassedInSession);
+        const remaining = Math.max(0, status.secondsUntilNextTransition);
+        const total = passed + remaining;
+        return total > 0 ? Math.min(100, (passed / total) * 100) : 0;
     };
 
     if (!task) {
@@ -473,22 +488,42 @@ export function CustomTimer({ task }: Props) {
                             </Typography>
 
                             {/* Controls */}
-                            {(status.sessionActive || waitingForPhase) && (
+                            {(status.sessionActive || waitingForPhase || status.phase === 'BREAK') && (
                                 <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
-                                    <IconButton
-                                        onClick={handleTogglePlayPause}
-                                        color="primary"
-                                        size="large"
-                                        disabled={isLoading}
-                                        sx={{
-                                            backgroundColor: 'action.hover',
-                                            '&:hover': {
-                                                backgroundColor: 'action.selected',
-                                            },
-                                        }}
-                                    >
-                                        {!waitingForPhase && status.sessionRunning ? <PauseIcon /> : <PlayArrowIcon />}
-                                    </IconButton>
+                                    {(status.sessionActive || waitingForPhase) && (
+                                        <IconButton
+                                            onClick={handleTogglePlayPause}
+                                            color="primary"
+                                            size="large"
+                                            disabled={isLoading}
+                                            sx={{
+                                                backgroundColor: 'action.hover',
+                                                '&:hover': {
+                                                    backgroundColor: 'action.selected',
+                                                },
+                                            }}
+                                        >
+                                            {!waitingForPhase && status.sessionRunning ? <PauseIcon /> : <PlayArrowIcon />}
+                                        </IconButton>
+                                    )}
+                                    {status.phase === 'BREAK' && (
+                                        <Tooltip title="End break and start the next focus session">
+                                            <span>
+                                                <IconButton
+                                                    onClick={handleFinishBreak}
+                                                    color="success"
+                                                    size="large"
+                                                    disabled={isLoading}
+                                                    sx={{
+                                                        backgroundColor: 'action.hover',
+                                                        '&:hover': { backgroundColor: 'action.selected' },
+                                                    }}
+                                                >
+                                                    <SkipNextIcon />
+                                                </IconButton>
+                                            </span>
+                                        </Tooltip>
+                                    )}
                                     <IconButton
                                         onClick={handleEndSession}
                                         color="error"

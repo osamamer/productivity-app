@@ -72,7 +72,7 @@ class MentalStateServiceTest {
 
         assertEquals("Wired/Tired", response.state());
         assertEquals(1, response.suggestedActions().size());
-        assertTrue(response.suggestedActions().get(0).startsWith("EMOTIONAL REPAIR MODE:"));
+        assertTrue(response.suggestedActions().get(0).startsWith("Focus on feeling grounded"));
     }
 
     @Test
@@ -106,12 +106,17 @@ class MentalStateServiceTest {
         MentalStateCheckInResponse maintenance = mentalStateService.checkIn(
                 new CreateMentalStateCheckInRequest(1, 5, 1, 1, 8, 1), USER_ID);
 
-        assertTrue(wiredTiredReset.suggestedActions().get(0).startsWith("WIRED/TIRED RESET:"));
-        assertTrue(dopamineGuardrails.suggestedActions().get(0).startsWith("DOPAMINE GUARDRAILS:"));
-        assertTrue(deepWork.suggestedActions().get(0).startsWith("DEEP WORK WINDOW:"));
-        assertTrue(almostReady.suggestedActions().get(0).startsWith("ALMOST READY:"));
-        assertTrue(healthyStimulation.suggestedActions().get(0).startsWith("HEALTHY STIMULATION:"));
-        assertTrue(maintenance.suggestedActions().get(0).startsWith("MAINTENANCE MODE:"));
+        assertTrue(wiredTiredReset.suggestedActions().get(0).startsWith("Your body may be tired"));
+        assertTrue(dopamineGuardrails.suggestedActions().get(0).startsWith("Make it harder"));
+        assertTrue(deepWork.suggestedActions().get(0).startsWith("You have a good window"));
+        assertTrue(almostReady.suggestedActions().get(0).startsWith("You may just need"));
+        assertTrue(healthyStimulation.suggestedActions().get(0).startsWith("Choose something engaging"));
+        assertTrue(maintenance.suggestedActions().get(0).startsWith("Keep things simple"));
+
+        assertTrue(List.of(wiredTiredReset, dopamineGuardrails, deepWork, almostReady, healthyStimulation, maintenance)
+                .stream()
+                .flatMap(checkIn -> checkIn.suggestedActions().stream())
+                .noneMatch(action -> action.contains(":") || action.equals(action.toUpperCase())));
     }
 
     @Test

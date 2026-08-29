@@ -54,9 +54,8 @@ public class TimedExecutorService {
 
     @Scheduled(fixedRate = ONE_SECOND)
     public void run() {
-//        log.info("Checking for tasks between {} and {} to run", LocalDateTime.now().minusSeconds(5), LocalDateTime.now().plusSeconds(5));
-        List<ScheduledJob> jobs = scheduledJobRepository.findAllByScheduledIsTrueAndDueDateBetween(LocalDateTime.now().minusSeconds(1),
-                                LocalDateTime.now().plusSeconds(1));
+        List<ScheduledJob> jobs = scheduledJobRepository
+                .findAllByScheduledIsTrueAndDueDateLessThanEqualOrderByDueDateAsc(LocalDateTime.now());
         jobs.forEach(this::doJob);
     }
 
@@ -70,9 +69,10 @@ public class TimedExecutorService {
         }
 
         try {
-            function.accept(scheduledJob.getAssociatedTaskId());
+            // Claim the job before invoking its handler so transition listeners only see the next deadline.
             scheduledJob.setScheduled(false);
             scheduledJobRepository.save(scheduledJob);
+            function.accept(scheduledJob.getAssociatedTaskId());
             try {
                 sendAutomaticTransitionNotification(scheduledJob);
             } catch (Exception e) {
@@ -82,6 +82,8 @@ public class TimedExecutorService {
             log.info("Scheduled job completed: jobId={} jobType={} taskId={}",
                     scheduledJob.getJobId(), scheduledJob.getJobType(), scheduledJob.getAssociatedTaskId());
         } catch (Exception e) {
+            scheduledJob.setScheduled(true);
+            scheduledJobRepository.save(scheduledJob);
             log.error("Scheduled job failed: jobId={} jobType={} taskId={}",
                     scheduledJob.getJobId(), scheduledJob.getJobType(), scheduledJob.getAssociatedTaskId(), e);
         }

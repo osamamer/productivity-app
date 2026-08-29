@@ -1,17 +1,31 @@
 import { useEffect, useState } from 'react';
-import { Alert, Box, CircularProgress, Stack, Typography } from '@mui/material';
+import { Alert, Box, Stack, Typography } from '@mui/material';
 import { PageWrapper } from '../components/PageWrapper';
-import { MentalStateCheckInForm } from '../components/mental-state/MentalStateCheckInForm';
+import { MentalStateCard } from '../components/mental-state/MentalStateCard';
 import { MentalStateHistory } from '../components/mental-state/MentalStateHistory';
-import { MentalStateResult } from '../components/mental-state/MentalStateResult';
 import { mentalStateService } from '../services/api/mentalStateService';
 import { MentalStateCheckIn } from '../types/MentalState';
+
+const CURRENT_STATE_WINDOW_MS = 60 * 60 * 1000;
+
+function isCurrentCheckIn(checkIn: MentalStateCheckIn | null, now: number): boolean {
+    if (!checkIn) return false;
+
+    const recordedAt = Date.parse(checkIn.recordedAt);
+    return Number.isFinite(recordedAt) && now - recordedAt <= CURRENT_STATE_WINDOW_MS;
+}
 
 export function MentalStatePage() {
     const [history, setHistory] = useState<MentalStateCheckIn[]>([]);
     const [selected, setSelected] = useState<MentalStateCheckIn | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [now, setNow] = useState(() => Date.now());
+
+    useEffect(() => {
+        const interval = window.setInterval(() => setNow(Date.now()), 60_000);
+        return () => window.clearInterval(interval);
+    }, []);
 
     useEffect(() => {
         let cancelled = false;
@@ -19,7 +33,7 @@ export function MentalStatePage() {
             .then(checkIns => {
                 if (cancelled) return;
                 setHistory(checkIns);
-                setSelected(checkIns[0] ?? null);
+                setSelected(null);
             })
             .catch(requestError => {
                 console.error('Failed to load mental state history:', requestError);
@@ -33,9 +47,13 @@ export function MentalStatePage() {
 
     const handleSaved = (checkIn: MentalStateCheckIn) => {
         setHistory(current => [checkIn, ...current]);
-        setSelected(checkIn);
+        setSelected(null);
         setError(null);
     };
+
+    const latestCheckIn = history[0] ?? null;
+    const currentCheckIn = isCurrentCheckIn(latestCheckIn, now) ? latestCheckIn : null;
+    const displayedCheckIn = selected ?? currentCheckIn;
 
     return (
         <PageWrapper>
@@ -51,16 +69,18 @@ export function MentalStatePage() {
 
                 <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1fr) 250px' }, gap: 2, alignItems: 'start' }}>
                     <Stack spacing={2}>
-                        <MentalStateCheckInForm onSaved={handleSaved} />
-                        {loading ? (
-                            <Box sx={{ display: 'grid', placeItems: 'center', minHeight: 180 }}>
-                                <CircularProgress size={30} />
-                            </Box>
-                        ) : (
-                            <MentalStateResult checkIn={selected} />
-                        )}
+                        <MentalStateCard
+                            loading={loading}
+                            checkIn={displayedCheckIn}
+                            isCurrent={displayedCheckIn !== null && displayedCheckIn.id === currentCheckIn?.id}
+                            onSaved={handleSaved}
+                        />
                     </Stack>
-                    <MentalStateHistory checkIns={history} selectedId={selected?.id ?? null} onSelect={setSelected} />
+                    <MentalStateHistory
+                        checkIns={history}
+                        selectedId={selected?.id ?? currentCheckIn?.id ?? null}
+                        onSelect={setSelected}
+                    />
                 </Box>
             </Box>
         </PageWrapper>
