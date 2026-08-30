@@ -3,7 +3,6 @@ import {
     Alert,
     Box,
     Button,
-    CircularProgress,
     Dialog,
     DialogActions,
     DialogContent,
@@ -18,6 +17,7 @@ import {
     Stack,
     Switch,
     Typography,
+    Skeleton,
 } from '@mui/material';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import PsychologyIcon from '@mui/icons-material/Psychology';
@@ -41,6 +41,58 @@ import {
 } from '../types/MentalThread.ts';
 
 type StateFilter = AttentionState | 'ALL';
+
+function MentalThreadsLoadingState() {
+    return (
+        <Box sx={{
+            mt: 1.5,
+            flex: 1,
+            minHeight: 0,
+            display: 'grid',
+            gridTemplateRows: 'auto auto minmax(0, 1fr)',
+            border: 1,
+            borderColor: 'divider',
+            borderRadius: 3,
+            bgcolor: 'background.paper',
+            overflow: 'hidden',
+        }}>
+            <Box sx={{ p: 1.5, borderBottom: 1, borderColor: 'divider' }}>
+                <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} justifyContent="space-between">
+                    <Box sx={{ flex: 1 }}>
+                        <Skeleton variant="text" width={150} height={24} />
+                        <Skeleton variant="text" width="42%" height={20} />
+                    </Box>
+                    <Skeleton variant="rounded" height={36} sx={{ width: { xs: '100%', md: 330 } }} />
+                </Stack>
+            </Box>
+            <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2} sx={{ px: 1.5, py: 1, borderBottom: 1, borderColor: 'divider' }}>
+                <Skeleton variant="text" width={90} height={28} />
+                <Skeleton variant="rounded" width={180} height={36} />
+            </Stack>
+            <Box sx={{
+                display: 'grid',
+                gridTemplateColumns: { xs: '1fr', md: 'minmax(320px, 420px) minmax(0, 1fr)' },
+                gridTemplateRows: { xs: 'minmax(0, 1fr) minmax(0, 1fr)', md: 'minmax(0, 1fr)' },
+                minHeight: 0,
+            }}>
+                <Stack spacing={1} sx={{ p: 1.5, bgcolor: 'background.default', borderRight: { md: 1 }, borderBottom: { xs: 1, md: 0 }, borderColor: 'divider' }}>
+                    {[0, 1, 2, 3].map(item => (
+                        <Box key={item} sx={{ p: 1.25, borderRadius: 2, bgcolor: 'background.paper' }}>
+                            <Skeleton variant="text" width={`${58 + item * 7}%`} />
+                            <Skeleton variant="rounded" height={6} sx={{ mt: 1 }} />
+                        </Box>
+                    ))}
+                </Stack>
+                <Stack spacing={1.5} sx={{ p: { xs: 2, md: 3 } }}>
+                    <Skeleton variant="text" width="42%" height={34} />
+                    <Skeleton variant="text" width="88%" />
+                    <Skeleton variant="rounded" height={10} />
+                    <Skeleton variant="text" width="70%" />
+                </Stack>
+            </Box>
+        </Box>
+    );
+}
 
 export function MentalThreadsPage() {
     const {
@@ -141,6 +193,8 @@ export function MentalThreadsPage() {
                 width: '100%',
                 maxWidth: 1500,
                 mx: 'auto',
+                flex: 1,
+                minWidth: 0,
                 height: '100%',
                 minHeight: 0,
                 display: 'flex',
@@ -165,10 +219,8 @@ export function MentalThreadsPage() {
                     </Button>
                 </Stack>
 
-                {loading ? (
-                    <Box sx={{ flex: 1, minHeight: 0, display: 'grid', placeItems: 'center' }}>
-                        <CircularProgress size={32} />
-                    </Box>
+                {loading && !summary ? (
+                    <MentalThreadsLoadingState />
                 ) : error ? (
                     <Alert
                         severity="error"

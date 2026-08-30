@@ -1,6 +1,6 @@
 import { StatDefinition, StatEntry, StatSummary, StatInsights, CreateDefinitionRequest, RecordEntryRequest } from '../../types/Stats';
 import { getAuthCacheScope, getAuthHeaders } from '../utils/authHeaders';
-import { TtlCache } from '../cache/ttlCache';
+import { CachedResource, TtlCache } from '../cache/ttlCache';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 const STATS_URL = `${API_BASE_URL}/api/v1/stats`;
@@ -17,6 +17,10 @@ const summaryCache = new TtlCache<StatSummary>({ ttlMs: DERIVED_STAT_DATA_TTL_MS
 const summaryRequests = new Map<string, Promise<StatSummary>>();
 const insightsCache = new TtlCache<StatInsights>({ ttlMs: DERIVED_STAT_DATA_TTL_MS, maxEntries: STAT_CACHE_MAX_ENTRIES });
 const insightsRequests = new Map<string, Promise<StatInsights>>();
+const dailyEntriesCache = new CachedResource<StatEntry[]>({
+    ttlMs: DERIVED_STAT_DATA_TTL_MS,
+    maxEntries: STAT_CACHE_MAX_ENTRIES,
+});
 const definitionsCache = new TtlCache<StatDefinition[]>({ ttlMs: STAT_DEFINITIONS_TTL_MS, maxEntries: 10 });
 const definitionsRequests = new Map<string, Promise<StatDefinition[]>>();
 
@@ -50,6 +54,18 @@ function isCurrentOrFutureRange(to: string): boolean {
     return to >= today;
 }
 
+function localDateString(date = new Date()): string {
+    return [
+        date.getFullYear(),
+        String(date.getMonth() + 1).padStart(2, '0'),
+        String(date.getDate()).padStart(2, '0'),
+    ].join('-');
+}
+
+function dailyEntriesCacheKey(date: string): string {
+    return `${getAuthCacheScope()}:daily:${date}`;
+}
+
 function invalidateEntryCache(definitionId?: string): void {
     if (!definitionId) {
         entryCache.clear();
@@ -79,6 +95,7 @@ function clearDataCaches(): void {
     entryRequests.clear();
     summaryRequests.clear();
     insightsRequests.clear();
+    dailyEntriesCache.clear();
 }
 
 export const statService = {
@@ -178,9 +195,12 @@ export const statService = {
     },
 
     async getTodayEntries(): Promise<StatEntry[]> {
-        const response = await fetch(`${STATS_URL}/entries/today`, { headers: getAuthHeaders() });
-        if (!response.ok) throw new Error("Failed to fetch today's entries");
-        return response.json();
+        const date = localDateString();
+        return dailyEntriesCache.get(dailyEntriesCacheKey(date), async () => {
+            const response = await fetch(`${STATS_URL}/entries/today`, { headers: getAuthHeaders() });
+            if (!response.ok) throw new Error("Failed to fetch today's entries");
+            return response.json();
+        }, CURRENT_STAT_DATA_TTL_MS);
     },
 
     async getSummary(definitionId: string, from: string, to: string): Promise<StatSummary> {
@@ -268,9 +288,11 @@ export const statService = {
     },
 
     async getEntriesByDate(date: string): Promise<StatEntry[]> {
-        const response = await fetch(`${STATS_URL}/entries/by-date?date=${date}`, { headers: getAuthHeaders() });
-        if (!response.ok) throw new Error(`Failed to fetch entries for ${date}`);
-        return response.json();
+        return dailyEntriesCache.get(dailyEntriesCacheKey(date), async () => {
+            const response = await fetch(`${STATS_URL}/entries/by-date?date=${date}`, { headers: getAuthHeaders() });
+            if (!response.ok) throw new Error(`Failed to fetch entries for ${date}`);
+            return response.json();
+        }, isCurrentOrFutureRange(date) ? CURRENT_STAT_DATA_TTL_MS : DERIVED_STAT_DATA_TTL_MS);
     },
 
     async recordEntry(req: RecordEntryRequest): Promise<StatEntry> {
@@ -284,6 +306,7 @@ export const statService = {
         const entry = { ...responseEntry, statDefinitionId: req.statDefinitionId };
         // Entries, summaries, and insights are all derived from this write.
         invalidateEntryCache(req.statDefinitionId);
+        if (responseEntry.date) dailyEntriesCache.invalidate(dailyEntriesCacheKey(responseEntry.date));
         invalidateSummaryCache(req.statDefinitionId);
         invalidateInsightsCache();
         return entry;

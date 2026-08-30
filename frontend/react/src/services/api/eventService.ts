@@ -1,8 +1,15 @@
 import { CalendarEvent, CalendarEventInput } from '../../types/CalendarEvent';
-import { getAuthHeaders } from '../utils/authHeaders';
+import { getAuthCacheScope, getAuthHeaders } from '../utils/authHeaders';
+import { CachedResource } from '../cache/ttlCache';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 const EVENT_URL = `${API_BASE_URL}/api/v1/events`;
+const EVENTS_TTL_MS = 60 * 1000;
+const eventsCache = new CachedResource<CalendarEvent[]>({ ttlMs: EVENTS_TTL_MS, maxEntries: 4 });
+
+function eventsCacheKey(): string {
+    return `${getAuthCacheScope()}:events`;
+}
 
 async function parseError(response: Response, fallback: string): Promise<Error> {
     const message = await response.text();
@@ -11,9 +18,11 @@ async function parseError(response: Response, fallback: string): Promise<Error> 
 
 export const eventService = {
     async getEvents(): Promise<CalendarEvent[]> {
-        const response = await fetch(EVENT_URL, { headers: getAuthHeaders() });
-        if (!response.ok) throw await parseError(response, 'Failed to load events');
-        return response.json();
+        return eventsCache.get(eventsCacheKey(), async () => {
+            const response = await fetch(EVENT_URL, { headers: getAuthHeaders() });
+            if (!response.ok) throw await parseError(response, 'Failed to load events');
+            return response.json();
+        });
     },
 
     async createEvent(event: CalendarEventInput): Promise<CalendarEvent> {
@@ -23,6 +32,7 @@ export const eventService = {
             body: JSON.stringify(event),
         });
         if (!response.ok) throw await parseError(response, 'Failed to create event');
+        eventsCache.invalidate(eventsCacheKey());
         return response.json();
     },
 
@@ -33,6 +43,7 @@ export const eventService = {
             body: JSON.stringify(event),
         });
         if (!response.ok) throw await parseError(response, 'Failed to update event');
+        eventsCache.invalidate(eventsCacheKey());
         return response.json();
     },
 
@@ -42,5 +53,10 @@ export const eventService = {
             headers: getAuthHeaders(),
         });
         if (!response.ok) throw await parseError(response, 'Failed to delete event');
+        eventsCache.invalidate(eventsCacheKey());
+    },
+
+    clearCache(): void {
+        eventsCache.clear();
     },
 };

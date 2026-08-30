@@ -42,17 +42,20 @@ import {
 
 export type FlatTaskRowProps = {
     task: Task;
-    onToggle: (taskId: string) => void;
+    onToggle: (taskId: string, anchorEl?: HTMLElement) => void;
     onUpdate: (taskId: string, updates: Partial<Task>) => Promise<void>;
     expandedPanel: 'pomodoro' | 'details' | null;
-    onTogglePanel: (panel: 'pomodoro' | 'details') => void;
-    onAutoExpand: (panel: 'pomodoro') => void;
+    onTogglePanel: (taskId: string, panel: 'pomodoro' | 'details') => void;
+    onAutoExpand: (taskId: string, panel: 'pomodoro') => void;
     onDelete?: (task: Task, anchorEl: HTMLElement) => void;
     showScheduledDate?: boolean;
+    showPomodoroButton?: boolean;
+    showDetailsButton?: boolean;
     onSelect?: (task: Task) => void;
     selected?: boolean;
     onSelectionClick?: (task: Task, event: React.MouseEvent<HTMLElement>) => void;
     reorderable?: boolean;
+    draggable?: boolean;
     onDragStart?: (task: Task) => void;
     onDragOver?: (task: Task, event: React.DragEvent<HTMLElement>) => void;
     onDrop?: (task: Task, event: React.DragEvent<HTMLElement>) => void;
@@ -145,10 +148,13 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     onAutoExpand,
     onDelete,
     showScheduledDate = false,
+    showPomodoroButton = true,
+    showDetailsButton = true,
     onSelect,
     selected = false,
     onSelectionClick,
     reorderable = false,
+    draggable = reorderable,
     onDragStart,
     onDragOver,
     onDrop,
@@ -285,7 +291,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         }
 
         if (initialPomodoroStatus?.active) {
-            onAutoExpand('pomodoro');
+            onAutoExpand(task.taskId, 'pomodoro');
             return;
         }
 
@@ -294,7 +300,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                 if (status?.active && status.associatedTaskId === task.taskId) {
                     setPomodoroStatus(status);
                     onPomodoroStatusChangeRef.current?.(task.taskId, status);
-                    onAutoExpand('pomodoro');
+                    onAutoExpand(task.taskId, 'pomodoro');
                 } else if (expectedPomodoroActive) {
                     pomodoroEndedRef.current = true;
                     setPomodoroStatus(null);
@@ -302,17 +308,14 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                 }
             })
             .catch(e => console.error('Error checking pomodoro status:', e));
-    // onAutoExpand is a stable arrow function defined inline in the parent — intentionally
-    // omitted from deps to avoid re-running when the parent re-renders.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [expectedPomodoroActive, initialPomodoroStatus, pomodoroHydrated, task.taskId]);
+    }, [expectedPomodoroActive, initialPomodoroStatus, onAutoExpand, pomodoroHydrated, task.taskId]);
 
     const togglePanel = useCallback((panel: 'pomodoro' | 'details') => {
         if (panel === 'pomodoro') {
             setPomodoroHydrated(true);
         }
-        onTogglePanel(panel);
-    }, [onTogglePanel]);
+        onTogglePanel(task.taskId, panel);
+    }, [onTogglePanel, task.taskId]);
 
     const handleStart = async () => {
         setActionLoading(true);
@@ -451,17 +454,17 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         <Box
             data-task-id={task.taskId}
             data-pomodoro-focus-task={expectedPomodoroActive ? 'true' : undefined}
-            draggable={reorderable}
+            draggable={draggable}
             sx={{
                 position: 'relative',
                 borderRadius: 1.5,
-                border: `1.5px solid ${
+                border: '1.5px solid transparent',
+                borderColor:
                     isActive
                         ? (useGreenBar ? theme.palette.success.main : alpha(activeAccent, 0.7))
                         : selected
                             ? alpha(activeAccent, 0.38)
-                            : 'transparent'
-                }`,
+                            : 'transparent',
                 borderBottom: isActive ? 'none' : undefined,
                 backgroundColor: isActive
                     ? alpha(activeAccent, 0.05)
@@ -491,7 +494,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
             }}
             onClick={handleRowSelection}
             onDragStart={(event) => {
-                if (!reorderable) return;
+                if (!draggable) return;
                 event.stopPropagation();
                 event.dataTransfer.effectAllowed = 'move';
                 event.dataTransfer.setData('text/plain', task.taskId);
@@ -516,45 +519,10 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                 <Checkbox
                     size="small"
                     checked={task.completed}
-                    onChange={() => onToggle(task.taskId)}
+                    onChange={event => onToggle(task.taskId, event.currentTarget.parentElement ?? event.currentTarget)}
                     sx={{ color: cbColor, '&.Mui-checked': { color: cbColor }, mr: 0.5 }}
                 />
-                {isEditingName ? (
-                    <TextField
-                        value={localName}
-                        onChange={(e) => setLocalName(e.target.value)}
-                        onBlur={handleNameCommit}
-                        onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                                e.preventDefault();
-                                handleNameCommit();
-                            }
-                            if (e.key === 'Escape') {
-                                e.preventDefault();
-                                handleNameCancel();
-                            }
-                        }}
-                        variant="standard"
-                        autoFocus
-                        fullWidth
-                        multiline
-                        inputProps={{
-                            style: {
-                                fontSize: '1.05rem',
-                                lineHeight: 1.6,
-                                textAlign: 'left',
-                            },
-                        }}
-                        sx={{
-                            flex: 1,
-                            minWidth: 0,
-                            '& .MuiInputBase-input': {
-                                color: task.completed ? 'text.disabled' : 'text.primary',
-                                textDecoration: task.completed ? 'line-through' : 'none',
-                            },
-                        }}
-                    />
-                ) : (
+                <Box sx={{ flex: 1, minWidth: 0, position: 'relative' }}>
                     <Typography
                         onClick={(e) => {
                             e.stopPropagation();
@@ -562,18 +530,56 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             setIsEditingName(true);
                         }}
                         sx={{
-                            flex: 1,
-                            minWidth: 0,
+                            width: '100%',
                             fontSize: '1.05rem',
                             lineHeight: 1.6,
                             textAlign: 'left',
                             color: task.completed ? 'text.disabled' : 'text.primary',
                             textDecoration: task.completed ? 'line-through' : 'none',
+                            visibility: isEditingName ? 'hidden' : 'visible',
                         }}
                     >
                         {task.name}
                     </Typography>
-                )}
+                    {isEditingName && (
+                        <TextField
+                            value={localName}
+                            onChange={(e) => setLocalName(e.target.value)}
+                            onBlur={handleNameCommit}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    handleNameCommit();
+                                }
+                                if (e.key === 'Escape') {
+                                    e.preventDefault();
+                                    handleNameCancel();
+                                }
+                            }}
+                            variant="standard"
+                            autoFocus
+                            fullWidth
+                            multiline
+                            sx={{
+                                position: 'absolute',
+                                inset: 0,
+                                width: '100%',
+                                '& .MuiInputBase-root': {
+                                    height: '100%',
+                                    padding: 0,
+                                },
+                                '& .MuiInputBase-input': {
+                                    color: task.completed ? 'text.disabled' : 'text.primary',
+                                    textDecoration: task.completed ? 'line-through' : 'none',
+                                    fontSize: '1.05rem',
+                                    lineHeight: 1.6,
+                                    textAlign: 'left',
+                                    padding: 0,
+                                },
+                            }}
+                        />
+                    )}
+                </Box>
 
                 {showScheduledDate && scheduledLabel && (
                     <Typography
@@ -589,49 +595,55 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                     <Box sx={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: '#ef4444', mx: 1.5, flexShrink: 0 }} />
                 )}
 
-                <Box sx={{ display: 'flex', gap: 0.25, ml: 0.5 }}>
-                    <Tooltip title="Pomodoro">
-                        <IconButton
-                            size="small"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                handleRowSelection(e);
-                                togglePanel('pomodoro');
-                            }}
-                            color={expandedPanel === 'pomodoro' || isActive ? 'primary' : 'default'}
-                        >
-                            <TimerIcon sx={{ fontSize: '1.1rem' }} />
-                        </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Details">
-                        <IconButton
-                            size="small"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                handleRowSelection(e);
-                                togglePanel('details');
-                            }}
-                            color={expandedPanel === 'details' ? 'primary' : 'default'}
-                        >
-                            <TuneIcon sx={{ fontSize: '1.1rem' }} />
-                        </IconButton>
-                    </Tooltip>
-                    {onDelete && (
-                        <Tooltip title="Delete task">
-                            <IconButton
-                                size="small"
-                                aria-label={`Delete ${task.name}`}
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    onDelete(task, e.currentTarget);
-                                }}
-                                color="error"
-                            >
-                                <DeleteOutlineIcon sx={{ fontSize: '1.1rem' }} />
-                            </IconButton>
-                        </Tooltip>
-                    )}
-                </Box>
+                {(showPomodoroButton || showDetailsButton || onDelete) && (
+                    <Box sx={{ display: 'flex', gap: 0.25, ml: 0.5 }}>
+                        {showPomodoroButton && (
+                            <Tooltip title="Pomodoro">
+                                <IconButton
+                                    size="small"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleRowSelection(e);
+                                        togglePanel('pomodoro');
+                                    }}
+                                    color={expandedPanel === 'pomodoro' || isActive ? 'primary' : 'default'}
+                                >
+                                    <TimerIcon sx={{ fontSize: '1.1rem' }} />
+                                </IconButton>
+                            </Tooltip>
+                        )}
+                        {showDetailsButton && (
+                            <Tooltip title="Details">
+                                <IconButton
+                                    size="small"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleRowSelection(e);
+                                        togglePanel('details');
+                                    }}
+                                    color={expandedPanel === 'details' ? 'primary' : 'default'}
+                                >
+                                    <TuneIcon sx={{ fontSize: '1.1rem' }} />
+                                </IconButton>
+                            </Tooltip>
+                        )}
+                        {onDelete && (
+                            <Tooltip title="Delete task">
+                                <IconButton
+                                    size="small"
+                                    aria-label={`Delete ${task.name}`}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        onDelete(task, e.currentTarget);
+                                    }}
+                                    color="error"
+                                >
+                                    <DeleteOutlineIcon sx={{ fontSize: '1.1rem' }} />
+                                </IconButton>
+                            </Tooltip>
+                        )}
+                    </Box>
+                )}
             </Box>
 
             {/* ── Pomodoro panel ── */}

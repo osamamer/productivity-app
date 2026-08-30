@@ -1,9 +1,11 @@
 import confetti from 'canvas-confetti';
 
-function getOrigin(anchor: HTMLElement | null | undefined): { x?: number; y?: number } {
+type CelebrationAnchor = HTMLElement | DOMRect;
+
+function getOrigin(anchor: CelebrationAnchor | null | undefined): { x?: number; y?: number } {
     if (!anchor) return { y: 0.72 };
 
-    const rect = anchor.getBoundingClientRect();
+    const rect = 'getBoundingClientRect' in anchor ? anchor.getBoundingClientRect() : anchor;
     if (rect.width === 0 && rect.height === 0) return { y: 0.72 };
 
     return {
@@ -12,7 +14,7 @@ function getOrigin(anchor: HTMLElement | null | undefined): { x?: number; y?: nu
     };
 }
 
-export function celebrateStatLogged(anchor?: HTMLElement | null): void {
+export function celebrateStatLogged(anchor?: CelebrationAnchor | null): void {
     confetti({
         particleCount: 72,
         spread: 58,

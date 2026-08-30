@@ -1,0 +1,25 @@
+databaseChangeLog:
+  - changeSet:
+      id: 033-add-calendar-event-recurrence
+      author: codex
+      comment: Store recurrence rules for calendar event series
+      changes:
+        - addColumn:
+            tableName: calendar_event
+            columns:
+              - column:
+                  name: recurrence_frequency
+                  type: varchar(20)
+                  defaultValue: NONE
+                  constraints:
+                    nullable: false
+              - column:
+                  name: recurrence_end_date
+                  type: date
+      rollback:
+        - dropColumn:
+            tableName: calendar_event
+            columnName: recurrence_end_date
+        - dropColumn:
+            tableName: calendar_event
+            columnName: recurrence_frequency

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-    Box, Button, Typography, CircularProgress, Alert, Stack,
+    Box, Button, Typography, Alert, Stack, Skeleton,
     Tooltip, IconButton, Dialog, DialogTitle, DialogContent,
     DialogContentText, DialogActions,
 } from '@mui/material';
@@ -33,6 +33,49 @@ function isDedicatedStat(definition: StatDefinition): boolean {
     return definition.systemKey !== undefined && DEDICATED_SYSTEM_KEYS.has(definition.systemKey);
 }
 
+function StatsLoadingState() {
+    return (
+        <Box sx={{
+            display: 'flex',
+            flex: 1,
+            gap: 2,
+            overflow: 'hidden',
+            minHeight: 0,
+            flexDirection: { xs: 'column', md: 'row' },
+        }}>
+            <Box sx={{
+                width: { xs: '100%', md: 360 },
+                flexShrink: 0,
+                overflow: 'hidden',
+                borderRadius: 2,
+                border: 1,
+                borderColor: 'divider',
+                p: 1.5,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 1.25,
+                minHeight: { xs: 180, md: 0 },
+                maxHeight: { xs: 270, md: 'none' },
+            }}>
+                {[0, 1, 2, 3, 4].map(item => (
+                    <Box key={item}>
+                        <Skeleton variant="text" width={`${55 + item * 7}%`} />
+                        <Skeleton variant="text" width={`${38 + item * 5}%`} height={18} />
+                    </Box>
+                ))}
+            </Box>
+            <Box sx={{ flex: 1, minWidth: 0, overflow: 'hidden', p: { xs: 0, md: 1 } }}>
+                <Skeleton variant="rounded" height={44} sx={{ mb: 2 }} />
+                <Skeleton variant="rounded" height={260} />
+                <Stack direction="row" spacing={1.5} sx={{ mt: 2 }}>
+                    <Skeleton variant="rounded" height={52} sx={{ flex: 1 }} />
+                    <Skeleton variant="rounded" height={52} sx={{ flex: 1 }} />
+                </Stack>
+            </Box>
+        </Box>
+    );
+}
+
 export function StatsPage() {
     const theme = useTheme();
     const [definitions, setDefinitions] = useState<StatDefinition[]>([]);
@@ -48,6 +91,7 @@ export function StatsPage() {
 
     const loadDefinitions = useCallback(() => {
         setLoading(true);
+        setError(null);
         statService.getDefinitions()
             .then(defs => {
                 setDefinitions(defs);
@@ -161,11 +205,7 @@ export function StatsPage() {
                     </DialogContent>
                 </Dialog>
 
-                {loading && (
-                    <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}>
-                        <CircularProgress size={32} />
-                    </Box>
-                )}
+                {loading && <StatsLoadingState />}
                 {error && <Alert severity="error">{error}</Alert>}
                 {orderError && <Alert severity="error" sx={{ mb: 1.5 }}>{orderError}</Alert>}
 
@@ -185,17 +225,20 @@ export function StatsPage() {
                         gap: 2,
                         overflow: 'hidden',
                         minHeight: 0,
+                        flexDirection: { xs: 'column', md: 'row' },
                     }}>
 
                         {/* Left panel — definition list */}
                         <Box sx={{
-                            width: 360,
+                            width: { xs: '100%', md: 360 },
                             flexShrink: 0,
                             overflowY: 'auto',
                             borderRadius: 2,
                             border: `1px solid ${theme.palette.divider}`,
                             display: 'flex',
                             flexDirection: 'column',
+                            minHeight: { xs: 0, md: 0 },
+                            maxHeight: { xs: 270, md: 'none' },
                         }}>
                             {visibleDefinitions.map((def, i) => {
                                 const isSelected = def.id === selectedId;

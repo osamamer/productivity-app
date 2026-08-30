@@ -2,6 +2,7 @@ import { Task } from '../../types/Task';
 import { TaskToCreate } from '../../types/TaskToCreate';
 import { getAuthHeaders } from '../utils/authHeaders';
 import { PomodoroStatus } from '../../types/PomodoroStatus';
+import { TaskPomodoroStats } from '../../types/TaskPomodoroStats';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 const TASK_URL = `${API_BASE_URL}/api/v1/tasks`;
@@ -83,6 +84,17 @@ export const taskService = {
         });
         if (!response.ok) {
             throw new Error('Failed to fetch subtasks');
+        }
+        return response.json();
+    },
+
+    async getPomodoroStats(taskId: string, signal?: AbortSignal): Promise<TaskPomodoroStats> {
+        const response = await fetch(`${TASK_URL}/${taskId}/pomodoro-stats`, {
+            headers: getAuthHeaders(),
+            signal,
+        });
+        if (!response.ok) {
+            throw new Error('Failed to fetch Pomodoro stats');
         }
         return response.json();
     },

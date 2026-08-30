@@ -13,7 +13,7 @@ public class MentalStateAdviceService {
                 clarity, valence, emotionalLoad);
 
         return new MentalStateAssessment(
-                state(energy, activation, clarity, emotionalLoad),
+                state(scores, energy, activation, clarity, valence, emotionalLoad),
                 suggestedActions(scores, energy, activation, clarity, emotionalLoad)
         );
     }
@@ -64,12 +64,27 @@ public class MentalStateAdviceService {
         );
     }
 
-    private String state(int energy, int activation, int clarity, int emotionalLoad) {
+    private String state(DerivedScores scores, int energy, int activation, int clarity,
+                         int valence, int emotionalLoad) {
         if (activation >= 7 && energy <= 4) return "Wired/Tired";
         if (energy <= 4 && activation <= 4) return "Depleted";
-        if (energy >= 6 && activation <= 6 && clarity >= 6) return "Ready";
+        if (energy >= 6 && activation <= 6 && clarity >= 6
+                && valence >= 5 && emotionalLoad <= 6) return "Ready";
         if (activation >= 7 && clarity <= 5) return "Scattered/Overactivated";
         if (emotionalLoad >= 7) return "Emotionally Loaded";
+        if (valence <= 4) return "Low Mood";
+        if (scores.compulsiveVulnerability() >= 7) return "Stimulation-Seeking";
+        if (scores.productiveCapacity() >= 7) return "Ready";
+        if (scores.productiveCapacity() >= 6
+                && energy >= 4
+                && clarity >= 5
+                && activation <= 6
+                && emotionalLoad <= 6) {
+            return "Almost Ready";
+        }
+        if (scores.meaningfulEngagementPotential() >= 5
+                && valence >= 7
+                && emotionalLoad <= 5) return "Engaged";
         return "Mixed";
     }
 

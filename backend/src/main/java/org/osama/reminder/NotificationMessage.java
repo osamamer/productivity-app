@@ -16,7 +16,9 @@ public record NotificationMessage(
     static NotificationMessage from(Reminder reminder) {
         if (reminder.getNotificationType() == NotificationType.CALENDAR_EVENT && reminder.getEvent() != null) {
             var event = reminder.getEvent();
-            Instant eventStart = event.isAllDay()
+            Instant eventStart = reminder.getEventOccurrenceStart() != null
+                    ? reminder.getEventOccurrenceStart()
+                    : event.isAllDay()
                     ? event.getStartDate().atStartOfDay(ZoneId.of(event.getTimeZone())).toInstant()
                     : event.getStartTime();
             return new NotificationMessage(

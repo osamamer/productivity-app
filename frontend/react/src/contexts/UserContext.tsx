@@ -1,6 +1,11 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, ReactNode } from 'react';
 import keycloak from '../services/keycloak';
 import { statService } from '../services/api/statService';
+import { dayService } from '../services/api/dayService';
+import { eventService } from '../services/api/eventService';
+import { mentalThreadService } from '../services/api/mentalThreadService';
+import { taskGroupService } from '../services/api/taskGroupService';
+import { userService } from '../services/api/userService';
 import { clearMentalThreadHistoryCache } from '../services/cache/mentalThreadHistoryCache';
 import { clearPomodoroConfigCache } from '../services/api/pomodoroConfigService';
 
@@ -51,6 +56,11 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
     const logout = useCallback(() => {
         statService.clearCache();
+        dayService.clearCache();
+        eventService.clearCache();
+        mentalThreadService.clearCache();
+        taskGroupService.clearCache();
+        userService.clearPreferencesCache();
         clearMentalThreadHistoryCache();
         clearPomodoroConfigCache();
         return keycloak.logout({ redirectUri: window.location.origin + '/' });

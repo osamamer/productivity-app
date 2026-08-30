@@ -48,6 +48,13 @@ public class CalendarEvent {
     @Column(name = "time_zone", nullable = false, length = 80)
     private String timeZone;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "recurrence_frequency", nullable = false, length = 20)
+    private RecurrenceFrequency recurrenceFrequency = RecurrenceFrequency.NONE;
+
+    @Column(name = "recurrence_end_date")
+    private LocalDate recurrenceEndDate;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

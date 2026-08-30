@@ -5,10 +5,28 @@ import {
     MentalThreadLoadEntry,
     MentalThreadSummary,
 } from '../../types/MentalThread.ts';
-import { getAuthHeaders } from '../utils/authHeaders.ts';
+import { getAuthCacheScope, getAuthHeaders } from '../utils/authHeaders.ts';
+import { CachedResource } from '../cache/ttlCache.ts';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 const MENTAL_THREADS_URL = `${API_BASE_URL}/api/v1/mental-threads`;
+const MENTAL_THREADS_TTL_MS = 30 * 1000;
+const MENTAL_SUMMARY_TTL_MS = 30 * 1000;
+const threadsCache = new CachedResource<MentalThread[]>({ ttlMs: MENTAL_THREADS_TTL_MS, maxEntries: 4 });
+const summaryCache = new CachedResource<MentalThreadSummary>({ ttlMs: MENTAL_SUMMARY_TTL_MS, maxEntries: 4 });
+
+function threadsCacheKey(includeClosed: boolean): string {
+    return `${getAuthCacheScope()}:threads:${includeClosed}`;
+}
+
+function summaryCacheKey(): string {
+    return `${getAuthCacheScope()}:summary`;
+}
+
+function invalidateReadCaches(): void {
+    threadsCache.clear();
+    summaryCache.clear();
+}
 
 function jsonHeaders() {
     return {
@@ -26,20 +44,23 @@ async function responseJson<T>(response: Response, fallbackMessage: string): Pro
 }
 
 export const mentalThreadService = {
-    async getThreads(includeClosed = false, signal?: AbortSignal): Promise<MentalThread[]> {
-        const response = await fetch(`${MENTAL_THREADS_URL}?includeClosed=${includeClosed}`, {
-            headers: getAuthHeaders(),
-            signal,
+    // Cached reads must outlive an individual component mount so Strict Mode cleanup cannot abort the shared request.
+    async getThreads(includeClosed = false): Promise<MentalThread[]> {
+        return threadsCache.get(threadsCacheKey(includeClosed), async () => {
+            const response = await fetch(`${MENTAL_THREADS_URL}?includeClosed=${includeClosed}`, {
+                headers: getAuthHeaders(),
+            });
+            return responseJson(response, 'Failed to load mental threads');
         });
-        return responseJson(response, 'Failed to load mental threads');
     },
 
-    async getSummary(signal?: AbortSignal): Promise<MentalThreadSummary> {
-        const response = await fetch(`${MENTAL_THREADS_URL}/summary`, {
-            headers: getAuthHeaders(),
-            signal,
+    async getSummary(): Promise<MentalThreadSummary> {
+        return summaryCache.get(summaryCacheKey(), async () => {
+            const response = await fetch(`${MENTAL_THREADS_URL}/summary`, {
+                headers: getAuthHeaders(),
+            });
+            return responseJson(response, 'Failed to load the mental load summary');
         });
-        return responseJson(response, 'Failed to load the mental load summary');
     },
 
     async createThread(input: MentalThreadInput): Promise<MentalThread> {
@@ -48,7 +69,9 @@ export const mentalThreadService = {
             headers: jsonHeaders(),
             body: JSON.stringify(input),
         });
-        return responseJson(response, 'Failed to create the mental thread');
+        const result = await responseJson<MentalThread>(response, 'Failed to create the mental thread');
+        invalidateReadCaches();
+        return result;
     },
 
     async updateThread(threadId: string, input: MentalThreadInput): Promise<MentalThread> {
@@ -57,7 +80,9 @@ export const mentalThreadService = {
             headers: jsonHeaders(),
             body: JSON.stringify(input),
         });
-        return responseJson(response, 'Failed to update the mental thread');
+        const result = await responseJson<MentalThread>(response, 'Failed to update the mental thread');
+        invalidateReadCaches();
+        return result;
     },
 
     async closeThread(threadId: string, input: CloseMentalThreadInput): Promise<MentalThread> {
@@ -66,7 +91,9 @@ export const mentalThreadService = {
             headers: jsonHeaders(),
             body: JSON.stringify(input),
         });
-        return responseJson(response, 'Failed to close the mental thread');
+        const result = await responseJson<MentalThread>(response, 'Failed to close the mental thread');
+        invalidateReadCaches();
+        return result;
     },
 
     async reopenThread(threadId: string): Promise<MentalThread> {
@@ -74,7 +101,9 @@ export const mentalThreadService = {
             method: 'POST',
             headers: getAuthHeaders(),
         });
-        return responseJson(response, 'Failed to reopen the mental thread');
+        const result = await responseJson<MentalThread>(response, 'Failed to reopen the mental thread');
+        invalidateReadCaches();
+        return result;
     },
 
     async deleteThread(threadId: string): Promise<void> {
@@ -83,6 +112,7 @@ export const mentalThreadService = {
             headers: getAuthHeaders(),
         });
         if (!response.ok) throw new Error('Failed to delete the mental thread');
+        invalidateReadCaches();
     },
 
     async getLoadHistory(threadId: string, signal?: AbortSignal): Promise<MentalThreadLoadEntry[]> {
@@ -100,5 +130,10 @@ export const mentalThreadService = {
             body: JSON.stringify({ capacity }),
         });
         if (!response.ok) throw new Error('Failed to save today\'s capacity');
+        summaryCache.invalidate(summaryCacheKey());
+    },
+
+    clearCache(): void {
+        invalidateReadCaches();
     },
 };

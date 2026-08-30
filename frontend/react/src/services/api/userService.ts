@@ -1,11 +1,20 @@
 import axios from 'axios';
 import apiClient from '../utils/axiosConfig';
+import { getAuthCacheScope } from '../utils/authHeaders';
+import { CachedResource } from '../cache/ttlCache';
 
 const API_BASE_URL = 'http://localhost:8080/api/v1';
 
 export interface UserPreferences {
     includeUnloggedNumericDaysAsZero: boolean;
     autoStartPomodoroSessions: boolean;
+}
+
+const USER_PREFERENCES_TTL_MS = 5 * 60 * 1000;
+const preferencesCache = new CachedResource<UserPreferences>({ ttlMs: USER_PREFERENCES_TTL_MS, maxEntries: 4 });
+
+function preferencesCacheKey(): string {
+    return `${getAuthCacheScope()}:preferences`;
 }
 
 export const userService = {
@@ -80,12 +89,19 @@ export const userService = {
     },
 
     async getPreferences(): Promise<UserPreferences> {
-        const response = await apiClient.get<UserPreferences>('/api/v1/users/me/preferences');
-        return response.data;
+        return preferencesCache.get(preferencesCacheKey(), async () => {
+            const response = await apiClient.get<UserPreferences>('/api/v1/users/me/preferences');
+            return response.data;
+        });
     },
 
     async updatePreferences(preferences: Partial<UserPreferences>): Promise<UserPreferences> {
         const response = await apiClient.patch<UserPreferences>('/api/v1/users/me/preferences', preferences);
+        preferencesCache.set(preferencesCacheKey(), response.data);
         return response.data;
+    },
+
+    clearPreferencesCache(): void {
+        preferencesCache.clear();
     },
 };

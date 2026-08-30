@@ -13,6 +13,8 @@ public record CalendarEventResponse(
         Instant startTime,
         Instant endTime,
         String timeZone,
+        RecurrenceFrequency recurrenceFrequency,
+        LocalDate recurrenceEndDate,
         Integer reminderMinutesBefore,
         Instant createdAt,
         Instant updatedAt

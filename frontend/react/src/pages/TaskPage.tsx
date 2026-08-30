@@ -1,14 +1,17 @@
-import React, {useCallback, useMemo, useRef, useState} from 'react';
-import { Box, Typography } from '@mui/material';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { Box, Button, Popover, Typography } from '@mui/material';
 import { PageWrapper } from '../components/PageWrapper';
 import { useGlobalTasks } from '../contexts/TaskContext';
 import { TaskToCreate } from '../types/TaskToCreate';
 import { taskService } from '../services/api';
-import { HighlightedTaskBox } from '../components/box/HighlightedTaskBox';
-import { TaskPageComposer } from '../components/task-page/TaskPageComposer.tsx';
-import { TaskPageSection } from '../components/task-page/TaskPageSection.tsx';
-import { TaskPageOverview } from '../components/task-page/TaskPageOverview.tsx';
-import { Task } from '../types/Task.tsx';
+import { TaskPageComposer } from '../components/task-page/TaskPageComposer';
+import { TaskPageSection } from '../components/task-page/TaskPageSection';
+import { TaskDetailsPanel } from '../components/task-page/TaskDetailsPanel';
+import { Task } from '../types/Task';
+import { getShowCompletedHomeTasks } from '../services/utils/homePreferences';
+
+type SectionName = 'today' | 'comingUp' | 'leftovers';
+type DeleteRequest = { task: Task; anchorEl: HTMLElement };
 
 export function TaskPage() {
     const {
@@ -24,49 +27,50 @@ export function TaskPage() {
         removeTaskFromState,
     } = useGlobalTasks();
 
-    const [expandedSections, setExpandedSections] = useState<{
-        today: boolean;
-        comingUp: boolean;
-        leftovers: boolean;
-    }>({
+    const [expandedSections, setExpandedSections] = useState<Record<SectionName, boolean>>({
         today: true,
-        comingUp: false,
+        comingUp: true,
         leftovers: false,
     });
-    const [activeExpansion, setActiveExpansion] = useState<{ taskId: string; panel: 'pomodoro' | 'details' } | null>(null);
-
+    const [deleteRequest, setDeleteRequest] = useState<DeleteRequest | null>(null);
+    const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+    const allTasksRef = useRef(allTasks);
     const todayRef = useRef<HTMLDivElement>(null);
     const comingUpRef = useRef<HTMLDivElement>(null);
     const leftoversRef = useRef<HTMLDivElement>(null);
-    const allTasksRef = useRef(allTasks);
-    const expandedSectionsRef = useRef(expandedSections);
     allTasksRef.current = allTasks;
-    expandedSectionsRef.current = expandedSections;
 
     const createTask = useCallback(async (task: TaskToCreate) => {
         try {
             const createdTask = await taskService.createTask(task);
             addTaskToState(createdTask);
             setHighlightedTask(createdTask);
-        } catch (err) {
-            console.error('Error creating task:', err);
+        } catch (error) {
+            console.error('Error creating task:', error);
             await fetchAllTasks(true);
         }
     }, [addTaskToState, fetchAllTasks, setHighlightedTask]);
 
+    const createSubtask = useCallback(async (task: TaskToCreate): Promise<Task> => {
+        try {
+            return await taskService.createTask(task);
+        } catch (error) {
+            console.error('Error creating subtask:', error);
+            throw error;
+        }
+    }, []);
+
     const toggleTaskCompletion = useCallback(async (taskId: string) => {
-        const task = allTasksRef.current.find(t => t.taskId === taskId);
+        const task = allTasksRef.current.find(candidate => candidate.taskId === taskId);
         if (task) {
             updateTaskInState(taskId, { completed: !task.completed });
         }
 
         try {
             await taskService.toggleTaskCompletion(taskId, task ? !task.completed : undefined);
-        } catch (err) {
-            console.error('Error toggling task:', err);
-            if (task) {
-                updateTaskInState(taskId, { completed: task.completed });
-            }
+        } catch (error) {
+            console.error('Error toggling task:', error);
+            if (task) updateTaskInState(taskId, { completed: task.completed });
         }
     }, [updateTaskInState]);
 
@@ -76,270 +80,243 @@ export function TaskPage() {
 
         try {
             await taskService.updateTask(taskId, updates);
-        } catch (err) {
-            console.error('Error updating task:', err);
-            if (originalTask) {
-                updateTaskInState(taskId, originalTask);
-            }
+        } catch (error) {
+            console.error('Error updating task:', error);
+            if (originalTask) updateTaskInState(taskId, originalTask);
             await fetchAllTasks(true);
         }
     }, [fetchAllTasks, updateTaskInState]);
 
-    const changeDescription = useCallback(async (description: string, taskId: string) => {
-        updateTaskInState(taskId, { description: description });
+    const requestDelete = useCallback((task: Task, anchorEl: HTMLElement) => {
+        if (!deleteSubmitting) setDeleteRequest({ task, anchorEl });
+    }, [deleteSubmitting]);
 
-        try {
-            await taskService.updateDescription(taskId, description);
-        } catch (err) {
-            console.error('Error updating description:', err);
-            await fetchAllTasks(true);
-        }
-    }, [fetchAllTasks, updateTaskInState]);
+    const closeDeleteRequest = useCallback(() => {
+        if (!deleteSubmitting) setDeleteRequest(null);
+    }, [deleteSubmitting]);
 
-    const deleteTask = useCallback(async (task: Task) => {
-        if (!window.confirm(`Delete “${task.name}” and its subtasks?`)) return;
+    const confirmDelete = useCallback(async () => {
+        if (!deleteRequest || deleteSubmitting) return;
 
+        const task = deleteRequest.task;
+        setDeleteSubmitting(true);
         try {
             await taskService.deleteTask(task.taskId);
             removeTaskFromState(task.taskId);
-            if (highlightedTask?.taskId === task.taskId) {
-                setHighlightedTask(null);
-            }
-        } catch (err) {
-            console.error('Error deleting task:', err);
+            if (highlightedTask?.taskId === task.taskId) setHighlightedTask(null);
+        } catch (error) {
+            console.error('Error deleting task:', error);
             await fetchAllTasks(true);
+        } finally {
+            setDeleteSubmitting(false);
+            setDeleteRequest(null);
         }
-    }, [fetchAllTasks, highlightedTask, removeTaskFromState, setHighlightedTask]);
+    }, [deleteRequest, deleteSubmitting, fetchAllTasks, highlightedTask, removeTaskFromState, setHighlightedTask]);
 
-    const handleChipClick = useCallback((section: 'today' | 'comingUp' | 'leftovers') => {
-        const wasExpanded = expandedSectionsRef.current[section];
-        setExpandedSections(prev => ({
-            ...prev,
-            [section]: !prev[section],
-        }));
-
-        // Scroll to the section
-        const refs = {
-            today: todayRef,
-            comingUp: comingUpRef,
-            leftovers: leftoversRef,
-        };
-
-        if (!wasExpanded) {
-            setTimeout(() => {
-                refs[section].current?.scrollIntoView({
-                    behavior: 'smooth',
-                    block: 'end'
-                });
-            }, 100);
-        }
+    const toggleSection = useCallback((section: SectionName) => {
+        setExpandedSections(previous => ({ ...previous, [section]: !previous[section] }));
     }, []);
 
-    const todayTasksExist = Array.isArray(todayTasks) && todayTasks.length > 0;
-    const futureTasksExist = Array.isArray(futureTasks) && futureTasks.length > 0;
-    const pastTasksExist = Array.isArray(pastTasks) && pastTasks.length > 0;
-    const tasksExist = todayTasksExist || futureTasksExist || pastTasksExist;
-
-    const taskCounts = useMemo(() => {
-        const counts = {
-            completedToday: 0,
-            completedFuture: 0,
-            completedPast: 0,
-            overduePending: 0,
-            completed: 0,
-            highPriorityPending: 0,
-        };
-
-        for (const task of todayTasks) {
-            if (task.completed) counts.completedToday += 1;
-        }
-        for (const task of futureTasks) {
-            if (task.completed) counts.completedFuture += 1;
-        }
-        for (const task of pastTasks) {
-            if (task.completed) {
-                counts.completedPast += 1;
-            } else {
-                counts.overduePending += 1;
-            }
-        }
-        for (const task of allTasks) {
-            if (task.completed) counts.completed += 1;
-            if (!task.completed && task.importance > 7) counts.highPriorityPending += 1;
-        }
-
-        return counts;
-    }, [allTasks, todayTasks, futureTasks, pastTasks]);
-
-    const handleTogglePanel = useCallback((taskId: string, panel: 'pomodoro' | 'details') => {
-        const selectedTask = allTasksRef.current.find(task => task.taskId === taskId) ?? null;
-        setHighlightedTask(selectedTask);
-        setActiveExpansion(prev => (
-            prev?.taskId === taskId && prev.panel === panel ? null : { taskId, panel }
-        ));
+    const handleTaskSelect = useCallback((task: Task) => {
+        setHighlightedTask(task);
     }, [setHighlightedTask]);
 
-    const handleAutoExpand = useCallback((taskId: string, panel: 'pomodoro') => {
-        const selectedTask = allTasksRef.current.find(task => task.taskId === taskId) ?? null;
-        setHighlightedTask(selectedTask);
-        setActiveExpansion({ taskId, panel });
+    const closeTaskDetails = useCallback(() => {
+        setHighlightedTask(null);
     }, [setHighlightedTask]);
+
+    const showCompletedTasks = getShowCompletedHomeTasks();
+    const visibleTodayTasks = useMemo(
+        () => todayTasks.filter(task => !task.parentId && (showCompletedTasks || !task.completed)),
+        [showCompletedTasks, todayTasks],
+    );
+    const visibleFutureTasks = useMemo(
+        () => futureTasks.filter(task => !task.parentId && (showCompletedTasks || !task.completed)),
+        [futureTasks, showCompletedTasks],
+    );
+    const visiblePastTasks = useMemo(
+        () => pastTasks.filter(task => !task.parentId && (showCompletedTasks || !task.completed)),
+        [pastTasks, showCompletedTasks],
+    );
+
+    const hasTodayTasks = visibleTodayTasks.length > 0;
+    const hasFutureTasks = visibleFutureTasks.length > 0;
+    const hasPastTasks = visiblePastTasks.length > 0;
+    const hasTasks = hasTodayTasks || hasFutureTasks || hasPastTasks;
+    const selectedTask = highlightedTask && (showCompletedTasks || !highlightedTask.completed)
+        ? highlightedTask
+        : null;
+
+    const sectionRefs: Record<SectionName, React.RefObject<HTMLDivElement>> = {
+        today: todayRef,
+        comingUp: comingUpRef,
+        leftovers: leftoversRef,
+    };
+
+    const handlePageClick = (event: React.MouseEvent<HTMLElement>) => {
+        const target = event.target;
+        if (target instanceof Element && (
+            target.closest('[data-task-id]') || target.closest('[data-task-details]')
+        )) {
+            return;
+        }
+        setHighlightedTask(null);
+    };
 
     return (
         <PageWrapper>
-            <Box sx={{
-                display: 'flex',
-                gap: { xs: 4, lg: 0 },
-                height: '100%',
-                flexWrap: 'wrap',
-            }}>
-                <Box sx={{
-                    flex: { xs: '1 1 100%', lg: '1 1 60%' },
-                    minWidth: 0,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 3,
-                    pr: { lg: 4 },
-                }}>
-                    <TaskPageComposer
-                        todayCount={todayTasks.length}
-                        upcomingCount={futureTasks.length}
-                        pastCount={pastTasks.length}
-                        expandedSections={expandedSections}
-                        onCreateTask={createTask}
-                        onToggleSection={handleChipClick}
-                    />
-
-                    <Box sx={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 3,
-                    }}>
-                        <TaskPageSection
-                            section="today"
-                            title="Today"
-                            tasks={todayTasks}
-                            completedCount={taskCounts.completedToday}
-                            expanded={expandedSections.today}
-                            onToggle={handleChipClick}
-                            onTaskClick={setHighlightedTask}
-                            toggleTaskCompletion={toggleTaskCompletion}
-                            updateTask={updateTask}
-                            deleteTask={deleteTask}
-                            emptyMessage="No tasks scheduled for today"
-                            sectionRef={todayRef}
-                            activeExpansion={activeExpansion}
-                            onTogglePanel={handleTogglePanel}
-                            onAutoExpand={handleAutoExpand}
-                        />
-                        <TaskPageSection
-                            section="comingUp"
-                            title="Coming Up"
-                            tasks={futureTasks}
-                            completedCount={taskCounts.completedFuture}
-                            expanded={expandedSections.comingUp}
-                            onToggle={handleChipClick}
-                            onTaskClick={setHighlightedTask}
-                            toggleTaskCompletion={toggleTaskCompletion}
-                            updateTask={updateTask}
-                            deleteTask={deleteTask}
-                            emptyMessage="No upcoming tasks"
-                            sectionRef={comingUpRef}
-                            activeExpansion={activeExpansion}
-                            onTogglePanel={handleTogglePanel}
-                            onAutoExpand={handleAutoExpand}
-                        />
-                        <TaskPageSection
-                            section="leftovers"
-                            title="Leftovers"
-                            tasks={pastTasks}
-                            completedCount={taskCounts.completedPast}
-                            expanded={expandedSections.leftovers}
-                            onToggle={handleChipClick}
-                            onTaskClick={setHighlightedTask}
-                            toggleTaskCompletion={toggleTaskCompletion}
-                            updateTask={updateTask}
-                            deleteTask={deleteTask}
-                            emptyMessage="No overdue tasks"
-                            sectionRef={leftoversRef}
-                            activeExpansion={activeExpansion}
-                            onTogglePanel={handleTogglePanel}
-                            onAutoExpand={handleAutoExpand}
-                        />
-                    </Box>
-
-                    {!tasksExist && (
-                        <Typography
-                            variant="h5"
-                            sx={{
-                                textAlign: 'left',
-                                color: 'text.secondary',
-                                fontStyle: 'italic',
-                                py: 4,
-                            }}
-                        >
-                            Nothing to do. Enjoy your free time!
-                        </Typography>
-                    )}
-                </Box>
-
+            <Box
+                onClick={handlePageClick}
+                sx={{
+                    flex: 1,
+                    width: '100%',
+                }}
+            >
                 <Box
                     sx={{
-                        display: { xs: 'block', lg: 'flex' },
-                        flex: { xs: '1 1 100%', lg: '0 0 auto' },
-                        alignSelf: 'stretch',
+                        flex: 1,
+                        width: '100%',
+                        maxWidth: 1180,
+                        ml: { xs: 'auto', lg: 0 },
+                        mr: 'auto',
+                        px: { xs: 1, sm: 3 },
+                        py: { xs: 2, md: 4 },
+                        boxSizing: 'border-box',
                     }}
                 >
+                <Box
+                    sx={{
+                        display: 'grid',
+                        gridTemplateColumns: { xs: 'minmax(0, 1fr)', lg: 'minmax(0, 1fr) minmax(320px, 380px)' },
+                        gap: { xs: 4, lg: 7 },
+                        alignItems: 'start',
+                    }}
+                >
+                    <Box sx={{ minWidth: 0 }}>
+                        <TaskPageComposer onCreateTask={createTask} />
+
+                        <Box>
+                            <TaskPageSection
+                                section="today"
+                                title="Today"
+                                tasks={visibleTodayTasks}
+                                completedCount={visibleTodayTasks.filter(task => task.completed).length}
+                                expanded={expandedSections.today}
+                                onToggle={toggleSection}
+                                onTaskClick={handleTaskSelect}
+                                selectedTaskId={selectedTask?.taskId}
+                                toggleTaskCompletion={toggleTaskCompletion}
+                                updateTask={updateTask}
+                                emptyMessage="No tasks scheduled for today"
+                                sectionRef={sectionRefs.today}
+                            />
+
+                            {hasFutureTasks && (
+                                <TaskPageSection
+                                    section="comingUp"
+                                    title="Coming up"
+                                    tasks={visibleFutureTasks}
+                                    completedCount={visibleFutureTasks.filter(task => task.completed).length}
+                                    expanded={expandedSections.comingUp}
+                                    onToggle={toggleSection}
+                                    onTaskClick={handleTaskSelect}
+                                    selectedTaskId={selectedTask?.taskId}
+                                    toggleTaskCompletion={toggleTaskCompletion}
+                                    updateTask={updateTask}
+                                    emptyMessage="No upcoming tasks"
+                                    sectionRef={sectionRefs.comingUp}
+                                    showScheduledDate
+                                />
+                            )}
+
+                            {hasPastTasks && (
+                                <TaskPageSection
+                                    section="leftovers"
+                                    title="Leftovers"
+                                    tasks={visiblePastTasks}
+                                    completedCount={visiblePastTasks.filter(task => task.completed).length}
+                                    expanded={expandedSections.leftovers}
+                                    onToggle={toggleSection}
+                                    onTaskClick={handleTaskSelect}
+                                    selectedTaskId={selectedTask?.taskId}
+                                    toggleTaskCompletion={toggleTaskCompletion}
+                                    updateTask={updateTask}
+                                    emptyMessage="No older tasks"
+                                    sectionRef={sectionRefs.leftovers}
+                                    showScheduledDate
+                                />
+                            )}
+                        </Box>
+
+                        {!hasTasks && (
+                            <Typography variant="body1" color="text.secondary" sx={{ py: 2 }}>
+                                Nothing to do. Enjoy your free time!
+                            </Typography>
+                        )}
+                    </Box>
+
                     <Box
                         sx={{
-                            width: { xs: '100%', lg: '1px' },
-                            height: { xs: '1px', lg: 'auto' },
-                            backgroundColor: 'divider',
-                            mb: { xs: 0, lg: 0 },
+                            minWidth: 0,
+                            position: { lg: 'sticky' },
+                            top: { lg: 24 },
+                            alignSelf: 'start',
                         }}
-                    />
-                </Box>
-
-                <Box sx={{
-                    flex: { xs: '1 1 100%', lg: '1 1 35%' },
-                    minWidth: 0,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 3,
-                    pl: { lg: 4 },
-                }}>
-                    {highlightedTask ? (
-                        <HighlightedTaskBox
-                            key={highlightedTask.taskId}
-                            task={highlightedTask}
-                            handleChangeDescription={changeDescription}
-                            toggleTaskCompletion={toggleTaskCompletion}
+                    >
+                        {selectedTask ? (
+                            <TaskDetailsPanel
+                                task={selectedTask}
+                                onClose={closeTaskDetails}
+                                onUpdate={updateTask}
+                                onToggleCompletion={toggleTaskCompletion}
+                                onDelete={requestDelete}
+                                onCreateSubtask={createSubtask}
                             />
-                    ) : (
-                        <Typography
-                            variant="h6"
-                            color="text.secondary"
-                            sx={{
-                                textAlign: 'left',
-                                py: 4,
-                                fontStyle: 'italic',
-                            }}
-                        >
-                            Click on a task to view details
-                        </Typography>
-                    )}
-
-                    <TaskPageOverview
-                        totalCount={allTasks.length}
-                        completedCount={taskCounts.completed}
-                        pendingCount={allTasks.length - taskCounts.completed}
-                        todayCount={todayTasks.length}
-                        upcomingCount={futureTasks.length}
-                        overdueCount={taskCounts.overduePending}
-                        highPriorityCount={taskCounts.highPriorityPending}
-                    />
+                        ) : null}
+                    </Box>
                 </Box>
             </Box>
+            </Box>
+
+            <Popover
+                open={deleteRequest !== null}
+                anchorEl={deleteRequest?.anchorEl}
+                onClose={closeDeleteRequest}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                slotProps={{
+                    paper: {
+                        sx: {
+                            p: 1.5,
+                            width: 270,
+                            maxWidth: 'calc(100vw - 32px)',
+                            borderRadius: 2.5,
+                        },
+                    },
+                }}
+            >
+                {deleteRequest && (
+                    <Box>
+                        <Typography variant="body2" sx={{ mb: 1.25 }}>
+                            Delete “{deleteRequest.task.name}” and its subtasks?
+                        </Typography>
+                        <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 0.75 }}>
+                            <Button size="small" onClick={closeDeleteRequest} disabled={deleteSubmitting}>
+                                Cancel
+                            </Button>
+                            <Button
+                                size="small"
+                                color="error"
+                                variant="contained"
+                                onClick={() => void confirmDelete()}
+                                disabled={deleteSubmitting}
+                            >
+                                {deleteSubmitting ? 'Deleting…' : 'Delete'}
+                            </Button>
+                        </Box>
+                    </Box>
+                )}
+            </Popover>
         </PageWrapper>
     );
 }

@@ -7,6 +7,9 @@ import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.osama.pomodoro.PomodoroTransition;
 import org.osama.scheduling.JobType;
 import org.osama.scheduling.ScheduledJob;
+import org.osama.event.CalendarEventRequest;
+import org.osama.event.CalendarEventService;
+import org.osama.event.RecurrenceFrequency;
 import org.osama.user.User;
 import org.osama.user.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,8 +22,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @SpringBootTest
@@ -37,6 +42,7 @@ class NotificationServiceTest {
     @Autowired private NotificationService notificationService;
     @Autowired private ReminderRepository reminderRepository;
     @Autowired private UserRepository userRepository;
+    @Autowired private CalendarEventService calendarEventService;
 
     private User user;
 
@@ -111,6 +117,29 @@ class NotificationServiceTest {
         assertEquals(1, due.size());
         assertEquals(NotificationType.TASK_REMINDER, due.get(0).type());
         assertEquals("/tasks", due.get(0).targetUrl());
+    }
+
+    @Test
+    void acknowledgingARecurringCalendarReminderSchedulesItsNextOccurrence() {
+        CalendarEventRequest request = new CalendarEventRequest();
+        request.setTitle("Weekly planning");
+        request.setStartTime(Instant.parse("2027-01-10T10:00:00Z"));
+        request.setEndTime(Instant.parse("2027-01-10T11:00:00Z"));
+        request.setTimeZone("Asia/Amman");
+        request.setRecurrenceFrequency(RecurrenceFrequency.WEEKLY);
+        request.setRecurrenceEndDate(LocalDate.of(2027, 2, 28));
+
+        var event = calendarEventService.createEvent(request, USER_ID);
+        var reminder = reminderRepository.findByEventId(event.id()).orElseThrow();
+        String firstReminderId = reminder.getReminderId();
+
+        notificationService.acknowledge(firstReminderId, USER_ID);
+
+        Reminder nextReminder = reminderRepository.findByEventId(event.id()).orElseThrow();
+        assertNotEquals(firstReminderId, nextReminder.getReminderId());
+        assertEquals(Instant.parse("2027-01-17T10:00:00Z"), nextReminder.getEventOccurrenceStart());
+        assertEquals(Instant.parse("2027-01-17T10:00:00Z").minusSeconds(24 * 60 * 60),
+                nextReminder.getDateTime());
     }
 
     private ScheduledJob job(String jobId) {

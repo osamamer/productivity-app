@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
     Alert,
     Box,
-    CircularProgress,
     IconButton,
+    Skeleton,
     Stack,
     Tooltip,
     Typography,
@@ -127,15 +127,38 @@ export function MeditationStats({ refreshKey }: MeditationStatsProps) {
 
     if (loading && !data) {
         return (
-            <Box sx={{ display: 'grid', minHeight: 360, placeItems: 'center' }}>
-                <Stack direction="row" justifyContent="center">
-                    <CircularProgress size={24} />
+            <Box sx={{ width: '100%', p: { xs: 2, sm: 3, lg: 4 }, minHeight: { xs: 460, sm: 480, md: 460 }, boxSizing: 'border-box' }}>
+                <Stack spacing={2.5}>
+                    <Stack direction="row" justifyContent="space-between" alignItems="center">
+                        <Stack direction="row" spacing={1.25} alignItems="center">
+                            <Skeleton variant="circular" width={40} height={40} />
+                            <Box>
+                                <Skeleton variant="text" width={120} />
+                                <Skeleton variant="text" width={180} />
+                            </Box>
+                        </Stack>
+                        <Skeleton variant="rounded" width={125} height={32} />
+                    </Stack>
+                    <Stack direction="row" spacing={1}>
+                        <Skeleton variant="rounded" height={76} sx={{ flex: 1 }} />
+                        <Skeleton variant="rounded" height={76} sx={{ flex: 1 }} />
+                    </Stack>
+                    <Box>
+                        <Skeleton variant="text" width="55%" />
+                        <Skeleton variant="rounded" height={210} />
+                    </Box>
                 </Stack>
             </Box>
         );
     }
 
-    if (error && !data) return <Alert severity="warning" sx={{ m: { xs: 2, sm: 3, lg: 4 } }}>Your meditation history could not be loaded.</Alert>;
+    if (error && !data) {
+        return (
+            <Box sx={{ minHeight: { xs: 460, sm: 480, md: 460 }, p: { xs: 2, sm: 3, lg: 4 }, boxSizing: 'border-box' }}>
+                <Alert severity="warning">Your meditation history could not be loaded.</Alert>
+            </Box>
+        );
+    }
     if (!data) return null;
 
     const yesDates = new Set(
@@ -157,6 +180,8 @@ export function MeditationStats({ refreshKey }: MeditationStatsProps) {
             sx={{
                 width: '100%',
                 p: { xs: 2, sm: 3, lg: 4 },
+                minHeight: { xs: 460, sm: 480, md: 460 },
+                boxSizing: 'border-box',
             }}
         >
             <Stack spacing={2.5}>

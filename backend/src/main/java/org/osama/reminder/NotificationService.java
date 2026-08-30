@@ -1,6 +1,8 @@
 package org.osama.reminder;
 
 import lombok.extern.slf4j.Slf4j;
+import org.osama.event.CalendarEvent;
+import org.osama.event.RecurrenceFrequency;
 import org.osama.exceptions.ResourceNotFoundException;
 import org.osama.pomodoro.PomodoroTransition;
 import org.osama.scheduling.ScheduledJob;
@@ -11,8 +13,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.YearMonth;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.UUID;
 
 @Service
 @Slf4j
@@ -65,10 +72,76 @@ public class NotificationService {
         Reminder reminder = reminderRepository.findByReminderIdAndUserId(notificationId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Notification not found: " + notificationId));
         if (reminder.getAcknowledgedAt() == null) {
+            if (scheduleNextRecurringEventReminder(reminder, Instant.now())) {
+                return;
+            }
             reminder.setAcknowledgedAt(Instant.now());
             log.info("Notification acknowledged: userId={} notificationId={} type={}",
                     userId, notificationId, reminder.getNotificationType());
         }
+    }
+
+    private boolean scheduleNextRecurringEventReminder(Reminder reminder, Instant now) {
+        CalendarEvent event = reminder.getEvent();
+        if (event == null || event.getRecurrenceFrequency() == null
+                || event.getRecurrenceFrequency() == RecurrenceFrequency.NONE) {
+            return false;
+        }
+
+        ZoneId zone = ZoneId.of(event.getTimeZone());
+        Instant currentOccurrenceStart = reminder.getEventOccurrenceStart();
+        if (currentOccurrenceStart == null) {
+            currentOccurrenceStart = event.isAllDay()
+                    ? event.getStartDate().atStartOfDay(zone).toInstant()
+                    : event.getStartTime();
+        }
+
+        ZonedDateTime nextOccurrence = currentOccurrenceStart.atZone(zone);
+        do {
+            nextOccurrence = nextOccurrence(event, nextOccurrence, zone);
+            if (event.getRecurrenceEndDate() != null
+                    && nextOccurrence.toLocalDate().isAfter(event.getRecurrenceEndDate())) {
+                return false;
+            }
+        } while (!nextOccurrence.toInstant().isAfter(now));
+
+        String userId = reminder.getUser().getId();
+        Reminder nextReminder = new Reminder();
+        nextReminder.setReminderId(UUID.randomUUID().toString());
+        nextReminder.setUser(reminder.getUser());
+        nextReminder.setEvent(event);
+        nextReminder.setEventOccurrenceStart(nextOccurrence.toInstant());
+        nextReminder.setDateTime(nextOccurrence.toInstant()
+                .minusSeconds(reminder.getMinutesBefore() * 60L));
+        nextReminder.setRepeat(0);
+        nextReminder.setNotificationType(reminder.getNotificationType());
+        nextReminder.setTitle(reminder.getTitle());
+        nextReminder.setBody(reminder.getBody());
+        nextReminder.setTargetUrl(reminder.getTargetUrl());
+        nextReminder.setMinutesBefore(reminder.getMinutesBefore());
+
+        reminderRepository.delete(reminder);
+        reminderRepository.flush();
+        reminderRepository.save(nextReminder);
+        log.info("Recurring calendar reminder advanced: userId={} eventId={} nextReminderId={} occurrenceStart={}",
+                userId, event.getId(), nextReminder.getReminderId(), nextOccurrence.toInstant());
+        return true;
+    }
+
+    private ZonedDateTime nextOccurrence(CalendarEvent event, ZonedDateTime current, ZoneId zone) {
+        return switch (event.getRecurrenceFrequency()) {
+            case DAILY -> current.plusDays(1);
+            case WEEKLY -> current.plusWeeks(1);
+            case MONTHLY -> {
+                LocalDate anchorDate = event.isAllDay()
+                        ? event.getStartDate()
+                        : event.getStartTime().atZone(zone).toLocalDate();
+                YearMonth nextMonth = YearMonth.from(current).plusMonths(1);
+                LocalDate nextDate = nextMonth.atDay(Math.min(anchorDate.getDayOfMonth(), nextMonth.lengthOfMonth()));
+                yield ZonedDateTime.of(nextDate, current.toLocalTime(), zone);
+            }
+            case NONE -> throw new IllegalStateException("A non-recurring event has no next occurrence.");
+        };
     }
 
     public void createPomodoroNotification(ScheduledJob job, String taskName, PomodoroTransition transition) {

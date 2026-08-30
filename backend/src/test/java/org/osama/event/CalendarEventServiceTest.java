@@ -113,6 +113,29 @@ class CalendarEventServiceTest {
         assertThrows(IllegalArgumentException.class, () -> eventService.createEvent(request, USER_ID));
     }
 
+    @Test
+    void recurringEventStoresFrequencyAndOptionalEndDate() {
+        CalendarEventRequest request = timedRequest(
+                Instant.parse("2027-01-10T10:00:00Z"), Instant.parse("2027-01-10T11:00:00Z"));
+        request.setRecurrenceFrequency(RecurrenceFrequency.WEEKLY);
+        request.setRecurrenceEndDate(LocalDate.of(2027, 2, 28));
+
+        CalendarEventResponse event = eventService.createEvent(request, USER_ID);
+
+        assertEquals(RecurrenceFrequency.WEEKLY, event.recurrenceFrequency());
+        assertEquals(LocalDate.of(2027, 2, 28), event.recurrenceEndDate());
+    }
+
+    @Test
+    void recurringEventRejectsEndDateBeforeItsStartDateInEventTimeZone() {
+        CalendarEventRequest request = timedRequest(
+                Instant.parse("2027-01-10T00:30:00Z"), Instant.parse("2027-01-10T01:30:00Z"));
+        request.setRecurrenceFrequency(RecurrenceFrequency.DAILY);
+        request.setRecurrenceEndDate(LocalDate.of(2027, 1, 9));
+
+        assertThrows(IllegalArgumentException.class, () -> eventService.createEvent(request, USER_ID));
+    }
+
     private CalendarEventRequest timedRequest(Instant start, Instant end) {
         CalendarEventRequest request = new CalendarEventRequest();
         request.setTitle("Doctor appointment");

@@ -1,13 +1,14 @@
 import React from 'react';
-import { Box, Typography } from '@mui/material';
-import TodayIcon from '@mui/icons-material/Today';
-import UpcomingIcon from '@mui/icons-material/EventAvailable';
-import HistoryIcon from '@mui/icons-material/History';
+import { Box, Collapse, IconButton, Typography } from '@mui/material';
+import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
+import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import { Task } from '../../types/Task.tsx';
 import { FlatTaskRow } from '../FlatTaskRow.tsx';
-import { TaskAccordion } from '../TaskAccordion.tsx';
 
 type SectionName = 'today' | 'comingUp' | 'leftovers';
+
+const noopTogglePanel = () => undefined;
+const noopAutoExpand = () => undefined;
 
 type TaskPageSectionProps = {
     section: SectionName;
@@ -17,65 +18,12 @@ type TaskPageSectionProps = {
     expanded: boolean;
     onToggle: (section: SectionName) => void;
     onTaskClick: (task: Task) => void;
+    selectedTaskId?: string | null;
     toggleTaskCompletion: (taskId: string) => void;
     updateTask: (taskId: string, updates: Partial<Task>) => Promise<void>;
-    deleteTask: (task: Task) => void;
     emptyMessage: string;
     sectionRef?: React.RefObject<HTMLDivElement>;
-    activeExpansion: { taskId: string; panel: 'pomodoro' | 'details' } | null;
-    onTogglePanel: (taskId: string, panel: 'pomodoro' | 'details') => void;
-    onAutoExpand: (taskId: string, panel: 'pomodoro') => void;
-};
-
-type TaskPageRowProps = {
-    task: Task;
-    expandedPanel: 'pomodoro' | 'details' | null;
-    onToggle: (taskId: string) => void;
-    onUpdate: (taskId: string, updates: Partial<Task>) => Promise<void>;
-    onDelete: (task: Task) => void;
-    onSelect: (task: Task) => void;
-    onTogglePanel: (taskId: string, panel: 'pomodoro' | 'details') => void;
-    onAutoExpand: (taskId: string, panel: 'pomodoro') => void;
-};
-
-const TaskPageRow = React.memo(function TaskPageRow({
-    task,
-    expandedPanel,
-    onToggle,
-    onUpdate,
-    onDelete,
-    onSelect,
-    onTogglePanel,
-    onAutoExpand,
-}: TaskPageRowProps) {
-    const handleTogglePanel = React.useCallback((panel: 'pomodoro' | 'details') => {
-        onTogglePanel(task.taskId, panel);
-    }, [onTogglePanel, task.taskId]);
-
-    const handleAutoExpand = React.useCallback((panel: 'pomodoro') => {
-        onAutoExpand(task.taskId, panel);
-    }, [onAutoExpand, task.taskId]);
-
-    return (
-        <FlatTaskRow
-            task={task}
-            onToggle={onToggle}
-            onUpdate={onUpdate}
-            expandedPanel={expandedPanel}
-            onTogglePanel={handleTogglePanel}
-            onAutoExpand={handleAutoExpand}
-            onDelete={onDelete}
-            onSelect={onSelect}
-            showScheduledDate
-            deferPomodoroHydration
-        />
-    );
-});
-
-const sectionIcons = {
-    today: <TodayIcon color="primary" />,
-    comingUp: <UpcomingIcon color="secondary" />,
-    leftovers: <HistoryIcon />,
+    showScheduledDate?: boolean;
 };
 
 export const TaskPageSection = React.memo(function TaskPageSection({
@@ -86,95 +34,91 @@ export const TaskPageSection = React.memo(function TaskPageSection({
     expanded,
     onToggle,
     onTaskClick,
+    selectedTaskId,
     toggleTaskCompletion,
     updateTask,
-    deleteTask,
     emptyMessage,
     sectionRef,
-    activeExpansion,
-    onTogglePanel,
-    onAutoExpand,
+    showScheduledDate = false,
 }: TaskPageSectionProps) {
-    const tasksExist = tasks.length > 0;
+    const visibleTasks = tasks.filter(task => !task.parentId);
 
     return (
-        <Box
-            ref={sectionRef}
-            sx={{
-                pb: 2.5,
-                borderBottom: theme => `1px solid ${theme.palette.divider}`,
-            }}
-        >
+        <Box ref={sectionRef} sx={{ mb: 4 }}>
             <Box
+                component="button"
+                type="button"
+                onClick={() => onToggle(section)}
                 sx={{
+                    width: '100%',
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'space-between',
-                    mb: 1,
+                    gap: 0.5,
+                    px: 0,
+                    py: 0.75,
+                    border: 0,
+                    borderBottom: '1px solid',
+                    borderColor: 'divider',
+                    background: 'none',
+                    color: 'text.primary',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    '&:hover': { color: 'primary.main' },
                 }}
             >
-                <Typography
-                    variant="h5"
-                    color="text.primary"
-                    sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 1,
-                    }}
+                <IconButton
+                    component="span"
+                    size="small"
+                    tabIndex={-1}
+                    aria-hidden="true"
+                    sx={{ p: 0.25, color: 'inherit' }}
                 >
-                    {sectionIcons[section]}
+                    {expanded
+                        ? <ExpandMoreRoundedIcon fontSize="small" />
+                        : <ChevronRightRoundedIcon fontSize="small" />}
+                </IconButton>
+                <Typography component="span" variant="h6" sx={{ fontWeight: 600 }}>
                     {title}
                 </Typography>
-                {tasksExist && (
-                    <Typography variant="body2" color="text.secondary">
-                        {completedCount} of {tasks.length} completed
+                <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 0.75 }}>
+                    {visibleTasks.length}
+                </Typography>
+                {visibleTasks.length > 0 && (
+                    <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 'auto', mr: 1 }}>
+                        {completedCount}/{visibleTasks.length} done
                     </Typography>
                 )}
             </Box>
 
-            <TaskAccordion
-                title=""
-                tasks={tasks}
-                expanded={expanded}
-                onChange={() => onToggle(section)}
-                toggleTaskCompletion={toggleTaskCompletion}
-                onTaskClick={onTaskClick}
-                summarySx={{ px: 0, minHeight: 32, '& .MuiAccordionSummary-content': { my: 0 } }}
-                detailsSx={{ px: 0 }}
-                listSx={{ py: 0 }}
-                accordionSx={{ mb: 0, '&.Mui-expanded': { margin: 0 } }}
-                renderTasks={(visibleTasks) => (
-                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, }}>
-                        {visibleTasks.map(task => (
-                            <TaskPageRow
-                                key={task.taskId}
-                                task={task}
-                                onToggle={toggleTaskCompletion}
-                                onUpdate={updateTask}
-                                onDelete={deleteTask}
-                                expandedPanel={activeExpansion?.taskId === task.taskId ? activeExpansion.panel : null}
-                                onTogglePanel={onTogglePanel}
-                                onAutoExpand={onAutoExpand}
-                                onSelect={onTaskClick}
-                            />
-                        ))}
-                    </Box>
-                )}
-            />
-
-            {!tasksExist && (
-                <Typography
-                    variant="body1"
-                    sx={{
-                        textAlign: 'left',
-                        color: 'text.secondary',
-                        fontStyle: 'italic',
-                        py: 2,
-                    }}
-                >
-                    {emptyMessage}
-                </Typography>
-            )}
+            <Collapse in={expanded} timeout={180} unmountOnExit>
+                <Box sx={{ pt: 1 }}>
+                    {visibleTasks.length > 0 ? (
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
+                            {visibleTasks.map(task => (
+                                <FlatTaskRow
+                                    key={task.taskId}
+                                    task={task}
+                                    onToggle={toggleTaskCompletion}
+                                    onUpdate={updateTask}
+                                    expandedPanel={null}
+                                    onTogglePanel={noopTogglePanel}
+                                    onAutoExpand={noopAutoExpand}
+                                    onSelect={onTaskClick}
+                                    selected={selectedTaskId === task.taskId}
+                                    showScheduledDate={showScheduledDate}
+                                    showPomodoroButton={false}
+                                    showDetailsButton={false}
+                                    deferPomodoroHydration
+                                />
+                            ))}
+                        </Box>
+                    ) : (
+                        <Typography variant="body2" color="text.secondary" sx={{ py: 1.5, pl: 4 }}>
+                            {emptyMessage}
+                        </Typography>
+                    )}
+                </Box>
+            </Collapse>
         </Box>
     );
 });

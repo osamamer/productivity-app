@@ -1,85 +1,46 @@
 import React from 'react';
-import { Box, Chip, Stack, Typography } from '@mui/material';
-import TodayIcon from '@mui/icons-material/Today';
-import UpcomingIcon from '@mui/icons-material/EventAvailable';
-import HistoryIcon from '@mui/icons-material/History';
+import { Box, Typography } from '@mui/material';
 import { SmartTaskInput } from '../input/SmartTaskInput.tsx';
 import { TaskToCreate } from '../../types/TaskToCreate.tsx';
 
 type TaskPageComposerProps = {
-    todayCount: number;
-    upcomingCount: number;
-    pastCount: number;
-    expandedSections: {
-        today: boolean;
-        comingUp: boolean;
-        leftovers: boolean;
-    };
     onCreateTask: (task: TaskToCreate) => Promise<void>;
-    onToggleSection: (section: 'today' | 'comingUp' | 'leftovers') => void;
 };
 
-export const TaskPageComposer = React.memo(function TaskPageComposer({
-    todayCount,
-    upcomingCount,
-    pastCount,
-    expandedSections,
-    onCreateTask,
-    onToggleSection,
-}: TaskPageComposerProps) {
+export const TaskPageComposer = React.memo(function TaskPageComposer({ onCreateTask }: TaskPageComposerProps) {
     return (
-        <Box sx={{ pb: 3 }}>
+        <Box
+            sx={{
+                display: 'grid',
+                gridTemplateColumns: { xs: '1fr', sm: 'minmax(max-content, 0.42fr) minmax(0, 1fr)' },
+                alignItems: 'center',
+                gap: { xs: 1.5, sm: 4 },
+                mb: 5,
+            }}
+        >
+            <Typography
+                variant="h4"
+                color="text.secondary"
+                component="h1"
+                sx={{ fontWeight: 400, textAlign: 'left' }}
+            >
+                All your tasks
+            </Typography>
+
             <Box
                 sx={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    flexWrap: 'wrap',
-                    gap: 2,
-                    mb: 3,
+                    backgroundColor: 'background.paper',
+                    borderRadius: 3,
+                    px: 2.5,
+                    py: 1.5,
+                    boxShadow: '0 2px 16px rgba(0,0,0,0.06)',
+                    '& .MuiInput-underline:before': { borderBottom: 'none' },
+                    '& .MuiInput-underline:after': { borderBottom: 'none' },
+                    '& .MuiInput-underline:hover:not(.Mui-disabled):before': { borderBottom: 'none' },
+                    '& .MuiInput-root': { fontSize: '1.1rem' },
                 }}
             >
-                <Typography color="text.primary" variant="h4" component="h1" sx={{ fontWeight: 600 }}>
-                    Tasks
-                </Typography>
-
-                <Stack direction="row" spacing={1.25} useFlexGap flexWrap="wrap">
-                    <Chip
-                        icon={<TodayIcon />}
-                        label={`${todayCount} Today`}
-                        color="primary"
-                        variant={expandedSections.today ? 'filled' : 'outlined'}
-                        onClick={() => onToggleSection('today')}
-                        sx={{ cursor: 'pointer' }}
-                    />
-                    <Chip
-                        icon={<UpcomingIcon />}
-                        label={`${upcomingCount} Upcoming`}
-                        color="secondary"
-                        variant={expandedSections.comingUp ? 'filled' : 'outlined'}
-                        onClick={() => onToggleSection('comingUp')}
-                        sx={{ cursor: 'pointer' }}
-                    />
-                    <Chip
-                        icon={<HistoryIcon />}
-                        label={`${pastCount} Past`}
-                        color="default"
-                        variant={expandedSections.leftovers ? 'filled' : 'outlined'}
-                        onClick={() => onToggleSection('leftovers')}
-                        sx={{ cursor: 'pointer' }}
-                    />
-                </Stack>
-            </Box>
-
-            <Box
-            >
-                <Box
-                    sx={{
-                        width: { xs: '100%', md: '50%' },
-                    }}
-                >
-                    <SmartTaskInput onSubmit={onCreateTask} />
-                </Box>
+                <SmartTaskInput onSubmit={onCreateTask} placeholder="Add a task..." />
             </Box>
         </Box>
     );

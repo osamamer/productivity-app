@@ -20,9 +20,10 @@ export function useMentalThreadsWorkspace() {
         setError(null);
         try {
             const [loadedThreads, loadedSummary] = await Promise.all([
-                mentalThreadService.getThreads(true, signal),
-                mentalThreadService.getSummary(signal),
+                mentalThreadService.getThreads(true),
+                mentalThreadService.getSummary(),
             ]);
+            if (signal?.aborted) return;
             setThreads(loadedThreads);
             setSummary(loadedSummary);
         } catch (loadError) {

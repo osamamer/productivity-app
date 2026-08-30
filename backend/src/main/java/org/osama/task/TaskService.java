@@ -78,6 +78,19 @@ public class TaskService {
                 .build();
         return findTasks(query);
     }
+
+    @Transactional(readOnly = true)
+    public TaskPomodoroStatsResponse getPomodoroStats(String taskId, String userId) {
+        getTaskForUserOrThrow(taskId, userId);
+        LocalDateTime now = LocalDateTime.now();
+        return TaskPomodoroStatsCalculator.calculate(
+                taskId,
+                taskSessionRepository.findAllByAssociatedTaskId(taskId),
+                now.toLocalDate(),
+                now
+        );
+    }
+
     public Duration getAccumulatedTime(String taskId) {
         Duration totalDuration = Duration.ZERO;
         List<TaskSession> taskSessionList = taskSessionRepository.findAllByAssociatedTaskId(taskId);

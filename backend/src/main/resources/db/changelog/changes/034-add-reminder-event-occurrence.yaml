@@ -1,0 +1,16 @@
+databaseChangeLog:
+  - changeSet:
+      id: 034-add-reminder-event-occurrence
+      author: codex
+      comment: Track the calendar occurrence represented by a reminder
+      changes:
+        - addColumn:
+            tableName: reminder
+            columns:
+              - column:
+                  name: event_occurrence_start
+                  type: timestamp with time zone
+      rollback:
+        - dropColumn:
+            tableName: reminder
+            columnName: event_occurrence_start

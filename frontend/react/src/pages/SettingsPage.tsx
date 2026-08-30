@@ -35,7 +35,7 @@ const sectionHeadingSx = {
     mb: 1.5,
 };
 
-const showCompletedTasksDescription = 'Keep completed tasks visible in today\'s Home list.';
+const showCompletedTasksDescription = 'Keep completed tasks visible in today\'s Home and Tasks lists.';
 const numericStatsAverageDescription = 'Include days without a logged numeric value as 0 when calculating averages.';
 const pomodoroAutoStartDescription = 'Start each break and focus session automatically, or wait for you to start the next phase.';
 const pomodoroSecondsModeDescription = 'Use 10-second focus and break durations instead of the normal 25/5/15-minute defaults.';
@@ -46,8 +46,8 @@ export function SettingsPage() {
     const [searchParams, setSearchParams] = useSearchParams();
     const initialTab = useMemo(() => {
         const tab = searchParams.get('tab');
-        if (tab === 'account') return 1;
-        if (tab === 'appearance') return 2;
+        if (tab === 'appearance') return 1;
+        if (tab === 'account') return 2;
         return 0;
     }, [searchParams]);
     const [activeTab, setActiveTab] = useState(initialTab);
@@ -119,7 +119,7 @@ export function SettingsPage() {
 
     function handleTabChange(_event: SyntheticEvent, newValue: number) {
         setActiveTab(newValue);
-        const tabName = newValue === 1 ? 'account' : newValue === 2 ? 'appearance' : 'general';
+        const tabName = newValue === 1 ? 'appearance' : newValue === 2 ? 'account' : 'general';
         setSearchParams(tabName === 'general' ? {} : { tab: tabName }, { replace: true });
     }
 
@@ -240,9 +240,9 @@ export function SettingsPage() {
                             },
                         }}
                     >
-                        <Tab label="General" />
-                        <Tab label="Account" />
+                        <Tab label="Behavior" />
                         <Tab label="Appearance" />
+                        <Tab label="Account" />
                     </Tabs>
 
                     <Stack spacing={2.5}>
@@ -250,32 +250,9 @@ export function SettingsPage() {
                             <>
                                 <Box sx={sectionCardSx}>
                                     <Box sx={sectionHeadingSx}>
-                                        <SecurityOutlinedIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
-                                        <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                                            Session
-                                        </Typography>
-                                    </Box>
-
-                                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2, textAlign: 'left' }}>
-                                        Authentication is handled through Keycloak. Signing out ends the current app session and returns you to login.
-                                    </Typography>
-
-                                    <Button
-                                        variant="outlined"
-                                        color="inherit"
-                                        startIcon={<LogoutIcon />}
-                                        onClick={() => setLogoutDialogOpen(true)}
-                                        sx={{ borderRadius: 2, py: 1.1, textTransform: 'none' }}
-                                    >
-                                        Log out
-                                    </Button>
-                                </Box>
-
-                                <Box sx={sectionCardSx}>
-                                    <Box sx={sectionHeadingSx}>
                                         <HomeOutlinedIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
                                         <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                                            Home page
+                                            Home & Tasks
                                         </Typography>
                                     </Box>
 
@@ -291,7 +268,7 @@ export function SettingsPage() {
                                         <Switch
                                             checked={showCompletedHomeTasks}
                                             onChange={(event) => setShowCompletedHomeTasks(event.target.checked)}
-                                            inputProps={{ 'aria-label': 'Show completed tasks on the Home page' }}
+                                            inputProps={{ 'aria-label': 'Show completed tasks on the Home and Tasks pages' }}
                                         />
                                     </Box>
                                 </Box>
@@ -376,7 +353,7 @@ export function SettingsPage() {
                             </>
                         )}
 
-                        {activeTab === 1 && (
+                        {activeTab === 2 && (
                             <Box sx={sectionCardSx}>
                             <Box sx={sectionHeadingSx}>
                                 <PersonOutlineIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
@@ -480,10 +457,33 @@ export function SettingsPage() {
                                     </Box>
                                 </Stack>
                             </Box>
+
+                            <Box sx={{ mt: 3, pt: 3, borderTop: theme => `1px solid ${theme.palette.divider}` }}>
+                                <Box sx={sectionHeadingSx}>
+                                    <SecurityOutlinedIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
+                                    <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                                        Session
+                                    </Typography>
+                                </Box>
+
+                                <Typography variant="body2" color="text.secondary" sx={{ mb: 2, textAlign: 'left' }}>
+                                    You are currently signed in. Logging out will end your session on this device.
+                                </Typography>
+
+                                <Button
+                                    variant="outlined"
+                                    color="inherit"
+                                    startIcon={<LogoutIcon />}
+                                    onClick={() => setLogoutDialogOpen(true)}
+                                    sx={{ borderRadius: 2, py: 1.1, textTransform: 'none' }}
+                                >
+                                    Log out
+                                </Button>
+                            </Box>
                         </Box>
                         )}
 
-                        {activeTab === 2 && (
+                        {activeTab === 1 && (
                             <Box sx={sectionCardSx}>
                             <Box sx={sectionHeadingSx}>
                                 <PaletteOutlinedIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
@@ -549,6 +549,7 @@ export function SettingsPage() {
                             </Box>
                         </Box>
                         )}
+
                     </Stack>
                 </Box>
             </Box>

@@ -3,16 +3,18 @@ import {PageWrapper} from "../components/PageWrapper.tsx";
 import {MonthCalendar} from "../components/MonthCalendar.tsx";
 import {useGlobalTasks} from "../contexts/TaskContext.tsx";
 import {useEffect, useState} from "react";
-import {eventService, taskService} from "../services/api";
+import {eventService, taskGroupService, taskService} from "../services/api";
 import {TaskToCreate} from "../types/TaskToCreate.tsx";
 import {StatDefinition} from "../types/Stats.ts";
 import {statService} from "../services/api/statService.ts";
 import {Task} from "../types/Task.tsx";
+import {TaskGroup} from "../types/TaskGroup.ts";
 import {CalendarEvent, CalendarEventInput} from "../types/CalendarEvent.ts";
 
 export function CalendarPage() {
     const {
         allTasks,
+        loading: tasksLoading,
         fetchAllTasks,
         fetchTodayTasks,
         fetchFutureTasks,
@@ -23,17 +25,26 @@ export function CalendarPage() {
 
     const [statDefinitions, setStatDefinitions] = useState<StatDefinition[]>([]);
     const [events, setEvents] = useState<CalendarEvent[]>([]);
+    const [groups, setGroups] = useState<TaskGroup[]>([]);
+    const [calendarDataLoading, setCalendarDataLoading] = useState(true);
 
     useEffect(() => {
-        statService.getDefinitions()
-            .then(setStatDefinitions)
-            .catch(e => console.error('Failed to load stat definitions:', e));
-    }, []);
+        let cancelled = false;
+        Promise.all([
+            statService.getDefinitions()
+                .then(definitions => { if (!cancelled) setStatDefinitions(definitions); })
+                .catch(e => console.error('Failed to load stat definitions:', e)),
+            eventService.getEvents()
+                .then(calendarEvents => { if (!cancelled) setEvents(calendarEvents); })
+                .catch(e => console.error('Failed to load calendar events:', e)),
+            taskGroupService.getGroups()
+                .then(taskGroups => { if (!cancelled) setGroups(taskGroups); })
+                .catch(e => console.error('Failed to load task groups:', e)),
+        ]).finally(() => {
+            if (!cancelled) setCalendarDataLoading(false);
+        });
 
-    useEffect(() => {
-        eventService.getEvents()
-            .then(setEvents)
-            .catch(e => console.error('Failed to load calendar events:', e));
+        return () => { cancelled = true; };
     }, []);
 
     const handleCreateEvent = async (input: CalendarEventInput) => {
@@ -85,11 +96,16 @@ export function CalendarPage() {
     return (
         <PageWrapper>
             <Box sx={{
-                height: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                flex: 1,
+                minHeight: 0,
+                minWidth: 0,
                 width: '100%',
             }}>
                 <MonthCalendar
                     tasks={allTasks}
+                    groups={groups}
                     events={events}
                     onCreateTask={handleCreateTask}
                     onUpdateTask={handleUpdateTask}
@@ -97,6 +113,7 @@ export function CalendarPage() {
                     onUpdateEvent={handleUpdateEvent}
                     onDeleteEvent={handleDeleteEvent}
                     statDefinitions={statDefinitions}
+                    loading={calendarDataLoading || tasksLoading}
                 />
             </Box>
         </PageWrapper>

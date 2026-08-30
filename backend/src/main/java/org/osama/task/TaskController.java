@@ -78,6 +78,11 @@ public class TaskController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
+    @GetMapping("/{taskId}/pomodoro-stats")
+    public ResponseEntity<TaskPomodoroStatsResponse> getPomodoroStats(@PathVariable String taskId) {
+        return ResponseEntity.ok(taskService.getPomodoroStats(taskId, currentUserService.getCurrentUserId()));
+    }
+
     @PostMapping
     public ResponseEntity<Task> createTask(@RequestBody @Valid NewTaskRequest request) {
         String userId = currentUserService.getCurrentUserId();

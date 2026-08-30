@@ -110,3 +110,11 @@ databaseChangeLog:
   # Preserve legacy task reminders as typed inbox notifications
   - include:
       file: db/changelog/changes/032-classify-legacy-task-reminders.yaml
+
+  # Recurrence rules for calendar event series
+  - include:
+      file: db/changelog/changes/033-add-calendar-event-recurrence.yaml
+
+  # Track the occurrence represented by each calendar reminder
+  - include:
+      file: db/changelog/changes/034-add-reminder-event-occurrence.yaml

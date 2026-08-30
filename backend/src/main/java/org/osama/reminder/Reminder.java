@@ -22,6 +22,9 @@ public class Reminder {
     @Column(nullable = false)
     private Instant dateTime;
 
+    @Column(name = "event_occurrence_start")
+    private Instant eventOccurrenceStart;
+
     @Column(nullable = false)
     private int repeat;
 

@@ -10,6 +10,7 @@ import {
     DialogTitle,
     MenuItem,
     Slider,
+    Skeleton,
     Stack,
     TextField,
     Typography,
@@ -323,14 +324,36 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
 
     if (isLoading) {
         return (
-            <Box sx={{ display: 'grid', minHeight: 480, placeItems: 'center' }}>
-                <CircularProgress />
+            <Box sx={{ width: '100%', p: { xs: 2, sm: 3, lg: 4 }, minHeight: { xs: 610, sm: 620, md: 620 }, boxSizing: 'border-box' }}>
+                <Stack spacing={3}>
+                    <Box>
+                        <Skeleton variant="text" width="35%" height={48} />
+                        <Skeleton variant="text" width="62%" />
+                    </Box>
+                    <Box>
+                        <Skeleton variant="text" width="48%" />
+                        <Skeleton variant="rounded" height={8} sx={{ mt: 1.5 }} />
+                        <Skeleton variant="text" width="92%" />
+                    </Box>
+                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+                        <Skeleton variant="rounded" height={56} sx={{ flex: 1 }} />
+                        <Skeleton variant="rounded" height={72} sx={{ flex: 1 }} />
+                    </Stack>
+                    <Box>
+                        <Skeleton variant="text" width="42%" />
+                        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                            <Skeleton variant="rounded" height={62} sx={{ flex: 1 }} />
+                            <Skeleton variant="rounded" height={62} sx={{ flex: 1 }} />
+                        </Stack>
+                    </Box>
+                    <Skeleton variant="rounded" width={170} height={44} />
+                </Stack>
             </Box>
         );
     }
 
     return (
-        <Box sx={{ width: '100%', p: { xs: 2, sm: 3, lg: 4 } }}>
+        <Box sx={{ width: '100%', p: { xs: 2, sm: 3, lg: 4 }, minHeight: { xs: 610, sm: 620, md: 620 }, boxSizing: 'border-box' }}>
             <Stack spacing={3}>
                 <Box sx={{ textAlign: 'left' }}>
                     <Typography variant="h4" sx={{ fontWeight: 400, mb: 1 }}>

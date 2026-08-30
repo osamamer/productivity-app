@@ -87,6 +87,14 @@ class MentalStateServiceTest {
                 new CreateMentalStateCheckInRequest(5, 7, 5, 5, 6, 4), USER_ID).state());
         assertEquals("Emotionally Loaded", mentalStateService.checkIn(
                 new CreateMentalStateCheckInRequest(5, 5, 5, 5, 6, 7), USER_ID).state());
+        assertEquals("Ready", mentalStateService.checkIn(
+                new CreateMentalStateCheckInRequest(8, 8, 1, 8, 8, 4), USER_ID).state());
+        assertEquals("Stimulation-Seeking", mentalStateService.checkIn(
+                new CreateMentalStateCheckInRequest(8, 9, 10, 8, 8, 1), USER_ID).state());
+        assertEquals("Low Mood", mentalStateService.checkIn(
+                new CreateMentalStateCheckInRequest(6, 5, 5, 6, 3, 4), USER_ID).state());
+        assertEquals("Engaged", mentalStateService.checkIn(
+                new CreateMentalStateCheckInRequest(4, 5, 1, 5, 8, 1), USER_ID).state());
         assertEquals("Mixed", mentalStateService.checkIn(
                 new CreateMentalStateCheckInRequest(5, 5, 5, 5, 6, 6), USER_ID).state());
     }

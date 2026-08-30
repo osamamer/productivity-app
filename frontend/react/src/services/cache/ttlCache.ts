@@ -72,3 +72,56 @@ export class TtlCache<T> {
         this.entries.clear();
     }
 }
+
+export class CachedResource<T> {
+    private readonly cache: TtlCache<T>;
+    private readonly requests = new Map<string, Promise<T>>();
+    private generation = 0;
+    private readonly keyVersions = new Map<string, number>();
+
+    constructor(options: TtlCacheOptions) {
+        this.cache = new TtlCache<T>(options);
+    }
+
+    async get(key: string, loader: () => Promise<T>, ttlMs?: number): Promise<T> {
+        const cached = this.cache.get(key);
+        if (cached !== undefined) return cached;
+
+        const pendingRequest = this.requests.get(key);
+        if (pendingRequest) return pendingRequest;
+
+        const generation = this.generation;
+        const keyVersion = this.keyVersions.get(key) ?? 0;
+        const request = loader().then(value => {
+            if (generation === this.generation && keyVersion === (this.keyVersions.get(key) ?? 0)) {
+                this.cache.set(key, value, ttlMs);
+            }
+            return value;
+        });
+
+        this.requests.set(key, request);
+        try {
+            return await request;
+        } finally {
+            if (this.requests.get(key) === request) this.requests.delete(key);
+        }
+    }
+
+    set(key: string, value: T, ttlMs?: number): void {
+        this.keyVersions.set(key, (this.keyVersions.get(key) ?? 0) + 1);
+        this.cache.set(key, value, ttlMs);
+    }
+
+    invalidate(key: string): void {
+        this.cache.delete(key);
+        this.keyVersions.set(key, (this.keyVersions.get(key) ?? 0) + 1);
+        this.requests.delete(key);
+    }
+
+    clear(): void {
+        this.cache.clear();
+        this.requests.clear();
+        this.generation += 1;
+        this.keyVersions.clear();
+    }
+}

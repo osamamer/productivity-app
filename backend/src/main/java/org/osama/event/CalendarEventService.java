@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.DateTimeException;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
@@ -108,6 +109,22 @@ public class CalendarEventService {
         event.setEndDate(request.isAllDay() ? request.getEndDate() : null);
         event.setStartTime(request.isAllDay() ? null : request.getStartTime());
         event.setEndTime(request.isAllDay() ? null : request.getEndTime());
+
+        RecurrenceFrequency recurrenceFrequency = request.getRecurrenceFrequency() == null
+                ? RecurrenceFrequency.NONE
+                : request.getRecurrenceFrequency();
+        LocalDate recurrenceStartDate = request.isAllDay()
+                ? request.getStartDate()
+                : request.getStartTime().atZone(ZoneId.of(event.getTimeZone())).toLocalDate();
+        if (recurrenceFrequency != RecurrenceFrequency.NONE
+                && request.getRecurrenceEndDate() != null
+                && request.getRecurrenceEndDate().isBefore(recurrenceStartDate)) {
+            throw new IllegalArgumentException("A recurring event must end on or after its start date.");
+        }
+        event.setRecurrenceFrequency(recurrenceFrequency);
+        event.setRecurrenceEndDate(recurrenceFrequency == RecurrenceFrequency.NONE
+                ? null
+                : request.getRecurrenceEndDate());
     }
 
     private Integer requestedReminderMinutes(CalendarEventRequest request) {
@@ -143,6 +160,7 @@ public class CalendarEventService {
         reminder.setNotificationType(NotificationType.CALENDAR_EVENT);
         reminder.setTargetUrl("/calendar");
         reminder.setDateTime(eventStart.minusSeconds(minutesBefore.longValue() * 60));
+        reminder.setEventOccurrenceStart(eventStart);
         reminder.setMinutesBefore(minutesBefore);
         reminder.setDispatchedAt(null);
         reminder.setAcknowledgedAt(null);
@@ -155,7 +173,8 @@ public class CalendarEventService {
                 .orElse(null);
         return new CalendarEventResponse(event.getId(), event.getTitle(), event.getDescription(),
                 event.isAllDay(), event.getStartDate(), event.getEndDate(), event.getStartTime(),
-                event.getEndTime(), event.getTimeZone(), reminderMinutes,
+                event.getEndTime(), event.getTimeZone(), event.getRecurrenceFrequency(),
+                event.getRecurrenceEndDate(), reminderMinutes,
                 event.getCreatedAt(), event.getUpdatedAt());
     }
 }

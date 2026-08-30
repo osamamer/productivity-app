@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Box, CircularProgress, Paper } from '@mui/material';
 import { MentalStateCheckIn } from '../../types/MentalState';
 import { MentalStateCheckInForm } from './MentalStateCheckInForm';
@@ -12,11 +12,13 @@ interface MentalStateCardProps {
 }
 
 export function MentalStateCard({ loading, checkIn, isCurrent, onSaved }: MentalStateCardProps) {
-    const [isCheckingIn, setIsCheckingIn] = useState(!checkIn);
+    const [recheckingCheckInId, setRecheckingCheckInId] = useState<string | null>(null);
+    const isCheckingIn = checkIn !== null && recheckingCheckInId === checkIn.id;
 
-    useEffect(() => {
-        setIsCheckingIn(!checkIn);
-    }, [checkIn]);
+    const handleSaved = (savedCheckIn: MentalStateCheckIn) => {
+        setRecheckingCheckInId(null);
+        onSaved(savedCheckIn);
+    };
 
     return (
         <Paper
@@ -31,11 +33,11 @@ export function MentalStateCard({ loading, checkIn, isCurrent, onSaved }: Mental
                 <MentalStateResult
                     checkIn={checkIn}
                     isCurrent={isCurrent}
-                    onRecheck={() => setIsCheckingIn(true)}
+                    onRecheck={() => setRecheckingCheckInId(checkIn.id)}
                     embedded
                 />
             ) : (
-                <MentalStateCheckInForm onSaved={onSaved} embedded />
+                <MentalStateCheckInForm onSaved={handleSaved} embedded />
             )}
         </Paper>
     );
