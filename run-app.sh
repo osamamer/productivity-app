@@ -1,7 +1,34 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
-compose=(docker compose --env-file deployment/.env -f deployment/docker-compose.yml -p productivity-app)
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+cd "$script_dir"
+
+env_file="$script_dir/deployment/.env"
+compose_file="$script_dir/deployment/docker-compose.yml"
+
+if [[ ! -r "$env_file" ]]; then
+  echo "Missing or unreadable environment file: $env_file" >&2
+  exit 1
+fi
+
+set -a
+source "$env_file"
+set +a
+
+: "${POSTGRES_USER:?POSTGRES_USER must be set in $env_file}"
+: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in $env_file}"
+: "${POSTGRES_DB:?POSTGRES_DB must be set in $env_file}"
+: "${KEYCLOAK_DB:?KEYCLOAK_DB must be set in $env_file}"
+
+compose=(docker compose --env-file "$env_file" -f "$compose_file" -p productivity-app)
+
+if ! docker info >/dev/null 2>&1; then
+  echo "Cannot access the Docker daemon. Add this account to the docker group and log in again." >&2
+  exit 1
+fi
+
+"${compose[@]}" config >/dev/null
 
 kill_port() {
   local port=$1
@@ -36,15 +63,27 @@ sleep 2
 echo "🐳 Starting Docker containers..."
 "${compose[@]}" up -d
 
-echo "⏳ Waiting for containers to be healthy..."
-sleep 5
+echo "⏳ Waiting for Keycloak to be available..."
+keycloak_ready=0
+for i in $(seq 1 30); do
+  if curl -fsS --max-time 2 http://localhost:7070/ >/dev/null 2>&1; then
+    keycloak_ready=1
+    break
+  fi
+  sleep 2
+done
+
+if [[ "$keycloak_ready" -ne 1 ]]; then
+  echo "Keycloak did not become available. Recent container logs:" >&2
+  "${compose[@]}" logs --tail=80 keycloak postgres >&2 || true
+  exit 1
+fi
 
 echo "🚀 Starting backend..."
-set -a && source deployment/.env && set +a
-cd backend
+cd "$script_dir/backend"
 ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev &
 BACKEND_PID=$!
-cd ..
+cd "$script_dir"
 
 echo "⏳ Waiting for backend to be ready on port 8080..."
 for i in $(seq 1 10); do
@@ -54,10 +93,10 @@ for i in $(seq 1 10); do
 done
 
 echo "🎨 Starting frontend..."
-cd frontend/react
+cd "$script_dir/frontend/react"
 npm run dev &
 FRONTEND_PID=$!
-cd ../..
+cd "$script_dir"
 
 echo "✅ All services running!"
 echo "   Backend PID:  $BACKEND_PID"
