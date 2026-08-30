@@ -50,7 +50,7 @@ export function TaskPage() {
             setHighlightedTask(createdTask);
         } catch (err) {
             console.error('Error creating task:', err);
-            await fetchAllTasks();
+            await fetchAllTasks(true);
         }
     }, [addTaskToState, fetchAllTasks, setHighlightedTask]);
 
@@ -81,7 +81,7 @@ export function TaskPage() {
             if (originalTask) {
                 updateTaskInState(taskId, originalTask);
             }
-            await fetchAllTasks();
+            await fetchAllTasks(true);
         }
     }, [fetchAllTasks, updateTaskInState]);
 
@@ -92,7 +92,7 @@ export function TaskPage() {
             await taskService.updateDescription(taskId, description);
         } catch (err) {
             console.error('Error updating description:', err);
-            await fetchAllTasks();
+            await fetchAllTasks(true);
         }
     }, [fetchAllTasks, updateTaskInState]);
 
@@ -107,7 +107,7 @@ export function TaskPage() {
             }
         } catch (err) {
             console.error('Error deleting task:', err);
-            await fetchAllTasks();
+            await fetchAllTasks(true);
         }
     }, [fetchAllTasks, highlightedTask, removeTaskFromState, setHighlightedTask]);
 

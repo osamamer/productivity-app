@@ -83,7 +83,7 @@ class CalendarEventServiceTest {
     }
 
     @Test
-    void updateReschedulesExistingReminderAndMakesItDeliverableAgain() {
+    void updateCreatesANewReminderOccurrenceSoClientsDoNotDeduplicateIt() {
         CalendarEventRequest original = timedRequest(
                 Instant.parse("2027-01-10T10:00:00Z"), Instant.parse("2027-01-10T11:00:00Z"));
         CalendarEventResponse event = eventService.createEvent(original, USER_ID);
@@ -99,7 +99,7 @@ class CalendarEventServiceTest {
         eventService.updateEvent(event.id(), changed, USER_ID);
 
         Reminder updated = reminderRepository.findByEventId(event.id()).orElseThrow();
-        assertEquals(reminderId, updated.getReminderId());
+        assertNotEquals(reminderId, updated.getReminderId());
         assertEquals(Instant.parse("2027-01-11T11:30:00Z"), updated.getDateTime());
         assertNull(updated.getDispatchedAt());
         assertNull(updated.getAcknowledgedAt());

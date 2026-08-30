@@ -1,4 +1,5 @@
-import { getAuthHeaders } from '../utils/authHeaders';
+import { getAuthCacheScope, getAuthHeaders } from '../utils/authHeaders';
+import { TtlCache } from '../cache/ttlCache';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
@@ -40,7 +41,9 @@ const DEV_POMODORO_CONFIG: PomodoroConfig = {
 const DEFAULT_NUM_FOCUSES = 4;
 const DEFAULT_LONG_BREAK_COOLDOWN = 4;
 
-let serverConfigRequest: Promise<PomodoroConfig> | null = null;
+const POMODORO_CONFIG_TTL_MS = 5 * 60 * 1000;
+const pomodoroConfigCache = new TtlCache<PomodoroConfig>({ ttlMs: POMODORO_CONFIG_TTL_MS, maxEntries: 4 });
+const pomodoroConfigRequests = new Map<string, Promise<PomodoroConfig>>();
 
 export function createPomodoroFormDefaults(config: PomodoroConfig): PomodoroFormValues {
     return {
@@ -60,6 +63,11 @@ export function setPomodoroSecondsModePreference(enabled: boolean): void {
     localStorage.setItem(POMODORO_DEV_SECONDS_MODE_STORAGE_KEY, String(enabled));
 }
 
+export function clearPomodoroConfigCache(): void {
+    pomodoroConfigCache.clear();
+    pomodoroConfigRequests.clear();
+}
+
 function getLocalSecondsModePreference(): boolean | null {
     const storedValue = localStorage.getItem(POMODORO_DEV_SECONDS_MODE_STORAGE_KEY);
     if (storedValue === 'true') return true;
@@ -74,8 +82,13 @@ function applyLocalPreference(config: PomodoroConfig): PomodoroConfig {
 }
 
 export async function getPomodoroConfig(): Promise<PomodoroConfig> {
-    if (!serverConfigRequest) {
-        serverConfigRequest = fetch(`${API_BASE_URL}/api/v1/pomodoro/config`, {
+    const cacheKey = getAuthCacheScope();
+    const cachedConfig = pomodoroConfigCache.get(cacheKey);
+    if (cachedConfig) return applyLocalPreference(cachedConfig);
+
+    let request = pomodoroConfigRequests.get(cacheKey);
+    if (!request) {
+        request = fetch(`${API_BASE_URL}/api/v1/pomodoro/config`, {
             headers: getAuthHeaders(),
         })
             .then(response => {
@@ -84,11 +97,18 @@ export async function getPomodoroConfig(): Promise<PomodoroConfig> {
                 }
                 return response.json() as Promise<PomodoroConfig>;
             })
-            .catch(error => {
-                serverConfigRequest = null;
-                throw error;
+            .then(config => {
+                pomodoroConfigCache.set(cacheKey, config);
+                return config;
             });
+        pomodoroConfigRequests.set(cacheKey, request);
     }
 
-    return applyLocalPreference(await serverConfigRequest);
+    try {
+        return applyLocalPreference(await request);
+    } finally {
+        if (pomodoroConfigRequests.get(cacheKey) === request) {
+            pomodoroConfigRequests.delete(cacheKey);
+        }
+    }
 }

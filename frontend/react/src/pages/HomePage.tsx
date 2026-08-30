@@ -316,7 +316,7 @@ export function HomePage() {
             addTaskToState(created);
         } catch (err) {
             console.error('Error creating task:', err);
-            await refreshTaskBuckets();
+            await refreshTaskBuckets(true);
         }
     }
 
@@ -328,7 +328,7 @@ export function HomePage() {
         } catch (err) {
             console.error('Error updating task:', err);
             if (originalTask) updateTaskInState(taskId, originalTask);
-            await refreshTaskBuckets();
+            await refreshTaskBuckets(true);
         }
     }
 
@@ -385,7 +385,7 @@ export function HomePage() {
             }
         } catch (err) {
             console.error(`Error deleting ${request.kind === 'bulk' ? 'selected tasks' : 'task'}:`, err);
-            await refreshTaskBuckets();
+            await refreshTaskBuckets(true);
         } finally {
             setDeleteSubmitting(false);
             if (request.kind === 'bulk') setBulkActionLoading(false);
@@ -414,7 +414,7 @@ export function HomePage() {
             clearSelection();
         } catch (err) {
             console.error(`Error applying bulk task action (${action}):`, err);
-            await refreshTaskBuckets();
+            await refreshTaskBuckets(true);
         } finally {
             setBulkActionLoading(false);
         }
@@ -594,7 +594,7 @@ export function HomePage() {
         reorderTasksInState(orderedTaskIds);
         taskService.reorderTasks(orderedTaskIds).catch(err => {
             console.error('Error reordering tasks:', err);
-            refreshTaskBuckets();
+            refreshTaskBuckets(true);
         });
     }, [refreshTaskBuckets, reorderTasksInState]);
 

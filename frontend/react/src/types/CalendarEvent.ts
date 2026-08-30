@@ -24,11 +24,3 @@ export type CalendarEventInput = {
     timeZone: string;
     reminderMinutesBefore: number | null;
 };
-
-export type ReminderNotification = {
-    reminderId: string;
-    eventId: string;
-    title: string;
-    eventStart: string;
-    allDay: boolean;
-};

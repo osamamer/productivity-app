@@ -18,16 +18,14 @@ import {SettingsPage} from "./pages/SettingsPage.tsx";
 import {NotesPage} from "./pages/NotesPage.tsx";
 import {MentalThreadsPage} from "./pages/MentalThreadsPage.tsx";
 import {MentalStatePage} from "./pages/MentalStatePage.tsx";
-import {ReminderNotifications} from "./components/calendar/ReminderNotifications.tsx";
-import {PomodoroNotifications} from "./components/timer/PomodoroNotifications.tsx";
+import {NotificationCenter} from "./components/notifications/NotificationCenter.tsx";
 
 
 function AppProviders() {
     return (
         <UserProvider>
             <TaskProvider>
-                <ReminderNotifications/>
-                <PomodoroNotifications/>
+                <NotificationCenter/>
                 <Outlet/>
             </TaskProvider>
         </UserProvider>

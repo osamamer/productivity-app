@@ -1,5 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, ReactNode } from 'react';
 import keycloak from '../services/keycloak';
+import { statService } from '../services/api/statService';
+import { clearMentalThreadHistoryCache } from '../services/cache/mentalThreadHistoryCache';
+import { clearPomodoroConfigCache } from '../services/api/pomodoroConfigService';
 
 interface UserInfo {
     id: string;
@@ -46,7 +49,12 @@ export function UserProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const login = useCallback((..._args: unknown[]) => keycloak.login(), []);
 
-    const logout = useCallback(() => keycloak.logout({ redirectUri: window.location.origin + '/' }), []);
+    const logout = useCallback(() => {
+        statService.clearCache();
+        clearMentalThreadHistoryCache();
+        clearPomodoroConfigCache();
+        return keycloak.logout({ redirectUri: window.location.origin + '/' });
+    }, []);
 
     const contextValue = useMemo(() => ({
         user,

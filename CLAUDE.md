@@ -14,7 +14,7 @@ Full-stack productivity app ("So Life Doesn't Get Overwhelming") for managing ta
 ```bash
 ./run-app.sh
 ```
-This kills existing processes on ports 8080, 5173, 7070, 3000, 5432, starts Docker services (PostgreSQL, Keycloak, Grafana), then starts the backend and frontend.
+This reuses healthy Docker services (PostgreSQL and Keycloak) and existing healthy app processes, starting only what is missing. It never uses `sudo` or kills arbitrary port owners. Ctrl+C stops only the backend and frontend processes started by that invocation; Docker services remain available for the next run.
 
 ### Backend
 ```bash
@@ -91,7 +91,6 @@ All user-scoped entities (Task, DayEntity, MeditationSession, TaskSession, Pomod
 | Backend    | 8080 | Spring Boot; also WebSocket    |
 | PostgreSQL | 5432 | Docker                         |
 | Keycloak   | 7070 | Docker, `start-dev` mode       |
-| Grafana    | 3000 | Docker, anonymous access on    |
 
 Docker services are defined in `deployment/docker-compose.yml`. Environment variables (DB credentials, Keycloak admin) live in `deployment/.env`.
 

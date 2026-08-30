@@ -57,7 +57,7 @@ export function CalendarPage() {
             addTaskToState(createdTask);
         } catch (err) {
             console.error('Error creating task:', err);
-            await fetchAllTasks();
+            await fetchAllTasks(true);
         }
     };
 
@@ -70,7 +70,7 @@ export function CalendarPage() {
         try {
             await taskService.updateTask(taskId, updates);
             await Promise.all([
-                fetchAllTasks(),
+                fetchAllTasks(true),
                 fetchTodayTasks(),
                 fetchFutureTasks(),
                 fetchPastTasks(),

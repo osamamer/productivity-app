@@ -10,7 +10,7 @@ Full-stack productivity app ("So Life Doesn't Get Overwhelming") for managing ta
 ```bash
 ./run-app.sh
 ```
-This kills existing processes on ports 8080, 5173, 7070, 3000, 5432, starts Docker services (PostgreSQL, Keycloak, Grafana), then starts the backend and frontend.
+This reuses healthy Docker services (PostgreSQL and Keycloak) and existing healthy app processes, starting only what is missing. It never uses `sudo` or kills arbitrary port owners. Ctrl+C stops only the backend and frontend processes started by that invocation; Docker services remain available for the next run.
 
 ### Backend
 ```bash
@@ -48,6 +48,7 @@ Feature packages follow a consistent pattern — each has an entity, repository,
 - `mentalthread/` — User-owned unresolved concerns with acting/ruminating/planned/pending attention states, subjective load history, closure outcomes, daily capacity check-ins, and connected next-action tasks
 - `day/` — Daily rating/plan/summary (`DayEntity`, one per user per date)
 - `pomodoro/` — Pomodoro timer settings, persisted phase state, and automatic/manual phase transitions
+- `reminder/` — Durable, typed notification inbox shared by calendar reminders and Pomodoro transitions; notifications remain due until the client acknowledges presentation, while authenticated WebSocket pushes are only a low-latency delivery signal
 - `stat/` — Daily user-defined tracking plus built-in meditation activity and sleep stats provisioned from `SystemStatCatalog`; built-ins use a stable `systemKey`, cannot be deleted, and expose server-side personal correlation insights
 - `mentalstate/` — Timestamped, multiple-per-day check-ins that capture energy, activation, stimulation hunger, clarity, valence, and emotional load together and generate deterministic state guidance
 - `session/task/` and `session/meditation/` — Session tracking with start/pause/unpause/end lifecycle, published as Spring events via `ApplicationEventPublisher`
@@ -55,6 +56,8 @@ Feature packages follow a consistent pattern — each has an entity, repository,
 - `user/` — User management and persisted preferences backed by Keycloak (see Auth below)
 
 WebSocket (STOMP) is configured in `WebSocketConfig.java`. The frontend connects via `/ws` (proxied by Vite).
+
+Reminder delivery is database-first. `ScheduledJobExecutor` locks and runs each due Pomodoro job in one transaction with creation of its notification, while `NotificationService` retries WebSocket pushes for unacknowledged due records. The app-wide frontend `NotificationCenter` owns the single authenticated socket, synchronizes `/api/v1/notifications/due` on startup/reconnect/focus/visibility/online changes and on a recovery interval, presents either an OS notification or a queued in-app fallback, then acknowledges it. Never add feature-specific ephemeral notification sockets; create another typed durable notification instead.
 
 ### Database
 
@@ -102,7 +105,6 @@ All user-scoped entities (Task, DayEntity, MeditationSession, TaskSession, Pomod
 | Backend    | 8080 | Spring Boot; also WebSocket    |
 | PostgreSQL | 5432 | Docker                         |
 | Keycloak   | 7070 | Docker, `start-dev` mode       |
-| Grafana    | 3000 | Docker, anonymous access on    |
 
 Docker services are defined in `deployment/docker-compose.yml`. Environment variables (DB credentials, Keycloak admin) live in `deployment/.env`.
 
@@ -115,6 +117,8 @@ Docker services are defined in `deployment/docker-compose.yml`. Environment vari
 **Prefix all index names with `idx_app_` to avoid collisions with Keycloak.** Keycloak shares the same PostgreSQL database and creates its own indexes (e.g. `IDX_USER_EMAIL` on `USER_ENTITY`). PostgreSQL index names are unique per schema and case-insensitive, so a plain `idx_user_email` on our `app_user` table collides with Keycloak's index of the same name, causing one of them to fail on startup. Always use `idx_app_<table>_<column>` for our indexes.
 
 **Always use `ifNotExists: true` on `createIndex` in Liquibase changesets.** Partial runs (e.g. a failed startup) can leave indexes in the DB without a corresponding `DATABASECHANGELOG` entry. On the next run Liquibase tries to create them again and fails. `ifNotExists: true` makes index creation idempotent and prevents this.
+
+**Never edit a Liquibase changeset after it may have been applied.** Liquibase stores each applied changeset's checksum in `DATABASECHANGELOG`; changing the file later prevents startup with a checksum validation failure. Restore the applied changeset exactly and put every subsequent schema or data change in a new, sequentially numbered changeset. Never work around this with `clearCheckSums` or `validCheckSum` unless the user explicitly authorizes a deliberate migration-history repair.
 
 **Never hardcode credentials in `.properties` files.** All secrets (DB user/password, etc.) live in `deployment/.env` and are referenced via `${ENV_VAR}` placeholders in `application-dev.properties`. `run-app.sh` sources `.env` before starting the backend so Spring Boot can resolve them.
 

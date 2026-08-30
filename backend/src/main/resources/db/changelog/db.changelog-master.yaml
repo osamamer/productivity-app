@@ -102,3 +102,11 @@ databaseChangeLog:
   # Store whether Pomodoro breaks and focus sessions start automatically
   - include:
       file: db/changelog/changes/030-add-pomodoro-start-preference.yaml
+
+  # Durable notification inbox shared by calendar reminders and Pomodoro transitions
+  - include:
+      file: db/changelog/changes/031-unify-notification-delivery.yaml
+
+  # Preserve legacy task reminders as typed inbox notifications
+  - include:
+      file: db/changelog/changes/032-classify-legacy-task-reminders.yaml

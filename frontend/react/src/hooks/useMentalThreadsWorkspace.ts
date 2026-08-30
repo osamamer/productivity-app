@@ -6,6 +6,7 @@ import {
     MentalThreadSummary,
 } from '../types/MentalThread.ts';
 import { mentalThreadService } from '../services/api/mentalThreadService.ts';
+import { invalidateMentalThreadHistory } from '../services/cache/mentalThreadHistoryCache.ts';
 
 export function useMentalThreadsWorkspace() {
     const [threads, setThreads] = useState<MentalThread[]>([]);
@@ -38,10 +39,14 @@ export function useMentalThreadsWorkspace() {
         return () => controller.abort();
     }, [reload]);
 
-    const performAndReload = useCallback(async <T,>(operation: () => Promise<T>): Promise<T | null> => {
+    const performAndReload = useCallback(async <T,>(
+        operation: () => Promise<T>,
+        onSuccess?: () => void,
+    ): Promise<T | null> => {
         setOperationError(null);
         try {
             const result = await operation();
+            onSuccess?.();
             await reload();
             return result;
         } catch (operationFailure) {
@@ -51,6 +56,29 @@ export function useMentalThreadsWorkspace() {
             return null;
         }
     }, [reload]);
+
+    const updateThread = useCallback((threadId: string, input: MentalThreadInput) => performAndReload(
+        () => mentalThreadService.updateThread(threadId, input),
+        () => invalidateMentalThreadHistory(threadId),
+    ), [performAndReload]);
+
+    const closeThread = useCallback((threadId: string, input: CloseMentalThreadInput) => performAndReload(
+        () => mentalThreadService.closeThread(threadId, input),
+        () => invalidateMentalThreadHistory(threadId),
+    ), [performAndReload]);
+
+    const reopenThread = useCallback((threadId: string) => performAndReload(
+        () => mentalThreadService.reopenThread(threadId),
+        () => invalidateMentalThreadHistory(threadId),
+    ), [performAndReload]);
+
+    const deleteThread = useCallback(async (threadId: string) => {
+        const result = await performAndReload(
+            () => mentalThreadService.deleteThread(threadId),
+            () => invalidateMentalThreadHistory(threadId),
+        );
+        return result !== null;
+    }, [performAndReload]);
 
     const checkInCapacity = useCallback(async (capacity: number) => {
         const result = await performAndReload(() => mentalThreadService.checkInCapacity(capacity));
@@ -66,15 +94,10 @@ export function useMentalThreadsWorkspace() {
         reload,
         clearOperationError: () => setOperationError(null),
         createThread: (input: MentalThreadInput) => performAndReload(() => mentalThreadService.createThread(input)),
-        updateThread: (threadId: string, input: MentalThreadInput) => performAndReload(
-            () => mentalThreadService.updateThread(threadId, input)),
-        closeThread: (threadId: string, input: CloseMentalThreadInput) => performAndReload(
-            () => mentalThreadService.closeThread(threadId, input)),
-        reopenThread: (threadId: string) => performAndReload(() => mentalThreadService.reopenThread(threadId)),
-        deleteThread: async (threadId: string) => {
-            const result = await performAndReload(() => mentalThreadService.deleteThread(threadId));
-            return result !== null;
-        },
+        updateThread,
+        closeThread,
+        reopenThread,
+        deleteThread,
         checkInCapacity,
     };
 }

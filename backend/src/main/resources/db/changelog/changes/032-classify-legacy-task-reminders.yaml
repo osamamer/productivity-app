@@ -1,0 +1,33 @@
+databaseChangeLog:
+  - changeSet:
+      id: 032-classify-legacy-task-reminders
+      author: codex
+      comment: Classify task reminders that predate the typed notification inbox
+      changes:
+        - update:
+            tableName: reminder
+            columns:
+              - column:
+                  name: notification_type
+                  value: TASK_REMINDER
+              - column:
+                  name: title
+                  value: Task reminder
+              - column:
+                  name: target_url
+                  value: /tasks
+            where: event_id IS NULL
+      rollback:
+        - update:
+            tableName: reminder
+            columns:
+              - column:
+                  name: notification_type
+                  value: CALENDAR_EVENT
+              - column:
+                  name: title
+                  valueComputed: 'NULL'
+              - column:
+                  name: target_url
+                  valueComputed: 'NULL'
+            where: notification_type = 'TASK_REMINDER'

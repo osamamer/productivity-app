@@ -67,6 +67,8 @@ function withTaskBuckets(previous: TaskState, allTasks: Task[]): TaskState {
     };
 }
 
+const TASK_LIST_TTL_MS = 30 * 1000;
+
 export function useTaskManager() {
     const [taskState, setTaskState] = useState<TaskState>({
         allTasks: [],
@@ -78,6 +80,7 @@ export function useTaskManager() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const allTasksRequestRef = useRef<Promise<void> | null>(null);
+    const allTasksFetchedAtRef = useRef(0);
 
     const {
         allTasks,
@@ -91,9 +94,12 @@ export function useTaskManager() {
         setTaskState(prev => ({ ...prev, highlightedTask: task }));
     }, []);
 
-    const fetchAllTasks = useCallback(async () => {
+    const fetchAllTasks = useCallback(async (force = false) => {
         if (allTasksRequestRef.current) {
             return allTasksRequestRef.current;
+        }
+        if (!force && Date.now() - allTasksFetchedAtRef.current < TASK_LIST_TTL_MS) {
+            return;
         }
 
         const request = (async () => {
@@ -101,6 +107,7 @@ export function useTaskManager() {
                 setLoading(true);
                 setError(null);
                 const tasks = await taskService.getAllMainTasks();
+                allTasksFetchedAtRef.current = Date.now();
                 setTaskState(prev => {
                     const next = withTaskBuckets(prev, tasks);
                     return {
@@ -111,6 +118,7 @@ export function useTaskManager() {
                     };
                 });
             } catch (err) {
+                allTasksFetchedAtRef.current = 0;
                 setError(err instanceof Error ? err.message : 'Failed to fetch tasks');
                 console.error('Error fetching all tasks:', err);
             } finally {
@@ -155,8 +163,8 @@ export function useTaskManager() {
         }
     }, []);
 
-    const refreshTaskBuckets = useCallback(async () => {
-        await fetchAllTasks();
+    const refreshTaskBuckets = useCallback(async (force = false) => {
+        await fetchAllTasks(force);
     }, [fetchAllTasks]);
 
     useEffect(() => {
@@ -170,7 +178,7 @@ export function useTaskManager() {
 
             timeoutId = setTimeout(async () => {
                 try {
-                    await refreshTaskBuckets();
+                    await refreshTaskBuckets(true);
                 } finally {
                     scheduleNextRefresh();
                 }

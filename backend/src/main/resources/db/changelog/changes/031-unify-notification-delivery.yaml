@@ -1,0 +1,74 @@
+databaseChangeLog:
+  - changeSet:
+      id: 031-unify-notification-delivery
+      author: codex
+      comment: Turn reminders into a durable, typed notification inbox shared by calendar and Pomodoro flows
+      changes:
+        - addColumn:
+            tableName: reminder
+            columns:
+              - column:
+                  name: notification_type
+                  type: varchar(50)
+                  defaultValue: CALENDAR_EVENT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: title
+                  type: varchar(200)
+              - column:
+                  name: body
+                  type: varchar(500)
+              - column:
+                  name: target_url
+                  type: varchar(255)
+              - column:
+                  name: created_at
+                  type: timestamp with time zone
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+        - createIndex:
+            tableName: reminder
+            indexName: idx_app_reminder_user_due_ack
+            ifNotExists: true
+            columns:
+              - column:
+                  name: user_id
+              - column:
+                  name: date_time
+              - column:
+                  name: acknowledged_at
+        - createIndex:
+            tableName: reminder
+            indexName: idx_app_reminder_push_retry
+            ifNotExists: true
+            columns:
+              - column:
+                  name: date_time
+              - column:
+                  name: dispatched_at
+              - column:
+                  name: acknowledged_at
+      rollback:
+        - dropIndex:
+            tableName: reminder
+            indexName: idx_app_reminder_push_retry
+        - dropIndex:
+            tableName: reminder
+            indexName: idx_app_reminder_user_due_ack
+        - dropColumn:
+            tableName: reminder
+            columnName: created_at
+        - dropColumn:
+            tableName: reminder
+            columnName: target_url
+        - dropColumn:
+            tableName: reminder
+            columnName: body
+        - dropColumn:
+            tableName: reminder
+            columnName: title
+        - dropColumn:
+            tableName: reminder
+            columnName: notification_type

@@ -21,6 +21,10 @@ import { MentalThread, MentalThreadLoadEntry } from '../../types/MentalThread.ts
 import { Task } from '../../types/Task.tsx';
 import { TaskToCreate } from '../../types/TaskToCreate.tsx';
 import { mentalThreadService } from '../../services/api/mentalThreadService.ts';
+import {
+    cacheMentalThreadHistory,
+    getCachedMentalThreadHistory,
+} from '../../services/cache/mentalThreadHistoryCache.ts';
 import { ThreadTasksSection } from './ThreadTasksSection.tsx';
 import {
     attentionStateDetails,
@@ -49,12 +53,6 @@ interface LoadHistoryState {
     error: string | null;
 }
 
-const loadHistoryCache = new Map<string, {
-    mentalLoad: number;
-    updatedAt: string;
-    entries: MentalThreadLoadEntry[];
-}>();
-
 function formatDate(date: string | null): string {
     if (!date) return 'Not set';
     return new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
@@ -82,8 +80,9 @@ export function MentalThreadDetail({
     onToggleTask,
 }: MentalThreadDetailProps) {
     const [loadHistoryState, setLoadHistoryState] = useState<LoadHistoryState>(() => {
-        const cached = loadHistoryCache.get(thread.id);
+        const cached = getCachedMentalThreadHistory(thread.id);
         return cached?.mentalLoad === thread.currentMentalLoad
+            && cached.updatedAt === thread.updatedAt
             ? {
                 threadId: thread.id,
                 mentalLoad: thread.currentMentalLoad,
@@ -112,7 +111,7 @@ export function MentalThreadDetail({
     const currentStateDescription = isClosed
         ? 'This thread is closed and no longer contributes to open mental load.'
         : presentation.description;
-    const cachedHistory = loadHistoryCache.get(thread.id);
+    const cachedHistory = getCachedMentalThreadHistory(thread.id);
     const stateMatchesThread = loadHistoryState.threadId === thread.id
         && loadHistoryState.mentalLoad === thread.currentMentalLoad
         && loadHistoryState.updatedAt === thread.updatedAt;
@@ -148,7 +147,7 @@ export function MentalThreadDetail({
     }, [visibleHistory.loading, visibleHistory.threadId, visibleHistory.mentalLoad, visibleHistory.updatedAt]);
 
     useEffect(() => {
-        const cached = loadHistoryCache.get(thread.id);
+        const cached = getCachedMentalThreadHistory(thread.id);
         if (cached?.mentalLoad === thread.currentMentalLoad && cached.updatedAt === thread.updatedAt) {
             setLoadHistoryState({
                 threadId: thread.id,
@@ -172,7 +171,7 @@ export function MentalThreadDetail({
         });
         mentalThreadService.getLoadHistory(thread.id, controller.signal)
             .then(entries => {
-                loadHistoryCache.set(thread.id, {
+                cacheMentalThreadHistory(thread.id, {
                     mentalLoad: thread.currentMentalLoad,
                     updatedAt: thread.updatedAt,
                     entries,

@@ -25,6 +25,19 @@ public class Reminder {
     @Column(nullable = false)
     private int repeat;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "notification_type", nullable = false)
+    private NotificationType notificationType = NotificationType.CALENDAR_EVENT;
+
+    @Column(length = 200)
+    private String title;
+
+    @Column(length = 500)
+    private String body;
+
+    @Column(name = "target_url", length = 255)
+    private String targetUrl;
+
     @Column(name = "minutes_before", nullable = false)
     private int minutesBefore;
 
@@ -41,10 +54,20 @@ public class Reminder {
     @Column(name = "acknowledged_at")
     private Instant acknowledgedAt;
 
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private Instant createdAt;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
     @Column(name = "user_id", insertable = false, updatable = false)
     private String userId;
+
+    @PrePersist
+    void onCreate() {
+        if (createdAt == null) {
+            createdAt = Instant.now();
+        }
+    }
 }

@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.osama.exceptions.ResourceNotFoundException;
 import org.osama.reminder.Reminder;
 import org.osama.reminder.ReminderRepository;
+import org.osama.reminder.NotificationType;
 import org.osama.user.User;
 import org.osama.user.UserRepository;
 import org.springframework.stereotype.Service;
@@ -122,23 +123,25 @@ public class CalendarEventService {
 
     private void replaceReminder(CalendarEvent event, Integer minutesBefore, User user) {
         var existingReminder = reminderRepository.findByEventId(event.getId());
+        existingReminder.ifPresent(reminderRepository::delete);
         if (minutesBefore == null) {
-            existingReminder.ifPresent(reminderRepository::delete);
             return;
+        }
+
+        if (existingReminder.isPresent()) {
+            reminderRepository.flush();
         }
 
         Instant eventStart = event.isAllDay()
                 ? event.getStartDate().atStartOfDay(ZoneId.of(event.getTimeZone())).toInstant()
                 : event.getStartTime();
-        Reminder reminder = existingReminder.orElseGet(() -> {
-            Reminder created = new Reminder();
-            created.setReminderId(UUID.randomUUID().toString());
-            created.setEvent(event);
-            created.setRepeat(0);
-            created.setUser(user);
-            return created;
-        });
+        Reminder reminder = new Reminder();
+        reminder.setReminderId(UUID.randomUUID().toString());
+        reminder.setRepeat(0);
+        reminder.setUser(user);
         reminder.setEvent(event);
+        reminder.setNotificationType(NotificationType.CALENDAR_EVENT);
+        reminder.setTargetUrl("/calendar");
         reminder.setDateTime(eventStart.minusSeconds(minutesBefore.longValue() * 60));
         reminder.setMinutesBefore(minutesBefore);
         reminder.setDispatchedAt(null);

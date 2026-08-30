@@ -1,28 +1,53 @@
 import { StatDefinition, StatEntry, StatSummary, StatInsights, CreateDefinitionRequest, RecordEntryRequest } from '../../types/Stats';
-import { getAuthHeaders } from '../utils/authHeaders';
+import { getAuthCacheScope, getAuthHeaders } from '../utils/authHeaders';
+import { TtlCache } from '../cache/ttlCache';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 const STATS_URL = `${API_BASE_URL}/api/v1/stats`;
 
-const entryCache = new Map<string, StatEntry[]>();
+const STAT_DEFINITIONS_TTL_MS = 10 * 60 * 1000;
+const CURRENT_STAT_DATA_TTL_MS = 60 * 1000;
+const HISTORICAL_STAT_ENTRIES_TTL_MS = 30 * 60 * 1000;
+const DERIVED_STAT_DATA_TTL_MS = 5 * 60 * 1000;
+const STAT_CACHE_MAX_ENTRIES = 100;
+
+const entryCache = new TtlCache<StatEntry[]>({ ttlMs: HISTORICAL_STAT_ENTRIES_TTL_MS, maxEntries: STAT_CACHE_MAX_ENTRIES });
 const entryRequests = new Map<string, Promise<StatEntry[]>>();
-const summaryCache = new Map<string, StatSummary>();
+const summaryCache = new TtlCache<StatSummary>({ ttlMs: DERIVED_STAT_DATA_TTL_MS, maxEntries: STAT_CACHE_MAX_ENTRIES });
 const summaryRequests = new Map<string, Promise<StatSummary>>();
-const insightsCache = new Map<string, StatInsights>();
+const insightsCache = new TtlCache<StatInsights>({ ttlMs: DERIVED_STAT_DATA_TTL_MS, maxEntries: STAT_CACHE_MAX_ENTRIES });
 const insightsRequests = new Map<string, Promise<StatInsights>>();
-let definitionsCache: StatDefinition[] | null = null;
-let definitionsRequest: Promise<StatDefinition[]> | null = null;
+const definitionsCache = new TtlCache<StatDefinition[]>({ ttlMs: STAT_DEFINITIONS_TTL_MS, maxEntries: 10 });
+const definitionsRequests = new Map<string, Promise<StatDefinition[]>>();
+
+function definitionsCacheKey(): string {
+    return `${getAuthCacheScope()}:definitions`;
+}
+
+function definitionCachePrefix(definitionId: string): string {
+    return `${getAuthCacheScope()}:${definitionId}:`;
+}
 
 function entryCacheKey(definitionId: string, from: string, to: string): string {
-    return `${definitionId}:${from}:${to}`;
+    return `${getAuthCacheScope()}:${definitionId}:${from}:${to}`;
 }
 
 function summaryCacheKey(definitionId: string, from: string, to: string): string {
-    return `${definitionId}:${from}:${to}`;
+    return `${getAuthCacheScope()}:${definitionId}:${from}:${to}`;
 }
 
 function insightsCacheKey(definitionId: string, from: string, to: string): string {
-    return `${definitionId}:${from}:${to}`;
+    return `${getAuthCacheScope()}:${definitionId}:${from}:${to}`;
+}
+
+function isCurrentOrFutureRange(to: string): boolean {
+    const now = new Date();
+    const today = [
+        now.getFullYear(),
+        String(now.getMonth() + 1).padStart(2, '0'),
+        String(now.getDate()).padStart(2, '0'),
+    ].join('-');
+    return to >= today;
 }
 
 function invalidateEntryCache(definitionId?: string): void {
@@ -31,45 +56,39 @@ function invalidateEntryCache(definitionId?: string): void {
         return;
     }
 
-    for (const key of entryCache.keys()) {
-        if (key.startsWith(`${definitionId}:`)) entryCache.delete(key);
-    }
+    entryCache.deleteMatching(key => key.startsWith(definitionCachePrefix(definitionId)));
 }
 
 function invalidateDefinitionsCache(): void {
-    definitionsCache = null;
+    definitionsCache.delete(definitionsCacheKey());
     insightsCache.clear();
 }
 
 function invalidateSummaryCache(definitionId: string): void {
-    const prefix = `${definitionId}:`;
-    for (const key of summaryCache.keys()) {
-        if (key.startsWith(prefix)) summaryCache.delete(key);
-    }
+    summaryCache.deleteMatching(key => key.startsWith(definitionCachePrefix(definitionId)));
 }
 
 function invalidateInsightsCache(): void {
     insightsCache.clear();
 }
 
-function cacheRecordedEntry(entry: StatEntry): void {
-    const prefix = `${entry.statDefinitionId}:`;
-    for (const [key, entries] of entryCache.entries()) {
-        if (!key.startsWith(prefix)) continue;
-        const [from, to] = key.slice(prefix.length).split(':');
-        if (entry.date < from || entry.date > to) continue;
-
-        const updatedEntries = entries.filter(cachedEntry => cachedEntry.date !== entry.date);
-        updatedEntries.push(entry);
-        updatedEntries.sort((left, right) => left.date.localeCompare(right.date));
-        entryCache.set(key, updatedEntries);
-    }
+function clearDataCaches(): void {
+    entryCache.clear();
+    summaryCache.clear();
+    insightsCache.clear();
+    entryRequests.clear();
+    summaryRequests.clear();
+    insightsRequests.clear();
 }
 
 export const statService = {
     async getDefinitions(): Promise<StatDefinition[]> {
-        if (definitionsCache) return definitionsCache;
-        if (definitionsRequest) return definitionsRequest;
+        const key = definitionsCacheKey();
+        const cachedDefinitions = definitionsCache.get(key);
+        if (cachedDefinitions) return cachedDefinitions;
+
+        const pendingRequest = definitionsRequests.get(key);
+        if (pendingRequest) return pendingRequest;
 
         const request = fetch(`${STATS_URL}/definitions`, { headers: getAuthHeaders() })
             .then(response => {
@@ -77,15 +96,15 @@ export const statService = {
                 return response.json() as Promise<StatDefinition[]>;
             })
             .then(definitions => {
-                definitionsCache = definitions;
+                definitionsCache.set(key, definitions);
                 return definitions;
             });
 
-        definitionsRequest = request;
+        definitionsRequests.set(key, request);
         try {
             return await request;
         } finally {
-            if (definitionsRequest === request) definitionsRequest = null;
+            if (definitionsRequests.get(key) === request) definitionsRequests.delete(key);
         }
     },
 
@@ -138,7 +157,11 @@ export const statService = {
                 return response.json() as Promise<StatEntry[]>;
             })
             .then(entries => {
-                entryCache.set(key, entries);
+                entryCache.set(
+                    key,
+                    entries,
+                    isCurrentOrFutureRange(to) ? CURRENT_STAT_DATA_TTL_MS : HISTORICAL_STAT_ENTRIES_TTL_MS,
+                );
                 return entries;
             });
 
@@ -177,7 +200,11 @@ export const statService = {
                 return response.json() as Promise<StatSummary>;
             })
             .then(summary => {
-                summaryCache.set(key, summary);
+                summaryCache.set(
+                    key,
+                    summary,
+                    isCurrentOrFutureRange(to) ? CURRENT_STAT_DATA_TTL_MS : DERIVED_STAT_DATA_TTL_MS,
+                );
                 return summary;
             });
 
@@ -198,12 +225,13 @@ export const statService = {
     },
 
     clearDataCache(): void {
-        entryCache.clear();
-        summaryCache.clear();
-        insightsCache.clear();
-        entryRequests.clear();
-        summaryRequests.clear();
-        insightsRequests.clear();
+        clearDataCaches();
+    },
+
+    clearCache(): void {
+        definitionsCache.clear();
+        definitionsRequests.clear();
+        clearDataCaches();
     },
 
     async getInsights(definitionId: string, from: string, to: string): Promise<StatInsights> {
@@ -223,7 +251,11 @@ export const statService = {
                 return response.json() as Promise<StatInsights>;
             })
             .then(insights => {
-                insightsCache.set(key, insights);
+                insightsCache.set(
+                    key,
+                    insights,
+                    isCurrentOrFutureRange(to) ? CURRENT_STAT_DATA_TTL_MS : DERIVED_STAT_DATA_TTL_MS,
+                );
                 return insights;
             });
 
@@ -250,7 +282,8 @@ export const statService = {
         if (!response.ok) throw new Error('Failed to record stat entry');
         const responseEntry = await response.json() as StatEntry;
         const entry = { ...responseEntry, statDefinitionId: req.statDefinitionId };
-        cacheRecordedEntry(entry);
+        // Entries, summaries, and insights are all derived from this write.
+        invalidateEntryCache(req.statDefinitionId);
         invalidateSummaryCache(req.statDefinitionId);
         invalidateInsightsCache();
         return entry;
