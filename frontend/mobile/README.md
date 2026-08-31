@@ -26,6 +26,30 @@ The mobile app has explicit environment guards. A local native build uses the
 profiles use the deployed HTTPS origins defined in `eas.json`. A preview or
 production build will fail rather than silently connecting to `localhost`.
 
+## Android host prerequisites
+
+`npm run android` needs the Android SDK and `adb` on the development computer.
+Install Android Studio, then use its SDK Manager to install Android SDK
+Platform-Tools, Android SDK Command-line Tools, and an Android SDK Platform.
+Create an emulator there, or connect a phone with USB debugging enabled.
+
+On Linux, Android Studio normally installs the SDK at
+`/home/your-user/Android/Sdk`. Set the actual path shown in Android Studio's SDK
+Manager, then restart the terminal:
+
+```bash
+export ANDROID_HOME=/home/your-user/Android/Sdk
+export ANDROID_SDK_ROOT=/home/your-user/Android/Sdk
+export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
+```
+
+Confirm the setup before running the app:
+
+```bash
+adb version
+adb devices
+```
+
 Start the backend, PostgreSQL, and Keycloak from the repository root:
 
 ```bash
