@@ -1,11 +1,13 @@
-FROM openjdk:17-ea-3-jdk-slim-buster
+FROM eclipse-temurin:21-jre-jammy
 
 COPY set-timezone.sh /set-timezone.sh
-RUN chmod +x /set-timezone.sh
+RUN chmod +x /set-timezone.sh \
+    && useradd --system --create-home --home-dir /app appuser
 
 COPY backend/target/*.jar app.jar
+RUN chown appuser:appuser /app.jar
 
-# Expose both HTTP and WebSocket ports
+USER appuser
 EXPOSE 8080
 
 ENTRYPOINT ["/set-timezone.sh"]

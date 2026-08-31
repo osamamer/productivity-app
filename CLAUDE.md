@@ -34,7 +34,7 @@ cd frontend/react && npm run lint     # ESLint (max-warnings 0)
 
 ## Architecture
 
-### Backend (Spring Boot 3.1.3, Java 17, Maven)
+### Backend (Spring Boot 3.1.3, Java 21, Maven)
 
 Package root: `org.osama`
 
@@ -110,7 +110,7 @@ Docker services are defined in `deployment/docker-compose.yml`. Environment vari
 ```
 
 `.github/workflows/build.yml` runs on push to `master`:
-- **Backend**: `mvn clean verify` with Java 17 (Temurin), using H2 test profile
+- **Backend**: `mvn clean verify` with Java 21 (Temurin), using H2 test profile
 - **Frontend**: `npm install` + `npm run build -- --mode=production` with Node 18
 
 ## Coding Style

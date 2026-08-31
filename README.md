@@ -10,6 +10,9 @@ Build the docker image with:
 ```sh
 ./deployment/build-docker-image.sh
 ```
+
+For a production deployment on a single VPS, see
+[`deployment/PRODUCTION_DEPLOYMENT.md`](deployment/PRODUCTION_DEPLOYMENT.md).
 Rerun the app after making changes to the backend:
 ```sh
 ./rerun-after-changes.sh

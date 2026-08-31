@@ -1,0 +1,116 @@
+name: productivity-app
+
+services:
+  postgres:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      KEYCLOAK_DB: ${KEYCLOAK_DB:?KEYCLOAK_DB is required}
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - productivity-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.7.2
+    restart: unless-stopped
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:?KEYCLOAK_ADMIN_USER is required}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD is required}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/${KEYCLOAK_DB}
+      KC_DB_USERNAME: ${POSTGRES_USER}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      KC_HTTP_ENABLED: "true"
+      KC_HTTP_PORT: "8080"
+      KC_HOSTNAME: https://${AUTH_DOMAIN:?AUTH_DOMAIN is required}
+      KC_PROXY_HEADERS: xforwarded
+      KC_HEALTH_ENABLED: "true"
+    command: start
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - productivity-network
+
+  backend:
+    build:
+      context: ..
+      dockerfile: deployment/backend.production.dockerfile
+    image: productivity-app-backend:production
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      KEYCLOAK_ISSUER_URI: https://${AUTH_DOMAIN}/realms/${KEYCLOAK_REALM:-productivity-app}
+      KEYCLOAK_BASE_URL: https://${AUTH_DOMAIN}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-productivity-app}
+      KEYCLOAK_PASSWORD_VERIFICATION_CLIENT_ID: ${KEYCLOAK_PASSWORD_VERIFICATION_CLIENT_ID:-admin-cli}
+      KEYCLOAK_ADMIN_REALM: ${KEYCLOAK_ADMIN_REALM:-master}
+      KEYCLOAK_ADMIN_CLIENT_ID: ${KEYCLOAK_ADMIN_CLIENT_ID:-admin-cli}
+      KEYCLOAK_ADMIN_USER: ${KEYCLOAK_ADMIN_USER}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      APP_CORS_ALLOWED_ORIGINS: https://${APP_DOMAIN}
+      APP_WEBSOCKET_ALLOWED_ORIGIN_PATTERNS: https://${APP_DOMAIN}
+      TZ: ${TZ:-UTC}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+    networks:
+      - productivity-network
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 45s
+
+  edge:
+    build:
+      context: ..
+      dockerfile: deployment/frontend.production.dockerfile
+      args:
+        VITE_API_URL: https://${APP_DOMAIN}
+        VITE_WS_URL: wss://${APP_DOMAIN}/ws
+        VITE_KEYCLOAK_URL: https://${AUTH_DOMAIN}
+        VITE_KEYCLOAK_REALM: ${KEYCLOAK_REALM:-productivity-app}
+        VITE_KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-productivity-app-frontend}
+    image: productivity-app-edge:production
+    restart: unless-stopped
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?APP_DOMAIN is required}
+      AUTH_DOMAIN: ${AUTH_DOMAIN:?AUTH_DOMAIN is required}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL is required}
+    depends_on:
+      - backend
+      - keycloak
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - productivity-network
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  productivity-network:
+    driver: bridge

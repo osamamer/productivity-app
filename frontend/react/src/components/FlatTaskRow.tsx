@@ -591,10 +591,6 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                     </Typography>
                 )}
 
-                {task.importance > 7 && !task.completed && (
-                    <Box sx={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: '#ef4444', mx: 1.5, flexShrink: 0 }} />
-                )}
-
                 {(showPomodoroButton || showDetailsButton || onDelete) && (
                     <Box sx={{ display: 'flex', gap: 0.25, ml: 0.5 }}>
                         {showPomodoroButton && (
