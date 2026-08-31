@@ -9,7 +9,17 @@ compose_file="$script_dir/deployment/docker-compose.yml"
 backend_pid=""
 frontend_pid=""
 
-if [[ ! -r "$env_file" ]]; then
+if [[ ! -e "$env_file" ]]; then
+  env_example="$script_dir/deployment/.env.example"
+  if [[ ! -r "$env_example" ]]; then
+    echo "Missing environment file and example: $env_file" >&2
+    exit 1
+  fi
+
+  cp "$env_example" "$env_file"
+  chmod 600 "$env_file"
+  echo "Created $env_file from $env_example."
+elif [[ ! -r "$env_file" ]]; then
   echo "Missing or unreadable environment file: $env_file" >&2
   exit 1
 fi
@@ -129,12 +139,31 @@ shutdown() {
   exit 130
 }
 
+ensure_frontend_dependencies() {
+  local frontend_dir="$script_dir/frontend/react"
+
+  if [[ -x "$frontend_dir/node_modules/.bin/vite" ]]; then
+    return 0
+  fi
+
+  if ! command -v npm >/dev/null 2>&1; then
+    echo "npm is required to install the frontend dependencies." >&2
+    echo "Install Node.js and npm, then run this script again." >&2
+    return 1
+  fi
+
+  echo "📦 Installing frontend dependencies..."
+  (cd "$frontend_dir" && npm ci --no-audit --no-fund)
+}
+
 trap shutdown INT TERM
 
 if ! docker info >/dev/null 2>&1; then
   echo "Cannot access the Docker daemon. Add this account to the docker group and log in again." >&2
   exit 1
 fi
+
+ensure_frontend_dependencies
 
 "${compose[@]}" config >/dev/null
 remove_legacy_grafana_container

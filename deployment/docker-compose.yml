@@ -34,9 +34,10 @@ services:
       KC_HOSTNAME: "http://localhost:7070"
     volumes:
       - ./keycloak-theme:/opt/keycloak/themes:ro
+      - ./keycloak:/opt/keycloak/data/import:ro
     ports:
       - "7070:7070"
-    command: start-dev
+    command: ["start-dev", "--import-realm"]
     depends_on:
       postgres:
         condition: service_healthy
