@@ -37,7 +37,7 @@ services:
       KC_HEALTH_ENABLED: "true"
     volumes:
       - ./keycloak-theme:/opt/keycloak/themes:ro
-    command: ["start", "--server-async-bootstrap=false"]
+    command: start
     healthcheck:
       test:
         [
