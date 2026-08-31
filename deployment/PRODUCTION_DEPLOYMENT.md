@@ -183,6 +183,13 @@ its health check, then starts Caddy. It records the last successful tag and rest
 the previous container images if a later rollout fails health checks. Database
 migrations are forward-only; a container rollback does not undo a migration.
 
+Keycloak is deliberately pinned to `26.5.2` in both Compose files. An application
+deployment must not implicitly upgrade the identity database. Upgrade Keycloak only
+as a separate maintenance operation with a fresh full backup and a tested restore.
+Before every startup, the deployment script verifies that an existing Keycloak schema
+also contains Keycloak's `databasechangelog` history. If tables exist without that
+history, deployment stops before Keycloak can enter the destructive migration loop.
+
 Watch startup logs:
 
 ```sh
@@ -257,6 +264,17 @@ crontab -e
 Copy backups to a separate machine or object-storage bucket and periodically test a
 restore. The VPS provider's snapshot/backup feature is useful as a second layer, but
 should not be the only copy.
+
+Always restore a Keycloak dump as a complete database. Never restore only realm/client
+tables, and never exclude `databasechangelog` or `databasechangeloglock`; the schema
+and those migration-ledger tables are one recovery unit. A dump created by
+`backup-production.sh` includes all of them.
+
+If deployment reports that schema tables exist without Keycloak migration history,
+leave Keycloak stopped. Move the invalid database aside, create a clean database with
+the same name, and restore one complete `keycloak-*.dump` made while the database was
+healthy. Do not fabricate changelog rows or use Liquibase checksum overrides: the
+ledger must come from the same snapshot as the schema and realm data.
 
 ## Updating the deployment
 

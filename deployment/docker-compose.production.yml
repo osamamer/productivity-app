@@ -21,7 +21,7 @@ services:
       retries: 12
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.7.2
+    image: quay.io/keycloak/keycloak:26.5.2
     restart: unless-stopped
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:?KEYCLOAK_ADMIN_USER is required}
@@ -37,7 +37,19 @@ services:
       KC_HEALTH_ENABLED: "true"
     volumes:
       - ./keycloak-theme:/opt/keycloak/themes:ro
-    command: start
+    command: ["start", "--server-async-bootstrap=false"]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "bash",
+          "-c",
+          "{ printf 'HEAD /health/ready HTTP/1.0\\r\\n\\r\\n' >&0; grep 'HTTP/1.0 200' <&0; } 0<>/dev/tcp/localhost/9000"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
     depends_on:
       postgres:
         condition: service_healthy
@@ -67,7 +79,7 @@ services:
       postgres:
         condition: service_healthy
       keycloak:
-        condition: service_started
+        condition: service_healthy
     networks:
       - productivity-network
     healthcheck:
@@ -85,8 +97,10 @@ services:
       AUTH_DOMAIN: ${AUTH_DOMAIN:?AUTH_DOMAIN is required}
       ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL is required}
     depends_on:
-      - backend
-      - keycloak
+      backend:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
     ports:
       - "80:80"
       - "443:443"
