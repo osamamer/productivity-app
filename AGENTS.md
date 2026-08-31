@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Full-stack productivity app ("So Life Doesn't Get Overwhelming") for managing tasks, focus sessions, meditation, and daily planning. Built with Spring Boot + React/TypeScript.
+Claritard is a full-stack productivity app ("So Life Doesn't Get Overwhelming") for managing tasks, focus sessions, meditation, and daily planning. Built with Spring Boot + React/TypeScript.
 
 ## Commands
 
@@ -82,6 +82,7 @@ Keycloak (port 7070) is the identity provider. The backend validates JWTs as an 
 1. Create realm `productivity-app`.
 2. Create client `productivity-app-frontend`: type = Public, valid redirect URIs = `http://localhost:5173/*`, web origins = `http://localhost:5173`.
 3. In that client's settings, ensure the token includes `email`, `given_name`, `family_name`, `preferred_username` claims (add mappers under Client scopes if needed). The backend falls back gracefully if claims are absent, but user display will be degraded.
+4. Local `run-app.sh` applies the `productivity` Login Theme and enables self-registration for the app realm automatically. For production, select `productivity` in Realm settings → Themes and enable User registration under Realm settings → Login. The theme is mounted from `deployment/keycloak-theme` by both Docker Compose files and keeps Keycloak's secure OIDC form flow while matching the app's visual language.
 
 All user-scoped entities (Task, DayEntity, MeditationSession, TaskSession, Pomodoro, MentalThread, MentalCapacityCheckIn) have a mandatory `user` foreign key. Users are auto-provisioned on first API call — no manual user creation is needed.
 

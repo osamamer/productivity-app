@@ -146,7 +146,9 @@ Create realm `productivity-app`, then create a public client:
 - Web origin: `https://app.example.com`
 
 Ensure the client token includes `email`, `given_name`, `family_name`, and
-`preferred_username` claims. Create a test user and verify that login, task creation,
+`preferred_username` claims. In Realm settings → Themes, select `productivity` as
+the Login Theme. The theme is mounted into the Keycloak container from
+`deployment/keycloak-theme`. Create a test user and verify that login, task creation,
 password changes, and logout all work.
 
 The backend's issuer URL must remain the public Keycloak URL because it must match the

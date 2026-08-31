@@ -1,4 +1,4 @@
-# Productivity App - So Life Doesn't Get Overwhelming
+# Claritard - So Life Doesn't Get Overwhelming
 An app designed to help you manage various aspects of your life while keeping things light and fun.
 
 ## Tech Stack Used
@@ -37,6 +37,14 @@ After verification, archive the old copied Keycloak tables outside the applicati
 ```
 
 This cleanup requires a migration backup and a non-empty realm in the new Keycloak database. It moves tables to the reversible `legacy_keycloak` schema; it does not delete data, remove the PostgreSQL volume, or remove the backup.
+
+## Branded login
+
+The Docker Compose files mount the app's `productivity` Keycloak login theme from
+`deployment/keycloak-theme`. `run-app.sh` applies it to the local
+`productivity-app` realm automatically. For other environments, select
+`productivity` under Realm settings → Themes → Login Theme. This keeps the standard
+Keycloak OIDC flow while giving the sign-in screen the app's visual style.
 
 ## Dev Coach
 

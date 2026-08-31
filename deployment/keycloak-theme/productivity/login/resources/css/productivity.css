@@ -1,0 +1,529 @@
+:root {
+    --productivity-violet: #946af5;
+    --productivity-violet-light: #b7a0fa;
+    --productivity-violet-dark: #6f44d8;
+    --productivity-ink: #1a1a2e;
+    --productivity-muted: rgba(26, 26, 46, 0.62);
+    --productivity-canvas: #f7f6fb;
+    --productivity-surface: #ffffff;
+    --productivity-border: rgba(26, 26, 46, 0.12);
+    --productivity-focus: rgba(148, 106, 245, 0.22);
+    --productivity-on-violet: #ffffff;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    min-height: 100%;
+}
+
+html.login-pf body {
+    margin: 0;
+    color: var(--productivity-ink);
+    background: var(--productivity-canvas);
+    font-family: Raleway, "Avenir Next", "Segoe UI", sans-serif;
+}
+
+.pf-v5-c-login {
+    min-height: 100vh;
+    padding: 24px;
+}
+
+.pf-v5-c-login__container {
+    width: 100%;
+    min-height: calc(100vh - 48px);
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: minmax(0, 396px);
+    grid-template-areas: "main";
+    justify-content: center;
+    align-items: center;
+}
+
+.pf-v5-c-login__header {
+    display: none;
+}
+
+.pf-v5-c-login__main {
+    grid-area: main;
+    width: 100%;
+    max-width: 396px;
+    margin: auto;
+    padding: 30px;
+    overflow: hidden;
+    border: 1px solid var(--productivity-border);
+    border-radius: 8px;
+    background: var(--productivity-surface);
+    box-shadow: 0 2px 16px rgba(0, 0, 0, 0.06);
+}
+
+.pf-v5-c-login__main-header {
+    display: block;
+    padding: 0 0 24px;
+    border: 0;
+}
+
+.pf-v5-c-login__main:has(#kc-form-login) .pf-v5-c-login__main-header::after {
+    display: block;
+    margin-top: 8px;
+    color: var(--productivity-muted);
+    content: "Sign in to continue planning your day.";
+    font-size: 0.9rem;
+    font-weight: 500;
+    line-height: 1.45;
+}
+
+.pf-v5-c-title {
+    color: var(--productivity-ink);
+    font-size: 1.75rem;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    line-height: 1.2;
+}
+
+.pf-v5-c-login__main-body,
+.pf-v5-c-login__main-footer {
+    padding: 0;
+    border: 0;
+    background: transparent;
+}
+
+.pf-v5-c-form__group {
+    margin-bottom: 20px;
+}
+
+.pf-v5-c-form__group-label {
+    padding-bottom: 8px;
+}
+
+.pf-v5-c-form__label,
+.pf-v5-c-form__label-text {
+    color: var(--productivity-ink);
+    font-size: 0.84rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+}
+
+span.pf-v5-c-form-control {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-height: 56px;
+    padding: 0;
+    border: 1px solid var(--productivity-border);
+    border-radius: 4px;
+    outline: 0;
+    color: var(--productivity-ink);
+    background: transparent;
+    background-image: none !important;
+    box-shadow: none !important;
+    appearance: none;
+    font: inherit;
+    font-size: 0.98rem;
+    transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+span.pf-v5-c-form-control::before,
+span.pf-v5-c-form-control::after {
+    display: none !important;
+    border: 0 !important;
+    background: none !important;
+    box-shadow: none !important;
+    content: none !important;
+}
+
+span.pf-v5-c-form-control > input {
+    width: 100%;
+    min-width: 0;
+    min-height: 54px;
+    padding: 0 16px;
+    border: 0 !important;
+    border-radius: 0 !important;
+    outline: 0 !important;
+    color: var(--productivity-ink);
+    background: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    appearance: none;
+    font: inherit;
+}
+
+span.pf-v5-c-form-control > input:-webkit-autofill {
+    -webkit-text-fill-color: var(--productivity-ink);
+    transition: background-color 9999s ease-out 0s;
+}
+
+span.pf-v5-c-form-control:focus-within {
+    border-color: var(--productivity-violet);
+    box-shadow: inset 0 0 0 1px var(--productivity-violet) !important;
+}
+
+span.pf-v5-c-form-control.pf-m-error,
+span.pf-v5-c-form-control.pf-m-error:focus-within {
+    border-color: #e56b6f;
+    box-shadow: inset 0 0 0 1px #e56b6f !important;
+}
+
+.pf-v5-c-input-group {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    overflow: hidden;
+    border: 1px solid var(--productivity-border);
+    border-radius: 4px;
+    background: transparent;
+    transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.pf-v5-c-input-group:focus-within {
+    border-color: var(--productivity-violet);
+    box-shadow: inset 0 0 0 1px var(--productivity-violet);
+}
+
+.pf-v5-c-input-group__item.pf-m-fill {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.pf-v5-c-input-group__item:not(.pf-m-fill) {
+    display: flex;
+    flex: 0 0 48px;
+}
+
+.pf-v5-c-input-group span.pf-v5-c-form-control {
+    min-height: 54px;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+.pf-v5-c-input-group span.pf-v5-c-form-control > input {
+    min-height: 54px;
+}
+
+.pf-v5-c-button.pf-m-control {
+    width: 48px;
+    min-height: 54px;
+    padding: 0;
+    border: 0 !important;
+    border-radius: 0 !important;
+    color: var(--productivity-muted);
+    background: transparent;
+    box-shadow: none !important;
+}
+
+.pf-v5-c-button.pf-m-control::before,
+.pf-v5-c-button.pf-m-control::after {
+    border: 0 !important;
+    box-shadow: none !important;
+}
+
+.pf-v5-c-button.pf-m-control:hover,
+.pf-v5-c-button.pf-m-control:focus {
+    color: var(--productivity-violet-dark);
+    background: rgba(148, 106, 245, 0.08);
+    outline: 0;
+}
+
+.pf-v5-c-helper-text {
+    padding-top: 8px;
+}
+
+.pf-v5-c-helper-text__item-text,
+.pf-v5-c-helper-text__item-text a,
+#kc-registration,
+#kc-registration a,
+#kc-info a {
+    color: var(--productivity-muted);
+    font-size: 0.82rem;
+}
+
+.pf-v5-c-helper-text__item-text a,
+#kc-registration a,
+#kc-info a,
+.pf-v5-c-login a {
+    color: var(--productivity-violet-dark);
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.pf-v5-c-helper-text__item-text a:hover,
+#kc-registration a:hover,
+#kc-info a:hover,
+.pf-v5-c-login a:hover {
+    text-decoration: underline;
+}
+
+.pf-v5-c-form__actions {
+    padding-top: 4px;
+}
+
+.pf-v5-c-button.pf-m-primary {
+    width: 100%;
+    min-height: 52px;
+    border: 0;
+    border-radius: 4px;
+    color: var(--productivity-on-violet);
+    background: var(--productivity-violet);
+    box-shadow: 0 3px 8px rgba(111, 68, 216, 0.22);
+    font: inherit;
+    font-size: 0.96rem;
+    font-weight: 700;
+    text-transform: none;
+    transition: transform 160ms ease, box-shadow 160ms ease, filter 160ms ease;
+}
+
+.pf-v5-c-button.pf-m-primary:hover,
+.pf-v5-c-button.pf-m-primary:focus {
+    background: var(--productivity-violet-dark);
+    box-shadow: 0 5px 12px rgba(111, 68, 216, 0.28);
+}
+
+.pf-v5-c-button.pf-m-primary:focus-visible,
+.pf-v5-c-button.pf-m-secondary:focus-visible,
+.pf-v5-c-login a:focus-visible {
+    outline: 3px solid var(--productivity-focus);
+    outline-offset: 3px;
+}
+
+span.pf-v5-c-form-control > input:focus-visible {
+    outline: 0;
+}
+
+.pf-v5-c-check {
+    color: var(--productivity-muted);
+    font-size: 0.82rem;
+}
+
+.pf-v5-c-check__input {
+    accent-color: var(--productivity-violet);
+}
+
+#kc-social-providers {
+    margin-top: 28px;
+    padding-top: 24px;
+    border-top: 1px solid var(--productivity-border);
+}
+
+#kc-social-providers h2 {
+    margin: 0 0 14px;
+    color: var(--productivity-muted);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-align: center;
+    text-transform: uppercase;
+}
+
+#kc-social-providers .pf-v5-c-button.pf-m-secondary {
+    min-height: 46px;
+    border: 1px solid var(--productivity-border);
+    border-radius: 4px;
+    color: var(--productivity-ink);
+    background: transparent;
+    font: inherit;
+    font-weight: 650;
+}
+
+#kc-social-providers .pf-v5-c-button.pf-m-secondary:hover {
+    border-color: var(--productivity-violet-light);
+    background: rgba(148, 106, 245, 0.06);
+}
+
+#kc-info,
+#kc-registration-container {
+    margin-top: 20px;
+    padding: 0;
+    text-align: center;
+}
+
+#kc-info {
+    border: 0 !important;
+}
+
+#kc-registration-container {
+    border-top: 1px solid var(--productivity-border);
+    padding-top: 20px;
+}
+
+#kc-registration {
+    color: var(--productivity-muted);
+    font-size: 0.88rem;
+    line-height: 1.5;
+}
+
+.pf-v5-c-login__container:has(#kc-register-form) {
+    max-width: 840px;
+    grid-template-columns: minmax(0, 840px);
+}
+
+.pf-v5-c-login__main:has(#kc-register-form) {
+    max-width: 840px;
+}
+
+#kc-register-form {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px 16px;
+}
+
+#kc-register-form > .pf-v5-c-form__group {
+    margin: 0;
+}
+
+#kc-register-form > .pf-v5-c-form__group:has(#firstName) {
+    grid-area: 1 / 1;
+}
+
+#kc-register-form > .pf-v5-c-form__group:has(#lastName) {
+    grid-area: 1 / 2;
+}
+
+#kc-register-form > .pf-v5-c-form__group:has(#email) {
+    grid-area: 1 / 3;
+}
+
+#kc-register-form > .pf-v5-c-form__group:has(#username) {
+    grid-area: 2 / 1;
+}
+
+#kc-register-form > .pf-v5-c-form__group:has(#password) {
+    grid-area: 2 / 2;
+}
+
+#kc-register-form > .pf-v5-c-form__group:has(#password-confirm) {
+    grid-area: 2 / 3;
+}
+
+#kc-form-buttons {
+    grid-area: 3 / 2 / 4 / 4;
+}
+
+#kc-register-form > .pf-v5-c-form__group:has(#kc-form-options) {
+    grid-area: 3 / 1 / 4 / 2;
+    display: flex;
+    align-items: stretch;
+    padding: 0;
+    border: 0;
+}
+
+#kc-form-options,
+#kc-form-options > div {
+    width: 100%;
+}
+
+#kc-form-options a {
+    display: flex;
+    min-height: 52px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--productivity-border);
+    border-radius: 4px;
+    font-size: 0.9rem;
+    white-space: nowrap;
+}
+
+#kc-form-options a:hover {
+    border-color: var(--productivity-violet);
+    background: rgba(148, 106, 245, 0.08);
+    text-decoration: none;
+}
+
+.pf-v5-c-alert {
+    margin-bottom: 22px;
+    border-radius: 4px;
+    font-size: 0.84rem;
+}
+
+html.pf-v5-theme-dark {
+    --productivity-violet: #a395f2;
+    --productivity-violet-light: #c6bcf7;
+    --productivity-violet-dark: #7a69d9;
+    --productivity-ink: #ffffff;
+    --productivity-muted: rgba(255, 255, 255, 0.62);
+    --productivity-canvas: #1e2124;
+    --productivity-surface: #26292d;
+    --productivity-border: rgba(255, 255, 255, 0.12);
+    --productivity-focus: rgba(163, 149, 242, 0.25);
+    --productivity-on-violet: #111827;
+}
+
+@media (max-width: 760px) {
+    .pf-v5-c-login {
+        padding: 16px;
+    }
+
+    .pf-v5-c-login__container {
+        min-height: calc(100vh - 32px);
+        grid-template-columns: 1fr;
+    }
+
+    .pf-v5-c-login__main {
+        max-width: 396px;
+        margin: 0 auto;
+        padding: 28px;
+    }
+
+    .pf-v5-c-login__container:has(#kc-register-form) {
+        max-width: 600px;
+        grid-template-columns: minmax(0, 600px);
+    }
+
+    .pf-v5-c-login__main:has(#kc-register-form) {
+        max-width: 600px;
+    }
+
+    #kc-register-form {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    #kc-register-form > .pf-v5-c-form__group:has(#firstName),
+    #kc-register-form > .pf-v5-c-form__group:has(#lastName),
+    #kc-register-form > .pf-v5-c-form__group:has(#email),
+    #kc-register-form > .pf-v5-c-form__group:has(#username),
+    #kc-register-form > .pf-v5-c-form__group:has(#password),
+    #kc-register-form > .pf-v5-c-form__group:has(#password-confirm),
+    #kc-form-buttons,
+    #kc-register-form > .pf-v5-c-form__group:has(#kc-form-options) {
+        grid-area: auto;
+    }
+
+    #kc-register-form > .pf-v5-c-form__group:has(#firstName) { order: 1; }
+    #kc-register-form > .pf-v5-c-form__group:has(#lastName) { order: 2; }
+    #kc-register-form > .pf-v5-c-form__group:has(#email) { order: 3; }
+    #kc-register-form > .pf-v5-c-form__group:has(#username) { order: 4; }
+    #kc-register-form > .pf-v5-c-form__group:has(#password) { order: 5; }
+    #kc-register-form > .pf-v5-c-form__group:has(#password-confirm) { order: 6; }
+    #kc-register-form > .pf-v5-c-form__group:has(#kc-form-options) { order: 7; }
+    #kc-form-buttons { order: 8; }
+}
+
+@media (max-width: 420px) {
+    .pf-v5-c-login {
+        padding: 12px;
+    }
+
+    .pf-v5-c-login__container {
+        min-height: calc(100vh - 24px);
+    }
+
+    .pf-v5-c-login__main {
+        min-height: auto;
+        padding: 26px 24px;
+    }
+
+    #kc-register-form {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    span.pf-v5-c-form-control,
+    .pf-v5-c-button.pf-m-primary {
+        transition: none;
+    }
+}

@@ -1,0 +1,48 @@
+{
+  "expo": {
+    "name": "So Life",
+    "slug": "so-life",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/app-icon.png",
+    "scheme": "solife",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "icon": "./assets/images/app-icon.png",
+      "bundleIdentifier": "org.osama.solife"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#F7F6FB",
+        "foregroundImage": "./assets/images/app-icon.png"
+      },
+      "predictiveBackGestureEnabled": true,
+      "package": "org.osama.solife"
+    },
+    "web": {
+      "output": "static",
+      "favicon": "./assets/images/app-icon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#F7F6FB",
+          "image": "./assets/images/productivity.png",
+          "imageWidth": 128,
+          "dark": {
+            "backgroundColor": "#1E2124",
+            "image": "./assets/images/productivity.png"
+          }
+        }
+      ],
+      "expo-secure-store",
+      "expo-notifications"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}

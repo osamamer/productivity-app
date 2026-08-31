@@ -35,6 +35,8 @@ services:
       KC_HOSTNAME: https://${AUTH_DOMAIN:?AUTH_DOMAIN is required}
       KC_PROXY_HEADERS: xforwarded
       KC_HEALTH_ENABLED: "true"
+    volumes:
+      - ./keycloak-theme:/opt/keycloak/themes:ro
     command: start
     depends_on:
       postgres:

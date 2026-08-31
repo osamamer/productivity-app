@@ -66,6 +66,34 @@ wait_for_endpoint() {
   return 1
 }
 
+apply_keycloak_login_theme() {
+  local realm=${KEYCLOAK_REALM:-productivity-app}
+  local admin_realm=${KEYCLOAK_ADMIN_REALM:-master}
+
+  if [[ -z "${KEYCLOAK_ADMIN_USER:-}" || -z "${KEYCLOAK_ADMIN_PASSWORD:-}" ]]; then
+    echo "⚠️  Keycloak admin credentials are missing; leaving the login theme unchanged."
+    return 0
+  fi
+
+  echo "🎨 Applying the Claritard login configuration..."
+  for attempt in {1..10}; do
+    if "${compose[@]}" exec -T keycloak /opt/keycloak/bin/kcadm.sh config credentials \
+      --server http://localhost:7070 \
+      --realm "$admin_realm" \
+      --user "$KEYCLOAK_ADMIN_USER" \
+      --password "$KEYCLOAK_ADMIN_PASSWORD" >/dev/null 2>&1 \
+      && "${compose[@]}" exec -T keycloak /opt/keycloak/bin/kcadm.sh update "realms/$realm" \
+        -s loginTheme=productivity \
+        -s registrationAllowed=true >/dev/null 2>&1; then
+      return 0
+    fi
+
+    sleep 2
+  done
+
+  echo "⚠️  Could not apply the Claritard login configuration; Keycloak remains usable." >&2
+}
+
 stop_started_processes() {
   local pid
 
@@ -123,6 +151,7 @@ if ! wait_for_endpoint "Keycloak" "http://localhost:7070/" 45; then
   "${compose[@]}" logs --tail=80 keycloak postgres >&2 || true
   exit 1
 fi
+apply_keycloak_login_theme
 
 if endpoint_is_ready "http://localhost:8080/actuator/health"; then
   echo "♻️  Backend is already healthy on port 8080; reusing it."
