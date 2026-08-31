@@ -10,10 +10,7 @@ import {
     Chip,
     Paper,
     Typography,
-    IconButton,
-    Grid,
     Button,
-    Divider,
 } from '@mui/material';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
@@ -22,7 +19,6 @@ import { DateCalendar } from '@mui/x-date-pickers/DateCalendar';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import FlagIcon from '@mui/icons-material/Flag';
 import LabelIcon from '@mui/icons-material/Label';
-import CloseIcon from '@mui/icons-material/Close';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import { TaskToCreate } from '../../types/TaskToCreate';
 
@@ -123,7 +119,7 @@ export function SmartTaskInput({ onSubmit, initialDate, autoFocus, parentId, pla
     const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
 
-        let taskName = input
+        const taskName = input
             .replace(/!priority|!p/gi, '')
             .replace(/!date|!d/gi, '')
             .replace(/!tag|!t/gi, '')

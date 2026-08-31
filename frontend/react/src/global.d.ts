@@ -1,5 +1,5 @@
 declare global {
     interface Window {
-        global: any;
+        global: typeof globalThis;
     }
 }

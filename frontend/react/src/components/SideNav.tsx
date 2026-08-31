@@ -30,8 +30,8 @@ import LogoutIcon from '@mui/icons-material/Logout';
 import KeyboardDoubleArrowRightRoundedIcon from '@mui/icons-material/KeyboardDoubleArrowRightRounded';
 import KeyboardDoubleArrowLeftRoundedIcon from '@mui/icons-material/KeyboardDoubleArrowLeftRounded';
 import { SideMenuButton } from "./button/SideMenuButton";
-import { useAppTheme } from "../contexts/ThemeContext";
-import { useUser } from "../contexts/UserContext";
+import { useAppTheme } from "../hooks/useAppTheme";
+import { useUser } from "../hooks/useUser";
 
 const COLLAPSED_WIDTH = 60;
 const EXPANDED_WIDTH = 320;

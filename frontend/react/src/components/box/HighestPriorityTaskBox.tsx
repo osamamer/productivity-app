@@ -26,7 +26,7 @@ export function HighestPriorityTaskBox(props: props) {
     } else {
         importance = "high";
     }
-    let color = importance;
+    const color = importance;
 
     if (props.tasks.length === 0) {
         return null;

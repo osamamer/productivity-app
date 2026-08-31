@@ -45,10 +45,7 @@ services:
       - productivity-network
 
   backend:
-    build:
-      context: ..
-      dockerfile: deployment/backend.production.dockerfile
-    image: productivity-app-backend:production
+    image: ${IMAGE_PREFIX:?IMAGE_PREFIX is required}-backend:${IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:
       SPRING_PROFILES_ACTIVE: prod
@@ -81,16 +78,7 @@ services:
       start_period: 45s
 
   edge:
-    build:
-      context: ..
-      dockerfile: deployment/frontend.production.dockerfile
-      args:
-        VITE_API_URL: https://${APP_DOMAIN}
-        VITE_WS_URL: wss://${APP_DOMAIN}/ws
-        VITE_KEYCLOAK_URL: https://${AUTH_DOMAIN}
-        VITE_KEYCLOAK_REALM: ${KEYCLOAK_REALM:-productivity-app}
-        VITE_KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-productivity-app-frontend}
-    image: productivity-app-edge:production
+    image: ${IMAGE_PREFIX:?IMAGE_PREFIX is required}-edge:${IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:
       APP_DOMAIN: ${APP_DOMAIN:?APP_DOMAIN is required}

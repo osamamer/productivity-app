@@ -1,20 +1,35 @@
-name: Verify Code
+name: Verify and deploy
+
 on:
   push:
     branches:
-      - 'master'
+      - master
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
 jobs:
   verify_backend:
     name: Verify Backend
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: "JDK set-up"
+      - name: Set up JDK
         uses: actions/setup-java@v4
         with:
           java-version: '21'
-          distribution: 'temurin'
-      - run: cd backend && mvn clean verify
+          distribution: temurin
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+      - name: Verify with Maven
+        working-directory: backend
+        run: ./mvnw -B -ntp clean verify
 
   verify_frontend:
     name: Verify Frontend
@@ -24,11 +39,120 @@ jobs:
         working-directory: frontend/react
     steps:
       - uses: actions/checkout@v4
-      - name: "Node set-up"
+      - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: '18.x'
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: frontend/react/package-lock.json
       - name: Install dependencies
-        run: npm install
+        run: npm ci
+      - name: Lint
+        run: npm run lint
       - name: Build
         run: npm run build -- --mode=production
+
+  build_images:
+    name: Build and publish production images
+    if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    needs: [verify_backend, verify_frontend]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_prefix: ${{ steps.images.outputs.prefix }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set image names
+        id: images
+        run: echo "prefix=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - name: Validate production frontend variables
+        env:
+          APP_DOMAIN: ${{ vars.APP_DOMAIN }}
+          AUTH_DOMAIN: ${{ vars.AUTH_DOMAIN }}
+        run: |
+          test -n "$APP_DOMAIN" || { echo "Repository variable APP_DOMAIN is required" >&2; exit 1; }
+          test -n "$AUTH_DOMAIN" || { echo "Repository variable AUTH_DOMAIN is required" >&2; exit 1; }
+          [[ "$APP_DOMAIN" != *://* ]] || { echo "APP_DOMAIN must be a hostname, not a URL" >&2; exit 1; }
+          [[ "$AUTH_DOMAIN" != *://* ]] || { echo "AUTH_DOMAIN must be a hostname, not a URL" >&2; exit 1; }
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build and push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deployment/backend.production.dockerfile
+          push: true
+          tags: |
+            ${{ steps.images.outputs.prefix }}-backend:${{ github.sha }}
+            ${{ steps.images.outputs.prefix }}-backend:latest
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+      - name: Build and push edge image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deployment/frontend.production.dockerfile
+          push: true
+          build-args: |
+            VITE_API_URL=https://${{ vars.APP_DOMAIN }}
+            VITE_WS_URL=wss://${{ vars.APP_DOMAIN }}/ws
+            VITE_KEYCLOAK_URL=https://${{ vars.AUTH_DOMAIN }}
+            VITE_KEYCLOAK_REALM=${{ vars.KEYCLOAK_REALM || 'productivity-app' }}
+            VITE_KEYCLOAK_CLIENT_ID=${{ vars.KEYCLOAK_CLIENT_ID || 'productivity-app-frontend' }}
+          tags: |
+            ${{ steps.images.outputs.prefix }}-edge:${{ github.sha }}
+            ${{ steps.images.outputs.prefix }}-edge:latest
+          cache-from: type=gha,scope=edge
+          cache-to: type=gha,mode=max,scope=edge
+
+  deploy_production:
+    name: Deploy production
+    if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    needs: build_images
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      packages: read
+    env:
+      DEPLOY_HOST: ${{ secrets.PRODUCTION_HOST }}
+      DEPLOY_USER: ${{ secrets.PRODUCTION_USER }}
+      DEPLOY_PATH: ${{ secrets.PRODUCTION_PATH }}
+      DEPLOY_KEY: ${{ secrets.PRODUCTION_SSH_KEY }}
+      DEPLOY_KNOWN_HOSTS: ${{ secrets.PRODUCTION_KNOWN_HOSTS }}
+      GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      IMAGE_TAG: ${{ github.sha }}
+    steps:
+      - name: Validate deployment secrets
+        run: |
+          test -n "$DEPLOY_HOST" || { echo "PRODUCTION_HOST secret is required" >&2; exit 1; }
+          test -n "$DEPLOY_USER" || { echo "PRODUCTION_USER secret is required" >&2; exit 1; }
+          test -n "$DEPLOY_PATH" || { echo "PRODUCTION_PATH secret is required" >&2; exit 1; }
+          test -n "$DEPLOY_KEY" || { echo "PRODUCTION_SSH_KEY secret is required" >&2; exit 1; }
+          test -n "$DEPLOY_KNOWN_HOSTS" || { echo "PRODUCTION_KNOWN_HOSTS secret is required" >&2; exit 1; }
+      - name: Prepare SSH
+        run: |
+          install -m 700 -d "$RUNNER_TEMP/production-ssh"
+          printf '%s\n' "$DEPLOY_KEY" > "$RUNNER_TEMP/production-ssh/id_ed25519"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$RUNNER_TEMP/production-ssh/known_hosts"
+          chmod 600 "$RUNNER_TEMP/production-ssh/id_ed25519" "$RUNNER_TEMP/production-ssh/known_hosts"
+      - name: Roll out the immutable image tag
+        run: |
+          printf '%s' "$GHCR_TOKEN" | ssh \
+            -i "$RUNNER_TEMP/production-ssh/id_ed25519" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=10 \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=3 \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/production-ssh/known_hosts" \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "cd '$DEPLOY_PATH' && git fetch --quiet origin master && git merge --ff-only '$IMAGE_TAG' && test \"\$(git rev-parse HEAD)\" = '$IMAGE_TAG' && docker login ghcr.io --username '$GITHUB_ACTOR' --password-stdin && ./deployment/deploy-production.sh '$IMAGE_TAG'"

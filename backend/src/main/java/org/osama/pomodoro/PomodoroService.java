@@ -413,7 +413,7 @@ public class PomodoroService {
             } catch (Exception e) {
                 log.error("Error updating pomodoro for task: {}", taskId, e);
             }
-        }, 100);
+        }, 1_000);
 
         statusUpdateTasks.put(taskId, future);
         log.info("Started pomodoro updates for task: {}", taskId);

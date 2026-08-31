@@ -1,7 +1,7 @@
 import { Alert, Snackbar } from '@mui/material';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useUser } from '../../contexts/UserContext';
+import { useUser } from '../../hooks/useUser';
 import { createAuthenticatedStompClient } from '../../services/authenticatedStompClient';
 import { notificationService } from '../../services/api/notificationService';
 import { showSystemNotification } from '../../services/systemNotifications';

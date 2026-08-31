@@ -10,7 +10,7 @@ import {
     Box,
 } from '@mui/material';
 import { Logout, Person } from '@mui/icons-material';
-import { useUser } from '../contexts/UserContext';
+import { useUser } from '../hooks/useUser';
 import { useNavigate } from 'react-router-dom';
 
 export function UserMenu() {

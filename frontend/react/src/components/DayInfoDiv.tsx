@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Box, Card } from '@mui/material';
 import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
-import { useAppTheme } from '../contexts/ThemeContext';
+import { useAppTheme } from '../hooks/useAppTheme';
 
 type DayInfoDivProps = {
     type: 'plan' | 'summary';

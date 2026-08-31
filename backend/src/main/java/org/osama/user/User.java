@@ -62,6 +62,11 @@ public class User {
 
     @PreUpdate
     protected void onUpdate() {
+        // Assigned-id fixtures are merged rather than persisted, so repair this
+        // invariant here as well as in the normal insert callback.
+        if (this.createdAt == null) {
+            this.createdAt = LocalDateTime.now();
+        }
         this.modifiedAt = LocalDateTime.now();
     }
 }

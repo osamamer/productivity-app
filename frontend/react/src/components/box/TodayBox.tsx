@@ -6,13 +6,9 @@ import plan from "../../assets/images/walk.png";
 import {DayInfoDiv} from "../DayInfoDiv.tsx";
 import {RatingDisplay} from "../RatingDisplay.tsx";
 import {HoverCardBox} from "./HoverCardBox";
-import {useAppTheme} from "../../contexts/ThemeContext";
 import {dayService} from "../../services/api";
 
-type props = { handleOpenDialog: (dialogType: string) => void };
-
-export function TodayBox(props: props) {
-    const darkMode = useAppTheme();
+export function TodayBox() {
     const [today, setToday] = useState<DayEntity>({} as DayEntity);
 
     useEffect(() => {

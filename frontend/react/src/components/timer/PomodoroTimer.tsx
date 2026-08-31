@@ -30,6 +30,7 @@ import {
     PomodoroConfig,
     PomodoroFormValues,
 } from '../../services/api/pomodoroConfigService';
+import { GENERIC_ERROR_MESSAGE } from '../../services/utils/userMessages';
 
 interface Task {
     taskId: string;
@@ -110,7 +111,7 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
             }
         } catch (error) {
             console.error('Error toggling play/pause:', error);
-            setConnectionError(error instanceof Error ? error.message : 'Failed to toggle session');
+            setConnectionError(GENERIC_ERROR_MESSAGE);
         } finally {
             setIsLoading(false);
         }
@@ -125,7 +126,7 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
             setStatus(null);
         } catch (error) {
             console.error('Error ending session:', error);
-            setConnectionError(error instanceof Error ? error.message : 'Failed to end session');
+            setConnectionError(GENERIC_ERROR_MESSAGE);
         } finally {
             setIsLoading(false);
         }
@@ -139,7 +140,7 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
             await taskService.finishPomodoroBreak(task.taskId);
         } catch (error) {
             console.error('Error ending Pomodoro break:', error);
-            setConnectionError(error instanceof Error ? error.message : 'Failed to end break');
+            setConnectionError(GENERIC_ERROR_MESSAGE);
         } finally {
             setIsLoading(false);
         }
@@ -163,7 +164,7 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
             connectionTimeout: 10000,
             onStompError: (frame) => {
                 console.error('STOMP protocol error:', frame);
-                setConnectionError(`STOMP error: ${frame.headers?.message || 'Unknown error'}`);
+                setConnectionError(GENERIC_ERROR_MESSAGE);
                 setIsConnected(false);
             }
         });
@@ -181,7 +182,7 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
 
         client.onWebSocketError = (error) => {
             console.error('WebSocket Error:', error);
-            setConnectionError('Failed to connect to WebSocket server');
+            setConnectionError(GENERIC_ERROR_MESSAGE);
             setIsConnected(false);
         };
 
@@ -192,7 +193,7 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
             client.activate();
         } catch (error) {
             console.error('Error activating STOMP client:', error);
-            setConnectionError(`Failed to activate STOMP client: ${error}`);
+            setConnectionError(GENERIC_ERROR_MESSAGE);
         }
 
         return () => {
@@ -231,7 +232,7 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
             });
         } catch (error) {
             console.error('Error subscribing to task:', error);
-            setConnectionError(`Failed to subscribe: ${error}`);
+            setConnectionError(GENERIC_ERROR_MESSAGE);
         }
     }, []);
 
@@ -259,17 +260,14 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
         }
 
         if (!isConnected) {
-            setConnectionError('Cannot start Pomodoro: WebSocket not connected');
+            setConnectionError(GENERIC_ERROR_MESSAGE);
             return;
         }
 
         setIsLoading(true);
         try {
-            try {
-                await requestSystemNotificationPermission();
-            } catch (error) {
-                console.error('Failed to request Pomodoro notification permission:', error);
-            }
+            void requestSystemNotificationPermission()
+                .catch(error => console.error('Failed to request Pomodoro notification permission:', error));
             console.log('Starting pomodoro with data:', formData);
             await taskService.startPomodoro(
                 task.taskId,
@@ -283,7 +281,7 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
             console.log('Pomodoro started successfully');
         } catch (error) {
             console.error('Error starting pomodoro:', error);
-            setConnectionError(error instanceof Error ? error.message : 'Failed to start pomodoro');
+            setConnectionError(GENERIC_ERROR_MESSAGE);
         } finally {
             setIsLoading(false);
         }

@@ -1,0 +1,26 @@
+{
+  "cli": {
+    "version": ">= 16.17.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "preview": {
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://claritard.com",
+        "EXPO_PUBLIC_KEYCLOAK_URL": "https://auth.claritard.com",
+        "EXPO_PUBLIC_KEYCLOAK_REALM": "productivity-app",
+        "EXPO_PUBLIC_KEYCLOAK_CLIENT_ID": "productivity-app-frontend"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://claritard.com",
+        "EXPO_PUBLIC_KEYCLOAK_URL": "https://auth.claritard.com",
+        "EXPO_PUBLIC_KEYCLOAK_REALM": "productivity-app",
+        "EXPO_PUBLIC_KEYCLOAK_CLIENT_ID": "productivity-app-frontend"
+      }
+    }
+  }
+}

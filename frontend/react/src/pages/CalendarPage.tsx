@@ -1,7 +1,7 @@
 import { Box } from "@mui/material";
 import {PageWrapper} from "../components/PageWrapper.tsx";
 import {MonthCalendar} from "../components/MonthCalendar.tsx";
-import {useGlobalTasks} from "../contexts/TaskContext.tsx";
+import {useGlobalTasks} from "../hooks/useGlobalTasks";
 import {useEffect, useState} from "react";
 import {eventService, taskGroupService, taskService} from "../services/api";
 import {TaskToCreate} from "../types/TaskToCreate.tsx";

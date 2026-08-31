@@ -8,7 +8,7 @@ import { NotesList } from '../components/notes/NotesList.tsx';
 import { NoteEditor } from '../components/notes/NoteEditor.tsx';
 import { CategoryDialog } from '../components/notes/CategoryDialog.tsx';
 import { useNotesWorkspace } from '../hooks/useNotesWorkspace.ts';
-import { useUser } from '../contexts/UserContext.tsx';
+import { useUser } from '../hooks/useUser';
 import { NoteCategory, NoteSort } from '../types/Note.ts';
 
 export function NotesPage() {

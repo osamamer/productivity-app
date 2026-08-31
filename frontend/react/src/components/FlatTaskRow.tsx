@@ -137,6 +137,11 @@ function formatScheduledDate(dateTime: string): string {
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+function isEditableDragOrigin(target: EventTarget | null): boolean {
+    return target instanceof Element
+        && target.closest('input, textarea, select, [contenteditable="true"], [data-task-text-area="true"]') !== null;
+}
+
 // ─── component ─────────────────────────────────────────────────────────────
 
 export const FlatTaskRow = React.memo(function FlatTaskRow({
@@ -183,6 +188,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     // Local description state — committed on blur to avoid an API call per keystroke
     const [localName, setLocalName] = useState(task.name ?? '');
     const [isEditingName, setIsEditingName] = useState(false);
+    const nameInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
     useEffect(() => { setLocalName(task.name ?? ''); }, [task.name]);
     const [localDesc, setLocalDesc] = useState(task.description ?? '');
     useEffect(() => { setLocalDesc(task.description ?? ''); }, [task.description]);
@@ -215,7 +221,8 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     const stompRef = useRef<Client | null>(null);
     const subscriptionRef = useRef<StompSubscription | null>(null);
     const previousSessionRunningRef = useRef<boolean | undefined>(initialPomodoroStatus?.sessionRunning);
-    const pomodoroEndedRef = useRef(false);
+    const activePomodoroIdRef = useRef<string | null>(initialPomodoroStatus?.pomodoroId ?? null);
+    const endedPomodoroIdRef = useRef<string | null>(null);
     const onPomodoroActiveChangeRef = useRef(onPomodoroActiveChange);
     const onPomodoroStatusChangeRef = useRef(onPomodoroStatusChange);
 
@@ -232,6 +239,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
             setPomodoroHydrated(true);
         }
         if (initialPomodoroStatus?.active) {
+            activePomodoroIdRef.current = initialPomodoroStatus.pomodoroId;
             setPomodoroStatus(initialPomodoroStatus);
         }
     }, [expandedPanel, initialPomodoroStatus]);
@@ -258,10 +266,16 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                     try {
                         const nextStatus: PomodoroStatus = JSON.parse(msg.body);
                         if (!nextStatus.active) {
-                            pomodoroEndedRef.current = true;
+                            if (activePomodoroIdRef.current !== null
+                                && activePomodoroIdRef.current !== nextStatus.pomodoroId) {
+                                return;
+                            }
+                            activePomodoroIdRef.current = null;
+                            endedPomodoroIdRef.current = nextStatus.pomodoroId;
                             setPomodoroStatus(null);
                             onPomodoroActiveChangeRef.current?.(task.taskId, false);
-                        } else if (!pomodoroEndedRef.current) {
+                        } else if (endedPomodoroIdRef.current !== nextStatus.pomodoroId) {
+                            activePomodoroIdRef.current = nextStatus.pomodoroId;
                             setPomodoroStatus(nextStatus);
                             onPomodoroStatusChangeRef.current?.(task.taskId, nextStatus);
                         }
@@ -298,11 +312,12 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         taskService.getActivePomodoro()
             .then(status => {
                 if (status?.active && status.associatedTaskId === task.taskId) {
+                    activePomodoroIdRef.current = status.pomodoroId;
                     setPomodoroStatus(status);
                     onPomodoroStatusChangeRef.current?.(task.taskId, status);
                     onAutoExpand(task.taskId, 'pomodoro');
                 } else if (expectedPomodoroActive) {
-                    pomodoroEndedRef.current = true;
+                    activePomodoroIdRef.current = null;
                     setPomodoroStatus(null);
                     onPomodoroActiveChangeRef.current?.(task.taskId, false);
                 }
@@ -319,13 +334,10 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
 
     const handleStart = async () => {
         setActionLoading(true);
-        pomodoroEndedRef.current = false;
+        endedPomodoroIdRef.current = null;
         try {
-            try {
-                await requestSystemNotificationPermission();
-            } catch (error) {
-                console.error('Failed to request Pomodoro notification permission:', error);
-            }
+            void requestSystemNotificationPermission()
+                .catch(error => console.error('Failed to request Pomodoro notification permission:', error));
             await taskService.startPomodoro(
                 task.taskId, form.focusDuration, form.shortBreakDuration,
                 form.longBreakDuration, form.numFocuses, form.longBreakCooldown,
@@ -333,7 +345,6 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
             );
             onPomodoroActiveChange?.(task.taskId, true);
         } catch (e) {
-            pomodoroEndedRef.current = true;
             console.error('Error starting pomodoro:', e);
         }
         finally { setActionLoading(false); }
@@ -355,13 +366,15 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
 
     const handleStop = async () => {
         setActionLoading(true);
-        pomodoroEndedRef.current = true;
+        const stoppedPomodoroId = activePomodoroIdRef.current;
+        if (stoppedPomodoroId) endedPomodoroIdRef.current = stoppedPomodoroId;
         try {
             await taskService.endPomodoro(task.taskId);
+            activePomodoroIdRef.current = null;
             setPomodoroStatus(null);
             onPomodoroActiveChange?.(task.taskId, false);
         } catch (e) {
-            pomodoroEndedRef.current = false;
+            endedPomodoroIdRef.current = null;
             console.error('Error stopping pomodoro:', e);
         }
         finally { setActionLoading(false); }
@@ -493,8 +506,18 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                 } : undefined,
             }}
             onClick={handleRowSelection}
+            onMouseDownCapture={(event) => {
+                event.currentTarget.draggable = Boolean(draggable && !isEditableDragOrigin(event.target));
+            }}
+            onMouseUpCapture={(event) => {
+                event.currentTarget.draggable = Boolean(draggable);
+            }}
             onDragStart={(event) => {
                 if (!draggable) return;
+                if (isEditableDragOrigin(event.target)) {
+                    event.preventDefault();
+                    return;
+                }
                 event.stopPropagation();
                 event.dataTransfer.effectAllowed = 'move';
                 event.dataTransfer.setData('text/plain', task.taskId);
@@ -522,7 +545,10 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                     onChange={event => onToggle(task.taskId, event.currentTarget.parentElement ?? event.currentTarget)}
                     sx={{ color: cbColor, '&.Mui-checked': { color: cbColor }, mr: 0.5 }}
                 />
-                <Box sx={{ flex: 1, minWidth: 0, position: 'relative' }}>
+                <Box
+                    data-task-text-area="true"
+                    sx={{ flex: 1, minWidth: 0, position: 'relative' }}
+                >
                     <Typography
                         onClick={(e) => {
                             e.stopPropagation();
@@ -533,6 +559,9 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             width: '100%',
                             fontSize: '1.05rem',
                             lineHeight: 1.6,
+                            overflowWrap: 'anywhere',
+                            wordBreak: 'break-word',
+                            hyphens: 'auto',
                             textAlign: 'left',
                             color: task.completed ? 'text.disabled' : 'text.primary',
                             textDecoration: task.completed ? 'line-through' : 'none',
@@ -544,6 +573,8 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                     {isEditingName && (
                         <TextField
                             value={localName}
+                            inputRef={nameInputRef}
+                            onClick={event => event.stopPropagation()}
                             onChange={(e) => setLocalName(e.target.value)}
                             onBlur={handleNameCommit}
                             onKeyDown={(e) => {
@@ -560,6 +591,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             autoFocus
                             fullWidth
                             multiline
+                            inputProps={{ draggable: false }}
                             sx={{
                                 position: 'absolute',
                                 inset: 0,
@@ -573,6 +605,10 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                     textDecoration: task.completed ? 'line-through' : 'none',
                                     fontSize: '1.05rem',
                                     lineHeight: 1.6,
+                                    whiteSpace: 'pre-wrap',
+                                    overflowWrap: 'anywhere',
+                                    wordBreak: 'break-word',
+                                    hyphens: 'auto',
                                     textAlign: 'left',
                                     padding: 0,
                                 },
@@ -664,7 +700,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                         value={form[key]}
                                         onChange={(e) => setForm(prev => ({ ...prev, [key]: Number(e.target.value) }))}
                                         disabled={actionLoading}
-                                        inputProps={{ style: { textAlign: 'left' } }}
+                            inputProps={{ style: { textAlign: 'left' }, draggable: false }}
                                     />
                                 ))}
                             </Box>

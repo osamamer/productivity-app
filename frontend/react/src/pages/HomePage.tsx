@@ -19,6 +19,7 @@ import {
 import { keyframes } from '@mui/system';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import AddIcon from '@mui/icons-material/Add';
 import GroupWorkIcon from '@mui/icons-material/GroupWork';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
@@ -31,8 +32,8 @@ import { taskGroupService, taskService } from '../services/api';
 import { Task } from '../types/Task';
 import { TaskGroup } from '../types/TaskGroup';
 import { PageWrapper } from '../components/PageWrapper';
-import { useGlobalTasks } from '../contexts/TaskContext';
-import { useUser } from '../contexts/UserContext';
+import { useGlobalTasks } from '../hooks/useGlobalTasks';
+import { useUser } from '../hooks/useUser';
 import { SmartTaskInput } from '../components/input/SmartTaskInput';
 import { FlatTaskRow } from '../components/FlatTaskRow';
 import { TaskToCreate } from '../types/TaskToCreate';
@@ -293,6 +294,9 @@ export function HomePage() {
     const [groupDialogOpen, setGroupDialogOpen] = useState(false);
     const [groupName, setGroupName] = useState('');
     const [groupSubmitting, setGroupSubmitting] = useState(false);
+    const [groupAddingTaskId, setGroupAddingTaskId] = useState<string | null>(null);
+    const [groupTaskDraft, setGroupTaskDraft] = useState('');
+    const [groupTaskSubmitting, setGroupTaskSubmitting] = useState(false);
     const [groups, setGroups] = useState<TaskGroup[] | null>(null);
     const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(() => new Set());
     const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
@@ -319,6 +323,7 @@ export function HomePage() {
     const taskFeedbackIdRef = useRef(0);
     const focusTransitionTimerRef = useRef<number | null>(null);
     const temporarilyCollapsedGroupIdRef = useRef<string | null>(null);
+    const groupTaskSubmissionRef = useRef(false);
 
     const showTaskFeedback = useCallback((severity: TaskFeedback['severity'], message: string) => {
         taskFeedbackIdRef.current += 1;
@@ -344,13 +349,15 @@ export function HomePage() {
         () => pastTasks.filter(task => !task.parentId && (getShowCompletedHomeTasks() || !task.completed)),
         [pastTasks],
     );
+    const selectedTaskIdSet = useMemo(() => new Set(selectedTaskIds), [selectedTaskIds]);
     const selectedTasks = useMemo(
-        () => allTasks.filter(task => selectedTaskIds.includes(task.taskId)),
-        [allTasks, selectedTaskIds],
+        () => allTasks.filter(task => selectedTaskIdSet.has(task.taskId)),
+        [allTasks, selectedTaskIdSet],
     );
+    const olderTaskIdSet = useMemo(() => new Set(olderTasks.map(task => task.taskId)), [olderTasks]);
     const selectedOlderTasks = useMemo(
-        () => selectedTasks.filter(task => olderTasks.some(olderTask => olderTask.taskId === task.taskId)),
-        [olderTasks, selectedTasks],
+        () => selectedTasks.filter(task => olderTaskIdSet.has(task.taskId)),
+        [olderTaskIdSet, selectedTasks],
     );
     const activePomodoroTask = useMemo(
         () => visibleTasks.find(task => task.taskId === activePomodoroTaskId) ?? null,
@@ -402,9 +409,8 @@ export function HomePage() {
             return;
         }
 
-        const selectedIdSet = new Set(selectedTaskIds);
         const selectedRows = Array.from(document.querySelectorAll<HTMLElement>('[data-task-id]'))
-            .filter(row => selectedIdSet.has(row.dataset.taskId ?? ''));
+            .filter(row => selectedTaskIdSet.has(row.dataset.taskId ?? ''));
         if (selectedRows.length === 0) {
             setSelectionActionsPosition(null);
             return;
@@ -431,11 +437,15 @@ export function HomePage() {
                 ? previous
                 : nextPosition
         ));
-    }, [selectedTaskIds]);
+    }, [selectedTaskIdSet, selectedTaskIds.length]);
 
     useLayoutEffect(() => {
+        if (selectedTaskIds.length < 2) {
+            setSelectionActionsPosition(previous => previous === null ? previous : null);
+            return undefined;
+        }
+
         updateSelectionActionsPosition();
-        if (selectedTaskIds.length < 2) return undefined;
 
         const handleViewportChange = () => updateSelectionActionsPosition();
         window.addEventListener('resize', handleViewportChange);
@@ -446,7 +456,7 @@ export function HomePage() {
             : new ResizeObserver(handleViewportChange);
         if (resizeObserver) {
             document.querySelectorAll<HTMLElement>('[data-task-id]').forEach(row => {
-                if (selectedTaskIds.includes(row.dataset.taskId ?? '')) resizeObserver.observe(row);
+                if (selectedTaskIdSet.has(row.dataset.taskId ?? '')) resizeObserver.observe(row);
             });
         }
 
@@ -455,8 +465,8 @@ export function HomePage() {
             window.removeEventListener('scroll', handleViewportChange, true);
             resizeObserver?.disconnect();
         };
-    }, [activeExpansion, collapsedGroupIds, focusVisibility, groups, olderTasks, selectedTaskIds,
-        showOlderTasks, updateSelectionActionsPosition, visibleTasks]);
+    }, [activeExpansion, collapsedGroupIds, focusVisibility, groups, olderTasks, selectedTaskIdSet,
+        selectedTaskIds.length, showOlderTasks, updateSelectionActionsPosition, visibleTasks]);
 
     const clearFocusTransitionTimer = useCallback(() => {
         if (focusTransitionTimerRef.current !== null) {
@@ -571,6 +581,7 @@ export function HomePage() {
 
         const request = deleteRequest;
         setDeleteSubmitting(true);
+        setDeleteRequest(null);
         if (request.kind === 'bulk') setBulkActionLoading(true);
         try {
             await Promise.all(request.tasks.map(task => taskService.deleteTask(task.taskId)));
@@ -655,7 +666,11 @@ export function HomePage() {
     }, []);
 
     const handleAutoExpand = useCallback((taskId: string, panel: 'pomodoro') => {
-        setActiveExpansion({ taskId, panel });
+        setActiveExpansion(previous => (
+            previous?.taskId === taskId && previous.panel === panel
+                ? previous
+                : { taskId, panel }
+        ));
     }, []);
 
     const handleTaskSelection = useCallback((task: Task, event: React.MouseEvent<HTMLElement>) => {
@@ -1189,6 +1204,63 @@ export function HomePage() {
         }
     }
 
+    async function createTaskInGroup(group: TaskGroup, firstVisibleTaskId?: string) {
+        const taskName = groupTaskDraft.trim();
+        if (!taskName || groupTaskSubmissionRef.current) return;
+
+        groupTaskSubmissionRef.current = true;
+        setGroupTaskSubmitting(true);
+        try {
+            const createdTask = await taskService.createTask({
+                name: taskName,
+                description: '',
+                scheduledPerformDateTime: '',
+                tag: '',
+                importance: 0,
+            });
+            const nextTaskIds = [...group.taskIds, createdTask.taskId];
+            const taskOrder = allTasks.map(task => task.taskId);
+            const groupTaskIndex = taskOrder.indexOf(firstVisibleTaskId ?? group.taskIds[0]);
+            taskOrder.splice(groupTaskIndex === -1 ? taskOrder.length : groupTaskIndex, 0, createdTask.taskId);
+
+            addTaskToState(createdTask);
+            reorderTasksInState(taskOrder);
+            setGroups(previous => (previous ?? []).map(existingGroup =>
+                existingGroup.groupId === group.groupId
+                    ? { ...existingGroup, taskIds: nextTaskIds }
+                    : existingGroup,
+            ));
+            setCollapsedGroupIds(previous => {
+                const next = new Set(previous);
+                next.delete(group.groupId);
+                return next;
+            });
+            const updatedGroup = await taskGroupService.replaceTasks(group.groupId, nextTaskIds);
+            setGroups(previous => (previous ?? []).map(existingGroup =>
+                existingGroup.groupId === updatedGroup.groupId ? updatedGroup : existingGroup,
+            ));
+            setGroupAddingTaskId(null);
+            setGroupTaskDraft('');
+        } catch (err) {
+            console.error('Error creating task in group:', err);
+            await refreshGroups();
+        } finally {
+            groupTaskSubmissionRef.current = false;
+            setGroupTaskSubmitting(false);
+        }
+    }
+
+    function startTaskInGroup(groupId: string) {
+        if (groupTaskSubmitting) return;
+        setGroupAddingTaskId(groupId);
+        setGroupTaskDraft('');
+        setCollapsedGroupIds(previous => {
+            const next = new Set(previous);
+            next.delete(groupId);
+            return next;
+        });
+    }
+
     async function deleteGroup(group: TaskGroup) {
         try {
             await taskGroupService.deleteGroup(group.groupId);
@@ -1303,7 +1375,7 @@ export function HomePage() {
                 onTogglePanel={handleTogglePanel}
                 onAutoExpand={handleAutoExpand}
                 onDelete={deleteTask}
-                selected={selectedTaskIds.includes(task.taskId)}
+                selected={selectedTaskIdSet.has(task.taskId)}
                 onSelectionClick={handleTaskSelection}
                 showScheduledDate={options.showScheduledDate}
                 reorderable={reorderable}
@@ -1427,7 +1499,22 @@ export function HomePage() {
                             <Typography component="span" variant="caption" color="text.disabled" sx={{ ml: 1 }}>
                                 {item.tasks.length}
                             </Typography>
-                        </Typography>
+                            </Typography>
+                        <IconButton
+                            size="small"
+                            color="inherit"
+                            aria-label={`Add task to ${item.group.name}`}
+                            title="Add task to group"
+                            onClick={event => {
+                                event.stopPropagation();
+                                startTaskInGroup(item.group.groupId);
+                            }}
+                            disabled={groupTaskSubmitting || groupAddingTaskId === item.group.groupId}
+                        >
+                            {groupTaskSubmitting && groupAddingTaskId === item.group.groupId
+                                ? <CircularProgress size={18} />
+                                : <AddIcon fontSize="small" />}
+                        </IconButton>
                         <IconButton
                             size="small"
                             color="inherit"
@@ -1448,6 +1535,44 @@ export function HomePage() {
                         }}
                     >
                         <Box sx={{ ml: 1.7, pl: 1.1, borderLeft: '1px solid', borderColor: 'divider' }}>
+                            {groupAddingTaskId === item.group.groupId && (
+                                <Box sx={{ px: 1.75, py: 0.5 }}>
+                                    <TextField
+                                        autoFocus
+                                        fullWidth
+                                        multiline
+                                        variant="standard"
+                                        value={groupTaskDraft}
+                                        placeholder="Add task..."
+                                        disabled={groupTaskSubmitting}
+                                        onChange={event => setGroupTaskDraft(event.target.value)}
+                                        onBlur={() => {
+                                            if (groupTaskDraft.trim()) {
+                                                void createTaskInGroup(item.group, item.tasks[0]?.taskId);
+                                            }
+                                        }}
+                                        onKeyDown={event => {
+                                            if (event.key === 'Enter' && !event.shiftKey) {
+                                                event.preventDefault();
+                                                void createTaskInGroup(item.group, item.tasks[0]?.taskId);
+                                            } else if (event.key === 'Escape') {
+                                                setGroupAddingTaskId(null);
+                                                setGroupTaskDraft('');
+                                            }
+                                        }}
+                                        inputProps={{
+                                            draggable: false,
+                                            'aria-label': `New task in ${item.group.name}`,
+                                        }}
+                                        sx={{
+                                            '& input::placeholder, & textarea::placeholder': {
+                                                color: 'text.disabled',
+                                                opacity: 1,
+                                            },
+                                        }}
+                                    />
+                                </Box>
+                            )}
                             {item.tasks.map(task => renderTaskRow(task, options))}
                         </Box>
                     </Collapse>
@@ -1866,6 +1991,10 @@ export function HomePage() {
                     }}
                     anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
                     TransitionComponent={SlideFromRight}
+                    sx={{
+                        right: { xs: 12, sm: 28 },
+                        bottom: { xs: 12, sm: 28 },
+                    }}
                 >
                     {taskFeedback ? (
                         <Alert
@@ -1875,14 +2004,15 @@ export function HomePage() {
                             onClose={() => setTaskFeedback(null)}
                             sx={{
                                 position: 'relative',
-                                minWidth: 160,
-                                maxWidth: 'calc(100vw - 32px)',
+                                minWidth: 190,
+                                maxWidth: 'calc(100vw - 48px)',
+                                boxSizing: 'border-box',
                                 alignItems: 'center',
                                 justifyContent: 'center',
                                 backgroundColor: 'background.paper',
-                                px: 1,
-                                pr: 4,
-                                py: 0.25,
+                                px: 1.5,
+                                pr: 5,
+                                py: 0.5,
                                 '& .MuiAlert-message': {
                                     flex: 1,
                                     display: 'flex',
@@ -1890,13 +2020,14 @@ export function HomePage() {
                                     justifyContent: 'center',
                                     py: 0.25,
                                     textAlign: 'center',
-                                    fontSize: '0.8rem',
+                                    fontSize: '0.85rem',
                                 },
                                 '& .MuiAlert-action': {
                                     position: 'absolute',
                                     top: '50%',
-                                    right: 2,
+                                    right: 6,
                                     p: 0,
+                                    m: 0,
                                     transform: 'translateY(-50%)',
                                 },
                             }}

@@ -1,10 +1,10 @@
-import {Box, Card} from "@mui/material";
-import React, {ReactElement, ReactNode} from "react";
-import {string} from "yup";
+import {Box} from "@mui/material";
+import type {Theme} from "@mui/material/styles";
+import type {CSSProperties, ReactNode} from "react";
 
-interface props {
+interface HoverCardBoxProps {
     children: ReactNode,
-    display?: (theme: any) => any,
+    display?: (theme: Theme) => CSSProperties['display'],
     maximumWidth?: string,
     maximumHeight?: string,
     height?: string,
@@ -12,7 +12,7 @@ interface props {
     variant?: 'default' | 'paper',
 }
 
-export function HoverCardBox({children, display, maximumWidth, maximumHeight, height, hover = true, variant = 'default'}: props) {
+export function HoverCardBox({children, display, maximumWidth, maximumHeight, height, hover = true, variant = 'default'}: HoverCardBoxProps) {
     return (
         <Box
             sx={(theme) => ({

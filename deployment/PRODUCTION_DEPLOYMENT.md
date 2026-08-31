@@ -99,6 +99,16 @@ For random values, run this locally or on the server:
 openssl rand -hex 32
 ```
 
+Set `IMAGE_PREFIX` to the lowercase GHCR prefix for this repository, for example:
+
+```dotenv
+IMAGE_PREFIX=ghcr.io/your-github-owner/productivity-app
+IMAGE_TAG=latest
+```
+
+The production compose file pulls `${IMAGE_PREFIX}-backend` and
+`${IMAGE_PREFIX}-edge`; it does not build application images on the VPS.
+
 Validate the Compose file before starting anything:
 
 ```sh
@@ -107,19 +117,71 @@ docker compose \
   -f deployment/docker-compose.production.yml config >/dev/null
 ```
 
-## 4. Start production
+## 4. Configure GitHub deployment
 
-Build and start the stack:
+The workflow in `.github/workflows/build.yml` verifies every pull request and every
+push to `master`. A successful push to `master` builds both production images, publishes
+them to GHCR under the commit SHA, and deploys that exact SHA over SSH. The server
+fetches the same commit before running the deployment script, so deployment files and
+images cannot silently come from different revisions.
+
+Create a GitHub repository environment named `production` for the deployment secrets.
+Add these non-secret repository variables under Settings → Secrets and variables →
+Actions → Variables (the Keycloak values are optional and default as shown):
+
+```text
+APP_DOMAIN=app.example.com
+AUTH_DOMAIN=auth.example.com
+KEYCLOAK_REALM=productivity-app
+KEYCLOAK_CLIENT_ID=productivity-app-frontend
+```
+
+Add these environment secrets:
+
+```text
+PRODUCTION_HOST=your-server-hostname
+PRODUCTION_USER=deploy
+PRODUCTION_PATH=/opt/productivity-app
+PRODUCTION_SSH_KEY=<private key whose public key is authorized for deploy>
+PRODUCTION_KNOWN_HOSTS=<verified output of ssh-keyscan -H your-server-hostname>
+```
+
+Store the complete private key, including its `BEGIN` and `END` lines. Verify the
+server fingerprint independently before adding `PRODUCTION_KNOWN_HOSTS`; strict host
+key checking is intentional. If the repository is private, give the server's Git
+remote a read-only deploy key so `git fetch origin master` can update the checkout.
+
+Protect `master` and require the verification checks before merging. This keeps the
+automatic deployment path limited to reviewed, green changes while still allowing a
+manual `workflow_dispatch` run for a redeploy.
+
+## 5. Start production
+
+Validate the Compose file and start the infrastructure services. The first application
+deployment is normally performed by GitHub Actions after the GHCR package is published:
 
 ```sh
 docker compose \
   --env-file /opt/productivity-app/.env \
-  -f deployment/docker-compose.production.yml build --pull
+  -f deployment/docker-compose.production.yml config >/dev/null
 
 docker compose \
   --env-file /opt/productivity-app/.env \
-  -f deployment/docker-compose.production.yml up -d
+  -f deployment/docker-compose.production.yml up -d postgres keycloak
 ```
+
+For a manual first deployment after an image has been published, log in to GHCR with
+a token that has package read access and run:
+
+```sh
+echo GHCR_READ_TOKEN | docker login ghcr.io --username YOUR_GITHUB_USERNAME --password-stdin
+./deployment/deploy-production.sh latest
+```
+
+The deployment script pulls the requested immutable tag, starts the backend, waits for
+its health check, then starts Caddy. It records the last successful tag and restores
+the previous container images if a later rollout fails health checks. Database
+migrations are forward-only; a container rollback does not undo a migration.
 
 Watch startup logs:
 
@@ -132,7 +194,7 @@ docker compose \
 The backend runs Liquibase with `ddl-auto=validate`; it applies new migrations without
 dropping existing data. Do not use `docker compose down -v` in production.
 
-## 5. Configure Keycloak
+## 6. Configure Keycloak
 
 Open `https://auth.example.com` and sign in to the administrator console using the
 credentials from `.env`.
@@ -154,7 +216,7 @@ password changes, and logout all work.
 The backend's issuer URL must remain the public Keycloak URL because it must match the
 issuer in the JWT: `https://auth.example.com/realms/productivity-app`.
 
-## 6. Verify the application
+## 7. Verify the application
 
 Check the public health endpoint:
 
@@ -170,7 +232,7 @@ Then test in the browser:
 4. Confirm browser notifications and the WebSocket-driven timer updates.
 5. Restart the backend and confirm data remains present.
 
-## 7. Backups
+## 8. Backups
 
 The Docker volume is persistence, not a backup. The repository includes
 `deployment/backup-production.sh` to dump both databases:
@@ -198,17 +260,14 @@ should not be the only copy.
 
 ## Updating the deployment
 
-After merging a tested change:
+After merging a tested change to `master`, GitHub Actions automatically:
 
-```sh
-cd /opt/productivity-app
-git pull --ff-only
-docker compose --env-file /opt/productivity-app/.env \
-  -f deployment/docker-compose.production.yml build --pull
-docker compose --env-file /opt/productivity-app/.env \
-  -f deployment/docker-compose.production.yml up -d
-```
+1. Runs backend verification and frontend lint/build.
+2. Builds and publishes backend and edge images tagged with the commit SHA.
+3. SSHes to the VPS, fetches that exact commit, and runs
+   `deployment/deploy-production.sh <commit-sha>`.
+4. Waits for the backend health check before bringing up the new edge image.
 
-For a more repeatable release process later, have GitHub Actions build and publish the
-backend and edge images tagged with the commit SHA, then have the server pull that
-immutable tag and restart only the changed services.
+Use the workflow's `workflow_dispatch` action for a manual redeploy of the current
+`master` commit. Keep the daily database dump and an off-server copy of those backups;
+an image rollback cannot recover deleted or migrated data.

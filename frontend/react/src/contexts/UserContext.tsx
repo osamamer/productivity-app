@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, ReactNode } from 'react';
+import React, { createContext, useState, useEffect, useMemo, useCallback, ReactNode } from 'react';
 import keycloak from '../services/keycloak';
 import { statService } from '../services/api/statService';
 import { dayService } from '../services/api/dayService';
@@ -28,7 +28,7 @@ interface UserContextType {
     isAuthenticated: boolean;
 }
 
-const UserContext = createContext<UserContextType | undefined>(undefined);
+export const UserContext = createContext<UserContextType | undefined>(undefined);
 
 export function UserProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<UserInfo | null>(null);
@@ -79,12 +79,4 @@ export function UserProvider({ children }: { children: ReactNode }) {
             {children}
         </UserContext.Provider>
     );
-}
-
-export function useUser() {
-    const context = useContext(UserContext);
-    if (context === undefined) {
-        throw new Error('useUser must be used within a UserProvider');
-    }
-    return context;
 }

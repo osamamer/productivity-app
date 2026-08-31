@@ -4,6 +4,7 @@ import App from './App.tsx'
 import './index.css'
 import { AppThemeProvider } from "./contexts/ThemeContext";
 import keycloak from './services/keycloak';
+import { AppErrorBoundary, AppErrorPage } from './components/AppErrorBoundary';
 
 const REDIRECT_KEY = 'post_auth_redirect';
 
@@ -34,11 +35,14 @@ keycloak.init({
 
     ReactDOM.createRoot(document.getElementById('root')!).render(
         <React.StrictMode>
-            <AppThemeProvider>
-                <App />
-            </AppThemeProvider>
+            <AppErrorBoundary>
+                <AppThemeProvider>
+                    <App />
+                </AppThemeProvider>
+            </AppErrorBoundary>
         </React.StrictMode>,
     );
 }).catch(err => {
     console.error('Keycloak initialisation failed', err);
+    ReactDOM.createRoot(document.getElementById('root')!).render(<AppErrorPage />);
 });

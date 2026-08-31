@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import axios from 'axios';
 import {
     Box,
     Button,
@@ -10,7 +11,7 @@ import {
     Link,
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
-import { useUser } from '../contexts/UserContext';
+import { useUser } from '../hooks/useUser';
 
 export function LoginPage() {
     const [email, setEmail] = useState('');
@@ -59,8 +60,11 @@ export function LoginPage() {
             // After signup, auto-login
             await login(formData.email, '');
             navigate('/');
-        } catch (err: any) {
-            setError(err.response?.data?.message || 'Sign up failed. Please try again.');
+        } catch (err: unknown) {
+            const message = axios.isAxiosError<{ message?: string }>(err)
+                ? err.response?.data?.message
+                : undefined;
+            setError(message || 'Sign up failed. Please try again.');
         } finally {
             setLoading(false);
         }

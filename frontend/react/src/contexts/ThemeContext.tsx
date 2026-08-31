@@ -1,41 +1,14 @@
 // src/contexts/ThemeContext.tsx
-import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, ReactNode } from 'react';
+import React, { createContext, useState, useEffect, useMemo, useCallback, ReactNode } from 'react';
 import { ThemeProvider as MuiThemeProvider, createTheme, responsiveFontSizes } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
+import {accentPalettes, type AccentColor} from './themeOptions';
 
 type ThemeMode = 'light' | 'dark';
-export type AccentColor = 'violet' | 'teal' | 'coral' | 'amber';
 
 const THEME_MODE_STORAGE_KEY = 'themeMode';
 const LEGACY_DARK_MODE_STORAGE_KEY = 'darkMode';
 const ACCENT_COLOR_STORAGE_KEY = 'accentColor';
-
-const accentPalettes: Record<AccentColor, {
-    label: string;
-    light: { main: string; light: string; dark: string; contrastText: string };
-    dark: { main: string; light: string; dark: string; contrastText: string };
-}> = {
-    violet: {
-        label: 'Violet',
-        light: { main: '#946AF5', light: '#B7A0FA', dark: '#6F44D8', contrastText: '#FFFFFF' },
-        dark: { main: '#A395F2', light: '#C6BCF7', dark: '#7A69D9', contrastText: '#111827' },
-    },
-    teal: {
-        label: 'Teal',
-        light: { main: '#0F9D8A', light: '#5BCBBE', dark: '#0A6F61', contrastText: '#FFFFFF' },
-        dark: { main: '#52CDBD', light: '#8DE2D6', dark: '#289A8C', contrastText: '#0F172A' },
-    },
-    coral: {
-        label: 'Coral',
-        light: { main: '#E56B6F', light: '#F09CA0', dark: '#C44F53', contrastText: '#FFFFFF' },
-        dark: { main: '#F08E84', light: '#F6B4AE', dark: '#D96A5F', contrastText: '#111827' },
-    },
-    amber: {
-        label: 'Amber',
-        light: { main: '#D18B00', light: '#E6B54D', dark: '#9E6700', contrastText: '#FFFFFF' },
-        dark: { main: '#F1B93A', light: '#F6D27D', dark: '#D99912', contrastText: '#111827' },
-    },
-};
 
 interface ThemeContextType {
     darkMode: boolean;
@@ -68,15 +41,7 @@ declare module '@mui/material/styles' {
     }
 }
 
-const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
-
-export const useAppTheme = () => {
-    const context = useContext(ThemeContext);
-    if (!context) {
-        throw new Error('useAppTheme must be used within a ThemeProvider');
-    }
-    return context;
-};
+export const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 interface ThemeProviderProps {
     children: ReactNode;
@@ -241,9 +206,3 @@ export const AppThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => 
         </ThemeContext.Provider>
     );
 };
-
-export const accentColorOptions = Object.entries(accentPalettes).map(([value, config]) => ({
-    value: value as AccentColor,
-    label: config.label,
-    swatch: config.light.main,
-}));

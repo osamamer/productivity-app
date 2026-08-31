@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { Box, Button, Popover, Typography } from '@mui/material';
 import { PageWrapper } from '../components/PageWrapper';
-import { useGlobalTasks } from '../contexts/TaskContext';
+import { useGlobalTasks } from '../hooks/useGlobalTasks';
 import { TaskToCreate } from '../types/TaskToCreate';
 import { taskService } from '../services/api';
 import { TaskPageComposer } from '../components/task-page/TaskPageComposer';
@@ -100,6 +100,7 @@ export function TaskPage() {
 
         const task = deleteRequest.task;
         setDeleteSubmitting(true);
+        setDeleteRequest(null);
         try {
             await taskService.deleteTask(task.taskId);
             removeTaskFromState(task.taskId);

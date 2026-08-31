@@ -4,7 +4,7 @@ import AssignmentIcon from '@mui/icons-material/Assignment';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import { RatingDisplay } from './RatingDisplay';
-import { useUser } from '../contexts/UserContext';
+import { useUser } from '../hooks/useUser';
 import { DayEntity } from '../types/DayEntity';
 import { Task } from '../types/Task';
 

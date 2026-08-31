@@ -1,4 +1,4 @@
-import {AppBar, Box, Button, IconButton, TextField, Toolbar, Typography} from "@mui/material";
+import {AppBar, Box, IconButton, TextField, Toolbar, Typography} from "@mui/material";
 import NightlightIcon from '@mui/icons-material/Nightlight';
 import ChatIcon from '@mui/icons-material/Chat';
 import {useNavigate} from "react-router-dom";

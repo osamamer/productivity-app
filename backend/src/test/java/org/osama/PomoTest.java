@@ -166,6 +166,26 @@ public class PomoTest {
         assertThrows(IllegalStateException.class,
                 () -> pomodoroService.startPomodoro(secondTask.getTaskId(), 25, 5, 15, 4, 4, testUserId));
     }
+
+    @Test
+    @org.springframework.transaction.annotation.Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void endedPomodoroCanBeRestartedForTheSameTask() {
+        Task task = createTask();
+        pomodoroService.startPomodoro(task.getTaskId(), 25, 5, 15, 4, 4, testUserId);
+        String firstPomodoroId = pomodoroService.getActivePomodoro(testUserId)
+                .orElseThrow()
+                .getPomodoroId();
+
+        pomodoroService.endPomodoro(task.getTaskId(), testUserId);
+        pomodoroService.startPomodoro(task.getTaskId(), 25, 5, 15, 4, 4, testUserId);
+
+        var restartedPomodoro = pomodoroService.getActivePomodoro(testUserId).orElseThrow();
+        assertFalse(firstPomodoroId.equals(restartedPomodoro.getPomodoroId()));
+        assertEquals(task.getTaskId(), restartedPomodoro.getAssociatedTaskId());
+        assertTrue(restartedPomodoro.isSessionActive());
+        assertTrue(restartedPomodoro.isSessionRunning());
+        assertEquals(1, restartedPomodoro.getCurrentFocusNumber());
+    }
     @Test
     void pomoUserInterventionTest() throws InterruptedException {
         Task task = createTask();

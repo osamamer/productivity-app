@@ -19,6 +19,7 @@ import {NotesPage} from "./pages/NotesPage.tsx";
 import {MentalThreadsPage} from "./pages/MentalThreadsPage.tsx";
 import {MentalStatePage} from "./pages/MentalStatePage.tsx";
 import {NotificationCenter} from "./components/notifications/NotificationCenter.tsx";
+import {AppErrorBoundary, AppErrorPage} from "./components/AppErrorBoundary.tsx";
 
 
 function AppProviders() {
@@ -35,6 +36,7 @@ function AppProviders() {
 const routes = [
     {
         element: <AppProviders/>,
+        errorElement: <AppErrorPage/>,
         children: [
             { path: "/login", element: <LoginPage/> },
             {
@@ -118,7 +120,11 @@ let appRouter: ReturnType<typeof createBrowserRouter> | null = null;
 
 function App() {
     appRouter ??= createBrowserRouter(routes);
-    return <RouterProvider router={appRouter}/>;
+    return (
+        <AppErrorBoundary>
+            <RouterProvider router={appRouter}/>
+        </AppErrorBoundary>
+    );
 }
 
 export default App

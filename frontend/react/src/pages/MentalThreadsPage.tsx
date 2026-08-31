@@ -29,7 +29,7 @@ import { MentalThreadFormDialog } from '../components/mental-threads/MentalThrea
 import { CloseMentalThreadDialog } from '../components/mental-threads/CloseMentalThreadDialog.tsx';
 import { attentionStateDetails, attentionStates } from '../components/mental-threads/mentalThreadPresentation.ts';
 import { useMentalThreadsWorkspace } from '../hooks/useMentalThreadsWorkspace.ts';
-import { useGlobalTasks } from '../contexts/TaskContext.tsx';
+import { useGlobalTasks } from '../hooks/useGlobalTasks';
 import { taskService } from '../services/api/taskService.ts';
 import { Task } from '../types/Task.tsx';
 import { TaskToCreate } from '../types/TaskToCreate.tsx';

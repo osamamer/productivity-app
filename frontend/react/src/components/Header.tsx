@@ -1,5 +1,4 @@
 import React from "react";
-import {Task} from "../types/Task.tsx";
 import {TaskToCreate} from "../types/TaskToCreate.tsx";
 
 type props = {onSubmit: (taskToCreate: TaskToCreate) => void};
