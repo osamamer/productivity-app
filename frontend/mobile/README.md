@@ -21,6 +21,11 @@ npm install
 
 In Keycloak, add `solife://auth` to the `productivity-app-frontend` client's valid redirect URIs. Keep the client public with standard flow and PKCE enabled. No client secret belongs in the app.
 
+The mobile app has explicit environment guards. A local native build uses the
+`EXPO_PUBLIC_*` values from `.env.local`; the `preview` and `production` EAS
+profiles use the deployed HTTPS origins defined in `eas.json`. A preview or
+production build will fail rather than silently connecting to `localhost`.
+
 Start the backend, PostgreSQL, and Keycloak from the repository root:
 
 ```bash
@@ -43,7 +48,12 @@ npm run android
 
 OAuth requires the app's custom `solife` scheme, so use a development/native build rather than Expo Go. An iOS simulator can use the loopback defaults directly; building iOS requires macOS. Physical iOS devices should point `.env.local` at deployed HTTPS API and Keycloak URLs.
 
-For a deployed environment, copy `.env.example` to `.env.local` and replace both service URLs with their public HTTPS origins. The Keycloak URL must match the issuer configured on the backend.
+For a deployed environment, the EAS `preview` and `production` profiles already
+provide the public origins. Verify that they match the server before building.
+If you run a production-like build locally, copy `.env.example` to `.env.local`,
+set `EXPO_PUBLIC_APP_ENV=production`, and replace both service URLs with their
+public HTTPS origins. The Keycloak URL must match the issuer configured on the
+backend.
 
 ## Validation
 
