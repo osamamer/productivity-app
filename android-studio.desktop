@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Android Studio
+Comment=The official IDE for Android development
+Exec=/home/leisure/apps/android-studio/bin/studio.sh %U
+TryExec=/home/leisure/apps/android-studio/bin/studio.sh
+Icon=/home/leisure/apps/android-studio/bin/studio.svg
+Terminal=false
+StartupNotify=true
+StartupWMClass=jetbrains-studio
+Categories=Development;IDE;
+Keywords=android;studio;ide;development;

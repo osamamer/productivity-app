@@ -33,6 +33,23 @@ Install Android Studio, then use its SDK Manager to install Android SDK
 Platform-Tools, Android SDK Command-line Tools, and an Android SDK Platform.
 Create an emulator there, or connect a phone with USB debugging enabled.
 
+Use Java 21 for the Gradle JDK in Android Studio. The React Native native build
+currently fails under Java 25 when AGP reads the CMake/Prefab output, because
+Java 25 reports restricted native access on the error stream. Keep Android
+Studio's Gradle JDK and `JAVA_HOME` pointed at the same Java 21 installation.
+For this Linux development machine, verify the terminal that runs Expo with:
+
+```bash
+export JAVA_HOME=/home/leisure/.sdkman/candidates/java/21.0.2-open
+export PATH="$JAVA_HOME/bin:$PATH"
+java -version                    # must report 21
+./android/gradlew --version      # JVM must report 21
+```
+
+The generated Android project also pins its local Gradle daemon to this Java 21
+installation, so Android Studio's Java 25 launcher cannot select the failing
+runtime. Re-run these settings after regenerating `android/` with Expo.
+
 On Linux, Android Studio normally installs the SDK at
 `/home/your-user/Android/Sdk`. Set the actual path shown in Android Studio's SDK
 Manager, then restart the terminal:
