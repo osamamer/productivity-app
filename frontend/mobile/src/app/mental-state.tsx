@@ -4,7 +4,7 @@ import { StyleSheet, View } from 'react-native';
 import { AppButton } from '@/components/ui/AppButton';
 import { AppText } from '@/components/ui/AppText';
 import { Card } from '@/components/ui/Card';
-import { ChoiceChips } from '@/components/ui/ChoiceChips';
+import { AppSlider } from '@/components/ui/AppSlider';
 import { Screen } from '@/components/ui/Screen';
 import { ErrorView, LoadingView } from '@/components/ui/StateView';
 import { useAsyncData } from '@/hooks/useAsyncData';
@@ -44,8 +44,13 @@ export default function MentalStateScreen() {
         {signals.map(signal => (
           <View key={signal.key} style={styles.signal}>
             <View style={styles.spaceBetween}><AppText variant="label">{signal.label}</AppText><AppText variant="label" color="accent">{values[signal.key]}/10</AppText></View>
-            <ChoiceChips value={values[signal.key]} onChange={value => setValues(current => ({ ...current, [signal.key]: value }))} options={[1,2,3,4,5,6,7,8,9,10].map(value => ({ value, label: String(value) }))} />
-            <View style={styles.spaceBetween}><AppText variant="caption" color="muted">{signal.low}</AppText><AppText variant="caption" color="muted">{signal.high}</AppText></View>
+            <AppSlider
+              label={signal.label}
+              value={values[signal.key]}
+              minimumLabel={signal.low}
+              maximumLabel={signal.high}
+              onValueChange={value => setValues(current => ({ ...current, [signal.key]: value }))}
+            />
           </View>
         ))}
         {error && <AppText color="danger">{error}</AppText>}
@@ -55,7 +60,7 @@ export default function MentalStateScreen() {
         <Card style={styles.result}>
           <AppText variant="caption" color="accent">YOUR STATE</AppText>
           <AppText variant="title">{result.state}</AppText>
-          {result.suggestedActions.map(action => <AppText key={action}>• {action}</AppText>)}
+          {result.suggestedActions.map(action => <AppText key={action}>{action}</AppText>)}
         </Card>
       )}
       <AppText variant="heading">Recent check-ins</AppText>

@@ -30,6 +30,7 @@ function buildTaskListItems(tasks: Task[], groups: TaskGroup[]): TaskListItem[] 
   const visibleTaskIds = new Set(tasks.map(task => task.taskId));
   const groupByTaskId = new Map<string, TaskGroup>();
   [...groups]
+    .filter(group => group.taskIds.length >= 2)
     .sort((first, second) => first.displayOrder - second.displayOrder)
     .forEach(group => group.taskIds.forEach(taskId => {
       if (visibleTaskIds.has(taskId) && !groupByTaskId.has(taskId)) groupByTaskId.set(taskId, group);
@@ -287,13 +288,23 @@ export default function TasksScreen() {
       )}
       <View style={styles.list}>
         {listItems.map(item => item.kind === 'task' ? renderTask(item.task) : (
-          <View key={item.group.groupId} style={styles.group}>
-            <Pressable onPress={() => toggleGroup(item.group.groupId)} style={({ pressed }) => [styles.groupHeader, pressed && styles.pressed]}>
-              <Ionicons name={collapsedGroupIds.has(item.group.groupId) ? 'chevron-forward' : 'chevron-down'} size={18} color={colors.textMuted} />
+          <View key={item.group.groupId} style={[styles.group, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`${collapsedGroupIds.has(item.group.groupId) ? 'Expand' : 'Collapse'} ${item.group.name}`}
+              accessibilityState={{ expanded: !collapsedGroupIds.has(item.group.groupId) }}
+              onPress={() => toggleGroup(item.group.groupId)}
+              style={({ pressed }) => [styles.groupHeader, { backgroundColor: colors.accentSoft, borderBottomColor: colors.border }, pressed && styles.pressed]}>
+              <Ionicons name={collapsedGroupIds.has(item.group.groupId) ? 'chevron-forward' : 'chevron-down'} size={18} color={colors.accent} />
+              <Ionicons name={collapsedGroupIds.has(item.group.groupId) ? 'folder-outline' : 'folder-open-outline'} size={18} color={colors.accent} />
               <AppText variant="label" style={styles.groupTitle}>{item.group.name}</AppText>
               <AppText variant="caption" color="muted">{item.tasks.length}</AppText>
             </Pressable>
-            {!collapsedGroupIds.has(item.group.groupId) && <View style={styles.groupTasks}>{item.tasks.map(renderTask)}</View>}
+            {!collapsedGroupIds.has(item.group.groupId) && (
+              <View style={[styles.groupTasks, { backgroundColor: colors.background, borderLeftColor: colors.accent }]}>
+                {item.tasks.map(renderTask)}
+              </View>
+            )}
           </View>
         ))}
       </View>
@@ -325,9 +336,9 @@ const styles = StyleSheet.create({
   selectionBar: { gap: 10, padding: 12, borderRadius: 16, backgroundColor: '#00000008' },
   selectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   actionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  group: { gap: 6 },
-  groupHeader: { minHeight: 46, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 8 },
+  group: { borderWidth: 1, borderRadius: 18, overflow: 'hidden' },
+  groupHeader: { minHeight: 50, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, borderBottomWidth: 1 },
   groupTitle: { flex: 1 },
-  groupTasks: { gap: 10 },
+  groupTasks: { gap: 10, marginLeft: 10, paddingLeft: 10, paddingRight: 8, paddingVertical: 10, borderLeftWidth: 2 },
   pressed: { opacity: 0.7 },
 });

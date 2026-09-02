@@ -51,7 +51,6 @@ export function StatEntrySheet({ definition, existing, onClose, onSaved, onRever
 
   return (
     <ModalSheet visible={Boolean(definition)} onClose={onClose} title={definition?.name ?? 'Check in'}>
-      {definition?.description && <AppText color="muted">{definition.description}</AppText>}
       {definition?.type === 'BOOLEAN' ? (
         <ChoiceChips value={existing?.value ?? -1} onChange={next => void save(next)} options={[{ value: 1, label: 'Yes' }, { value: 0, label: 'No' }]} />
       ) : definition?.type === 'RANGE' ? (

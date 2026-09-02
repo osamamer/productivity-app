@@ -13,6 +13,7 @@ export interface AppColors {
   textMuted: string;
   border: string;
   accent: string;
+  secondary: string;
   accentSoft: string;
   onAccent: string;
   success: string;
@@ -24,11 +25,15 @@ export interface AppColors {
   overlay: string;
 }
 
-const accents: Record<AccentColor, { light: string; dark: string }> = {
-  violet: { light: '#946AF5', dark: '#A395F2' },
-  teal: { light: '#0F9D8A', dark: '#52CDBD' },
-  coral: { light: '#E56B6F', dark: '#F08E84' },
-  amber: { light: '#D18B00', dark: '#F1B93A' },
+const accents: Record<AccentColor, {
+  light: string;
+  dark: string;
+  secondary: { light: string; dark: string };
+}> = {
+  violet: { light: '#946AF5', dark: '#A395F2', secondary: { light: '#C9A227', dark: '#F0D264' } },
+  teal: { light: '#0F9D8A', dark: '#52CDBD', secondary: { light: '#E56B6F', dark: '#F08E84' } },
+  coral: { light: '#E56B6F', dark: '#F08E84', secondary: { light: '#0F9D8A', dark: '#52CDBD' } },
+  amber: { light: '#D18B00', dark: '#F1B93A', secondary: { light: '#5D63C7', dark: '#A7ADF5' } },
 };
 
 function palette(dark: boolean, accentColor: AccentColor): AppColors {
@@ -42,6 +47,7 @@ function palette(dark: boolean, accentColor: AccentColor): AppColors {
         textMuted: 'rgba(255,255,255,0.74)',
         border: 'rgba(255,255,255,0.09)',
         accent,
+        secondary: accents[accentColor].secondary.dark,
         accentSoft: `${accent}26`,
         onAccent: '#111827',
         success: '#4ADE80',
@@ -60,6 +66,7 @@ function palette(dark: boolean, accentColor: AccentColor): AppColors {
         textMuted: 'rgba(26,26,46,0.72)',
         border: 'rgba(26,26,46,0.08)',
         accent,
+        secondary: accents[accentColor].secondary.light,
         accentSoft: `${accent}18`,
         onAccent: '#FFFFFF',
         success: '#22C55E',

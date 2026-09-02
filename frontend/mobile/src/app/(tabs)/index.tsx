@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 import { TaskComposerSheet } from '@/components/tasks/TaskComposerSheet';
 import { TaskDetailSheet } from '@/components/tasks/TaskDetailSheet';
@@ -19,20 +20,58 @@ import { usePreferences } from '@/providers/PreferencesProvider';
 import { useTaskWorkspace } from '@/providers/TaskWorkspaceProvider';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
-import type { Day, Task } from '@/types/models';
+import type { Day, Task, TaskGroup } from '@/types/models';
 
 interface TodayData { day: Day }
+
+type TaskListItem =
+  | { kind: 'task'; task: Task }
+  | { kind: 'group'; group: TaskGroup; tasks: Task[] };
+
+function buildTaskListItems(tasks: Task[], groups: TaskGroup[]): TaskListItem[] {
+  const visibleTaskIds = new Set(tasks.map(task => task.taskId));
+  const groupByTaskId = new Map<string, TaskGroup>();
+  [...groups]
+    .filter(group => group.taskIds.length >= 2)
+    .sort((first, second) => first.displayOrder - second.displayOrder)
+    .forEach(group => group.taskIds.forEach(taskId => {
+      if (visibleTaskIds.has(taskId) && !groupByTaskId.has(taskId)) groupByTaskId.set(taskId, group);
+    }));
+
+  const emittedGroupIds = new Set<string>();
+  return tasks.reduce<TaskListItem[]>((items, task) => {
+    const group = groupByTaskId.get(task.taskId);
+    if (!group) {
+      items.push({ kind: 'task', task });
+    } else if (!emittedGroupIds.has(group.groupId)) {
+      emittedGroupIds.add(group.groupId);
+      items.push({
+        kind: 'group',
+        group,
+        tasks: tasks.filter(candidate => groupByTaskId.get(candidate.taskId)?.groupId === group.groupId),
+      });
+    }
+    return items;
+  }, []);
+}
 
 export default function TodayScreen() {
   const { user } = useAuth();
   const { colors } = useAppTheme();
   const { showError } = useAppPopup();
   const resource = useAsyncData<TodayData>(async () => ({ day: await api.day.today() }));
-  const { todayTasks, addTask, updateTask: updateTaskInWorkspace, removeTask: removeTaskFromWorkspace } = useTaskWorkspace();
+  const {
+    todayTasks,
+    groups,
+    addTask,
+    updateTask: updateTaskInWorkspace,
+    removeTask: removeTaskFromWorkspace,
+  } = useTaskWorkspace();
   const { showCompletedTasks } = usePreferences();
   const [composerOpen, setComposerOpen] = useState(false);
   const [ratingSaving, setRatingSaving] = useState(false);
   const [selected, setSelected] = useState<Task | null>(null);
+  const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(new Set());
 
   function updateTask(updated: Task) {
     updateTaskInWorkspace(updated);
@@ -40,6 +79,15 @@ export default function TodayScreen() {
 
   function removeTask(taskId: string) {
     removeTaskFromWorkspace(taskId);
+  }
+
+  function toggleGroup(groupId: string) {
+    setCollapsedGroupIds(previous => {
+      const next = new Set(previous);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      return next;
+    });
   }
 
   async function toggle(task: Task) {
@@ -70,6 +118,7 @@ export default function TodayScreen() {
 
   const name = user?.firstName || user?.username;
   const tasks = todayTasks.filter(task => showCompletedTasks || !task.completed);
+  const listItems = useMemo(() => buildTaskListItems(tasks, groups), [groups, tasks]);
   const completed = todayTasks.filter(task => task.completed).length;
   const remaining = todayTasks.length - completed;
   const progress = todayTasks.length ? completed / todayTasks.length : 0;
@@ -114,13 +163,39 @@ export default function TodayScreen() {
             <AppButton compact label="Add" icon="add" onPress={() => setComposerOpen(true)} />
           </View>
           <View style={styles.list}>
-            {tasks.length ? tasks.map(task => (
+            {listItems.length ? listItems.map(item => item.kind === 'task' ? (
               <TaskRow
-                key={task.taskId}
-                task={task}
-                onToggle={() => void toggle(task)}
-                onPress={() => setSelected(task)}
+                key={item.task.taskId}
+                task={item.task}
+                onToggle={() => void toggle(item.task)}
+                onPress={() => setSelected(item.task)}
               />
+            ) : (
+              <View key={item.group.groupId} style={[styles.group, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`${collapsedGroupIds.has(item.group.groupId) ? 'Expand' : 'Collapse'} ${item.group.name}`}
+                  accessibilityState={{ expanded: !collapsedGroupIds.has(item.group.groupId) }}
+                  onPress={() => toggleGroup(item.group.groupId)}
+                  style={({ pressed }) => [styles.groupHeader, { backgroundColor: colors.accentSoft, borderBottomColor: colors.border }, pressed && styles.pressed]}>
+                  <Ionicons name={collapsedGroupIds.has(item.group.groupId) ? 'chevron-forward' : 'chevron-down'} size={18} color={colors.accent} />
+                  <Ionicons name={collapsedGroupIds.has(item.group.groupId) ? 'folder-outline' : 'folder-open-outline'} size={18} color={colors.accent} />
+                  <AppText variant="label" style={styles.groupTitle}>{item.group.name}</AppText>
+                  <AppText variant="caption" color="muted">{item.tasks.length}</AppText>
+                </Pressable>
+                {!collapsedGroupIds.has(item.group.groupId) && (
+                  <View style={[styles.groupTasks, { backgroundColor: colors.background, borderLeftColor: colors.accent }]}>
+                    {item.tasks.map(task => (
+                      <TaskRow
+                        key={task.taskId}
+                        task={task}
+                        onToggle={() => void toggle(task)}
+                        onPress={() => setSelected(task)}
+                      />
+                    ))}
+                  </View>
+                )}
+              </View>
             )) : (
               <Card style={styles.emptyCard}>
                 <AppText variant="heading">Nothing scheduled</AppText>
@@ -155,5 +230,10 @@ const styles = StyleSheet.create({
   fill: { height: 8, borderRadius: 4 },
   rating: { gap: 9 },
   list: { gap: 10 },
+  group: { borderWidth: 1, borderRadius: 18, overflow: 'hidden' },
+  groupHeader: { minHeight: 50, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, borderBottomWidth: 1 },
+  groupTitle: { flex: 1 },
+  groupTasks: { gap: 10, marginLeft: 10, paddingLeft: 10, paddingRight: 8, paddingVertical: 10, borderLeftWidth: 2 },
+  pressed: { opacity: 0.7 },
   emptyCard: { alignItems: 'center', gap: 6 },
 });

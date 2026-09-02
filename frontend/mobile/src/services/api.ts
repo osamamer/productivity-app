@@ -166,6 +166,10 @@ export const api = {
   stats: {
     definitions: () => apiRequest<StatDefinition[]>('/api/v1/stats/definitions'),
     today: () => apiRequest<StatEntry[]>('/api/v1/stats/entries/today'),
+    entries: (statDefinitionId: string, from: string, to: string) => {
+      const params = new URLSearchParams({ statDefinitionId, from, to });
+      return apiRequest<StatEntry[]>(`/api/v1/stats/entries?${params}`);
+    },
     record: (statDefinitionId: string, value: number, date?: string) =>
       json<StatEntry>('/api/v1/stats/entries', 'POST', { statDefinitionId, value, date }),
     create: (input: Pick<StatDefinition, 'name' | 'description' | 'type' | 'minValue' | 'maxValue'>) =>

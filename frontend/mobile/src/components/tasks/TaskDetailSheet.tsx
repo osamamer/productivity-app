@@ -11,6 +11,7 @@ import { AppInput } from '../ui/AppInput';
 import { AppText } from '../ui/AppText';
 import { ChoiceChips } from '../ui/ChoiceChips';
 import { ModalSheet } from '../ui/ModalSheet';
+import { TaskScheduleField } from './TaskScheduleField';
 
 export function TaskDetailSheet({ task, onClose, onUpdated, onStartFocus, onDeleted }: {
   task: Task | null;
@@ -21,7 +22,7 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onStartFocus, onDele
 }) {
   const { confirm } = useAppPopup();
   const [name, setName] = useState(task?.name ?? '');
-  const [description, setDescription] = useState(task?.description ?? '');
+  const [scheduledPerformDateTime, setScheduledPerformDateTime] = useState(task?.scheduledPerformDateTime ?? '');
   const [importance, setImportance] = useState(taskPriorityValue(task?.importance ?? 0));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -33,7 +34,7 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onStartFocus, onDele
     try {
       const updated = await api.tasks.update(task.taskId, {
         name: name.trim(),
-        description: description.trim(),
+        scheduledPerformDateTime,
         importance,
       });
       onUpdated(updated);
@@ -64,7 +65,7 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onStartFocus, onDele
       title="Task details"
       footer={<AppButton label="Save changes" loading={saving} onPress={() => void save()} />}>
       <AppInput label="Task" value={name} onChangeText={setName} />
-      <AppInput label="Details" multiline value={description} onChangeText={setDescription} />
+      <TaskScheduleField value={scheduledPerformDateTime} onChange={setScheduledPerformDateTime} />
       <AppText variant="label">Priority</AppText>
       <ChoiceChips value={importance} onChange={setImportance} options={[...TASK_PRIORITY_OPTIONS]} />
       {error && <AppText color="danger">{error}</AppText>}

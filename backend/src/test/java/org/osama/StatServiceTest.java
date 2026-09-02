@@ -29,6 +29,7 @@ public class StatServiceTest {
     @Autowired private StatEntryRepository entryRepository;
     @Autowired private StatDefinitionRepository definitionRepository;
     @Autowired private UserRepository userRepository;
+    @Autowired private SystemStatProvisioningService provisioningService;
 
     @BeforeEach
     void setUp() {
@@ -116,6 +117,23 @@ public class StatServiceTest {
         StatDefinition statDefinition = createStatDefinition(StatType.NUMBER, null, null);
         statService.recordEntry(statDefinition.getId(), LocalDate.now(), -999999.99, TEST_USER_ID);
         statService.recordEntry(statDefinition.getId(), LocalDate.now().plusDays(1), 999999.99, TEST_USER_ID);
+    }
+
+    @Test
+    void meditationStats_rejectManualEntries() {
+        User user = userRepository.findUserById(TEST_USER_ID).orElseThrow();
+        provisioningService.createMissingSystemStatsFor(user);
+
+        for (String systemKey : List.of(
+                SystemStatCatalog.MEDITATED_SYSTEM_KEY,
+                SystemStatCatalog.MEDITATION_MINUTES_SYSTEM_KEY)) {
+            StatDefinition definition = definitionRepository
+                    .findByUserIdAndSystemKey(TEST_USER_ID, systemKey)
+                    .orElseThrow();
+
+            assertThrows(IllegalArgumentException.class, () ->
+                    statService.recordEntry(definition.getId(), LocalDate.now(), 1.0, TEST_USER_ID));
+        }
     }
 
     @Test

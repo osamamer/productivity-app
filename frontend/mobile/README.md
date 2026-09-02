@@ -168,5 +168,5 @@ for JavaScript-only updates.
 - Calendar uses a touch-friendly upcoming agenda instead of FullCalendar's desktop month grid.
 - Notes use a plain-text editor. Existing rich HTML is readable as text, but saving it from mobile simplifies that formatting.
 - The sign-in screen is native and submits credentials to Keycloak without storing the password. Logout still returns through the `solife` callback scheme.
-- Meditation interval-bell audio and the web client's sound choices are not bundled yet. Session state and timing still persist through the backend.
+- Meditation bundles the shared web soundscape choices and uses a singing-bowl recording for interval bells. Session state and timing still persist through the backend.
 - Notes remain dependent on the planned notes backend, just like the current web Notes page.

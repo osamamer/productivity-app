@@ -198,9 +198,17 @@ public class StatService {
     }
 
     public StatEntry recordEntry(String statDefinitionId, LocalDate date, double value, String userId) {
+        return recordEntry(statDefinitionId, date, value, userId, false);
+    }
+
+    private StatEntry recordEntry(String statDefinitionId, LocalDate date, double value,
+                                  String userId, boolean automatic) {
         StatDefinition definition = definitionRepository.findByIdAndUserId(statDefinitionId, userId)
                 .orElseThrow(() -> new IllegalArgumentException("Stat definition not found: " + statDefinitionId));
 
+        if (!automatic && SystemStatCatalog.isAutomaticallyLoggedSystemKey(definition.getSystemKey())) {
+            throw new IllegalArgumentException("Meditation stats are recorded automatically when a session ends.");
+        }
         if (!isDailyStatDefinition(definition)) {
             throw new IllegalArgumentException("Mental state ratings must be recorded as a combined check-in.");
         }
@@ -234,14 +242,14 @@ public class StatService {
         StatDefinition minutesDefinition = getSystemDefinition(
                 userId, SystemStatCatalog.MEDITATION_MINUTES_SYSTEM_KEY);
 
-        recordEntry(meditatedDefinition.getId(), date, 1.0, userId);
+        recordEntry(meditatedDefinition.getId(), date, 1.0, userId, true);
 
         double existingMinutes = entryRepository
                 .findByStatDefinitionIdAndUserIdAndDate(minutesDefinition.getId(), userId, date)
                 .map(StatEntry::getValue)
                 .orElse(0.0);
         double sessionMinutes = duration.toMillis() / 60_000.0;
-        recordEntry(minutesDefinition.getId(), date, existingMinutes + sessionMinutes, userId);
+        recordEntry(minutesDefinition.getId(), date, existingMinutes + sessionMinutes, userId, true);
 
         log.info("Meditation stats recorded: userId={} date={} sessionMinutes={} dailyMinutes={}",
                 userId, date, sessionMinutes, existingMinutes + sessionMinutes);

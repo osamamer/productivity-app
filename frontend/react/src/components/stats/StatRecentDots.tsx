@@ -48,7 +48,7 @@ function getThresholdCircleBg(def: StatDefinition, value: number, theme: Theme):
         return `color-mix(in srgb, ${theme.palette.success.main} ${greenWeight * 100}%, ${theme.palette.background.paper} ${(1 - greenWeight) * 100}%)`;
     }
 
-    const redWeight = 1 - Math.min(0.75, (1 - goodnessRatio) * 0.75);
+    const redWeight = 0.55 + Math.min(0.45, (1 - goodnessRatio) * 0.6);
     return `color-mix(in srgb, ${theme.palette.error.main} ${redWeight * 100}%, ${theme.palette.background.paper} ${(1 - redWeight) * 100}%)`;
 }
 

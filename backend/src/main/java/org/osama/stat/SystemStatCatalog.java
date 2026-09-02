@@ -10,6 +10,10 @@ public final class SystemStatCatalog {
     public static final String MEDITATION_MINUTES_SYSTEM_KEY = "meditation_minutes";
     public static final String SLEEP_HOURS_SYSTEM_KEY = "sleep_hours";
 
+    private static final Set<String> AUTOMATIC_SYSTEM_KEYS = Set.of(
+            MEDITATED_SYSTEM_KEY, MEDITATION_MINUTES_SYSTEM_KEY
+    );
+
     // These definitions are captured by combined check-ins rather than daily stat entries.
     public static final List<SystemStatDefinition> MENTAL_STATE_STATS = List.of(
             range("energy", "Energy", "How much physical and mental energy you have."),
@@ -47,6 +51,10 @@ public final class SystemStatCatalog {
 
     public static boolean isMentalStateSystemKey(String systemKey) {
         return systemKey != null && MENTAL_STATE_SYSTEM_KEYS.contains(systemKey);
+    }
+
+    public static boolean isAutomaticallyLoggedSystemKey(String systemKey) {
+        return systemKey != null && AUTOMATIC_SYSTEM_KEYS.contains(systemKey);
     }
 
     private static SystemStatDefinition range(String systemKey, String name, String description) {

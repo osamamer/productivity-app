@@ -41,6 +41,15 @@ function replaceTask(tasks: Task[], updated: Task): Task[] {
   return tasks.map(task => task.taskId === updated.taskId ? updated : task);
 }
 
+function usableGroups(taskGroups: TaskGroup[], tasks?: Task[]): TaskGroup[] {
+  const liveTaskIds = tasks ? new Set(tasks.map(task => task.taskId)) : null;
+  return taskGroups
+    .map(group => liveTaskIds
+      ? { ...group, taskIds: group.taskIds.filter(taskId => liveTaskIds.has(taskId)) }
+      : group)
+    .filter(group => group.taskIds.length >= 2);
+}
+
 export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
   const { isAuthenticated } = useAuth();
   const [allTasks, setAllTasks] = useState<Task[]>([]);
@@ -61,7 +70,7 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
       try {
         const [tasks, taskGroups] = await Promise.all([api.tasks.all(), api.taskGroups.all()]);
         setAllTasks(tasks);
-        setGroups(taskGroups);
+        setGroups(usableGroups(taskGroups, tasks));
         loadedAtRef.current = Date.now();
       } catch (cause) {
         console.error('Could not load mobile task workspace:', cause);
@@ -105,9 +114,8 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
 
   const removeTask = useCallback((taskId: string) => {
     setAllTasks(previous => previous.filter(task => task.taskId !== taskId));
-    setGroups(previous => previous
-      .map(group => ({ ...group, taskIds: group.taskIds.filter(id => id !== taskId) }))
-      .filter(group => group.taskIds.length >= 2));
+    setGroups(previous => usableGroups(previous
+      .map(group => ({ ...group, taskIds: group.taskIds.filter(id => id !== taskId) }))));
   }, []);
 
   const moveTask = useCallback(async (taskId: string, direction: 'up' | 'down') => {
@@ -167,18 +175,16 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
 
   const createGroup = useCallback(async (name: string, taskIds: string[]) => {
     const created = await api.taskGroups.create(name, taskIds);
-    setGroups(previous => [
-      ...previous
-        .map(group => ({ ...group, taskIds: group.taskIds.filter(id => !taskIds.includes(id)) }))
-        .filter(group => group.taskIds.length >= 2),
+    setGroups(previous => usableGroups([
+      ...previous.map(group => ({ ...group, taskIds: group.taskIds.filter(id => !taskIds.includes(id)) })),
       created,
-    ]);
+    ]));
     return created;
   }, []);
 
   const replaceGroupTasks = useCallback(async (groupId: string, taskIds: string[]) => {
     const updated = await api.taskGroups.replaceTasks(groupId, taskIds);
-    setGroups(previous => previous.map(group => group.groupId === groupId ? updated : group));
+    setGroups(previous => usableGroups(previous.map(group => group.groupId === groupId ? updated : group)));
     return updated;
   }, []);
 

@@ -13,6 +13,7 @@ interface AppPopupProps {
   title: string;
   message?: string;
   kind?: AppPopupKind;
+  showIcon?: boolean;
   onClose: () => void;
   dismissOnBackdrop?: boolean;
   footer?: ReactNode;
@@ -23,6 +24,7 @@ export function AppPopup({
   title,
   message,
   kind = 'info',
+  showIcon = true,
   onClose,
   dismissOnBackdrop = true,
   footer,
@@ -46,9 +48,11 @@ export function AppPopup({
           style={[styles.backdrop, { backgroundColor: colors.overlay }]}
           onPress={dismissOnBackdrop ? onClose : undefined} />
         <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <View style={[styles.icon, { backgroundColor: `${iconColor}20` }]}>
-            <AppText variant="title" style={{ color: iconColor }}>{icon}</AppText>
-          </View>
+          {showIcon && (
+            <View style={[styles.icon, { backgroundColor: `${iconColor}20` }]}>
+              <AppText variant="title" style={{ color: iconColor }}>{icon}</AppText>
+            </View>
+          )}
           <AppText variant="heading" style={styles.title}>{title}</AppText>
           {message ? <AppText color="muted" style={styles.message}>{message}</AppText> : null}
           {children}

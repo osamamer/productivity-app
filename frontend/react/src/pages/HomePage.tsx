@@ -414,6 +414,7 @@ export function HomePage() {
     const [groupSubmitting, setGroupSubmitting] = useState(false);
     const [groupAddingTaskId, setGroupAddingTaskId] = useState<string | null>(null);
     const [groupTaskDraft, setGroupTaskDraft] = useState('');
+    const [groupTaskInputVersion, setGroupTaskInputVersion] = useState(0);
     const [groupTaskSubmitting, setGroupTaskSubmitting] = useState(false);
     const cachedGroups = taskGroupService.getCachedGroups();
     const [groups, setGroups] = useState<TaskGroup[] | null>(() => cachedGroups ?? null);
@@ -1389,7 +1390,11 @@ export function HomePage() {
         }
     }
 
-    async function createTaskInGroup(group: TaskGroup, firstVisibleTaskId?: string) {
+    async function createTaskInGroup(
+        group: TaskGroup,
+        firstVisibleTaskId?: string,
+        continueAdding = false,
+    ) {
         const taskName = groupTaskDraft.trim();
         if (!taskName || groupTaskSubmissionRef.current) return;
 
@@ -1424,8 +1429,13 @@ export function HomePage() {
             });
             const updatedGroup = await taskGroupService.replaceTasks(group.groupId, nextTaskIds);
             setGroups(previous => replaceTaskGroupIfChanged(previous, updatedGroup));
-            setGroupAddingTaskId(null);
             setGroupTaskDraft('');
+            if (continueAdding) {
+                // Remount the editor so the next task starts focused after the async save.
+                setGroupTaskInputVersion(previous => previous + 1);
+            } else {
+                setGroupAddingTaskId(null);
+            }
         } catch (err) {
             console.error('Error creating task in group:', err);
             await refreshGroups();
@@ -1759,8 +1769,11 @@ export function HomePage() {
                                         groupName={item.group.name}
                                         value={groupTaskDraft}
                                         disabled={groupTaskSubmitting}
+                                        key={`${item.group.groupId}-${groupTaskInputVersion}`}
                                         onChange={setGroupTaskDraft}
                                         onBlur={() => {
+                                            if (groupTaskSubmitting || groupTaskSubmissionRef.current) return;
+
                                             setGroupAddingTaskId(null);
                                             if (groupTaskDraft.trim()) {
                                                 void createTaskInGroup(item.group, item.tasks[0]?.taskId);
@@ -1771,8 +1784,7 @@ export function HomePage() {
                                         onKeyDown={event => {
                                             if (event.key === 'Enter' && !event.shiftKey) {
                                                 event.preventDefault();
-                                                setGroupAddingTaskId(null);
-                                                void createTaskInGroup(item.group, item.tasks[0]?.taskId);
+                                                void createTaskInGroup(item.group, item.tasks[0]?.taskId, true);
                                             } else if (event.key === 'Escape') {
                                                 setGroupAddingTaskId(null);
                                                 setGroupTaskDraft('');

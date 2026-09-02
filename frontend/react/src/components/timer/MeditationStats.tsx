@@ -13,7 +13,6 @@ import SelfImprovementIcon from '@mui/icons-material/SelfImprovement';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
-import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { addMonths, eachDayOfInterval, endOfMonth, format, getDay, isAfter, startOfMonth } from 'date-fns';
@@ -269,6 +268,9 @@ export function MeditationStats({ refreshKey }: MeditationStatsProps) {
                         gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
                         borderTop: `1px solid ${theme.palette.divider}`,
                         borderLeft: `1px solid ${theme.palette.divider}`,
+                        borderRadius: 2,
+                        overflow: 'hidden',
+                        bgcolor: 'background.paper',
                     }}>
                         {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => (
                             <Typography
@@ -307,10 +309,11 @@ export function MeditationStats({ refreshKey }: MeditationStatsProps) {
                                     <Box sx={{
                                         height: { xs: 32, sm: 38 },
                                         position: 'relative',
-                                        bgcolor: 'transparent',
+                                        bgcolor: practiced
+                                            ? alpha(theme.palette.success.main, theme.palette.mode === 'dark' ? 0.28 : 0.18)
+                                            : 'background.paper',
                                         borderRight: `1px solid ${theme.palette.divider}`,
                                         borderBottom: `1px solid ${theme.palette.divider}`,
-                                        boxShadow: practiced ? `inset 0 0 0 2px ${theme.palette.success.main}` : 'none',
                                         opacity: future ? 0.45 : 1,
                                         display: 'grid',
                                         placeItems: 'center',
@@ -322,16 +325,14 @@ export function MeditationStats({ refreshKey }: MeditationStatsProps) {
                                         <Typography
                                             variant="caption"
                                             sx={{
-                                                position: practiced ? 'absolute' : 'static',
-                                                top: practiced ? 3 : 'auto',
-                                                left: practiced ? 5 : 'auto',
                                                 fontSize: 10,
-                                                color: 'text.secondary',
+                                                color: practiced
+                                                    ? theme.palette.mode === 'dark' ? theme.palette.success.light : theme.palette.success.dark
+                                                    : theme.palette.text.secondary,
                                             }}
                                         >
                                             {format(date, 'd')}
                                         </Typography>
-                                        {practiced && <CheckRoundedIcon sx={{ fontSize: 19, color: 'success.main' }} />}
                                     </Box>
                                 </Tooltip>
                             );
@@ -339,9 +340,7 @@ export function MeditationStats({ refreshKey }: MeditationStatsProps) {
                     </Box>
                     <Stack direction="row" spacing={1.5} sx={{ mt: 1.25 }}>
                         <Stack direction="row" spacing={0.5} alignItems="center">
-                            <Box sx={{ width: 12, height: 12, display: 'grid', placeItems: 'center', border: `1px solid ${theme.palette.success.main}` }}>
-                                <CheckRoundedIcon sx={{ fontSize: 10, color: 'success.main' }} />
-                            </Box>
+                            <Box sx={{ width: 12, height: 12, borderRadius: 0.75, bgcolor: alpha(theme.palette.success.main, theme.palette.mode === 'dark' ? 0.28 : 0.18) }} />
                             <Typography variant="caption" color="text.secondary">Meditated</Typography>
                         </Stack>
                         <Stack direction="row" spacing={0.5} alignItems="center">

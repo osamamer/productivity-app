@@ -110,14 +110,17 @@ export interface MentalStateCheckIn {
 }
 
 export type StatType = 'NUMBER' | 'BOOLEAN' | 'RANGE';
+export type StatMorality = 'GOOD' | 'BAD' | 'NEUTRAL';
 
 export interface StatDefinition {
   id: string;
   name: string;
   description?: string;
   type: StatType;
+  morality?: StatMorality | null;
   minValue?: number;
   maxValue?: number;
+  goodThreshold?: number | null;
   systemKey?: string;
   displayOrder: number;
   userId: string;

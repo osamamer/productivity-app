@@ -27,6 +27,7 @@ export default function SettingsScreen() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [passwordMessage, setPasswordMessage] = useState<string | null>(null);
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
 
   async function updatePreference(key: 'includeUnloggedNumericDaysAsZero' | 'autoStartPomodoroSessions', value: boolean) {
     if (!resource.data) return;
@@ -47,6 +48,11 @@ export default function SettingsScreen() {
     finally { setPasswordSaving(false); }
   }
 
+  function closePasswordChange() {
+    setChangePasswordOpen(false);
+    setCurrentPassword(''); setNewPassword(''); setConfirmPassword(''); setPasswordMessage(null);
+  }
+
   const displayName = `${user?.firstName ?? ''} ${user?.lastName ?? ''}`.trim() || user?.username || 'Account';
   const initials = `${user?.firstName?.[0] ?? ''}${user?.lastName?.[0] ?? ''}`.toUpperCase() || user?.username?.[0]?.toUpperCase() || '?';
 
@@ -63,7 +69,14 @@ export default function SettingsScreen() {
         <AppText variant="label">Accent</AppText>
         <View style={styles.accents}>
           {accentOptions.map(option => (
-            <Pressable key={option.value} onPress={() => setAccent(option.value)} style={[styles.swatchWrap, { borderColor: accent === option.value ? colors.text : 'transparent' }]}>
+            <Pressable
+              key={option.value}
+              onPress={() => setAccent(option.value)}
+              style={[styles.swatchWrap, {
+                backgroundColor: accent === option.value ? colors.accentSoft : 'transparent',
+                borderColor: accent === option.value ? `${colors.accent}66` : colors.border,
+              }]}
+            >
               <View style={[styles.swatch, { backgroundColor: option.color }]} />
               <AppText variant="caption">{option.label}</AppText>
             </Pressable>
@@ -81,17 +94,53 @@ export default function SettingsScreen() {
       </Card>
 
       <Card style={styles.section}>
-        <View style={styles.account}>
+        <View style={styles.sectionHeading}><Ionicons name="person-outline" size={20} color={colors.textMuted} /><AppText variant="heading">Account</AppText></View>
+        <View style={[styles.profileSummary, { backgroundColor: colors.background, borderColor: colors.border }]}>
           <View style={[styles.avatar, { backgroundColor: colors.accent }]}><AppText variant="heading" style={{ color: colors.onAccent }}>{initials}</AppText></View>
           <View style={styles.grow}><AppText variant="heading">{displayName}</AppText><AppText color="muted">{user?.email}</AppText></View>
         </View>
-        <AppText variant="label">Change password</AppText>
-        <AppInput label="Current password" secureTextEntry value={currentPassword} onChangeText={setCurrentPassword} />
-        <AppInput label="New password" secureTextEntry value={newPassword} onChangeText={setNewPassword} />
-        <AppInput label="Confirm new password" secureTextEntry value={confirmPassword} onChangeText={setConfirmPassword} />
-        {passwordMessage && <AppText color={passwordMessage === 'Password updated.' ? 'success' : 'danger'}>{passwordMessage}</AppText>}
-        <AppButton variant="secondary" label="Update password" loading={passwordSaving} onPress={() => void changePassword()} />
-        <AppButton variant="danger" label="Sign out" icon="log-out-outline" onPress={() => void signOut()} />
+        <View style={[styles.accountActions, { borderTopColor: colors.border }]}>
+          <AppText variant="caption" color="muted">ACCOUNT ACTIONS</AppText>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ expanded: changePasswordOpen }}
+            onPress={() => {
+              if (changePasswordOpen) closePasswordChange();
+              else setChangePasswordOpen(true);
+            }}
+            style={({ pressed }) => [styles.accountOption, { borderColor: colors.border, backgroundColor: colors.background }, pressed && { opacity: 0.72 }]}
+          >
+            <View style={styles.optionCopy}>
+              <Ionicons name="key-outline" size={19} color={colors.textMuted} />
+              <View style={styles.grow}>
+                <AppText variant="label">Change password</AppText>
+                <AppText color="muted">Update the password used to sign in.</AppText>
+              </View>
+            </View>
+            <Ionicons name={changePasswordOpen ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textMuted} />
+          </Pressable>
+          {changePasswordOpen && <View style={styles.passwordForm}>
+            <AppInput label="Current password" secureTextEntry value={currentPassword} onChangeText={setCurrentPassword} />
+            <AppInput label="New password" secureTextEntry value={newPassword} onChangeText={setNewPassword} />
+            <AppInput label="Confirm new password" secureTextEntry value={confirmPassword} onChangeText={setConfirmPassword} />
+            {passwordMessage && <AppText color={passwordMessage === 'Password updated.' ? 'success' : 'danger'}>{passwordMessage}</AppText>}
+            <AppButton variant="secondary" label="Update password" loading={passwordSaving} onPress={() => void changePassword()} />
+          </View>}
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => void signOut()}
+            style={({ pressed }) => [styles.accountOption, { borderColor: `${colors.danger}40`, backgroundColor: `${colors.danger}0C` }, pressed && { opacity: 0.72 }]}
+          >
+            <View style={styles.optionCopy}>
+              <Ionicons name="log-out-outline" size={19} color={colors.danger} />
+              <View style={styles.grow}>
+                <AppText variant="label" color="danger">Log out</AppText>
+                <AppText color="muted">End your session on this device.</AppText>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.danger} />
+          </Pressable>
+        </View>
       </Card>
     </Screen>
   );
@@ -104,7 +153,7 @@ function SettingRow({ label, detail, value, disabled, onChange }: { label: strin
 
 const styles = StyleSheet.create({
   section: { gap: 16 }, sectionHeading: { flexDirection: 'row', alignItems: 'center', gap: 9 }, accents: { flexDirection: 'row', justifyContent: 'space-between', gap: 6 },
-  swatchWrap: { alignItems: 'center', gap: 6, borderWidth: 2, borderRadius: 16, padding: 7 }, swatch: { width: 34, height: 34, borderRadius: 17 },
-  setting: { flexDirection: 'row', alignItems: 'center', gap: 14 }, grow: { flex: 1, gap: 3 }, divider: { height: 1 },
-  account: { flexDirection: 'row', alignItems: 'center', gap: 13 }, avatar: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center' },
+  swatchWrap: { alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 16, padding: 8 }, swatch: { width: 34, height: 34, borderRadius: 17 },
+  setting: { flexDirection: 'row', alignItems: 'center', gap: 14 }, accountActions: { gap: 12, borderTopWidth: 1, paddingTop: 16 }, accountOption: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, borderWidth: 1, borderRadius: 14, padding: 13 }, optionCopy: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 11 }, passwordForm: { gap: 12 }, grow: { flex: 1, gap: 3 }, divider: { height: 1 },
+  profileSummary: { flexDirection: 'row', alignItems: 'center', gap: 13, borderWidth: 1, borderRadius: 16, padding: 14 }, avatar: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center' },
 });

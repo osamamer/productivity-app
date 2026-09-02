@@ -27,7 +27,9 @@ import { MeditationSession } from '../../types/MeditationSession.ts';
 import {
     MEDITATION_SOUND_OPTIONS,
     MeditationSoundId,
+    playIntervalBell,
     meditationSoundscape,
+    stopIntervalBell,
 } from './meditationSounds.ts';
 import { MeditationNavigationGuard } from './MeditationNavigationGuard.tsx';
 
@@ -105,27 +107,6 @@ function moodLabel(mood: number): string {
     return 'Very good';
 }
 
-function playIntervalBell() {
-    if (typeof window === 'undefined' || !window.AudioContext) return;
-
-    const context = new window.AudioContext();
-    const oscillator = context.createOscillator();
-    const gain = context.createGain();
-    const now = context.currentTime;
-
-    oscillator.type = 'sine';
-    oscillator.frequency.setValueAtTime(660, now);
-    oscillator.frequency.exponentialRampToValueAtTime(440, now + 0.35);
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.12, now + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.45);
-    oscillator.connect(gain);
-    gain.connect(context.destination);
-    oscillator.start(now);
-    oscillator.stop(now + 0.45);
-    oscillator.addEventListener('ended', () => void context.close(), { once: true });
-}
-
 interface MeditationTimerProps {
     onSessionCompleted: () => void;
 }
@@ -149,7 +130,10 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
     const soundStartedByUserRef = useRef(false);
 
     useEffect(() => {
-        return () => meditationSoundscape.stop();
+        return () => {
+            meditationSoundscape.stop();
+            stopIntervalBell();
+        };
     }, []);
 
     useEffect(() => {
@@ -432,6 +416,7 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
                 onSessionEnded={() => {
                     setSession(null);
                     meditationSoundscape.stop();
+                    stopIntervalBell();
                     soundStartedByUserRef.current = false;
                     onSessionCompleted();
                 }}
