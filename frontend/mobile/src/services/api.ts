@@ -19,6 +19,7 @@ import type {
   StatEntry,
   StatSummary,
   Task,
+  TaskGroup,
   TaskInput,
   UserPreferences,
 } from '@/types/models';
@@ -78,6 +79,15 @@ export const api = {
     update: (id: string, updates: Partial<Task>) =>
       json<Task>(`/api/v1/tasks/${id}`, 'PATCH', updates),
     remove: (id: string) => apiRequest<void>(`/api/v1/tasks/${id}`, { method: 'DELETE' }),
+    reorder: (taskIds: string[]) => json<Task[]>('/api/v1/tasks/order', 'PUT', { taskIds }),
+  },
+  taskGroups: {
+    all: () => apiRequest<TaskGroup[]>('/api/v1/task-groups'),
+    create: (name: string, taskIds: string[]) =>
+      json<TaskGroup>('/api/v1/task-groups', 'POST', { name, taskIds }),
+    replaceTasks: (groupId: string, taskIds: string[]) =>
+      json<TaskGroup>(`/api/v1/task-groups/${groupId}/tasks`, 'PUT', { taskIds }),
+    remove: (groupId: string) => apiRequest<void>(`/api/v1/task-groups/${groupId}`, { method: 'DELETE' }),
   },
   session: {
     pause: (taskId: string) => apiRequest<void>(`/api/v1/session/pause/${taskId}`, { method: 'POST' }),

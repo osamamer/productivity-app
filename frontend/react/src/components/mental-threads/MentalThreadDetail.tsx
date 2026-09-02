@@ -42,6 +42,7 @@ interface MentalThreadDetailProps {
     tasks: Task[];
     onCreateTask: (task: TaskToCreate) => Promise<void>;
     onToggleTask: (task: Task) => Promise<void>;
+    onUpdateTask: (taskId: string, updates: Partial<Task>) => Promise<void>;
 }
 
 interface LoadHistoryState {
@@ -78,6 +79,7 @@ export function MentalThreadDetail({
     tasks,
     onCreateTask,
     onToggleTask,
+    onUpdateTask,
 }: MentalThreadDetailProps) {
     const [loadHistoryState, setLoadHistoryState] = useState<LoadHistoryState>(() => {
         const cached = getCachedMentalThreadHistory(thread.id);
@@ -279,6 +281,7 @@ export function MentalThreadDetail({
                 canAddTasks={thread.status === 'OPEN'}
                 onCreate={onCreateTask}
                 onToggle={onToggleTask}
+                onUpdate={onUpdateTask}
             />
 
             <Divider sx={{ my: 1.5 }} />

@@ -6,6 +6,7 @@ import { AppText } from './AppText';
 interface Option<T extends string | number> {
   value: T;
   label: string;
+  color?: string;
 }
 
 export function ChoiceChips<T extends string | number>({ value, options, onChange }: {
@@ -24,10 +25,13 @@ export function ChoiceChips<T extends string | number>({ value, options, onChang
             onPress={() => onChange(option.value)}
             style={({ pressed }) => [
               styles.chip,
-              { backgroundColor: selected ? colors.accent : colors.background, borderColor: selected ? colors.accent : colors.border },
+              {
+                backgroundColor: selected ? option.color ?? colors.accent : colors.background,
+                borderColor: option.color ?? (selected ? colors.accent : colors.border),
+              },
               pressed && { opacity: 0.72 },
             ]}>
-            <AppText variant="caption" style={{ color: selected ? colors.onAccent : colors.text }}>
+            <AppText variant="caption" style={{ color: selected ? colors.onAccent : option.color ?? colors.text }}>
               {option.label}
             </AppText>
           </Pressable>

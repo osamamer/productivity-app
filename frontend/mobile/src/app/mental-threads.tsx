@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThreadComposerSheet } from '@/components/mind/ThreadComposerSheet';
 import { ThreadDetailSheet } from '@/components/mind/ThreadDetailSheet';
@@ -11,6 +11,7 @@ import { Screen } from '@/components/ui/Screen';
 import { ErrorView, LoadingView } from '@/components/ui/StateView';
 import { useAsyncData } from '@/hooks/useAsyncData';
 import { reportError } from '@/lib/errors';
+import { useAppPopup } from '@/providers/PopupProvider';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
 import type { MentalThread, MentalThreadSummary } from '@/types/models';
@@ -19,6 +20,7 @@ interface ThreadData { threads: MentalThread[]; summary: MentalThreadSummary }
 
 export default function MentalThreadsScreen() {
   const { colors } = useAppTheme();
+  const { showError } = useAppPopup();
   const resource = useAsyncData<ThreadData>(async () => {
     const [threads, summary] = await Promise.all([api.mentalThreads.all(true), api.mentalThreads.summary()]);
     return { threads, summary };
@@ -41,7 +43,7 @@ export default function MentalThreadsScreen() {
     try { await api.mentalThreads.capacity(value); }
     catch (cause) {
       resource.setData(current => current ? { ...current, summary: { ...current.summary, capacityToday: previous } } : current);
-      Alert.alert('Could not save capacity', reportError('Could not save capacity', cause));
+      void showError('Could not save capacity', reportError('Could not save capacity', cause));
     }
   }
 

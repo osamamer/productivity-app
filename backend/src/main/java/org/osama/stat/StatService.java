@@ -25,13 +25,16 @@ public class StatService {
     private final StatDefinitionRepository definitionRepository;
     private final StatEntryRepository entryRepository;
     private final UserRepository userRepository;
+    private final StatGroupService statGroupService;
 
     public StatService(StatDefinitionRepository definitionRepository,
                        StatEntryRepository entryRepository,
-                       UserRepository userRepository) {
+                       UserRepository userRepository,
+                       StatGroupService statGroupService) {
         this.definitionRepository = definitionRepository;
         this.entryRepository = entryRepository;
         this.userRepository = userRepository;
+        this.statGroupService = statGroupService;
     }
 
     public StatDefinition createDefinition(String name, String description, StatType type,
@@ -188,6 +191,7 @@ public class StatService {
         if (statDefinition.getSystemKey() != null) {
             throw new IllegalArgumentException("Cannot delete a system stat.");
         }
+        statGroupService.removeDefinitionFromGroups(definitionId, userId);
         definitionRepository.delete(statDefinition);
         log.info("Stat definition deleted: userId={} statDefinitionId={} name={}",
                 userId, definitionId, statDefinition.getName());

@@ -95,6 +95,9 @@ export const AppThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => 
         const { augmentColor } = basePalette;
         const createColor = (mainColor: string) => augmentColor({ color: { main: mainColor } });
         const primaryPalette = darkMode ? accentPalettes[accentColor].dark : accentPalettes[accentColor].light;
+        const secondaryPalette = darkMode
+            ? accentPalettes[accentColor].secondary.dark
+            : accentPalettes[accentColor].secondary.light;
 
         const t = createTheme({
             typography: {
@@ -103,9 +106,7 @@ export const AppThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => 
             palette: darkMode ? {
                 mode: 'dark',
                 primary: primaryPalette,
-                secondary: {
-                    main: '#F5E55F',
-                },
+                secondary: secondaryPalette,
                 success: {
                     main: '#22C55E',
                     light: '#4ADE80',
@@ -130,9 +131,7 @@ export const AppThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => 
             } : {
                 mode: 'light',
                 primary: primaryPalette,
-                secondary: {
-                    main: '#F5E55F',
-                },
+                secondary: secondaryPalette,
                 success: {
                     main: '#22C55E',
                     light: '#4ADE80',

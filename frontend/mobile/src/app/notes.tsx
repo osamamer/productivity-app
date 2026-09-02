@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useMemo, useState } from 'react';
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppButton } from '@/components/ui/AppButton';
 import { AppInput } from '@/components/ui/AppInput';
@@ -11,6 +11,7 @@ import { Screen } from '@/components/ui/Screen';
 import { EmptyView, ErrorView, LoadingView } from '@/components/ui/StateView';
 import { useAsyncData } from '@/hooks/useAsyncData';
 import { reportError } from '@/lib/errors';
+import { useAppPopup } from '@/providers/PopupProvider';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
 import type { Note } from '@/types/models';
@@ -27,6 +28,7 @@ function plainText(content: string): string {
 
 export default function NotesScreen() {
   const { colors } = useAppTheme();
+  const { confirm, showError } = useAppPopup();
   const resource = useAsyncData(() => api.notes.all());
   const [selected, setSelected] = useState<Note | null>(null);
   const [title, setTitle] = useState('');
@@ -49,7 +51,7 @@ export default function NotesScreen() {
       const note = await api.notes.create();
       resource.setData(current => current ? [note, ...current] : [note]);
       openNote(note);
-    } catch (cause) { Alert.alert('Could not create note', reportError('Could not create note', cause)); }
+    } catch (cause) { void showError('Could not create note', reportError('Could not create note', cause)); }
     finally { setSaving(false); }
   }
 
@@ -72,13 +74,15 @@ export default function NotesScreen() {
     } catch (cause) { setError(reportError('Could not update note', cause)); }
   }
 
-  function remove(note: Note) {
-    Alert.alert('Delete note?', note.title, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => void api.notes.remove(note.id).then(() => {
-        resource.setData(current => current?.filter(item => item.id !== note.id) ?? current); setSelected(null);
-      }).catch(cause => setError(reportError('Could not delete note', cause))) },
-    ]);
+  async function remove(note: Note) {
+    if (!await confirm('Delete note?', note.title, 'Delete')) return;
+    try {
+      await api.notes.remove(note.id);
+      resource.setData(current => current?.filter(item => item.id !== note.id) ?? current);
+      setSelected(null);
+    } catch (cause) {
+      setError(reportError('Could not delete note', cause));
+    }
   }
 
   return (

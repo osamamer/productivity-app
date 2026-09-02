@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
-import { Alert, Pressable, StyleSheet, Switch, View } from 'react-native';
+import { Pressable, StyleSheet, Switch, View } from 'react-native';
 
 import { AppButton } from '@/components/ui/AppButton';
 import { AppInput } from '@/components/ui/AppInput';
@@ -11,11 +11,15 @@ import { Screen } from '@/components/ui/Screen';
 import { useAsyncData } from '@/hooks/useAsyncData';
 import { reportError } from '@/lib/errors';
 import { useAuth } from '@/providers/AuthProvider';
+import { usePreferences } from '@/providers/PreferencesProvider';
+import { useAppPopup } from '@/providers/PopupProvider';
 import { accentOptions, useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
 
 export default function SettingsScreen() {
   const { user, logout } = useAuth();
+  const { showCompletedTasks, setShowCompletedTasks } = usePreferences();
+  const { confirm, showError } = useAppPopup();
   const { colors, mode, accent, setMode, setAccent } = useAppTheme();
   const resource = useAsyncData(() => api.preferences.get());
   const [currentPassword, setCurrentPassword] = useState('');
@@ -29,7 +33,7 @@ export default function SettingsScreen() {
     const previous = resource.data;
     resource.setData({ ...previous, [key]: value });
     try { resource.setData(await api.preferences.update({ [key]: value })); }
-    catch (cause) { resource.setData(previous); Alert.alert('Could not save setting', reportError('Could not save setting', cause)); }
+    catch (cause) { resource.setData(previous); void showError('Could not save setting', reportError('Could not save setting', cause)); }
   }
 
   async function changePassword() {
@@ -45,6 +49,10 @@ export default function SettingsScreen() {
 
   const displayName = `${user?.firstName ?? ''} ${user?.lastName ?? ''}`.trim() || user?.username || 'Account';
   const initials = `${user?.firstName?.[0] ?? ''}${user?.lastName?.[0] ?? ''}`.toUpperCase() || user?.username?.[0]?.toUpperCase() || '?';
+
+  async function signOut() {
+    if (await confirm('Sign out?', 'You can sign back in at any time.', 'Sign out')) await logout();
+  }
 
   return (
     <Screen title="Settings" eyebrow="Make it yours">
@@ -67,6 +75,8 @@ export default function SettingsScreen() {
         <View style={styles.sectionHeading}><Ionicons name="options-outline" size={20} color={colors.textMuted} /><AppText variant="heading">Behavior</AppText></View>
         <SettingRow label="Count unlogged days as zero" detail="Include empty days when calculating numeric averages." value={resource.data?.includeUnloggedNumericDaysAsZero ?? false} disabled={!resource.data} onChange={value => void updatePreference('includeUnloggedNumericDaysAsZero', value)} />
         <View style={[styles.divider, { backgroundColor: colors.border }]} />
+        <SettingRow label="Show completed tasks" detail="Keep completed tasks visible on Today and Tasks." value={showCompletedTasks} onChange={setShowCompletedTasks} />
+        <View style={[styles.divider, { backgroundColor: colors.border }]} />
         <SettingRow label="Auto-start Pomodoro phases" detail="Move directly into the next focus or break phase." value={resource.data?.autoStartPomodoroSessions ?? true} disabled={!resource.data} onChange={value => void updatePreference('autoStartPomodoroSessions', value)} />
       </Card>
 
@@ -81,7 +91,7 @@ export default function SettingsScreen() {
         <AppInput label="Confirm new password" secureTextEntry value={confirmPassword} onChangeText={setConfirmPassword} />
         {passwordMessage && <AppText color={passwordMessage === 'Password updated.' ? 'success' : 'danger'}>{passwordMessage}</AppText>}
         <AppButton variant="secondary" label="Update password" loading={passwordSaving} onPress={() => void changePassword()} />
-        <AppButton variant="danger" label="Sign out" icon="log-out-outline" onPress={() => Alert.alert('Sign out?', 'You can sign back in at any time.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Sign out', style: 'destructive', onPress: () => void logout() }])} />
+        <AppButton variant="danger" label="Sign out" icon="log-out-outline" onPress={() => void signOut()} />
       </Card>
     </Screen>
   );

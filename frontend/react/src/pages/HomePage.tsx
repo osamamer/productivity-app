@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import {
     Box,
     Button,
+    Checkbox,
     CircularProgress,
     Collapse,
     Dialog,
@@ -9,6 +10,7 @@ import {
     DialogContent,
     DialogTitle,
     Alert,
+    Fade,
     IconButton,
     Popover,
     Slide,
@@ -107,21 +109,12 @@ const SELECTION_ACTIONS_EDGE_PADDING = 12;
 const SELECTION_ACTIONS_GAP = 12;
 const SELECTION_ACTIONS_FALLBACK_WIDTH = 136;
 
-const groupReveal = keyframes`
-    from {
-        opacity: 0;
-        transform: translateY(-5px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-`;
-
 const SlideFromRight = React.forwardRef<HTMLDivElement, React.ComponentProps<typeof Slide>>(
     (props, ref) => <Slide {...props} ref={ref} direction="left" />,
 );
 SlideFromRight.displayName = 'SlideFromRight';
+
+let hasAnimatedHomeGreeting = false;
 
 function buildTaskListItems(tasks: Task[], groups: TaskGroup[]): TaskListItem[] {
     const visibleTaskIds = new Set(tasks.map(task => task.taskId));
@@ -268,6 +261,127 @@ function AnimatedTaskList({ items, renderItem }: AnimatedTaskListProps) {
     );
 }
 
+type GroupTaskInputRowProps = {
+    groupName: string;
+    value: string;
+    disabled: boolean;
+    onChange: (value: string) => void;
+    onBlur: () => void;
+    onKeyDown: React.KeyboardEventHandler<HTMLDivElement>;
+};
+
+const GroupTaskInputRow = React.forwardRef<HTMLDivElement, GroupTaskInputRowProps>(function GroupTaskInputRow({
+    groupName,
+    value,
+    disabled,
+    onChange,
+    onBlur,
+    onKeyDown,
+}, ref) {
+    return (
+        <Box
+            ref={ref}
+            onClick={event => event.stopPropagation()}
+            sx={{
+                position: 'relative',
+                borderRadius: 1.5,
+                border: '1.5px solid transparent',
+                backgroundColor: 'transparent',
+                overflow: 'hidden',
+                mb: 0.25,
+                transition: 'background-color 0.2s',
+                '&:hover': { backgroundColor: 'action.hover' },
+            }}
+        >
+            <Box sx={{ display: 'flex', alignItems: 'center', py: 0.75, px: 0.5 }}>
+                <Checkbox
+                    size="small"
+                    checked={false}
+                    disabled
+                    sx={{
+                        color: 'text.disabled',
+                        '&.Mui-disabled': { color: 'text.disabled' },
+                        mr: 0.5,
+                    }}
+                />
+                <Box sx={{ flex: 1, minWidth: 0, position: 'relative' }}>
+                    <TextField
+                        autoFocus
+                        fullWidth
+                        multiline
+                        minRows={1}
+                        maxRows={4}
+                        variant="standard"
+                        value={value}
+                        placeholder="Add to group"
+                        disabled={disabled}
+                        onChange={event => onChange(event.target.value)}
+                        onBlur={onBlur}
+                        onKeyDown={onKeyDown}
+                        InputProps={{ disableUnderline: true }}
+                        inputProps={{
+                            draggable: false,
+                            'aria-label': `New task in ${groupName}`,
+                        }}
+                        sx={{
+                            '& .MuiInputBase-root': {
+                                height: '100%',
+                                padding: 0,
+                            },
+                            '& .MuiInputBase-input': {
+                                color: 'text.primary',
+                                fontSize: '1.05rem',
+                                lineHeight: 1.5,
+                                whiteSpace: 'pre-wrap',
+                                maxHeight: '100%',
+                                overflowY: 'auto',
+                                overflowX: 'hidden',
+                                overflowWrap: 'anywhere',
+                                wordBreak: 'break-word',
+                                hyphens: 'auto',
+                                textAlign: 'left',
+                                padding: 0,
+                            },
+                            '& input::placeholder, & textarea::placeholder': {
+                                color: 'text.disabled',
+                                opacity: 1,
+                            },
+                        }}
+                    />
+                </Box>
+            </Box>
+        </Box>
+    );
+});
+GroupTaskInputRow.displayName = 'GroupTaskInputRow';
+
+function sameTaskGroup(first: TaskGroup, second: TaskGroup): boolean {
+    return first.groupId === second.groupId
+        && first.name === second.name
+        && first.displayOrder === second.displayOrder
+        && first.taskIds.length === second.taskIds.length
+        && first.taskIds.every((taskId, index) => taskId === second.taskIds[index]);
+}
+
+function replaceTaskGroupIfChanged(
+    previous: TaskGroup[] | null,
+    updatedGroup: TaskGroup,
+): TaskGroup[] | null {
+    if (!previous) return previous;
+
+    let changed = false;
+    const next = previous.map(existingGroup => {
+        if (existingGroup.groupId !== updatedGroup.groupId || sameTaskGroup(existingGroup, updatedGroup)) {
+            return existingGroup;
+        }
+
+        changed = true;
+        return updatedGroup;
+    });
+
+    return changed ? next : previous;
+}
+
 function formatLocalDateTime(date: Date): string {
     const pad = (value: number) => String(value).padStart(2, '0');
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
@@ -286,6 +400,7 @@ function moveTaskDateToToday(task: Task): string {
 
 export function HomePage() {
     const { user } = useUser();
+    const [animateGreeting] = useState(() => !hasAnimatedHomeGreeting);
     const [activeExpansion, setActiveExpansion] = useState<ActiveExpansion>(null);
     const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
     const [selectionActionsPosition, setSelectionActionsPosition] = useState<{ top: number; left: number } | null>(null);
@@ -300,8 +415,11 @@ export function HomePage() {
     const [groupAddingTaskId, setGroupAddingTaskId] = useState<string | null>(null);
     const [groupTaskDraft, setGroupTaskDraft] = useState('');
     const [groupTaskSubmitting, setGroupTaskSubmitting] = useState(false);
-    const [groups, setGroups] = useState<TaskGroup[] | null>(null);
-    const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(() => new Set());
+    const cachedGroups = taskGroupService.getCachedGroups();
+    const [groups, setGroups] = useState<TaskGroup[] | null>(() => cachedGroups ?? null);
+    const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(
+        () => new Set((cachedGroups ?? []).map(group => group.groupId)),
+    );
     const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
     const [draggedTaskIds, setDraggedTaskIds] = useState<string[]>([]);
     const [draggedGroupId, setDraggedGroupId] = useState<string | null>(null);
@@ -329,6 +447,10 @@ export function HomePage() {
     const groupTaskSubmissionRef = useRef(false);
     const activeDragRef = useRef<ActiveDrag | null>(null);
 
+    useEffect(() => {
+        if (animateGreeting) hasAnimatedHomeGreeting = true;
+    }, [animateGreeting]);
+
     const getDraggedTaskIds = useCallback(() => {
         const activeDrag = activeDragRef.current;
         return activeDrag?.kind === 'tasks' ? activeDrag.taskIds : [];
@@ -355,6 +477,7 @@ export function HomePage() {
         allTasks,
         todayTasks,
         pastTasks,
+        tasksLoaded,
         refreshTaskBuckets,
         addTaskToState,
         updateTaskInState,
@@ -423,6 +546,8 @@ export function HomePage() {
         }
         return taskIds;
     }, [focusedPomodoroTask, collapsedGroupIds, olderTaskListItems, showOlderTasks, taskListItems]);
+
+    const homeContentReady = tasksLoaded && pomodoroStatusResolved && groups !== null;
 
     const updateSelectionActionsPosition = useCallback(() => {
         if (selectedTaskIds.length < 2) {
@@ -901,6 +1026,41 @@ export function HomePage() {
         }
     }, [allTasks, olderTasks, refreshTaskBuckets, updateTaskInState]);
 
+    const moveGroupToToday = useCallback(async (group: TaskGroup) => {
+        const groupTaskIdSet = new Set(group.taskIds);
+        const tasksToMove = allTasks.filter(task => groupTaskIdSet.has(task.taskId));
+        if (tasksToMove.length === 0) return;
+
+        const updates = tasksToMove.map(task => ({
+            task,
+            scheduledPerformDateTime: moveTaskDateToToday(task),
+        }));
+        updates.forEach(({ task, scheduledPerformDateTime }) => {
+            updateTaskInState(task.taskId, { scheduledPerformDateTime });
+        });
+
+        try {
+            const updatedTasks = await taskGroupService.moveToToday(group.groupId);
+            updatedTasks.forEach(updatedTask => updateTaskInState(updatedTask.taskId, updatedTask));
+        } catch (err) {
+            console.error('Error moving task group to today:', err);
+            await refreshTaskBuckets(true);
+        }
+    }, [allTasks, refreshTaskBuckets, updateTaskInState]);
+
+    const moveDraggedGroupToToday = useCallback(() => {
+        const draggedGroupId = getDraggedGroupId();
+        const draggedGroup = groups?.find(group => group.groupId === draggedGroupId);
+        const olderTaskIdSet = new Set(olderTasks.map(task => task.taskId));
+        if (!draggedGroup || !draggedGroup.taskIds.some(taskId => olderTaskIdSet.has(taskId))) {
+            return false;
+        }
+
+        void moveGroupToToday(draggedGroup);
+        finishDragging();
+        return true;
+    }, [finishDragging, getDraggedGroupId, groups, moveGroupToToday, olderTasks]);
+
     const moveDraggedOlderTasksToToday = useCallback(() => {
         const draggedIds = getDraggedTaskIds();
         const olderTaskIdSet = new Set(olderTasks.map(task => task.taskId));
@@ -984,6 +1144,7 @@ export function HomePage() {
     }, [groups, persistTaskOrder, visibleTasks]);
 
     const handleDropOnTask = useCallback((targetTask: Task, edge: DropEdge) => {
+        if (moveDraggedGroupToToday()) return;
         if (moveDraggedOlderTasksToToday()) return;
 
         const activeGroupId = getDraggedGroupId();
@@ -1018,7 +1179,8 @@ export function HomePage() {
             void removeTasksFromGroup(sourceGroup, movedTaskIds);
         });
     }, [finishDragging, getDraggedGroupId, getDraggedTaskIds, getPrimaryDraggedTaskId, groups, minimizePomodoroTask,
-        moveDraggedOlderTasksToToday, persistTaskOrder, removeTasksFromGroup, reorderGroupRelativeToTask, visibleTasks]);
+        moveDraggedGroupToToday, moveDraggedOlderTasksToToday, persistTaskOrder, removeTasksFromGroup,
+        reorderGroupRelativeToTask, visibleTasks]);
 
     const reorderRelativeToGroup = useCallback((taskIds: string[], targetGroup: TaskGroup, edge: DropEdge) => {
         const orderedTaskIds = visibleTasks.map(task => task.taskId);
@@ -1036,6 +1198,7 @@ export function HomePage() {
     }, [persistTaskOrder, visibleTasks]);
 
     const handleDropOnGroup = useCallback((targetGroup: TaskGroup, intent: GroupDropIntent) => {
+        if (moveDraggedGroupToToday()) return;
         const draggedIds = getDraggedTaskIds();
         const activeGroupId = getDraggedGroupId();
         const olderTaskIdSet = new Set(olderTasks.map(task => task.taskId));
@@ -1093,9 +1256,10 @@ export function HomePage() {
         }
         finishDragging();
     }, [addTasksToGroup, finishDragging, getDraggedGroupId, getDraggedTaskIds, getPrimaryDraggedTaskId, groups, minimizePomodoroTask,
-        moveTasksToToday, olderTasks, removeTasksFromGroup, reorderRelativeToGroup, visibleTasks]);
+        moveDraggedGroupToToday, moveTasksToToday, olderTasks, removeTasksFromGroup, reorderRelativeToGroup, visibleTasks]);
 
     const handleDropAtBottom = useCallback(() => {
+        if (moveDraggedGroupToToday()) return;
         if (moveDraggedOlderTasksToToday()) return;
 
         const orderedTaskIds = visibleTasks.map(task => task.taskId);
@@ -1132,9 +1296,10 @@ export function HomePage() {
         }
         finishDragging();
     }, [finishDragging, getDraggedGroupId, getDraggedTaskIds, getPrimaryDraggedTaskId, groups, minimizePomodoroTask,
-        moveDraggedOlderTasksToToday, persistTaskOrder, removeTasksFromGroup, visibleTasks]);
+        moveDraggedGroupToToday, moveDraggedOlderTasksToToday, persistTaskOrder, removeTasksFromGroup, visibleTasks]);
 
     const handleDropAtTop = useCallback(() => {
+        if (moveDraggedGroupToToday()) return;
         if (moveDraggedOlderTasksToToday()) return;
 
         const orderedTaskIds = visibleTasks.map(task => task.taskId);
@@ -1174,7 +1339,7 @@ export function HomePage() {
         }
         finishDragging();
     }, [finishDragging, getDraggedGroupId, getDraggedTaskIds, getPrimaryDraggedTaskId, groups, minimizePomodoroTask,
-        moveDraggedOlderTasksToToday, persistTaskOrder, removeTasksFromGroup, visibleTasks]);
+        moveDraggedGroupToToday, moveDraggedOlderTasksToToday, persistTaskOrder, removeTasksFromGroup, visibleTasks]);
 
     function keepDragTargetInView(event: React.DragEvent<HTMLElement>) {
         if (!hasActiveDrag()) return;
@@ -1251,14 +1416,14 @@ export function HomePage() {
                     : existingGroup,
             ));
             setCollapsedGroupIds(previous => {
+                if (!previous.has(group.groupId)) return previous;
+
                 const next = new Set(previous);
                 next.delete(group.groupId);
                 return next;
             });
             const updatedGroup = await taskGroupService.replaceTasks(group.groupId, nextTaskIds);
-            setGroups(previous => (previous ?? []).map(existingGroup =>
-                existingGroup.groupId === updatedGroup.groupId ? updatedGroup : existingGroup,
-            ));
+            setGroups(previous => replaceTaskGroupIfChanged(previous, updatedGroup));
             setGroupAddingTaskId(null);
             setGroupTaskDraft('');
         } catch (err) {
@@ -1275,6 +1440,8 @@ export function HomePage() {
         setGroupAddingTaskId(groupId);
         setGroupTaskDraft('');
         setCollapsedGroupIds(previous => {
+            if (!previous.has(groupId)) return previous;
+
             const next = new Set(previous);
             next.delete(groupId);
             return next;
@@ -1441,7 +1608,6 @@ export function HomePage() {
                     key={item.group.groupId}
                     sx={{
                         mb: 0.4,
-                        animation: `${groupReveal} 170ms cubic-bezier(0.22, 1, 0.36, 1)`,
                     }}
                 >
                     <Box
@@ -1579,44 +1745,42 @@ export function HomePage() {
                         }}
                     >
                         <Box sx={{ ml: 1.7, pl: 1.1, borderLeft: '1px solid', borderColor: 'divider' }}>
-                            {groupAddingTaskId === item.group.groupId && (
-                                <Box sx={{ px: 1.75, py: 0.5 }}>
-                                    <TextField
-                                        autoFocus
-                                        fullWidth
-                                        multiline
-                                        variant="standard"
+                            <Collapse
+                                in={groupAddingTaskId === item.group.groupId}
+                                timeout={180}
+                                unmountOnExit
+                                sx={{
+                                    willChange: 'height',
+                                    '& .MuiCollapse-wrapper': { willChange: 'height' },
+                                }}
+                            >
+                                <Fade in={groupAddingTaskId === item.group.groupId} timeout={150}>
+                                    <GroupTaskInputRow
+                                        groupName={item.group.name}
                                         value={groupTaskDraft}
-                                        placeholder="Add task..."
                                         disabled={groupTaskSubmitting}
-                                        onChange={event => setGroupTaskDraft(event.target.value)}
+                                        onChange={setGroupTaskDraft}
                                         onBlur={() => {
+                                            setGroupAddingTaskId(null);
                                             if (groupTaskDraft.trim()) {
                                                 void createTaskInGroup(item.group, item.tasks[0]?.taskId);
+                                            } else {
+                                                setGroupTaskDraft('');
                                             }
                                         }}
                                         onKeyDown={event => {
                                             if (event.key === 'Enter' && !event.shiftKey) {
                                                 event.preventDefault();
+                                                setGroupAddingTaskId(null);
                                                 void createTaskInGroup(item.group, item.tasks[0]?.taskId);
                                             } else if (event.key === 'Escape') {
                                                 setGroupAddingTaskId(null);
                                                 setGroupTaskDraft('');
                                             }
                                         }}
-                                        inputProps={{
-                                            draggable: false,
-                                            'aria-label': `New task in ${item.group.name}`,
-                                        }}
-                                        sx={{
-                                            '& input::placeholder, & textarea::placeholder': {
-                                                color: 'text.disabled',
-                                                opacity: 1,
-                                            },
-                                        }}
                                     />
-                                </Box>
-                            )}
+                                </Fade>
+                            </Collapse>
                             {item.tasks.map(task => renderTaskRow(task, options))}
                         </Box>
                     </Collapse>
@@ -1648,8 +1812,10 @@ export function HomePage() {
                         sx={{
                             mb: 4,
                             fontWeight: 400,
-                            opacity: 0,
-                            animation: `${greetingReveal} 560ms cubic-bezier(0.22, 1, 0.36, 1) 120ms forwards`,
+                            opacity: animateGreeting ? 0 : 1,
+                            animation: animateGreeting
+                                ? `${greetingReveal} 560ms cubic-bezier(0.22, 1, 0.36, 1) 120ms forwards`
+                                : 'none',
                         }}
                     >
                         {greeting}{firstName ? `, ${firstName}` : ''}.
@@ -1739,7 +1905,7 @@ export function HomePage() {
 
                     <Box ref={taskListTopRef} sx={{ height: 0 }} />
 
-                    {pomodoroStatusResolved && groups !== null && visibleTasks.length > 0 ? (
+                    {homeContentReady && visibleTasks.length > 0 ? (
                         <>
                             {focusedPomodoroTask && focusVisibility !== 'fading' && (
                                 <Box
@@ -1853,7 +2019,7 @@ export function HomePage() {
                                 </Box>
                             )}
                         </>
-                    ) : pomodoroStatusResolved && groups !== null ? (
+                    ) : homeContentReady ? (
                         <Typography
                             variant="body1"
                             color="text.secondary"
@@ -1893,7 +2059,7 @@ export function HomePage() {
                     ) : null}
 
                     <Collapse
-                        in={pomodoroStatusResolved && groups !== null && focusVisibility === 'all'
+                        in={homeContentReady && focusVisibility === 'all'
                             && showOlderTasks && olderTasks.length > 0}
                         timeout={{ enter: 260, exit: 220 }}
                         mountOnEnter
@@ -1926,7 +2092,7 @@ export function HomePage() {
                     </Collapse>
 
                     <Collapse
-                        in={olderTasks.length > 0 && focusVisibility === 'all'}
+                        in={homeContentReady && focusVisibility === 'all' && olderTasks.length > 0}
                         timeout={{ enter: 220, exit: 180 }}
                         mountOnEnter
                         unmountOnExit

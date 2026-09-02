@@ -11,6 +11,8 @@ import {
     IconButton,
     CircularProgress,
     Chip,
+    Slide,
+    Snackbar,
     Tooltip,
 } from '@mui/material';
 import { HoverCardBox } from '../box/HoverCardBox.tsx';
@@ -20,6 +22,7 @@ import StopIcon from '@mui/icons-material/Stop';
 import TimerIcon from '@mui/icons-material/Timer';
 import FreeBreakfastIcon from '@mui/icons-material/FreeBreakfast';
 import SkipNextIcon from '@mui/icons-material/SkipNext';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { taskService } from '../../services/api';
 import { requestSystemNotificationPermission } from '../../services/systemNotifications';
 import {
@@ -56,13 +59,29 @@ interface Props {
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8080/ws';
 
+const SlideFromRight = React.forwardRef<HTMLDivElement, React.ComponentProps<typeof Slide>>(
+    (props, ref) => <Slide {...props} ref={ref} direction="left" />,
+);
+SlideFromRight.displayName = 'SlideFromRight';
+
+type PomodoroFeedback = { id: number; message: string };
+
 export function CustomTimer({ task }: Props) {
     const [status, setStatus] = useState<Pomodoro | null>(null);
     const [pomodoroConfig, setPomodoroConfig] = useState<PomodoroConfig>(NORMAL_POMODORO_CONFIG);
     const [isConnected, setIsConnected] = useState(false);
-    const [connectionError, setConnectionError] = useState<string | null>(null);
+    const [pomodoroFeedback, setPomodoroFeedback] = useState<PomodoroFeedback | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const stompClientRef = useRef<Client | null>(null);
+    const pomodoroFeedbackIdRef = useRef(0);
+
+    const showPomodoroError = useCallback(() => {
+        pomodoroFeedbackIdRef.current += 1;
+        setPomodoroFeedback({
+            id: pomodoroFeedbackIdRef.current,
+            message: GENERIC_ERROR_MESSAGE,
+        });
+    }, []);
 
     const [formData, setFormData] = useState<PomodoroFormValues>(() =>
         createPomodoroFormDefaults(NORMAL_POMODORO_CONFIG)
@@ -106,7 +125,7 @@ export function CustomTimer({ task }: Props) {
             }
         } catch (error) {
             console.error('Error toggling play/pause:', error);
-            setConnectionError(GENERIC_ERROR_MESSAGE);
+            showPomodoroError();
         } finally {
             setIsLoading(false);
         }
@@ -121,7 +140,7 @@ export function CustomTimer({ task }: Props) {
             setStatus(null);
         } catch (error) {
             console.error('Error ending session:', error);
-            setConnectionError(GENERIC_ERROR_MESSAGE);
+            showPomodoroError();
         } finally {
             setIsLoading(false);
         }
@@ -135,7 +154,7 @@ export function CustomTimer({ task }: Props) {
             await taskService.finishPomodoroBreak(task.taskId);
         } catch (error) {
             console.error('Error ending Pomodoro break:', error);
-            setConnectionError(GENERIC_ERROR_MESSAGE);
+            showPomodoroError();
         } finally {
             setIsLoading(false);
         }
@@ -162,7 +181,6 @@ export function CustomTimer({ task }: Props) {
             });
         } catch (error) {
             console.error('Error subscribing to task:', error);
-            setConnectionError(GENERIC_ERROR_MESSAGE);
         }
     }, []);
 
@@ -184,7 +202,6 @@ export function CustomTimer({ task }: Props) {
             connectionTimeout: 10000,
             onStompError: (frame) => {
                 console.error('STOMP protocol error:', frame);
-                setConnectionError(GENERIC_ERROR_MESSAGE);
                 setIsConnected(false);
             }
         });
@@ -192,7 +209,6 @@ export function CustomTimer({ task }: Props) {
         client.onConnect = (frame) => {
             console.log('STOMP Client Connected:', frame);
             setIsConnected(true);
-            setConnectionError(null);
         };
 
         client.onDisconnect = () => {
@@ -202,7 +218,6 @@ export function CustomTimer({ task }: Props) {
 
         client.onWebSocketError = (error) => {
             console.error('WebSocket Error:', error);
-            setConnectionError(GENERIC_ERROR_MESSAGE);
             setIsConnected(false);
         };
 
@@ -213,7 +228,6 @@ export function CustomTimer({ task }: Props) {
             client.activate();
         } catch (error) {
             console.error('Error activating STOMP client:', error);
-            setConnectionError(GENERIC_ERROR_MESSAGE);
         }
 
         return () => {
@@ -249,13 +263,8 @@ export function CustomTimer({ task }: Props) {
     };
 
     const startPomodoro = async () => {
-        if (!task) {
-            setConnectionError('No task selected');
-            return;
-        }
-
-        if (!isConnected) {
-            setConnectionError(GENERIC_ERROR_MESSAGE);
+        // Starting before the live timer channel is ready is harmless; the next click can try again.
+        if (!task || !isConnected) {
             return;
         }
 
@@ -276,7 +285,7 @@ export function CustomTimer({ task }: Props) {
             console.log('Pomodoro started successfully');
         } catch (error) {
             console.error('Error starting pomodoro:', error);
-            setConnectionError(GENERIC_ERROR_MESSAGE);
+            showPomodoroError();
         } finally {
             setIsLoading(false);
         }
@@ -315,12 +324,6 @@ export function CustomTimer({ task }: Props) {
     return (
         <Box sx={{ pt: 5 }}>
             <Stack spacing={3} sx={{ width: '100%' }}>
-                {connectionError && (
-                    <Alert severity="error" onClose={() => setConnectionError(null)}>
-                        {connectionError}
-                    </Alert>
-                )}
-
                 {!status?.active ? (
                     <>
                         <Box sx={{ textAlign: 'center' }}>
@@ -377,11 +380,11 @@ export function CustomTimer({ task }: Props) {
                             variant="contained"
                             color="primary"
                             onClick={startPomodoro}
-                            disabled={!isConnected || isLoading}
+                            disabled={isLoading}
                             fullWidth
                             startIcon={isLoading ? <CircularProgress size={20} /> : <PlayArrowIcon />}
                         >
-                            {isLoading ? 'Starting...' : !isConnected ? 'Connecting...' : 'Start Session'}
+                            {isLoading ? 'Starting...' : 'Start Session'}
                         </Button>
                     </>
                 ) : (
@@ -543,6 +546,60 @@ export function CustomTimer({ task }: Props) {
                     </>
                 )}
             </Stack>
+            <Snackbar
+                key={pomodoroFeedback?.id}
+                open={pomodoroFeedback !== null}
+                autoHideDuration={2000}
+                onClose={(_, reason) => {
+                    if (reason !== 'clickaway') setPomodoroFeedback(null);
+                }}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                TransitionComponent={SlideFromRight}
+                sx={{
+                    right: { xs: 12, sm: 28 },
+                    bottom: { xs: 12, sm: 28 },
+                }}
+            >
+                {pomodoroFeedback ? (
+                    <Alert
+                        severity="error"
+                        variant="outlined"
+                        icon={<InfoOutlinedIcon fontSize="small" />}
+                        onClose={() => setPomodoroFeedback(null)}
+                        sx={{
+                            position: 'relative',
+                            minWidth: 190,
+                            maxWidth: 'calc(100vw - 48px)',
+                            boxSizing: 'border-box',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            backgroundColor: 'background.paper',
+                            px: 1.5,
+                            pr: 5,
+                            py: 0.5,
+                            '& .MuiAlert-message': {
+                                flex: 1,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                py: 0.25,
+                                textAlign: 'center',
+                                fontSize: '0.85rem',
+                            },
+                            '& .MuiAlert-action': {
+                                position: 'absolute',
+                                top: '50%',
+                                right: 6,
+                                p: 0,
+                                m: 0,
+                                transform: 'translateY(-50%)',
+                            },
+                        }}
+                    >
+                        {pomodoroFeedback.message}
+                    </Alert>
+                ) : undefined}
+            </Snackbar>
         </Box>
     );
 }

@@ -10,6 +10,8 @@ import org.osama.user.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -91,6 +93,25 @@ public class TaskGroupService {
         log.info("Task group membership replaced: userId={} groupId={} taskCount={}",
                 userId, groupId, savedGroup.getTasks().size());
         return TaskGroupResponse.from(savedGroup);
+    }
+
+    @Transactional
+    public List<Task> moveGroupToToday(String groupId, String userId) {
+        TaskGroup group = getGroupOrThrow(groupId, userId);
+        LocalDateTime now = LocalDateTime.now();
+        LocalDate today = now.toLocalDate();
+
+        List<Task> tasks = group.getTasks().stream().toList();
+        tasks.forEach(task -> task.setScheduledPerformDateTime(
+                task.getScheduledPerformDateTime() == null
+                        ? now
+                        : LocalDateTime.of(today, task.getScheduledPerformDateTime().toLocalTime())
+        ));
+
+        List<Task> savedTasks = taskRepository.saveAll(tasks);
+        log.info("Task group moved to today: userId={} groupId={} taskCount={}",
+                userId, groupId, savedTasks.size());
+        return savedTasks;
     }
 
     @Transactional

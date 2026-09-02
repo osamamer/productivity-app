@@ -7,6 +7,7 @@ import { ChoiceChips } from '@/components/ui/ChoiceChips';
 import { ModalSheet } from '@/components/ui/ModalSheet';
 import { localDateTime } from '@/lib/date';
 import { reportError } from '@/lib/errors';
+import { TASK_PRIORITY_OPTIONS } from '@/lib/taskPriority';
 import { api } from '@/services/api';
 import type { Task } from '@/types/models';
 
@@ -27,7 +28,7 @@ export function TaskComposerSheet({ visible, onClose, onCreated }: {
 }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [importance, setImportance] = useState(1);
+  const [importance, setImportance] = useState<number>(TASK_PRIORITY_OPTIONS[0].value);
   const [schedule, setSchedule] = useState<Schedule>('today');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,7 +36,7 @@ export function TaskComposerSheet({ visible, onClose, onCreated }: {
   function reset() {
     setName('');
     setDescription('');
-    setImportance(1);
+    setImportance(TASK_PRIORITY_OPTIONS[0].value);
     setSchedule('today');
     setError(null);
   }
@@ -84,11 +85,7 @@ export function TaskComposerSheet({ visible, onClose, onCreated }: {
         { value: 'none', label: 'Someday' },
       ]} />
       <AppText variant="label">Priority</AppText>
-      <ChoiceChips value={importance} onChange={setImportance} options={[
-        { value: 1, label: 'Low' },
-        { value: 2, label: 'Medium' },
-        { value: 3, label: 'High' },
-      ]} />
+      <ChoiceChips value={importance} onChange={setImportance} options={[...TASK_PRIORITY_OPTIONS]} />
     </ModalSheet>
   );
 }

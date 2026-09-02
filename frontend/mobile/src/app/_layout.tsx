@@ -6,6 +6,9 @@ import { useEffect, useMemo } from 'react';
 import { AppErrorBoundary } from '@/components/ui/AppErrorBoundary';
 import { AuthProvider, useAuth } from '@/providers/AuthProvider';
 import { NotificationProvider } from '@/providers/NotificationProvider';
+import { PreferencesProvider } from '@/providers/PreferencesProvider';
+import { PopupProvider } from '@/providers/PopupProvider';
+import { TaskWorkspaceProvider } from '@/providers/TaskWorkspaceProvider';
 import { AppThemeProvider, useAppTheme } from '@/providers/ThemeProvider';
 import { APP_FONT_FAMILY } from '@/components/ui/AppText';
 
@@ -67,13 +70,19 @@ function Navigation() {
 export default function RootLayout() {
   return (
     <AppThemeProvider>
-      <AppErrorBoundary>
-        <AuthProvider>
-          <NotificationProvider>
-            <Navigation />
-          </NotificationProvider>
-        </AuthProvider>
-      </AppErrorBoundary>
+      <PopupProvider>
+        <AppErrorBoundary>
+          <AuthProvider>
+            <NotificationProvider>
+              <PreferencesProvider>
+                <TaskWorkspaceProvider>
+                  <Navigation />
+                </TaskWorkspaceProvider>
+              </PreferencesProvider>
+            </NotificationProvider>
+          </AuthProvider>
+        </AppErrorBoundary>
+      </PopupProvider>
     </AppThemeProvider>
   );
 }

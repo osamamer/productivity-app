@@ -10,7 +10,7 @@ import { TaskDetailsPanel } from '../components/task-page/TaskDetailsPanel';
 import { Task } from '../types/Task';
 import { getShowCompletedHomeTasks } from '../services/utils/homePreferences';
 
-type SectionName = 'today' | 'comingUp' | 'leftovers';
+type SectionName = 'today' | 'comingUp' | 'leftovers' | 'undated';
 type DeleteRequest = { task: Task; anchorEl: HTMLElement };
 
 export function TaskPage() {
@@ -19,6 +19,7 @@ export function TaskPage() {
         todayTasks,
         futureTasks,
         pastTasks,
+        undatedTasks,
         highlightedTask,
         setHighlightedTask,
         fetchAllTasks,
@@ -31,6 +32,7 @@ export function TaskPage() {
         today: true,
         comingUp: true,
         leftovers: false,
+        undated: false,
     });
     const [deleteRequest, setDeleteRequest] = useState<DeleteRequest | null>(null);
     const [deleteSubmitting, setDeleteSubmitting] = useState(false);
@@ -38,6 +40,7 @@ export function TaskPage() {
     const todayRef = useRef<HTMLDivElement>(null);
     const comingUpRef = useRef<HTMLDivElement>(null);
     const leftoversRef = useRef<HTMLDivElement>(null);
+    const undatedRef = useRef<HTMLDivElement>(null);
     allTasksRef.current = allTasks;
 
     const createTask = useCallback(async (task: TaskToCreate) => {
@@ -139,11 +142,16 @@ export function TaskPage() {
         () => pastTasks.filter(task => !task.parentId && (showCompletedTasks || !task.completed)),
         [pastTasks, showCompletedTasks],
     );
+    const visibleUndatedTasks = useMemo(
+        () => undatedTasks.filter(task => !task.parentId && (showCompletedTasks || !task.completed)),
+        [showCompletedTasks, undatedTasks],
+    );
 
     const hasTodayTasks = visibleTodayTasks.length > 0;
     const hasFutureTasks = visibleFutureTasks.length > 0;
     const hasPastTasks = visiblePastTasks.length > 0;
-    const hasTasks = hasTodayTasks || hasFutureTasks || hasPastTasks;
+    const hasUndatedTasks = visibleUndatedTasks.length > 0;
+    const hasTasks = hasTodayTasks || hasFutureTasks || hasPastTasks || hasUndatedTasks;
     const selectedTask = highlightedTask && (showCompletedTasks || !highlightedTask.completed)
         ? highlightedTask
         : null;
@@ -152,6 +160,7 @@ export function TaskPage() {
         today: todayRef,
         comingUp: comingUpRef,
         leftovers: leftoversRef,
+        undated: undatedRef,
     };
 
     const handlePageClick = (event: React.MouseEvent<HTMLElement>) => {
@@ -245,6 +254,23 @@ export function TaskPage() {
                                     emptyMessage="No older tasks"
                                     sectionRef={sectionRefs.leftovers}
                                     showScheduledDate
+                                />
+                            )}
+
+                            {hasUndatedTasks && (
+                                <TaskPageSection
+                                    section="undated"
+                                    title="No date"
+                                    tasks={visibleUndatedTasks}
+                                    completedCount={visibleUndatedTasks.filter(task => task.completed).length}
+                                    expanded={expandedSections.undated}
+                                    onToggle={toggleSection}
+                                    onTaskClick={handleTaskSelect}
+                                    selectedTaskId={selectedTask?.taskId}
+                                    toggleTaskCompletion={toggleTaskCompletion}
+                                    updateTask={updateTask}
+                                    emptyMessage="No undated tasks"
+                                    sectionRef={sectionRefs.undated}
                                 />
                             )}
                         </Box>

@@ -126,3 +126,7 @@ databaseChangeLog:
   # Custom interval and unit for calendar event recurrence
   - include:
       file: db/changelog/changes/036-add-custom-calendar-event-recurrence.yaml
+
+  # User-owned groups for organizing daily statistics
+  - include:
+      file: db/changelog/changes/037-create-stat-groups.yaml

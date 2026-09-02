@@ -28,6 +28,7 @@ type SmartTaskInputProps = {
     autoFocus?: boolean;
     parentId?: string;
     placeholder?: string;
+    submitOnBlur?: boolean;
 };
 
 type TaskMetadata = {
@@ -36,7 +37,14 @@ type TaskMetadata = {
     tag: string;
 };
 
-export function SmartTaskInput({ onSubmit, initialDate, autoFocus, parentId, placeholder }: SmartTaskInputProps) {
+export function SmartTaskInput({
+    onSubmit,
+    initialDate,
+    autoFocus,
+    parentId,
+    placeholder,
+    submitOnBlur = false,
+}: SmartTaskInputProps) {
     const [input, setInput] = useState('');
     const [metadata, setMetadata] = useState<TaskMetadata>({
         importance: 0,
@@ -116,9 +124,7 @@ export function SmartTaskInput({ onSubmit, initialDate, autoFocus, parentId, pla
         }
     }, [input]);
 
-    const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-        e.preventDefault();
-
+    const submitCurrentInput = () => {
         const taskName = input
             .replace(/!priority|!p/gi, '')
             .replace(/!date|!d/gi, '')
@@ -147,6 +153,11 @@ export function SmartTaskInput({ onSubmit, initialDate, autoFocus, parentId, pla
             scheduledDate: initialDate || '', // Keep the initialDate!
             tag: ''
         });
+    };
+
+    const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+        e.preventDefault();
+        submitCurrentInput();
     };
 
     const selectPriority = (value: number) => {
@@ -223,6 +234,9 @@ export function SmartTaskInput({ onSubmit, initialDate, autoFocus, parentId, pla
                     inputRef={inputRef}
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
+                    onBlur={() => {
+                        if (submitOnBlur) submitCurrentInput();
+                    }}
                     placeholder={placeholder ?? (parentId ? "Add subtask..." : "Add a task...")}
                     variant="standard"
                     fullWidth

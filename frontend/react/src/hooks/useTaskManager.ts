@@ -7,6 +7,7 @@ type TaskState = {
     todayTasks: Task[];
     futureTasks: Task[];
     pastTasks: Task[];
+    undatedTasks: Task[];
     highlightedTask: Task | null;
 };
 
@@ -22,12 +23,14 @@ function splitTasksByDate(tasks: Task[]) {
     return tasks.reduce(
         (acc, task) => {
             if (!task.scheduledPerformDateTime) {
+                acc.undated.push(task);
                 return acc;
             }
 
             const taskDate = new Date(task.scheduledPerformDateTime);
 
             if (Number.isNaN(taskDate.getTime())) {
+                acc.undated.push(task);
                 return acc;
             }
 
@@ -41,7 +44,12 @@ function splitTasksByDate(tasks: Task[]) {
 
             return acc;
         },
-        { today: [] as Task[], future: [] as Task[], past: [] as Task[] }
+        {
+            today: [] as Task[],
+            future: [] as Task[],
+            past: [] as Task[],
+            undated: [] as Task[],
+        }
     );
 }
 
@@ -64,6 +72,7 @@ function withTaskBuckets(previous: TaskState, allTasks: Task[]): TaskState {
         todayTasks: reuseTaskList(previous.todayTasks, grouped.today),
         futureTasks: reuseTaskList(previous.futureTasks, grouped.future),
         pastTasks: reuseTaskList(previous.pastTasks, grouped.past),
+        undatedTasks: reuseTaskList(previous.undatedTasks, grouped.undated),
     };
 }
 
@@ -75,9 +84,11 @@ export function useTaskManager() {
         todayTasks: [],
         futureTasks: [],
         pastTasks: [],
+        undatedTasks: [],
         highlightedTask: null,
     });
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [tasksLoaded, setTasksLoaded] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const allTasksRequestRef = useRef<Promise<void> | null>(null);
     const allTasksFetchedAtRef = useRef(0);
@@ -87,6 +98,7 @@ export function useTaskManager() {
         todayTasks,
         futureTasks,
         pastTasks,
+        undatedTasks,
         highlightedTask,
     } = taskState;
 
@@ -123,6 +135,7 @@ export function useTaskManager() {
                 console.error('Error fetching all tasks:', err);
             } finally {
                 setLoading(false);
+                setTasksLoaded(true);
             }
         })();
 
@@ -262,8 +275,10 @@ export function useTaskManager() {
         todayTasks,
         futureTasks,
         pastTasks,
+        undatedTasks,
         highlightedTask,
         loading,
+        tasksLoaded,
         error,
         // Setters
         setHighlightedTask,
@@ -283,8 +298,10 @@ export function useTaskManager() {
         todayTasks,
         futureTasks,
         pastTasks,
+        undatedTasks,
         highlightedTask,
         loading,
+        tasksLoaded,
         error,
         setHighlightedTask,
         fetchAllTasks,

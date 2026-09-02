@@ -1,0 +1,102 @@
+databaseChangeLog:
+  - changeSet:
+      id: 037-create-stat-groups
+      author: codex
+      comment: Persist user-owned groups for organizing daily statistics
+      changes:
+        - createTable:
+            tableName: stat_group
+            columns:
+              - column:
+                  name: group_id
+                  type: varchar(255)
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: name
+                  type: varchar(120)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: display_order
+                  type: int
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+        - createTable:
+            tableName: stat_group_definition
+            columns:
+              - column:
+                  name: group_id
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: stat_definition_id
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+        - addPrimaryKey:
+            tableName: stat_group_definition
+            columnNames: group_id, stat_definition_id
+            constraintName: pk_app_stat_group_definition
+        - addUniqueConstraint:
+            tableName: stat_group_definition
+            columnNames: stat_definition_id
+            constraintName: uk_app_stat_group_definition_stat_definition
+        - addForeignKeyConstraint:
+            baseTableName: stat_group
+            baseColumnNames: user_id
+            referencedTableName: app_user
+            referencedColumnNames: id
+            constraintName: fk_app_stat_group_user
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - addForeignKeyConstraint:
+            baseTableName: stat_group_definition
+            baseColumnNames: group_id
+            referencedTableName: stat_group
+            referencedColumnNames: group_id
+            constraintName: fk_app_stat_group_definition_group
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - addForeignKeyConstraint:
+            baseTableName: stat_group_definition
+            baseColumnNames: stat_definition_id
+            referencedTableName: stat_definition
+            referencedColumnNames: id
+            constraintName: fk_app_stat_group_definition_definition
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - createIndex:
+            tableName: stat_group
+            indexName: idx_app_stat_group_user_display_order
+            ifNotExists: true
+            columns:
+              - column:
+                  name: user_id
+              - column:
+                  name: display_order
+        - createIndex:
+            tableName: stat_group_definition
+            indexName: idx_app_stat_group_definition_definition_id
+            ifNotExists: true
+            columns:
+              - column:
+                  name: stat_definition_id
+      rollback:
+        - dropTable:
+            tableName: stat_group_definition
+        - dropTable:
+            tableName: stat_group

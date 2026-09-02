@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useMemo, useState } from 'react';
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { EventComposerSheet } from '@/components/calendar/EventComposerSheet';
 import { AppButton } from '@/components/ui/AppButton';
@@ -11,12 +11,14 @@ import { EmptyView, ErrorView, LoadingView } from '@/components/ui/StateView';
 import { useAsyncData } from '@/hooks/useAsyncData';
 import { calendarDateParts, eventDateInTimeZone, formatCalendarDate, formatCalendarTime, localDate } from '@/lib/date';
 import { reportError } from '@/lib/errors';
+import { useAppPopup } from '@/providers/PopupProvider';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
 import type { CalendarEvent } from '@/types/models';
 
 export default function CalendarScreen() {
   const { colors } = useAppTheme();
+  const { confirm, showError } = useAppPopup();
   const resource = useAsyncData(() => api.events.all());
   const [composerOpen, setComposerOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
@@ -52,15 +54,14 @@ export default function CalendarScreen() {
     return `${date} · ${startTime}${endTime ? `–${endTime}` : ''}`;
   }
 
-  function remove(event: CalendarEvent) {
-    Alert.alert('Delete event?', event.title, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete', style: 'destructive', onPress: () => void api.events.remove(event.id)
-          .then(() => resource.setData(current => current?.filter(item => item.id !== event.id) ?? current))
-          .catch(cause => Alert.alert('Could not delete event', reportError('Could not delete event', cause))),
-      },
-    ]);
+  async function remove(event: CalendarEvent) {
+    if (!await confirm('Delete event?', event.title, 'Delete')) return;
+    try {
+      await api.events.remove(event.id);
+      resource.setData(current => current?.filter(item => item.id !== event.id) ?? current);
+    } catch (cause) {
+      void showError('Could not delete event', reportError('Could not delete event', cause));
+    }
   }
 
   return (

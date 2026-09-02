@@ -1,8 +1,9 @@
 import * as Notifications from 'expo-notifications';
 import { PropsWithChildren, useCallback, useEffect, useRef } from 'react';
-import { Alert, AppState, Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 
 import { useAuth } from '@/providers/AuthProvider';
+import { useAppPopup } from '@/providers/PopupProvider';
 import { api } from '@/services/api';
 
 Notifications.setNotificationHandler({
@@ -16,6 +17,7 @@ Notifications.setNotificationHandler({
 
 export function NotificationProvider({ children }: PropsWithChildren) {
   const { isAuthenticated } = useAuth();
+  const { showInfo } = useAppPopup();
   const syncingRef = useRef(false);
   const shownRef = useRef(new Set<string>());
 
@@ -29,7 +31,7 @@ export function NotificationProvider({ children }: PropsWithChildren) {
         shownRef.current.add(notification.notificationId);
         try {
           if (Platform.OS === 'web') {
-            Alert.alert(notification.title, notification.body ?? undefined);
+            await showInfo(notification.title, notification.body ?? undefined);
           } else {
             const permissions = await Notifications.getPermissionsAsync();
             const allowed = permissions.granted
@@ -41,7 +43,7 @@ export function NotificationProvider({ children }: PropsWithChildren) {
                 trigger: null,
               });
             } else {
-              Alert.alert(notification.title, notification.body ?? undefined);
+              await showInfo(notification.title, notification.body ?? undefined);
             }
           }
           await api.notifications.acknowledge(notification.notificationId);
@@ -54,7 +56,7 @@ export function NotificationProvider({ children }: PropsWithChildren) {
     } finally {
       syncingRef.current = false;
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, showInfo]);
 
   useEffect(() => {
     if (Platform.OS === 'android') {

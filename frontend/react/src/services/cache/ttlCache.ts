@@ -107,6 +107,10 @@ export class CachedResource<T> {
         }
     }
 
+    getCached(key: string): T | undefined {
+        return this.cache.get(key);
+    }
+
     set(key: string, value: T, ttlMs?: number): void {
         this.keyVersions.set(key, (this.keyVersions.get(key) ?? 0) + 1);
         this.cache.set(key, value, ttlMs);

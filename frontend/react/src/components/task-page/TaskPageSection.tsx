@@ -5,7 +5,7 @@ import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import { Task } from '../../types/Task.tsx';
 import { FlatTaskRow } from '../FlatTaskRow.tsx';
 
-type SectionName = 'today' | 'comingUp' | 'leftovers';
+type SectionName = 'today' | 'comingUp' | 'leftovers' | 'undated';
 
 const noopTogglePanel = () => undefined;
 const noopAutoExpand = () => undefined;

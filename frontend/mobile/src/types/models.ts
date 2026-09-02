@@ -32,6 +32,13 @@ export interface TaskInput {
   mentalThreadId?: string;
 }
 
+export interface TaskGroup {
+  groupId: string;
+  name: string;
+  taskIds: string[];
+  displayOrder: number;
+}
+
 export interface Day {
   id: number;
   rating: number;

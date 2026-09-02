@@ -1,13 +1,17 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     alpha,
+    Alert,
     Box,
     Button,
     Checkbox,
     Chip,
     CircularProgress,
+    Collapse,
     IconButton,
     LinearProgress,
+    Slide,
+    Snackbar,
     TextField,
     Tooltip,
     Typography,
@@ -20,6 +24,7 @@ import PauseIcon from '@mui/icons-material/Pause';
 import StopIcon from '@mui/icons-material/Stop';
 import SkipNextIcon from '@mui/icons-material/SkipNext';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
@@ -37,6 +42,7 @@ import {
     PomodoroConfig,
     PomodoroFormValues,
 } from '../services/api/pomodoroConfigService';
+import { GENERIC_ERROR_MESSAGE } from '../services/utils/userMessages';
 
 // ─── types ─────────────────────────────────────────────────────────────────
 
@@ -75,6 +81,13 @@ export type FlatTaskRowProps = {
 // ─── helpers ───────────────────────────────────────────────────────────────
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8080/ws';
+
+const PanelSlide = React.forwardRef<HTMLDivElement, React.ComponentProps<typeof Slide>>(
+    (props, ref) => <Slide {...props} ref={ref} direction="left" />,
+);
+PanelSlide.displayName = 'PanelSlide';
+
+type PomodoroFeedback = { id: number; message: string };
 
 function checkboxColor(importance: number): string {
     if (importance > 7) return '#ef4444';
@@ -189,6 +202,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     const [pomodoroConfig, setPomodoroConfig] = useState<PomodoroConfig>(NORMAL_POMODORO_CONFIG);
     const [wsConnected, setWsConnected] = useState(false);
     const [actionLoading, setActionLoading] = useState(false);
+    const [pomodoroFeedback, setPomodoroFeedback] = useState<PomodoroFeedback | null>(null);
     const [pomodoroHydrated, setPomodoroHydrated] = useState(!deferPomodoroHydration);
 
     // Local description state — committed on blur to avoid an API call per keystroke
@@ -196,6 +210,23 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     const [isEditingName, setIsEditingName] = useState(false);
     const nameInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
     const dragAllowedRef = useRef(true);
+    const pomodoroFeedbackIdRef = useRef(0);
+
+    useEffect(() => {
+        if (!isEditingName || !nameInputRef.current) return;
+
+        const input = nameInputRef.current;
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
+    }, [isEditingName]);
+
+    const showPomodoroError = useCallback(() => {
+        pomodoroFeedbackIdRef.current += 1;
+        setPomodoroFeedback({
+            id: pomodoroFeedbackIdRef.current,
+            message: GENERIC_ERROR_MESSAGE,
+        });
+    }, []);
     useEffect(() => { setLocalName(task.name ?? ''); }, [task.name]);
     const [localDesc, setLocalDesc] = useState(task.description ?? '');
     useEffect(() => { setLocalDesc(task.description ?? ''); }, [task.description]);
@@ -340,6 +371,9 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     }, [onTogglePanel, task.taskId]);
 
     const handleStart = async () => {
+        // Starting before the live timer channel is ready is harmless; the next click can try again.
+        if (!wsConnected) return;
+
         setActionLoading(true);
         endedPomodoroIdRef.current = null;
         try {
@@ -353,6 +387,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
             onPomodoroActiveChange?.(task.taskId, true);
         } catch (e) {
             console.error('Error starting pomodoro:', e);
+            showPomodoroError();
         }
         finally { setActionLoading(false); }
     };
@@ -367,7 +402,10 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
             } else {
                 await taskService.unpauseSession(task.taskId);
             }
-        } catch (e) { console.error('Error toggling pomodoro:', e); }
+        } catch (e) {
+            console.error('Error toggling pomodoro:', e);
+            showPomodoroError();
+        }
         finally { setActionLoading(false); }
     };
 
@@ -383,6 +421,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         } catch (e) {
             endedPomodoroIdRef.current = null;
             console.error('Error stopping pomodoro:', e);
+            showPomodoroError();
         }
         finally { setActionLoading(false); }
     };
@@ -393,6 +432,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
             await taskService.finishPomodoroBreak(task.taskId);
         } catch (e) {
             console.error('Error ending Pomodoro break:', e);
+            showPomodoroError();
         }
         finally { setActionLoading(false); }
     };
@@ -501,6 +541,15 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                 transform: isDragging ? 'scale(0.985)' : 'scale(1)',
                 boxShadow: isDragging ? `0 10px 24px ${alpha(activeAccent, 0.18)}` : 'none',
                 transition: 'opacity 0.16s, transform 0.16s, box-shadow 0.16s, border-color 0.2s, background-color 0.2s',
+                '&:hover': {
+                    backgroundColor: isActive
+                        ? alpha(activeAccent, 0.05)
+                        : selected
+                            ? alpha(activeAccent, 0.09)
+                            : isDragTarget || isGroupDropTarget
+                                ? alpha(activeAccent, 0.045)
+                                : alpha(activeAccent, 0.04),
+                },
                 '&::before': isDragTarget && !isGroupDropTarget ? {
                     content: '""',
                     position: 'absolute',
@@ -706,7 +755,17 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
             </Box>
 
             {/* ── Pomodoro panel ── */}
-            {expandedPanel === 'pomodoro' && (
+            <Collapse
+                in={expandedPanel === 'pomodoro'}
+                timeout={{ enter: 260, exit: 180 }}
+                easing={{
+                    enter: 'cubic-bezier(0.22, 1, 0.36, 1)',
+                    exit: 'cubic-bezier(0.4, 0, 0.2, 1)',
+                }}
+                mountOnEnter
+                unmountOnExit
+                sx={{ willChange: 'height', '& .MuiCollapse-wrapper': { willChange: 'height' } }}
+            >
                 <Box sx={{ px: 2, pb: 2, pt: 0.5 }}>
                     {!isActive ? (
                         <Box>
@@ -735,7 +794,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                 variant="outlined"
                                 size="small"
                                 fullWidth
-                                disabled={!wsConnected || actionLoading}
+                                disabled={actionLoading}
                                 onClick={handleStart}
                                 startIcon={actionLoading ? <CircularProgress size={14} /> : <PlayArrowIcon />}
                                 sx={{
@@ -747,7 +806,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                     },
                                 }}
                             >
-                                {actionLoading ? 'Starting…' : !wsConnected ? 'Connecting…' : 'Start'}
+                                {actionLoading ? 'Starting…' : 'Start'}
                             </Button>
                         </Box>
                     ) : (
@@ -815,10 +874,20 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                         </Box>
                     )}
                 </Box>
-            )}
+            </Collapse>
 
             {/* ── Details panel ── */}
-            {expandedPanel === 'details' && (
+            <Collapse
+                in={expandedPanel === 'details'}
+                timeout={{ enter: 260, exit: 180 }}
+                easing={{
+                    enter: 'cubic-bezier(0.22, 1, 0.36, 1)',
+                    exit: 'cubic-bezier(0.4, 0, 0.2, 1)',
+                }}
+                mountOnEnter
+                unmountOnExit
+                sx={{ willChange: 'height', '& .MuiCollapse-wrapper': { willChange: 'height' } }}
+            >
                 <Box sx={{ px: 2, pb: 2, pt: 0.5, display: 'flex', flexDirection: 'column', gap: 2 }}>
 
                     {/* Priority chips */}
@@ -886,7 +955,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                         </Typography>
                     )}
                 </Box>
-            )}
+            </Collapse>
 
             {/* ── Progress bar as bottom border when pomodoro is running ── */}
             {isActive && (
@@ -906,6 +975,60 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                     }}
                 />
             )}
+            <Snackbar
+                key={pomodoroFeedback?.id}
+                open={pomodoroFeedback !== null}
+                autoHideDuration={2000}
+                onClose={(_, reason) => {
+                    if (reason !== 'clickaway') setPomodoroFeedback(null);
+                }}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                TransitionComponent={PanelSlide}
+                sx={{
+                    right: { xs: 12, sm: 28 },
+                    bottom: { xs: 12, sm: 28 },
+                }}
+            >
+                {pomodoroFeedback ? (
+                    <Alert
+                        severity="error"
+                        variant="outlined"
+                        icon={<InfoOutlinedIcon fontSize="small" />}
+                        onClose={() => setPomodoroFeedback(null)}
+                        sx={{
+                            position: 'relative',
+                            minWidth: 190,
+                            maxWidth: 'calc(100vw - 48px)',
+                            boxSizing: 'border-box',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            backgroundColor: 'background.paper',
+                            px: 1.5,
+                            pr: 5,
+                            py: 0.5,
+                            '& .MuiAlert-message': {
+                                flex: 1,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                py: 0.25,
+                                textAlign: 'center',
+                                fontSize: '0.85rem',
+                            },
+                            '& .MuiAlert-action': {
+                                position: 'absolute',
+                                top: '50%',
+                                right: 6,
+                                p: 0,
+                                m: 0,
+                                transform: 'translateY(-50%)',
+                            },
+                        }}
+                    >
+                        {pomodoroFeedback.message}
+                    </Alert>
+                ) : undefined}
+            </Snackbar>
         </Box>
     );
 });

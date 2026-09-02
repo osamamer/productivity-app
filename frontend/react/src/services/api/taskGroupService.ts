@@ -1,4 +1,5 @@
 import { TaskGroup } from '../../types/TaskGroup';
+import { Task } from '../../types/Task';
 import { getAuthCacheScope, getAuthHeaders } from '../utils/authHeaders';
 import { CachedResource } from '../cache/ttlCache';
 
@@ -12,6 +13,10 @@ function groupsCacheKey(): string {
 }
 
 export const taskGroupService = {
+    getCachedGroups(): TaskGroup[] | undefined {
+        return groupsCache.getCached(groupsCacheKey());
+    },
+
     async getGroups(): Promise<TaskGroup[]> {
         return groupsCache.get(groupsCacheKey(), async () => {
             const response = await fetch(GROUP_URL, { headers: getAuthHeaders() });
@@ -49,6 +54,18 @@ export const taskGroupService = {
         });
         if (!response.ok) {
             throw new Error('Failed to update task group membership');
+        }
+        groupsCache.invalidate(groupsCacheKey());
+        return response.json();
+    },
+
+    async moveToToday(groupId: string): Promise<Task[]> {
+        const response = await fetch(`${GROUP_URL}/${groupId}/move-to-today`, {
+            method: 'PUT',
+            headers: getAuthHeaders(),
+        });
+        if (!response.ok) {
+            throw new Error('Failed to move task group to today');
         }
         groupsCache.invalidate(groupsCacheKey());
         return response.json();

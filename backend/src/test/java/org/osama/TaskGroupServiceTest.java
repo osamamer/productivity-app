@@ -151,6 +151,26 @@ class TaskGroupServiceTest {
     }
 
     @Test
+    void moveGroupToToday_updatesEveryTaskInTheGroup() {
+        Task first = createTask(TEST_USER_ID, "First");
+        Task second = createTask(TEST_USER_ID, "Second");
+        first.setScheduledPerformDateTime(LocalDate.now().minusDays(2).atTime(9, 15));
+        second.setScheduledPerformDateTime(null);
+        taskService.updateTask(first.getTaskId(), updateDate(first.getScheduledPerformDateTime()), TEST_USER_ID);
+        taskService.updateTask(second.getTaskId(), updateDate(null), TEST_USER_ID);
+        TaskGroupResponse group = taskGroupService.createGroup(
+                "Older work", List.of(first.getTaskId(), second.getTaskId()), TEST_USER_ID);
+
+        List<Task> movedTasks = taskGroupService.moveGroupToToday(group.groupId(), TEST_USER_ID);
+
+        assertEquals(2, movedTasks.size());
+        assertEquals(LocalDate.now(), first.getScheduledPerformDateTime().toLocalDate());
+        assertEquals(LocalDate.now(), second.getScheduledPerformDateTime().toLocalDate());
+        assertEquals(9, first.getScheduledPerformDateTime().getHour());
+        assertEquals(15, first.getScheduledPerformDateTime().getMinute());
+    }
+
+    @Test
     void deletingATaskAlsoRemovesItsSubtasks() {
         Task parent = createTask(TEST_USER_ID, "Parent");
         NewTaskRequest subtaskRequest = new NewTaskRequest();
@@ -181,6 +201,12 @@ class TaskGroupServiceTest {
         request.setName(name);
         request.setScheduledPerformDateTime(LocalDate.now().atTime(9, 0).toString());
         return taskService.createTask(request, userId);
+    }
+
+    private UpdateTaskRequest updateDate(java.time.LocalDateTime dateTime) {
+        UpdateTaskRequest request = new UpdateTaskRequest();
+        request.setScheduledPerformDateTime(dateTime == null ? "" : dateTime.toString());
+        return request;
     }
 
     private User user(String id, String email, String username) {

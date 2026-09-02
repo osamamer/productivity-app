@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import {
-    Box, Stack, Tooltip, Typography, CircularProgress, Popover,
+    alpha, Box, Stack, Tooltip, Typography, CircularProgress, Popover,
     ToggleButton, ToggleButtonGroup, TextField, Slider, Button,
     Alert,
 } from '@mui/material';
@@ -11,15 +11,69 @@ import { format, subDays } from 'date-fns';
 import { StatDefinition } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
 import { KeyboardEvent } from 'react';
-import { getBooleanChoiceColor, getStatFeedback, showStatFeedback } from '../../services/statFeedback';
+import { effectiveStatMorality, getBooleanChoiceColor, getStatFeedback, showStatFeedback } from '../../services/statFeedback';
 
 const CIRCLE_SIZE = 24;
 
+function getThresholdGoodnessRatio(
+    value: number,
+    threshold: number,
+    morality: 'GOOD' | 'BAD',
+): number {
+    if (threshold > 0) {
+        if (morality === 'GOOD') return value / threshold;
+        return value <= 0 ? 3 : threshold / value;
+    }
+
+    const improvement = morality === 'GOOD'
+        ? value - threshold
+        : threshold - value;
+    return 1 + improvement / Math.max(Math.abs(threshold), 1);
+}
+
+function getThresholdCircleBg(def: StatDefinition, value: number, theme: Theme): string | null {
+    if ((def.type !== 'NUMBER' && def.type !== 'RANGE')
+        || def.goodThreshold == null
+        || !Number.isFinite(def.goodThreshold)) {
+        return null;
+    }
+
+    const morality = effectiveStatMorality(def);
+    if (morality !== 'GOOD' && morality !== 'BAD') return null;
+
+    const goodnessRatio = getThresholdGoodnessRatio(value, def.goodThreshold, morality);
+    if (goodnessRatio >= 1) {
+        const progressToMaximum = Math.min(1, (goodnessRatio - 1) / 2);
+        const greenWeight = 0.55 + progressToMaximum * 0.45;
+        return `color-mix(in srgb, ${theme.palette.success.main} ${greenWeight * 100}%, ${theme.palette.background.paper} ${(1 - greenWeight) * 100}%)`;
+    }
+
+    const redWeight = 1 - Math.min(0.75, (1 - goodnessRatio) * 0.75);
+    return `color-mix(in srgb, ${theme.palette.error.main} ${redWeight * 100}%, ${theme.palette.background.paper} ${(1 - redWeight) * 100}%)`;
+}
+
 function getCircleBg(def: StatDefinition, value: number | undefined, theme: Theme): string {
     if (value === undefined) return theme.palette.action.disabledBackground;
+    const thresholdCircleBg = getThresholdCircleBg(def, value, theme);
+    if (thresholdCircleBg) return thresholdCircleBg;
+
     const feedback = getStatFeedback(def, value);
     if (feedback === 'CELEBRATE') return theme.palette.success.main;
     if (feedback === 'SAD') return theme.palette.error.main;
+
+    if (effectiveStatMorality(def) === 'NEUTRAL') {
+        switch (def.type) {
+            case 'BOOLEAN':
+                return value === 1 ? theme.palette.primary.main : theme.palette.secondary.main;
+            case 'RANGE': {
+                const t = Math.max(0, Math.min(1, (value - def.minValue!) / (def.maxValue! - def.minValue!)));
+                return `color-mix(in srgb, ${theme.palette.secondary.main} ${(1 - t) * 100}%, ${theme.palette.primary.main} ${t * 100}%)`;
+            }
+            default:
+                break;
+        }
+    }
+
     switch (def.type) {
         case 'BOOLEAN':
             return value === 1 ? theme.palette.success.main : theme.palette.error.main;
@@ -144,8 +198,8 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                     const label = hasEntry && isUnboundedNumber ? formatCircleValue(value!) : null;
                     const booleanIcon = hasEntry && definition.type === 'BOOLEAN'
                         ? value === 1
-                            ? <CheckIcon sx={{ fontSize: 18, color: 'common.white', fontWeight: 700 }} />
-                            : <CloseIcon sx={{ fontSize: 18, color: 'common.white', fontWeight: 700 }} />
+                            ? <CheckIcon sx={{ fontSize: 18, color: alpha(theme.palette.common.white, 0.78), fontWeight: 700 }} />
+                            : <CloseIcon sx={{ fontSize: 18, color: alpha(theme.palette.common.white, 0.78), fontWeight: 700 }} />
                         : null;
                     const tooltipText = hasEntry
                         ? definition.type === 'BOOLEAN'

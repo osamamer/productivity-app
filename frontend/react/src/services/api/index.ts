@@ -2,6 +2,7 @@ export { taskService } from './taskService';
 export { dayService } from './dayService';
 export { userService } from './userService.ts';
 export { statService } from './statService';
+export { statGroupService } from './statGroupService';
 export { mentalStateService } from './mentalStateService';
 export { meditationService } from './meditationService';
 export { notesService } from './notesService';

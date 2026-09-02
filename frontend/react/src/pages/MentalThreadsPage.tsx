@@ -188,6 +188,11 @@ export function MentalThreadsPage() {
         updateTaskInState(task.taskId, updated);
     };
 
+    const handleUpdateTask = async (taskId: string, updates: Partial<Task>) => {
+        const updated = await taskService.updateTask(taskId, updates);
+        updateTaskInState(taskId, updated);
+    };
+
     return (
         <PageWrapper>
             <Box sx={{
@@ -316,6 +321,7 @@ export function MentalThreadsPage() {
                                         tasks={selectedThreadTasks}
                                         onCreateTask={handleCreateTask}
                                         onToggleTask={handleToggleTask}
+                                        onUpdateTask={handleUpdateTask}
                                     />
                                 </Box>
                             ) : (

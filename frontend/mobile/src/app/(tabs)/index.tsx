@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { TaskComposerSheet } from '@/components/tasks/TaskComposerSheet';
 import { TaskDetailSheet } from '@/components/tasks/TaskDetailSheet';
@@ -14,33 +14,32 @@ import { formatLongDate, greeting } from '@/lib/date';
 import { reportError } from '@/lib/errors';
 import { useAsyncData } from '@/hooks/useAsyncData';
 import { useAuth } from '@/providers/AuthProvider';
+import { useAppPopup } from '@/providers/PopupProvider';
+import { usePreferences } from '@/providers/PreferencesProvider';
+import { useTaskWorkspace } from '@/providers/TaskWorkspaceProvider';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
 import type { Day, Task } from '@/types/models';
 
-interface TodayData { day: Day; tasks: Task[] }
+interface TodayData { day: Day }
 
 export default function TodayScreen() {
   const { user } = useAuth();
   const { colors } = useAppTheme();
-  const resource = useAsyncData<TodayData>(async () => {
-    const [day, tasks] = await Promise.all([api.day.today(), api.tasks.today()]);
-    return { day, tasks };
-  });
+  const { showError } = useAppPopup();
+  const resource = useAsyncData<TodayData>(async () => ({ day: await api.day.today() }));
+  const { todayTasks, addTask, updateTask: updateTaskInWorkspace, removeTask: removeTaskFromWorkspace } = useTaskWorkspace();
+  const { showCompletedTasks } = usePreferences();
   const [composerOpen, setComposerOpen] = useState(false);
   const [ratingSaving, setRatingSaving] = useState(false);
   const [selected, setSelected] = useState<Task | null>(null);
 
   function updateTask(updated: Task) {
-    resource.setData(current => current
-      ? { ...current, tasks: current.tasks.map(task => task.taskId === updated.taskId ? updated : task) }
-      : current);
+    updateTaskInWorkspace(updated);
   }
 
   function removeTask(taskId: string) {
-    resource.setData(current => current
-      ? { ...current, tasks: current.tasks.filter(task => task.taskId !== taskId) }
-      : current);
+    removeTaskFromWorkspace(taskId);
   }
 
   async function toggle(task: Task) {
@@ -50,7 +49,7 @@ export default function TodayScreen() {
       updateTask(await api.tasks.update(task.taskId, { completed: optimistic.completed }));
     } catch (cause) {
       updateTask(task);
-      Alert.alert('Could not update task', reportError('Could not update task', cause));
+      void showError('Could not update task', reportError('Could not update task', cause));
     }
   }
 
@@ -63,17 +62,17 @@ export default function TodayScreen() {
       await api.day.save(rating, previous.plan ?? '', previous.summary ?? '');
     } catch (cause) {
       resource.setData(current => current ? { ...current, day: previous } : current);
-      Alert.alert('Could not save rating', reportError('Could not save rating', cause));
+      void showError('Could not save rating', reportError('Could not save rating', cause));
     } finally {
       setRatingSaving(false);
     }
   }
 
   const name = user?.firstName || user?.username;
-  const tasks = resource.data?.tasks ?? [];
-  const completed = tasks.filter(task => task.completed).length;
-  const remaining = tasks.length - completed;
-  const progress = tasks.length ? completed / tasks.length : 0;
+  const tasks = todayTasks.filter(task => showCompletedTasks || !task.completed);
+  const completed = todayTasks.filter(task => task.completed).length;
+  const remaining = todayTasks.length - completed;
+  const progress = todayTasks.length ? completed / todayTasks.length : 0;
 
   return (
     <Screen refreshing={resource.refreshing} onRefresh={() => void resource.reload()}>
@@ -90,7 +89,7 @@ export default function TodayScreen() {
             <View style={styles.spaceBetween}>
               <View>
                 <AppText variant="heading">Today</AppText>
-                <AppText color="muted">{remaining ? `${remaining} left · ${completed} done` : tasks.length ? 'Everything is done' : 'A clear day'}</AppText>
+                <AppText color="muted">{remaining ? `${remaining} left · ${completed} done` : todayTasks.length ? 'Everything is done' : 'A clear day'}</AppText>
               </View>
               <View style={[styles.progressCircle, { borderColor: colors.accentSoft }]}>
                 <AppText variant="label" color="accent">{Math.round(progress * 100)}%</AppText>
@@ -134,7 +133,7 @@ export default function TodayScreen() {
       <TaskComposerSheet
         visible={composerOpen}
         onClose={() => setComposerOpen(false)}
-        onCreated={task => resource.setData(current => current ? { ...current, tasks: [task, ...current.tasks] } : current)}
+        onCreated={addTask}
       />
       <TaskDetailSheet
         key={selected?.taskId ?? 'no-task'}

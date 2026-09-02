@@ -1,7 +1,9 @@
 import { useState } from 'react';
-import { Alert, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { reportError } from '@/lib/errors';
+import { TASK_PRIORITY_OPTIONS, taskPriorityValue } from '@/lib/taskPriority';
+import { useAppPopup } from '@/providers/PopupProvider';
 import { api } from '@/services/api';
 import type { Task } from '@/types/models';
 import { AppButton } from '../ui/AppButton';
@@ -17,9 +19,10 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onStartFocus, onDele
   onStartFocus?: (task: Task) => void;
   onDeleted: (taskId: string) => void;
 }) {
+  const { confirm } = useAppPopup();
   const [name, setName] = useState(task?.name ?? '');
   const [description, setDescription] = useState(task?.description ?? '');
-  const [importance, setImportance] = useState(task?.importance || 1);
+  const [importance, setImportance] = useState(taskPriorityValue(task?.importance ?? 0));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,19 +45,16 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onStartFocus, onDele
     }
   }
 
-  function confirmDelete() {
+  async function confirmDelete() {
     if (!task) return;
-    Alert.alert('Delete task?', task.name, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () => void api.tasks.remove(task.taskId).then(() => {
-          onDeleted(task.taskId);
-          onClose();
-        }).catch(cause => setError(reportError('Could not delete task', cause))),
-      },
-    ]);
+    if (!await confirm('Delete task?', task.name, 'Delete')) return;
+    try {
+      await api.tasks.remove(task.taskId);
+      onDeleted(task.taskId);
+      onClose();
+    } catch (cause) {
+      setError(reportError('Could not delete task', cause));
+    }
   }
 
   return (
@@ -66,9 +66,7 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onStartFocus, onDele
       <AppInput label="Task" value={name} onChangeText={setName} />
       <AppInput label="Details" multiline value={description} onChangeText={setDescription} />
       <AppText variant="label">Priority</AppText>
-      <ChoiceChips value={importance} onChange={setImportance} options={[
-        { value: 1, label: 'Low' }, { value: 2, label: 'Medium' }, { value: 3, label: 'High' },
-      ]} />
+      <ChoiceChips value={importance} onChange={setImportance} options={[...TASK_PRIORITY_OPTIONS]} />
       {error && <AppText color="danger">{error}</AppText>}
       <View style={styles.actions}>
         {onStartFocus && task && <AppButton label="Focus options" icon="timer-outline" variant="secondary" onPress={() => { onClose(); onStartFocus(task); }} style={styles.grow} />}

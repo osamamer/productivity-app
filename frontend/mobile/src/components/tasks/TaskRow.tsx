@@ -2,15 +2,19 @@ import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { formatShortDate, formatTime } from '@/lib/date';
+import { taskPriorityColor } from '@/lib/taskPriority';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import type { PomodoroStatus, Task } from '@/types/models';
 import { PomodoroPanel } from '../pomodoro/PomodoroPanel';
 import { AppText } from '../ui/AppText';
 
-export function TaskRow({ task, onToggle, onPress, onDelete, onPomodoroPress, pomodoroOpen, pomodoroStatus, onPomodoroClose, onPomodoroActiveChange, onPomodoroStatusChange }: {
+export function TaskRow({ task, onToggle, onPress, onLongPress, onSelectionToggle, selected = false, onDelete, onPomodoroPress, pomodoroOpen, pomodoroStatus, onPomodoroClose, onPomodoroActiveChange, onPomodoroStatusChange }: {
   task: Task;
   onToggle: () => void;
   onPress?: () => void;
+  onLongPress?: () => void;
+  onSelectionToggle?: () => void;
+  selected?: boolean;
   onDelete?: () => void;
   onPomodoroPress?: () => void;
   pomodoroOpen?: boolean;
@@ -20,7 +24,7 @@ export function TaskRow({ task, onToggle, onPress, onDelete, onPomodoroPress, po
   onPomodoroStatusChange?: (status: PomodoroStatus) => void;
 }) {
   const { colors } = useAppTheme();
-  const priority = task.importance >= 3 ? colors.high : task.importance === 2 ? colors.medium : colors.low;
+  const priority = taskPriorityColor(task.importance);
   const active = Boolean(pomodoroStatus?.active);
   const progress = pomodoroStatus
     ? (() => {
@@ -37,9 +41,11 @@ export function TaskRow({ task, onToggle, onPress, onDelete, onPomodoroPress, po
     <View style={[styles.container, {
       backgroundColor: active ? colors.accentSoft : colors.surface,
       borderColor: active ? (resting ? colors.success : colors.accent) : colors.border,
-    }]}>
+    }, selected && { borderColor: colors.accent, borderWidth: 2 }]}>
       <Pressable
-        onPress={onPress}
+        onPress={onSelectionToggle ?? onPress}
+        onLongPress={onLongPress}
+        accessibilityState={selected ? { selected: true } : undefined}
         style={({ pressed }) => [styles.row, pressed && { opacity: 0.75 }]}>
         <View style={[styles.priority, { backgroundColor: priority }]} />
         <Pressable
@@ -61,6 +67,7 @@ export function TaskRow({ task, onToggle, onPress, onDelete, onPomodoroPress, po
             {formatShortDate(task.scheduledPerformDateTime)}{formatTime(task.scheduledPerformDateTime) ? ` · ${formatTime(task.scheduledPerformDateTime)}` : ''}
           </AppText>
         </View>
+        {selected && <Ionicons name="checkmark-circle" size={22} color={colors.accent} />}
         {onPomodoroPress && (
           <Pressable
             hitSlop={10}
