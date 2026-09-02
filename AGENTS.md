@@ -5,6 +5,10 @@
 Claritard is a full-stack productivity app ("So Life Doesn't Get Overwhelming") for managing tasks, focus sessions, meditation, and daily planning. Built with Spring Boot + React/TypeScript.
 
 ## Commands
+### Shell environment
+
+The developer uses Fish (`/usr/bin/fish`) as the interactive shell. Do not tell them to source `~/.profile` from Fish; that file contains POSIX/Bash syntax. The original NVM (`nvm.sh`) is Bash-only, so Fish uses the `bass` bridge and the saved `nvm` function in its Fish configuration.
+
 
 ### Running the Full App
 ```bash

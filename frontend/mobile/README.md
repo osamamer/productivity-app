@@ -87,6 +87,28 @@ cd frontend/mobile
 npm run android
 ```
 
+### Node version mismatch during Gradle builds
+
+If `nvm use 22` selects Node 22 but `:expo-constants:createExpoConfig` fails
+with `parseEnv is not a function` and prints Node 18, restart the existing
+Gradle daemon after selecting Node. Its child processes can still resolve
+the old Node executable even when Fish and Expo use the new version.
+
+From `frontend/mobile`, these commands work in Fish with the configured
+NVM/Bass bridge:
+
+```fish
+nvm use 22
+node -p 'process.version + " " + process.execPath'
+./android/gradlew --stop
+npm run android
+```
+
+`--stop` stops this user's daemons for the wrapper's Gradle version. The next
+build starts a fresh daemon using the current environment; it preserves
+dependencies and build caches. Compare the Node version in the failing task
+with the terminal's version before changing shell configuration.
+
 OAuth requires the app's custom `solife` scheme, so use a development/native build rather than Expo Go. An iOS simulator can use the loopback defaults directly; building iOS requires macOS. Physical iOS devices should point `.env.local` at deployed HTTPS API and Keycloak URLs.
 
 For a deployed environment, the EAS `preview` and `production` profiles already
