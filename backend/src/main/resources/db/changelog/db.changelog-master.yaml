@@ -118,3 +118,11 @@ databaseChangeLog:
   # Track the occurrence represented by each calendar reminder
   - include:
       file: db/changelog/changes/034-add-reminder-event-occurrence.yaml
+
+  # Direction and threshold for meaningful stat feedback
+  - include:
+      file: db/changelog/changes/035-add-stat-morality-threshold.yaml
+
+  # Custom interval and unit for calendar event recurrence
+  - include:
+      file: db/changelog/changes/036-add-custom-calendar-event-recurrence.yaml

@@ -8,6 +8,7 @@ import { ChoiceChips } from '@/components/ui/ChoiceChips';
 import { Screen } from '@/components/ui/Screen';
 import { ErrorView, LoadingView } from '@/components/ui/StateView';
 import { useAsyncData } from '@/hooks/useAsyncData';
+import { reportError } from '@/lib/errors';
 import { api } from '@/services/api';
 import type { MentalStateCheckIn, MentalStateRequest } from '@/types/models';
 
@@ -33,7 +34,7 @@ export default function MentalStateScreen() {
       const checkIn = await api.mentalState.checkIn(values);
       setResult(checkIn);
       resource.setData(current => current ? [checkIn, ...current] : [checkIn]);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not save the check-in.'); }
+    } catch (cause) { setError(reportError('Could not save mental state check-in', cause)); }
     finally { setSaving(false); }
   }
 

@@ -8,6 +8,7 @@ import { useTheme } from '@mui/material/styles';
 import { format, parseISO, subDays, eachDayOfInterval } from 'date-fns';
 import { StatDefinition, StatEntry } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
+import { showStatFeedback } from '../../services/statFeedback';
 
 interface ChartPoint {
     date: string;
@@ -99,7 +100,7 @@ function buildWeeklyChartPoints(
 }
 
 function formatChartValue(value: number): string {
-    return Number.isInteger(value) ? String(value) : value.toFixed(1);
+    return Number.isInteger(value) ? String(value) : Number(value.toFixed(2)).toString();
 }
 
 function formatPointValue(value: number | undefined, definition: StatDefinition, averaged: boolean): string {
@@ -108,10 +109,79 @@ function formatPointValue(value: number | undefined, definition: StatDefinition,
     return averaged ? `Average ${formatChartValue(value)}` : formatChartValue(value);
 }
 
-function chartDomain(definition: StatDefinition): [number | string, number | string] {
+type NumericDomain = [number, number];
+
+function paddedDomain(minimum: number, maximum: number): NumericDomain {
+    const span = maximum - minimum;
+    const padding = span === 0
+        ? Math.max(Math.abs(maximum) * 0.1, 1)
+        : span * 0.1;
+    return [minimum - padding, maximum + padding];
+}
+
+function chartDomain(definition: StatDefinition, values: Array<number | undefined>): NumericDomain {
     if (definition.type === 'BOOLEAN') return [0, 1];
-    if (definition.type === 'RANGE') return [0, definition.maxValue!];
-    return [0, 'auto'];
+
+    const finiteValues = values.filter((value): value is number => value !== undefined && Number.isFinite(value));
+    if (definition.type === 'RANGE') {
+        finiteValues.push(definition.minValue!, definition.maxValue!);
+    }
+    if (definition.goodThreshold != null && definition.morality && definition.morality !== 'NEUTRAL') {
+        finiteValues.push(definition.goodThreshold);
+    }
+
+    if (finiteValues.length === 0) return [0, 1];
+
+    const minimum = Math.min(...finiteValues);
+    const maximum = Math.max(...finiteValues);
+    if (minimum >= 0) {
+        if (maximum === 0) return [0, 1];
+        const paddedMaximum = maximum * 1.1;
+        const step = niceTickStep(paddedMaximum);
+        const nextNiceTick = Math.ceil(maximum / step) * step;
+        return [0, Math.max(paddedMaximum, nextNiceTick + step * 0.1)];
+    }
+    if (maximum <= 0) {
+        const paddedMinimum = minimum * 1.1;
+        const step = niceTickStep(Math.abs(paddedMinimum));
+        const nextNiceTick = Math.floor(minimum / step) * step;
+        return [Math.min(paddedMinimum, nextNiceTick - step * 0.1), 0];
+    }
+    return paddedDomain(minimum, maximum);
+}
+
+function niceTickStep(range: number, targetTickCount = 5): number {
+    const rawStep = range / targetTickCount;
+    const magnitude = 10 ** Math.floor(Math.log10(rawStep));
+    const normalizedStep = rawStep / magnitude;
+    const multiplier = normalizedStep < Math.sqrt(2)
+        ? 1
+        : normalizedStep < Math.sqrt(10)
+        ? 2
+        : normalizedStep < Math.sqrt(50)
+        ? 5
+        : 10;
+    return multiplier * magnitude;
+}
+
+function roundTick(value: number, step: number): number {
+    const decimalPlaces = Math.max(0, Math.ceil(-Math.log10(step)) + 2);
+    return Number(value.toFixed(decimalPlaces));
+}
+
+function axisTicks(definition: StatDefinition, domain: NumericDomain): number[] {
+    if (definition.type === 'BOOLEAN') return [0, 1];
+
+    const [minimum, maximum] = domain;
+    const step = niceTickStep(maximum - minimum);
+    const firstIndex = Math.ceil(minimum / step - 1e-9);
+    const lastIndex = Math.floor(maximum / step + 1e-9);
+    const ticks = Array.from(
+        { length: Math.max(0, lastIndex - firstIndex + 1) },
+        (_, index) => roundTick((firstIndex + index) * step, step),
+    );
+
+    return [...new Set(ticks)].sort((left, right) => left - right);
 }
 
 function formatAxisValue(value: number, definition: StatDefinition): string {
@@ -161,6 +231,7 @@ export function StatLineChart({
         : createChartPoints(cachedEntries ?? [], cachedComparisonEntries ?? []);
     const loading = loadingKey === dataKey || (dataState.key !== dataKey && !hasCachedData);
     const [hoveredPoint, setHoveredPoint] = useState<ChartPoint | null>(null);
+    const [hoveredThreshold, setHoveredThreshold] = useState<'primary' | 'comparison' | null>(null);
     const [editorPosition, setEditorPosition] = useState<{ left: number; top: number } | null>(null);
     const [editValue, setEditValue] = useState('');
     const [saveError, setSaveError] = useState<string | null>(null);
@@ -179,6 +250,7 @@ export function StatLineChart({
             : [];
         if (!primaryEntries || !comparisonEntries) setLoadingKey(dataKey);
         setHoveredPoint(null);
+        setHoveredThreshold(null);
         setEditorPosition(null);
         Promise.all([
             statService.getEntries(definition.id, fromStr, toStr),
@@ -225,8 +297,14 @@ export function StatLineChart({
         if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     }, []);
 
-    const yDomain = chartDomain(definition);
-    const comparisonYDomain = comparisonDefinition ? chartDomain(comparisonDefinition) : undefined;
+    const yDomain = chartDomain(definition, data.map(point => point.value));
+    const yTicks = axisTicks(definition, yDomain);
+    const comparisonYDomain = comparisonDefinition
+        ? chartDomain(comparisonDefinition, data.map(point => point.comparisonValue))
+        : undefined;
+    const comparisonYTicks = comparisonDefinition && comparisonYDomain
+        ? axisTicks(comparisonDefinition, comparisonYDomain)
+        : undefined;
 
     const tickFormat = isYearView
         ? (d: string) => format(parseISO(d), 'MMM')
@@ -269,7 +347,14 @@ export function StatLineChart({
 
     const handleChartLeave = () => {
         chartHoveredRef.current = false;
+        setHoveredThreshold(null);
         scheduleEditorClose();
+    };
+
+    const handleThresholdEnter = (axis: 'primary' | 'comparison') => {
+        setHoveredThreshold(axis);
+        setHoveredPoint(null);
+        setEditorPosition(null);
     };
 
     const handleEditorEnter = () => {
@@ -302,6 +387,7 @@ export function StatLineChart({
                 date,
                 value,
             });
+            showStatFeedback(definition, value, chartRef.current);
             handleSaved(date, value);
             onEntryChanged?.();
         } catch (error) {
@@ -378,7 +464,7 @@ export function StatLineChart({
                 <ResponsiveContainer width="100%" height={200}>
                 <AreaChart
                     data={data}
-                    margin={{ top: 5, right: comparisonDefinition ? 0 : 10, left: 0, bottom: 5 }}
+                    margin={{ top: 12, right: comparisonDefinition ? 48 : 12, left: 48, bottom: 5 }}
                     onMouseMove={handleChartMouseMove}
                 >
                 <defs>
@@ -399,26 +485,33 @@ export function StatLineChart({
                 <YAxis
                     yAxisId="primary"
                     domain={yDomain}
+                    ticks={yTicks}
                     tickFormatter={value => formatAxisValue(value, definition)}
                     tick={{ fontSize: 11, fill: comparisonDefinition ? primaryColor : theme.palette.text.secondary }}
-                    axisLine={false}
-                    tickLine={false}
-                    width={35}
+                    axisLine={{ stroke: theme.palette.divider }}
+                    tickLine={{ stroke: theme.palette.divider }}
+                    tickMargin={4}
+                    interval={0}
+                    width={52}
                 />
                 {comparisonDefinition && (
                     <YAxis
                         yAxisId="comparison"
                         orientation="right"
                         domain={comparisonYDomain}
+                        ticks={comparisonYTicks}
                         tickFormatter={value => formatAxisValue(value, comparisonDefinition)}
                         tick={{ fontSize: 11, fill: comparisonColor }}
-                        axisLine={false}
-                        tickLine={false}
-                        width={35}
+                        axisLine={{ stroke: theme.palette.divider }}
+                        tickLine={{ stroke: theme.palette.divider }}
+                        tickMargin={4}
+                        interval={0}
+                        width={52}
                     />
                 )}
                 <YAxis yAxisId="hover" hide domain={[0, 1]} />
                 <Tooltip
+                    active={hoveredThreshold === null}
                     content={() => null}
                     cursor={{ stroke: theme.palette.text.secondary, strokeWidth: 1 }}
                 />
@@ -427,6 +520,48 @@ export function StatLineChart({
                         <ReferenceLine yAxisId="primary" y={definition.minValue} stroke={theme.palette.error.main} strokeDasharray="4 4" strokeOpacity={0.6} />
                         <ReferenceLine yAxisId="primary" y={definition.maxValue} stroke={theme.palette.success.main} strokeDasharray="4 4" strokeOpacity={0.6} />
                     </>
+                )}
+                {definition.goodThreshold != null && definition.morality && definition.morality !== 'NEUTRAL' && (
+                    <ReferenceLine
+                        yAxisId="primary"
+                        y={definition.goodThreshold}
+                        stroke={theme.palette.success.main}
+                        strokeDasharray="6 3"
+                        strokeOpacity={0.8}
+                        strokeWidth={2}
+                        zIndex={1300}
+                        pointerEvents="stroke"
+                        onMouseEnter={() => handleThresholdEnter('primary')}
+                        onMouseLeave={() => setHoveredThreshold(null)}
+                        label={{
+                            value: formatChartValue(definition.goodThreshold),
+                            position: 'insideBottomRight',
+                            fill: theme.palette.success.main,
+                            fontSize: 11,
+                        }}
+                    />
+                )}
+                {comparisonDefinition?.goodThreshold != null
+                    && comparisonDefinition.morality
+                    && comparisonDefinition.morality !== 'NEUTRAL' && (
+                    <ReferenceLine
+                        yAxisId="comparison"
+                        y={comparisonDefinition.goodThreshold}
+                        stroke={theme.palette.success.main}
+                        strokeDasharray="6 3"
+                        strokeOpacity={0.8}
+                        strokeWidth={2}
+                        zIndex={1300}
+                        pointerEvents="stroke"
+                        onMouseEnter={() => handleThresholdEnter('comparison')}
+                        onMouseLeave={() => setHoveredThreshold(null)}
+                        label={{
+                            value: formatChartValue(comparisonDefinition.goodThreshold),
+                            position: 'insideBottomLeft',
+                            fill: theme.palette.success.main,
+                            fontSize: 11,
+                        }}
+                    />
                 )}
                 <Area
                     yAxisId="primary"
@@ -472,7 +607,7 @@ export function StatLineChart({
                 />
             )}
 
-            {hoveredPoint && editorPosition && dataState.key === dataKey && !isYearView && definition.type !== 'BOOLEAN' && (
+            {hoveredThreshold === null && hoveredPoint && editorPosition && dataState.key === dataKey && !isYearView && definition.type !== 'BOOLEAN' && (
                 <Box
                     onMouseEnter={handleEditorEnter}
                     onMouseLeave={handleEditorLeave}
@@ -528,7 +663,7 @@ export function StatLineChart({
                 </Box>
             )}
 
-            {hoveredPoint && editorPosition && dataState.key === dataKey && (isYearView || definition.type === 'BOOLEAN') && (
+            {hoveredThreshold === null && hoveredPoint && editorPosition && dataState.key === dataKey && (isYearView || definition.type === 'BOOLEAN') && (
                 <Box
                     sx={{
                         position: 'absolute',

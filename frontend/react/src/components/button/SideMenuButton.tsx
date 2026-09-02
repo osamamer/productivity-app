@@ -9,12 +9,13 @@ type Props = {
     Icon: SvgIconComponent;
     text: string;
     targetPage: string;
+    activePaths?: string[];
 };
 
-export function SideMenuButton({ Icon, text, targetPage }: Props) {
+export function SideMenuButton({ Icon, text, targetPage, activePaths = [targetPage] }: Props) {
     const navigate = useNavigate();
     const location = useLocation();
-    const isActive = location.pathname === targetPage;
+    const isActive = activePaths.includes(location.pathname);
 
     return (
         <ListItemButton

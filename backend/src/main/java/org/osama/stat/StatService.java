@@ -36,49 +36,109 @@ public class StatService {
 
     public StatDefinition createDefinition(String name, String description, StatType type,
                                            Double minValue, Double maxValue, String userId) {
+        return createDefinition(name, description, type, minValue, maxValue,
+                null, null, userId);
+    }
+
+    public StatDefinition createDefinition(String name, String description, StatType type,
+                                           Double minValue, Double maxValue,
+                                           StatMorality morality, Double goodThreshold,
+                                           String userId) {
         User user = userRepository.findUserById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
 
-        validateDefinition(name, type, minValue, maxValue, userId);
-        return saveDefinition(name, description, type, minValue, maxValue, null, user);
+        validateDefinition(name, type, minValue, maxValue, morality, goodThreshold, userId, null);
+        return saveDefinition(name, description, type, minValue, maxValue,
+                morality, goodThreshold, null, user);
+    }
+
+    @Transactional
+    public StatDefinition updateDefinition(String definitionId, String name, String description,
+                                           StatMorality morality, Double goodThreshold,
+                                           String userId) {
+        StatDefinition definition = definitionRepository.findByIdAndUserId(definitionId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("No such stat."));
+        if (definition.getSystemKey() != null) {
+            throw new IllegalArgumentException("Cannot edit a system stat.");
+        }
+
+        validateDefinition(name, definition.getType(), definition.getMinValue(),
+                definition.getMaxValue(), morality, goodThreshold, userId, definitionId);
+        definition.setName(name);
+        definition.setDescription(description);
+        definition.setMorality(morality);
+        definition.setGoodThreshold(goodThreshold);
+        StatDefinition savedDefinition = definitionRepository.save(definition);
+        log.info("Stat definition updated: userId={} statDefinitionId={} name={} morality={} goodThreshold={}",
+                userId, savedDefinition.getId(), savedDefinition.getName(),
+                savedDefinition.getMorality(), savedDefinition.getGoodThreshold());
+        return savedDefinition;
     }
 
     StatDefinition createSystemDefinition(SystemStatDefinition systemStat, User user) {
         validateDefinition(systemStat.name(), systemStat.type(), systemStat.minValue(),
-                systemStat.maxValue(), user.getId());
+                systemStat.maxValue(), null, null, user.getId(), null);
         return saveDefinition(systemStat.name(), systemStat.description(), systemStat.type(),
-                systemStat.minValue(), systemStat.maxValue(), systemStat.systemKey(), user);
+                systemStat.minValue(), systemStat.maxValue(), null, null,
+                systemStat.systemKey(), user);
     }
 
     private void validateDefinition(String name, StatType type, Double minValue,
-                                    Double maxValue, String userId) {
+                                    Double maxValue, StatMorality morality,
+                                    Double goodThreshold, String userId,
+                                    String excludedDefinitionId) {
         if (name == null || name.isBlank()) {
             throw new IllegalArgumentException("A stat must have a name.");
         }
         if (type == null) {
             throw new IllegalArgumentException("A stat must have a type.");
         }
-        if (definitionRepository.findByUserIdAndNameIgnoreCase(userId, name).isPresent()) {
+        Optional<StatDefinition> sameName = definitionRepository.findByUserIdAndNameIgnoreCase(userId, name);
+        if (sameName.isPresent() && !sameName.get().getId().equals(excludedDefinitionId)) {
             throw new IllegalArgumentException("A stat with that name already exists.");
         }
         if (type == StatType.RANGE) {
             if (minValue == null || maxValue == null || minValue.isNaN()
-                    || maxValue.isNaN() || minValue > maxValue) {
+                    || maxValue.isNaN() || !Double.isFinite(minValue)
+                    || !Double.isFinite(maxValue) || minValue > maxValue) {
                 throw new IllegalArgumentException("Invalid range for stat.");
             }
+        }
+        if (morality == null || morality == StatMorality.NEUTRAL) {
+            if (goodThreshold != null) {
+                throw new IllegalArgumentException("A neutral stat cannot have a good threshold.");
+            }
+            return;
+        }
+        if (type == StatType.BOOLEAN) {
+            if (goodThreshold != null) {
+                throw new IllegalArgumentException("Boolean stats do not use a good threshold.");
+            }
+            return;
+        }
+        if (goodThreshold == null || !Double.isFinite(goodThreshold)) {
+            throw new IllegalArgumentException("A non-neutral numeric stat must have a good threshold.");
+        }
+        if (type == StatType.RANGE
+                && (goodThreshold < minValue || goodThreshold > maxValue)) {
+            throw new IllegalArgumentException("The good threshold must be inside the stat range.");
         }
     }
 
     private StatDefinition saveDefinition(String name, String description, StatType type,
-                                          Double minValue, Double maxValue, String systemKey,
+                                          Double minValue, Double maxValue,
+                                          StatMorality morality, Double goodThreshold,
+                                          String systemKey,
                                           User user) {
         StatDefinition definition = new StatDefinition();
         definition.setId(UUID.randomUUID().toString());
         definition.setName(name);
         definition.setDescription(description);
         definition.setType(type);
+        definition.setMorality(morality);
         definition.setMinValue(minValue);
         definition.setMaxValue(maxValue);
+        definition.setGoodThreshold(goodThreshold);
         definition.setSystemKey(systemKey);
         definition.setDisplayOrder(nextDisplayOrder(user.getId()));
         definition.setUser(user);

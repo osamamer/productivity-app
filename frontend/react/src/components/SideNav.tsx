@@ -1,5 +1,4 @@
 import {
-    Avatar,
     Box,
     Button,
     Dialog,
@@ -18,12 +17,10 @@ import { useNavigate } from "react-router-dom";
 import DashboardRoundedIcon from '@mui/icons-material/DashboardRounded';
 import AssignmentIcon from '@mui/icons-material/Assignment';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
-import SelfImprovementIcon from '@mui/icons-material/SelfImprovement';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import SettingsIcon from '@mui/icons-material/Settings';
 import EditNoteRoundedIcon from '@mui/icons-material/EditNoteRounded';
 import PsychologyIcon from '@mui/icons-material/Psychology';
-import MoodIcon from '@mui/icons-material/Mood';
 import NightlightIcon from '@mui/icons-material/Nightlight';
 import LightModeIcon from '@mui/icons-material/LightMode';
 import LogoutIcon from '@mui/icons-material/Logout';
@@ -65,13 +62,6 @@ export function SideNav() {
     const [open, setOpen] = useState(false);
     const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
 
-    const getInitials = () => {
-        if (!user) return '?';
-        const first = user.firstName?.[0] ?? '';
-        const last = user.lastName?.[0] ?? '';
-        return (first + last).toUpperCase() || (user.username?.[0]?.toUpperCase() ?? '?');
-    };
-
     return (
         <Drawer
             variant="permanent"
@@ -110,13 +100,15 @@ export function SideNav() {
                 <List sx={{ width: '100%', textAlign: 'center', flexGrow: 1, py: 0 }}>
                     <SideMenuButton Icon={DashboardRoundedIcon} text="Home" targetPage="/" />
                     <SideMenuButton Icon={AssignmentIcon} text="Tasks" targetPage="/tasks" />
-                    <SideMenuButton Icon={PsychologyIcon} text="Mental threads" targetPage="/mental-threads" />
-                    <SideMenuButton Icon={MoodIcon} text="Mental state" targetPage="/mental-state" />
+                    <SideMenuButton
+                        Icon={PsychologyIcon}
+                        text="Mental"
+                        targetPage="/mental"
+                        activePaths={["/mental", "/mental-state", "/mental-threads", "/meditation"]}
+                    />
                     <SideMenuButton Icon={EditNoteRoundedIcon} text="Notes" targetPage="/notes" />
                     <SideMenuButton Icon={CalendarMonthIcon} text="Calendar" targetPage="/calendar" />
-                    <SideMenuButton Icon={SelfImprovementIcon} text="Meditation" targetPage="/meditation" />
                     <SideMenuButton Icon={BarChartIcon} text="Statistics" targetPage="/stats" />
-                    <SideMenuButton Icon={SettingsIcon} text="Settings" targetPage="/settings" />
                 </List>
 
                 <Box sx={{ width: '100%', pb: 1 }}>
@@ -147,35 +139,32 @@ export function SideNav() {
                     </ListItemButton>
 
 
-                    {user && (
-                        <ListItemButton
-                            onClick={() => navigate('/settings?tab=account')}
-                            title="Account"
-                            aria-label="Account"
-                            sx={{
-                                ...navActionSx,
-                                minHeight: 58,
-                            }}
-                        >
-                            <Box sx={iconRailSx}>
-                                <Avatar
-                                    sx={{
-                                        width: 30,
-                                        height: 30,
-                                        bgcolor: 'primary.main',
-                                        flexShrink: 0,
-                                        fontSize: '0.72rem',
-                                        transition: 'transform 0.16s ease',
-                                        '.MuiListItemButton-root:hover &': {
-                                            transform: 'scale(1.05)',
-                                        },
-                                    }}
-                                >
-                                    {getInitials()}
-                                </Avatar>
-                            </Box>
-                        </ListItemButton>
-                    )}
+                    <ListItemButton
+                        onClick={() => navigate('/settings')}
+                        title="Settings"
+                        aria-label="Settings"
+                        sx={{
+                            ...navActionSx,
+                            minHeight: 58,
+                        }}
+                    >
+                        <Box sx={iconRailSx}>
+                            <IconButton
+                                size="small"
+                                disableRipple
+                                disableFocusRipple
+                                sx={{
+                                    p: 0.75,
+                                    backgroundColor: 'transparent',
+                                    '&:hover': {
+                                        backgroundColor: 'transparent',
+                                    },
+                                }}
+                            >
+                                <SettingsIcon fontSize="small" />
+                            </IconButton>
+                        </Box>
+                    </ListItemButton>
 
                     {user && (
                         <ListItemButton

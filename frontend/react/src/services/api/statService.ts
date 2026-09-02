@@ -1,4 +1,4 @@
-import { StatDefinition, StatEntry, StatSummary, StatInsights, CreateDefinitionRequest, RecordEntryRequest } from '../../types/Stats';
+import { StatDefinition, StatEntry, StatSummary, StatInsights, CreateDefinitionRequest, RecordEntryRequest, UpdateDefinitionRequest } from '../../types/Stats';
 import { getAuthCacheScope, getAuthHeaders } from '../utils/authHeaders';
 import { CachedResource, TtlCache } from '../cache/ttlCache';
 
@@ -146,6 +146,20 @@ export const statService = {
         invalidateEntryCache(id);
         invalidateSummaryCache(id);
         invalidateInsightsCache();
+    },
+
+    async updateDefinition(id: string, req: UpdateDefinitionRequest): Promise<StatDefinition> {
+        const response = await fetch(`${STATS_URL}/definitions/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify(req),
+            headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getAuthHeaders() },
+        });
+        if (!response.ok) throw new Error('Failed to update stat definition');
+        invalidateDefinitionsCache();
+        invalidateEntryCache(id);
+        invalidateSummaryCache(id);
+        invalidateInsightsCache();
+        return response.json();
     },
 
     async reorderDefinitions(definitionIds: string[]): Promise<StatDefinition[]> {

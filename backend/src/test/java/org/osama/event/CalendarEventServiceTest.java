@@ -127,6 +127,31 @@ class CalendarEventServiceTest {
     }
 
     @Test
+    void customRecurringEventStoresItsIntervalAndUnit() {
+        CalendarEventRequest request = timedRequest(
+                Instant.parse("2027-01-10T10:00:00Z"), Instant.parse("2027-01-10T11:00:00Z"));
+        request.setRecurrenceFrequency(RecurrenceFrequency.CUSTOM);
+        request.setRecurrenceInterval(2);
+        request.setRecurrenceUnit(RecurrenceUnit.WEEKS);
+
+        CalendarEventResponse event = eventService.createEvent(request, USER_ID);
+
+        assertEquals(RecurrenceFrequency.CUSTOM, event.recurrenceFrequency());
+        assertEquals(2, event.recurrenceInterval());
+        assertEquals(RecurrenceUnit.WEEKS, event.recurrenceUnit());
+    }
+
+    @Test
+    void customRecurringEventRequiresAValidIntervalAndUnit() {
+        CalendarEventRequest request = timedRequest(
+                Instant.parse("2027-01-10T10:00:00Z"), Instant.parse("2027-01-10T11:00:00Z"));
+        request.setRecurrenceFrequency(RecurrenceFrequency.CUSTOM);
+        request.setRecurrenceInterval(0);
+
+        assertThrows(IllegalArgumentException.class, () -> eventService.createEvent(request, USER_ID));
+    }
+
+    @Test
     void recurringEventRejectsEndDateBeforeItsStartDateInEventTimeZone() {
         CalendarEventRequest request = timedRequest(
                 Instant.parse("2027-01-10T00:30:00Z"), Instant.parse("2027-01-10T01:30:00Z"));

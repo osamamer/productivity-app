@@ -1,0 +1,22 @@
+databaseChangeLog:
+  - changeSet:
+      id: 036-add-custom-calendar-event-recurrence
+      author: codex
+      comment: Store interval and unit for custom calendar event recurrence
+      changes:
+        - addColumn:
+            tableName: calendar_event
+            columns:
+              - column:
+                  name: recurrence_interval
+                  type: int
+              - column:
+                  name: recurrence_unit
+                  type: varchar(20)
+      rollback:
+        - dropColumn:
+            tableName: calendar_event
+            columnName: recurrence_unit
+        - dropColumn:
+            tableName: calendar_event
+            columnName: recurrence_interval

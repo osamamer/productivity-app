@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
+import { reportError } from '@/lib/errors';
 import { api } from '@/services/api';
 import type { AttentionState, ClosureType, MentalThread } from '@/types/models';
 import { AppButton } from '../ui/AppButton';
@@ -35,7 +36,7 @@ export function ThreadDetailSheet({ thread, onClose, onUpdated }: {
         currentMentalLoad: load, loadReason: null,
       });
       onUpdated(updated); onClose();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not save this thread.'); }
+    } catch (cause) { setError(reportError('Could not save thread', cause)); }
     finally { setSaving(false); }
   }
 
@@ -48,7 +49,7 @@ export function ThreadDetailSheet({ thread, onClose, onUpdated }: {
         ? await api.mentalThreads.close(thread.id, closure, resolution.trim())
         : await api.mentalThreads.reopen(thread.id);
       onUpdated(updated); onClose();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not update this thread.'); }
+    } catch (cause) { setError(reportError('Could not update thread', cause)); }
     finally { setSaving(false); }
   }
 

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 
+import { reportError } from '@/lib/errors';
 import { api } from '@/services/api';
 import type { AttentionState, MentalThread } from '@/types/models';
 import { AppButton } from '../ui/AppButton';
@@ -38,7 +39,7 @@ export function ThreadComposerSheet({ visible, onClose, onCreated }: {
       });
       onCreated(thread); close();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not create this thread.');
+      setError(reportError('Could not create thread', cause));
     } finally { setSaving(false); }
   }
 

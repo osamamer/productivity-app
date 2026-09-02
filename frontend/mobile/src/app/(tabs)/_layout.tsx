@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 
+import { APP_FONT_FAMILY } from '@/components/ui/AppText';
 import { useAppTheme } from '@/providers/ThemeProvider';
 
 const icons: Record<string, { active: keyof typeof Ionicons.glyphMap; inactive: keyof typeof Ionicons.glyphMap }> = {
@@ -26,7 +27,7 @@ export default function TabLayout() {
           paddingTop: 8,
           paddingBottom: 8,
         },
-        tabBarLabelStyle: { fontFamily: 'Raleway', fontSize: 11, fontWeight: '600' },
+        tabBarLabelStyle: { fontFamily: APP_FONT_FAMILY, fontSize: 11, fontWeight: '500' },
         tabBarIcon: ({ focused, color, size }) => {
           const pair = icons[route.name] ?? icons.more;
           return <Ionicons name={focused ? pair.active : pair.inactive} color={color} size={size} />;

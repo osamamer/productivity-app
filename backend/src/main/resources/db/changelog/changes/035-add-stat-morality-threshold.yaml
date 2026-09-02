@@ -1,0 +1,22 @@
+databaseChangeLog:
+  - changeSet:
+      id: 035-add-stat-morality-and-threshold
+      author: osama
+      comment: Store the direction and threshold used to judge daily stat values
+      changes:
+        - addColumn:
+            tableName: stat_definition
+            columns:
+              - column:
+                  name: morality
+                  type: varchar(20)
+              - column:
+                  name: good_threshold
+                  type: double precision
+      rollback:
+        - dropColumn:
+            tableName: stat_definition
+            columnName: good_threshold
+        - dropColumn:
+            tableName: stat_definition
+            columnName: morality

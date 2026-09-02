@@ -1,11 +1,11 @@
-# So Life mobile
+# Claritard mobile
 
 React Native client for the productivity app, built with Expo SDK 57 and Expo Router. It shares the Spring Boot API and Keycloak realm with the web frontend.
 
 ## What is included
 
-- Keycloak authorization-code login with PKCE, encrypted refresh-token storage, token refresh, and logout
-- Today dashboard, day rating, task creation/editing/completion, and 25-minute focus starts
+- Native Keycloak email/password sign-in, encrypted refresh-token storage, token refresh, and logout
+- Today dashboard, day rating, task creation/editing/completion, and the full in-row Pomodoro focus flow
 - Task, calendar event, mental thread, mental-state, meditation, note, and stat workflows
 - Shared Raleway typography, web palette, four accent colors, light/dark/system themes, soft cards, and task-priority colors
 - Durable notification recovery from the backend, presented through native notifications when permission is available
@@ -19,7 +19,7 @@ cd frontend/mobile
 npm install
 ```
 
-In Keycloak, add `solife://auth` to the `productivity-app-frontend` client's valid redirect URIs. Keep the client public with standard flow and PKCE enabled. No client secret belongs in the app.
+In Keycloak, add `solife://auth` to the `productivity-app-frontend` client's valid redirect URIs and enable Direct Access Grants for the public client. The native form uses the realm's password grant; no client secret belongs in the app.
 
 The mobile app has explicit environment guards. A local native build uses the
 `EXPO_PUBLIC_*` values from `.env.local`; the `preview` and `production` EAS
@@ -104,6 +104,35 @@ npm run typecheck
 npm run export:android
 ```
 
+## CI Android builds
+
+The GitHub Actions workflow runs the validation commands above for every change,
+then queues an EAS Android `preview` build after a successful production deploy
+on `master` or a manual workflow run. The preview profile is an internal,
+installable build configured with the deployed API and Keycloak origins. The
+same workflow publishes a `preview` OTA update for compatible JavaScript-only
+mobile changes after the deployment succeeds.
+
+One-time EAS setup is required before the workflow can build:
+
+```bash
+npx eas-cli@latest login
+npx eas-cli@latest init
+npx eas-cli@latest build --platform android --profile preview
+```
+
+Commit the EAS configuration that links the app to the Expo project, then add an
+`EXPO_TOKEN` repository secret in GitHub. The workflow prints the EAS build link;
+download the finished APK from that build and install it on the phone. The
+production Play Store build can use the existing `production` profile later.
+
+After that first OTA-capable APK is installed, normal changes under
+`src/` can reach the phone from a push to `master` without reinstalling. The
+workflow deliberately skips OTA publication when `app.json`, `eas.json`, or the
+mobile dependency manifests change; those changes require installing the new
+APK produced by the workflow. Keep the app version/runtime version compatible
+for JavaScript-only updates.
+
 ## Structure
 
 - `src/app/` — protected routes, bottom tabs, and feature screens
@@ -116,6 +145,6 @@ npm run export:android
 
 - Calendar uses a touch-friendly upcoming agenda instead of FullCalendar's desktop month grid.
 - Notes use a plain-text editor. Existing rich HTML is readable as text, but saving it from mobile simplifies that formatting.
-- Pomodoro starts and durable notification recovery work, but the mobile client does not yet expose the web client's complete phase-control panel or STOMP socket; it recovers notifications by polling on launch, foreground, and once per minute.
+- The sign-in screen is native and submits credentials to Keycloak without storing the password. Logout still returns through the `solife` callback scheme.
 - Meditation interval-bell audio and the web client's sound choices are not bundled yet. Session state and timing still persist through the backend.
 - Notes remain dependent on the planned notes backend, just like the current web Notes page.

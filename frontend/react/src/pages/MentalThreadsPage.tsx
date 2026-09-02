@@ -21,6 +21,7 @@ import {
 } from '@mui/material';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import PsychologyIcon from '@mui/icons-material/Psychology';
+import { BackToMentalButton } from '../components/BackToMentalButton';
 import { PageWrapper } from '../components/PageWrapper.tsx';
 import { MentalLoadOverview } from '../components/mental-threads/MentalLoadOverview.tsx';
 import { MentalThreadList } from '../components/mental-threads/MentalThreadList.tsx';
@@ -200,6 +201,7 @@ export function MentalThreadsPage() {
                 display: 'flex',
                 flexDirection: 'column',
             }}>
+                <BackToMentalButton />
                 <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={2} sx={{ mb: 1, flexShrink: 0 }}>
                     <Box sx={{ textAlign: 'left' }}>
                         <Typography variant="h6" fontWeight={720}>Mental threads</Typography>

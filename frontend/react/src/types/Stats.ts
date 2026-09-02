@@ -1,12 +1,16 @@
 export type StatType = 'NUMBER' | 'BOOLEAN' | 'RANGE';
+export type StatMorality = 'GOOD' | 'BAD' | 'NEUTRAL';
+export type StatFeedback = 'CELEBRATE' | 'SAD' | 'NONE';
 
 export interface StatDefinition {
     id: string;
     name: string;
     description?: string;
     type: StatType;
+    morality?: StatMorality | null;
     minValue?: number;
     maxValue?: number;
+    goodThreshold?: number | null;
     systemKey?: string;
     displayOrder: number;
     userId: string;
@@ -27,6 +31,15 @@ export interface CreateDefinitionRequest {
     type: StatType;
     minValue?: number;
     maxValue?: number;
+    morality?: StatMorality;
+    goodThreshold?: number;
+}
+
+export interface UpdateDefinitionRequest {
+    name: string;
+    description?: string;
+    morality?: StatMorality;
+    goodThreshold?: number;
 }
 
 export interface RecordEntryRequest {

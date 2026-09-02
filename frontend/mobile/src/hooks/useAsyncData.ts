@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
+import { GENERIC_ERROR_MESSAGE } from '@/lib/errors';
+
 export function useAsyncData<T>(loader: () => Promise<T>) {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
@@ -17,7 +19,8 @@ export function useAsyncData<T>(loader: () => Promise<T>) {
       setData(result);
       return result;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Something went wrong.');
+      console.error('Could not load data:', cause);
+      setError(GENERIC_ERROR_MESSAGE);
       return null;
     } finally {
       setLoading(false);
@@ -32,7 +35,8 @@ export function useAsyncData<T>(loader: () => Promise<T>) {
         if (active) setData(result);
       })
       .catch(cause => {
-        if (active) setError(cause instanceof Error ? cause.message : 'Something went wrong.');
+        console.error('Could not load data:', cause);
+        if (active) setError(GENERIC_ERROR_MESSAGE);
       })
       .finally(() => {
         if (active) setLoading(false);

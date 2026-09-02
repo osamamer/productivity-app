@@ -9,6 +9,7 @@ import { Card } from '@/components/ui/Card';
 import { ChoiceChips } from '@/components/ui/ChoiceChips';
 import { Screen } from '@/components/ui/Screen';
 import { useAsyncData } from '@/hooks/useAsyncData';
+import { reportError } from '@/lib/errors';
 import { useAuth } from '@/providers/AuthProvider';
 import { accentOptions, useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
@@ -28,7 +29,7 @@ export default function SettingsScreen() {
     const previous = resource.data;
     resource.setData({ ...previous, [key]: value });
     try { resource.setData(await api.preferences.update({ [key]: value })); }
-    catch (cause) { resource.setData(previous); Alert.alert('Could not save setting', cause instanceof Error ? cause.message : undefined); }
+    catch (cause) { resource.setData(previous); Alert.alert('Could not save setting', reportError('Could not save setting', cause)); }
   }
 
   async function changePassword() {
@@ -38,7 +39,7 @@ export default function SettingsScreen() {
     try {
       await api.account.changePassword(currentPassword, newPassword);
       setCurrentPassword(''); setNewPassword(''); setConfirmPassword(''); setPasswordMessage('Password updated.');
-    } catch (cause) { setPasswordMessage(cause instanceof Error ? cause.message : 'Could not update password.'); }
+    } catch (cause) { setPasswordMessage(reportError('Could not update password', cause)); }
     finally { setPasswordSaving(false); }
   }
 

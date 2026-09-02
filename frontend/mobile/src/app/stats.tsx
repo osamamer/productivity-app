@@ -62,7 +62,18 @@ export default function StatsScreen() {
           );
         })}
       </View>
-      <StatEntrySheet key={selected?.id ?? 'no-stat'} definition={selected} existing={selected ? entriesByDefinition.get(selected.id) : undefined} onClose={() => setSelected(null)} onSaved={saveEntry} />
+      <StatEntrySheet
+        key={selected?.id ?? 'no-stat'}
+        definition={selected}
+        existing={selected ? entriesByDefinition.get(selected.id) : undefined}
+        onClose={() => setSelected(null)}
+        onSaved={saveEntry}
+        onReverted={entry => resource.setData(current => {
+          if (!current || !selected) return current;
+          const rest = current.entries.filter(item => item.statDefinitionId !== selected.id);
+          return { ...current, entries: entry ? [...rest, entry] : rest };
+        })}
+      />
       <StatComposerSheet visible={composerOpen} onClose={() => setComposerOpen(false)} onCreated={definition => resource.setData(current => current ? { ...current, definitions: [...current.definitions, definition] } : current)} />
     </Screen>
   );

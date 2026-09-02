@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Box, Paper } from '@mui/material';
 import { PageWrapper } from '../components/PageWrapper.tsx';
+import { BackToMentalButton } from '../components/BackToMentalButton';
 import MeditationTimer from '../components/timer/MeditationTimer.tsx';
 import { MeditationStats } from '../components/timer/MeditationStats.tsx';
 
@@ -9,6 +10,7 @@ export function MeditationPage() {
 
     return (
         <PageWrapper>
+            <BackToMentalButton />
             <Paper
                 elevation={0}
                 sx={{

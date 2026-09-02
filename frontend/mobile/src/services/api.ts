@@ -1,4 +1,5 @@
 import { appConfig } from '@/lib/config';
+import { GENERIC_ERROR_MESSAGE } from '@/lib/errors';
 import type {
   ApplicationNotification,
   CalendarEvent,
@@ -12,6 +13,8 @@ import type {
   MentalThreadSummary,
   Note,
   NoteCategory,
+  PomodoroConfig,
+  PomodoroStatus,
   StatDefinition,
   StatEntry,
   StatSummary,
@@ -52,7 +55,9 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   if (response.status === 401) response = await perform(true);
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(errorMessage(body, response.status));
+    const detail = errorMessage(body, response.status);
+    console.error('API request failed:', { path, status: response.status }, new Error(detail));
+    throw new Error(GENERIC_ERROR_MESSAGE);
   }
   if (response.status === 204 || response.headers.get('content-length') === '0') {
     return undefined as T;
@@ -73,15 +78,26 @@ export const api = {
     update: (id: string, updates: Partial<Task>) =>
       json<Task>(`/api/v1/tasks/${id}`, 'PATCH', updates),
     remove: (id: string) => apiRequest<void>(`/api/v1/tasks/${id}`, { method: 'DELETE' }),
-    startPomodoro: (taskId: string) => json<void>('/api/v1/pomodoro/start', 'POST', {
-      taskId,
-      focusDuration: 25,
-      shortBreakDuration: 5,
-      longBreakDuration: 15,
-      numFocuses: 4,
-      longBreakCooldown: 4,
-      secondsMode: false,
-    }),
+  },
+  session: {
+    pause: (taskId: string) => apiRequest<void>(`/api/v1/session/pause/${taskId}`, { method: 'POST' }),
+    resume: (taskId: string) => apiRequest<void>(`/api/v1/session/unpause/${taskId}`, { method: 'POST' }),
+  },
+  pomodoro: {
+    config: () => apiRequest<PomodoroConfig>('/api/v1/pomodoro/config'),
+    start: (taskId: string, input: {
+      focusDuration: number;
+      shortBreakDuration: number;
+      longBreakDuration: number;
+      numFocuses: number;
+      longBreakCooldown: number;
+      secondsMode: boolean;
+    }) => json<void>('/api/v1/pomodoro/start', 'POST', { taskId, ...input }),
+    end: (taskId: string) => apiRequest<void>(`/api/v1/pomodoro/end/${taskId}`, { method: 'POST' }),
+    startNextPhase: (taskId: string) => apiRequest<void>(`/api/v1/pomodoro/phase/start/${taskId}`, { method: 'POST' }),
+    finishBreakEarly: (taskId: string) => apiRequest<void>(`/api/v1/pomodoro/phase/finish-break/${taskId}`, { method: 'POST' }),
+    statusForTask: (taskId: string) => apiRequest<PomodoroStatus | undefined>(`/api/v1/pomodoro/status/${taskId}`),
+    status: () => apiRequest<PomodoroStatus | undefined>('/api/v1/pomodoro/status'),
   },
   day: {
     today: () => apiRequest<Day>('/api/v1/day/get-today'),

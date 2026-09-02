@@ -55,6 +55,13 @@ public class CalendarEvent {
     @Column(name = "recurrence_end_date")
     private LocalDate recurrenceEndDate;
 
+    @Column(name = "recurrence_interval")
+    private Integer recurrenceInterval;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "recurrence_unit", length = 20)
+    private RecurrenceUnit recurrenceUnit;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

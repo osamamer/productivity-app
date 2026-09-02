@@ -1,5 +1,5 @@
 import { addDays, addMonths, differenceInCalendarDays, differenceInCalendarMonths, format, startOfDay } from 'date-fns';
-import { CalendarEvent, RecurrenceFrequency } from '../../types/CalendarEvent';
+import { CalendarEvent, RecurrenceFrequency, RecurrenceUnit } from '../../types/CalendarEvent';
 
 export type CalendarEventOccurrence = {
     id: string;
@@ -9,17 +9,32 @@ export type CalendarEventOccurrence = {
     allDay: boolean;
 };
 
-function occurrenceStart(anchor: Date, frequency: RecurrenceFrequency, index: number): Date {
-    if (frequency === 'DAILY') return addDays(anchor, index);
-    if (frequency === 'WEEKLY') return addDays(anchor, index * 7);
-    return addMonths(anchor, index);
+function recurrenceInterval(event: CalendarEvent): number {
+    return event.recurrenceFrequency === 'CUSTOM' ? event.recurrenceInterval ?? 1 : 1;
 }
 
-function firstVisibleIndex(anchor: Date, rangeStart: Date, frequency: RecurrenceFrequency, durationDays: number): number {
+function recurrenceUnit(frequency: RecurrenceFrequency, customUnit: RecurrenceUnit | null): RecurrenceUnit {
+    if (frequency === 'DAILY') return 'DAYS';
+    if (frequency === 'WEEKLY') return 'WEEKS';
+    if (frequency === 'MONTHLY') return 'MONTHS';
+    return customUnit ?? 'WEEKS';
+}
+
+function occurrenceStart(anchor: Date, event: CalendarEvent, index: number): Date {
+    const unit = recurrenceUnit(event.recurrenceFrequency, event.recurrenceUnit);
+    const amount = index * recurrenceInterval(event);
+    if (unit === 'DAYS') return addDays(anchor, amount);
+    if (unit === 'WEEKS') return addDays(anchor, amount * 7);
+    return addMonths(anchor, amount);
+}
+
+function firstVisibleIndex(anchor: Date, rangeStart: Date, event: CalendarEvent, durationDays: number): number {
     const daysUntilRange = differenceInCalendarDays(startOfDay(rangeStart), startOfDay(anchor));
-    if (frequency === 'DAILY') return Math.max(0, daysUntilRange - durationDays);
-    if (frequency === 'WEEKLY') return Math.max(0, Math.floor((daysUntilRange - durationDays) / 7));
-    return Math.max(0, differenceInCalendarMonths(startOfDay(rangeStart), startOfDay(anchor)) - 1);
+    const unit = recurrenceUnit(event.recurrenceFrequency, event.recurrenceUnit);
+    const interval = recurrenceInterval(event);
+    if (unit === 'DAYS') return Math.max(0, Math.floor((daysUntilRange - durationDays) / interval));
+    if (unit === 'WEEKS') return Math.max(0, Math.floor((daysUntilRange - durationDays) / (interval * 7)));
+    return Math.max(0, Math.floor((differenceInCalendarMonths(startOfDay(rangeStart), startOfDay(anchor)) - 1) / interval));
 }
 
 function dateString(date: Date): string {
@@ -34,7 +49,6 @@ function allDayOccurrences(
     event: CalendarEvent,
     rangeStart: Date,
     rangeEnd: Date,
-    frequency: RecurrenceFrequency,
 ): CalendarEventOccurrence[] {
     if (!event.startDate || !event.endDate) return [];
 
@@ -43,13 +57,13 @@ function allDayOccurrences(
         new Date(`${event.endDate}T12:00:00`),
         anchor,
     ) + 1;
-    const firstIndex = firstVisibleIndex(anchor, rangeStart, frequency, durationDays);
+    const firstIndex = firstVisibleIndex(anchor, rangeStart, event, durationDays);
     const visibleRangeStart = startOfDay(rangeStart);
     const visibleRangeEnd = startOfDay(rangeEnd);
     const occurrences: CalendarEventOccurrence[] = [];
 
     for (let index = firstIndex; ; index += 1) {
-        const start = occurrenceStart(anchor, frequency, index);
+        const start = occurrenceStart(anchor, event, index);
         const occurrenceDate = dateString(start);
         if (isAfterRecurrenceEnd(occurrenceDate, event.recurrenceEndDate)) break;
         if (start >= visibleRangeEnd) break;
@@ -72,18 +86,17 @@ function timedOccurrences(
     event: CalendarEvent,
     rangeStart: Date,
     rangeEnd: Date,
-    frequency: RecurrenceFrequency,
 ): CalendarEventOccurrence[] {
     if (!event.startTime || !event.endTime) return [];
 
     const anchor = new Date(event.startTime);
     const end = new Date(event.endTime);
     const durationMilliseconds = end.getTime() - anchor.getTime();
-    const firstIndex = firstVisibleIndex(anchor, rangeStart, frequency, 0);
+    const firstIndex = firstVisibleIndex(anchor, rangeStart, event, 0);
     const occurrences: CalendarEventOccurrence[] = [];
 
     for (let index = firstIndex; ; index += 1) {
-        const start = occurrenceStart(anchor, frequency, index);
+        const start = occurrenceStart(anchor, event, index);
         const occurrenceDate = dateString(start);
         if (isAfterRecurrenceEnd(occurrenceDate, event.recurrenceEndDate)) break;
         if (start >= rangeEnd) break;
@@ -125,6 +138,6 @@ export function expandCalendarEvent(event: CalendarEvent, rangeStart: Date, rang
     }
 
     return event.allDay
-        ? allDayOccurrences(event, rangeStart, rangeEnd, frequency)
-        : timedOccurrences(event, rangeStart, rangeEnd, frequency);
+        ? allDayOccurrences(event, rangeStart, rangeEnd)
+        : timedOccurrences(event, rangeStart, rangeEnd);
 }

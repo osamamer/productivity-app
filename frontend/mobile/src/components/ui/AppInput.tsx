@@ -2,7 +2,7 @@ import { ComponentProps } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
 
 import { useAppTheme } from '@/providers/ThemeProvider';
-import { AppText } from './AppText';
+import { APP_FONT_FAMILY, AppText } from './AppText';
 
 interface Props extends ComponentProps<typeof TextInput> {
   label?: string;
@@ -39,8 +39,9 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 11,
-    fontFamily: 'Raleway',
+    fontFamily: APP_FONT_FAMILY,
     fontSize: 15,
+    fontWeight: '500',
   },
   multiline: { minHeight: 104, textAlignVertical: 'top' },
 });

@@ -1,5 +1,7 @@
 import { useState } from 'react';
 
+import { localDate } from '@/lib/date';
+import { reportError } from '@/lib/errors';
 import { api } from '@/services/api';
 import type { StatDefinition, StatEntry } from '@/types/models';
 import { AppButton } from '../ui/AppButton';
@@ -8,11 +10,12 @@ import { AppText } from '../ui/AppText';
 import { ChoiceChips } from '../ui/ChoiceChips';
 import { ModalSheet } from '../ui/ModalSheet';
 
-export function StatEntrySheet({ definition, existing, onClose, onSaved }: {
+export function StatEntrySheet({ definition, existing, onClose, onSaved, onReverted }: {
   definition: StatDefinition | null;
   existing?: StatEntry;
   onClose: () => void;
   onSaved: (entry: StatEntry) => void;
+  onReverted: (entry?: StatEntry) => void;
 }) {
   const initialValue = existing?.value ?? definition?.minValue ?? 1;
   const [value, setValue] = useState(String(initialValue));
@@ -21,12 +24,24 @@ export function StatEntrySheet({ definition, existing, onClose, onSaved }: {
   const [error, setError] = useState<string | null>(null);
 
   async function save(nextValue?: number) {
-    if (!definition) return;
+    if (!definition || saving) return;
     const numeric = nextValue ?? Number(definition.type === 'RANGE' ? rangeValue : value);
     if (!Number.isFinite(numeric)) return setError('Enter a number.');
+    const optimistic: StatEntry = {
+      id: existing?.id ?? `optimistic-${definition.id}`,
+      statDefinitionId: definition.id,
+      statDefinition: definition,
+      date: existing?.date ?? localDate(),
+      value: numeric,
+      userId: existing?.userId ?? definition.userId,
+    };
+    onSaved(optimistic);
     setSaving(true); setError(null);
     try { onSaved(await api.stats.record(definition.id, numeric)); onClose(); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not record this stat.'); }
+    catch (cause) {
+      onReverted(existing);
+      setError(reportError('Could not record stat', cause));
+    }
     finally { setSaving(false); }
   }
 

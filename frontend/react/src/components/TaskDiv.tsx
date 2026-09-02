@@ -52,7 +52,8 @@ const formatTime = (dateTime: string): string => {
     return `${monthName} ${day}${ordinal(day)}`;
 };
 
-const isOverdue = (dateTime: string): boolean => {
+const isOverdue = (dateTime: string | null): boolean => {
+    if (!dateTime) return false;
     const date = new Date(dateTime);
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -62,7 +63,8 @@ const isOverdue = (dateTime: string): boolean => {
 
 export function TaskDiv(props: props) {
     const importance = props.task.importance;
-    const overdue = isOverdue(props.task.scheduledPerformDateTime) && !props.task.completed;
+    const scheduledDateTime = props.task.scheduledPerformDateTime;
+    const overdue = isOverdue(scheduledDateTime) && !props.task.completed;
 
     // Checkbox color based on priority
     const getCheckboxColor = () => {
@@ -125,7 +127,7 @@ export function TaskDiv(props: props) {
                     {props.task.name}
                 </Typography>
             </Box>
-            {!props.task.parentId && (
+            {!props.task.parentId && scheduledDateTime && (
                 <Typography
                     sx={{
                         position: 'absolute',
@@ -138,7 +140,7 @@ export function TaskDiv(props: props) {
                         whiteSpace: 'nowrap',
                     }}
                 >
-                    {formatTime(props.task.scheduledPerformDateTime)}
+                    {formatTime(scheduledDateTime)}
                 </Typography>
             )}
 

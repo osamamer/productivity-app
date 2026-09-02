@@ -1,5 +1,6 @@
 import { useState } from 'react';
 
+import { reportError } from '@/lib/errors';
 import { api } from '@/services/api';
 import type { StatDefinition, StatType } from '@/types/models';
 import { AppButton } from '../ui/AppButton';
@@ -32,7 +33,7 @@ export function StatComposerSheet({ visible, onClose, onCreated }: {
     try {
       const definition = await api.stats.create({ name: name.trim(), description: description.trim(), type, minValue, maxValue });
       onCreated(definition); close();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not create this stat.'); }
+    } catch (cause) { setError(reportError('Could not create stat', cause)); }
     finally { setSaving(false); }
   }
 

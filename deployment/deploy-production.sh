@@ -146,6 +146,39 @@ wait_for_keycloak() {
   return 1
 }
 
+configure_mobile_sign_in() {
+  local realm=${KEYCLOAK_REALM:-productivity-app}
+  local admin_realm=${KEYCLOAK_ADMIN_REALM:-master}
+  local client_name=${KEYCLOAK_CLIENT_ID:-productivity-app-frontend}
+  local client_id
+
+  echo "Applying the mobile sign-in configuration..."
+  for attempt in {1..10}; do
+    if "${compose[@]}" exec -T keycloak /opt/keycloak/bin/kcadm.sh config credentials \
+      --server http://localhost:8080 \
+      --realm "${admin_realm}" \
+      --user "${KEYCLOAK_ADMIN_USER}" \
+      --password "${KEYCLOAK_ADMIN_PASSWORD}" >/dev/null 2>&1 \
+      && client_id=$("${compose[@]}" exec -T keycloak /opt/keycloak/bin/kcadm.sh get clients \
+        -r "${realm}" \
+        -q "clientId=${client_name}" \
+        --fields id \
+        --format csv \
+        --noquotes 2>/dev/null | tr -d '\r' | tail -n 1) \
+      && [[ -n "${client_id}" ]]; then
+      "${compose[@]}" exec -T keycloak /opt/keycloak/bin/kcadm.sh update "clients/${client_id}" \
+        -r "${realm}" \
+        -s directAccessGrantsEnabled=true >/dev/null
+      return 0
+    fi
+
+    sleep 2
+  done
+
+  echo "The mobile sign-in client ${client_name} was not found; configure it before using mobile sign-in." >&2
+  return 0
+}
+
 wait_for_backend() {
   local deadline=$((SECONDS + 180))
   local container_id health
@@ -213,6 +246,7 @@ rollout() {
   echo "Starting the pinned Keycloak service..."
   "${compose[@]}" up -d --no-build keycloak || return 1
   wait_for_keycloak || return 1
+  configure_mobile_sign_in || return 1
 
   echo "Starting backend ${IMAGE_TAG}..."
   "${compose[@]}" up -d --no-build backend || return 1

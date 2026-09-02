@@ -14,6 +14,12 @@ import {
 } from 'react';
 
 import { appConfig, keycloakIssuer } from '@/lib/config';
+import {
+  CONNECTION_ERROR_MESSAGE,
+  GENERIC_ERROR_MESSAGE,
+  reportError,
+  signInResponseMessage,
+} from '@/lib/errors';
 import { registerTokenResolver } from '@/services/auth-session';
 import type { UserInfo } from '@/types/models';
 
@@ -35,7 +41,7 @@ interface AuthContextValue {
   isAuthenticated: boolean;
   user: UserInfo | null;
   error: string | null;
-  login: () => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -58,16 +64,6 @@ function userFromToken(token: AuthSession.TokenResponse): UserInfo | null {
 
 export function AuthProvider({ children }: PropsWithChildren) {
   const discovery = AuthSession.useAutoDiscovery(keycloakIssuer);
-  const [request, response, promptAsync] = AuthSession.useAuthRequest(
-    {
-      clientId: appConfig.keycloakClientId,
-      redirectUri,
-      responseType: AuthSession.ResponseType.Code,
-      scopes: ['openid', 'profile', 'email', 'offline_access'],
-      usePKCE: true,
-    },
-    discovery,
-  );
   const tokenRef = useRef<AuthSession.TokenResponse | null>(null);
   const refreshPromiseRef = useRef<Promise<AuthSession.TokenResponse> | null>(null);
   const [user, setUser] = useState<UserInfo | null>(null);
@@ -139,39 +135,61 @@ export function AuthProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     if (discovery) return;
     const timer = setTimeout(() => {
-      setError(`Could not reach Keycloak at ${keycloakIssuer}. Check the mobile environment settings.`);
+      setError(GENERIC_ERROR_MESSAGE);
       setLoading(false);
     }, 8_000);
     return () => clearTimeout(timer);
   }, [discovery]);
 
-  useEffect(() => {
-    if (response?.type !== 'success' || !discovery || !request?.codeVerifier) return;
-    void AuthSession.exchangeCodeAsync(
-      {
-        clientId: appConfig.keycloakClientId,
-        code: response.params.code,
-        redirectUri,
-        extraParams: { code_verifier: request.codeVerifier },
-      },
-      discovery,
-    )
-      .then(commitToken)
-      .catch((cause: unknown) => {
-        setError(cause instanceof Error ? cause.message : 'Sign in failed.');
-      })
-      .finally(() => setLoading(false));
-  }, [commitToken, discovery, request?.codeVerifier, response]);
-
-  const login = useCallback(async () => {
-    if (!request) {
-      setError(`Keycloak is not ready at ${keycloakIssuer}.`);
+  const login = useCallback(async (email: string, password: string) => {
+    if (!discovery?.tokenEndpoint) {
+      setError(GENERIC_ERROR_MESSAGE);
+      return;
+    }
+    if (!email.trim() || !password) {
+      setError('Enter your email and password.');
       return;
     }
     setError(null);
-    const result = await promptAsync();
-    if (result.type === 'error') setError(result.error?.message ?? 'Sign in failed.');
-  }, [promptAsync, request]);
+    try {
+      const response = await fetch(discovery.tokenEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'password',
+          client_id: appConfig.keycloakClientId,
+          username: email.trim(),
+          password,
+          scope: 'openid profile email offline_access',
+        }).toString(),
+      });
+      const payload = await response.json() as {
+        access_token?: string;
+        refresh_token?: string;
+        id_token?: string;
+        token_type?: string;
+        expires_in?: number;
+        scope?: string;
+        error?: string;
+        error_description?: string;
+      };
+      if (!response.ok || !payload.access_token) {
+        setError(signInResponseMessage(payload.error, payload.error_description));
+        return;
+      }
+      await commitToken(new AuthSession.TokenResponse({
+        accessToken: payload.access_token,
+        refreshToken: payload.refresh_token,
+        idToken: payload.id_token,
+        tokenType: payload.token_type as AuthSession.TokenResponse['tokenType'],
+        expiresIn: payload.expires_in,
+        scope: payload.scope,
+      }, payload));
+    } catch (cause) {
+      const fallbackMessage = reportError('Native sign in failed', cause);
+      setError(cause instanceof TypeError ? CONNECTION_ERROR_MESSAGE : fallbackMessage);
+    }
+  }, [commitToken, discovery]);
 
   const logout = useCallback(async () => {
     const idToken = tokenRef.current?.idToken;

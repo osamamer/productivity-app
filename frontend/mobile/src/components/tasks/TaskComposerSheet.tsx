@@ -6,6 +6,7 @@ import { AppText } from '@/components/ui/AppText';
 import { ChoiceChips } from '@/components/ui/ChoiceChips';
 import { ModalSheet } from '@/components/ui/ModalSheet';
 import { localDateTime } from '@/lib/date';
+import { reportError } from '@/lib/errors';
 import { api } from '@/services/api';
 import type { Task } from '@/types/models';
 
@@ -62,7 +63,7 @@ export function TaskComposerSheet({ visible, onClose, onCreated }: {
       onCreated(task);
       close();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not create the task.');
+      setError(reportError('Could not create task', cause));
     } finally {
       setSaving(false);
     }

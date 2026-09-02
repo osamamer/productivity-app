@@ -33,6 +33,8 @@ public class StatController {
                 request.type,
                 request.minValue,
                 request.maxValue,
+                request.morality,
+                request.goodThreshold,
                 currentUserService.getCurrentUserId()
         );
     }
@@ -45,6 +47,19 @@ public class StatController {
     @DeleteMapping("/definitions/{id}")
     public void deleteDefinition(@PathVariable String id) {
         statService.deleteDefinition(id, currentUserService.getCurrentUserId());
+    }
+
+    @PutMapping("/definitions/{id}")
+    public StatDefinition updateDefinition(@PathVariable String id,
+                                           @RequestBody UpdateDefinitionRequest request) {
+        return statService.updateDefinition(
+                id,
+                request.name,
+                request.description,
+                request.morality,
+                request.goodThreshold,
+                currentUserService.getCurrentUserId()
+        );
     }
 
     @PutMapping("/definitions/order")
@@ -110,6 +125,16 @@ public class StatController {
         StatType type;
         Double minValue;
         Double maxValue;
+        StatMorality morality;
+        Double goodThreshold;
+    }
+
+    @Data
+    public static class UpdateDefinitionRequest {
+        String name;
+        String description;
+        StatMorality morality;
+        Double goodThreshold;
     }
 
     @Data

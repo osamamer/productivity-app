@@ -52,10 +52,33 @@ jobs:
       - name: Build
         run: npm run build -- --mode=production
 
+  verify_mobile:
+    name: Verify Mobile
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend/mobile
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: frontend/mobile/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Export Android bundle
+        run: npm run export:android
+
   build_images:
     name: Build and publish production images
     if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    needs: [verify_backend, verify_frontend]
+    needs: [verify_backend, verify_frontend, verify_mobile]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -112,6 +135,101 @@ jobs:
             ${{ steps.images.outputs.prefix }}-edge:latest
           cache-from: type=gha,scope=edge
           cache-to: type=gha,mode=max,scope=edge
+
+  build_mobile:
+    name: Build Android mobile app
+    if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    needs: deploy_production
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Validate Expo token
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          test -n "$EXPO_TOKEN" || {
+            echo "EXPO_TOKEN repository secret is required for EAS mobile builds." >&2
+            exit 1
+          }
+      - uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: frontend/mobile/package-lock.json
+      - name: Set up Expo and EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          packager: npm
+          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Install dependencies
+        working-directory: frontend/mobile
+        run: npm ci
+      - name: Queue Android preview build
+        working-directory: frontend/mobile
+        run: eas build --platform android --profile preview --non-interactive --no-wait
+
+  publish_mobile_update:
+    name: Publish Android OTA update
+    if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    needs: [deploy_production, build_mobile]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: frontend/mobile/package-lock.json
+      - name: Set up Expo and EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          packager: npm
+          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Install dependencies
+        working-directory: frontend/mobile
+        run: npm ci
+      - name: Check OTA compatibility
+        id: ota_compatibility
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          base_sha="$BEFORE_SHA"
+          if [[ -z "$base_sha" || "$base_sha" =~ ^0+$ ]]; then
+            base_sha=$(git rev-parse HEAD^)
+          fi
+
+          native_changes=$(git diff --name-only "$base_sha" "$GITHUB_SHA" -- \
+            frontend/mobile/app.json \
+            frontend/mobile/eas.json \
+            frontend/mobile/package.json \
+            frontend/mobile/package-lock.json)
+          if [[ -n "$native_changes" ]]; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping OTA publication because native/config files changed:"
+            echo "$native_changes"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Publish preview OTA update
+        if: steps.ota_compatibility.outputs.publish == 'true'
+        working-directory: frontend/mobile
+        env:
+          EXPO_PUBLIC_APP_ENV: preview
+          EXPO_PUBLIC_API_URL: https://claritard.com
+          EXPO_PUBLIC_KEYCLOAK_URL: https://auth.claritard.com
+          EXPO_PUBLIC_KEYCLOAK_REALM: productivity-app
+          EXPO_PUBLIC_KEYCLOAK_CLIENT_ID: productivity-app-frontend
+        run: eas update --channel preview --message "GitHub ${GITHUB_SHA}" --non-interactive
 
   deploy_production:
     name: Deploy production

@@ -2,7 +2,7 @@ import {
     Alert, Box, Button, FormControlLabel, MenuItem, Stack, Switch, TextField, Typography,
 } from '@mui/material';
 import { useMemo, useState } from 'react';
-import { CalendarEvent, CalendarEventInput, RecurrenceFrequency } from '../../types/CalendarEvent';
+import { CalendarEvent, CalendarEventInput, RecurrenceFrequency, RecurrenceUnit } from '../../types/CalendarEvent';
 import { requestSystemNotificationPermission } from '../../services/systemNotifications';
 
 type Props = {
@@ -27,6 +27,13 @@ const RECURRENCE_OPTIONS: { value: RecurrenceFrequency; label: string }[] = [
     { value: 'DAILY', label: 'Daily' },
     { value: 'WEEKLY', label: 'Weekly' },
     { value: 'MONTHLY', label: 'Monthly' },
+    { value: 'CUSTOM', label: 'Custom…' },
+];
+
+const RECURRENCE_UNIT_OPTIONS: { value: RecurrenceUnit; label: string }[] = [
+    { value: 'DAYS', label: 'days' },
+    { value: 'WEEKS', label: 'weeks' },
+    { value: 'MONTHS', label: 'months' },
 ];
 
 function localDatePart(value: string | null | undefined, fallback: string): string {
@@ -69,6 +76,8 @@ export function CalendarEventForm({ initialDate, event, onSave, onCancel, onDele
     const [recurrenceFrequency, setRecurrenceFrequency] = useState<RecurrenceFrequency>(
         event?.recurrenceFrequency ?? 'NONE'
     );
+    const [recurrenceInterval, setRecurrenceInterval] = useState(event?.recurrenceInterval ?? 1);
+    const [recurrenceUnit, setRecurrenceUnit] = useState<RecurrenceUnit>(event?.recurrenceUnit ?? 'WEEKS');
     const [recurrenceEndDate, setRecurrenceEndDate] = useState(event?.recurrenceEndDate ?? '');
     const [reminderEnabled, setReminderEnabled] = useState(event ? event.reminderMinutesBefore !== null : true);
     const [reminderMinutes, setReminderMinutes] = useState(event?.reminderMinutesBefore ?? 1440);
@@ -90,9 +99,28 @@ export function CalendarEventForm({ initialDate, event, onSave, onCancel, onDele
         if (adjustedEnd.crossesMidnight) setEndDate(addDay(startDate));
     };
 
+    const handleStartDateChange = (nextStartDate: string) => {
+        setStartDate(nextStartDate);
+        if (!nextStartDate) return;
+
+        if (allDay) {
+            setEndDate(nextStartDate);
+            return;
+        }
+
+        const adjustedEnd = addHour(startTime);
+        setEndTime(adjustedEnd.time);
+        setEndDate(adjustedEnd.crossesMidnight ? addDay(nextStartDate) : nextStartDate);
+    };
+
     const submit = async () => {
         if (!title.trim()) {
             setError('Add a title for the event.');
+            return;
+        }
+        if (recurrenceFrequency === 'CUSTOM'
+            && (!Number.isInteger(recurrenceInterval) || recurrenceInterval < 1 || recurrenceInterval > 999)) {
+            setError('Custom repeat must be between 1 and 999.');
             return;
         }
 
@@ -127,6 +155,8 @@ export function CalendarEventForm({ initialDate, event, onSave, onCancel, onDele
                 timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
                 recurrenceFrequency,
                 recurrenceEndDate: recurrenceFrequency === 'NONE' || !recurrenceEndDate ? null : recurrenceEndDate,
+                recurrenceInterval: recurrenceFrequency === 'CUSTOM' ? recurrenceInterval : null,
+                recurrenceUnit: recurrenceFrequency === 'CUSTOM' ? recurrenceUnit : null,
                 reminderMinutesBefore: reminderEnabled ? reminderMinutes : null,
             });
         } catch (e) {
@@ -161,7 +191,7 @@ export function CalendarEventForm({ initialDate, event, onSave, onCancel, onDele
 
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
                 <TextField label="Start date" type="date" value={startDate}
-                           onChange={e => setStartDate(e.target.value)} slotProps={{ inputLabel: { shrink: true } }} fullWidth />
+                           onChange={e => handleStartDateChange(e.target.value)} slotProps={{ inputLabel: { shrink: true } }} fullWidth />
                 {!allDay && <TextField label="Start time" type="time" value={startTime}
                                        onChange={e => handleStartTimeChange(e.target.value)} slotProps={{ inputLabel: { shrink: true } }} fullWidth />}
             </Stack>
@@ -183,6 +213,19 @@ export function CalendarEventForm({ initialDate, event, onSave, onCancel, onDele
                         <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
                     ))}
                 </TextField>
+                {recurrenceFrequency === 'CUSTOM' && (
+                    <>
+                        <TextField label="Every" type="number" value={recurrenceInterval}
+                                   onChange={e => setRecurrenceInterval(Number(e.target.value))}
+                                   inputProps={{ min: 1, max: 999, step: 1 }} fullWidth />
+                        <TextField select label="Unit" value={recurrenceUnit}
+                                   onChange={e => setRecurrenceUnit(e.target.value as RecurrenceUnit)} fullWidth>
+                            {RECURRENCE_UNIT_OPTIONS.map(option => (
+                                <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                            ))}
+                        </TextField>
+                    </>
+                )}
                 {recurrenceFrequency !== 'NONE' && (
                     <TextField label="Repeat until (optional)" type="date" value={recurrenceEndDate}
                                onChange={e => setRecurrenceEndDate(e.target.value)}

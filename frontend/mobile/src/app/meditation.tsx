@@ -10,6 +10,7 @@ import { Screen } from '@/components/ui/Screen';
 import { ErrorView, LoadingView } from '@/components/ui/StateView';
 import { useAsyncData } from '@/hooks/useAsyncData';
 import { clock, secondsFromDuration } from '@/lib/date';
+import { reportError } from '@/lib/errors';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
 import type { MeditationSession } from '@/types/models';
@@ -44,7 +45,7 @@ export default function MeditationScreen() {
   async function start() {
     setSaving(true); setError(null);
     try { resource.setData(await api.meditation.start(moodBefore, duration * 60)); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not start the session.'); }
+    catch (cause) { setError(reportError('Could not start meditation', cause)); }
     finally { setSaving(false); }
   }
 
@@ -52,7 +53,7 @@ export default function MeditationScreen() {
     if (!session) return;
     setSaving(true); setError(null);
     try { resource.setData(session.running ? await api.meditation.pause(session.id) : await api.meditation.resume(session.id)); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not update the session.'); }
+    catch (cause) { setError(reportError('Could not update meditation', cause)); }
     finally { setSaving(false); }
   }
 
@@ -60,7 +61,7 @@ export default function MeditationScreen() {
     if (!session) return;
     setSaving(true); setError(null);
     try { await api.meditation.end(session.id, moodAfter); resource.setData(null); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not finish the session.'); }
+    catch (cause) { setError(reportError('Could not finish meditation', cause)); }
     finally { setSaving(false); }
   }
 

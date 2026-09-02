@@ -1,12 +1,13 @@
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider as NavigationThemeProvider } from 'expo-router';
-import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo } from 'react';
 
+import { AppErrorBoundary } from '@/components/ui/AppErrorBoundary';
 import { AuthProvider, useAuth } from '@/providers/AuthProvider';
 import { NotificationProvider } from '@/providers/NotificationProvider';
 import { AppThemeProvider, useAppTheme } from '@/providers/ThemeProvider';
+import { APP_FONT_FAMILY } from '@/components/ui/AppText';
 
 void SplashScreen.preventAutoHideAsync();
 
@@ -41,7 +42,7 @@ function Navigation() {
           headerBackButtonDisplayMode: 'minimal',
           headerStyle: { backgroundColor: colors.background },
           headerTintColor: colors.text,
-          headerTitleStyle: { fontFamily: 'Raleway' },
+          headerTitleStyle: { fontFamily: APP_FONT_FAMILY, fontWeight: '600' },
           contentStyle: { backgroundColor: colors.background },
         }}>
         <Stack.Screen name="index" options={{ headerShown: false }} />
@@ -64,16 +65,15 @@ function Navigation() {
 }
 
 export default function RootLayout() {
-  const [fontsLoaded] = useFonts({ Raleway: require('../../assets/Raleway-VariableFont_wght.ttf') });
-  if (!fontsLoaded) return null;
-
   return (
     <AppThemeProvider>
-      <AuthProvider>
-        <NotificationProvider>
-          <Navigation />
-        </NotificationProvider>
-      </AuthProvider>
+      <AppErrorBoundary>
+        <AuthProvider>
+          <NotificationProvider>
+            <Navigation />
+          </NotificationProvider>
+        </AuthProvider>
+      </AppErrorBoundary>
     </AppThemeProvider>
   );
 }

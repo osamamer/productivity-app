@@ -14,7 +14,10 @@ export function ModalSheet({ visible, onClose, title, children, footer }: PropsW
   const { colors } = useAppTheme();
   return (
     <Modal transparent animationType="slide" visible={visible} onRequestClose={onClose}>
-      <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView
+        style={styles.fill}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}>
         <Pressable style={[styles.backdrop, { backgroundColor: colors.overlay }]} onPress={onClose} />
         <SafeAreaView edges={['bottom']} style={[styles.sheet, { backgroundColor: colors.surface }]}>
           <View style={[styles.handle, { backgroundColor: colors.border }]} />
@@ -22,7 +25,13 @@ export function ModalSheet({ visible, onClose, title, children, footer }: PropsW
             <AppText variant="heading">{title}</AppText>
             <Pressable onPress={onClose} hitSlop={12}><AppText color="accent">Close</AppText></Pressable>
           </View>
-          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.body}>{children}</ScrollView>
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+            automaticallyAdjustKeyboardInsets
+            contentContainerStyle={styles.body}>
+            {children}
+          </ScrollView>
           {footer && <View style={[styles.footer, { borderColor: colors.border }]}>{footer}</View>}
         </SafeAreaView>
       </KeyboardAvoidingView>
@@ -33,7 +42,7 @@ export function ModalSheet({ visible, onClose, title, children, footer }: PropsW
 const styles = StyleSheet.create({
   fill: { flex: 1, justifyContent: 'flex-end' },
   backdrop: { ...StyleSheet.absoluteFill },
-  sheet: { maxHeight: '90%', borderTopLeftRadius: 28, borderTopRightRadius: 28 },
+  sheet: { maxHeight: '92%', flexShrink: 1, borderTopLeftRadius: 28, borderTopRightRadius: 28 },
   handle: { width: 44, height: 5, borderRadius: 3, alignSelf: 'center', marginTop: 10 },
   heading: { paddingHorizontal: 20, paddingVertical: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   body: { paddingHorizontal: 20, paddingBottom: 24, gap: 16 },

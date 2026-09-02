@@ -140,6 +140,17 @@ class TaskGroupServiceTest {
     }
 
     @Test
+    void updateTask_allowsScheduledDateToBeCleared() {
+        Task task = createTask(TEST_USER_ID, "Task with a date");
+        UpdateTaskRequest request = new UpdateTaskRequest();
+        request.setScheduledPerformDateTime("");
+
+        Task updatedTask = taskService.updateTask(task.getTaskId(), request, TEST_USER_ID).orElseThrow();
+
+        assertNull(updatedTask.getScheduledPerformDateTime());
+    }
+
+    @Test
     void deletingATaskAlsoRemovesItsSubtasks() {
         Task parent = createTask(TEST_USER_ID, "Parent");
         NewTaskRequest subtaskRequest = new NewTaskRequest();

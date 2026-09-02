@@ -151,7 +151,8 @@ export interface Note {
   updatedAt: string;
 }
 
-export type RecurrenceFrequency = 'NONE' | 'DAILY' | 'WEEKLY' | 'MONTHLY';
+export type RecurrenceFrequency = 'NONE' | 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'CUSTOM';
+export type RecurrenceUnit = 'DAYS' | 'WEEKS' | 'MONTHS';
 
 export interface CalendarEvent {
   id: string;
@@ -165,6 +166,8 @@ export interface CalendarEvent {
   timeZone: string;
   recurrenceFrequency: RecurrenceFrequency;
   recurrenceEndDate: string | null;
+  recurrenceInterval: number | null;
+  recurrenceUnit: RecurrenceUnit | null;
   reminderMinutesBefore: number | null;
   createdAt: string;
   updatedAt: string;
@@ -201,4 +204,27 @@ export interface ApplicationNotification {
 export interface UserPreferences {
   includeUnloggedNumericDaysAsZero: boolean;
   autoStartPomodoroSessions: boolean;
+}
+
+export type PomodoroPhase = 'FOCUS' | 'BREAK' | 'WAITING_FOR_BREAK' | 'WAITING_FOR_FOCUS';
+
+export interface PomodoroStatus {
+  pomodoroId: string;
+  associatedTaskId: string;
+  active: boolean;
+  sessionActive: boolean;
+  sessionRunning: boolean;
+  secondsPassedInSession: number;
+  secondsUntilNextTransition: number;
+  currentFocusNumber: number;
+  numFocuses: number;
+  phase?: PomodoroPhase;
+}
+
+export interface PomodoroConfig {
+  secondsMode: boolean;
+  durationUnit: 'minutes' | 'seconds';
+  defaultFocusDuration: number;
+  defaultShortBreakDuration: number;
+  defaultLongBreakDuration: number;
 }

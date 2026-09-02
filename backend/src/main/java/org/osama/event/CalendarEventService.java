@@ -121,10 +121,22 @@ public class CalendarEventService {
                 && request.getRecurrenceEndDate().isBefore(recurrenceStartDate)) {
             throw new IllegalArgumentException("A recurring event must end on or after its start date.");
         }
+        if (recurrenceFrequency == RecurrenceFrequency.CUSTOM
+                && (request.getRecurrenceInterval() == null || request.getRecurrenceInterval() < 1
+                || request.getRecurrenceInterval() > 999
+                || request.getRecurrenceUnit() == null)) {
+            throw new IllegalArgumentException("A custom recurrence needs an interval between 1 and 999 and a unit.");
+        }
         event.setRecurrenceFrequency(recurrenceFrequency);
         event.setRecurrenceEndDate(recurrenceFrequency == RecurrenceFrequency.NONE
                 ? null
                 : request.getRecurrenceEndDate());
+        event.setRecurrenceInterval(recurrenceFrequency == RecurrenceFrequency.CUSTOM
+                ? request.getRecurrenceInterval()
+                : null);
+        event.setRecurrenceUnit(recurrenceFrequency == RecurrenceFrequency.CUSTOM
+                ? request.getRecurrenceUnit()
+                : null);
     }
 
     private Integer requestedReminderMinutes(CalendarEventRequest request) {
@@ -174,7 +186,7 @@ public class CalendarEventService {
         return new CalendarEventResponse(event.getId(), event.getTitle(), event.getDescription(),
                 event.isAllDay(), event.getStartDate(), event.getEndDate(), event.getStartTime(),
                 event.getEndTime(), event.getTimeZone(), event.getRecurrenceFrequency(),
-                event.getRecurrenceEndDate(), reminderMinutes,
+                event.getRecurrenceEndDate(), event.getRecurrenceInterval(), event.getRecurrenceUnit(), reminderMinutes,
                 event.getCreatedAt(), event.getUpdatedAt());
     }
 }

@@ -76,7 +76,7 @@ Keycloak (port 7070) is the identity provider. The backend validates JWTs as an 
 3. The backend validates the JWT against the Keycloak JWKS (`SecurityConfig.java`).
 4. `CurrentUserService.getCurrentUser()` extracts the `Jwt` from the `SecurityContext` and calls `UserService.getOrCreateFromJwt()`, which finds or auto-creates a `User` entity keyed on the Keycloak `sub` claim. Controllers inject `CurrentUserService` instead of reading a header.
 
-`keycloak.ts` (`frontend/react/src/services/keycloak.ts`) configures the Keycloak instance. The realm/client can be overridden via env vars `VITE_KEYCLOAK_URL`, `VITE_KEYCLOAK_REALM`, `VITE_KEYCLOAK_CLIENT_ID` (defaults: `http://localhost:7070`, `productivity-app`, `productivity-app-frontend`).
+`keycloak.ts` (`frontend/react/src/services/keycloak.ts`) configures the Keycloak instance. The realm/client can be overridden via env vars `VITE_KEYCLOAK_URL`, `VITE_KEYCLOAK_REALM`, `VITE_KEYCLOAK_CLIENT_ID` (defaults: `http://localhost:7070`, `productivity-app`, `productivity-app-frontend`). The launcher uses dedicated process groups for Maven/Vite and targeted port-owner cleanup; it never kills listeners owned by another account or unidentified root/system processes.
 
 **Required Keycloak setup (one-time, via admin console at http://localhost:7070):**
 1. Create realm `productivity-app`.
@@ -155,6 +155,8 @@ Docker services are defined in `deployment/docker-compose.yml`. Environment vari
 **Always log caught exceptions with the exception object.** Use `logger.error("context: {}", e.getMessage(), e)` (Java) or equivalent so the full stack trace appears in the log. Never swallow exceptions silently or log only a generic message.
 
 **Backend event logging.** Log successful user-visible state changes at `INFO` with the user and resource identifiers plus relevant structured values. Keep read-only queries quiet, use `WARN` for rejected input or missing resources, and never log passwords, access tokens, or free-form private text unless the feature explicitly requires it (stat values are intentional audit data).
+
+**User-facing errors.** Translate authentication and API failures into concise, user-oriented messages at the UI boundary. Never display provider names (including Keycloak), OAuth/OIDC grant or protocol terminology, endpoint URLs, hostnames, raw exception text, or raw response descriptions to users. Keep implementation details in developer-facing logs and diagnostics only.
 
 **Prefer direct manipulation over obvious instructional UI.** Do not add permanent helper text, drag handles, or mode-launch buttons for interactions users can perform directly on the content. Make the content itself draggable/selectable, provide immediate visual feedback, and reveal contextual actions only after they become relevant. Keep grouped items inline with the list they organize, and let focus modes fully remove distractions until the user explicitly reveals them.
 

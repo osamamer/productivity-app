@@ -52,6 +52,9 @@ type TaskFeedback = { id: number; severity: 'success' | 'error'; message: string
 type TaskListItem =
     | { kind: 'task'; task: Task }
     | { kind: 'group'; group: TaskGroup; tasks: Task[] };
+type ActiveDrag =
+    | { kind: 'tasks'; taskIds: string[]; primaryTaskId: string }
+    | { kind: 'group'; groupId: string };
 
 const greetingReveal = keyframes`
     from {
@@ -324,6 +327,24 @@ export function HomePage() {
     const focusTransitionTimerRef = useRef<number | null>(null);
     const temporarilyCollapsedGroupIdRef = useRef<string | null>(null);
     const groupTaskSubmissionRef = useRef(false);
+    const activeDragRef = useRef<ActiveDrag | null>(null);
+
+    const getDraggedTaskIds = useCallback(() => {
+        const activeDrag = activeDragRef.current;
+        return activeDrag?.kind === 'tasks' ? activeDrag.taskIds : [];
+    }, []);
+
+    const getDraggedGroupId = useCallback(() => {
+        const activeDrag = activeDragRef.current;
+        return activeDrag?.kind === 'group' ? activeDrag.groupId : null;
+    }, []);
+
+    const getPrimaryDraggedTaskId = useCallback(() => {
+        const activeDrag = activeDragRef.current;
+        return activeDrag?.kind === 'tasks' ? activeDrag.primaryTaskId : null;
+    }, []);
+
+    const hasActiveDrag = useCallback(() => activeDragRef.current !== null, []);
 
     const showTaskFeedback = useCallback((severity: TaskFeedback['severity'], message: string) => {
         taskFeedbackIdRef.current += 1;
@@ -810,6 +831,7 @@ export function HomePage() {
     }, [clearFocusTransitionTimer]);
 
     const finishDragging = useCallback(() => {
+        activeDragRef.current = null;
         const temporarilyCollapsedGroupId = temporarilyCollapsedGroupIdRef.current;
         if (temporarilyCollapsedGroupId) {
             setCollapsedGroupIds(previous => {
@@ -880,9 +902,7 @@ export function HomePage() {
     }, [allTasks, olderTasks, refreshTaskBuckets, updateTaskInState]);
 
     const moveDraggedOlderTasksToToday = useCallback(() => {
-        const draggedIds = draggedTaskIds.length > 0
-            ? draggedTaskIds
-            : draggedTaskId ? [draggedTaskId] : [];
+        const draggedIds = getDraggedTaskIds();
         const olderTaskIdSet = new Set(olderTasks.map(task => task.taskId));
         const draggedOlderTaskIds = draggedIds.filter(taskId => olderTaskIdSet.has(taskId));
         if (draggedOlderTaskIds.length === 0) return false;
@@ -890,7 +910,7 @@ export function HomePage() {
         void moveTasksToToday(draggedOlderTaskIds);
         finishDragging();
         return true;
-    }, [draggedTaskId, draggedTaskIds, finishDragging, moveTasksToToday, olderTasks]);
+    }, [finishDragging, getDraggedTaskIds, moveTasksToToday, olderTasks]);
 
     const applyUpdatedGroup = useCallback((updatedGroup: TaskGroup, movedTaskIds: string[]) => {
         const movedTaskIdSet = new Set(movedTaskIds);
@@ -966,15 +986,14 @@ export function HomePage() {
     const handleDropOnTask = useCallback((targetTask: Task, edge: DropEdge) => {
         if (moveDraggedOlderTasksToToday()) return;
 
-        if (draggedGroupId) {
-            reorderGroupRelativeToTask(draggedGroupId, targetTask.taskId, edge);
+        const activeGroupId = getDraggedGroupId();
+        if (activeGroupId) {
+            reorderGroupRelativeToTask(activeGroupId, targetTask.taskId, edge);
             finishDragging();
             return;
         }
 
-        const draggedIds = draggedTaskIds.length > 0
-            ? draggedTaskIds
-            : draggedTaskId ? [draggedTaskId] : [];
+        const draggedIds = getDraggedTaskIds();
         if (draggedIds.length === 0 || draggedIds.includes(targetTask.taskId)) {
             finishDragging();
             return;
@@ -989,7 +1008,7 @@ export function HomePage() {
         const orderWithoutMovedTasks = orderedTaskIds.filter(taskId => !draggedIdSet.has(taskId));
         const targetIndex = orderWithoutMovedTasks.indexOf(targetTask.taskId);
         orderWithoutMovedTasks.splice(targetIndex + (edge === 'after' ? 1 : 0), 0, ...movedTaskIds);
-        minimizePomodoroTask(draggedTaskId ?? movedTaskIds[0]);
+        minimizePomodoroTask(getPrimaryDraggedTaskId() ?? movedTaskIds[0]);
         persistTaskOrder(orderWithoutMovedTasks);
 
         const sourceGroups = (groups ?? []).filter(group =>
@@ -998,7 +1017,8 @@ export function HomePage() {
         sourceGroups.forEach(sourceGroup => {
             void removeTasksFromGroup(sourceGroup, movedTaskIds);
         });
-    }, [draggedGroupId, draggedTaskId, draggedTaskIds, finishDragging, groups, minimizePomodoroTask, moveDraggedOlderTasksToToday, persistTaskOrder, removeTasksFromGroup, reorderGroupRelativeToTask, visibleTasks]);
+    }, [finishDragging, getDraggedGroupId, getDraggedTaskIds, getPrimaryDraggedTaskId, groups, minimizePomodoroTask,
+        moveDraggedOlderTasksToToday, persistTaskOrder, removeTasksFromGroup, reorderGroupRelativeToTask, visibleTasks]);
 
     const reorderRelativeToGroup = useCallback((taskIds: string[], targetGroup: TaskGroup, edge: DropEdge) => {
         const orderedTaskIds = visibleTasks.map(task => task.taskId);
@@ -1016,9 +1036,8 @@ export function HomePage() {
     }, [persistTaskOrder, visibleTasks]);
 
     const handleDropOnGroup = useCallback((targetGroup: TaskGroup, intent: GroupDropIntent) => {
-        const draggedIds = draggedTaskIds.length > 0
-            ? draggedTaskIds
-            : draggedTaskId ? [draggedTaskId] : [];
+        const draggedIds = getDraggedTaskIds();
+        const activeGroupId = getDraggedGroupId();
         const olderTaskIdSet = new Set(olderTasks.map(task => task.taskId));
         const draggedOlderTaskIds = draggedIds.filter(taskId => olderTaskIdSet.has(taskId));
 
@@ -1044,8 +1063,8 @@ export function HomePage() {
             return;
         }
 
-        if (draggedGroupId) {
-            const draggedGroup = groups?.find(group => group.groupId === draggedGroupId);
+        if (activeGroupId) {
+            const draggedGroup = groups?.find(group => group.groupId === activeGroupId);
             if (draggedGroup && draggedGroup.groupId !== targetGroup.groupId) {
                 const movedTaskIds = visibleTasks
                     .map(task => task.taskId)
@@ -1063,7 +1082,7 @@ export function HomePage() {
                 .filter(taskId => draggedIdSet.has(taskId));
             if (movedTaskIds.length > 0) {
                 reorderRelativeToGroup(movedTaskIds, targetGroup, intent);
-                minimizePomodoroTask(draggedTaskId ?? movedTaskIds[0]);
+                minimizePomodoroTask(getPrimaryDraggedTaskId() ?? movedTaskIds[0]);
                 const sourceGroups = (groups ?? []).filter(group =>
                     group.groupId !== targetGroup.groupId && movedTaskIds.some(taskId => group.taskIds.includes(taskId)),
                 );
@@ -1073,15 +1092,17 @@ export function HomePage() {
             }
         }
         finishDragging();
-    }, [addTasksToGroup, draggedGroupId, draggedTaskId, draggedTaskIds, finishDragging, groups, minimizePomodoroTask, moveTasksToToday, olderTasks, removeTasksFromGroup, reorderRelativeToGroup, visibleTasks]);
+    }, [addTasksToGroup, finishDragging, getDraggedGroupId, getDraggedTaskIds, getPrimaryDraggedTaskId, groups, minimizePomodoroTask,
+        moveTasksToToday, olderTasks, removeTasksFromGroup, reorderRelativeToGroup, visibleTasks]);
 
     const handleDropAtBottom = useCallback(() => {
         if (moveDraggedOlderTasksToToday()) return;
 
         const orderedTaskIds = visibleTasks.map(task => task.taskId);
 
-        if (draggedGroupId) {
-            const group = groups?.find(candidate => candidate.groupId === draggedGroupId);
+        const activeGroupId = getDraggedGroupId();
+        if (activeGroupId) {
+            const group = groups?.find(candidate => candidate.groupId === activeGroupId);
             if (group) {
                 const visibleGroupTaskIds = orderedTaskIds.filter(taskId => group.taskIds.includes(taskId));
                 const groupTaskIdSet = new Set(visibleGroupTaskIds);
@@ -1092,16 +1113,14 @@ export function HomePage() {
             return;
         }
 
-        const draggedIds = draggedTaskIds.length > 0
-            ? draggedTaskIds
-            : draggedTaskId ? [draggedTaskId] : [];
+        const draggedIds = getDraggedTaskIds();
         if (draggedIds.length > 0) {
             const draggedIdSet = new Set(draggedIds);
             const movedTaskIds = orderedTaskIds.filter(taskId => draggedIdSet.has(taskId));
             if (movedTaskIds.length > 0) {
                 const orderWithoutMovedTasks = orderedTaskIds.filter(taskId => !draggedIdSet.has(taskId));
                 const nextOrder = [...orderWithoutMovedTasks, ...movedTaskIds];
-                minimizePomodoroTask(draggedTaskId ?? movedTaskIds[0]);
+                minimizePomodoroTask(getPrimaryDraggedTaskId() ?? movedTaskIds[0]);
                 persistTaskOrder(nextOrder);
                 const sourceGroups = (groups ?? []).filter(group =>
                     movedTaskIds.some(taskId => group.taskIds.includes(taskId)),
@@ -1112,15 +1131,17 @@ export function HomePage() {
             }
         }
         finishDragging();
-    }, [draggedGroupId, draggedTaskId, draggedTaskIds, finishDragging, groups, minimizePomodoroTask, moveDraggedOlderTasksToToday, persistTaskOrder, removeTasksFromGroup, visibleTasks]);
+    }, [finishDragging, getDraggedGroupId, getDraggedTaskIds, getPrimaryDraggedTaskId, groups, minimizePomodoroTask,
+        moveDraggedOlderTasksToToday, persistTaskOrder, removeTasksFromGroup, visibleTasks]);
 
     const handleDropAtTop = useCallback(() => {
         if (moveDraggedOlderTasksToToday()) return;
 
         const orderedTaskIds = visibleTasks.map(task => task.taskId);
 
-        if (draggedGroupId) {
-            const group = groups?.find(candidate => candidate.groupId === draggedGroupId);
+        const activeGroupId = getDraggedGroupId();
+        if (activeGroupId) {
+            const group = groups?.find(candidate => candidate.groupId === activeGroupId);
             if (group) {
                 const visibleGroupTaskIds = orderedTaskIds.filter(taskId => group.taskIds.includes(taskId));
                 const groupTaskIdSet = new Set(visibleGroupTaskIds);
@@ -1133,9 +1154,7 @@ export function HomePage() {
             return;
         }
 
-        const draggedIds = draggedTaskIds.length > 0
-            ? draggedTaskIds
-            : draggedTaskId ? [draggedTaskId] : [];
+        const draggedIds = getDraggedTaskIds();
         if (draggedIds.length > 0) {
             const draggedIdSet = new Set(draggedIds);
             const movedTaskIds = orderedTaskIds.filter(taskId => draggedIdSet.has(taskId));
@@ -1144,7 +1163,7 @@ export function HomePage() {
                     ...movedTaskIds,
                     ...orderedTaskIds.filter(taskId => !draggedIdSet.has(taskId)),
                 ]);
-                minimizePomodoroTask(draggedTaskId ?? movedTaskIds[0]);
+                minimizePomodoroTask(getPrimaryDraggedTaskId() ?? movedTaskIds[0]);
                 const sourceGroups = (groups ?? []).filter(group =>
                     movedTaskIds.some(taskId => group.taskIds.includes(taskId)),
                 );
@@ -1154,10 +1173,11 @@ export function HomePage() {
             }
         }
         finishDragging();
-    }, [draggedGroupId, draggedTaskId, draggedTaskIds, finishDragging, groups, minimizePomodoroTask, moveDraggedOlderTasksToToday, persistTaskOrder, removeTasksFromGroup, visibleTasks]);
+    }, [finishDragging, getDraggedGroupId, getDraggedTaskIds, getPrimaryDraggedTaskId, groups, minimizePomodoroTask,
+        moveDraggedOlderTasksToToday, persistTaskOrder, removeTasksFromGroup, visibleTasks]);
 
     function keepDragTargetInView(event: React.DragEvent<HTMLElement>) {
-        if (draggedTaskIds.length === 0 && !draggedTaskId && !draggedGroupId) return;
+        if (!hasActiveDrag()) return;
 
         const scrollContainer = event.currentTarget.parentElement;
         if (!scrollContainer) return;
@@ -1291,11 +1311,19 @@ export function HomePage() {
             setInitialPomodoroStatus(null);
             setFocusVisibility('all');
         }
-        const visibleTaskIds = visibleTasks.map(task => task.taskId);
-        const selectedVisibleTaskIds = visibleTaskIds.filter(taskId => selectedTaskIds.includes(taskId));
-        const taskIdsToDrag = selectedVisibleTaskIds.includes(draggedTask.taskId)
-            ? selectedVisibleTaskIds
+        const sourceTasks = olderTaskIdSet.has(draggedTask.taskId) ? olderTasks : visibleTasks;
+        const selectedTaskIdSet = new Set(selectedTaskIds);
+        const selectedSourceTaskIds = sourceTasks
+            .map(task => task.taskId)
+            .filter(taskId => selectedTaskIdSet.has(taskId));
+        const taskIdsToDrag = selectedSourceTaskIds.includes(draggedTask.taskId)
+            ? selectedSourceTaskIds
             : [draggedTask.taskId];
+        activeDragRef.current = {
+            kind: 'tasks',
+            taskIds: taskIdsToDrag,
+            primaryTaskId: draggedTask.taskId,
+        };
         setDraggedTaskIds(taskIdsToDrag);
         setDraggedTaskId(draggedTask.taskId);
         setDraggedGroupId(null);
@@ -1304,18 +1332,17 @@ export function HomePage() {
         setDragTargetPosition(null);
         setDragTargetTop(false);
         setDragTargetBottom(false);
-    }, [clearFocusTransitionTimer, selectedTaskIds, visibleTasks]);
+    }, [clearFocusTransitionTimer, olderTaskIdSet, olderTasks, selectedTaskIds, visibleTasks]);
 
     const handleTaskDragOver = useCallback((dragTargetTask: Task, event: React.DragEvent<HTMLElement>) => {
-        const currentDraggedTaskIds = draggedTaskIds.length > 0
-            ? draggedTaskIds
-            : draggedTaskId ? [draggedTaskId] : [];
+        const currentDraggedTaskIds = getDraggedTaskIds();
+        const activeGroupId = getDraggedGroupId();
         const containingGroup = groups?.find(group => group.taskIds.includes(dragTargetTask.taskId));
-        if ((currentDraggedTaskIds.length > 0 && !currentDraggedTaskIds.includes(dragTargetTask.taskId)) || draggedGroupId) {
+        if ((currentDraggedTaskIds.length > 0 && !currentDraggedTaskIds.includes(dragTargetTask.taskId)) || activeGroupId) {
             const addingToExpandedGroup = Boolean(
                 containingGroup
                 && currentDraggedTaskIds.length > 0
-                && !draggedGroupId
+                && !activeGroupId
                 && currentDraggedTaskIds.some(taskId => !containingGroup.taskIds.includes(taskId)),
             );
             if (addingToExpandedGroup) {
@@ -1334,12 +1361,11 @@ export function HomePage() {
             setDragTargetTop(false);
             setDragTargetBottom(false);
         }
-    }, [draggedGroupId, draggedTaskId, draggedTaskIds, groups]);
+    }, [getDraggedGroupId, getDraggedTaskIds, groups]);
 
     const handleTaskDrop = useCallback((droppedTask: Task, event: React.DragEvent<HTMLElement>) => {
-        const currentDraggedTaskIds = draggedTaskIds.length > 0
-            ? draggedTaskIds
-            : draggedTaskId ? [draggedTaskId] : [];
+        const currentDraggedTaskIds = getDraggedTaskIds();
+        const activeGroupId = getDraggedGroupId();
         const containingGroup = groups?.find(group => group.taskIds.includes(droppedTask.taskId));
         const olderTaskIdSet = new Set(olderTasks.map(olderTask => olderTask.taskId));
         const draggedOlderTaskIds = currentDraggedTaskIds.filter(taskId => olderTaskIdSet.has(taskId));
@@ -1350,14 +1376,14 @@ export function HomePage() {
             return;
         }
         if (moveDraggedOlderTasksToToday()) return;
-        if (containingGroup && currentDraggedTaskIds.length > 0 && !draggedGroupId
+        if (containingGroup && currentDraggedTaskIds.length > 0 && !activeGroupId
             && currentDraggedTaskIds.some(taskId => !containingGroup.taskIds.includes(taskId))) {
             void addTasksToGroup(containingGroup, currentDraggedTaskIds);
             finishDragging();
             return;
         }
         handleDropOnTask(droppedTask, taskDropEdge(event));
-    }, [addTasksToGroup, draggedGroupId, draggedTaskId, draggedTaskIds, finishDragging, groups,
+    }, [addTasksToGroup, finishDragging, getDraggedGroupId, getDraggedTaskIds, groups,
         handleDropOnTask, moveDraggedOlderTasksToToday, moveTasksToToday, olderTasks]);
 
     function renderTaskRow(
@@ -1409,6 +1435,7 @@ export function HomePage() {
             const collapsed = collapsedGroupIds.has(item.group.groupId);
             const groupDragging = draggedGroupId === item.group.groupId;
             const groupDragTarget = dragTargetGroupId === item.group.groupId;
+            const groupDraggable = options.draggable ?? reorderable;
             return (
                 <Box
                     key={item.group.groupId}
@@ -1419,10 +1446,22 @@ export function HomePage() {
                 >
                     <Box
                         data-task-group-header="true"
-                        draggable={reorderable}
-                        onDragStart={reorderable ? (event) => {
+                        draggable={groupDraggable}
+                        onMouseDownCapture={event => {
+                            const target = event.target;
+                            const interactive = target instanceof Element
+                                && target.closest(
+                                    'button, input, textarea, select, [role="button"], .MuiButtonBase-root, [contenteditable="true"]',
+                                ) !== null;
+                            event.currentTarget.draggable = groupDraggable && !interactive;
+                        }}
+                        onMouseUpCapture={event => {
+                            event.currentTarget.draggable = groupDraggable;
+                        }}
+                        onDragStart={groupDraggable ? (event) => {
                             event.dataTransfer.effectAllowed = 'move';
                             event.dataTransfer.setData('text/plain', `group:${item.group.groupId}`);
+                            activeDragRef.current = { kind: 'group', groupId: item.group.groupId };
                             if (!collapsed) {
                                 temporarilyCollapsedGroupIdRef.current = item.group.groupId;
                                 setCollapsedGroupIds(previous => new Set(previous).add(item.group.groupId));
@@ -1441,8 +1480,10 @@ export function HomePage() {
                         onDragOver={reorderable ? (event) => {
                             event.preventDefault();
                             event.dataTransfer.dropEffect = 'move';
-                            if (draggedGroupId !== item.group.groupId || draggedTaskIds.length > 0 || draggedTaskId) {
-                                const intent = draggedGroupId ? taskDropEdge(event) : groupDropIntent(event);
+                            const activeGroupId = getDraggedGroupId();
+                            const activeTaskIds = getDraggedTaskIds();
+                            if (activeGroupId !== item.group.groupId || activeTaskIds.length > 0) {
+                                const intent = activeGroupId ? taskDropEdge(event) : groupDropIntent(event);
                                 setDragTargetGroupId(item.group.groupId);
                                 setDragTargetTaskId(null);
                                 setDragTargetPosition(intent);
@@ -1453,10 +1494,13 @@ export function HomePage() {
                         onDrop={reorderable ? (event) => {
                             event.preventDefault();
                             event.stopPropagation();
-                            const intent = draggedGroupId ? taskDropEdge(event) : groupDropIntent(event);
+                            const intent = getDraggedGroupId() ? taskDropEdge(event) : groupDropIntent(event);
                             handleDropOnGroup(item.group, intent);
                         } : undefined}
-                        onDragEnd={reorderable ? finishDragging : undefined}
+                        onDragEnd={groupDraggable ? event => {
+                            event.currentTarget.draggable = groupDraggable;
+                            finishDragging();
+                        } : undefined}
                         sx={{
                             position: 'relative',
                             display: 'flex',
@@ -1742,7 +1786,7 @@ export function HomePage() {
                                     <Box
                                         aria-hidden="true"
                                         onDragOver={(event) => {
-                                            if (draggedTaskIds.length === 0 && !draggedTaskId && !draggedGroupId) return;
+                                            if (!hasActiveDrag()) return;
                                             event.preventDefault();
                                             event.dataTransfer.dropEffect = 'move';
                                             setDragTargetTop(true);
@@ -1776,7 +1820,7 @@ export function HomePage() {
                                         <Box
                                             aria-hidden="true"
                                             onDragOver={(event) => {
-                                                if (draggedTaskIds.length === 0 && !draggedTaskId && !draggedGroupId) return;
+                                                if (!hasActiveDrag()) return;
                                                 event.preventDefault();
                                                 event.dataTransfer.dropEffect = 'move';
                                                 setDragTargetBottom(true);
@@ -1814,7 +1858,7 @@ export function HomePage() {
                             variant="body1"
                             color="text.secondary"
                             onDragOver={(event) => {
-                                if (draggedTaskIds.length === 0 && !draggedTaskId && !draggedGroupId) return;
+                                if (!hasActiveDrag()) return;
                                 event.preventDefault();
                                 event.dataTransfer.dropEffect = 'move';
                                 setDragTargetTop(true);

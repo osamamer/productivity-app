@@ -138,8 +138,14 @@ function formatScheduledDate(dateTime: string): string {
 }
 
 function isEditableDragOrigin(target: EventTarget | null): boolean {
-    return target instanceof Element
-        && target.closest('input, textarea, select, [contenteditable="true"], [data-task-text-area="true"]') !== null;
+    if (!(target instanceof Element)) return false;
+
+    const taskNameInput = target.closest('textarea[data-task-name-input="true"]');
+    if (taskNameInput) return taskNameInput === document.activeElement;
+
+    return target.closest(
+        'input, textarea, select, button, [role="button"], .MuiButtonBase-root, [contenteditable="true"]',
+    ) !== null;
 }
 
 // ─── component ─────────────────────────────────────────────────────────────
@@ -189,6 +195,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     const [localName, setLocalName] = useState(task.name ?? '');
     const [isEditingName, setIsEditingName] = useState(false);
     const nameInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+    const dragAllowedRef = useRef(true);
     useEffect(() => { setLocalName(task.name ?? ''); }, [task.name]);
     const [localDesc, setLocalDesc] = useState(task.description ?? '');
     useEffect(() => { setLocalDesc(task.description ?? ''); }, [task.description]);
@@ -391,10 +398,13 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     };
 
     const handleDateChange = (newDate: Date | null) => {
-        if (!newDate) return;
+        if (!newDate) {
+            void onUpdate(task.taskId, { scheduledPerformDateTime: '' });
+            return;
+        }
         const pad = (n: number) => String(n).padStart(2, '0');
         const iso = `${newDate.getFullYear()}-${pad(newDate.getMonth() + 1)}-${pad(newDate.getDate())}T${pad(newDate.getHours())}:${pad(newDate.getMinutes())}:00`;
-        onUpdate(task.taskId, { scheduledPerformDateTime: iso });
+        void onUpdate(task.taskId, { scheduledPerformDateTime: iso });
     };
 
     const handleDescBlur = () => {
@@ -457,7 +467,6 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     const cbColor = checkboxColor(task.importance);
     const schedDate = task.scheduledPerformDateTime ? new Date(task.scheduledPerformDateTime) : null;
     const scheduledLabel = task.scheduledPerformDateTime ? formatScheduledDate(task.scheduledPerformDateTime) : '';
-
     const handleRowSelection = (event: React.MouseEvent<HTMLElement>) => {
         onSelectionClick?.(task, event);
         onSelect?.(task);
@@ -507,14 +516,14 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
             }}
             onClick={handleRowSelection}
             onMouseDownCapture={(event) => {
-                event.currentTarget.draggable = Boolean(draggable && !isEditableDragOrigin(event.target));
+                dragAllowedRef.current = Boolean(draggable && !isEditableDragOrigin(event.target));
+                event.currentTarget.draggable = dragAllowedRef.current;
             }}
             onMouseUpCapture={(event) => {
                 event.currentTarget.draggable = Boolean(draggable);
             }}
             onDragStart={(event) => {
-                if (!draggable) return;
-                if (isEditableDragOrigin(event.target)) {
+                if (!draggable || !dragAllowedRef.current) {
                     event.preventDefault();
                     return;
                 }
@@ -535,7 +544,11 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                 event.stopPropagation();
                 onDrop?.(task, event);
             }}
-            onDragEnd={onDragEnd}
+            onDragEnd={(event) => {
+                dragAllowedRef.current = true;
+                event.currentTarget.draggable = Boolean(draggable);
+                onDragEnd?.();
+            }}
         >
             {/* ── Main row ── */}
             <Box sx={{ display: 'flex', alignItems: 'center', py: 0.75, px: 0.5 }}>
@@ -558,17 +571,22 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                         sx={{
                             width: '100%',
                             fontSize: '1.05rem',
-                            lineHeight: 1.6,
+                            lineHeight: 1.5,
+                            maxHeight: '6.3em',
+                            overflowY: 'auto',
+                            overflowX: 'hidden',
+                            scrollbarGutter: 'stable',
                             overflowWrap: 'anywhere',
                             wordBreak: 'break-word',
                             hyphens: 'auto',
+                            whiteSpace: 'pre-wrap',
                             textAlign: 'left',
                             color: task.completed ? 'text.disabled' : 'text.primary',
                             textDecoration: task.completed ? 'line-through' : 'none',
                             visibility: isEditingName ? 'hidden' : 'visible',
                         }}
                     >
-                        {task.name}
+                        {isEditingName ? localName : task.name}
                     </Typography>
                     {isEditingName && (
                         <TextField
@@ -578,7 +596,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             onChange={(e) => setLocalName(e.target.value)}
                             onBlur={handleNameCommit}
                             onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
+                                if (e.key === 'Enter' && !e.shiftKey) {
                                     e.preventDefault();
                                     handleNameCommit();
                                 }
@@ -591,7 +609,13 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             autoFocus
                             fullWidth
                             multiline
-                            inputProps={{ draggable: false }}
+                            minRows={1}
+                            maxRows={4}
+                            InputProps={{ disableUnderline: true }}
+                            inputProps={{
+                                draggable: false,
+                                'data-task-name-input': 'true',
+                            }}
                             sx={{
                                 position: 'absolute',
                                 inset: 0,
@@ -604,8 +628,11 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                     color: task.completed ? 'text.disabled' : 'text.primary',
                                     textDecoration: task.completed ? 'line-through' : 'none',
                                     fontSize: '1.05rem',
-                                    lineHeight: 1.6,
+                                    lineHeight: 1.5,
                                     whiteSpace: 'pre-wrap',
+                                    maxHeight: '100%',
+                                    overflowY: 'auto',
+                                    overflowX: 'hidden',
                                     overflowWrap: 'anywhere',
                                     wordBreak: 'break-word',
                                     hyphens: 'auto',
@@ -831,6 +858,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             onChange={handleDateChange}
                             ampm={false}
                             slotProps={{
+                                field: { clearable: true },
                                 textField: { size: 'small', fullWidth: true },
                             }}
                         />

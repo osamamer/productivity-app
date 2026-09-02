@@ -118,6 +118,85 @@ public class StatServiceTest {
         statService.recordEntry(statDefinition.getId(), LocalDate.now().plusDays(1), 999999.99, TEST_USER_ID);
     }
 
+    @Test
+    void definitionDefaultsToNeutralWithoutThreshold() {
+        StatDefinition statDefinition = createStatDefinition(StatType.NUMBER, null, null);
+
+        assertNull(statDefinition.getMorality());
+        assertNull(statDefinition.getGoodThreshold());
+    }
+
+    @Test
+    void goodBooleanDefinitionStoresMoralityWithoutThreshold() {
+        StatDefinition statDefinition = statService.createDefinition(
+                "Good habit", null, StatType.BOOLEAN, null, null,
+                StatMorality.GOOD, null, TEST_USER_ID);
+
+        assertEquals(StatMorality.GOOD, statDefinition.getMorality());
+        assertNull(statDefinition.getGoodThreshold());
+    }
+
+    @Test
+    void badBooleanDefinitionRejectsThreshold() {
+        assertThrows(IllegalArgumentException.class, () -> statService.createDefinition(
+                "Bad habit", null, StatType.BOOLEAN, null, null,
+                StatMorality.BAD, 1.0, TEST_USER_ID));
+    }
+
+    @Test
+    void nonNeutralNumericDefinitionRequiresThreshold() {
+        assertThrows(IllegalArgumentException.class, () -> statService.createDefinition(
+                "Exercise", null, StatType.NUMBER, null, null,
+                StatMorality.GOOD, null, TEST_USER_ID));
+    }
+
+    @Test
+    void rangeDefinitionRequiresThresholdInsideRange() {
+        assertThrows(IllegalArgumentException.class, () -> statService.createDefinition(
+                "Pain", null, StatType.RANGE, 1.0, 10.0,
+                StatMorality.BAD, 11.0, TEST_USER_ID));
+
+        StatDefinition statDefinition = statService.createDefinition(
+                "Pain", null, StatType.RANGE, 1.0, 10.0,
+                StatMorality.BAD, 4.0, TEST_USER_ID);
+        assertEquals(StatMorality.BAD, statDefinition.getMorality());
+        assertEquals(4.0, statDefinition.getGoodThreshold());
+    }
+
+    @Test
+    void definitionCanUpdateMoralityAndThreshold() {
+        StatDefinition statDefinition = createNamedStatDefinition("Quiet time", StatType.NUMBER);
+
+        StatDefinition updated = statService.updateDefinition(
+                statDefinition.getId(), "Quiet time", "Less noise is better",
+                StatMorality.BAD, 30.0, TEST_USER_ID);
+
+        assertEquals(StatMorality.BAD, updated.getMorality());
+        assertEquals(30.0, updated.getGoodThreshold());
+        assertEquals("Less noise is better", updated.getDescription());
+    }
+
+    @Test
+    void definitionUpdateAllowsKeepingItsOwnName() {
+        StatDefinition statDefinition = createNamedStatDefinition("Keep this name", StatType.BOOLEAN);
+
+        StatDefinition updated = statService.updateDefinition(
+                statDefinition.getId(), "Keep this name", null,
+                StatMorality.GOOD, null, TEST_USER_ID);
+
+        assertEquals(StatMorality.GOOD, updated.getMorality());
+    }
+
+    @Test
+    void definitionUpdateRejectsDuplicateStatName() {
+        createNamedStatDefinition("Already used", StatType.BOOLEAN);
+        StatDefinition other = createNamedStatDefinition("Other", StatType.BOOLEAN);
+
+        assertThrows(IllegalArgumentException.class, () -> statService.updateDefinition(
+                other.getId(), "Already used", null,
+                StatMorality.BAD, null, TEST_USER_ID));
+    }
+
     // --- Upsert behaviour ---
 
     @Test

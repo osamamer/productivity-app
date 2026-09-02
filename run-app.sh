@@ -39,6 +39,16 @@ endpoint_is_ready() {
   curl -fsS --max-time 2 "$1" >/dev/null 2>&1
 }
 
+port_owner_pids() {
+  local port=$1
+
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -nP -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true
+  elif command -v fuser >/dev/null 2>&1; then
+    fuser -n tcp "$port" 2>/dev/null | tr -cs '0-9' '\n'
+  fi
+}
+
 port_is_listening() {
   local port=$1
 
@@ -48,6 +58,168 @@ port_is_listening() {
     [[ -n $(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null) ]]
   else
     timeout 1 bash -c "</dev/tcp/127.0.0.1/$port" >/dev/null 2>&1
+  fi
+}
+
+compose_service_is_running() {
+  local service=$1
+
+  [[ -n $("${compose[@]}" ps --status running -q "$service" 2>/dev/null) ]]
+}
+
+process_belongs_to_app() {
+  local pid=$1
+  local cwd
+  local command
+
+  cwd=$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)
+  command=$(ps -p "$pid" -o args= 2>/dev/null || true)
+
+  if [[ "$command" == *"$script_dir/backend"* || "$command" == *"$script_dir/frontend/react"* ]]; then
+    return 0
+  fi
+
+  if [[ "$cwd" == "$script_dir/backend" && "$command" == *mvnw* ]]; then
+    return 0
+  fi
+
+  [[ "$cwd" == "$script_dir/frontend/react" && ( "$command" == *npm* || "$command" == *vite* ) ]]
+}
+
+terminate_process() {
+  local pid=$1
+  local label=$2
+  local process_group
+  local launcher_group
+
+  if ! kill -0 "$pid" 2>/dev/null; then
+    return 0
+  fi
+
+  process_group=$(ps -p "$pid" -o pgid= 2>/dev/null | tr -d ' ')
+  launcher_group=$(ps -p "$$" -o pgid= 2>/dev/null | tr -d ' ')
+
+  echo "🛑 Stopping $label (PID $pid)..."
+  if [[ -n "$process_group" && "$process_group" != "$launcher_group" && "$process_group" != "1" ]]; then
+    kill -TERM -- "-$process_group" 2>/dev/null || true
+  else
+    kill -TERM "$pid" 2>/dev/null || true
+  fi
+
+  for _ in {1..10}; do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      return 0
+    fi
+    sleep 1
+  done
+
+  if kill -0 "$pid" 2>/dev/null; then
+    if [[ -n "$process_group" && "$process_group" != "$launcher_group" && "$process_group" != "1" ]]; then
+      kill -KILL -- "-$process_group" 2>/dev/null || true
+    else
+      kill -KILL "$pid" 2>/dev/null || true
+    fi
+  fi
+}
+
+stop_unrelated_docker_containers() {
+  local port=$1
+  local container_id
+  local container_ids
+  local project_label
+  local container_name
+
+  container_ids=$(docker ps --filter "publish=$port" --format '{{.ID}}' 2>/dev/null || true)
+  while read -r container_id; do
+    [[ -z "$container_id" ]] && continue
+
+    project_label=$(docker inspect --format '{{ index .Config.Labels "com.docker.compose.project" }}' "$container_id" 2>/dev/null || true)
+    if [[ "$project_label" == "productivity-app" ]]; then
+      continue
+    fi
+
+    container_name=$(docker inspect --format '{{.Name}}' "$container_id" 2>/dev/null | sed 's#^/##' || true)
+    echo "🧹 Stopping unrelated Docker container $container_name on port $port..."
+    if ! docker stop "$container_id" >/dev/null; then
+      echo "Could not stop Docker container $container_name on port $port." >&2
+      return 1
+    fi
+  done <<< "$container_ids"
+}
+
+stop_system_postgresql_clusters() {
+  local port=$1
+  local cluster_data
+  local version
+  local cluster
+  local cluster_port
+  local status
+  local service
+
+  [[ "$port" == "5432" ]] || return 0
+  command -v pg_lsclusters >/dev/null 2>&1 || return 0
+
+  cluster_data=$(pg_lsclusters -h 2>/dev/null || true)
+  while read -r version cluster cluster_port status _; do
+    [[ "$cluster_port" == "$port" && "$status" == "online" ]] || continue
+
+    service="postgresql@${version}-${cluster}.service"
+    if systemctl is-active --quiet "$service" 2>/dev/null; then
+      echo "🧹 Stopping unrelated system PostgreSQL cluster $version/$cluster on port $port..."
+      if ! systemctl stop "$service"; then
+        echo "Could not stop $service, which owns port $port." >&2
+        return 1
+      fi
+    fi
+  done <<< "$cluster_data"
+}
+
+free_conflicting_port() {
+  local port=$1
+  local pids
+  local pid
+  local owner
+  local command
+
+  if ! port_is_listening "$port"; then
+    return 0
+  fi
+
+  stop_unrelated_docker_containers "$port" || return 1
+  stop_system_postgresql_clusters "$port" || return 1
+
+  if ! port_is_listening "$port"; then
+    return 0
+  fi
+
+  pids=$(port_owner_pids "$port")
+  if [[ -z "$pids" ]]; then
+    echo "Port $port is in use, but its owner could not be identified safely." >&2
+    echo "Stop the owner manually, then run this script again." >&2
+    return 1
+  fi
+
+  while read -r pid; do
+    [[ -z "$pid" ]] && continue
+    owner=$(ps -p "$pid" -o user= 2>/dev/null | tr -d ' ' || true)
+    command=$(ps -p "$pid" -o args= 2>/dev/null || true)
+
+    if [[ "$owner" != "$(id -un)" ]]; then
+      echo "Port $port is owned by $owner (PID $pid): $command" >&2
+      echo "Refusing to kill a process owned by another account." >&2
+      return 1
+    fi
+
+    if process_belongs_to_app "$pid"; then
+      terminate_process "$pid" "stale Claritard process"
+    else
+      terminate_process "$pid" "unrelated process on port $port"
+    fi
+  done <<< "$pids"
+
+  if port_is_listening "$port"; then
+    echo "Port $port is still in use after the identified owner was stopped." >&2
+    return 1
   fi
 }
 
@@ -76,9 +248,41 @@ wait_for_endpoint() {
   return 1
 }
 
+start_backend() {
+  echo "🚀 Starting backend..."
+  (
+    cd "$script_dir/backend"
+    exec setsid ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
+  ) &
+  backend_pid=$!
+
+  echo "⏳ Waiting for backend..."
+  if ! wait_for_endpoint "Backend" "http://localhost:8080/actuator/health" 45 "$backend_pid"; then
+    stop_started_processes
+    exit 1
+  fi
+}
+
+start_frontend() {
+  echo "🎨 Starting frontend..."
+  (
+    cd "$script_dir/frontend/react"
+    exec setsid npm run dev
+  ) &
+  frontend_pid=$!
+
+  echo "⏳ Waiting for frontend..."
+  if ! wait_for_endpoint "Frontend" "http://localhost:5173/" 30 "$frontend_pid"; then
+    stop_started_processes
+    exit 1
+  fi
+}
+
 apply_keycloak_login_theme() {
   local realm=${KEYCLOAK_REALM:-productivity-app}
   local admin_realm=${KEYCLOAK_ADMIN_REALM:-master}
+  local client_name=${KEYCLOAK_CLIENT_ID:-productivity-app-frontend}
+  local client_id
 
   if [[ -z "${KEYCLOAK_ADMIN_USER:-}" || -z "${KEYCLOAK_ADMIN_PASSWORD:-}" ]]; then
     echo "⚠️  Keycloak admin credentials are missing; leaving the login theme unchanged."
@@ -94,7 +298,17 @@ apply_keycloak_login_theme() {
       --password "$KEYCLOAK_ADMIN_PASSWORD" >/dev/null 2>&1 \
       && "${compose[@]}" exec -T keycloak /opt/keycloak/bin/kcadm.sh update "realms/$realm" \
         -s loginTheme=productivity \
-        -s registrationAllowed=true >/dev/null 2>&1; then
+        -s registrationAllowed=true >/dev/null 2>&1 \
+      && client_id=$("${compose[@]}" exec -T keycloak /opt/keycloak/bin/kcadm.sh get clients \
+        -r "$realm" \
+        -q "clientId=$client_name" \
+        --fields id \
+        --format csv \
+        --noquotes 2>/dev/null | tr -d '\r' | tail -n 1) \
+      && [[ -n "$client_id" ]] \
+      && "${compose[@]}" exec -T keycloak /opt/keycloak/bin/kcadm.sh update "clients/$client_id" \
+        -r "$realm" \
+        -s directAccessGrantsEnabled=true >/dev/null 2>&1; then
       return 0
     fi
 
@@ -109,7 +323,7 @@ stop_started_processes() {
 
   for pid in "$frontend_pid" "$backend_pid"; do
     if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
-      kill "$pid" 2>/dev/null || true
+      terminate_process "$pid" "app process"
     fi
   done
 }
@@ -157,6 +371,7 @@ ensure_frontend_dependencies() {
 }
 
 trap shutdown INT TERM
+trap stop_started_processes EXIT
 
 if ! docker info >/dev/null 2>&1; then
   echo "Cannot access the Docker daemon. Add this account to the docker group and log in again." >&2
@@ -167,6 +382,15 @@ ensure_frontend_dependencies
 
 "${compose[@]}" config >/dev/null
 remove_legacy_grafana_container
+
+for required_port in 5432 7070; do
+  required_service=postgres
+  [[ "$required_port" == "7070" ]] && required_service=keycloak
+
+  if ! compose_service_is_running "$required_service"; then
+    free_conflicting_port "$required_port"
+  fi
+done
 
 echo "🐳 Reusing healthy Docker services and starting only what is missing..."
 if ! "${compose[@]}" up -d; then
@@ -185,44 +409,33 @@ apply_keycloak_login_theme
 if endpoint_is_ready "http://localhost:8080/actuator/health"; then
   echo "♻️  Backend is already healthy on port 8080; reusing it."
 elif port_is_listening 8080; then
-  echo "Port 8080 is in use, but its service is not a healthy productivity-app backend." >&2
-  echo "Stop that service (using the account that owns it), then run this script again." >&2
-  exit 1
-else
-  echo "🚀 Starting backend..."
-  (
-    cd "$script_dir/backend"
-    exec ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
-  ) &
-  backend_pid=$!
+  echo "Port 8080 is in use, but its service is not a healthy productivity-app backend."
+  free_conflicting_port 8080
 
-  echo "⏳ Waiting for backend..."
-  if ! wait_for_endpoint "Backend" "http://localhost:8080/actuator/health" 45 "$backend_pid"; then
+  if port_is_listening 8080; then
+    echo "Port 8080 is still occupied after cleanup." >&2
     stop_started_processes
     exit 1
   fi
+  start_backend
+else
+  start_backend
 fi
 
 if endpoint_is_ready "http://localhost:5173/"; then
   echo "♻️  Frontend is already available on port 5173; reusing it."
 elif port_is_listening 5173; then
-  echo "Port 5173 is in use, but its service is not the productivity-app frontend." >&2
-  echo "Stop that service (using the account that owns it), then run this script again." >&2
-  stop_started_processes
-  exit 1
-else
-  echo "🎨 Starting frontend..."
-  (
-    cd "$script_dir/frontend/react"
-    exec npm run dev
-  ) &
-  frontend_pid=$!
+  echo "Port 5173 is in use, but its service is not the productivity-app frontend."
+  free_conflicting_port 5173
 
-  echo "⏳ Waiting for frontend..."
-  if ! wait_for_endpoint "Frontend" "http://localhost:5173/" 30 "$frontend_pid"; then
+  if port_is_listening 5173; then
+    echo "Port 5173 is still occupied after cleanup." >&2
     stop_started_processes
     exit 1
   fi
+  start_frontend
+else
+  start_frontend
 fi
 
 echo "✅ All services are ready."

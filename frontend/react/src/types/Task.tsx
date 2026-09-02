@@ -5,7 +5,7 @@ export interface Task   {
     completed: boolean;
     creationDateTime: string;
     creationDate: string;
-    scheduledPerformDateTime: string;
+    scheduledPerformDateTime: string | null;
     completionDateTime: string;
     parentId: string;
     tag: string;

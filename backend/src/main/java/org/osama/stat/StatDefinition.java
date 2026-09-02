@@ -26,12 +26,21 @@ public class StatDefinition {
     @Column(nullable = false)
     private StatType type;
 
+    // Null is treated as NEUTRAL so existing definitions remain unchanged.
+    @Enumerated(EnumType.STRING)
+    @Column
+    private StatMorality morality;
+
     // Only meaningful when type == RANGE; null for NUMBER and BOOLEAN.
     @Column
     private Double minValue;
 
     @Column
     private Double maxValue;
+
+    // Only meaningful for GOOD/BAD NUMBER and RANGE stats.
+    @Column(name = "good_threshold")
+    private Double goodThreshold;
 
     @Column(name = "system_key")
     private String systemKey;

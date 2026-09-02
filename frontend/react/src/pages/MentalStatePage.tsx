@@ -3,6 +3,7 @@ import { Alert, Box, Stack, Typography } from '@mui/material';
 import { PageWrapper } from '../components/PageWrapper';
 import { MentalStateCard } from '../components/mental-state/MentalStateCard';
 import { MentalStateHistory } from '../components/mental-state/MentalStateHistory';
+import { BackToMentalButton } from '../components/BackToMentalButton';
 import { mentalStateService } from '../services/api/mentalStateService';
 import { MentalStateCheckIn } from '../types/MentalState';
 
@@ -58,6 +59,7 @@ export function MentalStatePage() {
     return (
         <PageWrapper>
             <Box sx={{ width: '100%', maxWidth: 1040, mx: 'auto', pb: 3, textAlign: 'left' }}>
+                <BackToMentalButton />
                 <Box sx={{ mb: 2 }}>
                     <Typography variant="h4" fontWeight={750} sx={{ letterSpacing: '-0.02em' }}>Mental state</Typography>
                     <Typography color="text.secondary" sx={{ mt: 0.5 }}>

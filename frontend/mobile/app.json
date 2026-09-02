@@ -1,27 +1,28 @@
 {
   "expo": {
-    "name": "So Life",
+    "name": "Claritard",
     "slug": "so-life",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/app-icon.png",
+    "icon": "./assets/images/eye-care.png",
     "scheme": "solife",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/images/app-icon.png",
+      "icon": "./assets/images/eye-care.png",
       "bundleIdentifier": "org.osama.solife"
     },
     "android": {
+      "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "backgroundColor": "#F7F6FB",
-        "foregroundImage": "./assets/images/app-icon.png"
+        "foregroundImage": "./assets/images/eye-care.png"
       },
       "predictiveBackGestureEnabled": true,
       "package": "org.osama.solife"
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/app-icon.png"
+      "favicon": "./assets/images/eye-care.png"
     },
     "plugins": [
       "expo-router",
@@ -29,11 +30,11 @@
         "expo-splash-screen",
         {
           "backgroundColor": "#F7F6FB",
-          "image": "./assets/images/productivity.png",
+          "image": "./assets/images/eye-care.png",
           "imageWidth": 128,
           "dark": {
             "backgroundColor": "#1E2124",
-            "image": "./assets/images/productivity.png"
+            "image": "./assets/images/eye-care.png"
           }
         }
       ],
@@ -43,6 +44,19 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "c8a6d645-def2-4e79-993a-49e17e10be1b"
+      }
+    },
+    "owner": "dngoo",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/c8a6d645-def2-4e79-993a-49e17e10be1b"
     }
   }
 }

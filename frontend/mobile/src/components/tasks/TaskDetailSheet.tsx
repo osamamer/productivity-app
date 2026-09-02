@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
 
+import { reportError } from '@/lib/errors';
 import { api } from '@/services/api';
 import type { Task } from '@/types/models';
 import { AppButton } from '../ui/AppButton';
@@ -9,17 +10,17 @@ import { AppText } from '../ui/AppText';
 import { ChoiceChips } from '../ui/ChoiceChips';
 import { ModalSheet } from '../ui/ModalSheet';
 
-export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted }: {
+export function TaskDetailSheet({ task, onClose, onUpdated, onStartFocus, onDeleted }: {
   task: Task | null;
   onClose: () => void;
   onUpdated: (task: Task) => void;
+  onStartFocus?: (task: Task) => void;
   onDeleted: (taskId: string) => void;
 }) {
   const [name, setName] = useState(task?.name ?? '');
   const [description, setDescription] = useState(task?.description ?? '');
   const [importance, setImportance] = useState(task?.importance || 1);
   const [saving, setSaving] = useState(false);
-  const [focusStarting, setFocusStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function save() {
@@ -35,23 +36,9 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted }: {
       onUpdated(updated);
       onClose();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not save this task.');
+      setError(reportError('Could not save task', cause));
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function startFocus() {
-    if (!task) return;
-    setFocusStarting(true);
-    setError(null);
-    try {
-      await api.tasks.startPomodoro(task.taskId);
-      Alert.alert('Focus started', 'Your 25-minute focus session is running.');
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not start focus.');
-    } finally {
-      setFocusStarting(false);
     }
   }
 
@@ -65,7 +52,7 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted }: {
         onPress: () => void api.tasks.remove(task.taskId).then(() => {
           onDeleted(task.taskId);
           onClose();
-        }).catch(cause => setError(cause instanceof Error ? cause.message : 'Could not delete this task.')),
+        }).catch(cause => setError(reportError('Could not delete task', cause))),
       },
     ]);
   }
@@ -84,7 +71,7 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted }: {
       ]} />
       {error && <AppText color="danger">{error}</AppText>}
       <View style={styles.actions}>
-        <AppButton label="Start focus" icon="timer-outline" variant="secondary" loading={focusStarting} onPress={() => void startFocus()} style={styles.grow} />
+        {onStartFocus && task && <AppButton label="Focus options" icon="timer-outline" variant="secondary" onPress={() => { onClose(); onStartFocus(task); }} style={styles.grow} />}
         <AppButton label="Delete" icon="trash-outline" variant="danger" onPress={confirmDelete} style={styles.grow} />
       </View>
     </ModalSheet>

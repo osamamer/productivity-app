@@ -5,16 +5,21 @@ import {
     Alert,
 } from '@mui/material';
 import { useTheme, Theme } from '@mui/material/styles';
+import CheckIcon from '@mui/icons-material/Check';
+import CloseIcon from '@mui/icons-material/Close';
 import { format, subDays } from 'date-fns';
 import { StatDefinition } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
 import { KeyboardEvent } from 'react';
-import { celebrateStatLogged } from '../../services/statCelebration';
+import { getBooleanChoiceColor, getStatFeedback, showStatFeedback } from '../../services/statFeedback';
 
-const CIRCLE_SIZE = 28;
+const CIRCLE_SIZE = 24;
 
 function getCircleBg(def: StatDefinition, value: number | undefined, theme: Theme): string {
     if (value === undefined) return theme.palette.action.disabledBackground;
+    const feedback = getStatFeedback(def, value);
+    if (feedback === 'CELEBRATE') return theme.palette.success.main;
+    if (feedback === 'SAD') return theme.palette.error.main;
     switch (def.type) {
         case 'BOOLEAN':
             return value === 1 ? theme.palette.success.main : theme.palette.error.main;
@@ -58,7 +63,7 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
     const [editValue, setEditValue] = useState<number | null>(null);
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
-    const celebrationAnchorRef = useRef<HTMLElement | null>(null);
+    const feedbackAnchorRef = useRef<HTMLElement | null>(null);
 
     const fetchDots = () => {
         const today = new Date();
@@ -81,7 +86,7 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
         const existing = valueMap.get(date);
         setEditValue(existing ?? null);
         setSaveError(null);
-        celebrationAnchorRef.current = null;
+        feedbackAnchorRef.current = null;
         setPopover({ anchorEl: e.currentTarget, date });
     };
 
@@ -101,9 +106,7 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                 date: popover.date,
                 value: editValue,
             });
-            if (definition.type === 'BOOLEAN' && editValue === 1) {
-                celebrateStatLogged(celebrationAnchorRef.current);
-            }
+            showStatFeedback(definition, editValue, feedbackAnchorRef.current);
             setValueMap(prev => new Map(prev).set(popover.date, editValue));
             onEntryChanged?.();
             closePopover();
@@ -139,6 +142,11 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                     const bg = getCircleBg(definition, value, theme);
                     const isUnboundedNumber = definition.type === 'NUMBER';
                     const label = hasEntry && isUnboundedNumber ? formatCircleValue(value!) : null;
+                    const booleanIcon = hasEntry && definition.type === 'BOOLEAN'
+                        ? value === 1
+                            ? <CheckIcon sx={{ fontSize: 18, color: 'common.white', fontWeight: 700 }} />
+                            : <CloseIcon sx={{ fontSize: 18, color: 'common.white', fontWeight: 700 }} />
+                        : null;
                     const tooltipText = hasEntry
                         ? definition.type === 'BOOLEAN'
                             ? value === 1 ? 'Yes' : 'No'
@@ -173,7 +181,8 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                                     },
                                 }}
                             >
-                                {label && (
+                                {booleanIcon}
+                                {label && !booleanIcon && (
                                     <Typography
                                         sx={{
                                             fontSize: label.length > 3 ? 7 : 9,
@@ -224,14 +233,15 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                             >
                                 <ToggleButton
                                     value="yes"
-                                    onClick={event => { celebrationAnchorRef.current = event.currentTarget; }}
-                                    sx={{ '&.Mui-selected': { bgcolor: 'success.main', color: 'white', '&:hover': { bgcolor: 'success.dark' } } }}
+                                    onClick={event => { feedbackAnchorRef.current = event.currentTarget; }}
+                                    sx={{ '&.Mui-selected': { bgcolor: `${getBooleanChoiceColor(definition, 1)}.main`, color: 'white', '&:hover': { bgcolor: `${getBooleanChoiceColor(definition, 1)}.dark` } } }}
                                 >
                                     Yes
                                 </ToggleButton>
                                 <ToggleButton
                                     value="no"
-                                    sx={{ '&.Mui-selected': { bgcolor: 'error.main', color: 'white', '&:hover': { bgcolor: 'error.dark' } } }}
+                                    onClick={event => { feedbackAnchorRef.current = event.currentTarget; }}
+                                    sx={{ '&.Mui-selected': { bgcolor: `${getBooleanChoiceColor(definition, 0)}.main`, color: 'white', '&:hover': { bgcolor: `${getBooleanChoiceColor(definition, 0)}.dark` } } }}
                                 >
                                     No
                                 </ToggleButton>
@@ -244,6 +254,7 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                                 size="small"
                                 value={editValue ?? ''}
                                 onChange={e => setEditValue(e.target.value === '' ? null : Number(e.target.value))}
+                                onFocus={event => { feedbackAnchorRef.current = event.currentTarget; }}
                                 autoFocus
                                 sx={{ width: 160 }}
                             />
@@ -258,7 +269,10 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                                     step={1}
                                     marks
                                     valueLabelDisplay="auto"
-                                    onChange={(_, v) => setEditValue(v as number)}
+                                    onChange={(event, v) => {
+                                        feedbackAnchorRef.current = event.currentTarget as HTMLElement;
+                                        setEditValue(v as number);
+                                    }}
                                 />
                                 <Stack direction="row" justifyContent="space-between">
                                     <Typography variant="caption" color="text.secondary">{definition.minValue}</Typography>

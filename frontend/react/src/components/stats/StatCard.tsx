@@ -5,7 +5,7 @@ import {
     ToggleButton, Tooltip,
 } from '@mui/material';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import { format, subDays } from 'date-fns';
 import { StatDefinition } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
@@ -29,7 +29,7 @@ const CALENDAR_DATE_RANGES = [
 interface Props {
     definition: StatDefinition;
     comparisonDefinitions: StatDefinition[];
-    onDelete: (id: string) => void;
+    onEdit: (definition: StatDefinition) => void;
     refreshKey: number;
     onEntryChanged?: () => void;
 }
@@ -37,7 +37,7 @@ interface Props {
 export function StatCard({
     definition,
     comparisonDefinitions,
-    onDelete,
+    onEdit,
     refreshKey,
     onEntryChanged,
 }: Props) {
@@ -111,11 +111,13 @@ export function StatCard({
                 subheader={definition.description}
                 subheaderTypographyProps={{ variant: 'caption' }}
                 action={!definition.systemKey ? (
-                    <Tooltip title="Delete stat and all its data">
-                        <IconButton onClick={() => onDelete(definition.id)} size="small">
-                            <DeleteOutlineIcon fontSize="small" />
-                        </IconButton>
-                    </Tooltip>
+                    <Stack direction="row" spacing={0.25}>
+                        <Tooltip title="Edit stat">
+                            <IconButton onClick={() => onEdit(definition)} size="small" aria-label={`Edit ${definition.name}`}>
+                                <EditOutlinedIcon fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
+                    </Stack>
                 ) : null}
                 sx={{ pb: 0, minHeight: 72 }}
             />

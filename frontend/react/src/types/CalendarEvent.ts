@@ -1,4 +1,5 @@
-export type RecurrenceFrequency = 'NONE' | 'DAILY' | 'WEEKLY' | 'MONTHLY';
+export type RecurrenceFrequency = 'NONE' | 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'CUSTOM';
+export type RecurrenceUnit = 'DAYS' | 'WEEKS' | 'MONTHS';
 
 export type CalendarEvent = {
     id: string;
@@ -12,6 +13,8 @@ export type CalendarEvent = {
     timeZone: string;
     recurrenceFrequency: RecurrenceFrequency;
     recurrenceEndDate: string | null;
+    recurrenceInterval: number | null;
+    recurrenceUnit: RecurrenceUnit | null;
     reminderMinutesBefore: number | null;
     createdAt: string;
     updatedAt: string;
@@ -28,5 +31,7 @@ export type CalendarEventInput = {
     timeZone: string;
     recurrenceFrequency: RecurrenceFrequency;
     recurrenceEndDate: string | null;
+    recurrenceInterval: number | null;
+    recurrenceUnit: RecurrenceUnit | null;
     reminderMinutesBefore: number | null;
 };

@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useMemo, useState } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
 
 import { TaskComposerSheet } from '@/components/tasks/TaskComposerSheet';
@@ -10,8 +11,9 @@ import { Screen } from '@/components/ui/Screen';
 import { EmptyView, ErrorView, LoadingView } from '@/components/ui/StateView';
 import { useAsyncData } from '@/hooks/useAsyncData';
 import { localDate } from '@/lib/date';
+import { reportError } from '@/lib/errors';
 import { api } from '@/services/api';
-import type { Task } from '@/types/models';
+import type { PomodoroStatus, Task } from '@/types/models';
 
 type Filter = 'today' | 'upcoming' | 'all';
 
@@ -24,6 +26,47 @@ export default function TasksScreen() {
   const [filter, setFilter] = useState<Filter>('today');
   const [composerOpen, setComposerOpen] = useState(false);
   const [selected, setSelected] = useState<Task | null>(null);
+  const [expandedPomodoroTaskId, setExpandedPomodoroTaskId] = useState<string | null>(null);
+  const [activePomodoroTaskId, setActivePomodoroTaskId] = useState<string | null>(null);
+  const [activePomodoroStatus, setActivePomodoroStatus] = useState<PomodoroStatus | null>(null);
+
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    void api.pomodoro.status().then(status => {
+      if (!active) return;
+      if (!status?.active) {
+        setActivePomodoroTaskId(null);
+        setActivePomodoroStatus(null);
+        setExpandedPomodoroTaskId(null);
+        return;
+      }
+      setActivePomodoroTaskId(status.associatedTaskId);
+      setActivePomodoroStatus(status);
+      setExpandedPomodoroTaskId(status.associatedTaskId);
+    }).catch(cause => console.warn('Could not refresh Pomodoro status:', cause));
+    return () => { active = false; };
+  }, []));
+
+  const openPomodoro = useCallback((taskId: string) => {
+    setExpandedPomodoroTaskId(current => current === taskId ? null : taskId);
+  }, []);
+
+  const handlePomodoroActiveChange = useCallback((taskId: string, active: boolean) => {
+    if (active) {
+      setActivePomodoroTaskId(taskId);
+      setExpandedPomodoroTaskId(taskId);
+    } else {
+      setActivePomodoroTaskId(current => current === taskId ? null : current);
+      setActivePomodoroStatus(current => current?.associatedTaskId === taskId ? null : current);
+      setExpandedPomodoroTaskId(current => current === taskId ? null : current);
+    }
+  }, []);
+
+  const handlePomodoroStatusChange = useCallback((taskId: string, status: PomodoroStatus) => {
+    if (!status.active) return;
+    setActivePomodoroTaskId(taskId);
+    setActivePomodoroStatus(status);
+  }, []);
 
   const filtered = useMemo(() => {
     const tasks = resource.data ?? [];
@@ -32,20 +75,27 @@ export default function TasksScreen() {
     return tasks;
   }, [filter, resource.data]);
 
+  const visibleTasks = activePomodoroTaskId
+    ? (resource.data ?? []).filter(task => task.taskId === activePomodoroTaskId)
+    : filtered;
+
   function replace(updated: Task) {
     resource.setData(current => current?.map(task => task.taskId === updated.taskId ? updated : task) ?? current);
     setSelected(updated);
   }
 
+  function updateList(updated: Task) {
+    resource.setData(current => current?.map(task => task.taskId === updated.taskId ? updated : task) ?? current);
+  }
+
   async function toggle(task: Task) {
     const optimistic = { ...task, completed: !task.completed };
-    replace(optimistic);
+    updateList(optimistic);
     try {
-      replace(await api.tasks.update(task.taskId, { completed: optimistic.completed }));
-      setSelected(null);
+      updateList(await api.tasks.update(task.taskId, { completed: optimistic.completed }));
     } catch (cause) {
-      replace(task);
-      Alert.alert('Could not update task', cause instanceof Error ? cause.message : undefined);
+      updateList(task);
+      Alert.alert('Could not update task', reportError('Could not update task', cause));
     }
   }
 
@@ -63,12 +113,23 @@ export default function TasksScreen() {
       ]} />
       {resource.loading && <LoadingView label="Loading tasks…" />}
       {resource.error && !resource.data && <ErrorView message={resource.error} retry={() => void resource.reload()} />}
-      {!resource.loading && resource.data && !filtered.length && (
+      {!resource.loading && resource.data && !visibleTasks.length && (
         <EmptyView title="No tasks here" message="Use Add when a clear next action comes to mind." />
       )}
       <View style={styles.list}>
-        {filtered.map(task => (
-          <TaskRow key={task.taskId} task={task} onToggle={() => void toggle(task)} onPress={() => setSelected(task)} />
+        {visibleTasks.map(task => (
+          <TaskRow
+            key={task.taskId}
+            task={task}
+            onToggle={() => void toggle(task)}
+            onPress={() => setSelected(task)}
+            onPomodoroPress={() => openPomodoro(task.taskId)}
+            pomodoroOpen={expandedPomodoroTaskId === task.taskId || activePomodoroTaskId === task.taskId}
+            pomodoroStatus={activePomodoroTaskId === task.taskId ? activePomodoroStatus : null}
+            onPomodoroActiveChange={active => handlePomodoroActiveChange(task.taskId, active)}
+            onPomodoroStatusChange={status => handlePomodoroStatusChange(task.taskId, status)}
+            onPomodoroClose={() => setExpandedPomodoroTaskId(null)}
+          />
         ))}
       </View>
       <TaskComposerSheet
@@ -81,6 +142,7 @@ export default function TasksScreen() {
         task={selected}
         onClose={() => setSelected(null)}
         onUpdated={replace}
+        onStartFocus={task => { setSelected(null); openPomodoro(task.taskId); }}
         onDeleted={id => resource.setData(current => current?.filter(task => task.taskId !== id) ?? current)}
       />
     </Screen>

@@ -14,6 +14,8 @@ public class CalendarEventRequest {
     private String timeZone;
     private RecurrenceFrequency recurrenceFrequency;
     private LocalDate recurrenceEndDate;
+    private Integer recurrenceInterval;
+    private RecurrenceUnit recurrenceUnit;
     private Integer reminderMinutesBefore;
     private boolean reminderMinutesBeforePresent;
 
@@ -39,6 +41,10 @@ public class CalendarEventRequest {
     }
     public LocalDate getRecurrenceEndDate() { return recurrenceEndDate; }
     public void setRecurrenceEndDate(LocalDate recurrenceEndDate) { this.recurrenceEndDate = recurrenceEndDate; }
+    public Integer getRecurrenceInterval() { return recurrenceInterval; }
+    public void setRecurrenceInterval(Integer recurrenceInterval) { this.recurrenceInterval = recurrenceInterval; }
+    public RecurrenceUnit getRecurrenceUnit() { return recurrenceUnit; }
+    public void setRecurrenceUnit(RecurrenceUnit recurrenceUnit) { this.recurrenceUnit = recurrenceUnit; }
     public Integer getReminderMinutesBefore() { return reminderMinutesBefore; }
     public void setReminderMinutesBefore(Integer reminderMinutesBefore) {
         this.reminderMinutesBefore = reminderMinutesBefore;

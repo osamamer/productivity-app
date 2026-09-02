@@ -202,7 +202,19 @@ public class TaskService {
             changedFields.add("importance");
         }
         if (request.getScheduledPerformDateTime() != null) {
-            task.setScheduledPerformDateTime(request.getScheduledPerformDateTime());
+            String requestedDateTime = request.getScheduledPerformDateTime().trim();
+            if (requestedDateTime.isBlank()) {
+                task.setScheduledPerformDateTime(null);
+            } else {
+                try {
+                    task.setScheduledPerformDateTime(LocalDateTime.parse(requestedDateTime));
+                } catch (DateTimeParseException e) {
+                    log.warn("Task update rejected because scheduledPerformDateTime is invalid: taskId={} value={}",
+                            taskId, requestedDateTime, e);
+                    throw new IllegalArgumentException(
+                            "Invalid datetime format. Use ISO format: 2024-01-20T10:30:00", e);
+                }
+            }
             changedFields.add("scheduledPerformDateTime");
         }
 

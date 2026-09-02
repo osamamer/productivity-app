@@ -9,7 +9,7 @@ import HighlightOffIcon from '@mui/icons-material/HighlightOff';
 import { format, subDays, eachDayOfInterval, getDay } from 'date-fns';
 import { StatDefinition } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
-import { celebrateStatLogged } from '../../services/statCelebration';
+import { getBooleanChoiceColor, getStatFeedback, showStatFeedback } from '../../services/statFeedback';
 
 // Week starts on Monday. Offset maps JS getDay() (0=Sun) to Mon-based index (0=Mon, 6=Sun).
 const toMondayIndex = (jsDay: number) => (jsDay + 6) % 7;
@@ -43,7 +43,7 @@ export function BooleanCalendarView({ definition, dateRange, refreshKey, onEntry
     const [editValue, setEditValue] = useState<number | null>(null);
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
-    const celebrationAnchorRef = useRef<HTMLElement | null>(null);
+    const feedbackAnchorRef = useRef<HTMLElement | null>(null);
 
     const allDays = eachDayOfInterval({ start: from, end: to });
     const startOffset = toMondayIndex(getDay(from));
@@ -74,7 +74,7 @@ export function BooleanCalendarView({ definition, dateRange, refreshKey, onEntry
         event.stopPropagation();
         setEditValue(valueMap.get(date) ?? null);
         setSaveError(null);
-        celebrationAnchorRef.current = null;
+        feedbackAnchorRef.current = null;
         setPopover({ anchorEl: event.currentTarget, date });
     };
 
@@ -94,7 +94,7 @@ export function BooleanCalendarView({ definition, dateRange, refreshKey, onEntry
                 date: popover.date,
                 value: editValue,
             });
-            if (editValue === 1) celebrateStatLogged(celebrationAnchorRef.current);
+            showStatFeedback(definition, editValue, feedbackAnchorRef.current);
             setValueState(previous => previous.key === dataKey
                 ? { ...previous, values: new Map(previous.values).set(popover.date, editValue) }
                 : previous);
@@ -142,8 +142,17 @@ export function BooleanCalendarView({ definition, dateRange, refreshKey, onEntry
                     {week.map((day, di) => {
                         const dateKey = day ? format(day, 'yyyy-MM-dd') : null;
                         const hasEntry = dateKey ? valueMap.has(dateKey) : false;
-                        const isYes = hasEntry && valueMap.get(dateKey!) === 1;
-                        const isNo = hasEntry && valueMap.get(dateKey!) !== 1;
+                        const value = dateKey ? valueMap.get(dateKey) : undefined;
+                        const isYes = hasEntry && value === 1;
+                        const isNo = hasEntry && value !== 1;
+                        const feedback = value === undefined ? 'NONE' : getStatFeedback(definition, value);
+                        const stampColor = feedback === 'CELEBRATE'
+                            ? theme.palette.success.main
+                            : feedback === 'SAD'
+                            ? theme.palette.error.main
+                            : isYes
+                            ? theme.palette.success.main
+                            : theme.palette.error.main;
 
                         return (
                             <Box
@@ -165,10 +174,12 @@ export function BooleanCalendarView({ definition, dateRange, refreshKey, onEntry
                                     opacity: day ? 1 : 0,
                                     cursor: day ? 'pointer' : 'default',
                                     border: '1.5px solid',
-                                    borderColor: isYes
+                                    borderColor: feedback === 'CELEBRATE'
                                         ? `${theme.palette.success.main}66`
-                                        : isNo
+                                        : feedback === 'SAD'
                                         ? `${theme.palette.error.main}66`
+                                        : isYes || isNo
+                                        ? `${stampColor}66`
                                         : 'transparent',
                                 }}
                             >
@@ -194,12 +205,12 @@ export function BooleanCalendarView({ definition, dateRange, refreshKey, onEntry
                                             <CheckCircleOutlineIcon
                                                 sx={{
                                                     fontSize: 20,
-                                                    color: theme.palette.success.main,
+                                                    color: stampColor,
                                                     transform: 'rotate(-12deg)',
                                                     position: 'absolute',
                                                     top: 3,
                                                     right: 3,
-                                                    filter: `drop-shadow(0 0 2px ${theme.palette.success.main}55)`,
+                                                    filter: `drop-shadow(0 0 2px ${stampColor}55)`,
                                                 }}
                                             />
                                         )}
@@ -207,12 +218,12 @@ export function BooleanCalendarView({ definition, dateRange, refreshKey, onEntry
                                             <HighlightOffIcon
                                                 sx={{
                                                     fontSize: 20,
-                                                    color: theme.palette.error.main,
+                                                    color: stampColor,
                                                     transform: 'rotate(12deg)',
                                                     position: 'absolute',
                                                     top: 3,
                                                     right: 3,
-                                                    filter: `drop-shadow(0 0 2px ${theme.palette.error.main}55)`,
+                                                    filter: `drop-shadow(0 0 2px ${stampColor}55)`,
                                                 }}
                                             />
                                         )}
@@ -263,14 +274,15 @@ export function BooleanCalendarView({ definition, dateRange, refreshKey, onEntry
                         >
                             <ToggleButton
                                 value="yes"
-                                onClick={event => { celebrationAnchorRef.current = event.currentTarget; }}
-                                sx={{ '&.Mui-selected': { bgcolor: 'success.main', color: 'white', '&:hover': { bgcolor: 'success.dark' } } }}
+                                onClick={event => { feedbackAnchorRef.current = event.currentTarget; }}
+                                sx={{ '&.Mui-selected': { bgcolor: `${getBooleanChoiceColor(definition, 1)}.main`, color: 'white', '&:hover': { bgcolor: `${getBooleanChoiceColor(definition, 1)}.dark` } } }}
                             >
                                 Yes
                             </ToggleButton>
                             <ToggleButton
                                 value="no"
-                                sx={{ '&.Mui-selected': { bgcolor: 'error.main', color: 'white', '&:hover': { bgcolor: 'error.dark' } } }}
+                                onClick={event => { feedbackAnchorRef.current = event.currentTarget; }}
+                                sx={{ '&.Mui-selected': { bgcolor: `${getBooleanChoiceColor(definition, 0)}.main`, color: 'white', '&:hover': { bgcolor: `${getBooleanChoiceColor(definition, 0)}.dark` } } }}
                             >
                                 No
                             </ToggleButton>

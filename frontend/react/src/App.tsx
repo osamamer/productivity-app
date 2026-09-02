@@ -18,6 +18,7 @@ import {SettingsPage} from "./pages/SettingsPage.tsx";
 import {NotesPage} from "./pages/NotesPage.tsx";
 import {MentalThreadsPage} from "./pages/MentalThreadsPage.tsx";
 import {MentalStatePage} from "./pages/MentalStatePage.tsx";
+import {MentalPage} from "./pages/MentalPage.tsx";
 import {NotificationCenter} from "./components/notifications/NotificationCenter.tsx";
 import {AppErrorBoundary, AppErrorPage} from "./components/AppErrorBoundary.tsx";
 
@@ -84,6 +85,14 @@ const routes = [
                 element: (
                     <ProtectedRoute>
                         <NotesPage/>
+                    </ProtectedRoute>
+                ),
+            },
+            {
+                path: "/mental",
+                element: (
+                    <ProtectedRoute>
+                        <MentalPage/>
                     </ProtectedRoute>
                 ),
             },

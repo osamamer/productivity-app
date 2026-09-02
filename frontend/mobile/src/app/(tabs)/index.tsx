@@ -1,8 +1,8 @@
-import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { Alert, StyleSheet, View } from 'react-native';
 
 import { TaskComposerSheet } from '@/components/tasks/TaskComposerSheet';
+import { TaskDetailSheet } from '@/components/tasks/TaskDetailSheet';
 import { TaskRow } from '@/components/tasks/TaskRow';
 import { AppButton } from '@/components/ui/AppButton';
 import { AppText } from '@/components/ui/AppText';
@@ -11,6 +11,7 @@ import { ChoiceChips } from '@/components/ui/ChoiceChips';
 import { ErrorView, LoadingView } from '@/components/ui/StateView';
 import { Screen } from '@/components/ui/Screen';
 import { formatLongDate, greeting } from '@/lib/date';
+import { reportError } from '@/lib/errors';
 import { useAsyncData } from '@/hooks/useAsyncData';
 import { useAuth } from '@/providers/AuthProvider';
 import { useAppTheme } from '@/providers/ThemeProvider';
@@ -28,10 +29,17 @@ export default function TodayScreen() {
   });
   const [composerOpen, setComposerOpen] = useState(false);
   const [ratingSaving, setRatingSaving] = useState(false);
+  const [selected, setSelected] = useState<Task | null>(null);
 
   function updateTask(updated: Task) {
     resource.setData(current => current
       ? { ...current, tasks: current.tasks.map(task => task.taskId === updated.taskId ? updated : task) }
+      : current);
+  }
+
+  function removeTask(taskId: string) {
+    resource.setData(current => current
+      ? { ...current, tasks: current.tasks.filter(task => task.taskId !== taskId) }
       : current);
   }
 
@@ -42,7 +50,7 @@ export default function TodayScreen() {
       updateTask(await api.tasks.update(task.taskId, { completed: optimistic.completed }));
     } catch (cause) {
       updateTask(task);
-      Alert.alert('Could not update task', cause instanceof Error ? cause.message : undefined);
+      Alert.alert('Could not update task', reportError('Could not update task', cause));
     }
   }
 
@@ -55,7 +63,7 @@ export default function TodayScreen() {
       await api.day.save(rating, previous.plan ?? '', previous.summary ?? '');
     } catch (cause) {
       resource.setData(current => current ? { ...current, day: previous } : current);
-      Alert.alert('Could not save rating', cause instanceof Error ? cause.message : undefined);
+      Alert.alert('Could not save rating', reportError('Could not save rating', cause));
     } finally {
       setRatingSaving(false);
     }
@@ -65,7 +73,6 @@ export default function TodayScreen() {
   const tasks = resource.data?.tasks ?? [];
   const completed = tasks.filter(task => task.completed).length;
   const remaining = tasks.length - completed;
-  const focusTask = tasks.filter(task => !task.completed).sort((a, b) => b.importance - a.importance)[0];
   const progress = tasks.length ? completed / tasks.length : 0;
 
   return (
@@ -103,30 +110,18 @@ export default function TodayScreen() {
             </View>
           </Card>
 
-          {focusTask && (
-            <Card style={[styles.focusCard, { backgroundColor: colors.accentSoft }]}>
-              <View style={styles.focusIcon}><Ionicons name="sparkles" size={20} color={colors.accent} /></View>
-              <View style={styles.grow}>
-                <AppText variant="caption" color="accent">A GOOD PLACE TO START</AppText>
-                <AppText variant="heading" numberOfLines={2}>{focusTask.name}</AppText>
-              </View>
-              <Pressable
-                hitSlop={10}
-                onPress={() => void api.tasks.startPomodoro(focusTask.taskId)
-                  .then(() => Alert.alert('Focus started', 'Your 25-minute session is running.'))
-                  .catch(cause => Alert.alert('Could not start focus', cause instanceof Error ? cause.message : undefined))}>
-                <Ionicons name="play-circle" size={42} color={colors.accent} />
-              </Pressable>
-            </Card>
-          )}
-
           <View style={styles.spaceBetween}>
             <AppText variant="heading">Today’s tasks</AppText>
             <AppButton compact label="Add" icon="add" onPress={() => setComposerOpen(true)} />
           </View>
           <View style={styles.list}>
             {tasks.length ? tasks.map(task => (
-              <TaskRow key={task.taskId} task={task} onToggle={() => void toggle(task)} />
+              <TaskRow
+                key={task.taskId}
+                task={task}
+                onToggle={() => void toggle(task)}
+                onPress={() => setSelected(task)}
+              />
             )) : (
               <Card style={styles.emptyCard}>
                 <AppText variant="heading">Nothing scheduled</AppText>
@@ -141,6 +136,13 @@ export default function TodayScreen() {
         onClose={() => setComposerOpen(false)}
         onCreated={task => resource.setData(current => current ? { ...current, tasks: [task, ...current.tasks] } : current)}
       />
+      <TaskDetailSheet
+        key={selected?.taskId ?? 'no-task'}
+        task={selected}
+        onClose={() => setSelected(null)}
+        onUpdated={updateTask}
+        onDeleted={removeTask}
+      />
     </Screen>
   );
 }
@@ -153,9 +155,6 @@ const styles = StyleSheet.create({
   track: { height: 8, borderRadius: 4, overflow: 'hidden' },
   fill: { height: 8, borderRadius: 4 },
   rating: { gap: 9 },
-  focusCard: { flexDirection: 'row', alignItems: 'center', gap: 13 },
-  focusIcon: { alignSelf: 'flex-start', paddingTop: 3 },
-  grow: { flex: 1, gap: 4 },
   list: { gap: 10 },
   emptyCard: { alignItems: 'center', gap: 6 },
 });

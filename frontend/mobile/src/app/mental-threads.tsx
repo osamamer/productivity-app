@@ -10,6 +10,7 @@ import { ChoiceChips } from '@/components/ui/ChoiceChips';
 import { Screen } from '@/components/ui/Screen';
 import { ErrorView, LoadingView } from '@/components/ui/StateView';
 import { useAsyncData } from '@/hooks/useAsyncData';
+import { reportError } from '@/lib/errors';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
 import type { MentalThread, MentalThreadSummary } from '@/types/models';
@@ -40,7 +41,7 @@ export default function MentalThreadsScreen() {
     try { await api.mentalThreads.capacity(value); }
     catch (cause) {
       resource.setData(current => current ? { ...current, summary: { ...current.summary, capacityToday: previous } } : current);
-      Alert.alert('Could not save capacity', cause instanceof Error ? cause.message : undefined);
+      Alert.alert('Could not save capacity', reportError('Could not save capacity', cause));
     }
   }
 

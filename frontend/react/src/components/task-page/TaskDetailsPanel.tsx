@@ -53,6 +53,17 @@ const PRIORITY_OPTIONS = [
 
 const subtaskCache = new Map<string, Task[]>();
 const pomodoroStatsCache = new Map<string, TaskPomodoroStats>();
+const TASK_NAME_SCALE_START = 48;
+const TASK_NAME_SCALE_END = 240;
+
+function getTaskNameFontSize(name: string): string {
+    const scale = Math.min(
+        1,
+        Math.max(0, (name.trim().length - TASK_NAME_SCALE_START)
+            / (TASK_NAME_SCALE_END - TASK_NAME_SCALE_START)),
+    );
+    return `${(1.5 - (0.5 * scale)).toFixed(2)}rem`;
+}
 
 function formatTaskDateTime(date: Date | null): string {
     if (!date || Number.isNaN(date.getTime())) return '';
@@ -369,7 +380,7 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
                 </Box>
             </Box>
 
-            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 3 }}>
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 3, minWidth: 0 }}>
                 <Checkbox
                     size="small"
                     checked={task.completed}
@@ -381,8 +392,17 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
                     sx={{
                         flex: 1,
                         minWidth: 0,
+                        maxWidth: '100%',
+                        maxHeight: '8rem',
+                        overflowY: 'auto',
+                        overflowX: 'hidden',
+                        scrollbarGutter: 'stable',
+                        fontSize: getTaskNameFontSize(task.name ?? ''),
                         textAlign: 'left',
                         lineHeight: 1.25,
+                        overflowWrap: 'anywhere',
+                        wordBreak: 'break-word',
+                        whiteSpace: 'normal',
                         color: task.completed ? 'text.disabled' : 'text.primary',
                         textDecoration: task.completed ? 'line-through' : 'none',
                     }}
@@ -424,7 +444,10 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
                         value={validScheduledDate}
                         onChange={handleDateChange}
                         ampm={false}
-                        slotProps={{ textField: { size: 'small', fullWidth: true } }}
+                        slotProps={{
+                            field: { clearable: true },
+                            textField: { size: 'small', fullWidth: true },
+                        }}
                     />
                 </LocalizationProvider>
 

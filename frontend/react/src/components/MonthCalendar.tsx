@@ -11,7 +11,7 @@ import FullCalendar from "@fullcalendar/react";
 import React, { useMemo, useState, useCallback } from "react";
 import { Task } from "../types/Task.tsx";
 import { useTheme } from "@mui/material";
-import { DatesSetArg, EventClickArg, EventMountArg } from '@fullcalendar/core';
+import { DatesSetArg, EventClickArg, EventContentArg, EventMountArg } from '@fullcalendar/core';
 import { TaskToCreate } from "../types/TaskToCreate.tsx";
 import { TaskGroup } from "../types/TaskGroup.ts";
 import { SmartTaskInput } from "./input/SmartTaskInput.tsx";
@@ -23,6 +23,7 @@ import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
 import { DateTimePicker } from "@mui/x-date-pickers/DateTimePicker";
 import FilterListIcon from '@mui/icons-material/FilterList';
+import CheckIcon from '@mui/icons-material/Check';
 import { CalendarEvent, CalendarEventInput } from "../types/CalendarEvent.ts";
 import { CalendarEventForm } from "./calendar/CalendarEventForm.tsx";
 import { expandCalendarEvent } from "./calendar/recurrence.ts";
@@ -96,12 +97,6 @@ const PRIORITY_OPTIONS = [
     { label: 'High', value: 9, color: '#ef4444' },
 ];
 
-function priorityColor(importance: number): string {
-    if (importance > 7) return '#ef4444';
-    if (importance > 4) return '#eab308';
-    return '#1976d2';
-}
-
 function priorityBucket(importance: number): number {
     if (importance > 7) return 9;
     if (importance > 4) return 6;
@@ -111,6 +106,11 @@ function priorityBucket(importance: number): number {
 function statEventValue(definition: StatDefinition, value: number): string {
     if (definition.type === 'BOOLEAN') return value === 1 ? 'Yes' : 'No';
     return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function calendarEventTimeLabel(start: Date | null): string {
+    if (!start) return '';
+    return format(start, start.getMinutes() === 0 ? 'h a' : 'h:mm a');
 }
 
 type CreateTab = 'event' | 'task' | 'stats';
@@ -262,7 +262,12 @@ export function MonthCalendar({
             .filter((task): task is Task => Boolean(task));
     }, [calendarTasks, selectedTaskGroup]);
 
+    const neutralCalendarColor = theme.palette.mode === 'dark'
+        ? 'rgba(255, 255, 255, 0.14)'
+        : 'rgba(26, 26, 46, 0.10)';
+
     const calendarEvents = useMemo(() => {
+        const taskById = new Map(tasks.map(task => [task.taskId, task]));
         const eventEntries = events.flatMap(event => expandCalendarEvent(
             event,
             calendarRange.start,
@@ -273,9 +278,10 @@ export function MonthCalendar({
             start: occurrence.start,
             end: occurrence.end,
             allDay: occurrence.allDay,
-            backgroundColor: theme.palette.mode === 'dark' ? 'rgba(156, 39, 176, 0.22)' : 'rgba(156, 39, 176, 0.12)',
-            borderColor: theme.palette.secondary.main,
-            textColor: theme.palette.text.primary,
+            backgroundColor: theme.palette.primary.main,
+            borderColor: 'transparent',
+            textColor: theme.palette.primary.contrastText,
+            classNames: ['calendar-accent-event'],
             extendedProps: {
                 eventType: 'calendarEvent',
                 calendarEventId: event.id,
@@ -299,16 +305,17 @@ export function MonthCalendar({
                 title: group.name,
                 date,
                 groupId: group.groupId,
-                backgroundColor: theme.palette.mode === 'dark'
-                    ? 'rgba(156, 39, 176, 0.22)'
-                    : 'rgba(156, 39, 176, 0.12)',
-                borderColor: theme.palette.secondary.main,
+                backgroundColor: neutralCalendarColor,
+                borderColor: 'transparent',
                 textColor: theme.palette.text.primary,
+                classNames: ['calendar-neutral-event'],
                 extendedProps: {
                     eventType: 'taskGroup',
                     groupId: group.groupId,
                     groupOrder: group.displayOrder,
                     fullDescription: group.name,
+                    completed: group.taskIds.length > 0
+                        && group.taskIds.every(taskId => taskById.get(taskId)?.completed === true),
                 },
             }))
             : [];
@@ -322,11 +329,10 @@ export function MonthCalendar({
                         id: task.taskId,
                         title: taskName,
                         date: new Date(task.scheduledPerformDateTime!).toISOString().split('T')[0],
-                        backgroundColor: theme.palette.mode === 'dark'
-                            ? 'rgba(255, 255, 255, 0.04)'
-                            : 'rgba(255, 255, 255, 0.82)',
-                        borderColor: task.completed ? '#4caf50' : priorityColor(task.importance),
+                        backgroundColor: neutralCalendarColor,
+                        borderColor: 'transparent',
                         textColor: theme.palette.text.primary,
+                        classNames: ['calendar-neutral-event'],
                         extendedProps: {
                             eventType: 'task',
                             fullDescription: taskName,
@@ -363,7 +369,37 @@ export function MonthCalendar({
             : [];
 
         return [...eventEntries, ...groupEvents, ...taskEvents, ...statEvents];
-    }, [availableStatDefinitions, calendarRange.end, calendarRange.start, calendarTasks, events, hasVisibleStats, selectedStatIdsForDisplay, showTasks, statEntries, taskGroupByTaskId, theme.palette.mode, theme.palette.secondary.main, theme.palette.text.primary, theme.palette.success.main, theme.palette.error.main]);
+    }, [availableStatDefinitions, calendarRange.end, calendarRange.start, calendarTasks, events, hasVisibleStats, neutralCalendarColor, selectedStatIdsForDisplay, showTasks, statEntries, tasks, taskGroupByTaskId, theme.palette.error.main, theme.palette.primary.contrastText, theme.palette.primary.main, theme.palette.secondary.main, theme.palette.success.main, theme.palette.text.primary]);
+
+    const renderEventContent = useCallback((arg: EventContentArg) => {
+        const eventType = arg.event.extendedProps.eventType;
+        const isTaskEntity = eventType === 'task' || eventType === 'taskGroup';
+        const isCalendarEvent = eventType === 'calendarEvent';
+        const completed = arg.event.extendedProps.completed === true;
+
+        return (
+            <Box className="calendar-event-content">
+                {isTaskEntity && completed && (
+                    <CheckIcon
+                        aria-label="Completed"
+                        sx={{
+                            color: theme.palette.success.main,
+                            flexShrink: 0,
+                            fontSize: '1rem',
+                        }}
+                    />
+                )}
+                <Box component="span" className="calendar-event-title">
+                    {arg.event.title || 'Untitled'}
+                </Box>
+                {isCalendarEvent && !arg.event.allDay && arg.event.start && (
+                    <Box component="span" className="calendar-event-time">
+                        {calendarEventTimeLabel(arg.event.start)}
+                    </Box>
+                )}
+            </Box>
+        );
+    }, [theme.palette.success.main]);
 
     const handleEventDidMount = useCallback((info: EventMountArg) => {
         const fullDescription = info.event.extendedProps.fullDescription;
@@ -459,7 +495,10 @@ export function MonthCalendar({
     }, []);
 
     const handleTaskDateChange = useCallback((newDate: Date | null) => {
-        if (!newDate) return;
+        if (!newDate) {
+            setTaskDraft(prev => prev ? { ...prev, scheduledPerformDateTime: '' } : prev);
+            return;
+        }
         const pad = (n: number) => String(n).padStart(2, '0');
         const iso = `${newDate.getFullYear()}-${pad(newDate.getMonth() + 1)}-${pad(newDate.getDate())}T${pad(newDate.getHours())}:${pad(newDate.getMinutes())}:00`;
         setTaskDraft(prev => prev ? { ...prev, scheduledPerformDateTime: iso } : prev);
@@ -682,6 +721,47 @@ export function MonthCalendar({
                                 transform: 'translateY(-1px)',
                             },
                         },
+                        '& .fc-daygrid-event-dot': {
+                            display: 'none',
+                        },
+                        '& .fc .calendar-accent-event': {
+                            backgroundColor: `${theme.palette.primary.main} !important`,
+                            borderColor: `${theme.palette.primary.main} !important`,
+                            color: `${theme.palette.primary.contrastText} !important`,
+                        },
+                        '& .fc .calendar-accent-event .fc-event-main': {
+                            color: `${theme.palette.primary.contrastText} !important`,
+                        },
+                        '& .fc .calendar-neutral-event': {
+                            backgroundColor: `${neutralCalendarColor} !important`,
+                            borderColor: `${neutralCalendarColor} !important`,
+                            color: `${theme.palette.text.primary} !important`,
+                        },
+                        '& .fc-daygrid-event .fc-event-main': {
+                            display: 'flex',
+                            minWidth: 0,
+                            width: '100%',
+                        },
+                        '& .calendar-event-content': {
+                            alignItems: 'center',
+                            display: 'flex',
+                            gap: '4px',
+                            minWidth: 0,
+                            width: '100%',
+                        },
+                        '& .calendar-event-title': {
+                            flex: '1 1 auto',
+                            minWidth: 0,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                        },
+                        '& .calendar-event-time': {
+                            flex: '0 0 auto',
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            marginLeft: 'auto',
+                            paddingLeft: '4px',
+                        },
                         '& .fc-button': {
                             border: 'none !important',
                             background: `${theme.palette.primary.main}30 !important`,
@@ -748,6 +828,7 @@ export function MonthCalendar({
                             initialView="dayGridMonth"
                             height="100%"
                             events={calendarEvents}
+                            eventContent={renderEventContent}
                             eventOrder="groupOrder,start,title"
                             eventDidMount={handleEventDidMount}
                             eventClick={handleEventClick}
@@ -887,7 +968,7 @@ export function MonthCalendar({
                                     <ListItemButton onClick={() => openTaskEditor(task)}>
                                         <ListItemText
                                             primary={task.name || 'Untitled Task'}
-                                            secondary={`${format(new Date(task.scheduledPerformDateTime), 'MMM d, yyyy, HH:mm')} · ${task.completed ? 'Completed' : 'Open'}`}
+                                            secondary={`${format(new Date(task.scheduledPerformDateTime!), 'MMM d, yyyy, HH:mm')} · ${task.completed ? 'Completed' : 'Open'}`}
                                             primaryTypographyProps={{
                                                 sx: {
                                                     textDecoration: task.completed ? 'line-through' : 'none',
@@ -974,6 +1055,7 @@ export function MonthCalendar({
                                     onChange={handleTaskDateChange}
                                     ampm={false}
                                     slotProps={{
+                                        field: { clearable: true },
                                         textField: { size: 'small', fullWidth: true },
                                     }}
                                 />

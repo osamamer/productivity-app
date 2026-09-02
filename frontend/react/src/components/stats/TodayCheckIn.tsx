@@ -6,7 +6,7 @@ import {
 import { format } from 'date-fns';
 import { StatDefinition } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
-import { celebrateStatLogged } from '../../services/statCelebration';
+import { getBooleanChoiceColor, showStatFeedback } from '../../services/statFeedback';
 
 interface Props {
     definitions: StatDefinition[];
@@ -21,7 +21,7 @@ export function TodayCheckIn({ definitions, onSaved }: Props) {
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState(false);
-    const celebrationAnchorRef = useRef<HTMLElement | null>(null);
+    const feedbackAnchorRef = useRef<HTMLElement | null>(null);
 
     useEffect(() => {
         if (definitions.length === 0) {
@@ -69,8 +69,9 @@ export function TodayCheckIn({ definitions, onSaved }: Props) {
                     statService.recordEntry({ statDefinitionId: d.id, date: today, value: values[d.id]! })
                 )
             );
-            const hasYesValue = toSave.some(d => d.type === 'BOOLEAN' && values[d.id] === 1);
-            if (hasYesValue) celebrateStatLogged(celebrationAnchorRef.current);
+            toSave.forEach(definition => {
+                showStatFeedback(definition, values[definition.id]!, feedbackAnchorRef.current);
+            });
             setSuccess(true);
             onSaved();
         } catch (e) {
@@ -108,14 +109,15 @@ export function TodayCheckIn({ definitions, onSaved }: Props) {
                             >
                                 <ToggleButton
                                     value="yes"
-                                    onClick={event => { celebrationAnchorRef.current = event.currentTarget; }}
-                                    sx={{ '&.Mui-selected': { bgcolor: 'success.main', color: 'white', '&:hover': { bgcolor: 'success.dark' } } }}
+                                    onClick={event => { feedbackAnchorRef.current = event.currentTarget; }}
+                                    sx={{ '&.Mui-selected': { bgcolor: `${getBooleanChoiceColor(def, 1)}.main`, color: 'white', '&:hover': { bgcolor: `${getBooleanChoiceColor(def, 1)}.dark` } } }}
                                 >
                                     Yes
                                 </ToggleButton>
                                 <ToggleButton
                                     value="no"
-                                    sx={{ '&.Mui-selected': { bgcolor: 'error.main', color: 'white', '&:hover': { bgcolor: 'error.dark' } } }}
+                                    onClick={event => { feedbackAnchorRef.current = event.currentTarget; }}
+                                    sx={{ '&.Mui-selected': { bgcolor: `${getBooleanChoiceColor(def, 0)}.main`, color: 'white', '&:hover': { bgcolor: `${getBooleanChoiceColor(def, 0)}.dark` } } }}
                                 >
                                     No
                                 </ToggleButton>
@@ -127,6 +129,7 @@ export function TodayCheckIn({ definitions, onSaved }: Props) {
                                 size="small"
                                 value={values[def.id] ?? ''}
                                 onChange={e => setValue(def.id, e.target.value === '' ? null : Number(e.target.value))}
+                                onFocus={event => { feedbackAnchorRef.current = event.currentTarget; }}
                                 sx={{ width: 160 }}
                             />
                         )}
@@ -139,7 +142,10 @@ export function TodayCheckIn({ definitions, onSaved }: Props) {
                                     step={1}
                                     marks
                                     valueLabelDisplay="auto"
-                                    onChange={(_, v) => setValue(def.id, v as number)}
+                                    onChange={(event, v) => {
+                                        feedbackAnchorRef.current = event.currentTarget as HTMLElement;
+                                        setValue(def.id, v as number);
+                                    }}
                                     color={touched.has(def.id) ? 'primary' : 'secondary'}
                                 />
                                 <Stack direction="row" justifyContent="space-between">

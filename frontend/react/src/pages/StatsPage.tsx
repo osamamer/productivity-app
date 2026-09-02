@@ -6,8 +6,7 @@ import {
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import AddIcon from '@mui/icons-material/Add';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import { PageWrapper } from '../components/PageWrapper';
 import { CreateStatForm } from '../components/stats/CreateStatForm';
 import { StatRecentDots } from '../components/stats/StatRecentDots';
@@ -28,6 +27,8 @@ const DEDICATED_SYSTEM_KEYS = new Set([
     'valence',
     'emotional_load',
 ]);
+
+const STAT_ACTIONS_WIDTH = 32;
 
 function isDedicatedStat(definition: StatDefinition): boolean {
     return definition.systemKey !== undefined && DEDICATED_SYSTEM_KEYS.has(definition.systemKey);
@@ -83,6 +84,7 @@ export function StatsPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [showCreateForm, setShowCreateForm] = useState(false);
+    const [editTarget, setEditTarget] = useState<StatDefinition | null>(null);
     const [chartRefreshKey, setChartRefreshKey] = useState(0);
     const [deleteTarget, setDeleteTarget] = useState<StatDefinition | null>(null);
     const [draggedId, setDraggedId] = useState<string | null>(null);
@@ -120,6 +122,13 @@ export function StatsPage() {
         setShowCreateForm(false);
     };
 
+    const handleUpdated = (updated: StatDefinition) => {
+        setDefinitions(prev => prev.map(definition =>
+            definition.id === updated.id ? updated : definition,
+        ));
+        setEditTarget(null);
+    };
+
     const handleDeleteConfirm = async () => {
         if (!deleteTarget) return;
         try {
@@ -133,6 +142,7 @@ export function StatsPage() {
                 });
                 return next;
             });
+            setEditTarget(null);
         } catch (e) {
             console.error('Failed to delete stat definition:', e);
         } finally {
@@ -202,6 +212,25 @@ export function StatsPage() {
                             onCreated={handleCreated}
                             onCancel={() => setShowCreateForm(false)}
                         />
+                    </DialogContent>
+                </Dialog>
+
+                <Dialog
+                    open={Boolean(editTarget)}
+                    onClose={() => setEditTarget(null)}
+                    fullWidth
+                    maxWidth="xs"
+                >
+                    <DialogTitle>Edit statistic</DialogTitle>
+                    <DialogContent dividers sx={{ p: 1.5 }}>
+                        {editTarget && (
+                            <CreateStatForm
+                                initialDefinition={editTarget}
+                                onUpdated={handleUpdated}
+                                onDelete={() => setDeleteTarget(editTarget)}
+                                onCancel={() => setEditTarget(null)}
+                            />
+                        )}
                     </DialogContent>
                 </Dialog>
 
@@ -283,7 +312,7 @@ export function StatsPage() {
                                             justifyContent="space-between"
                                             spacing={1}
                                         >
-                                            <Box sx={{ minWidth: 0, flex: 1 }}>
+                                            <Box sx={{ minWidth: 0, flex: 1, textAlign: 'left' }}>
                                                 <Typography
                                                     variant="body2"
                                                     fontWeight={isSelected ? 600 : 400}
@@ -303,27 +332,31 @@ export function StatsPage() {
                                                 )}
                                             </Box>
                                             <Stack direction="row" alignItems="center" spacing={0.5} sx={{ flexShrink: 0 }}>
-                                                <Tooltip title="Drag to reorder">
-                                                    <DragIndicatorIcon
-                                                        aria-label={`Reorder ${def.name}`}
-                                                        sx={{ color: 'text.secondary', cursor: 'grab', fontSize: 20 }}
-                                                    />
-                                                </Tooltip>
                                                 <StatRecentDots
                                                     definition={def}
                                                     refreshKey={chartRefreshKey}
                                                     onEntryChanged={handleEntryChanged}
                                                 />
                                                 {!def.systemKey && (
-                                                    <Tooltip title="Delete stat and all its data">
-                                                        <IconButton
-                                                            size="small"
-                                                            onClick={e => { e.stopPropagation(); setDeleteTarget(def); }}
-                                                            sx={{ ml: 0.5, opacity: 0.5, '&:hover': { opacity: 1 } }}
-                                                        >
-                                                            <DeleteOutlineIcon sx={{ fontSize: 16 }} />
-                                                        </IconButton>
-                                                    </Tooltip>
+                                                    <Box
+                                                        sx={{
+                                                            width: STAT_ACTIONS_WIDTH,
+                                                            flexShrink: 0,
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: 0.5,
+                                                        }}
+                                                    >
+                                                        <Tooltip title="Edit stat">
+                                                            <IconButton
+                                                                size="small"
+                                                                onClick={e => { e.stopPropagation(); setEditTarget(def); }}
+                                                                sx={{ opacity: 0.5, '&:hover': { opacity: 1 } }}
+                                                            >
+                                                                <EditOutlinedIcon sx={{ fontSize: 16 }} />
+                                                            </IconButton>
+                                                        </Tooltip>
+                                                    </Box>
                                                 )}
                                             </Stack>
                                         </Stack>
@@ -339,7 +372,7 @@ export function StatsPage() {
                                     key={selectedDef.type === 'BOOLEAN' ? 'calendar' : 'numeric-chart'}
                                     definition={selectedDef}
                                     comparisonDefinitions={visibleDefinitions}
-                                    onDelete={id => setDeleteTarget(definitions.find(d => d.id === id) ?? null)}
+                                    onEdit={setEditTarget}
                                     refreshKey={chartRefreshKey}
                                     onEntryChanged={handleEntryChanged}
                                 />

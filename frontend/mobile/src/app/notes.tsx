@@ -10,6 +10,7 @@ import { ModalSheet } from '@/components/ui/ModalSheet';
 import { Screen } from '@/components/ui/Screen';
 import { EmptyView, ErrorView, LoadingView } from '@/components/ui/StateView';
 import { useAsyncData } from '@/hooks/useAsyncData';
+import { reportError } from '@/lib/errors';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
 import type { Note } from '@/types/models';
@@ -48,7 +49,7 @@ export default function NotesScreen() {
       const note = await api.notes.create();
       resource.setData(current => current ? [note, ...current] : [note]);
       openNote(note);
-    } catch (cause) { Alert.alert('Could not create note', cause instanceof Error ? cause.message : undefined); }
+    } catch (cause) { Alert.alert('Could not create note', reportError('Could not create note', cause)); }
     finally { setSaving(false); }
   }
 
@@ -59,7 +60,7 @@ export default function NotesScreen() {
       const updated = await api.notes.update(selected.id, { title: title.trim() || 'Untitled', content });
       resource.setData(current => current?.map(note => note.id === updated.id ? updated : note) ?? current);
       setSelected(null);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not save this note.'); }
+    } catch (cause) { setError(reportError('Could not save note', cause)); }
     finally { setSaving(false); }
   }
 
@@ -68,7 +69,7 @@ export default function NotesScreen() {
       const updated = await api.notes.update(note.id, { pinned: !note.pinned });
       resource.setData(current => current?.map(item => item.id === updated.id ? updated : item) ?? current);
       setSelected(updated);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not update this note.'); }
+    } catch (cause) { setError(reportError('Could not update note', cause)); }
   }
 
   function remove(note: Note) {
@@ -76,7 +77,7 @@ export default function NotesScreen() {
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: () => void api.notes.remove(note.id).then(() => {
         resource.setData(current => current?.filter(item => item.id !== note.id) ?? current); setSelected(null);
-      }).catch(cause => setError(cause instanceof Error ? cause.message : 'Could not delete this note.')) },
+      }).catch(cause => setError(reportError('Could not delete note', cause))) },
     ]);
   }
 
@@ -108,7 +109,7 @@ export default function NotesScreen() {
 }
 
 const styles = StyleSheet.create({
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 }, half: { width: '48.5%' }, note: { minHeight: 190, gap: 10, padding: 14 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -5 }, half: { width: '50%', paddingHorizontal: 5, marginBottom: 10 }, note: { minHeight: 190, gap: 10, padding: 14 },
   grow: { flex: 1 }, spaceBetween: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 }, editor: { minHeight: 280 },
   actions: { flexDirection: 'row', gap: 10 },
 });

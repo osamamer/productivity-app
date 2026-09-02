@@ -140,6 +140,18 @@ public class NotificationService {
                 LocalDate nextDate = nextMonth.atDay(Math.min(anchorDate.getDayOfMonth(), nextMonth.lengthOfMonth()));
                 yield ZonedDateTime.of(nextDate, current.toLocalTime(), zone);
             }
+            case CUSTOM -> switch (event.getRecurrenceUnit()) {
+                case DAYS -> current.plusDays(event.getRecurrenceInterval());
+                case WEEKS -> current.plusWeeks(event.getRecurrenceInterval());
+                case MONTHS -> {
+                    LocalDate anchorDate = event.isAllDay()
+                            ? event.getStartDate()
+                            : event.getStartTime().atZone(zone).toLocalDate();
+                    YearMonth nextMonth = YearMonth.from(current).plusMonths(event.getRecurrenceInterval());
+                    LocalDate nextDate = nextMonth.atDay(Math.min(anchorDate.getDayOfMonth(), nextMonth.lengthOfMonth()));
+                    yield ZonedDateTime.of(nextDate, current.toLocalTime(), zone);
+                }
+            };
             case NONE -> throw new IllegalStateException("A non-recurring event has no next occurrence.");
         };
     }

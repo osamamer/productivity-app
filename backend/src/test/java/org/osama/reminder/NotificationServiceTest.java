@@ -10,6 +10,7 @@ import org.osama.scheduling.ScheduledJob;
 import org.osama.event.CalendarEventRequest;
 import org.osama.event.CalendarEventService;
 import org.osama.event.RecurrenceFrequency;
+import org.osama.event.RecurrenceUnit;
 import org.osama.user.User;
 import org.osama.user.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -140,6 +141,27 @@ class NotificationServiceTest {
         assertEquals(Instant.parse("2027-01-17T10:00:00Z"), nextReminder.getEventOccurrenceStart());
         assertEquals(Instant.parse("2027-01-17T10:00:00Z").minusSeconds(24 * 60 * 60),
                 nextReminder.getDateTime());
+    }
+
+    @Test
+    void acknowledgingACustomCalendarReminderUsesItsIntervalAndUnit() {
+        CalendarEventRequest request = new CalendarEventRequest();
+        request.setTitle("Biweekly planning");
+        request.setStartTime(Instant.parse("2027-01-10T10:00:00Z"));
+        request.setEndTime(Instant.parse("2027-01-10T11:00:00Z"));
+        request.setTimeZone("Asia/Amman");
+        request.setRecurrenceFrequency(RecurrenceFrequency.CUSTOM);
+        request.setRecurrenceInterval(2);
+        request.setRecurrenceUnit(RecurrenceUnit.WEEKS);
+        request.setRecurrenceEndDate(LocalDate.of(2027, 2, 28));
+
+        var event = calendarEventService.createEvent(request, USER_ID);
+        var reminder = reminderRepository.findByEventId(event.id()).orElseThrow();
+
+        notificationService.acknowledge(reminder.getReminderId(), USER_ID);
+
+        assertEquals(Instant.parse("2027-01-24T10:00:00Z"),
+                reminderRepository.findByEventId(event.id()).orElseThrow().getEventOccurrenceStart());
     }
 
     private ScheduledJob job(String jobId) {

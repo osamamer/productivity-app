@@ -12,7 +12,8 @@
         "EXPO_PUBLIC_KEYCLOAK_URL": "https://auth.claritard.com",
         "EXPO_PUBLIC_KEYCLOAK_REALM": "productivity-app",
         "EXPO_PUBLIC_KEYCLOAK_CLIENT_ID": "productivity-app-frontend"
-      }
+      },
+      "channel": "preview"
     },
     "production": {
       "autoIncrement": true,
@@ -22,7 +23,8 @@
         "EXPO_PUBLIC_KEYCLOAK_URL": "https://auth.claritard.com",
         "EXPO_PUBLIC_KEYCLOAK_REALM": "productivity-app",
         "EXPO_PUBLIC_KEYCLOAK_CLIENT_ID": "productivity-app-frontend"
-      }
+      },
+      "channel": "production"
     }
   }
 }

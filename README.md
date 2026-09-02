@@ -52,7 +52,9 @@ The values in `deployment/.env.example` are development-only credentials. Keep
 production environment.
 
 Press `Ctrl+C` to stop the backend and frontend processes started by this run.
-The Docker services stay running, so the next `./run-app.sh` starts quickly.
+The launcher stops their complete process groups, so Maven or Vite children do
+not remain behind on ports 8080 or 5173. The Docker services stay running, so
+the next `./run-app.sh` starts quickly.
 
 ### Stop or reset local services
 
@@ -156,9 +158,12 @@ For production deployment, see
 - **Docker permission denied:** make sure Docker is running and your account can
   access the Docker socket. On Linux, add the account to the `docker` group and
   log in again.
-- **A port is already in use:** stop the service using port `5432`, `7070`,
-  `8080`, or `5173`, then run `./run-app.sh` again. The launcher does not kill
-  unrelated processes.
+- **A port is already in use:** the launcher identifies the exact listener. It
+  stops unrelated Docker containers publishing the required ports, detected
+  system PostgreSQL clusters on `5432`, and same-user listeners on the app
+  ports. It refuses to kill a listener owned by another account or one it
+  cannot identify safely; stop that owner manually, then run the launcher
+  again.
 - **Login fails after an old local setup:** the imported realm is applied only
   when the realm does not already exist. If the old volume has an incomplete
   Keycloak setup, either finish the realm/client setup in the Keycloak admin
