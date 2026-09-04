@@ -52,6 +52,7 @@ export const NotesList = memo(function NotesList({
             <Box sx={{ p: 1.5, display: 'flex', gap: 1 }}>
                 <TextField
                     value={searchQuery}
+                    autoComplete="off"
                     onChange={event => onSearchChange(event.target.value)}
                     placeholder="Search notes"
                     size="small"

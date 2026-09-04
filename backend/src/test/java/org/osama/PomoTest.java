@@ -126,6 +126,25 @@ public class PomoTest {
     }
 
     @Test
+    @org.springframework.transaction.annotation.Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void activePomodoroStatusReportsTheLiveRemainingTime() throws InterruptedException {
+        Task task = createTask();
+
+        pomodoroService.startPomodoro(task.getTaskId(), 10, 10, 10, 2, 4, true, testUserId);
+
+        long initialRemaining = pomodoroService.getActivePomodoro(testUserId)
+                .orElseThrow()
+                .getSecondsUntilNextTransition();
+        Thread.sleep(1_200);
+        long laterRemaining = pomodoroService.getActivePomodoro(testUserId)
+                .orElseThrow()
+                .getSecondsUntilNextTransition();
+
+        assertTrue(initialRemaining > 0);
+        assertTrue(laterRemaining < initialRemaining);
+    }
+
+    @Test
     void userCannotStartPomodoroForAnotherUsersTask() {
         Task task = createTask();
         User otherUser = User.builder()

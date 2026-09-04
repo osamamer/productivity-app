@@ -93,7 +93,9 @@ export function StatSummaryBar({ definition, dateRange, refreshKey }: Props) {
     const summary = summaryState?.key === periodKey
         ? summaryState.summary
         : cachedSummary ?? null;
-    const entries = entryState?.key === periodKey ? entryState.entries : null;
+    const entries = entryState?.key === periodKey
+        ? entryState.entries
+        : statService.getCachedEntries(definition.id, period.from, period.to) ?? null;
 
     useEffect(() => {
         let cancelled = false;

@@ -18,19 +18,13 @@ interface MentalLoadOverviewProps {
 
 export const MentalLoadOverview = memo(function MentalLoadOverview({ summary, onCapacitySave }: MentalLoadOverviewProps) {
     const [capacity, setCapacity] = useState(summary.capacityToday ?? 5);
-    const [saving, setSaving] = useState(false);
 
     useEffect(() => {
         setCapacity(summary.capacityToday ?? 5);
     }, [summary.capacityToday]);
 
-    const saveCapacity = async () => {
-        setSaving(true);
-        try {
-            await onCapacitySave(capacity);
-        } finally {
-            setSaving(false);
-        }
+    const saveCapacity = () => {
+        void onCapacitySave(capacity);
     };
 
     const stateCounts = {
@@ -99,11 +93,11 @@ export const MentalLoadOverview = memo(function MentalLoadOverview({ summary, on
                     <Button
                         size="small"
                         variant={summary.capacityToday === capacity ? 'text' : 'contained'}
-                        disabled={saving || summary.capacityToday === capacity}
+                        disabled={summary.capacityToday === capacity}
                         onClick={() => void saveCapacity()}
                         sx={{ flexShrink: 0 }}
                     >
-                        {saving ? 'Saving…' : summary.capacityToday === null ? 'Save' : 'Update'}
+                        {summary.capacityToday === null ? 'Save' : 'Update'}
                     </Button>
                 </Stack>
             </Stack>

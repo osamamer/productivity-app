@@ -130,3 +130,7 @@ databaseChangeLog:
   # User-owned groups for organizing daily statistics
   - include:
       file: db/changelog/changes/037-create-stat-groups.yaml
+
+  # Give the built-in Sleep stat its positive seven-hour target
+  - include:
+      file: db/changelog/changes/038-set-sleep-stat-morality.yaml

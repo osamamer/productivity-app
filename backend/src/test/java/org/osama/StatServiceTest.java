@@ -347,6 +347,28 @@ public class StatServiceTest {
     }
 
     @Test
+    void bootstrapLoadsAllDailyStatsEntriesAndSummariesInTheRequestedWindow() {
+        StatDefinition number = createNamedStatDefinition("Steps", StatType.NUMBER);
+        StatDefinition habit = createNamedStatDefinition("Read", StatType.BOOLEAN);
+        LocalDate today = LocalDate.now();
+        LocalDate from = today.minusDays(29);
+
+        statService.recordEntry(number.getId(), today.minusDays(1), 8000.0, TEST_USER_ID);
+        statService.recordEntry(habit.getId(), today, 1.0, TEST_USER_ID);
+        statService.recordEntry(number.getId(), from.minusDays(1), 9999.0, TEST_USER_ID);
+
+        StatBootstrapResponse bootstrap = statService.getBootstrap(from, today, TEST_USER_ID);
+
+        assertEquals(List.of(number.getId(), habit.getId()),
+                bootstrap.definitions().stream().map(StatDefinition::getId).toList());
+        assertEquals(1, bootstrap.entries().get(number.getId()).size());
+        assertEquals(1, bootstrap.entries().get(habit.getId()).size());
+        assertEquals(8000.0, bootstrap.entries().get(number.getId()).get(0).getValue());
+        assertEquals(8000.0, bootstrap.summaries().get(number.getId()).periodTotal(), 0.0001);
+        assertEquals(1, bootstrap.summaries().get(habit.getId()).periodYesCount());
+    }
+
+    @Test
     void definitionsCanBeReorderedAndOrderIsReturnedPersistently() {
         StatDefinition first = createNamedStatDefinition("First", StatType.NUMBER);
         StatDefinition second = createNamedStatDefinition("Second", StatType.BOOLEAN);

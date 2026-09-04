@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useLayoutEffect, useRef, type MouseEvent } from 'react';
 import {
     Box,
     Chip,
@@ -20,6 +20,7 @@ interface MentalThreadListProps {
     threads: MentalThread[];
     selectedId: string | null;
     onSelect: (threadId: string) => void;
+    onContextMenu: (thread: MentalThread, anchorEl: HTMLElement) => void;
 }
 
 interface MentalThreadRowProps {
@@ -27,6 +28,7 @@ interface MentalThreadRowProps {
     isSelected: boolean;
     isLast: boolean;
     onSelect: (threadId: string) => void;
+    onContextMenu: (thread: MentalThread, anchorEl: HTMLElement) => void;
 }
 
 function formatDate(date: string): string {
@@ -39,6 +41,7 @@ const MentalThreadRow = memo(function MentalThreadRow({
     isSelected,
     isLast,
     onSelect,
+    onContextMenu,
 }: MentalThreadRowProps) {
     const presentation = attentionStateDetails[thread.attentionState];
     const isResolved = thread.status === 'CLOSED' && thread.closureType === 'RESOLVED';
@@ -48,6 +51,11 @@ const MentalThreadRow = memo(function MentalThreadRow({
         <ListItemButton
             selected={isSelected}
             onClick={() => onSelect(thread.id)}
+            onContextMenu={(event: MouseEvent<HTMLElement>) => {
+                event.preventDefault();
+                onSelect(thread.id);
+                onContextMenu(thread, event.currentTarget);
+            }}
             sx={{
                 display: 'block',
                 px: 2,
@@ -110,7 +118,50 @@ const MentalThreadRow = memo(function MentalThreadRow({
     );
 });
 
-export function MentalThreadList({ threads, selectedId, onSelect }: MentalThreadListProps) {
+export function MentalThreadList({ threads, selectedId, onSelect, onContextMenu }: MentalThreadListProps) {
+    const rowRefs = useRef(new Map<string, HTMLDivElement>());
+    const previousRowPositions = useRef(new Map<string, DOMRect>());
+    const threadsRef = useRef(threads);
+    threadsRef.current = threads;
+    const layoutKey = threads.map(thread => [
+        thread.id,
+        thread.status,
+        thread.attentionState,
+        thread.closureType ?? '',
+        thread.currentMentalLoad,
+        thread.targetCloseDate ?? '',
+        thread.title,
+    ].join(':')).join('|');
+
+    useLayoutEffect(() => {
+        const nextPositions = new Map<string, DOMRect>();
+        const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+        threadsRef.current.forEach(thread => {
+            const element = rowRefs.current.get(thread.id);
+            if (!element) return;
+
+            const nextPosition = element.getBoundingClientRect();
+            nextPositions.set(thread.id, nextPosition);
+            const previousPosition = previousRowPositions.current.get(thread.id);
+            if (!previousPosition || reducedMotion) return;
+
+            const deltaX = previousPosition.left - nextPosition.left;
+            const deltaY = previousPosition.top - nextPosition.top;
+            if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) return;
+
+            element.animate(
+                [
+                    { transform: `translate3d(${deltaX}px, ${deltaY}px, 0)` },
+                    { transform: 'translate3d(0, 0, 0)' },
+                ],
+                { duration: 280, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
+            );
+        });
+
+        previousRowPositions.current = nextPositions;
+    }, [layoutKey]);
+
     if (threads.length === 0) {
         return (
             <Box sx={{ p: 4, textAlign: 'center' }}>
@@ -125,13 +176,21 @@ export function MentalThreadList({ threads, selectedId, onSelect }: MentalThread
     return (
         <List disablePadding>
             {threads.map((thread, index) => (
-                <MentalThreadRow
+                <Box
                     key={thread.id}
-                    thread={thread}
-                    isSelected={thread.id === selectedId}
-                    isLast={index === threads.length - 1}
-                    onSelect={onSelect}
-                />
+                    ref={element => {
+                        if (element) rowRefs.current.set(thread.id, element as HTMLDivElement);
+                        else rowRefs.current.delete(thread.id);
+                    }}
+                >
+                    <MentalThreadRow
+                        thread={thread}
+                        isSelected={thread.id === selectedId}
+                        isLast={index === threads.length - 1}
+                        onSelect={onSelect}
+                        onContextMenu={onContextMenu}
+                    />
+                </Box>
             ))}
         </List>
     );

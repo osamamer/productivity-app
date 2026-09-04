@@ -23,7 +23,14 @@ export function getStatFeedback(definition: StatDefinition, value: number): Stat
     return value <= definition.goodThreshold ? 'CELEBRATE' : 'SAD';
 }
 
-export function getBooleanChoiceColor(definition: StatDefinition, value: 0 | 1): 'success' | 'error' {
+export function getBooleanChoiceColor(
+    definition: StatDefinition,
+    value: 0 | 1,
+): 'primary' | 'secondary' | 'success' | 'error' {
+    if (effectiveStatMorality(definition) === 'NEUTRAL') {
+        return value === 1 ? 'primary' : 'secondary';
+    }
+
     const feedback = getStatFeedback(definition, value);
     if (feedback === 'CELEBRATE') return 'success';
     if (feedback === 'SAD') return 'error';

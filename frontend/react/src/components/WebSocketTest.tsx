@@ -81,7 +81,7 @@ const WebSocketTest: React.FC = () => {
                 {connected && (
                     <div>
                         <label>What is your name?</label>
-                        <input type="text" ref={nameInputRef} />
+                        <input type="text" ref={nameInputRef} autoComplete="off" />
                         <button type="button" id="send" onClick={sendName}>
                             Send
                         </button>

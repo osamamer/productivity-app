@@ -26,6 +26,7 @@ import type { UserInfo } from '@/types/models';
 WebBrowser.maybeCompleteAuthSession();
 
 const STORAGE_KEY = 'solife.keycloak.refresh-token';
+const USER_STORAGE_KEY = 'solife.keycloak.user';
 const redirectUri = AuthSession.makeRedirectUri({ scheme: appConfig.scheme, path: 'auth' });
 
 interface KeycloakClaims {
@@ -62,6 +63,33 @@ function userFromToken(token: AuthSession.TokenResponse): UserInfo | null {
   }
 }
 
+function tokenErrorCode(cause: unknown): string | undefined {
+  return cause instanceof AuthSession.ResponseError ? cause.code : undefined;
+}
+
+function isInvalidRefreshToken(cause: unknown): boolean {
+  return tokenErrorCode(cause) === 'invalid_grant';
+}
+
+async function readStoredUser(): Promise<UserInfo | null> {
+  const storedUser = await SecureStore.getItemAsync(USER_STORAGE_KEY);
+  if (!storedUser) return null;
+  try {
+    const parsed = JSON.parse(storedUser) as Partial<UserInfo>;
+    if (typeof parsed.id !== 'string' || !parsed.id) return null;
+    return {
+      id: parsed.id,
+      email: typeof parsed.email === 'string' ? parsed.email : '',
+      firstName: typeof parsed.firstName === 'string' ? parsed.firstName : '',
+      lastName: typeof parsed.lastName === 'string' ? parsed.lastName : '',
+      username: typeof parsed.username === 'string' ? parsed.username : '',
+    };
+  } catch (cause) {
+    console.error('Could not read stored mobile user:', cause);
+    return null;
+  }
+}
+
 export function AuthProvider({ children }: PropsWithChildren) {
   const discovery = AuthSession.useAutoDiscovery(keycloakIssuer);
   const tokenRef = useRef<AuthSession.TokenResponse | null>(null);
@@ -74,14 +102,24 @@ export function AuthProvider({ children }: PropsWithChildren) {
     const previousRefreshToken = tokenRef.current?.refreshToken;
     if (!token.refreshToken && previousRefreshToken) token.refreshToken = previousRefreshToken;
     tokenRef.current = token;
-    setUser(userFromToken(token));
+    const nextUser = userFromToken(token);
+    setUser(nextUser);
     if (token.refreshToken) await SecureStore.setItemAsync(STORAGE_KEY, token.refreshToken);
+    if (nextUser) await SecureStore.setItemAsync(USER_STORAGE_KEY, JSON.stringify(nextUser));
   }, []);
 
   const clearSession = useCallback(async () => {
     tokenRef.current = null;
     setUser(null);
-    await SecureStore.deleteItemAsync(STORAGE_KEY);
+    const results = await Promise.allSettled([
+      SecureStore.deleteItemAsync(STORAGE_KEY),
+      SecureStore.deleteItemAsync(USER_STORAGE_KEY),
+    ]);
+    results.forEach(result => {
+      if (result.status === 'rejected') {
+        console.error('Could not clear a stored mobile session value:', result.reason);
+      }
+    });
   }, []);
 
   const refresh = useCallback(async (): Promise<AuthSession.TokenResponse> => {
@@ -104,14 +142,15 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const getAccessToken = useCallback(
     async (forceRefresh = false): Promise<string | null> => {
       const current = tokenRef.current;
-      if (!forceRefresh && current && AuthSession.TokenResponse.isTokenFresh(current, 45)) {
+      if (!forceRefresh && current && AuthSession.TokenResponse.isTokenFresh(current, -45)) {
         return current.accessToken;
       }
       try {
         return (await refresh()).accessToken;
-      } catch {
-        await clearSession();
-        return null;
+      } catch (cause) {
+        console.error('Mobile token refresh failed:', { code: tokenErrorCode(cause) }, cause);
+        if (isInvalidRefreshToken(cause)) await clearSession();
+        return current?.accessToken ?? null;
       }
     },
     [clearSession, refresh],
@@ -122,11 +161,23 @@ export function AuthProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     if (!discovery) return;
     let cancelled = false;
-    void refresh()
-      .catch(() => clearSession())
-      .finally(() => {
+    void (async () => {
+      try {
+        const refreshToken = await SecureStore.getItemAsync(STORAGE_KEY);
+        if (!refreshToken) {
+          await SecureStore.deleteItemAsync(USER_STORAGE_KEY);
+          return;
+        }
+        const storedUser = await readStoredUser();
+        if (storedUser && !cancelled) setUser(storedUser);
+        await refresh();
+      } catch (cause) {
+        console.error('Mobile session restore failed:', { code: tokenErrorCode(cause) }, cause);
+        if (isInvalidRefreshToken(cause)) await clearSession();
+      } finally {
         if (!cancelled) setLoading(false);
-      });
+      }
+    })();
     return () => {
       cancelled = true;
     };

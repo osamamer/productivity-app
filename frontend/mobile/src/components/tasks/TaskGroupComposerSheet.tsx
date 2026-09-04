@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { TextInput } from 'react-native';
 
 import { AppButton } from '@/components/ui/AppButton';
 import { AppInput } from '@/components/ui/AppInput';
@@ -14,9 +15,17 @@ export function TaskGroupComposerSheet({ visible, taskIds, onClose, onCreated }:
   onCreated: () => void;
 }) {
   const { createGroup } = useTaskWorkspace();
+  const nameInputRef = useRef<TextInput>(null);
   const [name, setName] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!visible) return undefined;
+
+    const focusTimer = setTimeout(() => nameInputRef.current?.focus(), 220);
+    return () => clearTimeout(focusTimer);
+  }, [visible]);
 
   function close() {
     setName('');
@@ -49,7 +58,7 @@ export function TaskGroupComposerSheet({ visible, taskIds, onClose, onCreated }:
       title="Group tasks"
       footer={<AppButton label="Create group" icon="folder-open-outline" loading={saving} onPress={() => void submit()} />}>
       <AppText color="muted">Keep these {taskIds.length} tasks together in your workspace.</AppText>
-      <AppInput autoFocus label="Group name" value={name} onChangeText={setName} error={error ?? undefined} />
+      <AppInput ref={nameInputRef} autoFocus label="Group name" value={name} onChangeText={setName} error={error ?? undefined} />
     </ModalSheet>
   );
 }

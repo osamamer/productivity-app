@@ -1,15 +1,16 @@
 import { Ionicons } from '@expo/vector-icons';
 import { ComponentProps } from 'react';
-import { ActivityIndicator, Pressable, StyleProp, StyleSheet, ViewStyle } from 'react-native';
+import { ActivityIndicator, StyleProp, StyleSheet, ViewStyle } from 'react-native';
 
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { AppText } from './AppText';
+import { SilentPressable } from './SilentPressable';
 
 interface Props {
   label: string;
   onPress: () => void;
   icon?: ComponentProps<typeof Ionicons>['name'];
-  variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
+  variant?: 'primary' | 'secondary' | 'ghost' | 'danger' | 'success';
   disabled?: boolean;
   loading?: boolean;
   compact?: boolean;
@@ -26,27 +27,34 @@ export function AppButton({
   compact,
   style,
 }: Props) {
-  const { colors } = useAppTheme();
+  const { colors, dark } = useAppTheme();
   const primary = variant === 'primary';
   const danger = variant === 'danger';
+  const success = variant === 'success';
   const backgroundColor = primary
     ? colors.accent
+    : success
+      ? colors.success
     : danger
       ? `${colors.danger}18`
       : variant === 'secondary'
         ? colors.accentSoft
         : 'transparent';
-  const foreground = primary ? colors.onAccent : danger ? colors.danger : colors.accent;
+  const foreground = primary
+    ? colors.onAccent
+    : success
+      ? dark ? colors.onAccent : colors.text
+      : danger ? colors.danger : colors.accent;
 
   return (
-    <Pressable
+    <SilentPressable
       accessibilityRole="button"
       disabled={disabled || loading}
       onPress={onPress}
       style={({ pressed }) => [
         styles.button,
         compact && styles.compact,
-        { backgroundColor, borderColor: primary ? colors.accent : colors.border },
+        { backgroundColor, borderColor: primary || success ? backgroundColor : colors.border },
         (disabled || loading) && styles.disabled,
         pressed && styles.pressed,
         style,
@@ -59,7 +67,7 @@ export function AppButton({
           <AppText variant="label" style={{ color: foreground }}>{label}</AppText>
         </>
       )}
-    </Pressable>
+    </SilentPressable>
   );
 }
 

@@ -493,7 +493,7 @@ function StartMeditation({
                     </Box>
 
                     <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}>
-                        <TextField select label="Session length" value={durationMinutes} onChange={onDurationChange}>
+                        <TextField select label="Session length" value={durationMinutes} autoComplete="off" onChange={onDurationChange}>
                             {DURATION_OPTIONS.map(option => <MenuItem key={option} value={option}>{option} minutes</MenuItem>)}
                         </TextField>
                         <Box sx={{ px: 1 }}>
@@ -636,6 +636,7 @@ function ActiveMeditation({
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems="center">
                     <TextField
                         select
+                        autoComplete="off"
                         size="small"
                         label="Soundscape"
                         value={selectedSound}

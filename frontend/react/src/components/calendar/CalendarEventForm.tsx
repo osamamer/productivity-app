@@ -3,7 +3,6 @@ import {
 } from '@mui/material';
 import { useMemo, useState } from 'react';
 import { CalendarEvent, CalendarEventInput, RecurrenceFrequency, RecurrenceUnit } from '../../types/CalendarEvent';
-import { requestSystemNotificationPermission } from '../../services/systemNotifications';
 
 type Props = {
     initialDate: string;
@@ -79,8 +78,7 @@ export function CalendarEventForm({ initialDate, event, onSave, onCancel, onDele
     const [recurrenceInterval, setRecurrenceInterval] = useState(event?.recurrenceInterval ?? 1);
     const [recurrenceUnit, setRecurrenceUnit] = useState<RecurrenceUnit>(event?.recurrenceUnit ?? 'WEEKS');
     const [recurrenceEndDate, setRecurrenceEndDate] = useState(event?.recurrenceEndDate ?? '');
-    const [reminderEnabled, setReminderEnabled] = useState(event ? event.reminderMinutesBefore !== null : true);
-    const [reminderMinutes, setReminderMinutes] = useState(event?.reminderMinutesBefore ?? 1440);
+    const [reminderMinutes, setReminderMinutes] = useState<number | null>(event?.reminderMinutesBefore ?? 1440);
     const [saving, setSaving] = useState(false);
     const [deleting, setDeleting] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -143,7 +141,6 @@ export function CalendarEventForm({ initialDate, event, onSave, onCancel, onDele
         setSaving(true);
         setError(null);
         try {
-            if (reminderEnabled) await requestSystemNotificationPermission();
             await onSave({
                 title: title.trim(),
                 description: description.trim(),
@@ -157,7 +154,7 @@ export function CalendarEventForm({ initialDate, event, onSave, onCancel, onDele
                 recurrenceEndDate: recurrenceFrequency === 'NONE' || !recurrenceEndDate ? null : recurrenceEndDate,
                 recurrenceInterval: recurrenceFrequency === 'CUSTOM' ? recurrenceInterval : null,
                 recurrenceUnit: recurrenceFrequency === 'CUSTOM' ? recurrenceUnit : null,
-                reminderMinutesBefore: reminderEnabled ? reminderMinutes : null,
+                reminderMinutesBefore: reminderMinutes,
             });
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Failed to save the event.');
@@ -180,8 +177,8 @@ export function CalendarEventForm({ initialDate, event, onSave, onCancel, onDele
 
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, p: 2 }}>
-            <TextField label="Event title" value={title} onChange={e => setTitle(e.target.value)} autoFocus fullWidth />
-            <TextField label="Description" value={description} onChange={e => setDescription(e.target.value)}
+            <TextField label="Event title" value={title} onChange={e => setTitle(e.target.value)} autoFocus autoComplete="off" fullWidth />
+            <TextField label="Description" value={description} onChange={e => setDescription(e.target.value)} autoComplete="off"
                        multiline minRows={2} maxRows={5} fullWidth />
 
             <FormControlLabel
@@ -190,20 +187,20 @@ export function CalendarEventForm({ initialDate, event, onSave, onCancel, onDele
             />
 
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
-                <TextField label="Start date" type="date" value={startDate}
+                <TextField label="Start date" type="date" value={startDate} autoComplete="off"
                            onChange={e => handleStartDateChange(e.target.value)} slotProps={{ inputLabel: { shrink: true } }} fullWidth />
-                {!allDay && <TextField label="Start time" type="time" value={startTime}
+                {!allDay && <TextField label="Start time" type="time" value={startTime} autoComplete="off"
                                        onChange={e => handleStartTimeChange(e.target.value)} slotProps={{ inputLabel: { shrink: true } }} fullWidth />}
             </Stack>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
-                <TextField label="Finish date" type="date" value={endDate}
+                <TextField label="Finish date" type="date" value={endDate} autoComplete="off"
                            onChange={e => setEndDate(e.target.value)} slotProps={{ inputLabel: { shrink: true } }} fullWidth />
-                {!allDay && <TextField label="Finish time" type="time" value={endTime}
+                {!allDay && <TextField label="Finish time" type="time" value={endTime} autoComplete="off"
                                        onChange={e => setEndTime(e.target.value)} slotProps={{ inputLabel: { shrink: true } }} fullWidth />}
             </Stack>
 
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
-                <TextField select label="Repeat" value={recurrenceFrequency}
+                <TextField select label="Repeat" value={recurrenceFrequency} autoComplete="off"
                            onChange={e => {
                                const nextFrequency = e.target.value as RecurrenceFrequency;
                                setRecurrenceFrequency(nextFrequency);
@@ -215,10 +212,10 @@ export function CalendarEventForm({ initialDate, event, onSave, onCancel, onDele
                 </TextField>
                 {recurrenceFrequency === 'CUSTOM' && (
                     <>
-                        <TextField label="Every" type="number" value={recurrenceInterval}
+                        <TextField label="Every" type="number" value={recurrenceInterval} autoComplete="off"
                                    onChange={e => setRecurrenceInterval(Number(e.target.value))}
                                    inputProps={{ min: 1, max: 999, step: 1 }} fullWidth />
-                        <TextField select label="Unit" value={recurrenceUnit}
+                        <TextField select label="Unit" value={recurrenceUnit} autoComplete="off"
                                    onChange={e => setRecurrenceUnit(e.target.value as RecurrenceUnit)} fullWidth>
                             {RECURRENCE_UNIT_OPTIONS.map(option => (
                                 <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
@@ -227,29 +224,24 @@ export function CalendarEventForm({ initialDate, event, onSave, onCancel, onDele
                     </>
                 )}
                 {recurrenceFrequency !== 'NONE' && (
-                    <TextField label="Repeat until (optional)" type="date" value={recurrenceEndDate}
+                    <TextField label="Repeat until (optional)" type="date" value={recurrenceEndDate} autoComplete="off"
                                onChange={e => setRecurrenceEndDate(e.target.value)}
                                slotProps={{ inputLabel: { shrink: true } }} fullWidth />
                 )}
             </Stack>
 
             <Box>
-                <FormControlLabel
-                    control={<Switch checked={reminderEnabled} onChange={e => setReminderEnabled(e.target.checked)} />}
-                    label="System notification"
-                />
-                {reminderEnabled && (
-                    <TextField select label="Remind me" value={reminderMinutes}
-                               onChange={e => setReminderMinutes(Number(e.target.value))} fullWidth sx={{ mt: 1 }}>
-                        {customReminderOption !== null && (
-                            <MenuItem value={customReminderOption}>{customReminderOption} minutes before</MenuItem>
-                        )}
-                        {REMINDER_OPTIONS.map(option => (
-                            <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
-                        ))}
-                    </TextField>
-                )}
-                {reminderEnabled && 'Notification' in window && Notification.permission === 'denied' && (
+                <TextField select label="Remind me" value={reminderMinutes ?? ''} autoComplete="off"
+                           onChange={e => setReminderMinutes(e.target.value === '' ? null : Number(e.target.value))} fullWidth>
+                    <MenuItem value="">No reminder</MenuItem>
+                    {customReminderOption !== null && (
+                        <MenuItem value={customReminderOption}>{customReminderOption} minutes before</MenuItem>
+                    )}
+                    {REMINDER_OPTIONS.map(option => (
+                        <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                    ))}
+                </TextField>
+                {reminderMinutes !== null && 'Notification' in window && Notification.permission === 'denied' && (
                     <Typography variant="caption" color="warning.main" sx={{ display: 'block', mt: 1 }}>
                         Notifications are blocked in this browser's site settings.
                     </Typography>

@@ -1,7 +1,8 @@
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { AppText } from './AppText';
+import { SilentPressable } from './SilentPressable';
 
 interface Option<T extends string | number> {
   value: T;
@@ -20,7 +21,7 @@ export function ChoiceChips<T extends string | number>({ value, options, onChang
       {options.map(option => {
         const selected = value === option.value;
         return (
-          <Pressable
+          <SilentPressable
             key={String(option.value)}
             onPress={() => onChange(option.value)}
             style={({ pressed }) => [
@@ -34,7 +35,7 @@ export function ChoiceChips<T extends string | number>({ value, options, onChang
             <AppText variant="caption" style={{ color: selected ? colors.onAccent : option.color ?? colors.text }}>
               {option.label}
             </AppText>
-          </Pressable>
+          </SilentPressable>
         );
       })}
     </View>

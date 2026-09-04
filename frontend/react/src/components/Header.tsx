@@ -27,6 +27,7 @@ export function Header(props: props) {
             <div className="input-field-wrapper">
                 <form onSubmit={handleSubmit} id="task-input-form"><label htmlFor="task-input-field"></label>
                     <input type="text"
+                           autoComplete="off"
                            value = {newTask}
                            onChange={(e) => setNewTask(e.target.value)}
                            id="task-input-field"

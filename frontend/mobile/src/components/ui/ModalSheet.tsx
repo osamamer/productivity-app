@@ -1,9 +1,11 @@
 import { PropsWithChildren, ReactNode } from 'react';
-import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Modal, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { AppText } from './AppText';
+import { SilentPressable } from './SilentPressable';
+import { KeyboardAwareScrollView, KeyboardAwareView } from './KeyboardAwareScrollView';
 
 export function ModalSheet({ visible, onClose, title, children, footer }: PropsWithChildren<{
   visible: boolean;
@@ -14,37 +16,34 @@ export function ModalSheet({ visible, onClose, title, children, footer }: PropsW
   const { colors } = useAppTheme();
   return (
     <Modal transparent animationType="slide" visible={visible} onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        style={styles.fill}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}>
-        <Pressable style={[styles.backdrop, { backgroundColor: colors.overlay }]} onPress={onClose} />
+      <KeyboardAwareView style={styles.fill}>
+        <SilentPressable style={[styles.backdrop, { backgroundColor: colors.overlay }]} onPress={onClose} />
         <SafeAreaView edges={['bottom']} style={[styles.sheet, { backgroundColor: colors.surface }]}>
           <View style={[styles.handle, { backgroundColor: colors.border }]} />
           <View style={styles.heading}>
             <AppText variant="heading">{title}</AppText>
-            <Pressable onPress={onClose} hitSlop={12}><AppText color="accent">Close</AppText></Pressable>
+          <SilentPressable onPress={onClose} hitSlop={12}><AppText color="accent">Close</AppText></SilentPressable>
           </View>
-          <ScrollView
+          <KeyboardAwareScrollView
+            avoidKeyboard={false}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="interactive"
-            automaticallyAdjustKeyboardInsets
             contentContainerStyle={styles.body}>
             {children}
-          </ScrollView>
+          </KeyboardAwareScrollView>
           {footer && <View style={[styles.footer, { borderColor: colors.border }]}>{footer}</View>}
         </SafeAreaView>
-      </KeyboardAvoidingView>
+      </KeyboardAwareView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  fill: { flex: 1, justifyContent: 'flex-end' },
+  fill: { justifyContent: 'flex-end' },
   backdrop: { ...StyleSheet.absoluteFill },
-  sheet: { maxHeight: '92%', flexShrink: 1, borderTopLeftRadius: 28, borderTopRightRadius: 28 },
+  sheet: { maxHeight: '92%', flexShrink: 1, borderTopLeftRadius: 28, borderTopRightRadius: 28, minHeight: 0 },
   handle: { width: 44, height: 5, borderRadius: 3, alignSelf: 'center', marginTop: 10 },
   heading: { paddingHorizontal: 20, paddingVertical: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  body: { paddingHorizontal: 20, paddingBottom: 24, gap: 16 },
+  body: { flexGrow: 1, paddingHorizontal: 20, paddingBottom: 24, gap: 16 },
   footer: { padding: 16, borderTopWidth: 1 },
 });

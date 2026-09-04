@@ -1,4 +1,5 @@
-import { Box, IconButton, Tooltip, Typography } from '@mui/material';
+import { useState } from 'react';
+import { Box, IconButton, ListItemIcon, ListItemText, Menu, MenuItem, Tooltip, Typography } from '@mui/material';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
@@ -15,6 +16,7 @@ interface NotesSidebarProps {
     noteCounts: Record<string, number>;
     onFilterChange: (filter: NotesFilter) => void;
     onAddCategory: () => void;
+    onCreateNote: (category: NoteCategory) => void;
     onEditCategory: (category: NoteCategory) => void;
     onDeleteCategory: (category: NoteCategory) => void;
 }
@@ -25,15 +27,17 @@ interface SidebarRowProps {
     icon: React.ReactNode;
     label: string;
     onClick: () => void;
+    onContextMenu?: (event: React.MouseEvent) => void;
     actions?: React.ReactNode;
 }
 
-function SidebarRow({ active, count, icon, label, onClick, actions }: SidebarRowProps) {
+function SidebarRow({ active, count, icon, label, onClick, onContextMenu, actions }: SidebarRowProps) {
     return (
         <Box
             role="button"
             tabIndex={0}
             onClick={onClick}
+            onContextMenu={onContextMenu}
             onKeyDown={event => {
                 if (event.key === 'Enter' || event.key === ' ') onClick();
             }}
@@ -70,9 +74,26 @@ export function NotesSidebar({
     noteCounts,
     onFilterChange,
     onAddCategory,
+    onCreateNote,
     onEditCategory,
     onDeleteCategory,
 }: NotesSidebarProps) {
+    const [categoryContextMenu, setCategoryContextMenu] = useState<{
+        category: NoteCategory;
+        mouseX: number;
+        mouseY: number;
+    } | null>(null);
+
+    function handleCategoryContextMenu(event: React.MouseEvent, category: NoteCategory) {
+        event.preventDefault();
+        event.stopPropagation();
+        setCategoryContextMenu({ category, mouseX: event.clientX + 2, mouseY: event.clientY + 2 });
+    }
+
+    function closeCategoryContextMenu() {
+        setCategoryContextMenu(null);
+    }
+
     return (
         <Box
             component="aside"
@@ -130,6 +151,7 @@ export function NotesSidebar({
                     icon={<Box sx={{ width: 9, height: 9, borderRadius: '50%', backgroundColor: category.color }} />}
                     label={category.name}
                     onClick={() => onFilterChange(category.id)}
+                    onContextMenu={event => handleCategoryContextMenu(event, category)}
                     actions={(
                         <Box className="category-actions" sx={{ display: 'flex', alignItems: 'center', opacity: activeFilter === category.id ? 1 : 0, transition: 'opacity 0.15s' }}>
                             <Typography variant="caption" color="text.disabled" sx={{ mr: 0.25 }}>
@@ -137,30 +159,48 @@ export function NotesSidebar({
                             </Typography>
                             <IconButton
                                 size="small"
-                                aria-label={`Edit ${category.name}`}
+                                aria-label={`New note in ${category.name}`}
                                 onClick={event => {
                                     event.stopPropagation();
-                                    onEditCategory(category);
+                                    onFilterChange(category.id);
+                                    onCreateNote(category);
                                 }}
                                 sx={{ p: 0.4 }}
                             >
-                                <EditOutlinedIcon sx={{ fontSize: 14 }} />
-                            </IconButton>
-                            <IconButton
-                                size="small"
-                                aria-label={`Delete ${category.name}`}
-                                onClick={event => {
-                                    event.stopPropagation();
-                                    onDeleteCategory(category);
-                                }}
-                                sx={{ p: 0.4 }}
-                            >
-                                <DeleteOutlineRoundedIcon sx={{ fontSize: 14 }} />
+                                <AddRoundedIcon sx={{ fontSize: 16 }} />
                             </IconButton>
                         </Box>
                     )}
                 />
             ))}
+
+            <Menu
+                open={Boolean(categoryContextMenu)}
+                onClose={closeCategoryContextMenu}
+                anchorReference="anchorPosition"
+                anchorPosition={categoryContextMenu ? { top: categoryContextMenu.mouseY, left: categoryContextMenu.mouseX } : undefined}
+                slotProps={{ paper: { sx: { minWidth: 160, borderRadius: 2.5 } } }}
+            >
+                <MenuItem
+                    onClick={() => {
+                        if (categoryContextMenu) onEditCategory(categoryContextMenu.category);
+                        closeCategoryContextMenu();
+                    }}
+                >
+                    <ListItemIcon><EditOutlinedIcon fontSize="small" /></ListItemIcon>
+                    <ListItemText>Edit category</ListItemText>
+                </MenuItem>
+                <MenuItem
+                    onClick={() => {
+                        if (categoryContextMenu) onDeleteCategory(categoryContextMenu.category);
+                        closeCategoryContextMenu();
+                    }}
+                    sx={{ color: 'error.main' }}
+                >
+                    <ListItemIcon sx={{ color: 'inherit' }}><DeleteOutlineRoundedIcon fontSize="small" /></ListItemIcon>
+                    <ListItemText>Delete category</ListItemText>
+                </MenuItem>
+            </Menu>
         </Box>
     );
 }

@@ -3,6 +3,7 @@ import '@fontsource/roboto/300.css';
 import '@fontsource/roboto/400.css';
 import '@fontsource/roboto/500.css';
 import '@fontsource/roboto/700.css';
+import {useEffect, type ReactNode} from "react";
 import {createBrowserRouter, Navigate, Outlet, RouterProvider} from "react-router-dom";
 import {HomePage} from "./pages/HomePage.jsx";
 import {CalendarPage} from "./pages/CalendarPage.jsx";
@@ -21,6 +22,17 @@ import {MentalStatePage} from "./pages/MentalStatePage.tsx";
 import {MentalPage} from "./pages/MentalPage.tsx";
 import {NotificationCenter} from "./components/notifications/NotificationCenter.tsx";
 import {AppErrorBoundary, AppErrorPage} from "./components/AppErrorBoundary.tsx";
+import {useAppContextMenuGuard} from "./components/AppContextMenuGuard.tsx";
+import {rememberMentalDestination, type MentalDestinationPath} from "./services/utils/mentalNavigation";
+
+
+function MentalDestinationTracker({destination, children}: { destination: MentalDestinationPath; children: ReactNode }) {
+    useEffect(() => {
+        rememberMentalDestination(destination);
+    }, [destination]);
+
+    return children;
+}
 
 
 function AppProviders() {
@@ -60,7 +72,9 @@ const routes = [
                 path: "/meditation",
                 element: (
                     <ProtectedRoute>
-                        <MeditationPage/>
+                        <MentalDestinationTracker destination="/meditation">
+                            <MeditationPage/>
+                        </MentalDestinationTracker>
                     </ProtectedRoute>
                 ),
             },
@@ -100,7 +114,9 @@ const routes = [
                 path: "/mental-threads",
                 element: (
                     <ProtectedRoute>
-                        <MentalThreadsPage/>
+                        <MentalDestinationTracker destination="/mental-threads">
+                            <MentalThreadsPage/>
+                        </MentalDestinationTracker>
                     </ProtectedRoute>
                 ),
             },
@@ -108,7 +124,9 @@ const routes = [
                 path: "/mental-state",
                 element: (
                     <ProtectedRoute>
-                        <MentalStatePage/>
+                        <MentalDestinationTracker destination="/mental-state">
+                            <MentalStatePage/>
+                        </MentalDestinationTracker>
                     </ProtectedRoute>
                 ),
             },
@@ -128,6 +146,7 @@ const routes = [
 let appRouter: ReturnType<typeof createBrowserRouter> | null = null;
 
 function App() {
+    useAppContextMenuGuard();
     appRouter ??= createBrowserRouter(routes);
     return (
         <AppErrorBoundary>

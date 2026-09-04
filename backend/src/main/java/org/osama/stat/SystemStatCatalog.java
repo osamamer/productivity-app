@@ -39,7 +39,8 @@ public final class SystemStatCatalog {
     );
 
     public static final List<SystemStatDefinition> DAILY_LIFE_STATS = List.of(
-            number(SLEEP_HOURS_SYSTEM_KEY, "Sleep", "How many hours you slept the previous night.")
+            number(SLEEP_HOURS_SYSTEM_KEY, "Sleep", "How many hours you slept the previous night.",
+                    StatMorality.GOOD, 7.0)
     );
 
     public static final List<SystemStatDefinition> SYSTEM_STATS = Stream
@@ -58,14 +59,22 @@ public final class SystemStatCatalog {
     }
 
     private static SystemStatDefinition range(String systemKey, String name, String description) {
-        return new SystemStatDefinition(systemKey, name, description, StatType.RANGE, 1.0, 10.0);
+        return new SystemStatDefinition(systemKey, name, description, StatType.RANGE,
+                1.0, 10.0, null, null);
     }
 
     private static SystemStatDefinition yesNo(String systemKey, String name, String description) {
-        return new SystemStatDefinition(systemKey, name, description, StatType.BOOLEAN, null, null);
+        return new SystemStatDefinition(systemKey, name, description, StatType.BOOLEAN,
+                null, null, null, null);
     }
 
     private static SystemStatDefinition number(String systemKey, String name, String description) {
-        return new SystemStatDefinition(systemKey, name, description, StatType.NUMBER, null, null);
+        return number(systemKey, name, description, null, null);
+    }
+
+    private static SystemStatDefinition number(String systemKey, String name, String description,
+                                               StatMorality morality, Double goodThreshold) {
+        return new SystemStatDefinition(systemKey, name, description, StatType.NUMBER,
+                null, null, morality, goodThreshold);
     }
 }

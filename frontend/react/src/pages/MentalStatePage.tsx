@@ -58,31 +58,33 @@ export function MentalStatePage() {
 
     return (
         <PageWrapper>
-            <Box sx={{ width: '100%', maxWidth: 1040, mx: 'auto', pb: 3, textAlign: 'left' }}>
+            <Box sx={{ width: '100%', maxWidth: 1040, mx: 'auto', pb: 3, textAlign: 'left', display: 'flex', flexDirection: 'column' }}>
                 <BackToMentalButton />
-                <Box sx={{ mb: 2 }}>
-                    <Typography variant="h4" fontWeight={750} sx={{ letterSpacing: '-0.02em' }}>Mental state</Typography>
-                    <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-                        A quick check-in for the state you are in right now.
-                    </Typography>
-                </Box>
+                <Box sx={{ width: '100%' }}>
+                    <Box sx={{ mb: 2 }}>
+                        <Typography variant="h4" fontWeight={750} sx={{ letterSpacing: '-0.02em' }}>Mental state</Typography>
+                        <Typography color="text.secondary" sx={{ mt: 0.5 }}>
+                            A quick check-in for the state you are in right now.
+                        </Typography>
+                    </Box>
 
-                {error && <Alert severity="warning" sx={{ mb: 2 }}>{error}</Alert>}
+                    {error && <Alert severity="warning" sx={{ mb: 2 }}>{error}</Alert>}
 
-                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1fr) 250px' }, gap: 2, alignItems: 'start' }}>
-                    <Stack spacing={2}>
-                        <MentalStateCard
-                            loading={loading}
-                            checkIn={displayedCheckIn}
-                            isCurrent={displayedCheckIn !== null && displayedCheckIn.id === currentCheckIn?.id}
-                            onSaved={handleSaved}
+                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1fr) 250px' }, gap: 2, alignItems: 'start' }}>
+                        <Stack spacing={2}>
+                            <MentalStateCard
+                                loading={loading}
+                                checkIn={displayedCheckIn}
+                                isCurrent={displayedCheckIn !== null && displayedCheckIn.id === currentCheckIn?.id}
+                                onSaved={handleSaved}
+                            />
+                        </Stack>
+                        <MentalStateHistory
+                            checkIns={history}
+                            selectedId={selected?.id ?? currentCheckIn?.id ?? null}
+                            onSelect={setSelected}
                         />
-                    </Stack>
-                    <MentalStateHistory
-                        checkIns={history}
-                        selectedId={selected?.id ?? currentCheckIn?.id ?? null}
-                        onSelect={setSelected}
-                    />
+                    </Box>
                 </Box>
             </Box>
         </PageWrapper>

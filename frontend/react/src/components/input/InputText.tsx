@@ -38,6 +38,7 @@ const TaskDescriptionInput: React.FC = () => {
         <div
           ref={divRef}
           contentEditable
+          spellCheck={false}
           onBlur={handleBlur}
           style={{
             minHeight: '30px', // Maintain a minimum height

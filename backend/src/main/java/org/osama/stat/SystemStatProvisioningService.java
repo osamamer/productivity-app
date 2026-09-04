@@ -78,6 +78,8 @@ public class SystemStatProvisioningService {
         definition.setType(systemStat.type());
         definition.setMinValue(systemStat.minValue());
         definition.setMaxValue(systemStat.maxValue());
+        definition.setMorality(systemStat.morality());
+        definition.setGoodThreshold(systemStat.goodThreshold());
         definition.setSystemKey(systemStat.systemKey());
         definitionRepository.save(definition);
     }

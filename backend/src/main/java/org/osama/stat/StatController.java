@@ -44,6 +44,13 @@ public class StatController {
         return statService.getDefinitions(currentUserService.getCurrentUserId());
     }
 
+    @GetMapping("/bootstrap")
+    public StatBootstrapResponse getBootstrap(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return statService.getBootstrap(from, to, currentUserService.getCurrentUserId());
+    }
+
     @DeleteMapping("/definitions/{id}")
     public void deleteDefinition(@PathVariable String id) {
         statService.deleteDefinition(id, currentUserService.getCurrentUserId());

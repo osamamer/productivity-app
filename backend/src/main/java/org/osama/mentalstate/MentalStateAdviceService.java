@@ -9,122 +9,93 @@ public class MentalStateAdviceService {
 
     public MentalStateAssessment assess(int energy, int activation, int stimulationHunger,
                                         int clarity, int valence, int emotionalLoad) {
-        DerivedScores scores = deriveScores(energy, activation, stimulationHunger,
+        MentalState state = classify(energy, activation, stimulationHunger,
                 clarity, valence, emotionalLoad);
 
         return new MentalStateAssessment(
-                state(scores, energy, activation, clarity, valence, emotionalLoad),
-                suggestedActions(scores, energy, activation, clarity, emotionalLoad)
+                state.label,
+                List.of(state.recommendation)
         );
     }
 
-    private DerivedScores deriveScores(int energy, int activation, int stimulationHunger,
-                                       int clarity, int valence, int emotionalLoad) {
-        double productiveCapacity = energy * 0.4
-                + clarity * 0.3
-                + (10 - Math.abs(activation - 5)) * 0.15
-                + (10 - stimulationHunger) * 0.075
-                + valence * 0.075;
-
-        double meaningfulEngagementPotential = energy * 0.25
-                + clarity * 0.25
-                + valence * 0.25
-                + (10 - emotionalLoad) * 0.15
-                + (10 - stimulationHunger) * 0.1;
-
-        double dysregulationScore = Math.min(10,
-                Math.abs(energy - activation) * 0.35
-                        + Math.abs(activation - 5) * 0.35
-                        + Math.max(0, 6 - clarity) * 0.55
-                        + Math.max(0, emotionalLoad - 4) * 0.4
-                        + Math.max(0, 5 - valence) * 0.55
-                        + Math.max(0, stimulationHunger - 5) * 0.35);
-
-        double compulsiveVulnerability = activation * 0.25
-                + stimulationHunger * 0.45
-                + (10 - clarity) * 0.15
-                + (10 - energy) * 0.075
-                + Math.max(0, 5 - valence) * 0.075;
-
-        double moodRepairNeed = Math.max(0, 10 - valence) * 0.8
-                + emotionalLoad * 0.2;
-
-        double recoveryNeed = (10 - energy) * 0.4
-                + emotionalLoad * 0.25
-                + Math.abs(activation - 5) * 0.15
-                + Math.max(0, 5 - valence) * 0.2;
-
-        return new DerivedScores(
-                productiveCapacity,
-                meaningfulEngagementPotential,
-                dysregulationScore,
-                compulsiveVulnerability,
-                moodRepairNeed,
-                recoveryNeed
-        );
+    private MentalState classify(int energy, int activation, int stimulationHunger,
+                                 int clarity, int valence, int emotionalLoad) {
+        if (activation >= 7 && energy <= 4) return MentalState.WIRED_TIRED;
+        if (energy <= 4 && activation <= 4) return MentalState.DEPLETED;
+        if (stimulationHunger >= 8) return MentalState.STIMULATION_SEEKING;
+        if (activation >= 7 && clarity <= 5) return MentalState.SCATTERED;
+        if (emotionalLoad >= 7) return MentalState.EMOTIONALLY_LOADED;
+        if (valence <= 4) return MentalState.LOW_MOOD;
+        if (isReady(energy, activation, stimulationHunger, clarity, valence, emotionalLoad)) {
+            return MentalState.READY;
+        }
+        if (isAlmostReady(energy, activation, stimulationHunger, clarity, valence, emotionalLoad)) {
+            return MentalState.ALMOST_READY;
+        }
+        if (energy >= 4 && clarity >= 5 && valence >= 7 && emotionalLoad <= 5) {
+            return MentalState.ENGAGED;
+        }
+        return MentalState.MIXED;
     }
 
-    private String state(DerivedScores scores, int energy, int activation, int clarity,
-                         int valence, int emotionalLoad) {
-        if (activation >= 7 && energy <= 4) return "Wired/Tired";
-        if (energy <= 4 && activation <= 4) return "Depleted";
-        if (energy >= 6 && activation <= 6 && clarity >= 6
-                && valence >= 5 && emotionalLoad <= 6) return "Ready";
-        if (activation >= 7 && clarity <= 5) return "Scattered/Overactivated";
-        if (emotionalLoad >= 7) return "Emotionally Loaded";
-        if (valence <= 4) return "Low Mood";
-        if (scores.compulsiveVulnerability() >= 7) return "Stimulation-Seeking";
-        if (scores.productiveCapacity() >= 7) return "Ready";
-        if (scores.productiveCapacity() >= 6
-                && energy >= 4
-                && clarity >= 5
-                && activation <= 6
-                && emotionalLoad <= 6) {
-            return "Almost Ready";
-        }
-        if (scores.meaningfulEngagementPotential() >= 5
-                && valence >= 7
-                && emotionalLoad <= 5) return "Engaged";
-        return "Mixed";
+    private boolean isReady(int energy, int activation, int stimulationHunger,
+                            int clarity, int valence, int emotionalLoad) {
+        return energy >= 6
+                && activation >= 4 && activation <= 8
+                && stimulationHunger <= 5
+                && clarity >= 6
+                && valence >= 6
+                && emotionalLoad <= 4;
     }
 
-    private List<String> suggestedActions(DerivedScores scores, int energy, int activation,
-                                          int clarity, int emotionalLoad) {
-        if (scores.moodRepairNeed() >= 5) {
-            return List.of("Focus on feeling grounded before trying to be productive. Reach out to someone or choose something gentle and comforting, like a walk, a shower, music, journaling, or a low-pressure show.");
-        }
-        if (scores.dysregulationScore() >= 6 && scores.recoveryNeed() >= 6) {
-            return List.of("Your body may be tired while your system is still switched on. Step away from stimulating content, then try some water or food, a short walk, a shower, and dimmer lights. Check in again when you feel steadier.");
-        }
-        if (scores.compulsiveVulnerability() >= 7) {
-            return List.of("Make it harder to fall into a stimulation spiral for a while. Put your phone away and choose one contained activity, such as a walk, the gym, a café, a book, or time with a friend.");
-        }
-        if (scores.recoveryNeed() >= 7) {
-            return List.of("Give yourself permission to recover before asking yourself to do more. Eat something, drink some water, and rest in a quiet, low-sensory space.");
-        }
-        if (scores.productiveCapacity() >= 7) {
-            return List.of("You have a good window for focused work. Choose the most important thing and give it your full attention for a while.");
-        }
-        if (scores.productiveCapacity() >= 6
-                && energy >= 4
-                && clarity >= 5
-                && activation <= 6
-                && emotionalLoad <= 6) {
-            return List.of("You may just need a small boost before getting started. Try some water, tea or coffee, a snack, sunlight, or a short walk, then begin with a 25-minute work sprint.");
-        }
-        if (scores.meaningfulEngagementPotential() >= 5) {
-            return List.of("Choose something engaging that leaves you feeling better afterward. Social time, movement, fiction, creative work, or a focused game or show could all fit.");
-        }
-        return List.of("Keep things simple for now. Take care of one small practical task, such as tidying up, showering, making food, or handling an easy bit of admin, then settle into something calm.");
+    private boolean isAlmostReady(int energy, int activation, int stimulationHunger,
+                                  int clarity, int valence, int emotionalLoad) {
+        return energy >= 6
+                && activation >= 4 && activation <= 7
+                && stimulationHunger <= 6
+                && clarity >= 6
+                && valence >= 5
+                && emotionalLoad <= 6;
     }
 
-    private record DerivedScores(
-            double productiveCapacity,
-            double meaningfulEngagementPotential,
-            double dysregulationScore,
-            double compulsiveVulnerability,
-            double moodRepairNeed,
-            double recoveryNeed
-    ) {
+    private enum MentalState {
+        WIRED_TIRED(
+                "Wired/Tired",
+                "Your body may be tired while your system is still switched on. Step away from stimulating content, then try some water or food, a short walk, a shower, and dimmer lights. Check in again when you feel steadier."),
+        DEPLETED(
+                "Depleted",
+                "Give yourself permission to recover before asking yourself to do more. Eat something, drink some water, and rest in a quiet, low-sensory space."),
+        STIMULATION_SEEKING(
+                "Stimulation-Seeking",
+                "Make it harder to fall into a stimulation spiral for a while. Put your phone away and choose one contained activity, such as a walk, the gym, a café, a book, or time with a friend."),
+        SCATTERED(
+                "Scattered/Overactivated",
+                "Your system may be running fast while clarity is low. Reduce stimulation, write down the next small step, and give yourself a short quiet block to settle."),
+        EMOTIONALLY_LOADED(
+                "Emotionally Loaded",
+                "There is a lot of emotional weight here. Reach out to someone safe or choose a gentle, grounding activity before taking on demanding work."),
+        LOW_MOOD(
+                "Low Mood",
+                "Be gentle with yourself for now. Choose warmth or connection—a walk, a shower, music, journaling, or a low-pressure show—before pushing for productivity."),
+        READY(
+                "Ready",
+                "You have a good window for focused work. Choose the most important thing and give it your full attention for a while."),
+        ALMOST_READY(
+                "Almost Ready",
+                "You may just need a small boost before getting started. Try some water, tea or coffee, a snack, sunlight, or a short walk, then begin with a 25-minute work sprint."),
+        ENGAGED(
+                "Engaged",
+                "Choose something engaging that leaves you feeling better afterward. Social time, movement, fiction, creative work, or a focused game or show could all fit."),
+        MIXED(
+                "Mixed",
+                "Keep things simple for now. Take care of one small practical task, such as tidying up, showering, making food, or handling an easy bit of admin, then settle into something calm.");
+
+        private final String label;
+        private final String recommendation;
+
+        MentalState(String label, String recommendation) {
+            this.label = label;
+            this.recommendation = recommendation;
+        }
     }
 }

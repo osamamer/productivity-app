@@ -59,6 +59,7 @@ function Navigation() {
           <Stack.Screen name="mental-state" options={{ title: 'Mental state' }} />
           <Stack.Screen name="meditation" options={{ title: 'Meditation' }} />
           <Stack.Screen name="notes" options={{ title: 'Notes' }} />
+          <Stack.Screen name="notes/[id]" options={{ headerShown: false }} />
           <Stack.Screen name="stats" options={{ title: 'Statistics' }} />
           <Stack.Screen name="settings" options={{ title: 'Settings' }} />
         </Stack.Protected>

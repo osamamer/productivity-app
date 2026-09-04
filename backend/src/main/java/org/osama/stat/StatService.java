@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -80,9 +81,11 @@ public class StatService {
 
     StatDefinition createSystemDefinition(SystemStatDefinition systemStat, User user) {
         validateDefinition(systemStat.name(), systemStat.type(), systemStat.minValue(),
-                systemStat.maxValue(), null, null, user.getId(), null);
+                systemStat.maxValue(), systemStat.morality(), systemStat.goodThreshold(),
+                user.getId(), null);
         return saveDefinition(systemStat.name(), systemStat.description(), systemStat.type(),
-                systemStat.minValue(), systemStat.maxValue(), null, null,
+                systemStat.minValue(), systemStat.maxValue(), systemStat.morality(),
+                systemStat.goodThreshold(),
                 systemStat.systemKey(), user);
     }
 
@@ -156,6 +159,34 @@ public class StatService {
         return definitionRepository.findAllByUserIdOrderByDisplayOrderAsc(userId).stream()
                 .filter(this::isDailyStatDefinition)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public StatBootstrapResponse getBootstrap(LocalDate from, LocalDate to, String userId) {
+        validatePeriod(from, to);
+        User user = userRepository.findUserById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("No such user."));
+        List<StatDefinition> definitions = getDefinitions(userId);
+        Set<String> definitionIds = definitions.stream()
+                .map(StatDefinition::getId)
+                .collect(Collectors.toSet());
+
+        Map<String, List<StatEntry>> entriesByDefinition = entryRepository
+                .findAllByUserIdAndDateBetween(userId, from, to).stream()
+                .filter(entry -> entry.getStatDefinition() != null
+                        && definitionIds.contains(entry.getStatDefinition().getId()))
+                .collect(Collectors.groupingBy(
+                        entry -> entry.getStatDefinition().getId(),
+                        LinkedHashMap::new,
+                        Collectors.toList()));
+        Map<String, StatSummaryResponse> summaries = new LinkedHashMap<>();
+        for (StatDefinition definition : definitions) {
+            List<StatEntry> entries = entriesByDefinition.getOrDefault(definition.getId(), List.of());
+            entriesByDefinition.putIfAbsent(definition.getId(), entries);
+            summaries.put(definition.getId(), summarize(definition, entries, from, to, user));
+        }
+
+        return new StatBootstrapResponse(from, to, definitions, entriesByDefinition, summaries);
     }
 
     @Transactional
@@ -276,13 +307,16 @@ public class StatService {
                 .orElseThrow(() -> new ResourceNotFoundException("No such stat."));
         User user = userRepository.findUserById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("No such user."));
-
-        if (from == null || to == null || from.isAfter(to)) {
-            throw new IllegalArgumentException("The summary period must have a valid start and end date.");
-        }
+        validatePeriod(from, to);
 
         List<StatEntry> entries = entryRepository
                 .findAllByStatDefinitionIdAndUserIdAndDateBetween(definitionId, userId, from, to);
+
+        return summarize(def, entries, from, to, user);
+    }
+
+    private StatSummaryResponse summarize(StatDefinition def, List<StatEntry> entries,
+                                          LocalDate from, LocalDate to, User user) {
 
         Map<LocalDate, Double> valueByDate = entries.stream()
                 .collect(Collectors.toMap(StatEntry::getDate, StatEntry::getValue));
@@ -324,6 +358,12 @@ public class StatService {
 
         return new StatSummaryResponse(checkInStreak, periodYesCount, booleanStreak, longestBooleanStreak,
                 periodAverage, periodTotal, periodHighest);
+    }
+
+    private void validatePeriod(LocalDate from, LocalDate to) {
+        if (from == null || to == null || from.isAfter(to)) {
+            throw new IllegalArgumentException("The summary period must have a valid start and end date.");
+        }
     }
 
     /**

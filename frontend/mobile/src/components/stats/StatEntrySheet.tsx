@@ -2,6 +2,7 @@ import { useState } from 'react';
 
 import { localDate } from '@/lib/date';
 import { reportError } from '@/lib/errors';
+import { useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
 import type { StatDefinition, StatEntry } from '@/types/models';
 import { AppButton } from '../ui/AppButton';
@@ -10,6 +11,17 @@ import { AppText } from '../ui/AppText';
 import { ChoiceChips } from '../ui/ChoiceChips';
 import { ModalSheet } from '../ui/ModalSheet';
 
+function booleanChoiceColor(
+  definition: StatDefinition,
+  value: 0 | 1,
+  colors: ReturnType<typeof useAppTheme>['colors'],
+): string {
+  const morality = definition.morality ?? 'NEUTRAL';
+  if (morality === 'NEUTRAL') return value === 1 ? colors.accent : colors.secondary;
+  if (morality === 'GOOD') return value === 1 ? colors.success : colors.danger;
+  return value === 1 ? colors.danger : colors.success;
+}
+
 export function StatEntrySheet({ definition, existing, onClose, onSaved, onReverted }: {
   definition: StatDefinition | null;
   existing?: StatEntry;
@@ -17,6 +29,7 @@ export function StatEntrySheet({ definition, existing, onClose, onSaved, onRever
   onSaved: (entry: StatEntry) => void;
   onReverted: (entry?: StatEntry) => void;
 }) {
+  const { colors } = useAppTheme();
   const initialValue = existing?.value ?? definition?.minValue ?? 1;
   const [value, setValue] = useState(String(initialValue));
   const [rangeValue, setRangeValue] = useState(initialValue);
@@ -52,7 +65,14 @@ export function StatEntrySheet({ definition, existing, onClose, onSaved, onRever
   return (
     <ModalSheet visible={Boolean(definition)} onClose={onClose} title={definition?.name ?? 'Check in'}>
       {definition?.type === 'BOOLEAN' ? (
-        <ChoiceChips value={existing?.value ?? -1} onChange={next => void save(next)} options={[{ value: 1, label: 'Yes' }, { value: 0, label: 'No' }]} />
+        <ChoiceChips
+          value={existing?.value ?? -1}
+          onChange={next => void save(next)}
+          options={[
+            { value: 1, label: 'Yes', color: booleanChoiceColor(definition, 1, colors) },
+            { value: 0, label: 'No', color: booleanChoiceColor(definition, 0, colors) },
+          ]}
+        />
       ) : definition?.type === 'RANGE' ? (
         <>
           <AppText variant="heading">{rangeValue}</AppText>

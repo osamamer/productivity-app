@@ -42,6 +42,7 @@ export function TopBar(props: props) {
                     </Typography>
                     <form onSubmit={handleSubmit} style={{display: 'flex', alignItems: 'center', flexGrow: 1}}>
                         <TextField
+                            autoComplete="off"
                             value={newTask}
                             onChange={(e) => setNewTask(e.target.value)}
                             id="standard-basic"

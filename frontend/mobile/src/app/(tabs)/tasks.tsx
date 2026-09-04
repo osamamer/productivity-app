@@ -1,18 +1,22 @@
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { AppState, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { TaskGroupComposerSheet } from '@/components/tasks/TaskGroupComposerSheet';
 import { TaskComposerSheet } from '@/components/tasks/TaskComposerSheet';
+import { TaskBulkDateSheet } from '@/components/tasks/TaskBulkDateSheet';
+import { TaskSelectionActionsPopup } from '@/components/tasks/TaskSelectionActionsPopup';
 import { TaskDetailSheet } from '@/components/tasks/TaskDetailSheet';
 import { TaskRow } from '@/components/tasks/TaskRow';
 import { AppButton } from '@/components/ui/AppButton';
 import { AppText } from '@/components/ui/AppText';
 import { ChoiceChips } from '@/components/ui/ChoiceChips';
 import { Screen } from '@/components/ui/Screen';
+import { SilentPressable } from '@/components/ui/SilentPressable';
 import { EmptyView, ErrorView, LoadingView } from '@/components/ui/StateView';
 import { reportError } from '@/lib/errors';
+import { playAudioFeedback } from '@/lib/audioFeedback';
 import { useAppPopup } from '@/providers/PopupProvider';
 import { usePreferences } from '@/providers/PreferencesProvider';
 import { useTaskWorkspace } from '@/providers/TaskWorkspaceProvider';
@@ -70,6 +74,7 @@ export default function TasksScreen() {
     removeTask: removeWorkspaceTask,
     moveTask,
     moveTasksToToday,
+    moveTasksToDate,
   } = useTaskWorkspace();
   const { showCompletedTasks } = usePreferences();
   const [filter, setFilter] = useState<Filter>('today');
@@ -77,27 +82,52 @@ export default function TasksScreen() {
   const [groupComposerOpen, setGroupComposerOpen] = useState(false);
   const [selected, setSelected] = useState<Task | null>(null);
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
+  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
   const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(new Set());
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
   const [expandedPomodoroTaskId, setExpandedPomodoroTaskId] = useState<string | null>(null);
   const [activePomodoroTaskId, setActivePomodoroTaskId] = useState<string | null>(null);
   const [activePomodoroStatus, setActivePomodoroStatus] = useState<PomodoroStatus | null>(null);
+  const [bulkDateOpen, setBulkDateOpen] = useState(false);
+  const [bulkDateSaving, setBulkDateSaving] = useState(false);
 
   useFocusEffect(useCallback(() => {
     let active = true;
-    void api.pomodoro.status().then(status => {
-      if (!active) return;
-      if (!status?.active) {
-        setActivePomodoroTaskId(null);
-        setActivePomodoroStatus(null);
-        setExpandedPomodoroTaskId(null);
-        return;
+    let requestInFlight = false;
+
+    async function refreshPomodoroStatus() {
+      if (!active || requestInFlight) return;
+      requestInFlight = true;
+      try {
+        const status = await api.pomodoro.status();
+        if (!active) return;
+        if (!status?.active) {
+          setActivePomodoroTaskId(null);
+          setActivePomodoroStatus(null);
+          setExpandedPomodoroTaskId(null);
+          return;
+        }
+        setActivePomodoroTaskId(status.associatedTaskId);
+        setActivePomodoroStatus(status);
+        setExpandedPomodoroTaskId(status.associatedTaskId);
+      } catch (cause) {
+        console.warn('Could not refresh Pomodoro status:', cause);
+      } finally {
+        requestInFlight = false;
       }
-      setActivePomodoroTaskId(status.associatedTaskId);
-      setActivePomodoroStatus(status);
-      setExpandedPomodoroTaskId(status.associatedTaskId);
-    }).catch(cause => console.warn('Could not refresh Pomodoro status:', cause));
-    return () => { active = false; };
+    }
+
+    void refreshPomodoroStatus();
+    const timer = setInterval(() => void refreshPomodoroStatus(), 5_000);
+    const appStateSubscription = AppState.addEventListener('change', state => {
+      if (state === 'active') void refreshPomodoroStatus();
+    });
+
+    return () => {
+      active = false;
+      clearInterval(timer);
+      appStateSubscription.remove();
+    };
   }, []));
 
   const openPomodoro = useCallback((taskId: string) => {
@@ -131,13 +161,23 @@ export default function TasksScreen() {
     : filtered;
   const listItems = useMemo(() => buildTaskListItems(visibleTasks, groups), [groups, visibleTasks]);
   const selectedTaskIdSet = useMemo(() => new Set(selectedTaskIds), [selectedTaskIds]);
+  const selectedGroupIdSet = useMemo(() => new Set(selectedGroupIds), [selectedGroupIds]);
+  const selectedGroupTaskIdSet = useMemo(
+    () => new Set(groups.filter(group => selectedGroupIdSet.has(group.groupId)).flatMap(group => group.taskIds)),
+    [groups, selectedGroupIdSet],
+  );
+  const selectedActionTaskIdSet = useMemo(
+    () => new Set([...selectedTaskIds, ...selectedGroupTaskIdSet]),
+    [selectedGroupTaskIdSet, selectedTaskIds],
+  );
   const selectedTasks = useMemo(
-    () => allTasks.filter(task => selectedTaskIdSet.has(task.taskId)),
-    [allTasks, selectedTaskIdSet],
+    () => allTasks.filter(task => selectedActionTaskIdSet.has(task.taskId)),
+    [allTasks, selectedActionTaskIdSet],
   );
   const selectedPastTaskIds = selectedTasks
     .filter(task => pastTasks.some(pastTask => pastTask.taskId === task.taskId))
     .map(task => task.taskId);
+  const canGroupSelectedTasks = selectedGroupIds.length === 0 && selectedTaskIds.length >= 2;
 
   function replace(updated: Task) {
     updateWorkspaceTask(updated);
@@ -152,7 +192,9 @@ export default function TasksScreen() {
     const optimistic = { ...task, completed: !task.completed };
     updateList(optimistic);
     try {
-      updateList(await api.tasks.update(task.taskId, { completed: optimistic.completed }));
+      const updated = await api.tasks.update(task.taskId, { completed: optimistic.completed });
+      updateList(updated);
+      if (optimistic.completed) playAudioFeedback('taskCompleted');
     } catch (cause) {
       updateList(task);
       void showError('Could not update task', reportError('Could not update task', cause));
@@ -171,18 +213,27 @@ export default function TasksScreen() {
 
   function clearSelection() {
     setSelectedTaskIds([]);
+    setSelectedGroupIds([]);
+    setBulkDateOpen(false);
   }
 
-  async function performBulkAction(action: 'complete' | 'reopen' | 'move-to-today') {
+  function toggleGroupSelection(groupId: string) {
+    setSelectedGroupIds(previous => previous.includes(groupId)
+      ? previous.filter(id => id !== groupId)
+      : [...previous, groupId]);
+  }
+
+  async function performBulkAction(action: 'complete' | 'move-to-today') {
     if (bulkActionLoading || selectedTasks.length === 0) return;
     setBulkActionLoading(true);
     try {
       if (action === 'move-to-today') {
-        await moveTasksToToday(selectedTaskIds);
+        await moveTasksToToday(selectedTasks.map(task => task.taskId));
       } else {
-        const completed = action === 'complete';
-        const updated = await Promise.all(selectedTasks.map(task => api.tasks.update(task.taskId, { completed })));
+        const tasksToComplete = selectedTasks.filter(task => !task.completed);
+        const updated = await Promise.all(selectedTasks.map(task => api.tasks.update(task.taskId, { completed: true })));
         updated.forEach(updateList);
+        if (tasksToComplete.length > 0) playAudioFeedback('taskCompleted');
       }
       clearSelection();
     } catch (cause) {
@@ -192,13 +243,26 @@ export default function TasksScreen() {
     }
   }
 
+  async function moveSelectedToDate(scheduledPerformDateTime: string) {
+    if (bulkActionLoading || selectedTasks.length === 0) return;
+    setBulkDateSaving(true);
+    try {
+      await moveTasksToDate(selectedTasks.map(task => task.taskId), scheduledPerformDateTime);
+      clearSelection();
+    } catch (cause) {
+      void showError('Could not move tasks', reportError('Could not move tasks', cause));
+    } finally {
+      setBulkDateSaving(false);
+    }
+  }
+
   async function confirmBulkDelete() {
     if (!selectedTasks.length) return;
     if (!await confirm('Delete selected tasks?', `${selectedTasks.length} tasks will be deleted.`, 'Delete')) return;
     setBulkActionLoading(true);
     try {
       await Promise.all(selectedTasks.map(task => api.tasks.remove(task.taskId)));
-      selectedTaskIds.forEach(removeWorkspaceTask);
+      selectedTasks.forEach(task => removeWorkspaceTask(task.taskId));
       clearSelection();
     } catch (cause) {
       void showError('Could not delete tasks', reportError('Could not delete tasks', cause));
@@ -217,7 +281,7 @@ export default function TasksScreen() {
   }
 
   async function moveSelected(direction: 'up' | 'down') {
-    if (selectedTaskIds.length !== 1 || bulkActionLoading) return;
+    if (selectedTaskIds.length !== 1 || selectedGroupIds.length > 0 || bulkActionLoading) return;
     setBulkActionLoading(true);
     try {
       await moveTask(selectedTaskIds[0], direction);
@@ -229,15 +293,16 @@ export default function TasksScreen() {
   }
 
   function renderTask(task: Task) {
+    const selectionMode = selectedTaskIds.length > 0 || selectedGroupIds.length > 0;
     return (
       <TaskRow
         key={task.taskId}
         task={task}
         onToggle={() => void toggle(task)}
-        onPress={() => selectedTaskIds.length ? toggleSelection(task.taskId) : setSelected(task)}
+        onPress={() => selectionMode ? toggleSelection(task.taskId) : setSelected(task)}
         onLongPress={() => startSelection(task.taskId)}
-        onSelectionToggle={selectedTaskIds.length ? () => toggleSelection(task.taskId) : undefined}
-        selected={selectedTaskIdSet.has(task.taskId)}
+        onSelectionToggle={selectionMode ? () => toggleSelection(task.taskId) : undefined}
+        selected={selectedTaskIdSet.has(task.taskId) || selectedGroupTaskIdSet.has(task.taskId)}
         onPomodoroPress={() => openPomodoro(task.taskId)}
         pomodoroOpen={expandedPomodoroTaskId === task.taskId || activePomodoroTaskId === task.taskId}
         pomodoroStatus={activePomodoroTaskId === task.taskId ? activePomodoroStatus : null}
@@ -250,32 +315,28 @@ export default function TasksScreen() {
 
   return (
     <Screen
-      title="Tasks"
       eyebrow="Make it manageable"
       action={<AppButton compact label="Add" icon="add" onPress={() => setComposerOpen(true)} />}
+      overlay={(
+        <TaskSelectionActionsPopup
+          visible={selectedTaskIds.length > 1 || selectedGroupIds.length > 0}
+          taskCount={selectedTasks.length}
+          loading={bulkActionLoading || bulkDateSaving}
+          canMoveToToday={selectedPastTaskIds.length > 0}
+          canReorder={selectedTaskIds.length === 1 && selectedGroupIds.length === 0}
+          canGroup={canGroupSelectedTasks}
+          onComplete={() => void performBulkAction('complete')}
+          onMoveToToday={() => void performBulkAction('move-to-today')}
+          onMoveToDate={() => setBulkDateOpen(true)}
+          onMoveUp={() => void moveSelected('up')}
+          onMoveDown={() => void moveSelected('down')}
+          onGroup={() => setGroupComposerOpen(true)}
+          onDelete={() => void confirmBulkDelete()}
+          onDismiss={clearSelection}
+        />
+      )}
       refreshing={loading}
       onRefresh={() => void refresh()}>
-      {selectedTaskIds.length > 0 ? (
-        <View style={styles.selectionBar}>
-          <View style={styles.selectionHeader}>
-            <AppButton compact label={`${selectedTaskIds.length} selected`} icon="checkmark-circle-outline" variant="secondary" onPress={clearSelection} />
-            <AppText variant="caption" color="muted">Long-press another task to add it</AppText>
-          </View>
-          <View style={styles.actionRow}>
-            <AppButton compact label="Complete" icon="checkmark" disabled={bulkActionLoading} onPress={() => void performBulkAction('complete')} />
-            <AppButton compact label="Reopen" icon="refresh-outline" variant="secondary" disabled={bulkActionLoading} onPress={() => void performBulkAction('reopen')} />
-            {selectedPastTaskIds.length > 0 && <AppButton compact label="Today" icon="today-outline" variant="secondary" disabled={bulkActionLoading} onPress={() => void performBulkAction('move-to-today')} />}
-            {selectedTaskIds.length === 1 && (
-              <>
-                <AppButton compact label="Up" icon="arrow-up" variant="secondary" disabled={bulkActionLoading} onPress={() => void moveSelected('up')} />
-                <AppButton compact label="Down" icon="arrow-down" variant="secondary" disabled={bulkActionLoading} onPress={() => void moveSelected('down')} />
-              </>
-            )}
-            {selectedTaskIds.length >= 2 && <AppButton compact label="Group" icon="folder-open-outline" variant="secondary" disabled={bulkActionLoading} onPress={() => setGroupComposerOpen(true)} />}
-            <AppButton compact label="Delete" icon="trash-outline" variant="danger" disabled={bulkActionLoading} onPress={confirmBulkDelete} />
-          </View>
-        </View>
-      ) : null}
       <ChoiceChips value={filter} onChange={setFilter} options={[
         { value: 'today', label: 'Today' },
         { value: 'upcoming', label: 'Upcoming' },
@@ -288,18 +349,36 @@ export default function TasksScreen() {
       )}
       <View style={styles.list}>
         {listItems.map(item => item.kind === 'task' ? renderTask(item.task) : (
-          <View key={item.group.groupId} style={[styles.group, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`${collapsedGroupIds.has(item.group.groupId) ? 'Expand' : 'Collapse'} ${item.group.name}`}
-              accessibilityState={{ expanded: !collapsedGroupIds.has(item.group.groupId) }}
-              onPress={() => toggleGroup(item.group.groupId)}
-              style={({ pressed }) => [styles.groupHeader, { backgroundColor: colors.accentSoft, borderBottomColor: colors.border }, pressed && styles.pressed]}>
-              <Ionicons name={collapsedGroupIds.has(item.group.groupId) ? 'chevron-forward' : 'chevron-down'} size={18} color={colors.accent} />
-              <Ionicons name={collapsedGroupIds.has(item.group.groupId) ? 'folder-outline' : 'folder-open-outline'} size={18} color={colors.accent} />
-              <AppText variant="label" style={styles.groupTitle}>{item.group.name}</AppText>
-              <AppText variant="caption" color="muted">{item.tasks.length}</AppText>
-            </Pressable>
+          <View
+            key={item.group.groupId}
+            style={[styles.group, { borderWidth: selectedGroupIdSet.has(item.group.groupId) ? 2 : 1, borderColor: selectedGroupIdSet.has(item.group.groupId) ? colors.accent : colors.border, backgroundColor: colors.surface }]}
+          >
+                <SilentPressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`${collapsedGroupIds.has(item.group.groupId) ? 'Expand' : 'Collapse'} ${item.group.name}`}
+                  accessibilityState={{ expanded: !collapsedGroupIds.has(item.group.groupId) }}
+                  onPress={() => toggleGroup(item.group.groupId)}
+                  style={({ pressed }) => [styles.groupHeader, { backgroundColor: colors.accentSoft, borderBottomColor: colors.border }, pressed && styles.pressed]}
+                >
+                  <Ionicons name={collapsedGroupIds.has(item.group.groupId) ? 'chevron-forward' : 'chevron-down'} size={18} color={colors.accent} />
+                  <View style={styles.groupSelection}>
+                    <AppText variant="label" style={styles.groupTitle}>{item.group.name}</AppText>
+                    <AppText variant="caption" color="muted">{item.tasks.length}</AppText>
+                  </View>
+                  <SilentPressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`${selectedGroupIdSet.has(item.group.groupId) ? 'Deselect' : 'Select'} ${item.group.name}`}
+                    accessibilityState={{ selected: selectedGroupIdSet.has(item.group.groupId) }}
+                    hitSlop={8}
+                    onPress={event => { event.stopPropagation(); toggleGroupSelection(item.group.groupId); }}
+                    style={({ pressed }) => [styles.groupSelect, pressed && styles.pressed]}>
+                    <Ionicons
+                      name={selectedGroupIdSet.has(item.group.groupId) ? 'checkmark-circle' : 'ellipse-outline'}
+                      size={22}
+                      color={selectedGroupIdSet.has(item.group.groupId) ? colors.accent : colors.textMuted}
+                    />
+                  </SilentPressable>
+                </SilentPressable>
             {!collapsedGroupIds.has(item.group.groupId) && (
               <View style={[styles.groupTasks, { backgroundColor: colors.background, borderLeftColor: colors.accent }]}>
                 {item.tasks.map(renderTask)}
@@ -315,9 +394,18 @@ export default function TasksScreen() {
       />
       <TaskGroupComposerSheet
         visible={groupComposerOpen}
-        taskIds={selectedTaskIds}
+        taskIds={selectedTasks.map(task => task.taskId)}
         onClose={() => setGroupComposerOpen(false)}
         onCreated={clearSelection}
+      />
+      <TaskBulkDateSheet
+        key={`${bulkDateOpen}-${selectedTasks[0]?.scheduledPerformDateTime ?? ''}`}
+        visible={bulkDateOpen}
+        taskCount={selectedTasks.length}
+        initialValue={selectedTasks[0]?.scheduledPerformDateTime ?? null}
+        saving={bulkDateSaving}
+        onClose={() => setBulkDateOpen(false)}
+        onApply={value => void moveSelectedToDate(value)}
       />
       <TaskDetailSheet
         key={selected?.taskId ?? 'no-task'}
@@ -333,12 +421,11 @@ export default function TasksScreen() {
 
 const styles = StyleSheet.create({
   list: { gap: 10 },
-  selectionBar: { gap: 10, padding: 12, borderRadius: 16, backgroundColor: '#00000008' },
-  selectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  actionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   group: { borderWidth: 1, borderRadius: 18, overflow: 'hidden' },
-  groupHeader: { minHeight: 50, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, borderBottomWidth: 1 },
+  groupHeader: { minHeight: 68, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 13, borderBottomWidth: 1 },
+  groupSelection: { flex: 1, minHeight: 68, flexDirection: 'row', alignItems: 'center', gap: 8 },
   groupTitle: { flex: 1 },
+  groupSelect: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
   groupTasks: { gap: 10, marginLeft: 10, paddingLeft: 10, paddingRight: 8, paddingVertical: 10, borderLeftWidth: 2 },
   pressed: { opacity: 0.7 },
 });

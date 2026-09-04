@@ -126,6 +126,13 @@ export interface StatDefinition {
   userId: string;
 }
 
+export interface StatGroup {
+  groupId: string;
+  name: string;
+  statDefinitionIds: string[];
+  displayOrder: number;
+}
+
 export interface StatEntry {
   id: string;
   statDefinitionId: string;

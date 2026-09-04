@@ -50,6 +50,6 @@ export function useAsyncData<T>(loader: () => Promise<T>) {
     loading,
     refreshing,
     error,
-    reload: () => load(true),
+    reload: useCallback(() => load(true), [load]),
   };
 }

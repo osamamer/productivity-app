@@ -54,5 +54,5 @@ export interface MentalThreadSummary {
 
 export interface CloseMentalThreadInput {
     closureType: ClosureType;
-    resolutionSummary: string;
+    resolutionSummary: string | null;
 }

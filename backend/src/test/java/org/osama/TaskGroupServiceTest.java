@@ -59,6 +59,17 @@ class TaskGroupServiceTest {
     }
 
     @Test
+    void createTask_prependsToThePersistedOrder() {
+        Task first = createTask(TEST_USER_ID, "First");
+        Task second = createTask(TEST_USER_ID, "Second");
+
+        assertEquals(
+                List.of(second.getTaskId(), first.getTaskId()),
+                taskService.getTodayTasks(TEST_USER_ID).stream().map(Task::getTaskId).toList()
+        );
+    }
+
+    @Test
     void createGroup_roundTripsMembershipWithoutMakingTasksSubtasks() {
         Task first = createTask(TEST_USER_ID, "First");
         Task second = createTask(TEST_USER_ID, "Second");
@@ -67,7 +78,7 @@ class TaskGroupServiceTest {
                 "Morning routine", List.of(first.getTaskId(), second.getTaskId()), TEST_USER_ID);
 
         assertEquals("Morning routine", created.name());
-        assertEquals(List.of(first.getTaskId(), second.getTaskId()), created.taskIds());
+        assertEquals(List.of(second.getTaskId(), first.getTaskId()), created.taskIds());
         assertNull(first.getParentId());
         assertEquals(1, taskGroupService.getGroups(TEST_USER_ID).size());
     }
@@ -95,8 +106,8 @@ class TaskGroupServiceTest {
 
         List<TaskGroupResponse> groups = taskGroupService.getGroups(TEST_USER_ID);
         assertEquals(2, groups.size());
-        assertEquals(List.of(first.getTaskId(), third.getTaskId()), groups.get(0).taskIds());
-        assertEquals(List.of(second.getTaskId(), fourth.getTaskId()), groups.get(1).taskIds());
+        assertEquals(List.of(third.getTaskId(), first.getTaskId()), groups.get(0).taskIds());
+        assertEquals(List.of(fourth.getTaskId(), second.getTaskId()), groups.get(1).taskIds());
     }
 
     @Test
@@ -109,7 +120,7 @@ class TaskGroupServiceTest {
 
         taskGroupService.removeTask(group.groupId(), second.getTaskId(), TEST_USER_ID);
 
-        assertEquals(List.of(first.getTaskId(), third.getTaskId()), taskGroupService.getGroups(TEST_USER_ID).get(0).taskIds());
+        assertEquals(List.of(third.getTaskId(), first.getTaskId()), taskGroupService.getGroups(TEST_USER_ID).get(0).taskIds());
         assertNull(second.getParentId());
     }
 

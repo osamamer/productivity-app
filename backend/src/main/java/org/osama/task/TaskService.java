@@ -137,7 +137,7 @@ public class TaskService {
         // Optional fields with null checks
         task.setDescription(request.getDescription()); // null is fine for description
 
-        // Parse datetime only if provided
+        // Thread next actions stay unscheduled until the user chooses a date.
         if (request.getScheduledPerformDateTime() != null && !request.getScheduledPerformDateTime().isBlank()) {
             try {
                 task.setScheduledPerformDateTime(LocalDateTime.parse(request.getScheduledPerformDateTime()));
@@ -146,15 +146,22 @@ public class TaskService {
                         request.getScheduledPerformDateTime(), e);
                 throw new IllegalArgumentException("Invalid datetime format. Use ISO format: 2024-01-20T10:30:00", e);
             }
-        } else {
-            // Default to now if not provided
+        } else if (mentalThread == null) {
+            // Keep the existing default for tasks created outside a mental thread.
             task.setScheduledPerformDateTime(LocalDateTime.now());
         }
 
         task.setParentId(parentId); // null is fine for main tasks
         task.setTag(request.getTag()); // null is fine
         task.setImportance(request.getImportance()); // primitive int defaults to 0
-        task.setDisplayOrder(nextDisplayOrder(userId, parentId));
+        if (mentalThread == null) {
+            // Keep regular task entry consistent with the task workspace. A
+            // thread's next actions are chronological, so they are appended.
+            prependTaskOrder(userId, parentId);
+            task.setDisplayOrder(0);
+        } else {
+            task.setDisplayOrder(nextDisplayOrder(userId, parentId));
+        }
         task.setMentalThreadId(mentalThreadId);
         task.setCompleted(false);
         task.setCreationDateTime(LocalDateTime.now());
@@ -311,6 +318,16 @@ public class TaskService {
         taskRepository.saveAll(allMainTasks);
         log.info("Tasks reordered: userId={} count={} orderedTaskIds={}", userId, taskIds.size(), taskIds);
         return allMainTasks;
+    }
+
+    private void prependTaskOrder(String userId, String parentId) {
+        List<Task> siblingTasks = parentId == null
+                ? taskRepository.findAllByUserIdAndParentIdIsNullOrderByDisplayOrderAsc(userId)
+                : taskRepository.findAllByUserIdAndParentIdOrderByDisplayOrderAsc(userId, parentId);
+        siblingTasks.forEach(task -> task.setDisplayOrder(task.getDisplayOrder() + 1));
+        if (!siblingTasks.isEmpty()) {
+            taskRepository.saveAll(siblingTasks);
+        }
     }
 
     private int nextDisplayOrder(String userId, String parentId) {

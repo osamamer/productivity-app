@@ -8,8 +8,8 @@ import { useTheme, Theme } from '@mui/material/styles';
 import CheckIcon from '@mui/icons-material/Check';
 import CloseIcon from '@mui/icons-material/Close';
 import { format, subDays } from 'date-fns';
-import { StatDefinition } from '../../types/Stats';
-import { statService } from '../../services/api/statService';
+import { StatDefinition, StatEntry } from '../../types/Stats';
+import { getLastMonthWindow, statService } from '../../services/api/statService';
 import { KeyboardEvent } from 'react';
 import { effectiveStatMorality, getBooleanChoiceColor, getStatFeedback, showStatFeedback } from '../../services/statFeedback';
 
@@ -54,6 +54,10 @@ function getThresholdCircleBg(def: StatDefinition, value: number, theme: Theme):
 
 function getCircleBg(def: StatDefinition, value: number | undefined, theme: Theme): string {
     if (value === undefined) return theme.palette.action.disabledBackground;
+    if (def.type === 'BOOLEAN') {
+        return theme.palette[getBooleanChoiceColor(def, value === 1 ? 1 : 0)].main;
+    }
+
     const thresholdCircleBg = getThresholdCircleBg(def, value, theme);
     if (thresholdCircleBg) return thresholdCircleBg;
 
@@ -63,8 +67,6 @@ function getCircleBg(def: StatDefinition, value: number | undefined, theme: Them
 
     if (effectiveStatMorality(def) === 'NEUTRAL') {
         switch (def.type) {
-            case 'BOOLEAN':
-                return value === 1 ? theme.palette.primary.main : theme.palette.secondary.main;
             case 'RANGE': {
                 const t = Math.max(0, Math.min(1, (value - def.minValue!) / (def.maxValue! - def.minValue!)));
                 return `color-mix(in srgb, ${theme.palette.secondary.main} ${(1 - t) * 100}%, ${theme.palette.primary.main} ${t * 100}%)`;
@@ -75,8 +77,6 @@ function getCircleBg(def: StatDefinition, value: number | undefined, theme: Them
     }
 
     switch (def.type) {
-        case 'BOOLEAN':
-            return value === 1 ? theme.palette.success.main : theme.palette.error.main;
         case 'RANGE': {
             const t = Math.max(0, Math.min(1, (value - def.minValue!) / (def.maxValue! - def.minValue!)));
             return `hsl(${Math.round(t * 120)}, 65%, 42%)`;
@@ -107,10 +107,24 @@ interface Props {
     onEntryChanged?: () => void;
 }
 
+function recentValueMap(entries: StatEntry[] | undefined, recentStart: string, to: string) {
+    return new Map(
+        (entries ?? [])
+            .filter(entry => entry.date >= recentStart && entry.date <= to)
+            .map(entry => [entry.date, entry.value]),
+    );
+}
+
 export const StatRecentDots = React.memo(function StatRecentDots({ definition, refreshKey, onEntryChanged }: Props) {
     const theme = useTheme();
-    const [valueMap, setValueMap] = useState<Map<string, number>>(new Map());
-    const [loading, setLoading] = useState(true);
+    const { from, to } = getLastMonthWindow();
+    const recentStart = format(subDays(new Date(), 4), 'yyyy-MM-dd');
+    const last5Days = Array.from({ length: 5 }, (_, i) =>
+        format(subDays(new Date(), 4 - i), 'yyyy-MM-dd')
+    );
+    const cachedEntries = statService.getCachedEntries(definition.id, from, to);
+    const [valueMap, setValueMap] = useState<Map<string, number>>(() => recentValueMap(cachedEntries, recentStart, to));
+    const [loading, setLoading] = useState(() => !cachedEntries);
 
     // Popover state
     const [popover, setPopover] = useState<PopoverState | null>(null);
@@ -119,21 +133,25 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
     const [saveError, setSaveError] = useState<string | null>(null);
     const feedbackAnchorRef = useRef<HTMLElement | null>(null);
 
-    const fetchDots = () => {
-        const today = new Date();
-        const from = subDays(today, 4);
-        statService
-            .getEntries(definition.id, format(from, 'yyyy-MM-dd'), format(today, 'yyyy-MM-dd'))
-            .then(entries => setValueMap(new Map(entries.map(e => [e.date, e.value]))))
+    useEffect(() => {
+        let cancelled = false;
+        const cached = statService.getCachedEntries(definition.id, from, to);
+        if (cached) {
+            setValueMap(recentValueMap(cached, recentStart, to));
+            setLoading(false);
+        }
+
+        statService.getEntries(definition.id, from, to)
+            .then(entries => {
+                if (!cancelled) setValueMap(recentValueMap(entries, recentStart, to));
+            })
             .catch(e => console.error('Failed to load recent dots:', e))
-            .finally(() => setLoading(false));
-    };
+            .finally(() => {
+                if (!cancelled) setLoading(false);
+            });
 
-    useEffect(fetchDots, [definition.id, refreshKey]);
-
-    const last5Days = Array.from({ length: 5 }, (_, i) =>
-        format(subDays(new Date(), 4 - i), 'yyyy-MM-dd')
-    );
+        return () => { cancelled = true; };
+    }, [definition.id, from, recentStart, refreshKey, to]);
 
     const openPopover = (e: React.MouseEvent<HTMLElement>, date: string) => {
         e.stopPropagation(); // don't select the stat in the left panel
@@ -305,6 +323,7 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                         {definition.type === 'NUMBER' && (
                             <TextField
                                 type="number"
+                                autoComplete="off"
                                 size="small"
                                 value={editValue ?? ''}
                                 onChange={e => setEditValue(e.target.value === '' ? null : Number(e.target.value))}

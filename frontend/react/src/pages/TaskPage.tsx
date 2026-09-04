@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Button, Popover, Typography } from '@mui/material';
 import { PageWrapper } from '../components/PageWrapper';
 import { useGlobalTasks } from '../hooks/useGlobalTasks';
@@ -9,6 +9,8 @@ import { TaskPageSection } from '../components/task-page/TaskPageSection';
 import { TaskDetailsPanel } from '../components/task-page/TaskDetailsPanel';
 import { Task } from '../types/Task';
 import { getShowCompletedHomeTasks } from '../services/utils/homePreferences';
+import { playAudioFeedback } from '../services/audioFeedback';
+import { loadTaskPomodoroStats } from '../services/cache/taskPomodoroStatsCache';
 
 type SectionName = 'today' | 'comingUp' | 'leftovers' | 'undated';
 type DeleteRequest = { task: Task; anchorEl: HTMLElement };
@@ -43,6 +45,19 @@ export function TaskPage() {
     const undatedRef = useRef<HTMLDivElement>(null);
     allTasksRef.current = allTasks;
 
+    const prefetchTaskPomodoroStats = useCallback(async (taskId: string) => {
+        try {
+            await loadTaskPomodoroStats(taskId, () => taskService.getPomodoroStats(taskId));
+        } catch (error) {
+            // The details panel can retry on selection; one failed prefetch must not block the page.
+            console.error('Error prefetching Pomodoro stats:', error);
+        }
+    }, []);
+
+    useEffect(() => {
+        allTasks.forEach(task => void prefetchTaskPomodoroStats(task.taskId));
+    }, [allTasks, prefetchTaskPomodoroStats]);
+
     const createTask = useCallback(async (task: TaskToCreate) => {
         try {
             const createdTask = await taskService.createTask(task);
@@ -70,12 +85,14 @@ export function TaskPage() {
         }
 
         try {
-            await taskService.toggleTaskCompletion(taskId, task ? !task.completed : undefined);
+            const updatedTask = await taskService.toggleTaskCompletion(taskId, task ? !task.completed : undefined);
+            if (!task?.completed && updatedTask.completed) playAudioFeedback('taskCompleted');
+            void prefetchTaskPomodoroStats(taskId);
         } catch (error) {
             console.error('Error toggling task:', error);
             if (task) updateTaskInState(taskId, { completed: task.completed });
         }
-    }, [updateTaskInState]);
+    }, [prefetchTaskPomodoroStats, updateTaskInState]);
 
     const updateTask = useCallback(async (taskId: string, updates: Partial<Task>) => {
         const originalTask = allTasksRef.current.find(task => task.taskId === taskId);
@@ -83,12 +100,13 @@ export function TaskPage() {
 
         try {
             await taskService.updateTask(taskId, updates);
+            void prefetchTaskPomodoroStats(taskId);
         } catch (error) {
             console.error('Error updating task:', error);
             if (originalTask) updateTaskInState(taskId, originalTask);
             await fetchAllTasks(true);
         }
-    }, [fetchAllTasks, updateTaskInState]);
+    }, [fetchAllTasks, prefetchTaskPomodoroStats, updateTaskInState]);
 
     const requestDelete = useCallback((task: Task, anchorEl: HTMLElement) => {
         if (!deleteSubmitting) setDeleteRequest({ task, anchorEl });

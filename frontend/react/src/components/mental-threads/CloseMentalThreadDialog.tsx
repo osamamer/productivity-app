@@ -34,10 +34,12 @@ export function CloseMentalThreadDialog({ thread, onClose, onConfirm }: CloseMen
     }, [thread]);
 
     const handleConfirm = async () => {
-        if (!resolutionSummary.trim()) return;
         setSaving(true);
         try {
-            const closed = await onConfirm({ closureType, resolutionSummary: resolutionSummary.trim() });
+            const closed = await onConfirm({
+                closureType,
+                resolutionSummary: resolutionSummary.trim() || null,
+            });
             if (closed) onClose();
         } finally {
             setSaving(false);
@@ -63,12 +65,12 @@ export function CloseMentalThreadDialog({ thread, onClose, onConfirm }: CloseMen
                         </Select>
                     </FormControl>
                     <TextField
-                        label="What changed, or what are you choosing?"
+                        label="What changed, or what are you choosing? (optional)"
+                        autoComplete="off"
                         value={resolutionSummary}
                         onChange={event => setResolutionSummary(event.target.value)}
                         multiline
                         minRows={3}
-                        required
                         inputProps={{ maxLength: 5000 }}
                     />
                 </Stack>
@@ -78,7 +80,7 @@ export function CloseMentalThreadDialog({ thread, onClose, onConfirm }: CloseMen
                 <Button
                     variant="contained"
                     onClick={() => void handleConfirm()}
-                    disabled={saving || !resolutionSummary.trim()}
+                    disabled={saving}
                 >
                     {saving ? 'Closing…' : 'Close thread'}
                 </Button>

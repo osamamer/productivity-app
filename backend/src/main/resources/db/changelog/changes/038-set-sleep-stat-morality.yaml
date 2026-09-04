@@ -1,0 +1,19 @@
+databaseChangeLog:
+  - changeSet:
+      id: 038-set-sleep-stat-morality
+      author: osama
+      comment: Treat seven hours of sleep as the positive target for the built-in stat
+      changes:
+        - sql:
+            sql: |
+              UPDATE stat_definition
+              SET morality = 'GOOD',
+                  good_threshold = 7
+              WHERE system_key = 'sleep_hours';
+      rollback:
+        - sql:
+            sql: |
+              UPDATE stat_definition
+              SET morality = NULL,
+                  good_threshold = NULL
+              WHERE system_key = 'sleep_hours';

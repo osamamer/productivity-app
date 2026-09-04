@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { formatLongDate, localDate } from '@/lib/date';
 import { useAppTheme } from '@/providers/ThemeProvider';
@@ -8,6 +8,7 @@ import { api } from '@/services/api';
 import type { StatDefinition, StatEntry, StatSummary } from '@/types/models';
 import { AppText } from '../ui/AppText';
 import { Card } from '../ui/Card';
+import { SilentPressable } from '../ui/SilentPressable';
 
 const MEDITATED_SYSTEM_KEY = 'meditated';
 const MEDITATION_MINUTES_SYSTEM_KEY = 'meditation_minutes';
@@ -126,13 +127,13 @@ export function MeditationStats({ refreshKey }: { refreshKey: number }) {
           </View>
         </View>
         <View style={styles.monthControls}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Previous month" hitSlop={8} onPress={() => setMonthOffset(offset => offset - 1)}>
+          <SilentPressable accessibilityRole="button" accessibilityLabel="Previous month" hitSlop={8} onPress={() => setMonthOffset(offset => offset - 1)}>
             <Ionicons name="chevron-back" size={19} color={colors.textMuted} />
-          </Pressable>
+          </SilentPressable>
           <AppText variant="caption" color="muted" style={styles.monthLabel}>{monthLabel(month)}</AppText>
-          <Pressable accessibilityRole="button" accessibilityLabel="Next month" disabled={monthOffset >= 0} hitSlop={8} onPress={() => setMonthOffset(offset => Math.min(0, offset + 1))}>
+          <SilentPressable accessibilityRole="button" accessibilityLabel="Next month" disabled={monthOffset >= 0} hitSlop={8} onPress={() => setMonthOffset(offset => Math.min(0, offset + 1))}>
             <Ionicons name="chevron-forward" size={19} color={monthOffset >= 0 ? colors.border : colors.textMuted} />
-          </Pressable>
+          </SilentPressable>
         </View>
       </View>
 

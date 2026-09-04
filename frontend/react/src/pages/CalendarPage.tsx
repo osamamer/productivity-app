@@ -10,15 +10,13 @@ import {statService} from "../services/api/statService.ts";
 import {Task} from "../types/Task.tsx";
 import {TaskGroup} from "../types/TaskGroup.ts";
 import {CalendarEvent, CalendarEventInput} from "../types/CalendarEvent.ts";
+import { playAudioFeedback } from '../services/audioFeedback';
 
 export function CalendarPage() {
     const {
         allTasks,
         loading: tasksLoading,
         fetchAllTasks,
-        fetchTodayTasks,
-        fetchFutureTasks,
-        fetchPastTasks,
         addTaskToState,
         updateTaskInState,
     } = useGlobalTasks();
@@ -50,6 +48,7 @@ export function CalendarPage() {
     const handleCreateEvent = async (input: CalendarEventInput) => {
         const created = await eventService.createEvent(input);
         setEvents(current => [...current, created]);
+        playAudioFeedback('eventCreated');
     };
 
     const handleUpdateEvent = async (eventId: string, input: CalendarEventInput) => {
@@ -79,13 +78,10 @@ export function CalendarPage() {
         updateTaskInState(taskId, updates);
 
         try {
-            await taskService.updateTask(taskId, updates);
-            await Promise.all([
-                fetchAllTasks(true),
-                fetchTodayTasks(),
-                fetchFutureTasks(),
-                fetchPastTasks(),
-            ]);
+            const updatedTask = await taskService.updateTask(taskId, updates);
+            if (!originalTask.completed && updates.completed === true && updatedTask.completed) {
+                playAudioFeedback('taskCompleted');
+            }
         } catch (err) {
             console.error('Error updating task from calendar:', err);
             updateTaskInState(taskId, originalTask);

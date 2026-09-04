@@ -106,7 +106,7 @@ public class MentalThreadService {
         ensureOpen(mentalThread);
         mentalThread.setStatus(MentalThreadStatus.CLOSED);
         mentalThread.setClosureType(request.closureType());
-        mentalThread.setResolutionSummary(validateRequiredText(
+        mentalThread.setResolutionSummary(normalizeOptionalText(
                 request.resolutionSummary(), "Resolution summary", 5000));
         mentalThread.setClosedAt(LocalDateTime.now());
         mentalThread.setCurrentMentalLoad(0);

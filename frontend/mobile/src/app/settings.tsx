@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
-import { Pressable, StyleSheet, Switch, View } from 'react-native';
+import { StyleSheet, Switch, View } from 'react-native';
 
 import { AppButton } from '@/components/ui/AppButton';
 import { AppInput } from '@/components/ui/AppInput';
@@ -8,6 +8,7 @@ import { AppText } from '@/components/ui/AppText';
 import { Card } from '@/components/ui/Card';
 import { ChoiceChips } from '@/components/ui/ChoiceChips';
 import { Screen } from '@/components/ui/Screen';
+import { SilentPressable } from '@/components/ui/SilentPressable';
 import { useAsyncData } from '@/hooks/useAsyncData';
 import { reportError } from '@/lib/errors';
 import { useAuth } from '@/providers/AuthProvider';
@@ -18,7 +19,7 @@ import { api } from '@/services/api';
 
 export default function SettingsScreen() {
   const { user, logout } = useAuth();
-  const { showCompletedTasks, setShowCompletedTasks } = usePreferences();
+  const { showCompletedTasks, setShowCompletedTasks, soundEffectsEnabled, setSoundEffectsEnabled } = usePreferences();
   const { confirm, showError } = useAppPopup();
   const { colors, mode, accent, setMode, setAccent } = useAppTheme();
   const resource = useAsyncData(() => api.preferences.get());
@@ -69,7 +70,7 @@ export default function SettingsScreen() {
         <AppText variant="label">Accent</AppText>
         <View style={styles.accents}>
           {accentOptions.map(option => (
-            <Pressable
+            <SilentPressable
               key={option.value}
               onPress={() => setAccent(option.value)}
               style={[styles.swatchWrap, {
@@ -79,13 +80,15 @@ export default function SettingsScreen() {
             >
               <View style={[styles.swatch, { backgroundColor: option.color }]} />
               <AppText variant="caption">{option.label}</AppText>
-            </Pressable>
+            </SilentPressable>
           ))}
         </View>
       </Card>
 
       <Card style={styles.section}>
         <View style={styles.sectionHeading}><Ionicons name="options-outline" size={20} color={colors.textMuted} /><AppText variant="heading">Behavior</AppText></View>
+        <SettingRow label="Play sound effects" detail="Use short musical cues for completions, events, ratings, and mental threads." value={soundEffectsEnabled} onChange={setSoundEffectsEnabled} />
+        <View style={[styles.divider, { backgroundColor: colors.border }]} />
         <SettingRow label="Count unlogged days as zero" detail="Include empty days when calculating numeric averages." value={resource.data?.includeUnloggedNumericDaysAsZero ?? false} disabled={!resource.data} onChange={value => void updatePreference('includeUnloggedNumericDaysAsZero', value)} />
         <View style={[styles.divider, { backgroundColor: colors.border }]} />
         <SettingRow label="Show completed tasks" detail="Keep completed tasks visible on Today and Tasks." value={showCompletedTasks} onChange={setShowCompletedTasks} />
@@ -101,7 +104,7 @@ export default function SettingsScreen() {
         </View>
         <View style={[styles.accountActions, { borderTopColor: colors.border }]}>
           <AppText variant="caption" color="muted">ACCOUNT ACTIONS</AppText>
-          <Pressable
+          <SilentPressable
             accessibilityRole="button"
             accessibilityState={{ expanded: changePasswordOpen }}
             onPress={() => {
@@ -118,15 +121,15 @@ export default function SettingsScreen() {
               </View>
             </View>
             <Ionicons name={changePasswordOpen ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textMuted} />
-          </Pressable>
+          </SilentPressable>
           {changePasswordOpen && <View style={styles.passwordForm}>
-            <AppInput label="Current password" secureTextEntry value={currentPassword} onChangeText={setCurrentPassword} />
-            <AppInput label="New password" secureTextEntry value={newPassword} onChangeText={setNewPassword} />
-            <AppInput label="Confirm new password" secureTextEntry value={confirmPassword} onChangeText={setConfirmPassword} />
+            <AppInput label="Current password" secureTextEntry autoComplete="current-password" importantForAutofill="yes" value={currentPassword} onChangeText={setCurrentPassword} />
+            <AppInput label="New password" secureTextEntry autoComplete="new-password" importantForAutofill="yes" value={newPassword} onChangeText={setNewPassword} />
+            <AppInput label="Confirm new password" secureTextEntry autoComplete="new-password" importantForAutofill="yes" value={confirmPassword} onChangeText={setConfirmPassword} />
             {passwordMessage && <AppText color={passwordMessage === 'Password updated.' ? 'success' : 'danger'}>{passwordMessage}</AppText>}
             <AppButton variant="secondary" label="Update password" loading={passwordSaving} onPress={() => void changePassword()} />
           </View>}
-          <Pressable
+          <SilentPressable
             accessibilityRole="button"
             onPress={() => void signOut()}
             style={({ pressed }) => [styles.accountOption, { borderColor: `${colors.danger}40`, backgroundColor: `${colors.danger}0C` }, pressed && { opacity: 0.72 }]}
@@ -139,7 +142,7 @@ export default function SettingsScreen() {
               </View>
             </View>
             <Ionicons name="chevron-forward" size={18} color={colors.danger} />
-          </Pressable>
+          </SilentPressable>
         </View>
       </Card>
     </Screen>

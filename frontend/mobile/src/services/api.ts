@@ -17,6 +17,7 @@ import type {
   PomodoroStatus,
   StatDefinition,
   StatEntry,
+  StatGroup,
   StatSummary,
   Task,
   TaskGroup,
@@ -126,7 +127,7 @@ export const api = {
       json<MentalThread>('/api/v1/mental-threads', 'POST', input),
     update: (id: string, input: MentalThreadInput) =>
       json<MentalThread>(`/api/v1/mental-threads/${id}`, 'PUT', input),
-    close: (id: string, closureType: string, resolutionSummary: string) =>
+    close: (id: string, closureType: string, resolutionSummary: string | null) =>
       json<MentalThread>(`/api/v1/mental-threads/${id}/close`, 'POST', {
         closureType,
         resolutionSummary,
@@ -151,6 +152,7 @@ export const api = {
   },
   notes: {
     all: () => apiRequest<Note[]>('/api/v1/notes'),
+    get: (id: string) => apiRequest<Note>(`/api/v1/notes/${id}`),
     categories: () => apiRequest<NoteCategory[]>('/api/v1/note-categories'),
     create: (categoryId: string | null = null) =>
       json<Note>('/api/v1/notes', 'POST', {
@@ -165,11 +167,13 @@ export const api = {
   },
   stats: {
     definitions: () => apiRequest<StatDefinition[]>('/api/v1/stats/definitions'),
+    groups: () => apiRequest<StatGroup[]>('/api/v1/stats/groups'),
     today: () => apiRequest<StatEntry[]>('/api/v1/stats/entries/today'),
     entries: (statDefinitionId: string, from: string, to: string) => {
       const params = new URLSearchParams({ statDefinitionId, from, to });
       return apiRequest<StatEntry[]>(`/api/v1/stats/entries?${params}`);
     },
+    entriesByDate: (date: string) => apiRequest<StatEntry[]>(`/api/v1/stats/entries/by-date?date=${encodeURIComponent(date)}`),
     record: (statDefinitionId: string, value: number, date?: string) =>
       json<StatEntry>('/api/v1/stats/entries', 'POST', { statDefinitionId, value, date }),
     create: (input: Pick<StatDefinition, 'name' | 'description' | 'type' | 'minValue' | 'maxValue'>) =>

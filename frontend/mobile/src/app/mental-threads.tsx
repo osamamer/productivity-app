@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { ThreadComposerSheet } from '@/components/mind/ThreadComposerSheet';
 import { ThreadDetailSheet } from '@/components/mind/ThreadDetailSheet';
@@ -8,10 +8,9 @@ import { AppText } from '@/components/ui/AppText';
 import { Card } from '@/components/ui/Card';
 import { ChoiceChips } from '@/components/ui/ChoiceChips';
 import { Screen } from '@/components/ui/Screen';
+import { SilentPressable } from '@/components/ui/SilentPressable';
 import { ErrorView, LoadingView } from '@/components/ui/StateView';
 import { useAsyncData } from '@/hooks/useAsyncData';
-import { reportError } from '@/lib/errors';
-import { useAppPopup } from '@/providers/PopupProvider';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
 import type { MentalThread, MentalThreadSummary } from '@/types/models';
@@ -20,7 +19,6 @@ interface ThreadData { threads: MentalThread[]; summary: MentalThreadSummary }
 
 export default function MentalThreadsScreen() {
   const { colors } = useAppTheme();
-  const { showError } = useAppPopup();
   const resource = useAsyncData<ThreadData>(async () => {
     const [threads, summary] = await Promise.all([api.mentalThreads.all(true), api.mentalThreads.summary()]);
     return { threads, summary };
@@ -34,17 +32,6 @@ export default function MentalThreadsScreen() {
     resource.setData(current => current ? { ...current, threads: current.threads.map(thread => thread.id === updated.id ? updated : thread) } : current);
     setSelected(updated);
     void resource.reload();
-  }
-
-  async function capacity(value: number) {
-    if (!resource.data) return;
-    const previous = resource.data.summary.capacityToday;
-    resource.setData({ ...resource.data, summary: { ...resource.data.summary, capacityToday: value } });
-    try { await api.mentalThreads.capacity(value); }
-    catch (cause) {
-      resource.setData(current => current ? { ...current, summary: { ...current.summary, capacityToday: previous } } : current);
-      void showError('Could not save capacity', reportError('Could not save capacity', cause));
-    }
   }
 
   return (
@@ -64,15 +51,13 @@ export default function MentalThreadsScreen() {
               <View style={styles.metric}><AppText variant="title">{resource.data.summary.totalLoad}</AppText><AppText variant="caption" color="muted">TOTAL LOAD</AppText></View>
               <View style={styles.metric}><AppText variant="title" color={resource.data.summary.highLoadCount ? 'danger' : 'default'}>{resource.data.summary.highLoadCount}</AppText><AppText variant="caption" color="muted">HIGH LOAD</AppText></View>
             </View>
-            <AppText variant="label">Capacity today · {resource.data.summary.capacityToday ?? 'not checked in'}</AppText>
-            <ChoiceChips value={resource.data.summary.capacityToday ?? 0} onChange={value => void capacity(value)} options={[1,2,3,4,5,6,7,8,9,10].map(value => ({ value, label: String(value) }))} />
           </Card>
           <ChoiceChips value={show} onChange={setShow} options={[{ value: 'open', label: 'Open' }, { value: 'closed', label: 'Closed' }]} />
           <View style={styles.list}>
             {visible.map(thread => {
               const loadColor = thread.currentMentalLoad >= 8 ? colors.high : thread.currentMentalLoad >= 5 ? colors.medium : colors.low;
               return (
-                <Pressable key={thread.id} onPress={() => setSelected(thread)}>
+                <SilentPressable key={thread.id} onPress={() => setSelected(thread)}>
                   <Card style={styles.thread}>
                     <View style={[styles.load, { backgroundColor: loadColor }]}><AppText variant="label" style={{ color: '#1A1A2E' }}>{thread.currentMentalLoad}</AppText></View>
                     <View style={styles.grow}>
@@ -81,7 +66,7 @@ export default function MentalThreadsScreen() {
                       {thread.desiredResolution && <AppText color="muted" numberOfLines={2}>{thread.desiredResolution}</AppText>}
                     </View>
                   </Card>
-                </Pressable>
+                </SilentPressable>
               );
             })}
           </View>

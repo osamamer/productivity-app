@@ -20,6 +20,7 @@ type TaskWorkspaceValue = {
   removeTask: (taskId: string) => void;
   moveTask: (taskId: string, direction: 'up' | 'down') => Promise<void>;
   moveTasksToToday: (taskIds: string[]) => Promise<void>;
+  moveTasksToDate: (taskIds: string[], scheduledPerformDateTime: string) => Promise<void>;
   createGroup: (name: string, taskIds: string[]) => Promise<TaskGroup>;
   replaceGroupTasks: (groupId: string, taskIds: string[]) => Promise<TaskGroup>;
   deleteGroup: (groupId: string) => Promise<void>;
@@ -48,6 +49,23 @@ function usableGroups(taskGroups: TaskGroup[], tasks?: Task[]): TaskGroup[] {
       ? { ...group, taskIds: group.taskIds.filter(taskId => liveTaskIds.has(taskId)) }
       : group)
     .filter(group => group.taskIds.length >= 2);
+}
+
+type TaskDateUpdate = { task: Task; scheduledPerformDateTime: string };
+
+function orderWithTasksAtEndOfToday(tasks: Task[], movedTaskIds: string[]): string[] {
+  const movedTaskIdSet = new Set(movedTaskIds);
+  const moved = tasks.map(task => task.taskId).filter(taskId => movedTaskIdSet.has(taskId));
+  const remaining = tasks.map(task => task.taskId).filter(taskId => !movedTaskIdSet.has(taskId));
+  let lastTodayIndex = -1;
+  tasks.forEach(task => {
+    if (!movedTaskIdSet.has(task.taskId) && dateBucket(task) === 'today') {
+      lastTodayIndex = remaining.indexOf(task.taskId);
+    }
+  });
+  if (lastTodayIndex === -1) return [...remaining, ...moved];
+  remaining.splice(lastTodayIndex + 1, 0, ...moved);
+  return remaining;
 }
 
 export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
@@ -141,6 +159,32 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
     }
   }, [allTasks, load]);
 
+  const persistDateUpdates = useCallback(async (updates: TaskDateUpdate[], taskIdsToAppend: string[]) => {
+    setAllTasks(previous => previous.map(task => {
+      const update = updates.find(item => item.task.taskId === task.taskId);
+      return update ? { ...task, scheduledPerformDateTime: update.scheduledPerformDateTime } : task;
+    }));
+
+    try {
+      const saved = await Promise.all(updates.map(update => api.tasks.update(update.task.taskId, {
+        scheduledPerformDateTime: update.scheduledPerformDateTime,
+      })));
+      const savedById = new Map(saved.map(task => [task.taskId, task]));
+      setAllTasks(previous => previous.map(task => savedById.get(task.taskId) ?? task));
+
+      if (taskIdsToAppend.length > 0) {
+        const orderedIds = orderWithTasksAtEndOfToday(allTasks, taskIdsToAppend);
+        const reordered = await api.tasks.reorder(orderedIds);
+        const reorderedById = new Map(reordered.map(task => [task.taskId, task]));
+        setAllTasks(previous => previous.map(task => reorderedById.get(task.taskId) ?? task));
+      }
+    } catch (cause) {
+      console.error('Could not move mobile tasks to a new date:', cause);
+      await load(true);
+      throw cause;
+    }
+  }, [allTasks, load]);
+
   const moveTasksToToday = useCallback(async (taskIds: string[]) => {
     const now = new Date();
     const ids = new Set(taskIds);
@@ -157,21 +201,24 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
         scheduledPerformDateTime: `${localDate(date)}T${pad(date.getHours())}:${pad(date.getMinutes())}:00`,
       };
     });
-    setAllTasks(previous => previous.map(task => {
-      const update = updates.find(item => item.task.taskId === task.taskId);
-      return update ? { ...task, scheduledPerformDateTime: update.scheduledPerformDateTime } : task;
-    }));
-    try {
-      const saved = await Promise.all(updates.map(update => api.tasks.update(update.task.taskId, {
-        scheduledPerformDateTime: update.scheduledPerformDateTime,
-      })));
-      saved.forEach(updateTask);
-    } catch (cause) {
-      console.error('Could not move mobile tasks to today:', cause);
-      await load(true);
-      throw cause;
-    }
-  }, [allTasks, load, updateTask]);
+    await persistDateUpdates(updates, tasksToMove.map(task => task.taskId));
+  }, [allTasks, persistDateUpdates]);
+
+  const moveTasksToDate = useCallback(async (taskIds: string[], scheduledPerformDateTime: string) => {
+    const ids = new Set(taskIds);
+    const tasksToMove = allTasks.filter(task => ids.has(task.taskId));
+    if (tasksToMove.length === 0) return;
+
+    const target = new Date(scheduledPerformDateTime);
+    if (Number.isNaN(target.getTime())) throw new Error('Invalid task date');
+    const taskIdsToAppend = localDate(target) === localDate()
+      ? tasksToMove.filter(task => dateBucket(task) !== 'today').map(task => task.taskId)
+      : [];
+    await persistDateUpdates(
+      tasksToMove.map(task => ({ task, scheduledPerformDateTime })),
+      taskIdsToAppend,
+    );
+  }, [allTasks, persistDateUpdates]);
 
   const createGroup = useCallback(async (name: string, taskIds: string[]) => {
     const created = await api.taskGroups.create(name, taskIds);
@@ -213,11 +260,12 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
       removeTask,
       moveTask,
       moveTasksToToday,
+      moveTasksToDate,
       createGroup,
       replaceGroupTasks,
       deleteGroup,
     };
-  }, [addTask, allTasks, createGroup, deleteGroup, error, groups, load, loading, moveTask, moveTasksToToday, removeTask, replaceGroupTasks, updateTask]);
+  }, [addTask, allTasks, createGroup, deleteGroup, error, groups, load, loading, moveTask, moveTasksToDate, moveTasksToToday, removeTask, replaceGroupTasks, updateTask]);
 
   return <TaskWorkspaceContext.Provider value={value}>{children}</TaskWorkspaceContext.Provider>;
 }

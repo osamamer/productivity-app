@@ -6,4 +6,6 @@ Use `src/providers/ThemeProvider.tsx` as the source of visual tokens, `src/servi
 
 Use `src/providers/PopupProvider.tsx` and `src/components/ui/AppPopup.tsx` for confirmations, errors, and reminder fallbacks; do not use React Native system alerts. Date and time fields should keep their selection UI inside the themed popup. Task priority presentation is shared through `src/lib/taskPriority.ts` so mobile uses the web client’s Low/Medium/High colors and thresholds.
 
+For mobile scheduling controls, use a `Custom` action that opens the themed date/time popup. Do not leave a `Someday` action that silently means “no date”; keep custom selection and cancellation behavior explicit.
+
 Run `npm run lint`, `npm run typecheck`, and `npm run export:android` before handing off mobile changes. OAuth must be tested in a native development build because Expo Go cannot register the `solife` callback scheme.

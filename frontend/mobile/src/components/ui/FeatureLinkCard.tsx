@@ -1,9 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Href, router } from 'expo-router';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { AppText } from './AppText';
+import { SilentPressable } from './SilentPressable';
 
 export function FeatureLinkCard({ title, description, icon, href }: {
   title: string;
@@ -13,7 +14,7 @@ export function FeatureLinkCard({ title, description, icon, href }: {
 }) {
   const { colors } = useAppTheme();
   return (
-    <Pressable
+    <SilentPressable
       onPress={() => router.push(href)}
       style={({ pressed }) => [styles.card, { backgroundColor: colors.surface, borderColor: colors.border }, pressed && { opacity: 0.72 }]}>
       <View style={[styles.icon, { backgroundColor: colors.accentSoft }]}><Ionicons name={icon} size={24} color={colors.accent} /></View>
@@ -22,7 +23,7 @@ export function FeatureLinkCard({ title, description, icon, href }: {
         <AppText color="muted">{description}</AppText>
       </View>
       <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-    </Pressable>
+    </SilentPressable>
   );
 }
 

@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Image, Keyboard, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { useState } from 'react';
+import { Image, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppButton } from '@/components/ui/AppButton';
 import { AppInput } from '@/components/ui/AppInput';
 import { AppText } from '@/components/ui/AppText';
 import { Card } from '@/components/ui/Card';
+import { KeyboardAwareScrollView } from '@/components/ui/KeyboardAwareScrollView';
 import { useAuth } from '@/providers/AuthProvider';
 import { useAppTheme } from '@/providers/ThemeProvider';
 
@@ -15,27 +16,6 @@ export default function SignInScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const scrollViewRef = useRef<ScrollView>(null);
-  const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const scrollToForm = useCallback(() => {
-    const scrollToEnd = () => scrollViewRef.current?.scrollToEnd({ animated: true });
-    requestAnimationFrame(scrollToEnd);
-    if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
-    scrollTimeoutRef.current = setTimeout(() => {
-      scrollToEnd();
-      scrollTimeoutRef.current = null;
-    }, 250);
-  }, []);
-
-  useEffect(() => {
-    const subscription = Keyboard.addListener('keyboardDidShow', scrollToForm);
-    return () => {
-      subscription.remove();
-      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
-    };
-  }, [scrollToForm]);
-
   async function submit() {
     setSubmitting(true);
     try { await login(email, password); }
@@ -44,9 +24,7 @@ export default function SignInScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
-      <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView
-        ref={scrollViewRef}
+      <KeyboardAwareScrollView
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag">
@@ -69,21 +47,21 @@ export default function SignInScreen() {
             onChangeText={setEmail}
             autoCapitalize="none"
             autoCorrect={false}
-            autoComplete="email"
+            spellCheck={false}
+            autoComplete="username"
+            importantForAutofill="yes"
             keyboardType="email-address"
-            textContentType="username"
             returnKeyType="next"
-            onFocus={scrollToForm}
           />
           <AppInput
             label="Password"
             value={password}
             onChangeText={setPassword}
             secureTextEntry
-            autoComplete="password"
-            textContentType="password"
+            spellCheck={false}
+            autoComplete="current-password"
+            importantForAutofill="yes"
             returnKeyType="go"
-            onFocus={scrollToForm}
             onSubmitEditing={() => void submit()}
           />
           <AppButton label="Sign in" icon="arrow-forward" loading={submitting} onPress={() => void submit()} />
@@ -91,15 +69,13 @@ export default function SignInScreen() {
             Your password is never stored by Claritard.
           </AppText>
         </Card>
-      </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAwareScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  fill: { flex: 1 },
   content: { flexGrow: 1, padding: 22, justifyContent: 'space-between', gap: 24 },
   hero: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16 },
   logoWrap: { width: 124, height: 124, borderRadius: 36, alignItems: 'center', justifyContent: 'center' },

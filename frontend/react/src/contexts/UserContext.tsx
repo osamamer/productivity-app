@@ -8,6 +8,7 @@ import { taskGroupService } from '../services/api/taskGroupService';
 import { userService } from '../services/api/userService';
 import { clearMentalThreadHistoryCache } from '../services/cache/mentalThreadHistoryCache';
 import { clearPomodoroConfigCache } from '../services/api/pomodoroConfigService';
+import { clearAppBootstrap } from '../services/bootstrap/appBootstrap';
 
 interface UserInfo {
     id: string;
@@ -55,6 +56,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
     const login = useCallback((..._args: unknown[]) => keycloak.login(), []);
 
     const logout = useCallback(() => {
+        clearAppBootstrap();
         statService.clearCache();
         dayService.clearCache();
         eventService.clearCache();

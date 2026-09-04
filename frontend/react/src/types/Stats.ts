@@ -58,6 +58,14 @@ export interface StatSummary {
     periodHighest?: number | null;     // NUMBER / RANGE only
 }
 
+export interface StatBootstrapResponse {
+    from: string;
+    to: string;
+    definitions: StatDefinition[];
+    entries: Record<string, StatEntry[]>;
+    summaries: Record<string, StatSummary>;
+}
+
 export type CorrelationStrength = 'STRONG' | 'MODERATE' | 'MILD' | 'NONE' | 'INSUFFICIENT_DATA' | 'NO_VARIATION';
 export type CorrelationDirection = 'POSITIVE' | 'NEGATIVE' | 'NONE';
 

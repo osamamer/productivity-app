@@ -25,10 +25,12 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Slf4j
 @Service
@@ -249,8 +251,9 @@ public class PomodoroService {
             pomodoro.setSecondsUntilNextTransition(0);
             pomodoroRepository.save(pomodoro);
             scheduleService.scheduleBreakEnd(task.getTaskId());
+            pausePomodoroUpdates(task.getTaskId());
             startPomodoroUpdates(task.getTaskId());
-            sendUpdate(pomodoro);
+            sendAsyncUpdate(task.getTaskId());
             log.info("Pomodoro break started manually: userId={} taskId={} focusNumber={}",
                     userId, taskId, pomodoro.getCurrentFocusNumber());
             return;
@@ -407,14 +410,21 @@ public class PomodoroService {
             return;
         }
 
-        ScheduledFuture<?> future = schedulerConfig.taskScheduler().scheduleAtFixedRate(() -> {
-            try {
-                updateAndBroadcastPomodoro(taskId);
-            } catch (Exception e) {
-                log.error("Error updating pomodoro for task: {}", taskId, e);
-            }
-        }, 1_000);
+        AtomicReference<ScheduledFuture<?>> currentFuture = new AtomicReference<>();
+        ScheduledFuture<?> future = schedulerConfig.taskScheduler().scheduleAtFixedRate(
+                () -> {
+                    try {
+                        if (!updateAndBroadcastPomodoro(taskId)) {
+                            pausePomodoroUpdatesIfCurrent(taskId, currentFuture.get());
+                        }
+                    } catch (Exception e) {
+                        log.error("Error updating pomodoro for task: {}", taskId, e);
+                    }
+                },
+                Instant.now().plusSeconds(1),
+                Duration.ofSeconds(1));
 
+        currentFuture.set(future);
         statusUpdateTasks.put(taskId, future);
         log.info("Started pomodoro updates for task: {}", taskId);
     }
@@ -427,37 +437,28 @@ public class PomodoroService {
         }
     }
 
-    private void updateAndBroadcastPomodoro(String taskId) {
+    private boolean updateAndBroadcastPomodoro(String taskId) {
         Optional<Pomodoro> activePomodoro =
                 pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(taskId);
         if (activePomodoro.isEmpty()) {
-            pausePomodoroUpdates(taskId);
-            return;
+            return false;
         }
         Pomodoro pomodoro = activePomodoro.get();
 
-        Optional<TaskSession> activeSession = taskSessionRepository
-                .findSessionByAssociatedTaskIdAndActiveIsTrue(taskId);
-        Optional<ScheduledJob> nextJob = scheduledJobRepository
-                .findAllByScheduledIsTrueAndAssociatedTaskId(taskId)
-                .stream()
-                .min(Comparator.comparing(ScheduledJob::getDueDate));
-
-        if (nextJob.isEmpty()) {
-            pausePomodoroUpdates(taskId);
-            return;
+        if (!refreshCurrentStatus(pomodoro)) {
+            return false;
         }
-
-        // Calculate progress
-        LocalDateTime now = LocalDateTime.now();
-        long secondsUntilNext = calculateSecondsUntil(nextJob.get().getDueDate(), now);
-        long secondsPassed = calculateSecondsPassed(pomodoro, activeSession, secondsUntilNext);
-
-        pomodoro.setSecondsPassedInSession(secondsPassed);
-        pomodoro.setSecondsUntilNextTransition(secondsUntilNext);
 
         // Broadcast without saving to DB
         simpMessagingTemplate.convertAndSend("/topic/pomodoro/" + taskId, pomodoro);
+        return true;
+    }
+
+    private void pausePomodoroUpdatesIfCurrent(String taskId, ScheduledFuture<?> expectedFuture) {
+        if (expectedFuture != null && statusUpdateTasks.remove(taskId, expectedFuture)) {
+            expectedFuture.cancel(false);
+            log.info("Paused pomodoro updates for task: {}", taskId);
+        }
     }
 
     private long calculateFocusSecondsPassed(Optional<TaskSession> activeSession) {
@@ -509,11 +510,41 @@ public class PomodoroService {
 
     public Optional<Pomodoro> getActivePomodoro(String taskId, String userId) {
         Task task = taskService.getTaskForUserOrThrow(taskId, userId);
-        return pomodoroRepository.findPomodoroByAssociatedTaskIdAndUserIdAndIsActiveIsTrue(task.getTaskId(), userId);
+        return pomodoroRepository.findPomodoroByAssociatedTaskIdAndUserIdAndIsActiveIsTrue(task.getTaskId(), userId)
+                .map(pomodoro -> {
+                    refreshCurrentStatus(pomodoro);
+                    return pomodoro;
+                });
     }
 
     public Optional<Pomodoro> getActivePomodoro(String userId) {
-        return pomodoroRepository.findPomodoroByUserIdAndIsActiveIsTrue(userId);
+        return pomodoroRepository.findPomodoroByUserIdAndIsActiveIsTrue(userId)
+                .map(pomodoro -> {
+                    refreshCurrentStatus(pomodoro);
+                    return pomodoro;
+                });
+    }
+
+    /**
+     * The countdown fields are a transport snapshot for WebSocket updates, not
+     * the source of truth. Scheduled transition due dates are persisted so a
+     * REST status request remains accurate after a client or backend restart.
+     */
+    private boolean refreshCurrentStatus(Pomodoro pomodoro) {
+        Optional<TaskSession> activeSession = taskSessionRepository
+                .findSessionByAssociatedTaskIdAndActiveIsTrue(pomodoro.getAssociatedTaskId());
+        Optional<ScheduledJob> nextJob = scheduledJobRepository
+                .findAllByScheduledIsTrueAndAssociatedTaskId(pomodoro.getAssociatedTaskId())
+                .stream()
+                .min(Comparator.comparing(ScheduledJob::getDueDate));
+        if (nextJob.isEmpty()) {
+            return false;
+        }
+
+        long secondsUntilNext = calculateSecondsUntil(nextJob.get().getDueDate(), LocalDateTime.now());
+        pomodoro.setSecondsPassedInSession(calculateSecondsPassed(pomodoro, activeSession, secondsUntilNext));
+        pomodoro.setSecondsUntilNextTransition(secondsUntilNext);
+        return true;
     }
 
     private void sendUpdate(Pomodoro pomodoro) {

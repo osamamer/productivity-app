@@ -127,6 +127,7 @@ export function CreateStatForm({ onCreated, onUpdated, onDelete, onCancel, initi
             <Stack spacing={2}>
                 <TextField
                     name="name"
+                    autoComplete="off"
                     label="Name"
                     value={formik.values.name}
                     onChange={formik.handleChange}
@@ -137,6 +138,7 @@ export function CreateStatForm({ onCreated, onUpdated, onDelete, onCancel, initi
                 />
                 <TextField
                     name="description"
+                    autoComplete="off"
                     label="Description (optional)"
                     value={formik.values.description}
                     onChange={formik.handleChange}
@@ -186,6 +188,7 @@ export function CreateStatForm({ onCreated, onUpdated, onDelete, onCancel, initi
                     <Stack direction="row" spacing={2}>
                         <TextField
                             name="minValue"
+                            autoComplete="off"
                             label="Min"
                             type="number"
                             value={formik.values.minValue}
@@ -197,6 +200,7 @@ export function CreateStatForm({ onCreated, onUpdated, onDelete, onCancel, initi
                         />
                         <TextField
                             name="maxValue"
+                            autoComplete="off"
                             label="Max"
                             type="number"
                             value={formik.values.maxValue}
@@ -211,6 +215,7 @@ export function CreateStatForm({ onCreated, onUpdated, onDelete, onCancel, initi
                 <Collapse in={formik.values.type !== 'BOOLEAN' && formik.values.morality !== 'NEUTRAL'}>
                     <TextField
                         name="goodThreshold"
+                        autoComplete="off"
                         label={formik.values.morality === 'BAD' ? 'Good at or below' : 'Good at or above'}
                         type="number"
                         value={formik.values.goodThreshold}

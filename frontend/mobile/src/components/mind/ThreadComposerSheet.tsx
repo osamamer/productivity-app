@@ -1,10 +1,13 @@
 import { useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 
 import { reportError } from '@/lib/errors';
+import { playAudioFeedback } from '@/lib/audioFeedback';
 import { api } from '@/services/api';
 import type { AttentionState, MentalThread } from '@/types/models';
 import { AppButton } from '../ui/AppButton';
 import { AppInput } from '../ui/AppInput';
+import { AppSlider } from '../ui/AppSlider';
 import { AppText } from '../ui/AppText';
 import { ChoiceChips } from '../ui/ChoiceChips';
 import { ModalSheet } from '../ui/ModalSheet';
@@ -37,7 +40,9 @@ export function ThreadComposerSheet({ visible, onClose, onCreated }: {
         desiredResolution: desiredResolution.trim() || null, targetCloseDate: null,
         hardDeadlineDate: null, nextReviewDate: null, currentMentalLoad: load, loadReason: null,
       });
-      onCreated(thread); close();
+      onCreated(thread);
+      playAudioFeedback('mentalThreadCreated');
+      close();
     } catch (cause) {
       setError(reportError('Could not create thread', cause));
     } finally { setSaving(false); }
@@ -53,8 +58,26 @@ export function ThreadComposerSheet({ visible, onClose, onCreated }: {
         { value: 'ACTING', label: 'Acting' }, { value: 'RUMINATING', label: 'Ruminating' },
         { value: 'PLANNED', label: 'Planned' }, { value: 'PENDING', label: 'Pending' },
       ]} />
-      <AppText variant="label">Mental load · {load}/10</AppText>
-      <ChoiceChips value={load} onChange={setLoad} options={[1,2,3,4,5,6,7,8,9,10].map(value => ({ value, label: String(value) }))} />
+      <View style={styles.loadSection}>
+        <View style={styles.sectionHeading}>
+          <AppText variant="label">Mental load</AppText>
+          <AppText variant="label" color="accent">{load}/10</AppText>
+        </View>
+        <AppSlider
+          label="Mental load"
+          value={load}
+          minimumValue={1}
+          maximumValue={10}
+          minimumLabel="Light"
+          maximumLabel="Heavy"
+          onValueChange={setLoad}
+        />
+      </View>
     </ModalSheet>
   );
 }
+
+const styles = StyleSheet.create({
+  loadSection: { gap: 8 },
+  sectionHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+});

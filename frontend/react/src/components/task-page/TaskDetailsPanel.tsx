@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
     Box,
     Chip,
@@ -16,6 +16,12 @@ import { Task } from '../../types/Task.tsx';
 import { TaskToCreate } from '../../types/TaskToCreate.tsx';
 import { TaskPomodoroStats } from '../../types/TaskPomodoroStats';
 import { taskService } from '../../services/api';
+import { playAudioFeedback } from '../../services/audioFeedback';
+import {
+    getStaleTaskPomodoroStats,
+    loadTaskPomodoroStats,
+    subscribeToTaskPomodoroStatsInvalidation,
+} from '../../services/cache/taskPomodoroStatsCache';
 
 type TaskDetailsPanelProps = {
     task: Task;
@@ -45,6 +51,11 @@ type PomodoroStatsState = {
     error: boolean;
 };
 
+type SubtaskListProps = {
+    items: Task[];
+    onToggle: (subtask: Task) => Promise<void>;
+};
+
 const PRIORITY_OPTIONS = [
     { label: 'Low', value: 3, color: '#1976d2' },
     { label: 'Medium', value: 6, color: '#eab308' },
@@ -52,9 +63,30 @@ const PRIORITY_OPTIONS = [
 ];
 
 const subtaskCache = new Map<string, Task[]>();
-const pomodoroStatsCache = new Map<string, TaskPomodoroStats>();
+const EMPTY_SUBTASKS: Task[] = [];
 const TASK_NAME_SCALE_START = 48;
 const TASK_NAME_SCALE_END = 240;
+
+function areSubtasksEqual(previous: Task[], next: Task[]): boolean {
+    if (previous.length !== next.length) return false;
+
+    return previous.every((subtask, index) => {
+        const nextSubtask = next[index];
+        return subtask.taskId === nextSubtask.taskId
+            && subtask.name === nextSubtask.name
+            && subtask.description === nextSubtask.description
+            && subtask.completed === nextSubtask.completed
+            && subtask.creationDateTime === nextSubtask.creationDateTime
+            && subtask.creationDate === nextSubtask.creationDate
+            && subtask.scheduledPerformDateTime === nextSubtask.scheduledPerformDateTime
+            && subtask.completionDateTime === nextSubtask.completionDateTime
+            && subtask.parentId === nextSubtask.parentId
+            && subtask.tag === nextSubtask.tag
+            && subtask.importance === nextSubtask.importance
+            && subtask.displayOrder === nextSubtask.displayOrder
+            && subtask.mentalThreadId === nextSubtask.mentalThreadId;
+    });
+}
 
 function getTaskNameFontSize(name: string): string {
     const scale = Math.min(
@@ -152,6 +184,7 @@ const SubtaskComposer = React.memo(function SubtaskComposer({
             />
             <TextField
                 value={visibleDraft.name}
+                autoComplete="off"
                 onChange={event => setDraft({ taskId, name: event.target.value, focused: visibleDraft.focused })}
                 onFocus={() => setDraft({ ...visibleDraft, focused: true })}
                 onBlur={() => setDraft({ ...visibleDraft, focused: false })}
@@ -162,6 +195,33 @@ const SubtaskComposer = React.memo(function SubtaskComposer({
                 sx={{ '& .MuiInputBase-input': { py: 1.25 } }}
             />
         </Box>
+    );
+});
+
+const SubtaskList = React.memo(function SubtaskList({ items, onToggle }: SubtaskListProps) {
+    return (
+        <>
+            {items.map(subtask => (
+                <Box key={subtask.taskId} sx={{ display: 'flex', alignItems: 'center', minHeight: 38 }}>
+                    <Checkbox
+                        size="small"
+                        checked={subtask.completed}
+                        onChange={() => void onToggle(subtask)}
+                        sx={{ p: 0.5, mr: 0.75 }}
+                    />
+                    <Typography
+                        variant="body2"
+                        sx={{
+                            textAlign: 'left',
+                            color: subtask.completed ? 'text.disabled' : 'text.primary',
+                            textDecoration: subtask.completed ? 'line-through' : 'none',
+                        }}
+                    >
+                        {subtask.name}
+                    </Typography>
+                </Box>
+            ))}
+        </>
     );
 });
 
@@ -186,7 +246,7 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
     const initialSubtasks = subtaskCache.get(task.taskId);
     const [subtaskState, setSubtaskState] = useState<SubtaskState>({
         taskId: task.taskId,
-        items: initialSubtasks ?? [],
+        items: initialSubtasks ?? EMPTY_SUBTASKS,
         loading: !initialSubtasks,
     });
     const cachedSubtasks = subtaskCache.get(task.taskId);
@@ -194,17 +254,17 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
         ? subtaskState
         : {
             taskId: task.taskId,
-            items: cachedSubtasks ?? [],
+            items: cachedSubtasks ?? EMPTY_SUBTASKS,
             loading: !cachedSubtasks,
         };
-    const initialPomodoroStats = pomodoroStatsCache.get(task.taskId) ?? null;
+    const initialPomodoroStats = getStaleTaskPomodoroStats(task.taskId) ?? null;
     const [pomodoroStatsState, setPomodoroStatsState] = useState<PomodoroStatsState>({
         taskId: task.taskId,
         stats: initialPomodoroStats,
         loading: !initialPomodoroStats,
         error: false,
     });
-    const cachedPomodoroStats = pomodoroStatsCache.get(task.taskId) ?? null;
+    const cachedPomodoroStats = getStaleTaskPomodoroStats(task.taskId) ?? null;
     const visiblePomodoroStatsState = pomodoroStatsState.taskId === task.taskId
         ? pomodoroStatsState
         : {
@@ -216,22 +276,42 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
 
     useEffect(() => {
         let cancelled = false;
-        const cached = subtaskCache.get(task.taskId);
-        setSubtaskState({
-            taskId: task.taskId,
-            items: cached ?? [],
-            loading: !cached,
-        });
-        taskService.getSubtasks(task.taskId)
+        const taskId = task.taskId;
+        const cached = subtaskCache.get(taskId);
+        if (cached !== undefined) {
+            setSubtaskState(previous => {
+                if (previous.taskId === taskId && previous.items === cached && !previous.loading) {
+                    return previous;
+                }
+                return { taskId, items: cached, loading: false };
+            });
+            return () => {
+                cancelled = true;
+            };
+        }
+
+        taskService.getSubtasks(taskId)
             .then(nextSubtasks => {
                 if (!cancelled) {
-                    subtaskCache.set(task.taskId, nextSubtasks);
-                    setSubtaskState({ taskId: task.taskId, items: nextSubtasks, loading: false });
+                    setSubtaskState(previous => {
+                        const items = previous.taskId === taskId
+                            && areSubtasksEqual(previous.items, nextSubtasks)
+                            ? previous.items
+                            : nextSubtasks;
+                        subtaskCache.set(taskId, items);
+                        return previous.taskId === taskId
+                            && previous.items === items
+                            && !previous.loading
+                            ? previous
+                            : { taskId, items, loading: false };
+                    });
                 }
             })
             .catch(error => {
                 if (!cancelled) {
-                    setSubtaskState({ taskId: task.taskId, items: cached ?? [], loading: false });
+                    setSubtaskState(previous => previous.taskId === taskId && !previous.loading
+                        ? previous
+                        : { taskId, items: previous.taskId === taskId ? previous.items : EMPTY_SUBTASKS, loading: false });
                     console.error('Error fetching subtasks for task details:', error);
                 }
             });
@@ -242,44 +322,56 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
     }, [task.taskId]);
 
     useEffect(() => {
-        const controller = new AbortController();
-        const cached = pomodoroStatsCache.get(task.taskId) ?? null;
+        let cancelled = false;
+        const taskId = task.taskId;
+        const cached = getStaleTaskPomodoroStats(taskId) ?? null;
         setPomodoroStatsState({
-            taskId: task.taskId,
+            taskId,
             stats: cached,
             loading: !cached,
             error: false,
         });
 
-        const loadStats = async () => {
+        const loadStats = async (forceRefresh = false) => {
             try {
-                const nextStats = await taskService.getPomodoroStats(task.taskId, controller.signal);
-                if (!controller.signal.aborted) {
-                    pomodoroStatsCache.set(task.taskId, nextStats);
+                const nextStats = await loadTaskPomodoroStats(
+                    taskId,
+                    () => taskService.getPomodoroStats(taskId),
+                    forceRefresh,
+                );
+                if (!cancelled) {
                     setPomodoroStatsState({
-                        taskId: task.taskId,
+                        taskId,
                         stats: nextStats,
                         loading: false,
                         error: false,
                     });
                 }
             } catch (error) {
-                if (!controller.signal.aborted) {
-                    setPomodoroStatsState({
-                        taskId: task.taskId,
-                        stats: pomodoroStatsCache.get(task.taskId) ?? null,
+                if (!cancelled) {
+                    setPomodoroStatsState(previous => ({
+                        taskId,
+                        // Keep the last value visible while a refresh fails.
+                        stats: previous.taskId === taskId
+                            ? previous.stats
+                            : getStaleTaskPomodoroStats(taskId) ?? null,
                         loading: false,
                         error: true,
-                    });
+                    }));
                     console.error('Error fetching Pomodoro stats for task details:', error);
                 }
             }
         };
 
         void loadStats();
-        const refreshInterval = window.setInterval(() => void loadStats(), 15000);
+        const unsubscribe = subscribeToTaskPomodoroStatsInvalidation(
+            taskId,
+            () => void loadStats(true),
+        );
+        const refreshInterval = window.setInterval(() => void loadStats(true), 15000);
         return () => {
-            controller.abort();
+            cancelled = true;
+            unsubscribe();
             window.clearInterval(refreshInterval);
         };
     }, [task.taskId]);
@@ -290,6 +382,13 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
     const validScheduledDate = scheduledDate && !Number.isNaN(scheduledDate.getTime())
         ? scheduledDate
         : null;
+    const [scheduledDraft, setScheduledDraft] = useState<Date | null>(validScheduledDate);
+    useEffect(() => {
+        const nextDate = task.scheduledPerformDateTime
+            ? new Date(task.scheduledPerformDateTime)
+            : null;
+        setScheduledDraft(nextDate && !Number.isNaN(nextDate.getTime()) ? nextDate : null);
+    }, [task.taskId, task.scheduledPerformDateTime]);
     const displayedSubtasks = visibleSubtaskState.items;
     const displayedPomodoroStats = visiblePomodoroStatsState.stats;
 
@@ -299,11 +398,16 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
         }
     };
 
-    const handleDateChange = (date: Date | null) => {
+    const commitDateChange = (date: Date | null) => {
         void onUpdate(task.taskId, { scheduledPerformDateTime: formatTaskDateTime(date) });
     };
 
-    const handleCreateSubtask = async (name: string) => {
+    const handleDateChange = (date: Date | null) => {
+        setScheduledDraft(date);
+        if (!date) commitDateChange(null);
+    };
+
+    const handleCreateSubtask = useCallback(async (name: string) => {
         const createdSubtask = await onCreateSubtask({
             name,
             description: '',
@@ -318,9 +422,9 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
             subtaskCache.set(task.taskId, items);
             return { ...previous, items };
         });
-    };
+    }, [onCreateSubtask, task.taskId]);
 
-    const handleToggleSubtask = async (subtask: Task) => {
+    const handleToggleSubtask = useCallback(async (subtask: Task) => {
         const completed = !subtask.completed;
         const updateSubtask = (item: Task, nextCompleted: boolean) => (
             item.taskId === subtask.taskId ? { ...item, completed: nextCompleted } : item
@@ -333,7 +437,8 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
         });
 
         try {
-            await taskService.toggleTaskCompletion(subtask.taskId, completed);
+            const updatedSubtask = await taskService.toggleTaskCompletion(subtask.taskId, completed);
+            if (!subtask.completed && updatedSubtask.completed) playAudioFeedback('taskCompleted');
         } catch (error) {
             setSubtaskState(previous => {
                 if (previous.taskId !== task.taskId) return previous;
@@ -343,7 +448,7 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
             });
             console.error('Error toggling subtask completion:', error);
         }
-    };
+    }, [task.taskId]);
 
     return (
         <Box
@@ -439,20 +544,24 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
                 </Box>
 
                 <LocalizationProvider dateAdapter={AdapterDateFns}>
-                    <DateTimePicker
-                        label="Scheduled"
-                        value={validScheduledDate}
-                        onChange={handleDateChange}
-                        ampm={false}
-                        slotProps={{
-                            field: { clearable: true },
-                            textField: { size: 'small', fullWidth: true },
-                        }}
+                        <DateTimePicker
+                            label="Scheduled"
+                            value={scheduledDraft}
+                            onChange={handleDateChange}
+                            onAccept={commitDateChange}
+                            closeOnSelect={false}
+                            ampm={false}
+                            slotProps={{
+                                field: { clearable: true },
+                                actionBar: { actions: ['cancel', 'accept'] },
+                                textField: { size: 'small', fullWidth: true },
+                            }}
                     />
                 </LocalizationProvider>
 
                 <TextField
                     label="Description"
+                    autoComplete="off"
                     value={visibleDescription}
                     onChange={event => setDescriptionDraft({
                         taskId: task.taskId,
@@ -517,26 +626,7 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
                         Subtasks {displayedSubtasks.length > 0 ? `· ${displayedSubtasks.filter(subtask => subtask.completed).length}/${displayedSubtasks.length}` : ''}
                     </Typography>
-                    {displayedSubtasks.map(subtask => (
-                        <Box key={subtask.taskId} sx={{ display: 'flex', alignItems: 'center', minHeight: 38 }}>
-                            <Checkbox
-                                size="small"
-                                checked={subtask.completed}
-                                onChange={() => void handleToggleSubtask(subtask)}
-                                sx={{ p: 0.5, mr: 0.75 }}
-                            />
-                            <Typography
-                                variant="body2"
-                                sx={{
-                                    textAlign: 'left',
-                                    color: subtask.completed ? 'text.disabled' : 'text.primary',
-                                    textDecoration: subtask.completed ? 'line-through' : 'none',
-                                }}
-                            >
-                                {subtask.name}
-                            </Typography>
-                        </Box>
-                    ))}
+                    <SubtaskList items={displayedSubtasks} onToggle={handleToggleSubtask} />
                     {!visibleSubtaskState.loading && (
                         <SubtaskComposer taskId={task.taskId} onSubmit={handleCreateSubtask} />
                     )}

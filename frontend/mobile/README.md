@@ -67,13 +67,13 @@ adb version
 adb devices
 ```
 
-Start the backend, PostgreSQL, and Keycloak from the repository root:
+Start the backend, PostgreSQL, Keycloak, and mobile Metro server from the repository root:
 
 ```bash
 ./run-app.sh
 ```
 
-The local Keycloak container publishes `http://localhost:7070` as its issuer. Android therefore needs reverse port forwarding so the device's loopback addresses reach the development machine while preserving the issuer exactly:
+When a device is already connected, `run-app.sh` automatically applies reverse port forwarding for the local Keycloak issuer, backend, and Metro server. If the emulator is started after `run-app.sh`, apply the mappings manually:
 
 ```bash
 adb reverse tcp:7070 tcp:7070

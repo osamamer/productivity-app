@@ -10,40 +10,41 @@ export function MeditationPage() {
 
     return (
         <PageWrapper>
-            <BackToMentalButton />
-            <Paper
-                elevation={0}
-                sx={{
-                    width: '100%',
-                    maxWidth: 1400,
-                    mx: 'auto',
-                    my: { xs: 0, md: 'auto' },
-                    minHeight: { xs: 0, md: 620 },
-                    borderRadius: 4,
-                    overflow: 'hidden',
-                    bgcolor: 'background.paper',
-                    border: theme => `1px solid ${theme.palette.divider}`,
-                    display: 'grid',
-                    gridTemplateColumns: {
-                        xs: 'minmax(0, 1fr)',
-                        md: 'minmax(0, 3fr) minmax(380px, 2fr)',
-                    },
-                    alignItems: 'stretch',
-                }}
-            >
-                <Box sx={{ minWidth: 0 }}>
-                    <MeditationTimer onSessionCompleted={() => setStatsRefreshKey(key => key + 1)} />
-                </Box>
-                <Box
+            <Box sx={{ width: '100%', maxWidth: 1400, mx: 'auto', display: 'flex', flexDirection: 'column' }}>
+                <BackToMentalButton />
+                <Paper
+                    elevation={0}
                     sx={{
-                        minWidth: 0,
-                        borderTop: theme => ({ xs: `1px solid ${theme.palette.divider}`, md: 0 }),
-                        borderLeft: theme => ({ xs: 0, md: `1px solid ${theme.palette.divider}` }),
+                        width: '100%',
+                        mx: 'auto',
+                        my: { xs: 0, md: 'auto' },
+                        minHeight: { xs: 0, md: 620 },
+                        borderRadius: 4,
+                        overflow: 'hidden',
+                        bgcolor: 'background.paper',
+                        border: theme => `1px solid ${theme.palette.divider}`,
+                        display: 'grid',
+                        gridTemplateColumns: {
+                            xs: 'minmax(0, 1fr)',
+                            md: 'minmax(0, 3fr) minmax(380px, 2fr)',
+                        },
+                        alignItems: 'stretch',
                     }}
                 >
-                    <MeditationStats refreshKey={statsRefreshKey} />
-                </Box>
-            </Paper>
+                    <Box sx={{ minWidth: 0 }}>
+                        <MeditationTimer onSessionCompleted={() => setStatsRefreshKey(key => key + 1)} />
+                    </Box>
+                    <Box
+                        sx={{
+                            minWidth: 0,
+                            borderTop: theme => ({ xs: `1px solid ${theme.palette.divider}`, md: 0 }),
+                            borderLeft: theme => ({ xs: 0, md: `1px solid ${theme.palette.divider}` }),
+                        }}
+                    >
+                        <MeditationStats refreshKey={statsRefreshKey} />
+                    </Box>
+                </Paper>
+            </Box>
         </PageWrapper>
     );
 }

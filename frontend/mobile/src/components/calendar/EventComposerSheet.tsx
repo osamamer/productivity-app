@@ -1,8 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { useMemo, useState } from 'react';
 
 import { eventDateInTimeZone, localDate, localDateTimeToInstant } from '@/lib/date';
+import { playAudioFeedback } from '@/lib/audioFeedback';
 import { reportError } from '@/lib/errors';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
@@ -13,6 +14,7 @@ import { AppPopup } from '../ui/AppPopup';
 import { AppText } from '../ui/AppText';
 import { ChoiceChips } from '../ui/ChoiceChips';
 import { ModalSheet } from '../ui/ModalSheet';
+import { SilentPressable } from '../ui/SilentPressable';
 
 type ReminderValue = string;
 
@@ -108,27 +110,27 @@ function CalendarPicker({ value, onChange }: { value: Date; onChange: (value: Da
   return (
     <View style={styles.calendar}>
       <View style={styles.calendarHeader}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Previous month" hitSlop={8} onPress={() => setMonth(current => new Date(current.getFullYear(), current.getMonth() - 1, 1))}>
+        <SilentPressable accessibilityRole="button" accessibilityLabel="Previous month" hitSlop={8} onPress={() => setMonth(current => new Date(current.getFullYear(), current.getMonth() - 1, 1))}>
           <Ionicons name="chevron-back" size={20} color={colors.textMuted} />
-        </Pressable>
+        </SilentPressable>
         <AppText variant="label">{monthLabel}</AppText>
-        <Pressable accessibilityRole="button" accessibilityLabel="Next month" hitSlop={8} onPress={() => setMonth(current => new Date(current.getFullYear(), current.getMonth() + 1, 1))}>
+        <SilentPressable accessibilityRole="button" accessibilityLabel="Next month" hitSlop={8} onPress={() => setMonth(current => new Date(current.getFullYear(), current.getMonth() + 1, 1))}>
           <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-        </Pressable>
+        </SilentPressable>
       </View>
       <View style={styles.weekdays}>
         {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => <AppText key={`${day}-${index}`} variant="caption" color="muted" style={styles.dayLabel}>{day}</AppText>)}
       </View>
       <View style={styles.calendarGrid}>
         {days.map((day, index) => day ? (
-          <Pressable
+          <SilentPressable
             key={day.toISOString()}
             accessibilityRole="button"
             accessibilityLabel={day.toLocaleDateString()}
             onPress={() => onChange(day)}
             style={[styles.day, sameCalendarDay(day, value) && { backgroundColor: colors.accent }]}>
             <AppText variant="label" style={{ color: sameCalendarDay(day, value) ? colors.onAccent : colors.text }}>{day.getDate()}</AppText>
-          </Pressable>
+          </SilentPressable>
         ) : <View key={`empty-${index}`} style={styles.day} />)}
       </View>
     </View>
@@ -144,12 +146,12 @@ function TimeColumn({ label, values, selected, onSelect }: { label: string; valu
         {values.map(value => {
           const selectedValue = value === selected;
           return (
-            <Pressable
+            <SilentPressable
               key={value}
               onPress={() => onSelect(value)}
               style={[styles.timeOption, { backgroundColor: selectedValue ? colors.accent : colors.background, borderColor: selectedValue ? colors.accent : colors.border }]}>
               <AppText variant="label" style={{ color: selectedValue ? colors.onAccent : colors.text }}>{String(value).padStart(2, '0')}</AppText>
-            </Pressable>
+            </SilentPressable>
           );
         })}
       </ScrollView>
@@ -189,10 +191,10 @@ function eventTimeInDeviceZone(value: string | null, timeZone: string | undefine
   return hour && minute ? `${hour}:${minute}` : fallback;
 }
 
-function eventDefaults(event: CalendarEvent | null | undefined) {
+function eventDefaults(event: CalendarEvent | null | undefined, initialDate?: string) {
   const date = event
     ? event.allDay ? event.startDate ?? localDate() : eventDateInTimeZone(event.startTime, event.timeZone)
-    : localDate();
+    : initialDate && isCalendarDate(initialDate) ? initialDate : localDate();
   const endDate = event?.allDay
     ? event.endDate ?? date
     : event ? eventDateInTimeZone(event.endTime, event.timeZone) : date;
@@ -237,14 +239,14 @@ function DateTimeField({ label, value, mode, onChange }: {
 
   return (
     <View style={styles.dateField}>
-      <Pressable
+      <SilentPressable
         accessibilityRole="button"
         accessibilityLabel={`${label}: ${shownValue}`}
         onPress={openPicker}
         style={({ pressed }) => [styles.dateButton, { borderColor: colors.border, backgroundColor: colors.background }, pressed && styles.pressed]}>
         <AppText variant="caption" color="muted">{label.toUpperCase()}</AppText>
         <AppText variant="label">{shownValue}</AppText>
-      </Pressable>
+      </SilentPressable>
       <AppPopup
         visible={open}
         title={label}
@@ -259,13 +261,15 @@ function DateTimeField({ label, value, mode, onChange }: {
   );
 }
 
-export function EventComposerSheet({ visible, onClose, event, onSaved }: {
+export function EventComposerSheet({ visible, onClose, event, initialDate, onSaved, onDelete }: {
   visible: boolean;
   onClose: () => void;
   event?: CalendarEvent | null;
+  initialDate?: string;
   onSaved: (event: CalendarEvent) => void;
+  onDelete?: () => Promise<boolean>;
 }) {
-  const defaults = eventDefaults(event);
+  const defaults = eventDefaults(event, initialDate);
   const [title, setTitle] = useState(defaults.title);
   const [description, setDescription] = useState(defaults.description);
   const [date, setDate] = useState(defaults.date);
@@ -279,10 +283,11 @@ export function EventComposerSheet({ visible, onClose, event, onSaved }: {
   const [recurrenceUnit, setRecurrenceUnit] = useState<RecurrenceUnit>(defaults.recurrenceUnit);
   const [reminder, setReminder] = useState<ReminderValue>(defaults.reminder);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function reset() {
-    const next = eventDefaults(null);
+    const next = eventDefaults(null, initialDate);
     setTitle(next.title);
     setDescription(next.description);
     setDate(next.date);
@@ -365,6 +370,7 @@ export function EventComposerSheet({ visible, onClose, event, onSaved }: {
     try {
       const saved = event ? await api.events.update(event.id, input) : await api.events.create(input);
       onSaved(saved);
+      if (!event) playAudioFeedback('eventCreated');
       close();
     } catch (cause) {
       setError(reportError(event ? 'Could not save event' : 'Could not create event', cause));
@@ -373,8 +379,21 @@ export function EventComposerSheet({ visible, onClose, event, onSaved }: {
     }
   }
 
+  async function remove() {
+    if (!onDelete || deleting) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      if (await onDelete()) close();
+    } catch (cause) {
+      setError(reportError('Could not delete event', cause));
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   const reminderOptions = [
-    { value: 'none', label: 'None' },
+    { value: 'none', label: 'No reminder' },
     ...REMINDER_OPTIONS,
     ...(reminder !== 'none' && !REMINDER_OPTIONS.some(option => option.value === reminder)
       ? [{ value: reminder, label: `${reminder} min` }]
@@ -386,7 +405,12 @@ export function EventComposerSheet({ visible, onClose, event, onSaved }: {
       visible={visible}
       onClose={close}
       title={event ? 'Edit event' : 'New event'}
-      footer={<AppButton label={event ? 'Save event' : 'Add event'} icon="calendar-outline" loading={saving} onPress={() => void submit()} />}>
+      footer={(
+        <View style={styles.footerActions}>
+          {event && onDelete && <AppButton style={styles.footerAction} label="Delete" icon="trash-outline" variant="danger" disabled={saving} loading={deleting} onPress={() => void remove()} />}
+          <AppButton style={styles.footerAction} label={event ? 'Save event' : 'Add event'} icon="calendar-outline" loading={saving} disabled={deleting} onPress={() => void submit()} />
+        </View>
+      )}>
       <AppInput autoFocus label="Event" value={title} onChangeText={setTitle} error={error ?? undefined} />
       <AppInput label="Details (optional)" multiline value={description} onChangeText={setDescription} />
       <AppText variant="label">When</AppText>
@@ -438,5 +462,7 @@ const styles = StyleSheet.create({
   timeOption: { minHeight: 40, borderWidth: 1, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   popupActions: { flexDirection: 'row', gap: 10 },
   popupAction: { flex: 1 },
+  footerActions: { flexDirection: 'row', gap: 10 },
+  footerAction: { flex: 1 },
   pressed: { opacity: 0.72 },
 });

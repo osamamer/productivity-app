@@ -5,31 +5,31 @@ import {
     Checkbox,
     CircularProgress,
     Collapse,
-    Dialog,
-    DialogActions,
-    DialogContent,
-    DialogTitle,
     Alert,
     Fade,
     IconButton,
     Popover,
+    Portal,
     Slide,
     Snackbar,
     TextField,
     Typography,
 } from '@mui/material';
 import { keyframes } from '@mui/system';
+import { alpha } from '@mui/material/styles';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import AddIcon from '@mui/icons-material/Add';
 import GroupWorkIcon from '@mui/icons-material/GroupWork';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
+import AdsClickIcon from '@mui/icons-material/AdsClick';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import HistoryIcon from '@mui/icons-material/History';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
-import LinkOffIcon from '@mui/icons-material/LinkOff';
 import ReplayIcon from '@mui/icons-material/Replay';
+import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import { taskGroupService, taskService } from '../services/api';
 import { Task } from '../types/Task';
 import { TaskGroup } from '../types/TaskGroup';
@@ -39,24 +39,34 @@ import { useUser } from '../hooks/useUser';
 import { SmartTaskInput } from '../components/input/SmartTaskInput';
 import { FlatTaskRow } from '../components/FlatTaskRow';
 import { TaskToCreate } from '../types/TaskToCreate';
-import { DayWidget } from '../components/DayWidget';
 import { getShowCompletedHomeTasks } from '../services/utils/homePreferences';
 import { PomodoroStatus } from '../types/PomodoroStatus';
 import { celebrateStatLogged } from '../services/statCelebration';
+import { playAudioFeedback } from '../services/audioFeedback';
+import { BulkTaskDatePopover } from '../components/task/BulkTaskDatePopover';
 
 type ActiveExpansion = { taskId: string; panel: 'pomodoro' | 'details' } | null;
 type FocusVisibility = 'all' | 'fading' | 'sliding' | 'hidden' | 'revealing';
 type DropEdge = 'before' | 'after';
 type GroupDropIntent = DropEdge | 'inside';
-type BulkAction = 'complete' | 'reopen' | 'move-to-today';
-type DeleteRequest = { kind: 'single' | 'bulk'; tasks: Task[]; anchorEl: HTMLElement };
+type BulkAction = 'complete' | 'reopen' | 'move-to-today' | 'move-to-date';
+type DeleteRequest =
+    | { kind: 'single' | 'bulk'; tasks: Task[]; anchorEl: HTMLElement }
+    | { kind: 'group'; group: TaskGroup; tasks: Task[]; anchorEl: HTMLElement };
 type TaskFeedback = { id: number; severity: 'success' | 'error'; message: string };
 type TaskListItem =
     | { kind: 'task'; task: Task }
     | { kind: 'group'; group: TaskGroup; tasks: Task[] };
+type SelectionEntity =
+    | { kind: 'task'; id: string }
+    | { kind: 'group'; id: string };
 type ActiveDrag =
-    | { kind: 'tasks'; taskIds: string[]; primaryTaskId: string }
+    | { kind: 'tasks'; taskIds: string[]; primaryTaskId: string; preservedGroupIds: string[] }
     | { kind: 'group'; groupId: string };
+type TodayDropPlacement =
+    | { kind: 'task'; targetTaskId: string; edge: DropEdge }
+    | { kind: 'group'; targetGroup: TaskGroup; edge: DropEdge }
+    | { kind: 'edge'; edge: 'top' | 'bottom' };
 
 const greetingReveal = keyframes`
     from {
@@ -106,7 +116,7 @@ const buttonFadeIn = keyframes`
 const TASKS_FADE_DURATION_MS = 140;
 const FOCUS_TASK_SLIDE_DURATION_MS = 650;
 const SELECTION_ACTIONS_EDGE_PADDING = 12;
-const SELECTION_ACTIONS_GAP = 12;
+const SELECTION_ACTIONS_GAP = 4;
 const SELECTION_ACTIONS_FALLBACK_WIDTH = 136;
 
 const SlideFromRight = React.forwardRef<HTMLDivElement, React.ComponentProps<typeof Slide>>(
@@ -161,7 +171,7 @@ function taskDropEdge(event: React.DragEvent<HTMLElement>): DropEdge {
     return event.clientY < bounds.top + bounds.height / 2 ? 'before' : 'after';
 }
 
-function groupDropIntent(event: React.DragEvent<HTMLElement>): GroupDropIntent {
+function dropIntent(event: React.DragEvent<HTMLElement>): GroupDropIntent {
     const bounds = event.currentTarget.getBoundingClientRect();
     const relativeY = (event.clientY - bounds.top) / bounds.height;
     if (relativeY < 0.32) return 'before';
@@ -307,6 +317,7 @@ const GroupTaskInputRow = React.forwardRef<HTMLDivElement, GroupTaskInputRowProp
                 <Box sx={{ flex: 1, minWidth: 0, position: 'relative' }}>
                     <TextField
                         autoFocus
+                        autoComplete="off"
                         fullWidth
                         multiline
                         minRows={1}
@@ -388,6 +399,18 @@ function formatLocalDateTime(date: Date): string {
         + `T${pad(date.getHours())}:${pad(date.getMinutes())}:00`;
 }
 
+function isSameLocalDay(first: Date, second: Date): boolean {
+    return first.getFullYear() === second.getFullYear()
+        && first.getMonth() === second.getMonth()
+        && first.getDate() === second.getDate();
+}
+
+function isScheduledForToday(task: Task): boolean {
+    if (!task.scheduledPerformDateTime) return false;
+    const scheduledDate = new Date(task.scheduledPerformDateTime);
+    return !Number.isNaN(scheduledDate.getTime()) && isSameLocalDay(scheduledDate, new Date());
+}
+
 function moveTaskDateToToday(task: Task): string {
     const today = new Date();
     const scheduledDate = task.scheduledPerformDateTime
@@ -403,25 +426,31 @@ export function HomePage() {
     const [animateGreeting] = useState(() => !hasAnimatedHomeGreeting);
     const [activeExpansion, setActiveExpansion] = useState<ActiveExpansion>(null);
     const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
+    const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
     const [selectionActionsPosition, setSelectionActionsPosition] = useState<{ top: number; left: number } | null>(null);
     const [taskFeedback, setTaskFeedback] = useState<TaskFeedback | null>(null);
     const [showOlderTasks, setShowOlderTasks] = useState(false);
     const [bulkActionLoading, setBulkActionLoading] = useState(false);
     const [deleteRequest, setDeleteRequest] = useState<DeleteRequest | null>(null);
     const [deleteSubmitting, setDeleteSubmitting] = useState(false);
-    const [groupDialogOpen, setGroupDialogOpen] = useState(false);
+    const [groupAnchorEl, setGroupAnchorEl] = useState<HTMLElement | null>(null);
     const [groupName, setGroupName] = useState('');
     const [groupSubmitting, setGroupSubmitting] = useState(false);
+    const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
+    const [localGroupName, setLocalGroupName] = useState('');
     const [groupAddingTaskId, setGroupAddingTaskId] = useState<string | null>(null);
     const [groupTaskDraft, setGroupTaskDraft] = useState('');
     const [groupTaskInputVersion, setGroupTaskInputVersion] = useState(0);
     const [groupTaskSubmitting, setGroupTaskSubmitting] = useState(false);
+    const [bulkDateAnchorEl, setBulkDateAnchorEl] = useState<HTMLElement | null>(null);
+    const [bulkDateDraft, setBulkDateDraft] = useState(() => new Date());
     const cachedGroups = taskGroupService.getCachedGroups();
     const [groups, setGroups] = useState<TaskGroup[] | null>(() => cachedGroups ?? null);
     const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(
         () => new Set((cachedGroups ?? []).map(group => group.groupId)),
     );
     const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
+    const groupNameInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
     const [draggedTaskIds, setDraggedTaskIds] = useState<string[]>([]);
     const [draggedGroupId, setDraggedGroupId] = useState<string | null>(null);
     const [dragTargetTaskId, setDragTargetTaskId] = useState<string | null>(null);
@@ -462,6 +491,11 @@ export function HomePage() {
         return activeDrag?.kind === 'group' ? activeDrag.groupId : null;
     }, []);
 
+    const getDraggedPreservedGroupIds = useCallback(() => {
+        const activeDrag = activeDragRef.current;
+        return activeDrag?.kind === 'tasks' ? activeDrag.preservedGroupIds : [];
+    }, []);
+
     const getPrimaryDraggedTaskId = useCallback(() => {
         const activeDrag = activeDragRef.current;
         return activeDrag?.kind === 'tasks' ? activeDrag.primaryTaskId : null;
@@ -495,15 +529,29 @@ export function HomePage() {
         [pastTasks],
     );
     const selectedTaskIdSet = useMemo(() => new Set(selectedTaskIds), [selectedTaskIds]);
+    const selectedGroupIdSet = useMemo(() => new Set(selectedGroupIds), [selectedGroupIds]);
+    const selectedGroupTaskIdSet = useMemo(
+        () => new Set((groups ?? [])
+            .filter(group => selectedGroupIdSet.has(group.groupId))
+            .flatMap(group => group.taskIds)),
+        [groups, selectedGroupIdSet],
+    );
+    const selectedActionTaskIdSet = useMemo(
+        () => new Set([...selectedTaskIds, ...selectedGroupTaskIdSet]),
+        [selectedGroupTaskIdSet, selectedTaskIds],
+    );
     const selectedTasks = useMemo(
-        () => allTasks.filter(task => selectedTaskIdSet.has(task.taskId)),
-        [allTasks, selectedTaskIdSet],
+        () => allTasks.filter(task => selectedActionTaskIdSet.has(task.taskId)),
+        [allTasks, selectedActionTaskIdSet],
     );
     const olderTaskIdSet = useMemo(() => new Set(olderTasks.map(task => task.taskId)), [olderTasks]);
     const selectedOlderTasks = useMemo(
         () => selectedTasks.filter(task => olderTaskIdSet.has(task.taskId)),
         [olderTaskIdSet, selectedTasks],
     );
+    const selectionEntityCount = selectedTaskIds.length + selectedGroupIds.length;
+    const selectionActionsVisible = selectionEntityCount > 1 || selectedGroupIds.length > 0;
+    const canGroupSelectedTasks = selectedGroupIds.length === 0 && selectedTaskIds.length >= 2;
     const activePomodoroTask = useMemo(
         () => visibleTasks.find(task => task.taskId === activePomodoroTaskId) ?? null,
         [activePomodoroTaskId, visibleTasks],
@@ -527,45 +575,51 @@ export function HomePage() {
         () => buildTaskListItems(olderTasks, groups ?? []),
         [groups, olderTasks],
     );
-    const renderedTaskIds = useMemo(() => {
-        const taskIds = focusedPomodoroTask ? [focusedPomodoroTask.taskId] : [];
-        taskListItems.forEach(item => {
-            if (item.kind === 'task') {
-                taskIds.push(item.task.taskId);
-            } else if (!collapsedGroupIds.has(item.group.groupId)) {
-                taskIds.push(...item.tasks.map(task => task.taskId));
-            }
-        });
-        if (showOlderTasks) {
-            olderTaskListItems.forEach(item => {
+    const renderedSelectionEntities = useMemo(() => {
+        const entities: SelectionEntity[] = focusedPomodoroTask
+            ? [{ kind: 'task', id: focusedPomodoroTask.taskId }]
+            : [];
+
+        const appendItems = (items: TaskListItem[]) => {
+            items.forEach(item => {
                 if (item.kind === 'task') {
-                    taskIds.push(item.task.taskId);
-                } else if (!collapsedGroupIds.has(item.group.groupId)) {
-                    taskIds.push(...item.tasks.map(task => task.taskId));
+                    entities.push({ kind: 'task', id: item.task.taskId });
+                    return;
+                }
+
+                entities.push({ kind: 'group', id: item.group.groupId });
+                if (!collapsedGroupIds.has(item.group.groupId)) {
+                    item.tasks.forEach(task => entities.push({ kind: 'task', id: task.taskId }));
                 }
             });
-        }
-        return taskIds;
+        };
+
+        appendItems(taskListItems);
+        if (showOlderTasks) appendItems(olderTaskListItems);
+        return entities;
     }, [focusedPomodoroTask, collapsedGroupIds, olderTaskListItems, showOlderTasks, taskListItems]);
 
     const homeContentReady = tasksLoaded && pomodoroStatusResolved && groups !== null;
 
     const updateSelectionActionsPosition = useCallback(() => {
-        if (selectedTaskIds.length < 2) {
+        if (!selectionActionsVisible) {
             setSelectionActionsPosition(null);
             return;
         }
 
         const selectedRows = Array.from(document.querySelectorAll<HTMLElement>('[data-task-id]'))
-            .filter(row => selectedTaskIdSet.has(row.dataset.taskId ?? ''));
-        if (selectedRows.length === 0) {
+            .filter(row => selectedActionTaskIdSet.has(row.dataset.taskId ?? ''));
+        const selectedGroupRows = Array.from(document.querySelectorAll<HTMLElement>('[data-task-group-id]'))
+            .filter(row => selectedGroupIdSet.has(row.dataset.taskGroupId ?? ''));
+        const rows = [...selectedRows, ...selectedGroupRows];
+        if (rows.length === 0) {
             setSelectionActionsPosition(null);
             return;
         }
 
-        const bounds = selectedRows.map(row => row.getBoundingClientRect());
-        const top = Math.min(...bounds.map(rect => rect.top));
-        const bottom = Math.max(...bounds.map(rect => rect.bottom));
+        const bounds = rows.map(row => row.getBoundingClientRect());
+        const rowCenters = bounds.map(rect => rect.top + rect.height / 2);
+        const top = (Math.min(...rowCenters) + Math.max(...rowCenters)) / 2;
         const right = Math.max(...bounds.map(rect => rect.right));
         const popupWidth = selectionActionsRef.current?.getBoundingClientRect().width
             ?? SELECTION_ACTIONS_FALLBACK_WIDTH;
@@ -575,7 +629,7 @@ export function HomePage() {
             Math.max(SELECTION_ACTIONS_EDGE_PADDING, maxLeft),
         );
         const nextPosition = {
-            top: Math.round((top + bottom) / 2),
+            top: Math.round(top),
             left: Math.round(left),
         };
 
@@ -584,10 +638,10 @@ export function HomePage() {
                 ? previous
                 : nextPosition
         ));
-    }, [selectedTaskIdSet, selectedTaskIds.length]);
+    }, [selectedActionTaskIdSet, selectedGroupIdSet, selectionActionsVisible]);
 
     useLayoutEffect(() => {
-        if (selectedTaskIds.length < 2) {
+        if (!selectionActionsVisible) {
             setSelectionActionsPosition(previous => previous === null ? previous : null);
             return undefined;
         }
@@ -603,7 +657,11 @@ export function HomePage() {
             : new ResizeObserver(handleViewportChange);
         if (resizeObserver) {
             document.querySelectorAll<HTMLElement>('[data-task-id]').forEach(row => {
-                if (selectedTaskIdSet.has(row.dataset.taskId ?? '')) resizeObserver.observe(row);
+                if (selectedActionTaskIdSet.has(row.dataset.taskId ?? '')
+                    || selectedGroupIdSet.has(row.dataset.taskGroupId ?? '')) resizeObserver.observe(row);
+            });
+            document.querySelectorAll<HTMLElement>('[data-task-group-id]').forEach(row => {
+                if (selectedGroupIdSet.has(row.dataset.taskGroupId ?? '')) resizeObserver.observe(row);
             });
         }
 
@@ -612,8 +670,8 @@ export function HomePage() {
             window.removeEventListener('scroll', handleViewportChange, true);
             resizeObserver?.disconnect();
         };
-    }, [activeExpansion, collapsedGroupIds, focusVisibility, groups, olderTasks, selectedTaskIdSet,
-        selectedTaskIds.length, showOlderTasks, updateSelectionActionsPosition, visibleTasks]);
+    }, [activeExpansion, collapsedGroupIds, focusVisibility, groups, olderTasks, selectedActionTaskIdSet,
+        selectedGroupIdSet, selectionActionsVisible, showOlderTasks, updateSelectionActionsPosition, visibleTasks]);
 
     const clearFocusTransitionTimer = useCallback(() => {
         if (focusTransitionTimerRef.current !== null) {
@@ -655,6 +713,42 @@ export function HomePage() {
         void refreshGroups();
     }, [refreshGroups]);
 
+    useEffect(() => {
+        if (!editingGroupId || !groupNameInputRef.current) return;
+
+        const input = groupNameInputRef.current;
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
+    }, [editingGroupId]);
+
+    function startGroupNameEditing(group: TaskGroup, event: React.MouseEvent<HTMLElement>) {
+        event.stopPropagation();
+        setEditingGroupId(group.groupId);
+        setLocalGroupName(group.name);
+    }
+
+    async function commitGroupName(group: TaskGroup) {
+        const trimmedName = localGroupName.trim();
+        const fallbackName = group.name;
+
+        setEditingGroupId(null);
+        setLocalGroupName(trimmedName || fallbackName);
+        if (!trimmedName || trimmedName === fallbackName) return;
+
+        try {
+            const updatedGroup = await taskGroupService.renameGroup(group.groupId, trimmedName);
+            setGroups(previous => replaceTaskGroupIfChanged(previous, updatedGroup));
+        } catch (err) {
+            console.error('Error renaming task group:', err);
+            await refreshGroups();
+        }
+    }
+
+    function cancelGroupNameEditing(group: TaskGroup) {
+        setLocalGroupName(group.name);
+        setEditingGroupId(null);
+    }
+
     useEffect(() => () => clearFocusTransitionTimer(), [clearFocusTransitionTimer]);
 
     useEffect(() => {
@@ -692,6 +786,7 @@ export function HomePage() {
             const updatedTask = await taskService.toggleTaskCompletion(taskId, task ? !task.completed : undefined);
             if (!wasCompleted && updatedTask.completed) {
                 celebrateStatLogged(completionOrigin ?? anchorEl);
+                playAudioFeedback('taskCompleted');
                 showTaskFeedback('success', 'Task completed');
             }
         } catch (err) {
@@ -714,6 +809,17 @@ export function HomePage() {
         setDeleteRequest({ kind: 'single', tasks: [task], anchorEl });
     }, []);
 
+    function requestGroupDelete(group: TaskGroup, anchorEl: HTMLElement) {
+        if (deleteSubmitting) return;
+
+        setDeleteRequest({
+            kind: 'group',
+            group,
+            tasks: allTasks.filter(task => group.taskIds.includes(task.taskId)),
+            anchorEl,
+        });
+    }
+
     function requestBulkDelete(anchorEl: HTMLElement) {
         if (bulkActionLoading || selectedTasks.length === 0) return;
         setDeleteRequest({ kind: 'bulk', tasks: selectedTasks, anchorEl });
@@ -731,25 +837,39 @@ export function HomePage() {
         setDeleteRequest(null);
         if (request.kind === 'bulk') setBulkActionLoading(true);
         try {
-            await Promise.all(request.tasks.map(task => taskService.deleteTask(task.taskId)));
-            request.tasks.forEach(task => removeTaskFromState(task.taskId));
-            removeTasksFromGroups(request.tasks.map(task => task.taskId));
-            showTaskFeedback(
-                'error',
-                request.kind === 'bulk'
-                    ? `${request.tasks.length} tasks deleted`
-                    : 'Task deleted',
-            );
-            if (request.kind === 'bulk') {
+            if (request.kind === 'group') {
+                await taskGroupService.deleteGroup(request.group.groupId);
+                await Promise.all(request.tasks.map(task => taskService.deleteTask(task.taskId)));
+                request.tasks.forEach(task => removeTaskFromState(task.taskId));
+                setGroups(previous => (previous ?? []).filter(group => group.groupId !== request.group.groupId));
+                setCollapsedGroupIds(previous => {
+                    const next = new Set(previous);
+                    next.delete(request.group.groupId);
+                    return next;
+                });
+                showTaskFeedback('error', 'Group deleted');
                 clearSelection();
             } else {
-                const [task] = request.tasks;
-                setSelectedTaskIds(previous => previous.filter(taskId => taskId !== task.taskId));
-                setActiveExpansion(previous => previous?.taskId === task.taskId ? null : previous);
+                await Promise.all(request.tasks.map(task => taskService.deleteTask(task.taskId)));
+                request.tasks.forEach(task => removeTaskFromState(task.taskId));
+                removeTasksFromGroups(request.tasks.map(task => task.taskId));
+                showTaskFeedback(
+                    'error',
+                    request.kind === 'bulk'
+                        ? `${request.tasks.length} tasks deleted`
+                        : 'Task deleted',
+                );
+                if (request.kind === 'bulk') {
+                    clearSelection();
+                } else {
+                    const [task] = request.tasks;
+                    setSelectedTaskIds(previous => previous.filter(taskId => taskId !== task.taskId));
+                    setActiveExpansion(previous => previous?.taskId === task.taskId ? null : previous);
+                }
             }
         } catch (err) {
-            console.error(`Error deleting ${request.kind === 'bulk' ? 'selected tasks' : 'task'}:`, err);
-            await refreshTaskBuckets(true);
+            console.error(`Error deleting ${request.kind === 'group' ? 'group' : request.kind === 'bulk' ? 'selected tasks' : 'task'}:`, err);
+            await Promise.all([refreshTaskBuckets(true), refreshGroups()]);
         } finally {
             setDeleteSubmitting(false);
             if (request.kind === 'bulk') setBulkActionLoading(false);
@@ -757,8 +877,9 @@ export function HomePage() {
         }
     }
 
-    async function performBulkAction(action: BulkAction) {
+    async function performBulkAction(action: BulkAction, scheduledDateTime?: string) {
         const tasksToUpdate = action === 'move-to-today' ? selectedOlderTasks : selectedTasks;
+        if (action === 'move-to-date' && !scheduledDateTime) return;
         if (bulkActionLoading || tasksToUpdate.length === 0) return;
         const tasksToCelebrate = action === 'complete'
             ? tasksToUpdate.filter(task => !task.completed)
@@ -777,18 +898,31 @@ export function HomePage() {
                     });
                 }
 
+                if (action === 'move-to-date') {
+                    return taskService.updateTask(task.taskId, {
+                        scheduledPerformDateTime: scheduledDateTime,
+                    });
+                }
+
                 return taskService.updateTask(task.taskId, {
                     completed: action === 'complete',
                 });
             }));
             updatedTasks.forEach(updatedTask => updateTaskInState(updatedTask.taskId, updatedTask));
+            if (action === 'move-to-date' && scheduledDateTime && isSameLocalDay(new Date(scheduledDateTime), new Date())) {
+                appendTasksToTodayOrder(
+                    tasksToUpdate.filter(task => !isScheduledForToday(task)).map(task => task.taskId),
+                );
+            }
             if (action === 'complete' && tasksToCelebrate.length > 0) {
                 completionOrigins.forEach(origin => celebrateStatLogged(origin));
+                playAudioFeedback('taskCompleted');
                 showTaskFeedback(
                     'success',
                     `${tasksToCelebrate.length} task${tasksToCelebrate.length === 1 ? '' : 's'} completed`,
                 );
             }
+            setBulkDateAnchorEl(null);
             clearSelection();
         } catch (err) {
             console.error(`Error applying bulk task action (${action}):`, err);
@@ -826,13 +960,24 @@ export function HomePage() {
         const anchorId = selectionAnchorRef.current;
 
         if (event.shiftKey && anchorId) {
-            const anchorIndex = renderedTaskIds.indexOf(anchorId);
-            const taskIndex = renderedTaskIds.indexOf(taskId);
+            const anchorIndex = renderedSelectionEntities.findIndex(
+                entity => entity.kind === 'task' && entity.id === anchorId,
+            );
+            const taskIndex = renderedSelectionEntities.findIndex(
+                entity => entity.kind === 'task' && entity.id === taskId,
+            );
             if (anchorIndex !== -1 && taskIndex !== -1) {
                 const rangeStart = Math.min(anchorIndex, taskIndex);
                 const rangeEnd = Math.max(anchorIndex, taskIndex);
-                const rangeIds = renderedTaskIds.slice(rangeStart, rangeEnd + 1);
-                setSelectedTaskIds(previous => [...new Set([...previous, ...rangeIds])]);
+                const rangeEntities = renderedSelectionEntities.slice(rangeStart, rangeEnd + 1);
+                const rangeTaskIds = rangeEntities
+                    .filter((entity): entity is Extract<SelectionEntity, { kind: 'task' }> => entity.kind === 'task')
+                    .map(entity => entity.id);
+                const rangeGroupIds = rangeEntities
+                    .filter((entity): entity is Extract<SelectionEntity, { kind: 'group' }> => entity.kind === 'group')
+                    .map(entity => entity.id);
+                setSelectedTaskIds(previous => [...new Set([...previous, ...rangeTaskIds])]);
+                setSelectedGroupIds(previous => [...new Set([...previous, ...rangeGroupIds])]);
                 return;
             }
         }
@@ -846,8 +991,16 @@ export function HomePage() {
         }
 
         setSelectedTaskIds([taskId]);
+        setSelectedGroupIds([]);
         selectionAnchorRef.current = taskId;
-    }, [renderedTaskIds]);
+    }, [renderedSelectionEntities]);
+
+    const handleGroupSelection = useCallback((groupId: string, event: React.SyntheticEvent) => {
+        event.stopPropagation();
+        setSelectedGroupIds(previous => previous.includes(groupId)
+            ? previous.filter(selectedGroupId => selectedGroupId !== groupId)
+            : [...previous, groupId]);
+    }, []);
 
     const handlePomodoroActiveChange = useCallback((
         taskId: string,
@@ -1003,10 +1156,84 @@ export function HomePage() {
         persistTaskOrder(orderWithoutAddedTasks);
     }, [allTasks, persistTaskOrder]);
 
-    const moveTasksToToday = useCallback(async (taskIds: string[]) => {
+    const appendTasksToTodayOrder = useCallback((taskIds: string[]) => {
+        const movedTaskIdSet = new Set(taskIds);
+        const movedTaskIds = allTasks
+            .map(task => task.taskId)
+            .filter(taskId => movedTaskIdSet.has(taskId));
+        if (movedTaskIds.length === 0) return;
+
+        const orderWithoutMovedTasks = allTasks
+            .map(task => task.taskId)
+            .filter(taskId => !movedTaskIdSet.has(taskId));
+        const todayTaskIdSet = new Set(todayTasks.map(task => task.taskId));
+        let lastTodayIndex = -1;
+        orderWithoutMovedTasks.forEach((taskId, index) => {
+            if (todayTaskIdSet.has(taskId)) lastTodayIndex = index;
+        });
+
+        if (lastTodayIndex === -1) {
+            orderWithoutMovedTasks.push(...movedTaskIds);
+        } else {
+            orderWithoutMovedTasks.splice(lastTodayIndex + 1, 0, ...movedTaskIds);
+        }
+        persistTaskOrder(orderWithoutMovedTasks);
+    }, [allTasks, persistTaskOrder, todayTasks]);
+
+    const placeTasksInTodayOrder = useCallback((taskIds: string[], placement: TodayDropPlacement) => {
+        const movedTaskIdSet = new Set(taskIds);
+        const movedTaskIds = allTasks
+            .map(task => task.taskId)
+            .filter(taskId => movedTaskIdSet.has(taskId));
+        if (movedTaskIds.length === 0) return;
+
+        const orderWithoutMovedTasks = allTasks
+            .map(task => task.taskId)
+            .filter(taskId => !movedTaskIdSet.has(taskId));
+        const todayTaskIdSet = new Set(todayTasks.map(task => task.taskId));
+        const visibleTodayTaskIdSet = new Set(visibleTasks.map(task => task.taskId));
+        let insertionIndex = orderWithoutMovedTasks.length;
+
+        if (placement.kind === 'task') {
+            const targetIndex = orderWithoutMovedTasks.indexOf(placement.targetTaskId);
+            if (targetIndex !== -1) {
+                insertionIndex = targetIndex + (placement.edge === 'after' ? 1 : 0);
+            }
+        } else if (placement.kind === 'group') {
+            const targetGroupTaskIds = orderWithoutMovedTasks.filter(taskId =>
+                placement.targetGroup.taskIds.includes(taskId),
+            );
+            if (targetGroupTaskIds.length > 0) {
+                const anchorTaskId = placement.edge === 'before'
+                    ? targetGroupTaskIds[0]
+                    : targetGroupTaskIds[targetGroupTaskIds.length - 1];
+                insertionIndex = orderWithoutMovedTasks.indexOf(anchorTaskId)
+                    + (placement.edge === 'after' ? 1 : 0);
+            }
+        } else {
+            const todayTaskIds = orderWithoutMovedTasks.filter(taskId =>
+                (visibleTodayTaskIdSet.size > 0 ? visibleTodayTaskIdSet : todayTaskIdSet).has(taskId),
+            );
+            if (todayTaskIds.length > 0) {
+                const anchorTaskId = placement.edge === 'top'
+                    ? todayTaskIds[0]
+                    : todayTaskIds[todayTaskIds.length - 1];
+                insertionIndex = orderWithoutMovedTasks.indexOf(anchorTaskId)
+                    + (placement.edge === 'bottom' ? 1 : 0);
+            }
+        }
+
+        orderWithoutMovedTasks.splice(insertionIndex, 0, ...movedTaskIds);
+        persistTaskOrder(orderWithoutMovedTasks);
+    }, [allTasks, persistTaskOrder, todayTasks, visibleTasks]);
+
+    const moveTasksToToday = useCallback(async (
+        taskIds: string[],
+        placement?: TodayDropPlacement,
+    ) => {
         const olderTaskIdSet = new Set(olderTasks.map(task => task.taskId));
         const tasksToMove = allTasks.filter(task => taskIds.includes(task.taskId) && olderTaskIdSet.has(task.taskId));
-        if (tasksToMove.length === 0) return;
+        if (tasksToMove.length === 0) return false;
 
         const updates = tasksToMove.map(task => ({
             task,
@@ -1021,13 +1248,16 @@ export function HomePage() {
                 taskService.updateTask(task.taskId, { scheduledPerformDateTime }),
             ));
             updatedTasks.forEach(updatedTask => updateTaskInState(updatedTask.taskId, updatedTask));
+            if (placement) placeTasksInTodayOrder(updatedTasks.map(task => task.taskId), placement);
+            return true;
         } catch (err) {
             console.error('Error moving dragged tasks to today:', err);
             await refreshTaskBuckets(true);
+            return false;
         }
-    }, [allTasks, olderTasks, refreshTaskBuckets, updateTaskInState]);
+    }, [allTasks, olderTasks, placeTasksInTodayOrder, refreshTaskBuckets, updateTaskInState]);
 
-    const moveGroupToToday = useCallback(async (group: TaskGroup) => {
+    const moveGroupToToday = useCallback(async (group: TaskGroup, placement?: TodayDropPlacement) => {
         const groupTaskIdSet = new Set(group.taskIds);
         const tasksToMove = allTasks.filter(task => groupTaskIdSet.has(task.taskId));
         if (tasksToMove.length === 0) return;
@@ -1043,13 +1273,14 @@ export function HomePage() {
         try {
             const updatedTasks = await taskGroupService.moveToToday(group.groupId);
             updatedTasks.forEach(updatedTask => updateTaskInState(updatedTask.taskId, updatedTask));
+            if (placement) placeTasksInTodayOrder(updatedTasks.map(task => task.taskId), placement);
         } catch (err) {
             console.error('Error moving task group to today:', err);
             await refreshTaskBuckets(true);
         }
-    }, [allTasks, refreshTaskBuckets, updateTaskInState]);
+    }, [allTasks, placeTasksInTodayOrder, refreshTaskBuckets, updateTaskInState]);
 
-    const moveDraggedGroupToToday = useCallback(() => {
+    const moveDraggedGroupToToday = useCallback((placement?: TodayDropPlacement) => {
         const draggedGroupId = getDraggedGroupId();
         const draggedGroup = groups?.find(group => group.groupId === draggedGroupId);
         const olderTaskIdSet = new Set(olderTasks.map(task => task.taskId));
@@ -1057,18 +1288,18 @@ export function HomePage() {
             return false;
         }
 
-        void moveGroupToToday(draggedGroup);
+        void moveGroupToToday(draggedGroup, placement);
         finishDragging();
         return true;
     }, [finishDragging, getDraggedGroupId, groups, moveGroupToToday, olderTasks]);
 
-    const moveDraggedOlderTasksToToday = useCallback(() => {
+    const moveDraggedOlderTasksToToday = useCallback((placement?: TodayDropPlacement) => {
         const draggedIds = getDraggedTaskIds();
         const olderTaskIdSet = new Set(olderTasks.map(task => task.taskId));
         const draggedOlderTaskIds = draggedIds.filter(taskId => olderTaskIdSet.has(taskId));
         if (draggedOlderTaskIds.length === 0) return false;
 
-        void moveTasksToToday(draggedOlderTaskIds);
+        void moveTasksToToday(draggedOlderTaskIds, placement);
         finishDragging();
         return true;
     }, [finishDragging, getDraggedTaskIds, moveTasksToToday, olderTasks]);
@@ -1081,6 +1312,37 @@ export function HomePage() {
                 : { ...group, taskIds: group.taskIds.filter(taskId => !movedTaskIdSet.has(taskId)) })
             .filter(group => group.taskIds.length >= 2));
     }, []);
+
+    const createGroupFromTaskDrop = useCallback(async (targetTask: Task, taskIds: string[]) => {
+        const groupedTaskIds = [...new Set([targetTask.taskId, ...taskIds])];
+        if (groupedTaskIds.length < 2) return;
+
+        try {
+            const groupName = targetTask.name.trim().slice(0, 120) || 'Task group';
+            const createdGroup = await taskGroupService.createGroup(groupName, groupedTaskIds);
+            const groupedTaskIdSet = new Set(groupedTaskIds);
+            setGroups(previous => [
+                ...(previous ?? [])
+                    .map(group => ({
+                        ...group,
+                        taskIds: group.taskIds.filter(taskId => !groupedTaskIdSet.has(taskId)),
+                    }))
+                    .filter(group => group.taskIds.length >= 2),
+                createdGroup,
+            ]);
+        } catch (err) {
+            console.error('Error creating task group from drag:', err);
+            await refreshGroups();
+        }
+    }, [refreshGroups]);
+
+    const groupTasksFromDrop = useCallback(async (targetTask: Task, taskIds: string[]) => {
+        const groupedTaskIds = [...new Set([targetTask.taskId, ...taskIds])];
+        const olderTaskIds = groupedTaskIds.filter(taskId => olderTaskIdSet.has(taskId));
+        if (olderTaskIds.length > 0 && !(await moveTasksToToday(olderTaskIds))) return;
+
+        await createGroupFromTaskDrop(targetTask, taskIds);
+    }, [createGroupFromTaskDrop, moveTasksToToday, olderTaskIdSet]);
 
     const addTasksToGroup = useCallback(async (targetGroup: TaskGroup, taskIds: string[]) => {
         const taskIdsToAdd = taskIds.filter(taskId => !targetGroup.taskIds.includes(taskId));
@@ -1145,8 +1407,8 @@ export function HomePage() {
     }, [groups, persistTaskOrder, visibleTasks]);
 
     const handleDropOnTask = useCallback((targetTask: Task, edge: DropEdge) => {
-        if (moveDraggedGroupToToday()) return;
-        if (moveDraggedOlderTasksToToday()) return;
+        if (moveDraggedGroupToToday({ kind: 'task', targetTaskId: targetTask.taskId, edge })) return;
+        if (moveDraggedOlderTasksToToday({ kind: 'task', targetTaskId: targetTask.taskId, edge })) return;
 
         const activeGroupId = getDraggedGroupId();
         if (activeGroupId) {
@@ -1174,12 +1436,14 @@ export function HomePage() {
         persistTaskOrder(orderWithoutMovedTasks);
 
         const sourceGroups = (groups ?? []).filter(group =>
-            group.groupId !== targetGroup?.groupId && movedTaskIds.some(taskId => group.taskIds.includes(taskId)),
+            group.groupId !== targetGroup?.groupId
+            && !getDraggedPreservedGroupIds().includes(group.groupId)
+            && movedTaskIds.some(taskId => group.taskIds.includes(taskId)),
         );
         sourceGroups.forEach(sourceGroup => {
             void removeTasksFromGroup(sourceGroup, movedTaskIds);
         });
-    }, [finishDragging, getDraggedGroupId, getDraggedTaskIds, getPrimaryDraggedTaskId, groups, minimizePomodoroTask,
+    }, [finishDragging, getDraggedGroupId, getDraggedPreservedGroupIds, getDraggedTaskIds, getPrimaryDraggedTaskId, groups, minimizePomodoroTask,
         moveDraggedGroupToToday, moveDraggedOlderTasksToToday, persistTaskOrder, removeTasksFromGroup,
         reorderGroupRelativeToTask, visibleTasks]);
 
@@ -1199,7 +1463,11 @@ export function HomePage() {
     }, [persistTaskOrder, visibleTasks]);
 
     const handleDropOnGroup = useCallback((targetGroup: TaskGroup, intent: GroupDropIntent) => {
-        if (moveDraggedGroupToToday()) return;
+        if (moveDraggedGroupToToday(
+            intent === 'inside'
+                ? undefined
+                : { kind: 'group', targetGroup, edge: intent },
+        )) return;
         const draggedIds = getDraggedTaskIds();
         const activeGroupId = getDraggedGroupId();
         const olderTaskIdSet = new Set(olderTasks.map(task => task.taskId));
@@ -1222,7 +1490,11 @@ export function HomePage() {
         }
 
         if (draggedOlderTaskIds.length > 0) {
-            void moveTasksToToday(draggedOlderTaskIds);
+            void moveTasksToToday(draggedOlderTaskIds, {
+                kind: 'group',
+                targetGroup,
+                edge: intent,
+            });
             finishDragging();
             return;
         }
@@ -1248,7 +1520,9 @@ export function HomePage() {
                 reorderRelativeToGroup(movedTaskIds, targetGroup, intent);
                 minimizePomodoroTask(getPrimaryDraggedTaskId() ?? movedTaskIds[0]);
                 const sourceGroups = (groups ?? []).filter(group =>
-                    group.groupId !== targetGroup.groupId && movedTaskIds.some(taskId => group.taskIds.includes(taskId)),
+                    group.groupId !== targetGroup.groupId
+                    && !getDraggedPreservedGroupIds().includes(group.groupId)
+                    && movedTaskIds.some(taskId => group.taskIds.includes(taskId)),
                 );
                 sourceGroups.forEach(sourceGroup => {
                     void removeTasksFromGroup(sourceGroup, movedTaskIds);
@@ -1256,12 +1530,12 @@ export function HomePage() {
             }
         }
         finishDragging();
-    }, [addTasksToGroup, finishDragging, getDraggedGroupId, getDraggedTaskIds, getPrimaryDraggedTaskId, groups, minimizePomodoroTask,
+    }, [addTasksToGroup, finishDragging, getDraggedGroupId, getDraggedPreservedGroupIds, getDraggedTaskIds, getPrimaryDraggedTaskId, groups, minimizePomodoroTask,
         moveDraggedGroupToToday, moveTasksToToday, olderTasks, removeTasksFromGroup, reorderRelativeToGroup, visibleTasks]);
 
     const handleDropAtBottom = useCallback(() => {
-        if (moveDraggedGroupToToday()) return;
-        if (moveDraggedOlderTasksToToday()) return;
+        if (moveDraggedGroupToToday({ kind: 'edge', edge: 'bottom' })) return;
+        if (moveDraggedOlderTasksToToday({ kind: 'edge', edge: 'bottom' })) return;
 
         const orderedTaskIds = visibleTasks.map(task => task.taskId);
 
@@ -1288,7 +1562,8 @@ export function HomePage() {
                 minimizePomodoroTask(getPrimaryDraggedTaskId() ?? movedTaskIds[0]);
                 persistTaskOrder(nextOrder);
                 const sourceGroups = (groups ?? []).filter(group =>
-                    movedTaskIds.some(taskId => group.taskIds.includes(taskId)),
+                    !getDraggedPreservedGroupIds().includes(group.groupId)
+                    && movedTaskIds.some(taskId => group.taskIds.includes(taskId)),
                 );
                 sourceGroups.forEach(sourceGroup => {
                     void removeTasksFromGroup(sourceGroup, movedTaskIds);
@@ -1296,12 +1571,12 @@ export function HomePage() {
             }
         }
         finishDragging();
-    }, [finishDragging, getDraggedGroupId, getDraggedTaskIds, getPrimaryDraggedTaskId, groups, minimizePomodoroTask,
+    }, [finishDragging, getDraggedGroupId, getDraggedPreservedGroupIds, getDraggedTaskIds, getPrimaryDraggedTaskId, groups, minimizePomodoroTask,
         moveDraggedGroupToToday, moveDraggedOlderTasksToToday, persistTaskOrder, removeTasksFromGroup, visibleTasks]);
 
     const handleDropAtTop = useCallback(() => {
-        if (moveDraggedGroupToToday()) return;
-        if (moveDraggedOlderTasksToToday()) return;
+        if (moveDraggedGroupToToday({ kind: 'edge', edge: 'top' })) return;
+        if (moveDraggedOlderTasksToToday({ kind: 'edge', edge: 'top' })) return;
 
         const orderedTaskIds = visibleTasks.map(task => task.taskId);
 
@@ -1331,7 +1606,8 @@ export function HomePage() {
                 ]);
                 minimizePomodoroTask(getPrimaryDraggedTaskId() ?? movedTaskIds[0]);
                 const sourceGroups = (groups ?? []).filter(group =>
-                    movedTaskIds.some(taskId => group.taskIds.includes(taskId)),
+                    !getDraggedPreservedGroupIds().includes(group.groupId)
+                    && movedTaskIds.some(taskId => group.taskIds.includes(taskId)),
                 );
                 sourceGroups.forEach(sourceGroup => {
                     void removeTasksFromGroup(sourceGroup, movedTaskIds);
@@ -1339,7 +1615,7 @@ export function HomePage() {
             }
         }
         finishDragging();
-    }, [finishDragging, getDraggedGroupId, getDraggedTaskIds, getPrimaryDraggedTaskId, groups, minimizePomodoroTask,
+    }, [finishDragging, getDraggedGroupId, getDraggedPreservedGroupIds, getDraggedTaskIds, getPrimaryDraggedTaskId, groups, minimizePomodoroTask,
         moveDraggedGroupToToday, moveDraggedOlderTasksToToday, persistTaskOrder, removeTasksFromGroup, visibleTasks]);
 
     function keepDragTargetInView(event: React.DragEvent<HTMLElement>) {
@@ -1359,17 +1635,31 @@ export function HomePage() {
 
     function clearSelection() {
         setSelectedTaskIds([]);
+        setSelectedGroupIds([]);
+        setBulkDateAnchorEl(null);
+        setGroupAnchorEl(null);
+        setGroupName('');
         selectionAnchorRef.current = null;
+    }
+
+    function openBulkDatePicker(anchorEl: HTMLElement) {
+        const firstScheduledDate = selectedTasks
+            .map(task => task.scheduledPerformDateTime)
+            .map(value => value ? new Date(value) : null)
+            .find((value): value is Date => value !== null && !Number.isNaN(value.getTime()));
+        setBulkDateDraft(firstScheduledDate ?? new Date());
+        setBulkDateAnchorEl(anchorEl);
     }
 
     async function createGroup() {
         const trimmedName = groupName.trim();
-        if (!trimmedName || selectedTaskIds.length < 2) return;
+        if (!trimmedName || !canGroupSelectedTasks) return;
 
         setGroupSubmitting(true);
         try {
-            const createdGroup = await taskGroupService.createGroup(trimmedName, selectedTaskIds);
-            const selectedTaskIdSet = new Set(selectedTaskIds);
+            const selectedTaskIdsForGroup = selectedTasks.map(task => task.taskId);
+            const selectedTaskIdSet = new Set(selectedTaskIdsForGroup);
+            const createdGroup = await taskGroupService.createGroup(trimmedName, selectedTaskIdsForGroup);
             setGroups(previous => [
                 ...(previous ?? [])
                     .map(group => ({
@@ -1380,8 +1670,6 @@ export function HomePage() {
                 createdGroup,
             ]);
             clearSelection();
-            setGroupDialogOpen(false);
-            setGroupName('');
             setCollapsedGroupIds(previous => new Set(previous).add(createdGroup.groupId));
         } catch (err) {
             console.error('Error creating task group:', err);
@@ -1458,7 +1746,12 @@ export function HomePage() {
         });
     }
 
-    async function deleteGroup(group: TaskGroup) {
+    async function confirmUngroup() {
+        if (!deleteRequest || deleteRequest.kind !== 'group' || deleteSubmitting) return;
+
+        const group = deleteRequest.group;
+        setDeleteSubmitting(true);
+        setDeleteRequest(null);
         try {
             await taskGroupService.deleteGroup(group.groupId);
             setGroups(previous => (previous ?? []).filter(existingGroup => existingGroup.groupId !== group.groupId));
@@ -1467,8 +1760,13 @@ export function HomePage() {
                 next.delete(group.groupId);
                 return next;
             });
+            setSelectedGroupIds(previous => previous.filter(groupId => groupId !== group.groupId));
         } catch (err) {
-            console.error('Error deleting task group:', err);
+            console.error('Error ungrouping task group:', err);
+            await refreshGroups();
+        } finally {
+            setDeleteSubmitting(false);
+            setDeleteRequest(null);
         }
     }
 
@@ -1489,17 +1787,17 @@ export function HomePage() {
             setFocusVisibility('all');
         }
         const sourceTasks = olderTaskIdSet.has(draggedTask.taskId) ? olderTasks : visibleTasks;
-        const selectedTaskIdSet = new Set(selectedTaskIds);
         const selectedSourceTaskIds = sourceTasks
             .map(task => task.taskId)
-            .filter(taskId => selectedTaskIdSet.has(taskId));
-        const taskIdsToDrag = selectedSourceTaskIds.includes(draggedTask.taskId)
+            .filter(taskId => selectedActionTaskIdSet.has(taskId));
+        const taskIdsToDrag = selectedActionTaskIdSet.has(draggedTask.taskId)
             ? selectedSourceTaskIds
             : [draggedTask.taskId];
         activeDragRef.current = {
             kind: 'tasks',
             taskIds: taskIdsToDrag,
             primaryTaskId: draggedTask.taskId,
+            preservedGroupIds: selectedGroupIds,
         };
         setDraggedTaskIds(taskIdsToDrag);
         setDraggedTaskId(draggedTask.taskId);
@@ -1509,7 +1807,7 @@ export function HomePage() {
         setDragTargetPosition(null);
         setDragTargetTop(false);
         setDragTargetBottom(false);
-    }, [clearFocusTransitionTimer, olderTaskIdSet, olderTasks, selectedTaskIds, visibleTasks]);
+    }, [clearFocusTransitionTimer, olderTaskIdSet, olderTasks, selectedActionTaskIdSet, selectedGroupIds, visibleTasks]);
 
     const handleTaskDragOver = useCallback((dragTargetTask: Task, event: React.DragEvent<HTMLElement>) => {
         const currentDraggedTaskIds = getDraggedTaskIds();
@@ -1531,7 +1829,7 @@ export function HomePage() {
                 return;
             }
 
-            const edge = taskDropEdge(event);
+            const edge = containingGroup ? taskDropEdge(event) : dropIntent(event);
             setDragTargetTaskId(dragTargetTask.taskId);
             setDragTargetGroupId(null);
             setDragTargetPosition(edge);
@@ -1546,22 +1844,35 @@ export function HomePage() {
         const containingGroup = groups?.find(group => group.taskIds.includes(droppedTask.taskId));
         const olderTaskIdSet = new Set(olderTasks.map(olderTask => olderTask.taskId));
         const draggedOlderTaskIds = currentDraggedTaskIds.filter(taskId => olderTaskIdSet.has(taskId));
-        if (containingGroup && draggedOlderTaskIds.length > 0) {
-            void moveTasksToToday(draggedOlderTaskIds);
-            void addTasksToGroup(containingGroup, draggedOlderTaskIds);
+        const intent = activeGroupId ? taskDropEdge(event) : dropIntent(event);
+        const canAddToContainingGroup = Boolean(
+            containingGroup
+            && !activeGroupId
+            && currentDraggedTaskIds.length > 0
+            && currentDraggedTaskIds.some(taskId => !containingGroup.taskIds.includes(taskId)),
+        );
+        if (canAddToContainingGroup) {
+            void (async () => {
+                if (draggedOlderTaskIds.length > 0 && !(await moveTasksToToday(draggedOlderTaskIds))) return;
+                await addTasksToGroup(containingGroup!, currentDraggedTaskIds);
+            })();
             finishDragging();
             return;
         }
-        if (moveDraggedOlderTasksToToday()) return;
-        if (containingGroup && currentDraggedTaskIds.length > 0 && !activeGroupId
-            && currentDraggedTaskIds.some(taskId => !containingGroup.taskIds.includes(taskId))) {
-            void addTasksToGroup(containingGroup, currentDraggedTaskIds);
+
+        if (!activeGroupId && intent === 'inside' && currentDraggedTaskIds.length > 0
+            && !currentDraggedTaskIds.includes(droppedTask.taskId)) {
+            void groupTasksFromDrop(droppedTask, currentDraggedTaskIds);
             finishDragging();
             return;
         }
-        handleDropOnTask(droppedTask, taskDropEdge(event));
+
+        if (moveDraggedOlderTasksToToday(
+            intent === 'inside' ? undefined : { kind: 'task', targetTaskId: droppedTask.taskId, edge: intent },
+        )) return;
+        handleDropOnTask(droppedTask, intent === 'inside' ? 'before' : intent);
     }, [addTasksToGroup, finishDragging, getDraggedGroupId, getDraggedTaskIds, groups,
-        handleDropOnTask, moveDraggedOlderTasksToToday, moveTasksToToday, olderTasks]);
+        groupTasksFromDrop, handleDropOnTask, moveDraggedOlderTasksToToday, moveTasksToToday, olderTasks]);
 
     function renderTaskRow(
         task: Task,
@@ -1578,7 +1889,7 @@ export function HomePage() {
                 onTogglePanel={handleTogglePanel}
                 onAutoExpand={handleAutoExpand}
                 onDelete={deleteTask}
-                selected={selectedTaskIdSet.has(task.taskId)}
+                selected={selectedTaskIdSet.has(task.taskId) || selectedGroupTaskIdSet.has(task.taskId)}
                 onSelectionClick={handleTaskSelection}
                 showScheduledDate={options.showScheduledDate}
                 reorderable={reorderable}
@@ -1622,12 +1933,17 @@ export function HomePage() {
                 >
                     <Box
                         data-task-group-header="true"
+                        data-task-group-id={item.group.groupId}
                         draggable={groupDraggable}
+                        onClick={event => {
+                            event.stopPropagation();
+                            toggleGroup(item.group.groupId);
+                        }}
                         onMouseDownCapture={event => {
                             const target = event.target;
                             const interactive = target instanceof Element
                                 && target.closest(
-                                    'button, input, textarea, select, [role="button"], .MuiButtonBase-root, [contenteditable="true"]',
+                                    'button, input, textarea, select, [role="button"], .MuiButtonBase-root, [contenteditable="true"], [data-task-group-name="true"]',
                                 ) !== null;
                             event.currentTarget.draggable = groupDraggable && !interactive;
                         }}
@@ -1636,17 +1952,41 @@ export function HomePage() {
                         }}
                         onDragStart={groupDraggable ? (event) => {
                             event.dataTransfer.effectAllowed = 'move';
-                            event.dataTransfer.setData('text/plain', `group:${item.group.groupId}`);
-                            activeDragRef.current = { kind: 'group', groupId: item.group.groupId };
+                            const selectedGroupIsBeingDragged = selectedGroupIdSet.has(item.group.groupId);
+                            const hasOtherSelectedEntity = selectedGroupIds.length > 1
+                                || selectedTaskIds.some(taskId => !selectedGroupTaskIdSet.has(taskId));
+                            const isMixedDrag = selectedGroupIsBeingDragged && hasOtherSelectedEntity;
+                            if (isMixedDrag) {
+                                const dragSourceTasks = options.showScheduledDate ? olderTasks : visibleTasks;
+                                const taskIdsToDrag = dragSourceTasks
+                                    .map(task => task.taskId)
+                                    .filter(taskId => selectedActionTaskIdSet.has(taskId));
+                                const primaryTaskId = item.tasks.find(task => taskIdsToDrag.includes(task.taskId))?.taskId
+                                    ?? taskIdsToDrag[0]
+                                    ?? '';
+                                event.dataTransfer.setData('text/plain', primaryTaskId);
+                                activeDragRef.current = {
+                                    kind: 'tasks',
+                                    taskIds: taskIdsToDrag,
+                                    primaryTaskId,
+                                    preservedGroupIds: selectedGroupIds,
+                                };
+                                setDraggedTaskIds(taskIdsToDrag);
+                                setDraggedTaskId(primaryTaskId || null);
+                                setDraggedGroupId(null);
+                            } else {
+                                event.dataTransfer.setData('text/plain', `group:${item.group.groupId}`);
+                                activeDragRef.current = { kind: 'group', groupId: item.group.groupId };
+                                setDraggedGroupId(item.group.groupId);
+                                setDraggedTaskIds([]);
+                                setDraggedTaskId(null);
+                            }
                             if (!collapsed) {
                                 temporarilyCollapsedGroupIdRef.current = item.group.groupId;
                                 setCollapsedGroupIds(previous => new Set(previous).add(item.group.groupId));
                             } else {
                                 temporarilyCollapsedGroupIdRef.current = null;
                             }
-                            setDraggedGroupId(item.group.groupId);
-                            setDraggedTaskIds([]);
-                            setDraggedTaskId(null);
                             setDragTargetGroupId(null);
                             setDragTargetTaskId(null);
                             setDragTargetPosition(null);
@@ -1659,7 +1999,7 @@ export function HomePage() {
                             const activeGroupId = getDraggedGroupId();
                             const activeTaskIds = getDraggedTaskIds();
                             if (activeGroupId !== item.group.groupId || activeTaskIds.length > 0) {
-                                const intent = activeGroupId ? taskDropEdge(event) : groupDropIntent(event);
+                                const intent = activeGroupId ? taskDropEdge(event) : dropIntent(event);
                                 setDragTargetGroupId(item.group.groupId);
                                 setDragTargetTaskId(null);
                                 setDragTargetPosition(intent);
@@ -1670,7 +2010,7 @@ export function HomePage() {
                         onDrop={reorderable ? (event) => {
                             event.preventDefault();
                             event.stopPropagation();
-                            const intent = getDraggedGroupId() ? taskDropEdge(event) : groupDropIntent(event);
+                            const intent = getDraggedGroupId() ? taskDropEdge(event) : dropIntent(event);
                             handleDropOnGroup(item.group, intent);
                         } : undefined}
                         onDragEnd={groupDraggable ? event => {
@@ -1681,15 +2021,24 @@ export function HomePage() {
                             position: 'relative',
                             display: 'flex',
                             alignItems: 'center',
-                            minHeight: 42,
+                            minHeight: 52,
                             borderRadius: 1.5,
-                            px: 0.35,
+                            px: 0.5,
                             color: 'text.secondary',
+                            boxShadow: selectedGroupIdSet.has(item.group.groupId)
+                                ? theme => `inset 0 0 0 1.5px ${alpha(theme.palette.primary.main, 0.38)}`
+                                : 'none',
                             opacity: groupDragging ? 0.42 : 1,
                             transform: groupDragging ? 'scale(0.98)' : 'scale(1)',
-                            backgroundColor: groupDragTarget && dragTargetPosition === 'inside' ? 'action.hover' : 'transparent',
+                            backgroundColor: selectedGroupIdSet.has(item.group.groupId)
+                                ? theme => alpha(theme.palette.primary.main, 0.09)
+                                : groupDragTarget && dragTargetPosition === 'inside' ? 'action.hover' : 'transparent',
                             transition: 'opacity 0.16s, transform 0.16s, background-color 0.18s',
-                            '&:hover': { backgroundColor: 'action.hover' },
+                            '&:hover': {
+                                backgroundColor: selectedGroupIdSet.has(item.group.groupId)
+                                    ? theme => alpha(theme.palette.primary.main, 0.09)
+                                    : 'action.hover',
+                            },
                             '&::before': groupDragTarget && dragTargetPosition !== 'inside' ? {
                                 content: '""',
                                 position: 'absolute',
@@ -1706,20 +2055,84 @@ export function HomePage() {
                         <IconButton
                             size="small"
                             aria-label={collapsed ? `Expand ${item.group.name}` : `Collapse ${item.group.name}`}
-                            onClick={() => toggleGroup(item.group.groupId)}
+                            sx={{ width: 38, height: 38, p: 0, mr: 0.5, flexShrink: 0 }}
+                            onClick={event => {
+                                event.stopPropagation();
+                                toggleGroup(item.group.groupId);
+                            }}
                         >
                             {collapsed ? <ChevronRightIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
                         </IconButton>
-                        <Typography
-                            variant="body2"
-                            onClick={() => toggleGroup(item.group.groupId)}
-                            sx={{ flex: 1, textAlign: 'left', fontWeight: 650, cursor: 'pointer' }}
+                        {editingGroupId === item.group.groupId ? (
+                            <TextField
+                                value={localGroupName}
+                                inputRef={groupNameInputRef}
+                                autoComplete="off"
+                                onClick={event => event.stopPropagation()}
+                                onChange={event => setLocalGroupName(event.target.value)}
+                                onBlur={() => void commitGroupName(item.group)}
+                                onKeyDown={event => {
+                                    if (event.key === 'Enter') {
+                                        event.preventDefault();
+                                        void commitGroupName(item.group);
+                                    }
+                                    if (event.key === 'Escape') {
+                                        event.preventDefault();
+                                        cancelGroupNameEditing(item.group);
+                                    }
+                                }}
+                                variant="standard"
+                                autoFocus
+                                fullWidth
+                                InputProps={{ disableUnderline: true }}
+                                inputProps={{ draggable: false, 'data-task-group-name-input': 'true' }}
+                                sx={{
+                                    flex: 1,
+                                    minWidth: 0,
+                                    position: 'relative',
+                                    top: '-1px',
+                                    '& .MuiInputBase-input': {
+                                        fontSize: '0.95rem',
+                                        fontWeight: 650,
+                                        lineHeight: 1.5,
+                                        padding: 0,
+                                    },
+                                }}
+                            />
+                        ) : (
+                            <Box sx={{ flex: 1, minWidth: 0, textAlign: 'left', position: 'relative', top: '-1px' }}>
+                                <Box
+                                    component="span"
+                                    data-task-group-name="true"
+                                    onClick={event => startGroupNameEditing(item.group, event)}
+                                    sx={{
+                                        display: 'inline-block',
+                                        maxWidth: 'calc(100% - 8px)',
+                                        paddingRight: '32px',
+                                        textAlign: 'left',
+                                        cursor: 'text',
+                                    }}
+                                >
+                                    <Typography component="span" variant="body2" display="inline" sx={{ fontWeight: 650 }}>
+                                        {item.group.name}
+                                        <Typography component="span" variant="caption" color="text.disabled" sx={{ ml: 1 }}>
+                                            {item.tasks.length}
+                                        </Typography>
+                                    </Typography>
+                                </Box>
+                            </Box>
+                        )}
+                        <IconButton
+                            size="small"
+                            color={selectedGroupIdSet.has(item.group.groupId) ? 'primary' : 'inherit'}
+                            aria-label={selectedGroupIdSet.has(item.group.groupId)
+                                ? `Deselect group ${item.group.name}`
+                                : `Select group ${item.group.name}`}
+                            title={selectedGroupIdSet.has(item.group.groupId) ? 'Deselect group' : 'Select group'}
+                            onClick={event => handleGroupSelection(item.group.groupId, event)}
                         >
-                            {item.group.name}
-                            <Typography component="span" variant="caption" color="text.disabled" sx={{ ml: 1 }}>
-                                {item.tasks.length}
-                            </Typography>
-                            </Typography>
+                            <AdsClickIcon fontSize="small" />
+                        </IconButton>
                         <IconButton
                             size="small"
                             color="inherit"
@@ -1737,12 +2150,15 @@ export function HomePage() {
                         </IconButton>
                         <IconButton
                             size="small"
-                            color="inherit"
-                            aria-label={`Ungroup ${item.group.name}`}
-                            title="Ungroup"
-                            onClick={() => deleteGroup(item.group)}
+                            color="error"
+                            aria-label={`Delete group ${item.group.name}`}
+                            title="Delete group"
+                            onClick={event => {
+                                event.stopPropagation();
+                                requestGroupDelete(item.group, event.currentTarget);
+                            }}
                         >
-                            <LinkOffIcon fontSize="small" />
+                            <DeleteOutlineIcon sx={{ fontSize: '1.1rem' }} />
                         </IconButton>
                     </Box>
                     <Collapse
@@ -1850,69 +2266,87 @@ export function HomePage() {
                         <SmartTaskInput onSubmit={createTask} />
                     </Box>
 
-                    {selectedTaskIds.length > 1 && selectionActionsPosition && (
-                        <Box
-                            ref={selectionActionsRef}
-                            onClick={event => event.stopPropagation()}
-                            sx={{
-                                position: 'fixed',
-                                top: selectionActionsPosition.top,
-                                left: selectionActionsPosition.left,
-                                zIndex: 1300,
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 0.25,
-                                p: 0.5,
-                                border: '1px solid',
-                                borderColor: 'divider',
-                                borderRadius: 2.5,
-                                backgroundColor: 'background.paper',
-                                boxShadow: 4,
-                                transform: 'translateY(-50%)',
-                                animation: `${buttonFadeIn} 180ms ease-out`,
-                            }}
-                        >
-                            <IconButton
-                                size="small"
-                                color="inherit"
-                                aria-label={selectedTasks.length > 0 && selectedTasks.every(task => task.completed)
-                                    ? 'Reopen selected tasks'
-                                    : 'Complete selected tasks'}
-                                title={selectedTasks.length > 0 && selectedTasks.every(task => task.completed)
-                                    ? 'Reopen selected tasks'
-                                    : 'Complete selected tasks'}
-                                onClick={() => performBulkAction(
-                                    selectedTasks.length > 0 && selectedTasks.every(task => task.completed)
-                                        ? 'reopen'
-                                        : 'complete',
+                    {selectionActionsVisible && selectionActionsPosition && (
+                        <Portal>
+                            <Box
+                                ref={selectionActionsRef}
+                                onClick={event => event.stopPropagation()}
+                                sx={{
+                                    position: 'fixed',
+                                    top: selectionActionsPosition.top,
+                                    left: selectionActionsPosition.left,
+                                    zIndex: 1300,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 0.25,
+                                    p: 0.5,
+                                    border: '1px solid',
+                                    borderColor: 'divider',
+                                    borderRadius: 2.5,
+                                    backgroundColor: 'background.paper',
+                                    boxShadow: 4,
+                                    transform: 'translateY(-50%)',
+                                    animation: `${buttonFadeIn} 180ms ease-out`,
+                                }}
+                            >
+                                <IconButton
+                                    size="small"
+                                    color="inherit"
+                                    aria-label={selectedTasks.length > 0 && selectedTasks.every(task => task.completed)
+                                        ? 'Reopen selected tasks'
+                                        : 'Complete selected tasks'}
+                                    title={selectedTasks.length > 0 && selectedTasks.every(task => task.completed)
+                                        ? 'Reopen selected tasks'
+                                        : 'Complete selected tasks'}
+                                    onClick={() => performBulkAction(
+                                        selectedTasks.length > 0 && selectedTasks.every(task => task.completed)
+                                            ? 'reopen'
+                                            : 'complete',
+                                    )}
+                                    disabled={bulkActionLoading || selectedTasks.length === 0}
+                                >
+                                    {selectedTasks.length > 0 && selectedTasks.every(task => task.completed)
+                                        ? <ReplayIcon fontSize="small" />
+                                        : <CheckCircleOutlineIcon fontSize="small" color="success" />}
+                                </IconButton>
+                                <IconButton
+                                    size="small"
+                                    color="inherit"
+                                    aria-label="Move selected tasks to a date"
+                                    title="Move selected tasks to a date"
+                                    onClick={event => openBulkDatePicker(event.currentTarget)}
+                                    disabled={bulkActionLoading || selectedTasks.length === 0}
+                                >
+                                    <CalendarMonthIcon fontSize="small" />
+                                </IconButton>
+                                {canGroupSelectedTasks && (
+                                    <IconButton
+                                        size="small"
+                                        color="inherit"
+                                        aria-label="Group selected tasks"
+                                        title="Group selected tasks"
+                                        onClick={event => {
+                                            event.stopPropagation();
+                                            setGroupName('');
+                                            setGroupAnchorEl(event.currentTarget);
+                                        }}
+                                        disabled={bulkActionLoading}
+                                    >
+                                        <GroupWorkIcon fontSize="small" />
+                                    </IconButton>
                                 )}
-                                disabled={bulkActionLoading || selectedTasks.length === 0}
-                            >
-                                {selectedTasks.length > 0 && selectedTasks.every(task => task.completed)
-                                    ? <ReplayIcon fontSize="small" />
-                                    : <CheckCircleOutlineIcon fontSize="small" color="success" />}
-                            </IconButton>
-                            <IconButton
-                                size="small"
-                                color="inherit"
-                                aria-label="Group selected tasks"
-                                title="Group selected tasks"
-                                onClick={() => setGroupDialogOpen(true)}
-                                disabled={bulkActionLoading}
-                            >
-                                <GroupWorkIcon fontSize="small" />
-                            </IconButton>
-                            <IconButton
-                                size="small"
-                                color="error"
-                                aria-label="Delete selected tasks"
-                                title="Delete selected tasks"
-                                onClick={event => requestBulkDelete(event.currentTarget)}
-                                disabled={bulkActionLoading || selectedTasks.length === 0}
-                            >
-                                <DeleteSweepIcon fontSize="small" />
-                            </IconButton>
-                        </Box>
+                                <IconButton
+                                    size="small"
+                                    color="error"
+                                    aria-label="Delete selected tasks"
+                                    title="Delete selected tasks"
+                                    onClick={event => requestBulkDelete(event.currentTarget)}
+                                    disabled={bulkActionLoading || selectedTasks.length === 0}
+                                >
+                                    <DeleteSweepIcon fontSize="small" />
+                                </IconButton>
+                            </Box>
+                        </Portal>
                     )}
 
                     <Box ref={taskListTopRef} sx={{ height: 0 }} />
@@ -2145,12 +2579,23 @@ export function HomePage() {
                     {deleteRequest && (
                         <Box>
                             <Typography variant="body2" sx={{ mb: 1.25 }}>
-                                {deleteRequest.kind === 'bulk'
+                                {deleteRequest.kind === 'group'
+                                    ? `Delete “${deleteRequest.group.name}” and its ${deleteRequest.tasks.length} tasks?`
+                                    : deleteRequest.kind === 'bulk'
                                     ? `Delete ${deleteRequest.tasks.length} selected task${deleteRequest.tasks.length > 1 ? 's' : ''} and their subtasks?`
                                     : `Delete “${deleteRequest.tasks[0].name}” and its subtasks?`}
                             </Typography>
                             <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 0.75 }}>
                                 <Button size="small" onClick={closeDeleteRequest} disabled={deleteSubmitting}>Cancel</Button>
+                                {deleteRequest.kind === 'group' && (
+                                    <Button
+                                        size="small"
+                                        onClick={() => void confirmUngroup()}
+                                        disabled={deleteSubmitting}
+                                    >
+                                        Ungroup
+                                    </Button>
+                                )}
                                 <Button
                                     size="small"
                                     color="error"
@@ -2165,44 +2610,57 @@ export function HomePage() {
                     )}
                 </Popover>
 
-                <Dialog
-                    open={groupDialogOpen}
-                    onClose={() => !groupSubmitting && setGroupDialogOpen(false)}
-                    onClick={event => event.stopPropagation()}
-                    fullWidth
-                    maxWidth="xs"
+                <Popover
+                    open={Boolean(groupAnchorEl)}
+                    anchorEl={groupAnchorEl}
+                    onClose={() => {
+                        if (!groupSubmitting) {
+                            setGroupAnchorEl(null);
+                            setGroupName('');
+                        }
+                    }}
+                    anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+                    transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+                    slotProps={{
+                        paper: {
+                            sx: {
+                                p: 1.25,
+                                width: 260,
+                            },
+                        },
+                    }}
                 >
-                    <DialogTitle>Group selected tasks</DialogTitle>
-                    <DialogContent>
+                    <Box
+                        component="form"
+                        onSubmit={event => {
+                            event.preventDefault();
+                            void createGroup();
+                        }}
+                        onClick={event => event.stopPropagation()}
+                    >
                         <TextField
                             autoFocus
+                            autoComplete="off"
                             fullWidth
+                            size="small"
                             label="Group name"
                             placeholder="Morning routine"
                             value={groupName}
                             onChange={event => setGroupName(event.target.value)}
-                            onKeyDown={event => {
-                                if (event.key === 'Enter') {
-                                    event.preventDefault();
-                                    createGroup();
-                                }
-                            }}
+                            onFocus={event => event.currentTarget.select()}
                             disabled={groupSubmitting}
-                            sx={{ mt: 1 }}
                         />
-                    </DialogContent>
-                    <DialogActions>
-                        <Button onClick={() => setGroupDialogOpen(false)} disabled={groupSubmitting}>Cancel</Button>
-                        <Button
-                            variant="contained"
-                            onClick={createGroup}
-                            disabled={groupSubmitting || !groupName.trim()}
-                            startIcon={groupSubmitting ? <CircularProgress size={14} /> : <GroupWorkIcon />}
-                        >
-                            Create group
-                        </Button>
-                    </DialogActions>
-                </Dialog>
+                    </Box>
+                </Popover>
+
+                <BulkTaskDatePopover
+                    anchorEl={bulkDateAnchorEl}
+                    value={bulkDateDraft}
+                    loading={bulkActionLoading}
+                    onChange={setBulkDateDraft}
+                    onClose={() => setBulkDateAnchorEl(null)}
+                    onApply={() => void performBulkAction('move-to-date', formatLocalDateTime(bulkDateDraft))}
+                />
 
                 <Snackbar
                     key={taskFeedback?.id}
@@ -2259,7 +2717,6 @@ export function HomePage() {
                     ) : undefined}
                 </Snackbar>
 
-                <DayWidget />
             </Box>
         </PageWrapper>
     );

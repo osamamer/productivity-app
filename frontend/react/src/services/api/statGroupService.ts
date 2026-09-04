@@ -4,7 +4,7 @@ import { CachedResource } from '../cache/ttlCache';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 const GROUPS_URL = `${API_BASE_URL}/api/v1/stats/groups`;
-const GROUPS_TTL_MS = 30 * 1000;
+const GROUPS_TTL_MS = 24 * 60 * 60 * 1000;
 const groupsCache = new CachedResource<StatGroup[]>({ ttlMs: GROUPS_TTL_MS, maxEntries: 4 });
 
 function groupsCacheKey(): string {

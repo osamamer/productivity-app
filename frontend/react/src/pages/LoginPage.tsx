@@ -71,7 +71,7 @@ export function LoginPage() {
     };
 
     return (
-        <Container component="main" maxWidth="xs">
+        <Container component="main" maxWidth="xs" data-context-menu-space>
             <Box
                 sx={{
                     marginTop: 8,

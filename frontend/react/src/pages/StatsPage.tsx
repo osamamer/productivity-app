@@ -793,6 +793,7 @@ export function StatsPage() {
                     <DialogContent>
                         <TextField
                             autoFocus
+                            autoComplete="off"
                             fullWidth
                             label="Group name"
                             value={groupName}
@@ -1019,7 +1020,6 @@ export function StatsPage() {
                         <Box sx={{ flex: 1, overflowY: 'auto', minWidth: 0 }}>
                             {selectedDef ? (
                                 <StatCard
-                                    key={selectedDef.type === 'BOOLEAN' ? 'calendar' : 'numeric-chart'}
                                     definition={selectedDef}
                                     comparisonDefinitions={visibleDefinitions}
                                     onEdit={setEditTarget}

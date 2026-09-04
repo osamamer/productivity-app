@@ -3,8 +3,10 @@ import ArrowOutwardRoundedIcon from '@mui/icons-material/ArrowOutwardRounded';
 import MoodRoundedIcon from '@mui/icons-material/MoodRounded';
 import PsychologyRoundedIcon from '@mui/icons-material/PsychologyRounded';
 import SelfImprovementRoundedIcon from '@mui/icons-material/SelfImprovementRounded';
-import { useNavigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { PageWrapper } from '../components/PageWrapper';
+import { getLastMentalDestination, rememberMentalDestination } from '../services/utils/mentalNavigation';
 
 const mentalDestinations = [
     {
@@ -25,11 +27,30 @@ const mentalDestinations = [
         target: '/meditation',
         Icon: SelfImprovementRoundedIcon,
     },
-];
+] as const;
 
 export function MentalPage() {
+    const location = useLocation();
     const navigate = useNavigate();
     const theme = useTheme();
+    const openedFromDestination = location.state?.skipLastMentalDestinationRedirect === true;
+    const lastDestination = openedFromDestination ? null : getLastMentalDestination();
+    const redirectDestination = !openedFromDestination
+        && lastDestination !== null
+        && lastDestination !== '/mental'
+        ? lastDestination
+        : null;
+
+    useEffect(() => {
+        if (redirectDestination === null) {
+            rememberMentalDestination('/mental');
+        }
+    }, [redirectDestination]);
+
+    if (redirectDestination) {
+        return <Navigate to={redirectDestination} replace />;
+    }
+
     const accentColors = [
         theme.palette.primary.main,
         theme.palette.info.main,
@@ -66,7 +87,10 @@ export function MentalPage() {
                                 component="button"
                                 type="button"
                                 elevation={0}
-                                onClick={() => navigate(target)}
+                                onClick={() => {
+                                    rememberMentalDestination(target);
+                                    navigate(target);
+                                }}
                                 sx={{
                                     minHeight: { xs: 205, md: 250 },
                                     p: { xs: 2.5, sm: 3 },

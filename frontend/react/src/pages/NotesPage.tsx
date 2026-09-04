@@ -195,6 +195,10 @@ export function NotesPage() {
                             setEditingCategory(null);
                             setCategoryDialogOpen(true);
                         }}
+                        onCreateNote={category => {
+                            setActiveFilter(category.id);
+                            void createNote(category.id);
+                        }}
                         onEditCategory={category => {
                             setEditingCategory(category);
                             setCategoryDialogOpen(true);

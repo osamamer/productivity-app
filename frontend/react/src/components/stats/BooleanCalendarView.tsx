@@ -9,7 +9,7 @@ import HighlightOffIcon from '@mui/icons-material/HighlightOff';
 import { format, subDays, eachDayOfInterval, getDay } from 'date-fns';
 import { StatDefinition } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
-import { getBooleanChoiceColor, getStatFeedback, showStatFeedback } from '../../services/statFeedback';
+import { getBooleanChoiceColor, showStatFeedback } from '../../services/statFeedback';
 
 // Week starts on Monday. Offset maps JS getDay() (0=Sun) to Mon-based index (0=Mon, 6=Sun).
 const toMondayIndex = (jsDay: number) => (jsDay + 6) % 7;
@@ -24,6 +24,8 @@ interface Props {
 
 export function BooleanCalendarView({ definition, dateRange, refreshKey, onEntryChanged }: Props) {
     const theme = useTheme();
+    const yesColor = theme.palette[getBooleanChoiceColor(definition, 1)].main;
+    const noColor = theme.palette[getBooleanChoiceColor(definition, 0)].main;
     const to = new Date();
     const from = subDays(to, dateRange - 1);
     const fromStr = format(from, 'yyyy-MM-dd');
@@ -145,14 +147,7 @@ export function BooleanCalendarView({ definition, dateRange, refreshKey, onEntry
                         const value = dateKey ? valueMap.get(dateKey) : undefined;
                         const isYes = hasEntry && value === 1;
                         const isNo = hasEntry && value !== 1;
-                        const feedback = value === undefined ? 'NONE' : getStatFeedback(definition, value);
-                        const stampColor = feedback === 'CELEBRATE'
-                            ? theme.palette.success.main
-                            : feedback === 'SAD'
-                            ? theme.palette.error.main
-                            : isYes
-                            ? theme.palette.success.main
-                            : theme.palette.error.main;
+                        const stampColor = isYes ? yesColor : noColor;
 
                         return (
                             <Box
@@ -174,11 +169,7 @@ export function BooleanCalendarView({ definition, dateRange, refreshKey, onEntry
                                     opacity: day ? 1 : 0,
                                     cursor: day ? 'pointer' : 'default',
                                     border: '1.5px solid',
-                                    borderColor: feedback === 'CELEBRATE'
-                                        ? `${theme.palette.success.main}66`
-                                        : feedback === 'SAD'
-                                        ? `${theme.palette.error.main}66`
-                                        : isYes || isNo
+                                    borderColor: isYes || isNo
                                         ? `${stampColor}66`
                                         : 'transparent',
                                 }}
@@ -238,16 +229,12 @@ export function BooleanCalendarView({ definition, dateRange, refreshKey, onEntry
             {/* Legend */}
             <Stack direction="row" spacing={2} sx={{ mt: 1.5 }}>
                 <Stack direction="row" spacing={0.5} alignItems="center">
-                    <CheckCircleOutlineIcon sx={{ fontSize: 14, color: 'success.main', transform: 'rotate(-12deg)' }} />
+                    <CheckCircleOutlineIcon sx={{ fontSize: 14, color: yesColor, transform: 'rotate(-12deg)' }} />
                     <Typography variant="caption" color="text.secondary">Yes</Typography>
                 </Stack>
                 <Stack direction="row" spacing={0.5} alignItems="center">
-                    <HighlightOffIcon sx={{ fontSize: 14, color: 'error.main', transform: 'rotate(12deg)' }} />
+                    <HighlightOffIcon sx={{ fontSize: 14, color: noColor, transform: 'rotate(12deg)' }} />
                     <Typography variant="caption" color="text.secondary">No</Typography>
-                </Stack>
-                <Stack direction="row" spacing={0.5} alignItems="center">
-                    <Box sx={{ width: 12, height: 12, borderRadius: 0.5, bgcolor: theme.palette.mode === 'dark' ? 'background.default' : 'action.disabledBackground' }} />
-                    <Typography variant="caption" color="text.secondary">No data</Typography>
                 </Stack>
             </Stack>
 

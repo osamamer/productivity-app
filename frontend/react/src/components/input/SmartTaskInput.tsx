@@ -232,6 +232,7 @@ export function SmartTaskInput({
             <Box component="form" onSubmit={handleSubmit} sx={{ position: 'relative' }}>
                 <TextField
                     inputRef={inputRef}
+                    autoComplete="off"
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onBlur={() => {

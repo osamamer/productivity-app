@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Box, InputBase, Typography, useTheme, alpha } from '@mui/material';
 import StarRoundedIcon from '@mui/icons-material/StarRounded';
 import StarOutlineRoundedIcon from '@mui/icons-material/StarOutlineRounded';
@@ -7,6 +7,7 @@ import { DayEntity } from '../types/DayEntity';
 import { dayService } from '../services/api';
 import planIcon from '../assets/images/walk.png';
 import summaryIcon from '../assets/images/summary.png';
+import { dayRatingFeedback, playAudioFeedback } from '../services/audioFeedback';
 
 // ─── geometry ────────────────────────────────────────────────────────────────
 
@@ -138,6 +139,8 @@ export function DayWidget() {
     const theme = useTheme();
 
     const [today, setToday] = useState<DayEntity | null>(null);
+    const todayRef = useRef<DayEntity | null>(null);
+    const todayMutationVersionRef = useRef(0);
     const [hoveredRating, setHoveredRating] = useState<number | null>(null);
     const [localPlan, setLocalPlan] = useState('');
     const [localSummary, setLocalSummary] = useState('');
@@ -145,6 +148,7 @@ export function DayWidget() {
     useEffect(() => {
         dayService.getToday()
             .then(data => {
+                todayRef.current = data;
                 setToday(data);
                 setLocalPlan(data.plan ?? '');
                 setLocalSummary(data.summary ?? '');
@@ -153,16 +157,29 @@ export function DayWidget() {
     }, []);
 
     async function saveUpdate(partial: { rating?: number; plan?: string; summary?: string }) {
-        if (!today) return;
+        const previous = todayRef.current;
+        if (!previous) return;
         const next = {
-            rating: partial.rating ?? today.rating ?? 0,
-            plan:   partial.plan   ?? today.plan   ?? '',
-            summary: partial.summary ?? today.summary ?? '',
+            ...previous,
+            rating: partial.rating ?? previous.rating ?? 0,
+            plan:   partial.plan   ?? previous.plan   ?? '',
+            summary: partial.summary ?? previous.summary ?? '',
         };
+        const mutationVersion = todayMutationVersionRef.current + 1;
+        todayMutationVersionRef.current = mutationVersion;
+        todayRef.current = next;
+        setToday(next);
         try {
             await dayService.setTodayInfo(next.rating, next.plan, next.summary);
-            setToday(prev => prev ? { ...prev, ...next } : prev);
+            if (partial.rating !== undefined && next.rating !== (previous.rating ?? 0)) {
+                const feedback = dayRatingFeedback(next.rating, 10);
+                if (feedback) playAudioFeedback(feedback);
+            }
         } catch (e) {
+            if (todayMutationVersionRef.current === mutationVersion) {
+                todayRef.current = previous;
+                setToday(previous);
+            }
             console.error('DayWidget: failed to save:', e);
         }
     }
@@ -306,6 +323,7 @@ export function DayWidget() {
                 />
                 <InputBase
                     multiline
+                    inputProps={{ autoComplete: 'off' }}
                     title="Day plan"
                     value={localPlan}
                     onChange={e => setLocalPlan(e.target.value)}
@@ -328,6 +346,7 @@ export function DayWidget() {
                 />
                 <InputBase
                     multiline
+                    inputProps={{ autoComplete: 'off' }}
                     title="Day summary"
                     value={localSummary}
                     onChange={e => setLocalSummary(e.target.value)}

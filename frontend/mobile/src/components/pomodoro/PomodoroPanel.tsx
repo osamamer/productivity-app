@@ -74,9 +74,9 @@ function isBreakPhase(status: PomodoroStatus): boolean {
 }
 
 function phaseLabel(status: PomodoroStatus): string {
-  if (status.phase === 'WAITING_FOR_BREAK') return 'Break ready';
-  if (status.phase === 'WAITING_FOR_FOCUS') return 'Focus ready';
-  return isBreakPhase(status) ? 'Break' : 'Focus';
+  if (status.phase === 'WAITING_FOR_BREAK') return 'BREAK TIME';
+  if (status.phase === 'WAITING_FOR_FOCUS') return 'WORK TIME';
+  return isBreakPhase(status) ? 'BREAK TIME' : 'WORK TIME';
 }
 
 function optimisticStatus(taskId: string, form: PomodoroFormValues, config: PomodoroConfig): PomodoroStatus {
@@ -102,7 +102,8 @@ export function PomodoroPanel({ taskId, initialStatus, onClose, onActiveChange, 
   onActiveChange: (active: boolean) => void;
   onStatusChange: (status: PomodoroStatus) => void;
 }) {
-  const { colors } = useAppTheme();
+  const { colors, dark } = useAppTheme();
+  const pomodoroGreen = dark ? '#9BC5A3' : '#7EA88A';
   const [status, setStatus] = useState<PomodoroStatus | null>(initialStatus ?? null);
   const [config, setConfig] = useState<PomodoroConfig>(DEFAULT_CONFIG);
   const [form, setForm] = useState<PomodoroFormValues>(DEFAULT_FORM);
@@ -289,7 +290,12 @@ export function PomodoroPanel({ taskId, initialStatus, onClose, onActiveChange, 
       {(waiting || !breakPhase) && (
         <AppButton
           compact
-          variant="secondary"
+          variant={waiting
+            ? status.phase === 'WAITING_FOR_BREAK' ? 'success' : 'primary'
+            : 'secondary'}
+          style={waiting && status.phase === 'WAITING_FOR_BREAK'
+            ? { backgroundColor: pomodoroGreen, borderColor: pomodoroGreen }
+            : undefined}
           icon={!waiting && status.sessionRunning ? 'pause' : 'play'}
           label={waiting ? (status.phase === 'WAITING_FOR_BREAK' ? 'Start break' : 'Start focus') : status.sessionRunning ? 'Pause' : 'Resume'}
           loading={actionLoading}
@@ -301,7 +307,7 @@ export function PomodoroPanel({ taskId, initialStatus, onClose, onActiveChange, 
         />
       )}
       {status.phase === 'BREAK' && (
-        <AppButton compact variant="secondary" icon="play-forward" label="Start focus" loading={actionLoading} onPress={() => void runAction(() => api.pomodoro.finishBreakEarly(taskId))} />
+        <AppButton compact variant="primary" icon="play-forward" label="Start focus" loading={actionLoading} onPress={() => void runAction(() => api.pomodoro.finishBreakEarly(taskId))} />
       )}
       <AppButton compact variant="danger" icon="stop" label="Stop" loading={actionLoading} onPress={stop} />
     </View>
@@ -341,8 +347,27 @@ export function PomodoroPanel({ taskId, initialStatus, onClose, onActiveChange, 
     <View style={styles.activePanel}>
       <View style={styles.activeInfo}>
         <View style={styles.grow}>
-          <AppText variant="caption" color={breakPhase ? 'success' : 'accent'}>{phaseLabel(status)}</AppText>
-          <AppText variant="title">{waiting ? 'Ready' : formatSeconds(remaining)}</AppText>
+          {waiting ? (
+            <View style={styles.stackedPhaseLabel}>
+              {phaseLabel(status).split(' ').map(word => (
+                <AppText
+                  key={word}
+                  variant="title"
+                  color={breakPhase ? 'default' : 'accent'}
+                  style={breakPhase ? { color: pomodoroGreen } : undefined}
+                >{word}</AppText>
+              ))}
+            </View>
+          ) : (
+            <>
+              <AppText
+                variant="caption"
+                color={breakPhase ? 'default' : 'accent'}
+                style={breakPhase ? { color: pomodoroGreen } : undefined}
+              >{phaseLabel(status)}</AppText>
+              <AppText variant="title">{formatSeconds(remaining)}</AppText>
+            </>
+          )}
         </View>
         <View style={styles.dots}>
           {Array.from({ length: status.numFocuses }).map((_, index) => (
@@ -350,8 +375,8 @@ export function PomodoroPanel({ taskId, initialStatus, onClose, onActiveChange, 
           ))}
         </View>
       </View>
-      <View style={[styles.track, { backgroundColor: breakPhase ? `${colors.success}28` : colors.accentSoft }]}>
-        <View style={[styles.fill, { width: `${progress * 100}%`, backgroundColor: breakPhase ? colors.success : colors.accent }]} />
+      <View style={[styles.track, { backgroundColor: breakPhase ? `${pomodoroGreen}28` : colors.accentSoft }]}>
+        <View style={[styles.fill, { width: `${progress * 100}%`, backgroundColor: breakPhase ? pomodoroGreen : colors.accent }]} />
       </View>
       {controls}
       {error && <AppText color="danger">{error}</AppText>}
@@ -367,6 +392,7 @@ const styles = StyleSheet.create({
   option: { width: '48%' },
   activePanel: { gap: 13, paddingTop: 2, paddingHorizontal: 13, paddingBottom: 14 },
   activeInfo: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  stackedPhaseLabel: { gap: 0 },
   dots: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   dot: { width: 9, height: 9, borderRadius: 5 },
   controls: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },

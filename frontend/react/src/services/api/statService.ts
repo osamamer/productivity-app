@@ -1,12 +1,17 @@
-import { StatDefinition, StatEntry, StatSummary, StatInsights, CreateDefinitionRequest, RecordEntryRequest, UpdateDefinitionRequest } from '../../types/Stats';
+import { StatBootstrapResponse, StatDefinition, StatEntry, StatSummary, StatInsights, CreateDefinitionRequest, RecordEntryRequest, UpdateDefinitionRequest } from '../../types/Stats';
 import { getAuthCacheScope, getAuthHeaders } from '../utils/authHeaders';
 import { CachedResource, TtlCache } from '../cache/ttlCache';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 const STATS_URL = `${API_BASE_URL}/api/v1/stats`;
+const STAT_BOOTSTRAP_URL = `${STATS_URL}/bootstrap`;
 
-const STAT_DEFINITIONS_TTL_MS = 10 * 60 * 1000;
-const CURRENT_STAT_DATA_TTL_MS = 60 * 1000;
+// Definitions are invalidated after create/update/delete/reorder operations, so they
+// do not need to expire while the user is simply moving around the app.
+const STAT_DEFINITIONS_TTL_MS = 24 * 60 * 60 * 1000;
+// Stat writes invalidate affected data explicitly, so current-period data can stay warm
+// for the session instead of refetching every minute while the user changes selection.
+const CURRENT_STAT_DATA_TTL_MS = 24 * 60 * 60 * 1000;
 const HISTORICAL_STAT_ENTRIES_TTL_MS = 30 * 60 * 1000;
 const DERIVED_STAT_DATA_TTL_MS = 5 * 60 * 1000;
 const STAT_CACHE_MAX_ENTRIES = 100;
@@ -23,6 +28,8 @@ const dailyEntriesCache = new CachedResource<StatEntry[]>({
 });
 const definitionsCache = new TtlCache<StatDefinition[]>({ ttlMs: STAT_DEFINITIONS_TTL_MS, maxEntries: 10 });
 const definitionsRequests = new Map<string, Promise<StatDefinition[]>>();
+const lastMonthPrefetchRequests = new Map<string, Promise<void>>();
+let statCacheGeneration = 0;
 
 function definitionsCacheKey(): string {
     return `${getAuthCacheScope()}:definitions`;
@@ -62,11 +69,26 @@ function localDateString(date = new Date()): string {
     ].join('-');
 }
 
+export interface StatDateRange {
+    from: string;
+    to: string;
+}
+
+export function getLastMonthWindow(today = new Date()): StatDateRange {
+    const fromDate = new Date(today);
+    fromDate.setDate(fromDate.getDate() - 29);
+    return {
+        from: localDateString(fromDate),
+        to: localDateString(today),
+    };
+}
+
 function dailyEntriesCacheKey(date: string): string {
     return `${getAuthCacheScope()}:daily:${date}`;
 }
 
 function invalidateEntryCache(definitionId?: string): void {
+    statCacheGeneration += 1;
     if (!definitionId) {
         entryCache.clear();
         return;
@@ -76,19 +98,23 @@ function invalidateEntryCache(definitionId?: string): void {
 }
 
 function invalidateDefinitionsCache(): void {
+    statCacheGeneration += 1;
     definitionsCache.delete(definitionsCacheKey());
     insightsCache.clear();
 }
 
 function invalidateSummaryCache(definitionId: string): void {
+    statCacheGeneration += 1;
     summaryCache.deleteMatching(key => key.startsWith(definitionCachePrefix(definitionId)));
 }
 
 function invalidateInsightsCache(): void {
+    statCacheGeneration += 1;
     insightsCache.clear();
 }
 
 function clearDataCaches(): void {
+    statCacheGeneration += 1;
     entryCache.clear();
     summaryCache.clear();
     insightsCache.clear();
@@ -122,6 +148,52 @@ export const statService = {
             return await request;
         } finally {
             if (definitionsRequests.get(key) === request) definitionsRequests.delete(key);
+        }
+    },
+
+    async prefetchLastMonth(): Promise<void> {
+        const range = getLastMonthWindow();
+        const key = `${getAuthCacheScope()}:${range.from}:${range.to}`;
+        const pendingRequest = lastMonthPrefetchRequests.get(key);
+        if (pendingRequest) return pendingRequest;
+
+        const requestGeneration = statCacheGeneration;
+        const request = (async () => {
+            const params = new URLSearchParams({ from: range.from, to: range.to });
+            const response = await fetch(`${STAT_BOOTSTRAP_URL}?${params}`, {
+                headers: getAuthHeaders(),
+            });
+            if (!response.ok) throw new Error('Failed to warm statistics');
+
+            const bootstrap = await response.json() as StatBootstrapResponse;
+            if (requestGeneration !== statCacheGeneration) return;
+
+            definitionsCache.set(definitionsCacheKey(), bootstrap.definitions);
+            bootstrap.definitions.forEach(definition => {
+                const entries = bootstrap.entries[definition.id] ?? [];
+                entryCache.set(
+                    entryCacheKey(definition.id, range.from, range.to),
+                    entries,
+                    CURRENT_STAT_DATA_TTL_MS,
+                );
+                const summary = bootstrap.summaries[definition.id];
+                if (summary) {
+                    summaryCache.set(
+                        summaryCacheKey(definition.id, range.from, range.to),
+                        summary,
+                        CURRENT_STAT_DATA_TTL_MS,
+                    );
+                }
+            });
+        })();
+
+        lastMonthPrefetchRequests.set(key, request);
+        try {
+            await request;
+        } finally {
+            if (lastMonthPrefetchRequests.get(key) === request) {
+                lastMonthPrefetchRequests.delete(key);
+            }
         }
     },
 
@@ -205,7 +277,7 @@ export const statService = {
     },
 
     getCachedEntries(definitionId: string, from: string, to: string): StatEntry[] | undefined {
-        return entryCache.get(entryCacheKey(definitionId, from, to));
+        return entryCache.getStale(entryCacheKey(definitionId, from, to));
     },
 
     async getTodayEntries(): Promise<StatEntry[]> {
@@ -251,7 +323,7 @@ export const statService = {
     },
 
     getCachedSummary(definitionId: string, from: string, to: string): StatSummary | undefined {
-        return summaryCache.get(summaryCacheKey(definitionId, from, to));
+        return summaryCache.getStale(summaryCacheKey(definitionId, from, to));
     },
 
     clearSummaryCache(): void {
@@ -265,6 +337,7 @@ export const statService = {
     clearCache(): void {
         definitionsCache.clear();
         definitionsRequests.clear();
+        lastMonthPrefetchRequests.clear();
         clearDataCaches();
     },
 

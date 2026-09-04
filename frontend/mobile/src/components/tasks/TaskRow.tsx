@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { formatShortDate, formatTime } from '@/lib/date';
 import { taskPriorityColor } from '@/lib/taskPriority';
@@ -7,6 +7,7 @@ import { useAppTheme } from '@/providers/ThemeProvider';
 import type { PomodoroStatus, Task } from '@/types/models';
 import { PomodoroPanel } from '../pomodoro/PomodoroPanel';
 import { AppText } from '../ui/AppText';
+import { SilentPressable } from '../ui/SilentPressable';
 
 export function TaskRow({ task, onToggle, onPress, onLongPress, onSelectionToggle, selected = false, onDelete, onPomodoroPress, pomodoroOpen, pomodoroStatus, onPomodoroClose, onPomodoroActiveChange, onPomodoroStatusChange }: {
   task: Task;
@@ -24,7 +25,7 @@ export function TaskRow({ task, onToggle, onPress, onLongPress, onSelectionToggl
   onPomodoroStatusChange?: (status: PomodoroStatus) => void;
 }) {
   const { colors } = useAppTheme();
-  const priority = taskPriorityColor(task.importance);
+  const priorityColor = taskPriorityColor(task.importance);
   const active = Boolean(pomodoroStatus?.active);
   const progress = pomodoroStatus
     ? (() => {
@@ -42,23 +43,25 @@ export function TaskRow({ task, onToggle, onPress, onLongPress, onSelectionToggl
       backgroundColor: active ? colors.accentSoft : colors.surface,
       borderColor: active ? (resting ? colors.success : colors.accent) : colors.border,
     }, selected && { borderColor: colors.accent, borderWidth: 2 }]}>
-      <Pressable
+      <SilentPressable
         onPress={onSelectionToggle ?? onPress}
         onLongPress={onLongPress}
         accessibilityState={selected ? { selected: true } : undefined}
         style={({ pressed }) => [styles.row, pressed && { opacity: 0.75 }]}>
-        <View style={[styles.priority, { backgroundColor: priority }]} />
-        <Pressable
+        <SilentPressable
           hitSlop={10}
           accessibilityRole="checkbox"
           accessibilityState={{ checked: task.completed }}
           onPress={event => { event.stopPropagation(); onToggle(); }}>
-          <Ionicons
-            name={task.completed ? 'checkmark-circle' : 'ellipse-outline'}
-            size={25}
-            color={task.completed ? colors.success : colors.textMuted}
-          />
-        </Pressable>
+          <View
+            style={[
+              styles.checkbox,
+              { borderColor: priorityColor },
+              task.completed && { backgroundColor: priorityColor },
+            ]}>
+            {task.completed && <Ionicons name="checkmark" size={13} color="#FFFFFF" />}
+          </View>
+        </SilentPressable>
         <View style={styles.copy}>
           <AppText variant="label" style={task.completed ? styles.completed : undefined} numberOfLines={2}>
             {task.name}
@@ -69,20 +72,20 @@ export function TaskRow({ task, onToggle, onPress, onLongPress, onSelectionToggl
         </View>
         {selected && <Ionicons name="checkmark-circle" size={22} color={colors.accent} />}
         {onPomodoroPress && (
-          <Pressable
+          <SilentPressable
             hitSlop={10}
             accessibilityRole="button"
             accessibilityLabel={pomodoroOpen ? 'Close focus timer' : 'Open focus timer'}
             onPress={event => { event.stopPropagation(); onPomodoroPress(); }}>
             <Ionicons name="timer-outline" size={21} color={active || pomodoroOpen ? colors.accent : colors.textMuted} />
-          </Pressable>
+          </SilentPressable>
         )}
         {onDelete && (
-          <Pressable hitSlop={10} onPress={event => { event.stopPropagation(); onDelete(); }}>
+          <SilentPressable hitSlop={10} onPress={event => { event.stopPropagation(); onDelete(); }}>
             <Ionicons name="trash-outline" size={19} color={colors.textMuted} />
-          </Pressable>
+          </SilentPressable>
         )}
-      </Pressable>
+      </SilentPressable>
       {pomodoroOpen && onPomodoroActiveChange && onPomodoroStatusChange && (
         <PomodoroPanel
           taskId={task.taskId}
@@ -112,7 +115,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
-  priority: { width: 5, height: 34, borderRadius: 3 },
+  checkbox: {
+    width: 18,
+    height: 18,
+    borderWidth: 1.75,
+    borderRadius: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   copy: { flex: 1, gap: 4 },
   completed: { textDecorationLine: 'line-through', opacity: 0.52 },
   progressTrack: { height: 3 },

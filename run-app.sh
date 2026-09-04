@@ -8,6 +8,7 @@ env_file="$script_dir/deployment/.env"
 compose_file="$script_dir/deployment/docker-compose.yml"
 backend_pid=""
 frontend_pid=""
+mobile_pid=""
 
 if [[ ! -e "$env_file" ]]; then
   env_example="$script_dir/deployment/.env.example"
@@ -278,6 +279,85 @@ start_frontend() {
   fi
 }
 
+start_mobile_metro() {
+  local mobile_dir="$script_dir/frontend/mobile"
+
+  if [[ ! -x "$mobile_dir/node_modules/.bin/expo" ]]; then
+    echo "⚠️  Mobile dependencies are not installed; skipping mobile Metro."
+    echo "   Run 'cd frontend/mobile && npm install', then run this script again."
+    return 0
+  fi
+
+  if endpoint_is_ready "http://localhost:8081/status"; then
+    echo "♻️  Mobile Metro is already available on port 8081; reusing it."
+    return 0
+  elif port_is_listening 8081; then
+    echo "Port 8081 is in use, but its service is not a healthy mobile Metro server."
+    free_conflicting_port 8081
+
+    if port_is_listening 8081; then
+      echo "Port 8081 is still occupied after cleanup." >&2
+      stop_started_processes
+      exit 1
+    fi
+  fi
+
+  echo "📱 Starting mobile Metro..."
+  (
+    cd "$mobile_dir"
+    exec setsid npm run start -- --dev-client --lan
+  ) &
+  mobile_pid=$!
+
+  echo "⏳ Waiting for mobile Metro..."
+  if ! wait_for_endpoint "Mobile Metro" "http://localhost:8081/status" 45 "$mobile_pid"; then
+    stop_started_processes
+    exit 1
+  fi
+}
+
+setup_android_dev_bridge() {
+  local adb_bin
+  local android_sdk_dir
+  local android_device_serials
+  local serial
+
+  adb_bin=$(command -v adb || true)
+  if [[ -z "$adb_bin" ]]; then
+    for android_sdk_dir in "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}"; do
+      if [[ -n "$android_sdk_dir" && -x "$android_sdk_dir/platform-tools/adb" ]]; then
+        adb_bin="$android_sdk_dir/platform-tools/adb"
+        break
+      fi
+    done
+  fi
+
+  if [[ -z "$adb_bin" ]]; then
+    echo "⚠️  adb was not found; Android Studio will need manual local port forwarding."
+    return 0
+  fi
+
+  android_device_serials=$("$adb_bin" devices 2>/dev/null | awk 'NR > 1 && $2 == "device" { print $1 }' || true)
+  if [[ -z "$android_device_serials" ]]; then
+    echo "⚠️  No Android device is connected; adb forwarding will be skipped."
+    echo "   Start the emulator, then run: adb reverse tcp:7070 tcp:7070"
+    echo "                              adb reverse tcp:8080 tcp:8080"
+    echo "                              adb reverse tcp:8081 tcp:8081"
+    return 0
+  fi
+
+  while IFS= read -r serial; do
+    [[ -z "$serial" ]] && continue
+    if ! "$adb_bin" -s "$serial" reverse tcp:7070 tcp:7070 >/dev/null \
+      || ! "$adb_bin" -s "$serial" reverse tcp:8080 tcp:8080 >/dev/null \
+      || ! "$adb_bin" -s "$serial" reverse tcp:8081 tcp:8081 >/dev/null; then
+      echo "⚠️  Could not configure adb forwarding for Android device $serial." >&2
+      continue
+    fi
+    echo "🔌 Android device $serial is forwarded to Keycloak, backend, and Metro."
+  done <<< "$android_device_serials"
+}
+
 apply_keycloak_login_theme() {
   local realm=${KEYCLOAK_REALM:-productivity-app}
   local admin_realm=${KEYCLOAK_ADMIN_REALM:-master}
@@ -321,7 +401,7 @@ apply_keycloak_login_theme() {
 stop_started_processes() {
   local pid
 
-  for pid in "$frontend_pid" "$backend_pid"; do
+  for pid in "$mobile_pid" "$frontend_pid" "$backend_pid"; do
     if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
       terminate_process "$pid" "app process"
     fi
@@ -438,18 +518,22 @@ else
   start_frontend
 fi
 
+start_mobile_metro
+setup_android_dev_bridge
+
 echo "✅ All services are ready."
 echo "   App:      http://localhost:5173"
+echo "   Mobile:   http://localhost:8081"
 echo "   Backend:  http://localhost:8080"
 echo "   Keycloak: http://localhost:7070"
 
-if [[ -z "$backend_pid" && -z "$frontend_pid" ]]; then
+if [[ -z "$backend_pid" && -z "$frontend_pid" && -z "$mobile_pid" ]]; then
   echo "Everything was already running; nothing was started by this shell."
   exit 0
 fi
 
 echo
-echo "Press Ctrl+C to stop the backend/frontend processes started by this run."
+echo "Press Ctrl+C to stop the app processes started by this run."
 echo "Docker services will remain running."
 
 wait

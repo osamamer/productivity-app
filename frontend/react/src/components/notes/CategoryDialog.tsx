@@ -43,6 +43,7 @@ export function CategoryDialog({ open, category, onClose, onSave }: CategoryDial
             <DialogContent>
                 <TextField
                     autoFocus
+                    autoComplete="off"
                     fullWidth
                     label="Name"
                     value={name}

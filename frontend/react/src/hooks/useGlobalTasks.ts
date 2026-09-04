@@ -7,11 +7,11 @@ export function useGlobalTasks() {
         throw new Error('useGlobalTasks must be used within TaskProvider');
     }
 
-    // Only task-aware pages load the shared task data. This keeps unrelated pages
-    // from fetching the entire task list during every browser refresh.
+    // Only task-aware pages load the shared task data. Entering one of these pages
+    // is an explicit request for current data, so bypass the manager's short TTL.
     const {refreshTaskBuckets} = context;
     useEffect(() => {
-        void refreshTaskBuckets();
+        void refreshTaskBuckets(true);
     }, [refreshTaskBuckets]);
 
     return context;

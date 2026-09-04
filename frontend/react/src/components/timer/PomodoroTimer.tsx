@@ -14,6 +14,7 @@ import {
     Slide,
     Snackbar,
     Tooltip,
+    useTheme,
 } from '@mui/material';
 import { HoverCardBox } from '../box/HoverCardBox.tsx';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
@@ -68,6 +69,9 @@ SlideFromRight.displayName = 'SlideFromRight';
 type PomodoroFeedback = { id: number; message: string };
 
 export function PomodoroTimer({ task, onActiveChange }: Props) {
+    const theme = useTheme();
+    const pomodoroGreen = theme.palette.mode === 'dark' ? '#9BC5A3' : '#7EA88A';
+    const pomodoroGreenForeground = theme.palette.mode === 'dark' ? '#111827' : '#1A1A2E';
     const [status, setStatus] = useState<Pomodoro | null>(null);
     const [pomodoroConfig, setPomodoroConfig] = useState<PomodoroConfig>(NORMAL_POMODORO_CONFIG);
 
@@ -343,6 +347,7 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
                         <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
                             <TextField
                                 name="focusDuration"
+                                autoComplete="off"
                                 label={`Focus (${durationUnitLabel})`}
                                 type="number"
                                 size="small"
@@ -352,6 +357,7 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
                             />
                             <TextField
                                 name="shortBreakDuration"
+                                autoComplete="off"
                                 label={`Short Break (${durationUnitLabel})`}
                                 type="number"
                                 size="small"
@@ -361,6 +367,7 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
                             />
                             <TextField
                                 name="longBreakDuration"
+                                autoComplete="off"
                                 label={`Long Break (${durationUnitLabel})`}
                                 type="number"
                                 size="small"
@@ -370,6 +377,7 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
                             />
                             <TextField
                                 name="numFocuses"
+                                autoComplete="off"
                                 label="Focus Sessions"
                                 type="number"
                                 size="small"
@@ -411,7 +419,7 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
                                     size={200}
                                     thickness={2}
                                     sx={{
-                                        color: isBreakTime() ? '#4caf50' : 'primary.main',
+                                        color: isBreakTime() ? pomodoroGreen : 'primary.main',
                                         '& .MuiCircularProgress-circle': {
                                             strokeLinecap: 'round',
                                         },
@@ -431,12 +439,29 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
                                     }}
                                 >
                                     {isBreakTime() ? (
-                                        <FreeBreakfastIcon sx={{ fontSize: 32, color: '#4caf50', mb: 1 }} />
+                                        <FreeBreakfastIcon sx={{ fontSize: 32, color: pomodoroGreen, mb: 1 }} />
                                     ) : (
                                         <TimerIcon sx={{ fontSize: 32, color: 'primary.main', mb: 1 }} />
                                     )}
-                                    <Typography variant="h3" component="div" fontWeight="bold">
-                                        {waitingForPhase ? 'Ready' : formatTime(status.secondsUntilNextTransition)}
+                                    <Typography
+                                        variant={waitingForPhase ? 'h5' : 'h3'}
+                                        component="div"
+                                        fontWeight="bold"
+                                        sx={waitingForPhase ? {
+                                            letterSpacing: 1.1,
+                                            lineHeight: 0.95,
+                                            textAlign: 'center',
+                                            whiteSpace: 'normal',
+                                            color: status.phase === 'WAITING_FOR_BREAK' ? pomodoroGreen : undefined,
+                                        } : undefined}
+                                    >
+                                        {waitingForPhase
+                                            ? (status.phase === 'WAITING_FOR_BREAK' ? ['BREAK', 'TIME'] : ['WORK', 'TIME']).map(word => (
+                                                <Box component="span" key={word} sx={{ display: 'block' }}>
+                                                    {word}
+                                                </Box>
+                                            ))
+                                            : formatTime(status.secondsUntilNextTransition)}
                                     </Typography>
                                 </Box>
                             </Box>
@@ -455,14 +480,19 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
                             </Typography>
 
                             {/* Status Chip */}
-                            <Chip
-                                label={waitingForPhase
-                                    ? (status.phase === 'WAITING_FOR_BREAK' ? 'Break Ready' : 'Focus Ready')
-                                    : isBreakTime() ? 'Break Time' : 'Focus Time'}
-                                color={isBreakTime() ? 'success' : 'primary'}
-                                icon={isBreakTime() ? <FreeBreakfastIcon /> : <TimerIcon />}
-                                sx={{ mb: 2 }}
-                            />
+                            {!waitingForPhase && (
+                                <Chip
+                                    label={isBreakTime() ? 'BREAK TIME' : 'WORK TIME'}
+                                    color={isBreakTime() ? 'default' : 'primary'}
+                                    icon={isBreakTime() ? <FreeBreakfastIcon /> : <TimerIcon />}
+                                    sx={isBreakTime() ? {
+                                        mb: 2,
+                                        backgroundColor: pomodoroGreen,
+                                        color: pomodoroGreenForeground,
+                                        '& .MuiChip-icon': { color: pomodoroGreenForeground },
+                                    } : { mb: 2 }}
+                                />
+                            )}
 
                             {/* Session Progress */}
                             <Box sx={{
@@ -496,10 +526,11 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
                                 {(status.sessionActive || waitingForPhase) && (
                                     <IconButton
                                         onClick={handleTogglePlayPause}
-                                        color="primary"
+                                        color={waitingForPhase && status.phase === 'WAITING_FOR_BREAK' ? 'inherit' : 'primary'}
                                         size="large"
                                         disabled={isLoading}
                                         sx={{
+                                            color: waitingForPhase && status.phase === 'WAITING_FOR_BREAK' ? pomodoroGreen : undefined,
                                             backgroundColor: 'action.hover',
                                             '&:hover': { backgroundColor: 'action.selected' },
                                         }}
@@ -512,7 +543,7 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
                                         <span>
                                             <IconButton
                                                 onClick={handleFinishBreak}
-                                                color="success"
+                                                color="primary"
                                                 size="large"
                                                 disabled={isLoading}
                                                 sx={{

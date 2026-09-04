@@ -72,7 +72,7 @@ class MentalStateServiceTest {
 
         assertEquals("Wired/Tired", response.state());
         assertEquals(1, response.suggestedActions().size());
-        assertTrue(response.suggestedActions().get(0).startsWith("Focus on feeling grounded"));
+        assertTrue(response.suggestedActions().get(0).startsWith("Your body may be tired"));
     }
 
     @Test
@@ -100,7 +100,7 @@ class MentalStateServiceTest {
     }
 
     @Test
-    void usesTheRequestedDerivedScorePriorityForSuggestedActions() {
+    void usesTheSamePriorityForStateAndSuggestedActions() {
         MentalStateCheckInResponse wiredTiredReset = mentalStateService.checkIn(
                 new CreateMentalStateCheckInRequest(1, 10, 10, 1, 8, 7), USER_ID);
         MentalStateCheckInResponse dopamineGuardrails = mentalStateService.checkIn(
@@ -114,6 +114,13 @@ class MentalStateServiceTest {
         MentalStateCheckInResponse maintenance = mentalStateService.checkIn(
                 new CreateMentalStateCheckInRequest(1, 5, 1, 1, 8, 1), USER_ID);
 
+        assertEquals("Wired/Tired", wiredTiredReset.state());
+        assertEquals("Stimulation-Seeking", dopamineGuardrails.state());
+        assertEquals("Ready", deepWork.state());
+        assertEquals("Almost Ready", almostReady.state());
+        assertEquals("Engaged", healthyStimulation.state());
+        assertEquals("Mixed", maintenance.state());
+
         assertTrue(wiredTiredReset.suggestedActions().get(0).startsWith("Your body may be tired"));
         assertTrue(dopamineGuardrails.suggestedActions().get(0).startsWith("Make it harder"));
         assertTrue(deepWork.suggestedActions().get(0).startsWith("You have a good window"));
@@ -125,6 +132,15 @@ class MentalStateServiceTest {
                 .stream()
                 .flatMap(checkIn -> checkIn.suggestedActions().stream())
                 .noneMatch(action -> action.contains(":") || action.equals(action.toUpperCase())));
+    }
+
+    @Test
+    void keepsNeutralSignalsInTheMixedState() {
+        MentalStateCheckInResponse response = mentalStateService.checkIn(
+                new CreateMentalStateCheckInRequest(5, 5, 5, 5, 5, 5), USER_ID);
+
+        assertEquals("Mixed", response.state());
+        assertTrue(response.suggestedActions().get(0).startsWith("Keep things simple"));
     }
 
     @Test

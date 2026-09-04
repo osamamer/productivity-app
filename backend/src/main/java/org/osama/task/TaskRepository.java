@@ -19,6 +19,8 @@ public interface TaskRepository extends JpaRepository<Task, String>,
 
     List<Task> findAllByUserIdAndParentIdIsNullOrderByDisplayOrderAsc(String userId);
 
+    List<Task> findAllByUserIdAndParentIdOrderByDisplayOrderAsc(String userId, String parentId);
+
     Optional<Task> findTopByUserIdAndParentIdIsNullOrderByDisplayOrderDesc(String userId);
 
     Optional<Task> findTopByUserIdAndParentIdOrderByDisplayOrderDesc(String userId, String parentId);

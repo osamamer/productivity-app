@@ -9,6 +9,7 @@ import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin, { DateClickArg } from "@fullcalendar/interaction";
 import FullCalendar from "@fullcalendar/react";
 import React, { useMemo, useState, useCallback } from "react";
+import { keyframes } from '@mui/system';
 import { Task } from "../types/Task.tsx";
 import { useTheme } from "@mui/material";
 import { DatesSetArg, EventClickArg, EventContentArg, EventMountArg } from '@fullcalendar/core';
@@ -27,6 +28,7 @@ import CheckIcon from '@mui/icons-material/Check';
 import { CalendarEvent, CalendarEventInput } from "../types/CalendarEvent.ts";
 import { CalendarEventForm } from "./calendar/CalendarEventForm.tsx";
 import { expandCalendarEvent } from "./calendar/recurrence.ts";
+import { getBooleanChoiceColor } from "../services/statFeedback.ts";
 
 type MonthCalenderProps = {
     tasks: Task[],
@@ -115,14 +117,47 @@ function calendarEventTimeLabel(start: Date | null): string {
 
 type CreateTab = 'event' | 'task' | 'stats';
 
+const calendarLoadingReveal = keyframes`
+    from {
+        opacity: 0;
+        transform: translate3d(0, 8px, 0);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+`;
+
+const calendarContentReveal = keyframes`
+    from {
+        opacity: 0;
+        transform: translate3d(0, 7px, 0);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+`;
+
 function CalendarLoadingState() {
     return (
-        <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, gap: 1.5 }}>
+        <Box sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            flex: 1,
+            minHeight: 0,
+            gap: 1.5,
+            animation: `${calendarLoadingReveal} 420ms cubic-bezier(0.22, 1, 0.36, 1) both`,
+            '@media (prefers-reduced-motion: reduce)': {
+                animation: 'none',
+                '& .MuiSkeleton-root': { animation: 'none' },
+            },
+        }}>
             <Stack direction="row" alignItems="center" spacing={1} sx={{ px: 1 }}>
-                <Skeleton variant="rounded" width={32} height={32} />
-                <Skeleton variant="rounded" width={32} height={32} />
-                <Skeleton variant="rounded" width={72} height={36} />
-                <Skeleton variant="text" width={190} height={36} />
+                <Skeleton animation="wave" variant="rounded" width={32} height={32} />
+                <Skeleton animation="wave" variant="rounded" width={32} height={32} />
+                <Skeleton animation="wave" variant="rounded" width={72} height={36} />
+                <Skeleton animation="wave" variant="text" width={190} height={36} />
             </Stack>
             <Box sx={{
                 display: 'grid',
@@ -135,11 +170,19 @@ function CalendarLoadingState() {
                 bgcolor: 'divider',
             }}>
                 {Array.from({ length: 49 }, (_, index) => (
-                    <Box key={index} sx={{ bgcolor: 'background.paper', p: 1 }}>
+                    <Box key={index} sx={{
+                        bgcolor: 'background.paper',
+                        p: 1,
+                        animation: `${calendarLoadingReveal} 360ms cubic-bezier(0.22, 1, 0.36, 1) ${Math.min(index, 8) * 25}ms both`,
+                        '@media (prefers-reduced-motion: reduce)': {
+                            animation: 'none',
+                            '& .MuiSkeleton-root': { animation: 'none' },
+                        },
+                    }}>
                         {index < 7 ? (
-                            <Skeleton variant="text" width="65%" height={20} />
+                            <Skeleton animation="wave" variant="text" width="65%" height={20} />
                         ) : (
-                            <Skeleton variant="text" width="18%" height={20} sx={{ ml: 'auto' }} />
+                            <Skeleton animation="wave" variant="text" width="18%" height={20} sx={{ ml: 'auto' }} />
                         )}
                     </Box>
                 ))}
@@ -350,7 +393,7 @@ export function MonthCalendar({
                 if (!definition) return [];
                 const value = statEventValue(definition, entry.value);
                 const color = definition.type === 'BOOLEAN'
-                    ? entry.value === 1 ? theme.palette.success.main : theme.palette.error.main
+                    ? theme.palette[getBooleanChoiceColor(definition, entry.value === 1 ? 1 : 0)].main
                     : theme.palette.secondary.main;
                 return [{
                     id: `stat-${entry.statDefinitionId}-${entry.date}`,
@@ -369,7 +412,7 @@ export function MonthCalendar({
             : [];
 
         return [...eventEntries, ...groupEvents, ...taskEvents, ...statEvents];
-    }, [availableStatDefinitions, calendarRange.end, calendarRange.start, calendarTasks, events, hasVisibleStats, neutralCalendarColor, selectedStatIdsForDisplay, showTasks, statEntries, tasks, taskGroupByTaskId, theme.palette.error.main, theme.palette.primary.contrastText, theme.palette.primary.main, theme.palette.secondary.main, theme.palette.success.main, theme.palette.text.primary]);
+    }, [availableStatDefinitions, calendarRange.end, calendarRange.start, calendarTasks, events, hasVisibleStats, neutralCalendarColor, selectedStatIdsForDisplay, showTasks, statEntries, tasks, taskGroupByTaskId, theme.palette]);
 
     const renderEventContent = useCallback((arg: EventContentArg) => {
         const eventType = arg.event.extendedProps.eventType;
@@ -538,6 +581,19 @@ export function MonthCalendar({
                         minHeight: 0,
                     }}
                 >
+                    {loading ? (
+                        <CalendarLoadingState />
+                    ) : (
+                        <Box sx={{
+                            flex: 1,
+                            minHeight: 0,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            animation: `${calendarContentReveal} 420ms cubic-bezier(0.22, 1, 0.36, 1) both`,
+                            '@media (prefers-reduced-motion: reduce)': {
+                                animation: 'none',
+                            },
+                        }}>
                     <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
                         <Box>
                             <Typography variant="h6" fontWeight={600}>Calendar</Typography>
@@ -820,9 +876,6 @@ export function MonthCalendar({
                         },
                         }}
                     >
-                    {loading ? (
-                        <CalendarLoadingState />
-                    ) : (
                         <FullCalendar
                             plugins={[dayGridPlugin, interactionPlugin]}
                             initialView="dayGridMonth"
@@ -844,8 +897,9 @@ export function MonthCalendar({
                                 today: 'Today',
                             }}
                         />
-                    )}
                     </Box>
+                        </Box>
+                    )}
                 </Box>
             </HoverCardBox>
 
@@ -1017,6 +1071,7 @@ export function MonthCalendar({
                             />
                             <TextField
                                 label="Name"
+                                autoComplete="off"
                                 value={taskDraft.name ?? ''}
                                 onChange={(event) => setTaskDraft(prev => prev ? { ...prev, name: event.target.value } : prev)}
                                 fullWidth
@@ -1063,6 +1118,7 @@ export function MonthCalendar({
 
                             <TextField
                                 label="Description"
+                                autoComplete="off"
                                 value={taskDraft.description ?? ''}
                                 onChange={(event) => setTaskDraft(prev => prev ? { ...prev, description: event.target.value } : prev)}
                                 multiline

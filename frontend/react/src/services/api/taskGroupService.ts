@@ -43,6 +43,22 @@ export const taskGroupService = {
         return response.json();
     },
 
+    async renameGroup(groupId: string, name: string): Promise<TaskGroup> {
+        const response = await fetch(`${GROUP_URL}/${groupId}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ name }),
+            headers: {
+                'Content-Type': 'application/json; charset=UTF-8',
+                ...getAuthHeaders(),
+            },
+        });
+        if (!response.ok) {
+            throw new Error('Failed to rename task group');
+        }
+        groupsCache.invalidate(groupsCacheKey());
+        return response.json();
+    },
+
     async replaceTasks(groupId: string, taskIds: string[]): Promise<TaskGroup> {
         const response = await fetch(`${GROUP_URL}/${groupId}/tasks`, {
             method: 'PUT',

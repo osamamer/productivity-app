@@ -126,6 +126,7 @@ export function TodayCheckIn({ definitions, onSaved }: Props) {
                         {def.type === 'NUMBER' && (
                             <TextField
                                 type="number"
+                                autoComplete="off"
                                 size="small"
                                 value={values[def.id] ?? ''}
                                 onChange={e => setValue(def.id, e.target.value === '' ? null : Number(e.target.value))}

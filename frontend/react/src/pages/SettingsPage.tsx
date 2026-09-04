@@ -10,6 +10,8 @@ import QueryStatsOutlinedIcon from '@mui/icons-material/QueryStatsOutlined';
 import SecurityOutlinedIcon from '@mui/icons-material/SecurityOutlined';
 import TimerOutlinedIcon from '@mui/icons-material/TimerOutlined';
 import CheckIcon from '@mui/icons-material/Check';
+import PsychologyOutlinedIcon from '@mui/icons-material/PsychologyOutlined';
+import VolumeUpOutlinedIcon from '@mui/icons-material/VolumeUpOutlined';
 import { PageWrapper } from '../components/PageWrapper.tsx';
 import { useUser } from '../hooks/useUser';
 import { accentColorOptions } from '../contexts/themeOptions';
@@ -20,6 +22,8 @@ import axios from 'axios';
 import { SHOW_COMPLETED_HOME_TASKS_STORAGE_KEY } from '../services/utils/homePreferences.ts';
 import { statService } from '../services/api/statService.ts';
 import { getPomodoroConfig, setPomodoroSecondsModePreference } from '../services/api/pomodoroConfigService.ts';
+import { getShowClosedMentalThreads, setShowClosedMentalThreads } from '../services/utils/mentalThreadPreferences.ts';
+import { isAudioFeedbackEnabled, setAudioFeedbackEnabled } from '../services/audioFeedback.ts';
 
 const sectionCardSx = {
     backgroundColor: 'background.paper',
@@ -40,6 +44,8 @@ const showCompletedTasksDescription = 'Keep completed tasks visible in today\'s 
 const numericStatsAverageDescription = 'Include days without a logged numeric value as 0 when calculating averages.';
 const pomodoroAutoStartDescription = 'Start each break and focus session automatically, or wait for you to start the next phase.';
 const pomodoroSecondsModeDescription = 'Use 10-second focus and break durations instead of the normal 25/5/15-minute defaults.';
+const showClosedMentalThreadsDescription = 'Keep closed threads visible in the mental threads list.';
+const soundEffectsDescription = 'Play short musical cues when you complete, capture, schedule, or rate something.';
 
 export function SettingsPage() {
     const { user, logout } = useUser();
@@ -63,6 +69,8 @@ export function SettingsPage() {
     const [showCompletedHomeTasks, setShowCompletedHomeTasks] = useState(() => (
         localStorage.getItem(SHOW_COMPLETED_HOME_TASKS_STORAGE_KEY) !== 'false'
     ));
+    const [showClosedMentalThreads, setShowClosedMentalThreadsState] = useState(getShowClosedMentalThreads);
+    const [soundEffectsEnabled, setSoundEffectsEnabledState] = useState(isAudioFeedbackEnabled);
     const [includeUnloggedNumericDaysAsZero, setIncludeUnloggedNumericDaysAsZero] = useState(false);
     const [userPreferencesLoading, setUserPreferencesLoading] = useState(true);
     const [numericStatsPreferenceSaving, setNumericStatsPreferenceSaving] = useState(false);
@@ -192,6 +200,18 @@ export function SettingsPage() {
         setPomodoroSecondsModePreference(nextValue);
     }
 
+    function handleShowClosedMentalThreadsChange(event: ChangeEvent<HTMLInputElement>) {
+        const nextValue = event.target.checked;
+        setShowClosedMentalThreadsState(nextValue);
+        setShowClosedMentalThreads(nextValue);
+    }
+
+    function handleSoundEffectsChange(event: ChangeEvent<HTMLInputElement>) {
+        const nextValue = event.target.checked;
+        setSoundEffectsEnabledState(nextValue);
+        setAudioFeedbackEnabled(nextValue);
+    }
+
     async function handleAutoStartPomodoroSessionsChange(event: ChangeEvent<HTMLInputElement>) {
         const nextValue = event.target.checked;
         const previousValue = autoStartPomodoroSessions;
@@ -283,6 +303,56 @@ export function SettingsPage() {
                                             checked={showCompletedHomeTasks}
                                             onChange={(event) => setShowCompletedHomeTasks(event.target.checked)}
                                             inputProps={{ 'aria-label': 'Show completed tasks on the Home and Tasks pages' }}
+                                        />
+                                    </Box>
+                                </Box>
+
+                                <Box sx={sectionCardSx}>
+                                    <Box sx={sectionHeadingSx}>
+                                        <VolumeUpOutlinedIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
+                                        <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                                            Sound effects
+                                        </Typography>
+                                    </Box>
+
+                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
+                                        <Box sx={{ textAlign: 'left' }}>
+                                            <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                                                Play sound effects
+                                            </Typography>
+                                            <Typography variant="body2" color="text.secondary">
+                                                {soundEffectsDescription}
+                                            </Typography>
+                                        </Box>
+                                        <Switch
+                                            checked={soundEffectsEnabled}
+                                            onChange={handleSoundEffectsChange}
+                                            inputProps={{ 'aria-label': 'Play sound effects' }}
+                                        />
+                                    </Box>
+                                </Box>
+
+                                <Box sx={sectionCardSx}>
+                                    <Box sx={sectionHeadingSx}>
+                                        <PsychologyOutlinedIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
+                                        <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                                            Mental threads
+                                        </Typography>
+                                    </Box>
+
+                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
+                                        <Box sx={{ textAlign: 'left' }}>
+                                            <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                                                Show closed threads
+                                            </Typography>
+                                            <Typography variant="body2" color="text.secondary">
+                                                {showClosedMentalThreadsDescription}
+                                            </Typography>
+                                        </Box>
+                                        <Switch
+                                            checked={showClosedMentalThreads}
+                                            onChange={handleShowClosedMentalThreadsChange}
+                                            inputProps={{ 'aria-label': 'Show closed mental threads' }}
                                         />
                                     </Box>
                                 </Box>

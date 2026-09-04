@@ -1,10 +1,11 @@
 import { PropsWithChildren, ReactNode } from 'react';
-import { Modal, Pressable, StyleSheet, View } from 'react-native';
+import { Modal, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { AppButton } from './AppButton';
 import { AppText } from './AppText';
+import { SilentPressable } from './SilentPressable';
 
 export type AppPopupKind = 'info' | 'error' | 'confirm';
 
@@ -42,7 +43,7 @@ export function AppPopup({
       statusBarTranslucent
       onRequestClose={onClose}>
       <SafeAreaView style={styles.safeArea}>
-        <Pressable
+        <SilentPressable
           accessibilityRole="button"
           accessibilityLabel="Close popup"
           style={[styles.backdrop, { backgroundColor: colors.overlay }]}

@@ -7,7 +7,7 @@ export function BackToMentalButton() {
 
     return (
         <IconButton
-            onClick={() => navigate('/mental')}
+            onClick={() => navigate('/mental', { state: { skipLastMentalDestinationRedirect: true } })}
             title="Back to mental"
             aria-label="Back to mental"
             size="small"

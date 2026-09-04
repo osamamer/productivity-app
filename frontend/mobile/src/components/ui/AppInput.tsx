@@ -1,22 +1,32 @@
-import { ComponentProps } from 'react';
-import { StyleSheet, TextInput, View } from 'react-native';
+import { ComponentProps, forwardRef } from 'react';
+import { StyleProp, StyleSheet, TextInput, View, ViewStyle } from 'react-native';
 
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { APP_FONT_FAMILY, AppText } from './AppText';
+import { useKeyboardAwareFocus } from './KeyboardAwareScrollView';
 
 interface Props extends ComponentProps<typeof TextInput> {
   label?: string;
   error?: string;
+  containerStyle?: StyleProp<ViewStyle>;
 }
 
-export function AppInput({ label, error, style, multiline, ...props }: Props) {
+export const AppInput = forwardRef<TextInput, Props>(function AppInput({ label, error, containerStyle, style, multiline, ...props }, ref) {
   const { colors } = useAppTheme();
+  const focusInput = useKeyboardAwareFocus();
   return (
-    <View style={styles.wrapper}>
+    <View style={[styles.wrapper, containerStyle]}>
       {label && <AppText variant="caption" color="muted">{label}</AppText>}
       <TextInput
+        ref={ref}
         {...props}
+        autoCorrect={props.autoCorrect ?? false}
+        spellCheck={props.spellCheck ?? false}
         multiline={multiline}
+        onFocus={event => {
+          focusInput?.(event.nativeEvent.target);
+          props.onFocus?.(event);
+        }}
         placeholderTextColor={colors.textMuted}
         selectionColor={colors.accent}
         style={[
@@ -29,7 +39,9 @@ export function AppInput({ label, error, style, multiline, ...props }: Props) {
       {error && <AppText variant="caption" color="danger">{error}</AppText>}
     </View>
   );
-}
+});
+
+AppInput.displayName = 'AppInput';
 
 const styles = StyleSheet.create({
   wrapper: { gap: 6 },

@@ -40,6 +40,19 @@ export class TtlCache<T> {
         return entry.value;
     }
 
+    /**
+     * Returns an expired value without extending its freshness or removing it.
+     * Read views use this during background refreshes to avoid flashing empty UI.
+     */
+    getStale(key: string): T | undefined {
+        const entry = this.entries.get(key);
+        if (!entry) return undefined;
+
+        this.entries.delete(key);
+        this.entries.set(key, entry);
+        return entry.value;
+    }
+
     set(key: string, value: T, ttlMs = this.options.ttlMs): void {
         if (!Number.isFinite(ttlMs) || ttlMs <= 0) {
             throw new Error('A cache entry TTL must be a positive number');
@@ -109,6 +122,10 @@ export class CachedResource<T> {
 
     getCached(key: string): T | undefined {
         return this.cache.get(key);
+    }
+
+    getStale(key: string): T | undefined {
+        return this.cache.getStale(key);
     }
 
     set(key: string, value: T, ttlMs?: number): void {

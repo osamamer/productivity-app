@@ -3,6 +3,7 @@ import { TaskToCreate } from '../../types/TaskToCreate';
 import { getAuthHeaders } from '../utils/authHeaders';
 import { PomodoroStatus } from '../../types/PomodoroStatus';
 import { TaskPomodoroStats } from '../../types/TaskPomodoroStats';
+import { invalidateTaskPomodoroStats } from '../cache/taskPomodoroStatsCache';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 const TASK_URL = `${API_BASE_URL}/api/v1/tasks`;
@@ -138,7 +139,9 @@ export const taskService = {
         if (!response.ok) {
             throw new Error('Failed to update task');
         }
-        return response.json();
+        const updatedTask = await response.json() as Task;
+        invalidateTaskPomodoroStats(taskId);
+        return updatedTask;
     },
 
     async getTask(taskId: string): Promise<Task> {
@@ -168,6 +171,7 @@ export const taskService = {
         if (!response.ok) {
             throw new Error('Failed to delete task');
         }
+        invalidateTaskPomodoroStats(taskId);
     },
 
     // ============ Session Operations ============
@@ -180,6 +184,7 @@ export const taskService = {
         if (!response.ok) {
             throw new Error('Failed to start session');
         }
+        invalidateTaskPomodoroStats(taskId);
     },
 
     async pauseSession(taskId: string): Promise<void> {
@@ -190,6 +195,7 @@ export const taskService = {
         if (!response.ok) {
             throw new Error('Failed to pause session');
         }
+        invalidateTaskPomodoroStats(taskId);
     },
 
     async unpauseSession(taskId: string): Promise<void> {
@@ -200,6 +206,7 @@ export const taskService = {
         if (!response.ok) {
             throw new Error('Failed to unpause session');
         }
+        invalidateTaskPomodoroStats(taskId);
     },
 
     async endSession(taskId: string): Promise<void> {
@@ -210,6 +217,7 @@ export const taskService = {
         if (!response.ok) {
             throw new Error('Failed to end session');
         }
+        invalidateTaskPomodoroStats(taskId);
     },
 
     // ============ Pomodoro Operations ============
@@ -243,6 +251,7 @@ export const taskService = {
         if (!response.ok) {
             throw new Error('Failed to start pomodoro');
         }
+        invalidateTaskPomodoroStats(taskId);
         console.log("Started Pomodoro.");
     },
 
@@ -254,6 +263,7 @@ export const taskService = {
         if (!response.ok) {
             throw new Error('Failed to end pomodoro');
         }
+        invalidateTaskPomodoroStats(taskId);
         console.log("Ended Pomodoro.");
     },
 
@@ -265,6 +275,7 @@ export const taskService = {
         if (!response.ok) {
             throw new Error('Failed to start the next Pomodoro phase');
         }
+        invalidateTaskPomodoroStats(taskId);
     },
 
     async finishPomodoroBreak(taskId: string): Promise<void> {
@@ -275,6 +286,7 @@ export const taskService = {
         if (!response.ok) {
             throw new Error('Failed to end the Pomodoro break');
         }
+        invalidateTaskPomodoroStats(taskId);
     },
 
     // Returns the current user's active pomodoro, or null if none is running.

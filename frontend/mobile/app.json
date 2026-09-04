@@ -12,6 +12,9 @@
       "bundleIdentifier": "org.osama.solife"
     },
     "android": {
+      "permissions": [
+        "POST_NOTIFICATIONS"
+      ],
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "backgroundColor": "#F7F6FB",
@@ -40,7 +43,18 @@
       ],
       "expo-secure-store",
       "expo-notifications",
-      "expo-audio"
+      "expo-audio",
+      "./plugins/withAndroidBuildPerformance",
+      [
+        "react-native-audio-api",
+        {
+          "iosBackgroundMode": false,
+          "androidForegroundService": false,
+          "androidPermissions": [],
+          "disableFFmpeg": true,
+          "disableStaticExternalLibs": true
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

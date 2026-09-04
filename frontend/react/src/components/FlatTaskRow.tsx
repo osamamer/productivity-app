@@ -76,6 +76,7 @@ export type FlatTaskRowProps = {
     deferPomodoroHydration?: boolean;
     initialPomodoroStatus?: PomodoroStatus | null;
     expectedPomodoroActive?: boolean;
+    readOnly?: boolean;
 };
 
 // ─── helpers ───────────────────────────────────────────────────────────────
@@ -117,6 +118,8 @@ const PRIORITY_OPTIONS = [
     { label: 'Medium', value: 6, color: '#eab308' },
     { label: 'High',   value: 9, color: '#ef4444' },
 ];
+
+const TASK_NAME_TRAILING_SPACE = '32px';
 
 function currentPriorityLabel(importance: number): string {
     if (importance > 7) return 'High';
@@ -193,10 +196,12 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     deferPomodoroHydration = false,
     initialPomodoroStatus = null,
     expectedPomodoroActive = false,
+    readOnly = false,
 }: FlatTaskRowProps) {
     const theme = useTheme();
     const accent = theme.palette.primary.light;
     const activeAccent = theme.palette.primary.main;
+    const pomodoroGreen = theme.palette.mode === 'dark' ? '#9BC5A3' : '#7EA88A';
 
     const [pomodoroStatus, setPomodoroStatus] = useState<PomodoroStatus | null>(initialPomodoroStatus);
     const [pomodoroConfig, setPomodoroConfig] = useState<PomodoroConfig>(NORMAL_POMODORO_CONFIG);
@@ -230,6 +235,12 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     useEffect(() => { setLocalName(task.name ?? ''); }, [task.name]);
     const [localDesc, setLocalDesc] = useState(task.description ?? '');
     useEffect(() => { setLocalDesc(task.description ?? ''); }, [task.description]);
+    const [scheduledDraft, setScheduledDraft] = useState<Date | null>(
+        task.scheduledPerformDateTime ? new Date(task.scheduledPerformDateTime) : null,
+    );
+    useEffect(() => {
+        setScheduledDraft(task.scheduledPerformDateTime ? new Date(task.scheduledPerformDateTime) : null);
+    }, [task.scheduledPerformDateTime, task.taskId]);
 
     const [form, setForm] = useState<PomodoroFormValues>(() =>
         createPomodoroFormDefaults(NORMAL_POMODORO_CONFIG)
@@ -364,11 +375,12 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     }, [expectedPomodoroActive, initialPomodoroStatus, onAutoExpand, pomodoroHydrated, task.taskId]);
 
     const togglePanel = useCallback((panel: 'pomodoro' | 'details') => {
+        if (readOnly) return;
         if (panel === 'pomodoro') {
             setPomodoroHydrated(true);
         }
         onTogglePanel(task.taskId, panel);
-    }, [onTogglePanel, task.taskId]);
+    }, [onTogglePanel, readOnly, task.taskId]);
 
     const handleStart = async () => {
         // Starting before the live timer channel is ready is harmless; the next click can try again.
@@ -437,7 +449,8 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         finally { setActionLoading(false); }
     };
 
-    const handleDateChange = (newDate: Date | null) => {
+    const commitDateChange = (newDate: Date | null) => {
+        if (readOnly) return;
         if (!newDate) {
             void onUpdate(task.taskId, { scheduledPerformDateTime: '' });
             return;
@@ -447,13 +460,21 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         void onUpdate(task.taskId, { scheduledPerformDateTime: iso });
     };
 
+    const handleDateChange = (newDate: Date | null) => {
+        if (readOnly) return;
+        setScheduledDraft(newDate);
+        if (!newDate) commitDateChange(null);
+    };
+
     const handleDescBlur = () => {
+        if (readOnly) return;
         if (localDesc !== (task.description ?? '')) {
             onUpdate(task.taskId, { description: localDesc });
         }
     };
 
     const handleNameCommit = () => {
+        if (readOnly) return;
         const trimmed = localName.trim();
         const fallbackName = task.name ?? '';
 
@@ -505,7 +526,6 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         : 0;
 
     const cbColor = checkboxColor(task.importance);
-    const schedDate = task.scheduledPerformDateTime ? new Date(task.scheduledPerformDateTime) : null;
     const scheduledLabel = task.scheduledPerformDateTime ? formatScheduledDate(task.scheduledPerformDateTime) : '';
     const handleRowSelection = (event: React.MouseEvent<HTMLElement>) => {
         onSelectionClick?.(task, event);
@@ -604,43 +624,65 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                 <Checkbox
                     size="small"
                     checked={task.completed}
+                    disabled={readOnly}
                     onChange={event => onToggle(task.taskId, event.currentTarget.parentElement ?? event.currentTarget)}
                     sx={{ color: cbColor, '&.Mui-checked': { color: cbColor }, mr: 0.5 }}
                 />
                 <Box
                     data-task-text-area="true"
-                    sx={{ flex: 1, minWidth: 0, position: 'relative' }}
+                    sx={{
+                        flex: 1,
+                        minWidth: 0,
+                        position: 'relative',
+                        maxHeight: '6.3em',
+                        overflowY: 'auto',
+                        overflowX: 'hidden',
+                        scrollbarGutter: 'stable',
+                        overflowWrap: 'anywhere',
+                        wordBreak: 'break-word',
+                        hyphens: 'auto',
+                        textAlign: 'left',
+                        lineHeight: 1.5,
+                        top: '-1px',
+                    }}
                 >
-                    <Typography
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            handleRowSelection(e);
+                    <Box
+                        component="span"
+                        onClick={event => {
+                            event.stopPropagation();
+                            handleRowSelection(event);
+                            if (readOnly) return;
                             setIsEditingName(true);
                         }}
                         sx={{
+                            display: 'block',
                             width: '100%',
-                            fontSize: '1.05rem',
-                            lineHeight: 1.5,
-                            maxHeight: '6.3em',
-                            overflowY: 'auto',
-                            overflowX: 'hidden',
-                            scrollbarGutter: 'stable',
-                            overflowWrap: 'anywhere',
-                            wordBreak: 'break-word',
-                            hyphens: 'auto',
-                            whiteSpace: 'pre-wrap',
+                            boxSizing: 'border-box',
+                            paddingRight: TASK_NAME_TRAILING_SPACE,
                             textAlign: 'left',
-                            color: task.completed ? 'text.disabled' : 'text.primary',
-                            textDecoration: task.completed ? 'line-through' : 'none',
-                            visibility: isEditingName ? 'hidden' : 'visible',
+                            cursor: readOnly ? 'default' : 'text',
                         }}
                     >
-                        {isEditingName ? localName : task.name}
-                    </Typography>
+                        <Typography
+                            component="span"
+                            display="inline"
+                            sx={{
+                                fontSize: '1.05rem',
+                                lineHeight: 1.5,
+                                whiteSpace: 'pre-wrap',
+                                color: task.completed ? 'text.disabled' : 'text.primary',
+                                textDecoration: task.completed ? 'line-through' : 'none',
+                                visibility: isEditingName ? 'hidden' : 'visible',
+                            }}
+                        >
+                            {isEditingName ? localName : task.name}
+                        </Typography>
+                    </Box>
                     {isEditingName && (
                         <TextField
                             value={localName}
                             inputRef={nameInputRef}
+                            autoComplete="off"
                             onClick={event => event.stopPropagation()}
                             onChange={(e) => setLocalName(e.target.value)}
                             onBlur={handleNameCommit}
@@ -667,8 +709,11 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             }}
                             sx={{
                                 position: 'absolute',
-                                inset: 0,
-                                width: '100%',
+                                top: 0,
+                                right: TASK_NAME_TRAILING_SPACE,
+                                bottom: 0,
+                                left: 0,
+                                width: 'auto',
                                 '& .MuiInputBase-root': {
                                     height: '100%',
                                     padding: 0,
@@ -703,9 +748,9 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                     </Typography>
                 )}
 
-                {(showPomodoroButton || showDetailsButton || onDelete) && (
+                {((showPomodoroButton && !readOnly) || (showDetailsButton && !readOnly) || (onDelete && !readOnly)) && (
                     <Box sx={{ display: 'flex', gap: 0.25, ml: 0.5 }}>
-                        {showPomodoroButton && (
+                        {showPomodoroButton && !readOnly && (
                             <Tooltip title="Pomodoro">
                                 <IconButton
                                     size="small"
@@ -720,7 +765,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                 </IconButton>
                             </Tooltip>
                         )}
-                        {showDetailsButton && (
+                        {showDetailsButton && !readOnly && (
                             <Tooltip title="Details">
                                 <IconButton
                                     size="small"
@@ -735,7 +780,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                 </IconButton>
                             </Tooltip>
                         )}
-                        {onDelete && (
+                        {onDelete && !readOnly && (
                             <Tooltip title="Delete task">
                                 <IconButton
                                     size="small"
@@ -782,6 +827,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                         key={key}
                                         label={label}
                                         type="number"
+                                        autoComplete="off"
                                         size="small"
                                         value={form[key]}
                                         onChange={(e) => setForm(prev => ({ ...prev, [key]: Number(e.target.value) }))}
@@ -811,24 +857,32 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                         </Box>
                     ) : (
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                            <Box sx={{ textAlign: 'left' }}>
+                            <Box sx={{ textAlign: 'left', minHeight: 34, display: 'flex', justifyContent: 'center', flexDirection: 'column' }}>
                                 <Typography
-                                    variant="caption"
+                                    variant={waitingForPhase ? 'h5' : 'caption'}
                                     sx={{
                                         display: 'block',
                                         fontWeight: 600,
                                         textTransform: 'uppercase',
-                                        letterSpacing: 1,
-                                        color: isBreak ? 'success.main' : accent,
+                                        letterSpacing: waitingForPhase ? 1.1 : 1,
+                                        lineHeight: waitingForPhase ? 0.95 : undefined,
+                                        whiteSpace: waitingForPhase ? 'normal' : 'nowrap',
+                                        color: isBreak ? pomodoroGreen : accent,
                                     }}
                                 >
                                     {waitingForPhase
-                                        ? (pomodoroStatus!.phase === 'WAITING_FOR_BREAK' ? 'Break ready' : 'Focus ready')
-                                        : isBreak ? 'Break' : 'Focus'}
+                                        ? (pomodoroStatus!.phase === 'WAITING_FOR_BREAK' ? ['BREAK', 'TIME'] : ['WORK', 'TIME']).map(word => (
+                                            <Box component="span" key={word} sx={{ display: 'block' }}>
+                                                {word}
+                                            </Box>
+                                        ))
+                                        : isBreak ? 'BREAK TIME' : 'WORK TIME'}
                                 </Typography>
-                                <Typography variant="h4" sx={{ fontWeight: 700, lineHeight: 1 }}>
-                                    {waitingForPhase ? 'Ready' : formatSeconds(pomodoroStatus!.secondsUntilNextTransition)}
-                                </Typography>
+                                {!waitingForPhase && (
+                                    <Typography variant="h4" sx={{ fontWeight: 700, lineHeight: 1 }}>
+                                        {formatSeconds(pomodoroStatus!.secondsUntilNextTransition)}
+                                    </Typography>
+                                )}
                             </Box>
 
                             {/* Focus dots — lighter inactive shade */}
@@ -849,7 +903,13 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
 
                             <Box sx={{ display: 'flex', gap: 0.5, ml: 'auto' }}>
                                 {(waitingForPhase || !isBreak) && (
-                                    <IconButton size="small" onClick={handlePlayPause} disabled={actionLoading} color="primary">
+                                    <IconButton
+                                        size="small"
+                                        onClick={handlePlayPause}
+                                        disabled={actionLoading}
+                                        color={pomodoroStatus!.phase === 'WAITING_FOR_BREAK' ? 'inherit' : 'primary'}
+                                        sx={pomodoroStatus!.phase === 'WAITING_FOR_BREAK' ? { color: pomodoroGreen } : undefined}
+                                    >
                                         {!waitingForPhase && pomodoroStatus!.sessionRunning ? <PauseIcon /> : <PlayArrowIcon />}
                                     </IconButton>
                                 )}
@@ -860,7 +920,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                                 size="small"
                                                 onClick={handleFinishBreak}
                                                 disabled={actionLoading}
-                                                color="success"
+                                                color="primary"
                                             >
                                                 <SkipNextIcon />
                                             </IconButton>
@@ -868,7 +928,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                     </Tooltip>
                                 )}
                                 <IconButton size="small" onClick={handleStop} disabled={actionLoading} color="error">
-                                    <StopIcon color="primary" />
+                                    <StopIcon />
                                 </IconButton>
                             </Box>
                         </Box>
@@ -923,11 +983,14 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                     <LocalizationProvider dateAdapter={AdapterDateFns}>
                         <DateTimePicker
                             label="Scheduled"
-                            value={schedDate}
+                            value={scheduledDraft}
                             onChange={handleDateChange}
+                            onAccept={commitDateChange}
+                            closeOnSelect={false}
                             ampm={false}
                             slotProps={{
                                 field: { clearable: true },
+                                actionBar: { actions: ['cancel', 'accept'] },
                                 textField: { size: 'small', fullWidth: true },
                             }}
                         />
@@ -936,6 +999,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                     {/* Description */}
                     <TextField
                         label="Description"
+                        autoComplete="off"
                         value={localDesc}
                         onChange={(e) => setLocalDesc(e.target.value)}
                         onBlur={handleDescBlur}

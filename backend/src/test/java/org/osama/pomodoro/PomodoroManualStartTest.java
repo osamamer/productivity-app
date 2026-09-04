@@ -1,5 +1,6 @@
 package org.osama.pomodoro;
 
+import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -13,6 +14,8 @@ import org.osama.task.TaskService;
 import org.osama.user.User;
 import org.osama.user.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.mock.mockito.SpyBean;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Propagation;
@@ -24,6 +27,10 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.verify;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -43,6 +50,8 @@ class PomodoroManualStartTest {
     private ScheduledJobRepository scheduledJobRepository;
     @Autowired
     private TaskSessionService taskSessionService;
+    @SpyBean
+    private SimpMessagingTemplate messagingTemplate;
 
     @BeforeEach
     void setUp() {
@@ -81,6 +90,30 @@ class PomodoroManualStartTest {
         assertTrue(pomodoro.isSessionActive());
         assertEquals(1, jobs.size());
         assertEquals(JobType.END_SESSION, jobs.get(0).getJobType());
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void manuallyStartedBreakBroadcastsItsRemainingTime() {
+        Task task = createTask();
+        pomodoroService.startPomodoro(task.getTaskId(), 25, 5, 15, 2, 4, false, userId);
+
+        ScheduledJob firstFocusEnd = scheduledJobRepository
+                .findAllByScheduledIsTrueAndAssociatedTaskId(task.getTaskId())
+                .get(0);
+        firstFocusEnd.setScheduled(false);
+        scheduledJobRepository.save(firstFocusEnd);
+        taskSessionService.endSession(task.getTaskId());
+        clearInvocations(messagingTemplate);
+
+        pomodoroService.startNextPhase(task.getTaskId(), userId);
+
+        ArgumentCaptor<Pomodoro> statusCaptor = ArgumentCaptor.forClass(Pomodoro.class);
+        verify(messagingTemplate, atLeastOnce()).convertAndSend(
+                eq("/topic/pomodoro/" + task.getTaskId()), statusCaptor.capture());
+        assertTrue(statusCaptor.getAllValues().stream()
+                .anyMatch(status -> status.getPhase() == PomodoroPhase.BREAK
+                        && status.getSecondsUntilNextTransition() > 0));
     }
 
     @Test

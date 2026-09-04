@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-    Card, CardContent, CardHeader, IconButton,
+    Box, Card, CardContent, CardHeader, IconButton,
     FormControl, InputLabel, MenuItem, Select, Stack,
     ToggleButton, Tooltip,
 } from '@mui/material';
@@ -26,6 +26,38 @@ const CALENDAR_DATE_RANGES = [
     { label: '30d', value: 30 },
 ];
 
+interface StatViewTransitionProps {
+    viewKey: string;
+    children: React.ReactNode;
+}
+
+function StatViewTransition({ viewKey, children }: StatViewTransitionProps) {
+    const previousViewKey = useRef<string | null>(null);
+    const animate = previousViewKey.current !== null && previousViewKey.current !== viewKey;
+
+    useEffect(() => {
+        previousViewKey.current = viewKey;
+    }, [viewKey]);
+
+    return (
+        <Box
+            key={viewKey}
+            sx={animate ? {
+                animation: 'statViewEnter 280ms cubic-bezier(0.22, 1, 0.36, 1)',
+                '@keyframes statViewEnter': {
+                    from: { opacity: 0, transform: 'translateY(8px)' },
+                    to: { opacity: 1, transform: 'translateY(0)' },
+                },
+                '@media (prefers-reduced-motion: reduce)': {
+                    animation: 'none',
+                },
+            } : undefined}
+        >
+            {children}
+        </Box>
+    );
+}
+
 interface Props {
     definition: StatDefinition;
     comparisonDefinitions: StatDefinition[];
@@ -48,6 +80,8 @@ export function StatCard({
     const availableComparisons = comparisonDefinitions.filter(item => item.id !== definition.id);
     const comparisonDefinition = availableComparisons.find(item => item.id === comparisonId);
     const comparisonIds = comparisonDefinitions.map(item => item.id).join(':');
+    const isBooleanCalendar = definition.type === 'BOOLEAN' && !comparisonDefinition;
+    const effectiveDateRange = isBooleanCalendar ? Math.min(dateRange, 30) : dateRange;
 
     useEffect(() => {
         let cancelled = false;
@@ -82,12 +116,12 @@ export function StatCard({
     }, [comparisonDefinitions, comparisonId, definition.id]);
 
     useEffect(() => {
-        if (!comparisonDefinition && definition.type === 'BOOLEAN' && dateRange > 30) {
+        if (isBooleanCalendar && dateRange > 30) {
             setDateRange(30);
         }
-    }, [comparisonDefinition, dateRange, definition.type]);
+    }, [dateRange, isBooleanCalendar]);
 
-    const dateRanges = definition.type === 'BOOLEAN' && !comparisonDefinition
+    const dateRanges = isBooleanCalendar
         ? CALENDAR_DATE_RANGES
         : CHART_DATE_RANGES;
 
@@ -122,7 +156,7 @@ export function StatCard({
                 sx={{ pb: 0, minHeight: 72 }}
             />
             <CardContent>
-                <StatSummaryBar definition={definition} dateRange={dateRange} refreshKey={refreshKey} />
+                <StatSummaryBar definition={definition} dateRange={effectiveDateRange} refreshKey={refreshKey} />
                 <Stack
                     direction={{ xs: 'column', sm: 'row' }}
                     alignItems={{ xs: 'stretch', sm: 'center' }}
@@ -135,7 +169,7 @@ export function StatCard({
                             <ToggleButton
                                 key={r.value}
                                 value={r.value}
-                                selected={dateRange === r.value}
+                                selected={effectiveDateRange === r.value}
                                 onChange={() => setDateRange(r.value)}
                                 size="small"
                                 sx={{ px: 1.5, py: 0.25, fontSize: 12, lineHeight: 1.5 }}
@@ -160,22 +194,26 @@ export function StatCard({
                         </Select>
                     </FormControl>
                 </Stack>
-                {definition.type === 'BOOLEAN' && !comparisonDefinition ? (
-                    <BooleanCalendarView
-                        definition={definition}
-                        dateRange={dateRange}
-                        refreshKey={refreshKey}
-                        onEntryChanged={onEntryChanged}
-                    />
-                ) : (
-                    <StatLineChart
-                        definition={definition}
-                        comparisonDefinition={comparisonDefinition}
-                        dateRange={dateRange}
-                        refreshKey={refreshKey}
-                        onEntryChanged={onEntryChanged}
-                    />
-                )}
+                <StatViewTransition
+                    viewKey={isBooleanCalendar ? 'calendar' : 'chart'}
+                >
+                    {isBooleanCalendar ? (
+                        <BooleanCalendarView
+                            definition={definition}
+                            dateRange={effectiveDateRange}
+                            refreshKey={refreshKey}
+                            onEntryChanged={onEntryChanged}
+                        />
+                    ) : (
+                        <StatLineChart
+                            definition={definition}
+                            comparisonDefinition={comparisonDefinition}
+                            dateRange={effectiveDateRange}
+                            refreshKey={refreshKey}
+                            onEntryChanged={onEntryChanged}
+                        />
+                    )}
+                </StatViewTransition>
             </CardContent>
             <StatInsightsDialog
                 open={insightsOpen}

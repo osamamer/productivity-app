@@ -16,12 +16,11 @@ import {
     TextField,
     Typography,
 } from '@mui/material';
-import { AttentionState, MentalThread, MentalThreadInput } from '../../types/MentalThread.ts';
+import { AttentionState, MentalThreadInput } from '../../types/MentalThread.ts';
 import { attentionStateDetails, attentionStates } from './mentalThreadPresentation.ts';
 
-interface MentalThreadFormDialogProps {
+interface MentalThreadCreateDialogProps {
     open: boolean;
-    thread: MentalThread | null;
     onClose: () => void;
     onSave: (input: MentalThreadInput) => Promise<boolean>;
 }
@@ -38,28 +37,13 @@ const emptyInput: MentalThreadInput = {
     loadReason: null,
 };
 
-function inputFromThread(thread: MentalThread | null): MentalThreadInput {
-    if (!thread) return emptyInput;
-    return {
-        title: thread.title,
-        description: thread.description,
-        attentionState: thread.attentionState,
-        desiredResolution: thread.desiredResolution,
-        targetCloseDate: thread.targetCloseDate,
-        hardDeadlineDate: thread.hardDeadlineDate,
-        nextReviewDate: thread.nextReviewDate,
-        currentMentalLoad: thread.currentMentalLoad,
-        loadReason: null,
-    };
-}
-
-export function MentalThreadFormDialog({ open, thread, onClose, onSave }: MentalThreadFormDialogProps) {
+export function MentalThreadCreateDialog({ open, onClose, onSave }: MentalThreadCreateDialogProps) {
     const [input, setInput] = useState<MentalThreadInput>(emptyInput);
     const [saving, setSaving] = useState(false);
 
     useEffect(() => {
-        if (open) setInput(inputFromThread(thread));
-    }, [open, thread]);
+        if (open) setInput(emptyInput);
+    }, [open]);
 
     const update = <K extends keyof MentalThreadInput>(key: K, value: MentalThreadInput[K]) => {
         setInput(current => ({ ...current, [key]: value }));
@@ -86,11 +70,12 @@ export function MentalThreadFormDialog({ open, thread, onClose, onSave }: Mental
 
     return (
         <Dialog open={open} onClose={saving ? undefined : onClose} fullWidth maxWidth="md">
-            <DialogTitle>{thread ? 'Edit mental thread' : 'Capture a mental thread'}</DialogTitle>
+            <DialogTitle>Capture a mental thread</DialogTitle>
             <DialogContent dividers>
                 <Stack spacing={2.5} sx={{ pt: 0.5 }}>
                     <TextField
                         label="What is occupying your mind?"
+                        autoComplete="off"
                         value={input.title}
                         onChange={event => update('title', event.target.value)}
                         required
@@ -99,6 +84,7 @@ export function MentalThreadFormDialog({ open, thread, onClose, onSave }: Mental
                     />
                     <TextField
                         label="Context"
+                        autoComplete="off"
                         value={input.description ?? ''}
                         onChange={event => update('description', event.target.value || null)}
                         multiline
@@ -108,6 +94,7 @@ export function MentalThreadFormDialog({ open, thread, onClose, onSave }: Mental
                     />
                     <TextField
                         label="What would make this feel complete?"
+                        autoComplete="off"
                         value={input.desiredResolution ?? ''}
                         onChange={event => update('desiredResolution', event.target.value || null)}
                         multiline
@@ -116,9 +103,9 @@ export function MentalThreadFormDialog({ open, thread, onClose, onSave }: Mental
                     />
 
                     <FormControl>
-                        <InputLabel id="attention-state-label">Attention state</InputLabel>
+                        <InputLabel id="new-thread-attention-state-label">Attention state</InputLabel>
                         <Select
-                            labelId="attention-state-label"
+                            labelId="new-thread-attention-state-label"
                             label="Attention state"
                             value={input.attentionState}
                             onChange={event => update('attentionState', event.target.value as AttentionState)}
@@ -149,45 +136,17 @@ export function MentalThreadFormDialog({ open, thread, onClose, onSave }: Mental
                             valueLabelDisplay="auto"
                             aria-label="Mental load"
                         />
-                        <TextField
-                            label={thread && thread.currentMentalLoad !== input.currentMentalLoad
-                                ? 'What changed the load?'
-                                : 'What is contributing to the load?'}
-                            value={input.loadReason ?? ''}
-                            onChange={event => update('loadReason', event.target.value || null)}
-                            fullWidth
-                            size="small"
-                            inputProps={{ maxLength: 500 }}
-                            helperText="Optional — this is saved with the load history."
-                        />
                     </Box>
 
-                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' }, gap: 2 }}>
-                        <TextField
-                            label="Target close"
-                            type="date"
-                            value={input.targetCloseDate ?? ''}
-                            onChange={event => update('targetCloseDate', event.target.value || null)}
-                            InputLabelProps={{ shrink: true }}
-                            helperText="When you hope it is settled"
-                        />
-                        <TextField
-                            label="Hard deadline"
-                            type="date"
-                            value={input.hardDeadlineDate ?? ''}
-                            onChange={event => update('hardDeadlineDate', event.target.value || null)}
-                            InputLabelProps={{ shrink: true }}
-                            helperText="An external consequence"
-                        />
-                        <TextField
-                            label="Review again"
-                            type="date"
-                            value={input.nextReviewDate ?? ''}
-                            onChange={event => update('nextReviewDate', event.target.value || null)}
-                            InputLabelProps={{ shrink: true }}
-                            helperText="Permission to set it down"
-                        />
-                    </Box>
+                    <TextField
+                        label="Target close"
+                        autoComplete="off"
+                        type="date"
+                        value={input.targetCloseDate ?? ''}
+                        onChange={event => update('targetCloseDate', event.target.value || null)}
+                        InputLabelProps={{ shrink: true }}
+                        helperText="When you hope it is settled"
+                    />
                 </Stack>
             </DialogContent>
             <DialogActions sx={{ px: 3, py: 2 }}>
@@ -197,7 +156,7 @@ export function MentalThreadFormDialog({ open, thread, onClose, onSave }: Mental
                     onClick={() => void handleSave()}
                     disabled={saving || !input.title.trim()}
                 >
-                    {saving ? 'Saving…' : thread ? 'Save changes' : 'Create thread'}
+                    {saving ? 'Saving…' : 'Create thread'}
                 </Button>
             </DialogActions>
         </Dialog>

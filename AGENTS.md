@@ -14,7 +14,7 @@ The developer uses Fish (`/usr/bin/fish`) as the interactive shell. Do not tell 
 ```bash
 ./run-app.sh
 ```
-This reuses healthy Docker services (PostgreSQL and Keycloak) and existing healthy app processes, starting only what is missing. It never uses `sudo` or kills arbitrary port owners. Ctrl+C stops only the backend and frontend processes started by that invocation; Docker services remain available for the next run.
+This reuses healthy Docker services (PostgreSQL and Keycloak) and existing healthy app processes, starting only what is missing. It also starts the mobile Metro server when its dependencies are installed and forwards connected Android devices to the local Keycloak, backend, and Metro ports. It never uses `sudo` or kills arbitrary port owners. Ctrl+C stops only the backend, frontend, and mobile Metro processes started by that invocation; Docker services remain available for the next run.
 
 ### Backend
 ```bash
@@ -154,6 +154,10 @@ Docker services are defined in `deployment/docker-compose.yml`. Environment vari
 
 **Tests are documentation.** Test names and structure should teach a reader how the system behaves. A new developer should be able to read the tests and understand the API, edge cases, and invariants. Prioritize clarity over cleverness.
 
+**Rendering and loading behavior.** The user cares very much about how the interface renders and about flashes or visual jumps while content is loading. Whenever implementing a feature, treat state shape, caching, loading transitions, and render behavior as part of the feature: preserve stable UI where possible, avoid unnecessary loading flashes, and prevent avoidable full rerenders. Prefer targeted state updates, memoization or stable references when they materially help, and cache or prefetch data when appropriate so already-visible content does not needlessly disappear and reappear.
+
+**Optimistic interactions and animations.** Direct-manipulation controls such as sliders, toggles, and inline edits must update visible state immediately, remain interactive while persistence is in flight, and avoid a `Saving` indicator for each small auto-save. Guard optimistic mutations against out-of-order responses so an older request cannot overwrite a newer value, and roll back only the latest failed mutation. For FLIP or layout animations, key the animation effect from layout-affecting values such as order, size, status, or displayed labels, not whole response objects or timestamps; backend reconciliation must not replay a completed animation or cause a bounce. Test rapid repeated changes with delayed responses.
+
 **Real tests, minimal mocks.** Test actual behavior through real code paths. Only mock at true system boundaries (external services, network, filesystem). Never mock internal classes just to isolate a unit.
 
 **Always log caught exceptions with the exception object.** Use `logger.error("context: {}", e.getMessage(), e)` (Java) or equivalent so the full stack trace appears in the log. Never swallow exceptions silently or log only a generic message.
@@ -163,6 +167,12 @@ Docker services are defined in `deployment/docker-compose.yml`. Environment vari
 **User-facing errors.** Translate authentication and API failures into concise, user-oriented messages at the UI boundary. Never display provider names (including Keycloak), OAuth/OIDC grant or protocol terminology, endpoint URLs, hostnames, raw exception text, or raw response descriptions to users. Keep implementation details in developer-facing logs and diagnostics only.
 
 **Prefer direct manipulation over obvious instructional UI.** Do not add permanent helper text, drag handles, or mode-launch buttons for interactions users can perform directly on the content. Make the content itself draggable/selectable, provide immediate visual feedback, and reveal contextual actions only after they become relevant. Keep grouped items inline with the list they organize, and let focus modes fully remove distractions until the user explicitly reveals them.
+
+**Modal and popup preference.** The user does not like large modals that blur the whole app. Prefer inline editing and small anchored popups for confirmations or contextual actions.
+
+**Mobile keyboard visibility.** Every new mobile screen, form, sheet, or popup that accepts text must use the shared keyboard-aware surfaces (`Screen`, `ModalSheet`, `KeyboardAwareScrollView`, or `KeyboardAwareView`) so the focused field remains visible above the opened keyboard. Do not add a standalone scroll view around inputs without keyboard avoidance and focused-input reveal behavior.
+
+**Mobile date input preference.** When a mobile scheduling control offers a date choice, use a `Custom` action that opens a themed date/time popup. Do not leave a `Someday` action that silently means “no date.”
 
 **Don't add what wasn't asked for.** If the task is "write tests", don't modify production code without asking. Don't add features, abstractions, or considerations that weren't requested. When in doubt, ask first.
 

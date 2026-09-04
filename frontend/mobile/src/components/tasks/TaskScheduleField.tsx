@@ -1,16 +1,17 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { formatShortDate, formatTime, localDateTime } from '@/lib/date';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { AppButton } from '../ui/AppButton';
 import { AppPopup } from '../ui/AppPopup';
 import { AppText } from '../ui/AppText';
+import { SilentPressable } from '../ui/SilentPressable';
 
 const pad = (value: number) => String(value).padStart(2, '0');
 
-function dateFromValue(value: string | null | undefined): Date {
+export function dateFromScheduleValue(value: string | null | undefined): Date {
   if (value) {
     const parsed = new Date(value);
     if (!Number.isNaN(parsed.getTime())) return parsed;
@@ -50,21 +51,21 @@ function CalendarPicker({ value, onChange }: { value: Date; onChange: (value: Da
   return (
     <View style={styles.calendar}>
       <View style={styles.calendarHeader}>
-        <Pressable
+        <SilentPressable
           accessibilityRole="button"
           accessibilityLabel="Previous month"
           hitSlop={8}
           onPress={() => setMonth(current => new Date(current.getFullYear(), current.getMonth() - 1, 1))}>
           <Ionicons name="chevron-back" size={20} color={colors.textMuted} />
-        </Pressable>
+        </SilentPressable>
         <AppText variant="label">{monthLabel}</AppText>
-        <Pressable
+        <SilentPressable
           accessibilityRole="button"
           accessibilityLabel="Next month"
           hitSlop={8}
           onPress={() => setMonth(current => new Date(current.getFullYear(), current.getMonth() + 1, 1))}>
           <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-        </Pressable>
+        </SilentPressable>
       </View>
       <View style={styles.weekdays}>
         {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => (
@@ -75,7 +76,7 @@ function CalendarPicker({ value, onChange }: { value: Date; onChange: (value: Da
       </View>
       <View style={styles.calendarGrid}>
         {days.map((day, index) => day ? (
-          <Pressable
+          <SilentPressable
             key={day.toISOString()}
             accessibilityRole="button"
             accessibilityLabel={day.toLocaleDateString()}
@@ -86,7 +87,7 @@ function CalendarPicker({ value, onChange }: { value: Date; onChange: (value: Da
                 {day.getDate()}
               </AppText>
             </View>
-          </Pressable>
+          </SilentPressable>
         ) : <View key={`empty-${index}`} style={styles.day} />)}
       </View>
     </View>
@@ -107,7 +108,7 @@ function TimeColumn({ label, values, selected, onSelect }: {
         {values.map(value => {
           const selectedValue = value === selected;
           return (
-            <Pressable
+            <SilentPressable
               key={value}
               accessibilityRole="button"
               accessibilityState={{ selected: selectedValue }}
@@ -119,7 +120,7 @@ function TimeColumn({ label, values, selected, onSelect }: {
               <AppText variant="label" style={{ color: selectedValue ? colors.onAccent : colors.text }}>
                 {pad(value)}
               </AppText>
-            </Pressable>
+            </SilentPressable>
           );
         })}
       </ScrollView>
@@ -155,20 +156,33 @@ function TimePicker({ value, onChange }: { value: Date; onChange: (value: Date) 
   );
 }
 
+export function TaskDateTimePicker({ value, onChange }: { value: Date; onChange: (value: Date) => void }) {
+  const { colors } = useAppTheme();
+
+  return (
+    <>
+      <CalendarPicker value={value} onChange={onChange} />
+      <View style={[styles.divider, { backgroundColor: colors.border }]} />
+      <AppText variant="label">Time</AppText>
+      <TimePicker value={value} onChange={onChange} />
+    </>
+  );
+}
+
 export function TaskScheduleField({ value, onChange }: {
   value: string | null | undefined;
   onChange: (value: string) => void;
 }) {
   const { colors } = useAppTheme();
   const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState(() => dateFromValue(value));
+  const [draft, setDraft] = useState(() => dateFromScheduleValue(value));
   const hasSchedule = Boolean(value && !Number.isNaN(new Date(value).getTime()));
   const displayedValue = hasSchedule
     ? `${formatShortDate(value)} · ${formatTime(value)}`
     : 'Not scheduled';
 
   function openPicker() {
-    setDraft(dateFromValue(value));
+    setDraft(dateFromScheduleValue(value));
     setOpen(true);
   }
 
@@ -187,7 +201,7 @@ export function TaskScheduleField({ value, onChange }: {
       <View style={styles.heading}>
         <AppText variant="label">Scheduled</AppText>
         {hasSchedule && (
-          <Pressable
+          <SilentPressable
             accessibilityRole="button"
             accessibilityLabel="Clear scheduled date and time"
             hitSlop={8}
@@ -195,10 +209,10 @@ export function TaskScheduleField({ value, onChange }: {
             style={({ pressed }) => [styles.clearButton, pressed && styles.pressed]}>
             <Ionicons name="close-circle-outline" size={17} color={colors.textMuted} />
             <AppText variant="caption" color="muted">Clear</AppText>
-          </Pressable>
+          </SilentPressable>
         )}
       </View>
-      <Pressable
+      <SilentPressable
         accessibilityRole="button"
         accessibilityLabel={`Scheduled: ${displayedValue}`}
         onPress={openPicker}
@@ -208,7 +222,7 @@ export function TaskScheduleField({ value, onChange }: {
           {displayedValue}
         </AppText>
         <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-      </Pressable>
+      </SilentPressable>
       <AppPopup
         visible={open}
         title="Scheduled"
@@ -221,10 +235,7 @@ export function TaskScheduleField({ value, onChange }: {
             <AppButton style={styles.popupAction} label="Done" onPress={save} />
           </View>
         )}>
-        <CalendarPicker key={`${open}-${value ?? ''}`} value={draft} onChange={setDraft} />
-        <View style={[styles.divider, { backgroundColor: colors.border }]} />
-        <AppText variant="label">Time</AppText>
-        <TimePicker value={draft} onChange={setDraft} />
+        <TaskDateTimePicker key={`${open}-${value ?? ''}`} value={draft} onChange={setDraft} />
       </AppPopup>
     </View>
   );

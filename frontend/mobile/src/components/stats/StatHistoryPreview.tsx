@@ -1,4 +1,3 @@
-import { Ionicons } from '@expo/vector-icons';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
@@ -10,9 +9,27 @@ import { AppText } from '../ui/AppText';
 
 const RECENT_DAYS = 5;
 const PLOT_HEIGHT = 108;
+const PLOT_VERTICAL_INSET = 12;
+const WEEKDAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
 type NumericDomain = [number, number];
 interface ChartPoint { x: number; y: number; value: number; }
+
+function calendarWeeks(dates: string[]): (string | null)[][] {
+  if (dates.length === 0) return [];
+  const firstDay = new Date(`${dates[0]}T12:00:00`);
+  const leadingEmptyDays = (firstDay.getDay() + 6) % 7;
+  const calendarDays: (string | null)[] = [
+    ...Array<string | null>(leadingEmptyDays).fill(null),
+    ...dates,
+  ];
+  while (calendarDays.length % 7 !== 0) calendarDays.push(null);
+  const weeks: (string | null)[][] = [];
+  for (let index = 0; index < calendarDays.length; index += 7) {
+    weeks.push(calendarDays.slice(index, index + 7));
+  }
+  return weeks;
+}
 
 function datesForLastDays(days: number): string[] {
   return Array.from({ length: days }, (_, index) => {
@@ -188,14 +205,15 @@ function curvedSegments(points: ChartPoint[]): ChartSegment[] {
     const start = points[index];
     const previous = points[index - 1] ?? start;
     const next = points[index + 2] ?? end;
+    const clampY = (value: number) => Math.max(PLOT_VERTICAL_INSET, Math.min(PLOT_HEIGHT - PLOT_VERTICAL_INSET, value));
     const controlOne = {
       x: start.x + (end.x - previous.x) / 6,
-      y: start.y + (end.y - previous.y) / 6,
+      y: clampY(start.y + (end.y - previous.y) / 6),
       value: start.value,
     };
     const controlTwo = {
       x: end.x - (next.x - start.x) / 6,
-      y: end.y - (next.y - start.y) / 6,
+      y: clampY(end.y - (next.y - start.y) / 6),
       value: end.value,
     };
 
@@ -272,13 +290,76 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, refreshK
         const ratio = Math.max(0, Math.min(1, (value - domain[0]) / span));
         return {
           x: buckets.length === 1 ? 0 : (index / (buckets.length - 1)) * plotWidth,
-          y: 6 + (1 - ratio) * (PLOT_HEIGHT - 12),
+          y: PLOT_VERTICAL_INSET + (1 - ratio) * (PLOT_HEIGHT - PLOT_VERTICAL_INSET * 2),
           value,
         };
       })
       .filter((point): point is ChartPoint => point !== undefined);
   }, [buckets, definition.type, domain, entriesByDate, hasHistory, plotWidth]);
   const chartSegments = useMemo(() => curvedSegments(chartPoints), [chartPoints]);
+  const calendar = useMemo(() => calendarWeeks(dates), [dates]);
+
+  if (definition.type === 'BOOLEAN') {
+    const yesColor = getCircleColor(definition, 1, colors, dark);
+    const noColor = getCircleColor(definition, 0, colors, dark);
+    const cellHeight = dateRange <= 30 ? 27 : dateRange <= 90 ? 16 : 9;
+
+    return (
+      <View style={styles.history}>
+        <View style={styles.compactHeader}>
+          {header && <View style={styles.headerSlot}>{header}</View>}
+          {loading && <ActivityIndicator size="small" color={colors.accent} />}
+        </View>
+        <View style={styles.booleanCalendar} accessibilityLabel={`${definition.name} calendar`}>
+          <View style={styles.calendarWeek}>
+            {WEEKDAY_LABELS.map((label, index) => (
+              <AppText key={`${label}-${index}`} variant="caption" color="muted" style={styles.calendarWeekday}>
+                {label}
+              </AppText>
+            ))}
+          </View>
+          <View style={styles.calendarGrid}>
+            {calendar.map((week, weekIndex) => (
+              <View key={`week-${weekIndex}`} style={styles.calendarWeek}>
+                {week.map((date, dayIndex) => {
+                  const value = date ? entriesByDate.get(date) : undefined;
+                  return (
+                    <View
+                      key={date ?? `empty-${weekIndex}-${dayIndex}`}
+                      accessible={Boolean(date)}
+                      accessibilityLabel={date ? `${date}: ${value === undefined ? 'Not recorded' : value === 1 ? 'Yes' : 'No'}` : undefined}
+                      style={[
+                        styles.calendarCell,
+                        { height: cellHeight },
+                        date && value === undefined && { backgroundColor: `${colors.border}35` },
+                        date && value === 1 && { backgroundColor: yesColor },
+                        date && value === 0 && { backgroundColor: noColor },
+                      ]}
+                    />
+                  );
+                })}
+              </View>
+            ))}
+          </View>
+        </View>
+        <View style={styles.calendarFooter}>
+          <View style={styles.calendarLegend}>
+            <View style={[styles.legendSwatch, { backgroundColor: yesColor }]} />
+            <AppText variant="caption" color="muted">Yes</AppText>
+            <View style={[styles.legendSwatch, { backgroundColor: noColor }]} />
+            <AppText variant="caption" color="muted">No</AppText>
+          </View>
+          {error ? (
+            <AppText variant="caption" color="danger">History unavailable</AppText>
+          ) : (
+            <AppText variant="caption" color="muted">
+              {formatShortDate(dates[0])} – {formatShortDate(dates[dates.length - 1])}
+            </AppText>
+          )}
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.history}>
@@ -288,9 +369,6 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, refreshK
           {recentDates.map(date => {
             const value = entriesByDate.get(date);
             const isUnboundedNumber = definition.type === 'NUMBER';
-            const icon = definition.type === 'BOOLEAN' && value !== undefined
-              ? <Ionicons name={value === 1 ? 'checkmark' : 'close'} size={16} color="#FFFFFF" />
-              : null;
             return (
               <View
                 key={date}
@@ -300,9 +378,8 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, refreshK
                   styles.dot,
                   { backgroundColor: getCircleColor(definition, value, colors, dark) },
                   isUnboundedNumber && value === undefined && { borderColor: colors.border, borderStyle: 'dashed', borderWidth: 1 },
-                ]}>
-                {icon}
-                {isUnboundedNumber && value !== undefined && !icon && (
+              ]}>
+                {isUnboundedNumber && value !== undefined && (
                   <AppText variant="caption" style={styles.dotValue}>{formatCircleValue(value)}</AppText>
                 )}
               </View>
@@ -363,9 +440,17 @@ const styles = StyleSheet.create({
   recentDots: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   dot: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   dotValue: { fontSize: 9, lineHeight: 10, fontWeight: '700' },
+  booleanCalendar: { gap: 4 },
+  calendarGrid: { gap: 4 },
+  calendarWeek: { flexDirection: 'row', gap: 4 },
+  calendarWeekday: { flex: 1, textAlign: 'center', fontSize: 10, lineHeight: 13 },
+  calendarCell: { flex: 1, borderRadius: 5 },
+  calendarFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  calendarLegend: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  legendSwatch: { width: 8, height: 8, borderRadius: 3, marginLeft: 4 },
   chart: { flexDirection: 'row', height: PLOT_HEIGHT, gap: 8 },
   chartEmpty: { opacity: 0.55 },
-  chartAxis: { width: 34, justifyContent: 'space-between', alignItems: 'flex-end', paddingVertical: 1 },
+  chartAxis: { width: 34, justifyContent: 'space-between', alignItems: 'flex-end', paddingVertical: 3 },
   plot: { flex: 1, height: PLOT_HEIGHT, overflow: 'hidden', position: 'relative', borderRadius: 8 },
   gridLine: { position: 'absolute', left: 0, right: 0, height: 1 },
   segment: { height: 2, position: 'absolute', borderRadius: 1 },

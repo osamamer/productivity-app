@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { ScrollView, StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 
 import { MeditationStats } from '@/components/meditation/MeditationStats';
 import { AppButton } from '@/components/ui/AppButton';
@@ -10,6 +10,7 @@ import { AppText } from '@/components/ui/AppText';
 import { Card } from '@/components/ui/Card';
 import { ModalSheet } from '@/components/ui/ModalSheet';
 import { Screen } from '@/components/ui/Screen';
+import { SilentPressable } from '@/components/ui/SilentPressable';
 import { ErrorView, LoadingView } from '@/components/ui/StateView';
 import { useAsyncData } from '@/hooks/useAsyncData';
 import { useMeditationAudio } from '@/hooks/useMeditationAudio';
@@ -104,7 +105,7 @@ function DurationPicker({ value, onChange }: { value: number; onChange: (value: 
         {DURATION_VALUES.map(minutes => {
           const selected = minutes === value;
           return (
-            <Pressable
+            <SilentPressable
               key={minutes}
               accessibilityRole="button"
               accessibilityLabel={`${minutes} minutes`}
@@ -120,7 +121,7 @@ function DurationPicker({ value, onChange }: { value: number; onChange: (value: 
                 {minutes}
               </AppText>
               {selected && <AppText variant="caption" color="accent">min</AppText>}
-            </Pressable>
+            </SilentPressable>
           );
         })}
       </ScrollView>
@@ -139,7 +140,7 @@ function SoundChoices({ selected, onChange, compact = false }: {
       {MEDITATION_SOUND_OPTIONS.map(option => {
         const active = selected === option.id;
         return (
-          <Pressable
+          <SilentPressable
             key={option.id}
             accessibilityRole="button"
             accessibilityState={{ selected: active }}
@@ -158,7 +159,7 @@ function SoundChoices({ selected, onChange, compact = false }: {
               {!compact && <AppText variant="caption" color="muted" numberOfLines={1}>{option.description}</AppText>}
             </View>
             {active && <Ionicons name="checkmark-circle" size={18} color={colors.accent} />}
-          </Pressable>
+          </SilentPressable>
         );
       })}
     </View>
@@ -342,9 +343,9 @@ export default function MeditationScreen() {
                 <AppText variant="label" color="success">Meditation saved</AppText>
                 <AppText variant="caption" color="muted">You spent {clock(durationInSeconds(completedSession.totalSessionTime))} in stillness.</AppText>
               </View>
-              <Pressable accessibilityRole="button" accessibilityLabel="Dismiss saved meditation" onPress={() => setCompletedSession(null)} hitSlop={10}>
+              <SilentPressable accessibilityRole="button" accessibilityLabel="Dismiss saved meditation" onPress={() => setCompletedSession(null)} hitSlop={10}>
                 <Ionicons name="close" size={19} color={colors.textMuted} />
-              </Pressable>
+              </SilentPressable>
             </View>
           )}
           <View style={[styles.leaf, { backgroundColor: colors.accentSoft }]}><Ionicons name="leaf" size={34} color={colors.accent} /></View>

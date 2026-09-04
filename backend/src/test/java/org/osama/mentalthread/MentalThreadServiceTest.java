@@ -224,6 +224,24 @@ class MentalThreadServiceTest {
         Task task = taskService.createTask(request, USER_ID);
 
         assertEquals(thread.id(), task.getMentalThreadId());
+        assertNull(task.getScheduledPerformDateTime());
+    }
+
+    @Test
+    void closingAThreadDoesNotRequireAResolutionSummary() {
+        MentalThreadResponse thread = mentalThreadService.createThread(
+                createRequest("Close without a note", AttentionState.PENDING, 4),
+                USER_ID
+        );
+
+        MentalThreadResponse closed = mentalThreadService.closeThread(
+                thread.id(),
+                new CloseMentalThreadRequest(ClosureType.RELEASED, null),
+                USER_ID
+        );
+
+        assertEquals(MentalThreadStatus.CLOSED, closed.status());
+        assertNull(closed.resolutionSummary());
     }
 
     @Test
@@ -246,6 +264,13 @@ class MentalThreadServiceTest {
         assertEquals(1, groups.size());
         assertEquals(thread.title(), groups.getFirst().name());
         assertEquals(List.of(firstTask.getTaskId(), secondTask.getTaskId()), groups.getFirst().taskIds());
+        assertEquals(
+                List.of(firstTask.getTaskId(), secondTask.getTaskId()),
+                taskService.getAllMainTasks(USER_ID).stream()
+                        .filter(task -> thread.id().equals(task.getMentalThreadId()))
+                        .map(Task::getTaskId)
+                        .toList()
+        );
     }
 
     @Test

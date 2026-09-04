@@ -6,6 +6,8 @@ public record SystemStatDefinition(
         String description,
         StatType type,
         Double minValue,
-        Double maxValue
+        Double maxValue,
+        StatMorality morality,
+        Double goodThreshold
 ) {
 }

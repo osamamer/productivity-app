@@ -637,6 +637,7 @@ export function StatLineChart({
                     )}
                     <TextField
                         size="small"
+                        autoComplete="off"
                         type="number"
                         value={editValue}
                         onChange={event => {

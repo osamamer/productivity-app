@@ -77,6 +77,7 @@ export function NoteEditor({
     const [draftTitle, setDraftTitle] = useState(note.title);
     const [draftContent, setDraftContent] = useState(note.content);
     const [wordCount, setWordCount] = useState(() => countWords(note.content));
+    const quillRef = useRef<ReactQuill | null>(null);
     const pendingDraftRef = useRef<NoteDraftPatch>({});
     const commitTimerRef = useRef<number | null>(null);
     const onCommitDraftRef = useRef(onCommitDraft);
@@ -179,6 +180,12 @@ export function NoteEditor({
                             setDraftTitle(title);
                             queueDraftUpdate({ title });
                         }}
+                        onKeyDown={event => {
+                            if (event.key === 'Tab' && !event.shiftKey) {
+                                event.preventDefault();
+                                quillRef.current?.focus();
+                            }
+                        }}
                         placeholder="Untitled"
                         aria-label="Note title"
                         sx={{
@@ -216,6 +223,7 @@ export function NoteEditor({
                     >
                         <ReactQuill
                             key={note.id}
+                            ref={quillRef}
                             theme="snow"
                             value={draftContent}
                             onChange={(content, _delta, source) => {

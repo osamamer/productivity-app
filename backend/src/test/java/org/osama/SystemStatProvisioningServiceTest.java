@@ -7,6 +7,7 @@ import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.osama.stat.StatDefinition;
 import org.osama.stat.StatDefinitionRepository;
 import org.osama.stat.StatService;
+import org.osama.stat.StatMorality;
 import org.osama.stat.StatType;
 import org.osama.stat.SystemStatCatalog;
 import org.osama.stat.SystemStatProvisioningService;
@@ -79,10 +80,12 @@ class SystemStatProvisioningServiceTest {
                 .findByUserIdAndSystemKey(TEST_USER_ID, SystemStatCatalog.MEDITATION_MINUTES_SYSTEM_KEY)
                 .orElseThrow()
                 .getType());
-        assertEquals(StatType.NUMBER, definitionRepository
+        StatDefinition sleep = definitionRepository
                 .findByUserIdAndSystemKey(TEST_USER_ID, SystemStatCatalog.SLEEP_HOURS_SYSTEM_KEY)
-                .orElseThrow()
-                .getType());
+                .orElseThrow();
+        assertEquals(StatType.NUMBER, sleep.getType());
+        assertEquals(StatMorality.GOOD, sleep.getMorality());
+        assertEquals(7.0, sleep.getGoodThreshold());
     }
 
     @Test
@@ -96,6 +99,8 @@ class SystemStatProvisioningServiceTest {
         assertEquals(SystemStatCatalog.SLEEP_HOURS_SYSTEM_KEY, adopted.getSystemKey());
         assertEquals("Sleep", adopted.getName());
         assertEquals(StatType.NUMBER, adopted.getType());
+        assertEquals(StatMorality.GOOD, adopted.getMorality());
+        assertEquals(7.0, adopted.getGoodThreshold());
         assertEquals(SystemStatCatalog.SYSTEM_STATS.size(),
                 definitionRepository.findAllByUserId(TEST_USER_ID).size());
     }

@@ -5,8 +5,14 @@ import './index.css'
 import { AppThemeProvider } from "./contexts/ThemeContext";
 import keycloak from './services/keycloak';
 import { AppErrorBoundary, AppErrorPage } from './components/AppErrorBoundary';
+import { warmAppData } from './services/bootstrap/appBootstrap';
+import { prepareAudioFeedback } from './services/audioFeedback';
 
 const REDIRECT_KEY = 'post_auth_redirect';
+
+// Unlock Web Audio during a user gesture so a later API response can play its cue.
+window.addEventListener('pointerdown', prepareAudioFeedback, { capture: true });
+window.addEventListener('keydown', prepareAudioFeedback, { capture: true });
 
 // Before Keycloak potentially redirects the browser away to the login page,
 // save where the user was so we can restore it after they come back.
@@ -32,6 +38,9 @@ keycloak.init({
     setInterval(() => {
         keycloak.updateToken(60).catch(() => keycloak.logout({ redirectUri: window.location.origin + '/' }));
     }, 60_000);
+
+    // Start warming the shared Stats cache while the initial route renders.
+    void warmAppData();
 
     ReactDOM.createRoot(document.getElementById('root')!).render(
         <React.StrictMode>

@@ -24,5 +24,5 @@
     "noFallthroughCasesInSwitch": true,
     "allowSyntheticDefaultImports": true
   },
-  "include": ["src", "interfaces"]
+  "include": ["src", "interfaces", "../shared"]
 }
