@@ -6,6 +6,9 @@ COPY frontend/react/package*.json ./
 RUN npm ci
 
 COPY frontend/react/ ./
+# The React app imports the browser/native-shared audio implementation from
+# ../../../shared, which resolves to /shared after the app is copied to /app.
+COPY frontend/shared/ /shared/
 
 ARG VITE_API_URL
 ARG VITE_WS_URL
