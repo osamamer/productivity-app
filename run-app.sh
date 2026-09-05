@@ -9,6 +9,12 @@ compose_file="$script_dir/deployment/docker-compose.yml"
 backend_pid=""
 frontend_pid=""
 mobile_pid=""
+mobile_android_pid=""
+android_emulator_pid=""
+mobile_android_started=0
+adb_bin=""
+android_device_serials=""
+android_connected_serials=""
 
 if [[ ! -e "$env_file" ]]; then
   env_example="$script_dir/deployment/.env.example"
@@ -72,11 +78,12 @@ process_belongs_to_app() {
   local pid=$1
   local cwd
   local command
+  local mobile_dir="$script_dir/frontend/mobile"
 
   cwd=$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)
   command=$(ps -p "$pid" -o args= 2>/dev/null || true)
 
-  if [[ "$command" == *"$script_dir/backend"* || "$command" == *"$script_dir/frontend/react"* ]]; then
+  if [[ "$command" == *"$script_dir/backend"* || "$command" == *"$script_dir/frontend/react"* || "$command" == *"$mobile_dir"* ]]; then
     return 0
   fi
 
@@ -84,7 +91,8 @@ process_belongs_to_app() {
     return 0
   fi
 
-  [[ "$cwd" == "$script_dir/frontend/react" && ( "$command" == *npm* || "$command" == *vite* ) ]]
+  [[ "$cwd" == "$script_dir/frontend/react" && ( "$command" == *npm* || "$command" == *vite* ) ]] \
+    || [[ "$cwd" == "$mobile_dir" && ( "$command" == *npm* || "$command" == *expo* ) ]]
 }
 
 terminate_process() {
@@ -279,6 +287,62 @@ start_frontend() {
   fi
 }
 
+find_adb() {
+  local android_sdk_dir
+
+  if command -v adb >/dev/null 2>&1; then
+    command -v adb
+    return 0
+  fi
+
+  for android_sdk_dir in "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}" "${HOME:-}/Android/Sdk"; do
+    if [[ -n "$android_sdk_dir" && -x "$android_sdk_dir/platform-tools/adb" ]]; then
+      echo "$android_sdk_dir/platform-tools/adb"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+find_android_emulator() {
+  local android_sdk_dir
+  local adb_dir
+
+  if command -v emulator >/dev/null 2>&1; then
+    command -v emulator
+    return 0
+  fi
+
+  if [[ -n "$adb_bin" ]]; then
+    adb_dir=$(dirname "$adb_bin")
+    if [[ -x "$adb_dir/../emulator/emulator" ]]; then
+      echo "$(cd "$adb_dir/../emulator" && pwd)/emulator"
+      return 0
+    fi
+  fi
+
+  for android_sdk_dir in "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}" "${HOME:-}/Android/Sdk"; do
+    if [[ -n "$android_sdk_dir" && -x "$android_sdk_dir/emulator/emulator" ]]; then
+      echo "$android_sdk_dir/emulator/emulator"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+refresh_android_devices() {
+  local adb_devices_output
+
+  if ! adb_devices_output=$("$adb_bin" devices 2>/dev/null); then
+    return 1
+  fi
+
+  android_connected_serials=$(printf '%s\n' "$adb_devices_output" | awk 'NR > 1 && $1 != "" && $2 != "" { print $1 }')
+  android_device_serials=$(printf '%s\n' "$adb_devices_output" | awk 'NR > 1 && $2 == "device" { print $1 }')
+}
+
 start_mobile_metro() {
   local mobile_dir="$script_dir/frontend/mobile"
 
@@ -305,7 +369,11 @@ start_mobile_metro() {
   echo "📱 Starting mobile Metro..."
   (
     cd "$mobile_dir"
-    exec setsid npm run start -- --dev-client --lan
+    # React Native 0.86's standalone DevTools downloads an Electron shell that
+    # requires a setuid sandbox on Linux. Metro is all the app needs here.
+    export EXPO_UNSTABLE_HEADLESS=1
+    export REACT_NATIVE_PACKAGER_HOSTNAME=127.0.0.1
+    exec setsid npm run start -- --dev-client --localhost
   ) &
   mobile_pid=$!
 
@@ -317,27 +385,21 @@ start_mobile_metro() {
 }
 
 setup_android_dev_bridge() {
-  local adb_bin
-  local android_sdk_dir
-  local android_device_serials
+  local forwarded_device_serials=""
   local serial
 
-  adb_bin=$(command -v adb || true)
-  if [[ -z "$adb_bin" ]]; then
-    for android_sdk_dir in "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}"; do
-      if [[ -n "$android_sdk_dir" && -x "$android_sdk_dir/platform-tools/adb" ]]; then
-        adb_bin="$android_sdk_dir/platform-tools/adb"
-        break
-      fi
-    done
-  fi
+  adb_bin=$(find_adb || true)
 
   if [[ -z "$adb_bin" ]]; then
-    echo "⚠️  adb was not found; Android Studio will need manual local port forwarding."
+    echo "⚠️  adb was not found; local port forwarding and native Android launch are unavailable."
     return 0
   fi
 
-  android_device_serials=$("$adb_bin" devices 2>/dev/null | awk 'NR > 1 && $2 == "device" { print $1 }' || true)
+  if ! refresh_android_devices; then
+    echo "⚠️  adb could not enumerate Android devices; skipping native mobile start."
+    return 0
+  fi
+
   if [[ -z "$android_device_serials" ]]; then
     echo "⚠️  No Android device is connected; adb forwarding will be skipped."
     echo "   Start the emulator, then run: adb reverse tcp:7070 tcp:7070"
@@ -351,11 +413,266 @@ setup_android_dev_bridge() {
     if ! "$adb_bin" -s "$serial" reverse tcp:7070 tcp:7070 >/dev/null \
       || ! "$adb_bin" -s "$serial" reverse tcp:8080 tcp:8080 >/dev/null \
       || ! "$adb_bin" -s "$serial" reverse tcp:8081 tcp:8081 >/dev/null; then
-      echo "⚠️  Could not configure adb forwarding for Android device $serial." >&2
+      echo "⚠️  Could not configure all required adb forwards for Android device $serial; it will not be launched." >&2
       continue
     fi
+    forwarded_device_serials+="$serial"$'\n'
     echo "🔌 Android device $serial is forwarded to Keycloak, backend, and Metro."
   done <<< "$android_device_serials"
+
+  android_device_serials="$forwarded_device_serials"
+  if [[ -z "$android_device_serials" ]]; then
+    echo "⚠️  No Android device has all required adb forwards; skipping native mobile start." >&2
+  fi
+}
+
+start_android_emulator_if_needed() {
+  local mobile_dir="$script_dir/frontend/mobile"
+  local emulator_bin
+  local avd_list
+  local avd_name
+  local avd_count
+  local emulator_cores
+  local emulator_memory
+  local emulator_nice
+  local device_serial
+  local boot_completed
+  local existing_emulator_serial
+  local attempt
+  local boot_attempt
+
+  if [[ "${CLARITARD_MOBILE_ANDROID:-1}" == "0" || "${CLARITARD_ANDROID_EMULATOR:-auto}" == "0" || ! -x "$mobile_dir/node_modules/.bin/expo" ]]; then
+    return 0
+  fi
+
+  adb_bin=$(find_adb || true)
+  if [[ -z "$adb_bin" || -n "$android_device_serials" ]]; then
+    return 0
+  fi
+
+  if ! refresh_android_devices; then
+    echo "⚠️  adb could not enumerate Android devices; skipping emulator start."
+    return 0
+  fi
+  if [[ -n "$android_device_serials" ]]; then
+    return 0
+  fi
+
+  existing_emulator_serial=$(printf '%s\n' "$android_connected_serials" | awk '/^emulator-[0-9]+$/ { print; exit }')
+  if [[ -n "$existing_emulator_serial" ]]; then
+    echo "⏳ Android emulator $existing_emulator_serial is already connecting; waiting for it instead of starting another emulator..."
+    for ((attempt = 1; attempt <= 90; attempt++)); do
+      refresh_android_devices || true
+      if printf '%s\n' "$android_device_serials" | awk -v wanted="$existing_emulator_serial" '$0 == wanted { found = 1 } END { exit !found }'; then
+        device_serial="$existing_emulator_serial"
+        echo "⏳ Waiting for Android emulator $device_serial to finish booting..."
+        for ((boot_attempt = 1; boot_attempt <= 90; boot_attempt++)); do
+          boot_completed=$("$adb_bin" -s "$device_serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)
+          if [[ "$boot_completed" == "1" ]]; then
+            echo "✅ Android emulator $device_serial is ready."
+            return 0
+          fi
+          sleep 2
+        done
+        echo "⚠️  Android emulator $device_serial did not finish booting in time; native mobile start is skipped." >&2
+        return 0
+      fi
+      sleep 2
+    done
+    echo "⚠️  Android emulator $existing_emulator_serial did not become available to adb; native mobile start is skipped." >&2
+    return 0
+  fi
+
+  emulator_bin=$(find_android_emulator || true)
+  if [[ -z "$emulator_bin" ]]; then
+    echo "⏭️  No Android device or emulator executable was found; native mobile start is skipped."
+    return 0
+  fi
+
+  avd_list=$("$emulator_bin" -list-avds 2>/dev/null || true)
+  avd_name=${CLARITARD_ANDROID_AVD:-}
+  if [[ -n "$avd_name" ]]; then
+    if ! printf '%s\n' "$avd_list" | awk -v wanted="$avd_name" '$0 == wanted { found = 1 } END { exit !found }'; then
+      echo "⚠️  CLARITARD_ANDROID_AVD=$avd_name was not found; native mobile start is skipped."
+      return 0
+    fi
+  else
+    avd_count=$(printf '%s\n' "$avd_list" | awk 'NF { count++ } END { print count + 0 }')
+    if (( avd_count == 0 )); then
+      echo "⏭️  No Android AVD is configured; native mobile start is skipped."
+      return 0
+    elif (( avd_count > 1 )); then
+      echo "⚠️  Multiple Android AVDs are available; set CLARITARD_ANDROID_AVD to choose one."
+      return 0
+    fi
+    avd_name=$(printf '%s\n' "$avd_list" | awk 'NF { print; exit }')
+  fi
+
+  emulator_cores=${CLARITARD_ANDROID_EMULATOR_CORES:-2}
+  emulator_memory=${CLARITARD_ANDROID_EMULATOR_MEMORY:-2048}
+  emulator_nice=${CLARITARD_ANDROID_EMULATOR_NICE:-10}
+  if [[ ! "$emulator_cores" =~ ^[1-9][0-9]*$ || ! "$emulator_memory" =~ ^[1-9][0-9]*$ || ! "$emulator_nice" =~ ^[0-9]+$ ]]; then
+    echo "CLARITARD_ANDROID_EMULATOR_CORES and CLARITARD_ANDROID_EMULATOR_MEMORY must be positive integers; CLARITARD_ANDROID_EMULATOR_NICE must be non-negative." >&2
+    return 1
+  fi
+
+  echo "📟 Starting Android emulator $avd_name (cores: $emulator_cores; memory: ${emulator_memory} MB)..."
+  (
+    export PATH="$(dirname "$adb_bin"):$PATH"
+    exec setsid nice -n "$emulator_nice" "$emulator_bin" \
+      -avd "$avd_name" \
+      -cores "$emulator_cores" \
+      -memory "$emulator_memory" \
+      -no-audio \
+      -no-boot-anim
+  ) &
+  android_emulator_pid=$!
+
+  echo "⏳ Waiting for Android emulator to connect..."
+  for ((attempt = 1; attempt <= 90; attempt++)); do
+    if ! kill -0 "$android_emulator_pid" 2>/dev/null; then
+      echo "Android emulator exited before connecting to adb." >&2
+      stop_started_processes
+      exit 1
+    fi
+
+    refresh_android_devices || true
+    if [[ -n "$android_device_serials" ]]; then
+      break
+    fi
+    sleep 2
+  done
+
+  if [[ -z "$android_device_serials" ]]; then
+    echo "Android emulator did not connect to adb in time." >&2
+    stop_started_processes
+    exit 1
+  fi
+
+  device_serial=$(printf '%s\n' "$android_device_serials" | awk 'NF { print; exit }')
+  echo "⏳ Waiting for Android emulator $device_serial to finish booting..."
+  for ((attempt = 1; attempt <= 90; attempt++)); do
+    if ! kill -0 "$android_emulator_pid" 2>/dev/null; then
+      echo "Android emulator exited during boot." >&2
+      stop_started_processes
+      exit 1
+    fi
+
+    boot_completed=$("$adb_bin" -s "$device_serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)
+    if [[ "$boot_completed" == "1" ]]; then
+      echo "✅ Android emulator $device_serial is ready."
+      return 0
+    fi
+    sleep 2
+  done
+
+  echo "Android emulator $device_serial did not finish booting in time." >&2
+  stop_started_processes
+  exit 1
+}
+
+start_mobile_android() {
+  local mobile_dir="$script_dir/frontend/mobile"
+  local device_serial
+  local device_count
+  local java_major_version
+  local gradle_workers
+  local gradle_heap
+  local build_nice
+  local gradle_opts
+  local launch_url
+
+  if [[ "${CLARITARD_MOBILE_ANDROID:-1}" == "0" ]]; then
+    echo "⏭️  Native Android start disabled with CLARITARD_MOBILE_ANDROID=0."
+    return 0
+  fi
+
+  if [[ ! -x "$mobile_dir/node_modules/.bin/expo" ]]; then
+    echo "⚠️  Mobile dependencies are not installed; skipping native Android start."
+    echo "   Run 'cd frontend/mobile && npm install', then run this script again."
+    return 0
+  fi
+
+  if [[ -z "$adb_bin" || -z "$android_device_serials" ]]; then
+    echo "⏭️  Native Android build skipped; start an emulator or connect a device to build and launch it."
+    return 0
+  fi
+
+  if [[ ! -x "$mobile_dir/android/gradlew" ]]; then
+    echo "⚠️  The generated Android project is missing; skipping native Android start."
+    echo "   Run 'cd frontend/mobile && npx expo prebuild --platform android', then run this script again."
+    return 0
+  fi
+
+  if ! command -v java >/dev/null 2>&1; then
+    echo "⚠️  Java 21 is required for the native Android build; Java was not found."
+    return 0
+  fi
+
+  java_major_version=$(java -version 2>&1 | sed -nE 's/.*version "([0-9]+)(\..*)?".*/\1/p' | head -n 1)
+  if [[ "$java_major_version" != "21" ]]; then
+    echo "⚠️  Native Android build skipped because Java 21 is required (found ${java_major_version:-unknown})."
+    echo "   Set JAVA_HOME to a Java 21 installation and run this script again."
+    return 0
+  fi
+
+  gradle_workers=${CLARITARD_MOBILE_GRADLE_WORKERS:-2}
+  if [[ ! "$gradle_workers" =~ ^[1-9][0-9]*$ ]]; then
+    echo "CLARITARD_MOBILE_GRADLE_WORKERS must be a positive integer." >&2
+    return 1
+  fi
+
+  gradle_heap=${CLARITARD_MOBILE_GRADLE_MAX_HEAP:-1536m}
+  build_nice=${CLARITARD_MOBILE_BUILD_NICE:-10}
+  if [[ ! "$gradle_heap" =~ ^[0-9]+[kKmMgG]$ ]]; then
+    echo "CLARITARD_MOBILE_GRADLE_MAX_HEAP must be a size such as 1536m." >&2
+    return 1
+  fi
+  if [[ ! "$build_nice" =~ ^[0-9]+$ ]]; then
+    echo "CLARITARD_MOBILE_BUILD_NICE must be a non-negative integer." >&2
+    return 1
+  fi
+
+  device_serial=$(printf '%s\n' "$android_device_serials" | awk 'NF { print; exit }')
+  device_count=$(printf '%s\n' "$android_device_serials" | awk 'NF { count++ } END { print count + 0 }')
+  if (( device_count > 1 )); then
+    echo "⚠️  Multiple Android devices are connected; Expo will use the first device reported by adb ($device_serial)."
+  fi
+
+  gradle_opts="${GRADLE_OPTS:-} -Xmx$gradle_heap -XX:MaxMetaspaceSize=384m -Dorg.gradle.workers.max=$gradle_workers -Dorg.gradle.parallel=false -Dorg.gradle.tooling.parallel=false -Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx$gradle_heap -Dfile.encoding=UTF-8"
+
+  echo "🤖 Building and starting Android app on $device_serial (Gradle workers: $gradle_workers; CMake jobs: $gradle_workers)..."
+  (
+    cd "$mobile_dir"
+    export PATH="$(dirname "$adb_bin"):$PATH"
+    export EXPO_UNSTABLE_HEADLESS=1
+    export REACT_NATIVE_PACKAGER_HOSTNAME=127.0.0.1
+    export ANDROID_SERIAL="$device_serial"
+    export GRADLE_OPTS="$gradle_opts"
+    export CMAKE_BUILD_PARALLEL_LEVEL="$gradle_workers"
+    exec setsid nice -n "$build_nice" npm run android -- --no-bundler
+  ) &
+  mobile_android_pid=$!
+
+  if ! wait "$mobile_android_pid"; then
+    echo "Native Android build/start failed." >&2
+    stop_started_processes
+    exit 1
+  fi
+
+  mobile_android_pid=""
+  mobile_android_started=1
+
+  launch_url='solife://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081'
+  echo "📲 Opening the development build through the forwarded Metro port..."
+  if ! "$adb_bin" -s "$device_serial" shell am start \
+    -a android.intent.action.VIEW \
+    -d "$launch_url" \
+    org.osama.solife >/dev/null; then
+    echo "Android app was installed, but it could not be opened on $device_serial." >&2
+    stop_started_processes
+    exit 1
+  fi
 }
 
 apply_keycloak_login_theme() {
@@ -401,7 +718,7 @@ apply_keycloak_login_theme() {
 stop_started_processes() {
   local pid
 
-  for pid in "$mobile_pid" "$frontend_pid" "$backend_pid"; do
+  for pid in "$mobile_android_pid" "$mobile_pid" "$android_emulator_pid" "$frontend_pid" "$backend_pid"; do
     if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
       terminate_process "$pid" "app process"
     fi
@@ -450,90 +767,102 @@ ensure_frontend_dependencies() {
   (cd "$frontend_dir" && npm ci --no-audit --no-fund)
 }
 
-trap shutdown INT TERM
-trap stop_started_processes EXIT
+main() {
+  local required_port
+  local required_service
 
-if ! docker info >/dev/null 2>&1; then
-  echo "Cannot access the Docker daemon. Add this account to the docker group and log in again." >&2
-  exit 1
-fi
+  # Keeping the complete launch sequence in one function makes Bash parse it
+  # before any long-running build begins. Editing this file during a Gradle
+  # build can therefore never corrupt the already-running launcher.
+  trap shutdown INT TERM
+  trap stop_started_processes EXIT
 
-ensure_frontend_dependencies
-
-"${compose[@]}" config >/dev/null
-remove_legacy_grafana_container
-
-for required_port in 5432 7070; do
-  required_service=postgres
-  [[ "$required_port" == "7070" ]] && required_service=keycloak
-
-  if ! compose_service_is_running "$required_service"; then
-    free_conflicting_port "$required_port"
-  fi
-done
-
-echo "🐳 Reusing healthy Docker services and starting only what is missing..."
-if ! "${compose[@]}" up -d; then
-  echo "Docker services could not be started. Another service may own port 5432 or 7070." >&2
-  exit 1
-fi
-
-echo "⏳ Waiting for Keycloak..."
-if ! wait_for_endpoint "Keycloak" "http://localhost:7070/" 45; then
-  echo "Recent container logs:" >&2
-  "${compose[@]}" logs --tail=80 keycloak postgres >&2 || true
-  exit 1
-fi
-apply_keycloak_login_theme
-
-if endpoint_is_ready "http://localhost:8080/actuator/health"; then
-  echo "♻️  Backend is already healthy on port 8080; reusing it."
-elif port_is_listening 8080; then
-  echo "Port 8080 is in use, but its service is not a healthy productivity-app backend."
-  free_conflicting_port 8080
-
-  if port_is_listening 8080; then
-    echo "Port 8080 is still occupied after cleanup." >&2
-    stop_started_processes
+  if ! docker info >/dev/null 2>&1; then
+    echo "Cannot access the Docker daemon. Add this account to the docker group and log in again." >&2
     exit 1
   fi
-  start_backend
-else
-  start_backend
-fi
 
-if endpoint_is_ready "http://localhost:5173/"; then
-  echo "♻️  Frontend is already available on port 5173; reusing it."
-elif port_is_listening 5173; then
-  echo "Port 5173 is in use, but its service is not the productivity-app frontend."
-  free_conflicting_port 5173
+  ensure_frontend_dependencies
 
-  if port_is_listening 5173; then
-    echo "Port 5173 is still occupied after cleanup." >&2
-    stop_started_processes
+  "${compose[@]}" config >/dev/null
+  remove_legacy_grafana_container
+
+  for required_port in 5432 7070; do
+    required_service=postgres
+    [[ "$required_port" == "7070" ]] && required_service=keycloak
+
+    if ! compose_service_is_running "$required_service"; then
+      free_conflicting_port "$required_port"
+    fi
+  done
+
+  echo "🐳 Reusing healthy Docker services and starting only what is missing..."
+  if ! "${compose[@]}" up -d; then
+    echo "Docker services could not be started. Another service may own port 5432 or 7070." >&2
     exit 1
   fi
-  start_frontend
-else
-  start_frontend
-fi
 
-start_mobile_metro
-setup_android_dev_bridge
+  echo "⏳ Waiting for Keycloak..."
+  if ! wait_for_endpoint "Keycloak" "http://localhost:7070/" 45; then
+    echo "Recent container logs:" >&2
+    "${compose[@]}" logs --tail=80 keycloak postgres >&2 || true
+    exit 1
+  fi
+  apply_keycloak_login_theme
 
-echo "✅ All services are ready."
-echo "   App:      http://localhost:5173"
-echo "   Mobile:   http://localhost:8081"
-echo "   Backend:  http://localhost:8080"
-echo "   Keycloak: http://localhost:7070"
+  if endpoint_is_ready "http://localhost:8080/actuator/health"; then
+    echo "♻️  Backend is already healthy on port 8080; reusing it."
+  elif port_is_listening 8080; then
+    echo "Port 8080 is in use, but its service is not a healthy productivity-app backend."
+    free_conflicting_port 8080
 
-if [[ -z "$backend_pid" && -z "$frontend_pid" && -z "$mobile_pid" ]]; then
-  echo "Everything was already running; nothing was started by this shell."
-  exit 0
-fi
+    if port_is_listening 8080; then
+      echo "Port 8080 is still occupied after cleanup." >&2
+      exit 1
+    fi
+    start_backend
+  else
+    start_backend
+  fi
 
-echo
-echo "Press Ctrl+C to stop the app processes started by this run."
-echo "Docker services will remain running."
+  if endpoint_is_ready "http://localhost:5173/"; then
+    echo "♻️  Frontend is already available on port 5173; reusing it."
+  elif port_is_listening 5173; then
+    echo "Port 5173 is in use, but its service is not the productivity-app frontend."
+    free_conflicting_port 5173
 
-wait
+    if port_is_listening 5173; then
+      echo "Port 5173 is still occupied after cleanup." >&2
+      exit 1
+    fi
+    start_frontend
+  else
+    start_frontend
+  fi
+
+  start_mobile_metro
+  start_android_emulator_if_needed
+  setup_android_dev_bridge
+  start_mobile_android
+
+  echo "✅ All services are ready."
+  echo "   App:      http://localhost:5173"
+  echo "   Mobile:   http://localhost:8081"
+  echo "   Backend:  http://localhost:8080"
+  echo "   Keycloak: http://localhost:7070"
+
+  if [[ -z "$backend_pid" && -z "$frontend_pid" && -z "$mobile_pid" && -z "$android_emulator_pid" ]]; then
+    if (( mobile_android_started == 0 )); then
+      echo "Everything was already running; nothing was started by this shell."
+    fi
+    return 0
+  fi
+
+  echo
+  echo "Press Ctrl+C to stop the app processes started by this run."
+  echo "Docker services will remain running."
+
+  wait
+}
+
+main "$@"

@@ -4,6 +4,7 @@ import { useTheme } from '@mui/material/styles';
 import { differenceInCalendarDays, format, parseISO, subDays } from 'date-fns';
 import { StatDefinition, StatEntry, StatSummary } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
+import { formatTimeValue } from '../../services/utils/statValues';
 
 interface TileProps {
     label: string;
@@ -78,7 +79,7 @@ function getPeriodWindow(dateRange: number): { from: string; to: string; key: st
     };
 }
 
-export function StatSummaryBar({ definition, dateRange, refreshKey }: Props) {
+export const StatSummaryBar = React.memo(function StatSummaryBar({ definition, dateRange, refreshKey }: Props) {
     const period = getPeriodWindow(dateRange);
     const periodKey = `${definition.id}:${period.key}`;
     const [summaryState, setSummaryState] = useState<{ key: string; summary: StatSummary } | null>(() => {
@@ -90,12 +91,17 @@ export function StatSummaryBar({ definition, dateRange, refreshKey }: Props) {
         return entries ? { key: periodKey, entries } : null;
     });
     const cachedSummary = statService.getCachedSummary(definition.id, period.from, period.to);
-    const summary = summaryState?.key === periodKey
+    const currentSummary = summaryState?.key === periodKey
         ? summaryState.summary
         : cachedSummary ?? null;
-    const entries = entryState?.key === periodKey
+    const currentEntries = entryState?.key === periodKey
         ? entryState.entries
         : statService.getCachedEntries(definition.id, period.from, period.to) ?? null;
+    // Keep the previous period visible while the next period is loading. This
+    // prevents the summary row from collapsing into skeletons on every range change.
+    const summary = currentSummary ?? summaryState?.summary ?? null;
+    const entries = currentEntries ?? entryState?.entries ?? null;
+    const isRefreshing = currentSummary === null && summaryState !== null;
 
     useEffect(() => {
         let cancelled = false;
@@ -134,6 +140,9 @@ export function StatSummaryBar({ definition, dateRange, refreshKey }: Props) {
     const derivedPeriodHighest = entries && entries.length > 0
         ? Math.max(...entries.map(entry => entry.value))
         : null;
+    const derivedPeriodEarliest = entries && entries.length > 0
+        ? Math.min(...entries.map(entry => entry.value))
+        : null;
     const periodHighest = summary.periodHighest ?? derivedPeriodHighest;
 
     if (definition.type === 'BOOLEAN') {
@@ -166,11 +175,26 @@ export function StatSummaryBar({ definition, dateRange, refreshKey }: Props) {
         });
     }
 
+    if (definition.type === 'TIME') {
+        tiles.push({
+            label: 'Earliest',
+            value: derivedPeriodEarliest != null ? formatTimeValue(derivedPeriodEarliest) : '—',
+        });
+        tiles.push({
+            label: 'Average',
+            value: summary.periodAverage !== null ? formatTimeValue(summary.periodAverage) : '—',
+        });
+        tiles.push({
+            label: 'Latest',
+            value: periodHighest != null ? formatTimeValue(periodHighest) : '—',
+        });
+    }
+
     return (
-        <Stack direction="row" spacing={1.5} sx={{ mb: 2 }}>
+        <Stack direction="row" spacing={1.5} sx={{ mb: 2, opacity: isRefreshing ? 0.72 : 1, transition: 'opacity 160ms ease' }}>
             {tiles.map(t => (
                 <SummaryTile key={t.label} label={t.label} value={t.value} />
             ))}
         </Stack>
     );
-}
+});

@@ -25,6 +25,7 @@ The local stack uses these ports:
 | Service | URL |
 | --- | --- |
 | Web app | <http://localhost:5173> |
+| Mobile Metro | <http://localhost:8081> |
 | Backend health check | <http://localhost:8080/actuator/health> |
 | Keycloak | <http://localhost:7070> |
 | PostgreSQL | `localhost:5432` |
@@ -45,16 +46,25 @@ Open <http://localhost:5173>. On a fresh database, the launcher starts
 PostgreSQL and Keycloak, imports the local `productivity-app` realm and public
 web client, installs the web dependencies, starts the backend with the `dev`
 profile, and applies database migrations. Choose **Create account** on the
-Keycloak login page to register a local user.
+Keycloak login page to register a local user. If Android SDK tools, Java 21,
+and a connected device or already-running emulator are available, it also
+starts Metro and builds/launches the native Android app. If no device is
+connected and exactly one Android AVD is configured, it starts that AVD with
+two virtual cores and 2 GB RAM; multiple AVDs require
+`CLARITARD_ANDROID_AVD`. The Android build is deliberately limited to two
+Gradle/CMake workers and runs without a persistent Gradle daemon. Set
+`CLARITARD_MOBILE_ANDROID=0` to skip native Android, or
+`CLARITARD_ANDROID_EMULATOR=0` to leave emulator startup to you.
 
 The values in `deployment/.env.example` are development-only credentials. Keep
 `deployment/.env` uncommitted and use strong, separate values for any shared or
 production environment.
 
-Press `Ctrl+C` to stop the backend and frontend processes started by this run.
-The launcher stops their complete process groups, so Maven or Vite children do
-not remain behind on ports 8080 or 5173. The Docker services stay running, so
-the next `./run-app.sh` starts quickly.
+Press `Ctrl+C` to stop the backend, frontend, Metro, and emulator processes
+started by this run. The launcher stops their complete process groups, so
+Maven, Vite, Metro, or emulator children do not remain behind. The installed
+Android app is not stopped. The Docker services stay running, so the next
+`./run-app.sh` starts quickly.
 
 ### Stop or reset local services
 

@@ -176,6 +176,10 @@ public class StatInsightService {
         if (type == StatType.BOOLEAN) {
             return String.format(Locale.ROOT, "%.0f%%", value * 100);
         }
+        if (type == StatType.TIME) {
+            int totalMinutes = (int) Math.round(value);
+            return String.format(Locale.ROOT, "%02d:%02d", totalMinutes / 60, totalMinutes % 60);
+        }
         return String.format(Locale.ROOT, "%.1f", value).replaceAll("\\.0$", "");
     }
 

@@ -4,11 +4,24 @@ import { getAuthHeaders } from '../utils/authHeaders';
 import { PomodoroStatus } from '../../types/PomodoroStatus';
 import { TaskPomodoroStats } from '../../types/TaskPomodoroStats';
 import { invalidateTaskPomodoroStats } from '../cache/taskPomodoroStatsCache';
+import { CachedResource } from '../cache/ttlCache';
+import { getAuthCacheScope } from '../utils/authHeaders';
+import { clearTaskSubtasksCache, loadTaskSubtasks } from '../cache/taskSubtasksCache';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 const TASK_URL = `${API_BASE_URL}/api/v1/tasks`;
 const SESSION_URL = `${API_BASE_URL}/api/v1/session`;
 const POMODORO_URL = `${API_BASE_URL}/api/v1/pomodoro`;
+const TODAY_TASKS_TTL_MS = 30 * 1000;
+const todayTasksCache = new CachedResource<Task[]>({ ttlMs: TODAY_TASKS_TTL_MS, maxEntries: 4 });
+
+function todayTasksCacheKey(): string {
+    return `${getAuthCacheScope()}:today-tasks`;
+}
+
+function invalidateTodayTasksCache(): void {
+    todayTasksCache.invalidate(todayTasksCacheKey());
+}
 
 export const taskService = {
 
@@ -25,13 +38,15 @@ export const taskService = {
     },
 
     async getTodayTasks(): Promise<Task[]> {
-        const response = await fetch(`${TASK_URL}/today`, {
-            headers: getAuthHeaders(),
+        return todayTasksCache.get(todayTasksCacheKey(), async () => {
+            const response = await fetch(`${TASK_URL}/today`, {
+                headers: getAuthHeaders(),
+            });
+            if (!response.ok) {
+                throw new Error('Failed to fetch today tasks');
+            }
+            return response.json() as Promise<Task[]>;
         });
-        if (!response.ok) {
-            throw new Error('Failed to fetch today tasks');
-        }
-        return response.json();
     },
 
     async reorderTasks(taskIds: string[]): Promise<Task[]> {
@@ -46,6 +61,7 @@ export const taskService = {
         if (!response.ok) {
             throw new Error('Failed to reorder tasks');
         }
+        invalidateTodayTasksCache();
         return response.json();
     },
 
@@ -80,13 +96,15 @@ export const taskService = {
     },
 
     async getSubtasks(taskId: string): Promise<Task[]> {
-        const response = await fetch(`${TASK_URL}/${taskId}/subtasks`, {
-            headers: getAuthHeaders(),
+        return loadTaskSubtasks(taskId, async () => {
+            const response = await fetch(`${TASK_URL}/${taskId}/subtasks`, {
+                headers: getAuthHeaders(),
+            });
+            if (!response.ok) {
+                throw new Error('Failed to fetch subtasks');
+            }
+            return response.json() as Promise<Task[]>;
         });
-        if (!response.ok) {
-            throw new Error('Failed to fetch subtasks');
-        }
-        return response.json();
     },
 
     async getPomodoroStats(taskId: string, signal?: AbortSignal): Promise<TaskPomodoroStats> {
@@ -123,6 +141,7 @@ export const taskService = {
         if (!response.ok) {
             throw new Error('Failed to create task');
         }
+        invalidateTodayTasksCache();
         return response.json();
     },
 
@@ -141,6 +160,7 @@ export const taskService = {
         }
         const updatedTask = await response.json() as Task;
         invalidateTaskPomodoroStats(taskId);
+        invalidateTodayTasksCache();
         return updatedTask;
     },
 
@@ -172,6 +192,12 @@ export const taskService = {
             throw new Error('Failed to delete task');
         }
         invalidateTaskPomodoroStats(taskId);
+        invalidateTodayTasksCache();
+    },
+
+    clearCache(): void {
+        todayTasksCache.clear();
+        clearTaskSubtasksCache();
     },
 
     // ============ Session Operations ============

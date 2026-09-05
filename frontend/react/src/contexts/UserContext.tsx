@@ -5,6 +5,7 @@ import { dayService } from '../services/api/dayService';
 import { eventService } from '../services/api/eventService';
 import { mentalThreadService } from '../services/api/mentalThreadService';
 import { taskGroupService } from '../services/api/taskGroupService';
+import { taskService } from '../services/api/taskService';
 import { userService } from '../services/api/userService';
 import { clearMentalThreadHistoryCache } from '../services/cache/mentalThreadHistoryCache';
 import { clearPomodoroConfigCache } from '../services/api/pomodoroConfigService';
@@ -62,6 +63,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
         eventService.clearCache();
         mentalThreadService.clearCache();
         taskGroupService.clearCache();
+        taskService.clearCache();
         userService.clearPreferencesCache();
         clearMentalThreadHistoryCache();
         clearPomodoroConfigCache();

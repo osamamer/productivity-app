@@ -9,6 +9,7 @@ import { format, parseISO, subDays, eachDayOfInterval } from 'date-fns';
 import { StatDefinition, StatEntry } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
 import { showStatFeedback } from '../../services/statFeedback';
+import { formatTimeValue, minutesToTimeValue, timeValueToMinutes } from '../../services/utils/statValues';
 
 interface ChartPoint {
     date: string;
@@ -23,7 +24,7 @@ interface Props {
     comparisonDefinition?: StatDefinition;
     dateRange: number;
     refreshKey: number;
-    onEntryChanged?: () => void;
+    onEntryChanged?: (definitionId: string) => void;
 }
 
 function valueForDate(
@@ -106,6 +107,7 @@ function formatChartValue(value: number): string {
 function formatPointValue(value: number | undefined, definition: StatDefinition, averaged: boolean): string {
     if (value === undefined) return 'No data';
     if (definition.type === 'BOOLEAN') return averaged ? `${Math.round(value * 100)}% yes` : value === 1 ? 'Yes' : 'No';
+    if (definition.type === 'TIME') return formatTimeValue(value);
     return averaged ? `Average ${formatChartValue(value)}` : formatChartValue(value);
 }
 
@@ -121,6 +123,7 @@ function paddedDomain(minimum: number, maximum: number): NumericDomain {
 
 function chartDomain(definition: StatDefinition, values: Array<number | undefined>): NumericDomain {
     if (definition.type === 'BOOLEAN') return [0, 1];
+    if (definition.type === 'TIME') return [0, 24 * 60];
 
     const finiteValues = values.filter((value): value is number => value !== undefined && Number.isFinite(value));
     if (definition.type === 'RANGE') {
@@ -171,6 +174,7 @@ function roundTick(value: number, step: number): number {
 
 function axisTicks(definition: StatDefinition, domain: NumericDomain): number[] {
     if (definition.type === 'BOOLEAN') return [0, 1];
+    if (definition.type === 'TIME') return [0, 6 * 60, 12 * 60, 18 * 60, 24 * 60];
 
     const [minimum, maximum] = domain;
     const step = niceTickStep(maximum - minimum);
@@ -185,13 +189,14 @@ function axisTicks(definition: StatDefinition, domain: NumericDomain): number[] 
 }
 
 function formatAxisValue(value: number, definition: StatDefinition): string {
+    if (definition.type === 'TIME') return formatTimeValue(value);
     if (definition.type !== 'BOOLEAN') return formatChartValue(value);
     if (value === 0) return 'No';
     if (value === 1) return 'Yes';
     return '';
 }
 
-export function StatLineChart({
+export const StatLineChart = React.memo(function StatLineChart({
     definition,
     comparisonDefinition,
     dateRange,
@@ -225,11 +230,19 @@ export function StatLineChart({
         key: dataKey,
         points: createChartPoints(cachedEntries ?? [], cachedComparisonEntries ?? []),
     }));
+    const hasRenderedDataRef = useRef(hasCachedData);
     const [loadingKey, setLoadingKey] = useState<string | null>(hasCachedData ? null : dataKey);
+    const cachedPoints = cachedEntries && cachedComparisonEntries
+        ? createChartPoints(cachedEntries, cachedComparisonEntries)
+        : null;
+    // Keep the last plotted points in place while a new timeframe or overlay
+    // loads. The chart can fade slightly, but its box never collapses or flashes.
     const data = dataState.key === dataKey
         ? dataState.points
-        : createChartPoints(cachedEntries ?? [], cachedComparisonEntries ?? []);
-    const loading = loadingKey === dataKey || (dataState.key !== dataKey && !hasCachedData);
+        : cachedPoints ?? dataState.points;
+    const loading = loadingKey === dataKey
+        || (dataState.key !== dataKey && !hasCachedData && !hasRenderedDataRef.current);
+    const [animateChart, setAnimateChart] = useState(true);
     const [hoveredPoint, setHoveredPoint] = useState<ChartPoint | null>(null);
     const [hoveredThreshold, setHoveredThreshold] = useState<'primary' | 'comparison' | null>(null);
     const [editorPosition, setEditorPosition] = useState<{ left: number; top: number } | null>(null);
@@ -243,12 +256,18 @@ export function StatLineChart({
     const editorHoveredRef = useRef(false);
 
     useEffect(() => {
+        if (!loading) setAnimateChart(false);
+    }, [loading]);
+
+    useEffect(() => {
         let cancelled = false;
         const primaryEntries = statService.getCachedEntries(definition.id, fromStr, toStr);
         const comparisonEntries = comparisonId
             ? statService.getCachedEntries(comparisonId, fromStr, toStr)
             : [];
-        if (!primaryEntries || !comparisonEntries) setLoadingKey(dataKey);
+        if ((!primaryEntries || !comparisonEntries) && !hasRenderedDataRef.current) {
+            setLoadingKey(dataKey);
+        }
         setHoveredPoint(null);
         setHoveredThreshold(null);
         setEditorPosition(null);
@@ -278,6 +297,7 @@ export function StatLineChart({
                                 comparisonDefinition,
                             ),
                     });
+                    hasRenderedDataRef.current = true;
                 }
             })
             .catch(e => console.error('Failed to fetch stat entries for chart comparison:', e))
@@ -288,9 +308,13 @@ export function StatLineChart({
     }, [comparisonDefinition, comparisonId, dataKey, definition, fromStr, isYearView, refreshKey, toStr]);
 
     useEffect(() => {
-        setEditValue(hoveredPoint?.value === undefined ? '' : String(hoveredPoint.value));
+        setEditValue(hoveredPoint?.value === undefined
+            ? ''
+            : definition.type === 'TIME'
+                ? minutesToTimeValue(hoveredPoint.value)
+                : String(hoveredPoint.value));
         setSaveError(null);
-    }, [hoveredPoint?.date, hoveredPoint?.value]);
+    }, [definition.type, hoveredPoint?.date, hoveredPoint?.value]);
 
     useEffect(() => () => {
         if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
@@ -369,9 +393,11 @@ export function StatLineChart({
 
     const saveEntry = async (date: string, rawValue: string) => {
         if (rawValue.trim() === '') return;
-        const value = Number(rawValue);
-        if (!Number.isFinite(value)) {
-            setSaveError('Enter a number first.');
+        const value = definition.type === 'TIME'
+            ? timeValueToMinutes(rawValue)
+            : Number(rawValue);
+        if (value === null || !Number.isFinite(value)) {
+            setSaveError(definition.type === 'TIME' ? 'Choose a valid time.' : 'Enter a number first.');
             return;
         }
         if (definition.type === 'RANGE'
@@ -389,7 +415,7 @@ export function StatLineChart({
             });
             showStatFeedback(definition, value, chartRef.current);
             handleSaved(date, value);
-            onEntryChanged?.();
+            onEntryChanged?.(definition.id);
         } catch (error) {
             console.error('Failed to save chart stat entry:', error);
             setSaveError('Failed to save this value.');
@@ -573,6 +599,8 @@ export function StatLineChart({
                     dot={isYearView ? false : { r: 3, fill: primaryColor }}
                     activeDot={{ r: 5 }}
                     connectNulls={true}
+                    isAnimationActive={animateChart && !loading}
+                    animationDuration={320}
                 />
                 {comparisonDefinition && (
                     <Line
@@ -582,9 +610,11 @@ export function StatLineChart({
                         stroke={comparisonColor}
                         strokeWidth={2}
                         dot={isYearView ? false : { r: 3, fill: comparisonColor }}
-                        activeDot={{ r: 5 }}
-                        connectNulls={true}
-                    />
+                    activeDot={{ r: 5 }}
+                    connectNulls={true}
+                    isAnimationActive={animateChart && !loading}
+                    animationDuration={320}
+                />
                 )}
                 <Line
                     type="linear"
@@ -638,7 +668,7 @@ export function StatLineChart({
                     <TextField
                         size="small"
                         autoComplete="off"
-                        type="number"
+                        type={definition.type === 'TIME' ? 'time' : 'number'}
                         value={editValue}
                         onChange={event => {
                             const value = event.target.value;
@@ -651,6 +681,7 @@ export function StatLineChart({
                             if (event.key === 'Enter') event.currentTarget.blur();
                         }}
                         inputProps={{
+                            step: definition.type === 'TIME' ? 60 : undefined,
                             min: definition.type === 'RANGE' ? definition.minValue : undefined,
                             max: definition.type === 'RANGE' ? definition.maxValue : undefined,
                             'aria-label': `${definition.name} value for ${format(parseISO(hoveredPoint.date), 'MMMM d, yyyy')}`,
@@ -707,4 +738,4 @@ export function StatLineChart({
             )}
         </Box>
     );
-}
+});

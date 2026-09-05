@@ -54,7 +54,11 @@ function findSystemDefinition(definitions: StatDefinition[], systemKey: string):
   return definitions.find(definition => definition.systemKey === systemKey);
 }
 
-export function MeditationStats({ refreshKey }: { refreshKey: number }) {
+export function MeditationStats({ refreshKey, compact = false, onViewCalendar }: {
+  refreshKey: number;
+  compact?: boolean;
+  onViewCalendar?: () => void;
+}) {
   const { colors } = useAppTheme();
   const [monthOffset, setMonthOffset] = useState(0);
   const [data, setData] = useState<MeditationStatsData | null>(null);
@@ -114,7 +118,7 @@ export function MeditationStats({ refreshKey }: { refreshKey: number }) {
   const yesCount = data?.meditatedSummary.periodYesCount ?? 0;
   const totalMinutes = data?.minutesSummary.periodTotal ?? 0;
 
-  return (
+  const card = (
     <Card style={styles.card}>
       <View style={styles.heading}>
         <View style={styles.titleRow}>
@@ -126,15 +130,17 @@ export function MeditationStats({ refreshKey }: { refreshKey: number }) {
             <AppText variant="caption" color="muted">A gentle look back at this month</AppText>
           </View>
         </View>
-        <View style={styles.monthControls}>
-          <SilentPressable accessibilityRole="button" accessibilityLabel="Previous month" hitSlop={8} onPress={() => setMonthOffset(offset => offset - 1)}>
-            <Ionicons name="chevron-back" size={19} color={colors.textMuted} />
-          </SilentPressable>
-          <AppText variant="caption" color="muted" style={styles.monthLabel}>{monthLabel(month)}</AppText>
-          <SilentPressable accessibilityRole="button" accessibilityLabel="Next month" disabled={monthOffset >= 0} hitSlop={8} onPress={() => setMonthOffset(offset => Math.min(0, offset + 1))}>
-            <Ionicons name="chevron-forward" size={19} color={monthOffset >= 0 ? colors.border : colors.textMuted} />
-          </SilentPressable>
-        </View>
+        {!compact && (
+          <View style={styles.monthControls}>
+            <SilentPressable accessibilityRole="button" accessibilityLabel="Previous month" hitSlop={8} onPress={() => setMonthOffset(offset => offset - 1)}>
+              <Ionicons name="chevron-back" size={19} color={colors.textMuted} />
+            </SilentPressable>
+            <AppText variant="caption" color="muted" style={styles.monthLabel}>{monthLabel(month)}</AppText>
+            <SilentPressable accessibilityRole="button" accessibilityLabel="Next month" disabled={monthOffset >= 0} hitSlop={8} onPress={() => setMonthOffset(offset => Math.min(0, offset + 1))}>
+              <Ionicons name="chevron-forward" size={19} color={monthOffset >= 0 ? colors.border : colors.textMuted} />
+            </SilentPressable>
+          </View>
+        )}
       </View>
 
       <View style={[styles.metrics, { borderColor: colors.border }]}>
@@ -150,7 +156,7 @@ export function MeditationStats({ refreshKey }: { refreshKey: number }) {
 
       {loading && !data ? <AppText variant="caption" color="muted">Loading your practice…</AppText> : null}
       {error && !data ? <AppText variant="caption" color="danger">Your meditation history could not be loaded.</AppText> : null}
-      <View>
+      {!compact && <View>
         <View style={styles.calendarTitle}>
           <AppText variant="label">Practice calendar</AppText>
           <AppText variant="caption" color="muted">Mon – Sun</AppText>
@@ -175,9 +181,20 @@ export function MeditationStats({ refreshKey }: { refreshKey: number }) {
           <View style={styles.legendItem}><View style={[styles.legendMark, { backgroundColor: `${colors.success}2E` }]} /><AppText variant="caption" color="muted">Meditated</AppText></View>
           <View style={styles.legendItem}><View style={[styles.legendMark, { borderColor: colors.border }]} /><AppText variant="caption" color="muted">No session</AppText></View>
         </View>
-      </View>
-      <AppText variant="caption" color="muted" style={styles.updated}>Today is {formatLongDate()}.</AppText>
+      </View>}
+      {!compact && <AppText variant="caption" color="muted" style={styles.updated}>Today is {formatLongDate()}.</AppText>}
     </Card>
+  );
+
+  if (!compact || !onViewCalendar) return card;
+  return (
+    <SilentPressable
+      accessibilityRole="button"
+      accessibilityLabel="View practice calendar"
+      onPress={onViewCalendar}
+      style={({ pressed }) => [styles.cardPressable, pressed && styles.pressed]}>
+      {card}
+    </SilentPressable>
   );
 }
 
@@ -200,5 +217,7 @@ const styles = StyleSheet.create({
   legend: { flexDirection: 'row', gap: 16, marginTop: 10 },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   legendMark: { width: 13, height: 13, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  cardPressable: { width: '100%' },
   updated: { marginTop: -7 },
+  pressed: { opacity: 0.76, transform: [{ scale: 0.985 }] },
 });

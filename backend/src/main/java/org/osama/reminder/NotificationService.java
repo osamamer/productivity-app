@@ -6,6 +6,7 @@ import org.osama.event.RecurrenceFrequency;
 import org.osama.exceptions.ResourceNotFoundException;
 import org.osama.pomodoro.PomodoroTransition;
 import org.osama.scheduling.ScheduledJob;
+import org.osama.user.User;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -27,6 +28,9 @@ public class NotificationService {
     private static final int PUSH_BATCH_SIZE = 100;
     private static final long PUSH_RETRY_SECONDS = 30;
     private static final String USER_DESTINATION = "/queue/notifications";
+    public static final String CHECKUP_TITLE = "Check-Up";
+    public static final String CHECKUP_BODY = "Time to check what your state is.";
+    public static final String CHECKUP_TARGET_URL = "/mental-state";
 
     private final ReminderRepository reminderRepository;
     private final SimpMessagingTemplate messagingTemplate;
@@ -174,6 +178,39 @@ public class NotificationService {
         reminderRepository.save(notification);
         log.info("Pomodoro notification persisted: userId={} notificationId={} taskId={} type={}",
                 job.getUser().getId(), notificationId, job.getAssociatedTaskId(), notification.getNotificationType());
+    }
+
+    @Transactional
+    public void createCheckupNotification(User user, ZonedDateTime scheduledAt) {
+        String notificationId = "mental-state-checkup-" + user.getId() + "-"
+                + scheduledAt.toLocalDate() + "-" + String.format("%02d%02d",
+                scheduledAt.getHour(), scheduledAt.getMinute());
+        if (reminderRepository.existsById(notificationId)) {
+            return;
+        }
+
+        Reminder notification = new Reminder();
+        notification.setReminderId(notificationId);
+        notification.setDateTime(scheduledAt.toInstant());
+        notification.setRepeat(0);
+        notification.setMinutesBefore(0);
+        notification.setUser(user);
+        notification.setNotificationType(NotificationType.MENTAL_STATE_CHECKUP);
+        notification.setTitle(CHECKUP_TITLE);
+        notification.setBody(CHECKUP_BODY);
+        notification.setTargetUrl(CHECKUP_TARGET_URL);
+        reminderRepository.save(notification);
+        log.info("Mental state check-up notification persisted: userId={} notificationId={} scheduledAt={}",
+                user.getId(), notificationId, scheduledAt);
+    }
+
+    @Transactional
+    public void clearPendingCheckupNotifications(String userId) {
+        int removed = reminderRepository.deletePendingByUserIdAndNotificationType(
+                userId, NotificationType.MENTAL_STATE_CHECKUP);
+        if (removed > 0) {
+            log.info("Pending mental state check-up notifications cleared: userId={} count={}", userId, removed);
+        }
     }
 
     private void applyPomodoroCopy(Reminder notification, String taskName, PomodoroTransition transition) {

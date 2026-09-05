@@ -19,10 +19,15 @@ interface Props {
     definition: StatDefinition;
     dateRange: number;
     refreshKey: number;
-    onEntryChanged?: () => void;
+    onEntryChanged?: (definitionId: string) => void;
 }
 
-export function BooleanCalendarView({ definition, dateRange, refreshKey, onEntryChanged }: Props) {
+export const BooleanCalendarView = React.memo(function BooleanCalendarView({
+    definition,
+    dateRange,
+    refreshKey,
+    onEntryChanged,
+}: Props) {
     const theme = useTheme();
     const yesColor = theme.palette[getBooleanChoiceColor(definition, 1)].main;
     const noColor = theme.palette[getBooleanChoiceColor(definition, 0)].main;
@@ -36,11 +41,15 @@ export function BooleanCalendarView({ definition, dateRange, refreshKey, onEntry
         key: dataKey,
         values: new Map(cachedEntries?.map(entry => [entry.date, entry.value]) ?? []),
     }));
+    const hasRenderedDataRef = useRef(Boolean(cachedEntries));
     const [loadingKey, setLoadingKey] = useState<string | null>(cachedEntries ? null : dataKey);
     const valueMap = valueState.key === dataKey
         ? valueState.values
-        : new Map(cachedEntries?.map(entry => [entry.date, entry.value]) ?? []);
-    const loading = loadingKey === dataKey || (valueState.key !== dataKey && !cachedEntries);
+        : cachedEntries
+            ? new Map(cachedEntries.map(entry => [entry.date, entry.value]))
+            : valueState.values;
+    const loading = loadingKey === dataKey
+        || (valueState.key !== dataKey && !cachedEntries && !hasRenderedDataRef.current);
     const [popover, setPopover] = useState<{ anchorEl: HTMLElement; date: string } | null>(null);
     const [editValue, setEditValue] = useState<number | null>(null);
     const [saving, setSaving] = useState(false);
@@ -54,7 +63,10 @@ export function BooleanCalendarView({ definition, dateRange, refreshKey, onEntry
 
     useEffect(() => {
         let cancelled = false;
-        if (!statService.getCachedEntries(definition.id, fromStr, toStr)) setLoadingKey(dataKey);
+        if (!statService.getCachedEntries(definition.id, fromStr, toStr)
+            && !hasRenderedDataRef.current) {
+            setLoadingKey(dataKey);
+        }
         setPopover(null);
         statService.getEntries(definition.id, fromStr, toStr)
             .then(entries => {
@@ -63,6 +75,7 @@ export function BooleanCalendarView({ definition, dateRange, refreshKey, onEntry
                         key: dataKey,
                         values: new Map(entries.map(entry => [entry.date, entry.value])),
                     });
+                    hasRenderedDataRef.current = true;
                 }
             })
             .catch(e => console.error('Failed to fetch boolean calendar entries:', e))
@@ -100,7 +113,7 @@ export function BooleanCalendarView({ definition, dateRange, refreshKey, onEntry
             setValueState(previous => previous.key === dataKey
                 ? { ...previous, values: new Map(previous.values).set(popover.date, editValue) }
                 : previous);
-            onEntryChanged?.();
+            onEntryChanged?.(definition.id);
             closeEditor();
         } catch (error) {
             console.error('Failed to save boolean stat entry:', error);
@@ -290,4 +303,4 @@ export function BooleanCalendarView({ definition, dateRange, refreshKey, onEntry
             </Popover>
         </Box>
     );
-}
+});

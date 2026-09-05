@@ -25,7 +25,7 @@ export function AppPopup({
   title,
   message,
   kind = 'info',
-  showIcon = true,
+  showIcon = kind !== 'info',
   onClose,
   dismissOnBackdrop = true,
   footer,

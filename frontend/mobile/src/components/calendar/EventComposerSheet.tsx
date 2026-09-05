@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { ScrollView, StyleSheet, View } from 'react-native';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { eventDateInTimeZone, localDate, localDateTimeToInstant } from '@/lib/date';
 import { playAudioFeedback } from '@/lib/audioFeedback';
@@ -139,10 +139,23 @@ function CalendarPicker({ value, onChange }: { value: Date; onChange: (value: Da
 
 function TimeColumn({ label, values, selected, onSelect }: { label: string; values: number[]; selected: number; onSelect: (value: number) => void }) {
   const { colors } = useAppTheme();
+  const scrollRef = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    const selectedIndex = values.indexOf(selected);
+    if (selectedIndex < 0) return;
+    const optionHeight = 40;
+    const optionGap = 7;
+    const viewportHeight = 220;
+    const targetOffset = Math.max(0, selectedIndex * (optionHeight + optionGap) - (viewportHeight - optionHeight) / 2);
+    const focusTimer = setTimeout(() => scrollRef.current?.scrollTo({ y: targetOffset, animated: false }), 0);
+    return () => clearTimeout(focusTimer);
+  }, [selected, values]);
+
   return (
     <View style={styles.timeColumn}>
       <AppText variant="caption" color="muted" style={styles.timeLabel}>{label}</AppText>
-      <ScrollView style={styles.timeScroll} contentContainerStyle={styles.timeOptions} showsVerticalScrollIndicator={false}>
+      <ScrollView ref={scrollRef} style={styles.timeScroll} contentContainerStyle={styles.timeOptions} showsVerticalScrollIndicator={false}>
         {values.map(value => {
           const selectedValue = value === selected;
           return (

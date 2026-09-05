@@ -1,4 +1,4 @@
-import { Alert, Snackbar } from '@mui/material';
+import { Alert, Button, Snackbar } from '@mui/material';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUser } from '../../hooks/useUser';
@@ -164,11 +164,18 @@ export function NotificationCenter() {
         if (current[0]) queuedFallbacks.current.delete(current[0].notificationId);
         return current.slice(1);
     });
+    const openFallback = () => {
+        if (currentFallback?.targetUrl) navigate(currentFallback.targetUrl);
+        closeFallback();
+    };
 
     return (
         <Snackbar key={currentFallback?.notificationId} open={Boolean(currentFallback)} autoHideDuration={10000}
                   onClose={closeFallback} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}>
-            <Alert severity="info" variant="filled" onClose={closeFallback}>
+            <Alert severity="info" variant="filled" onClose={closeFallback}
+                   action={currentFallback?.targetUrl ? (
+                       <Button color="inherit" size="small" onClick={openFallback}>Open</Button>
+                   ) : undefined}>
                 {currentFallback && notificationSummary(currentFallback)}
             </Alert>
         </Snackbar>

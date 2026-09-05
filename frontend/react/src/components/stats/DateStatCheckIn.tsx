@@ -6,6 +6,7 @@ import {
 import { StatDefinition } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
 import { getBooleanChoiceColor, showStatFeedback } from '../../services/statFeedback';
+import { minutesToTimeValue, timeValueToMinutes } from '../../services/utils/statValues';
 
 interface Props {
     date: string;
@@ -99,8 +100,13 @@ export function DateStatCheckIn({ date, definitions, onSaved }: Props) {
                     width: '0.4em',
                 },
                 '&::-webkit-scrollbar-thumb': {
-                    backgroundColor: 'rgba(0,0,0,.1)',
-                    borderRadius: '4px',
+                    backgroundColor: 'action.disabled',
+                    borderRadius: '999px',
+                    border: '2px solid transparent',
+                    backgroundClip: 'content-box',
+                },
+                '&::-webkit-scrollbar-thumb:hover': {
+                    backgroundColor: 'action.active',
                 },
             }}>
                 <Stack spacing={3}>
@@ -144,6 +150,21 @@ export function DateStatCheckIn({ date, definitions, onSaved }: Props) {
                                     value={values[def.id] ?? ''}
                                     onChange={e => setValue(def.id, e.target.value === '' ? null : Number(e.target.value))}
                                     onFocus={event => { feedbackAnchorRef.current = event.currentTarget; }}
+                                    sx={{ width: 160 }}
+                                />
+                            )}
+                            {def.type === 'TIME' && (
+                                <TextField
+                                    type="time"
+                                    autoComplete="off"
+                                    size="small"
+                                    value={minutesToTimeValue(values[def.id])}
+                                    onChange={event => setValue(
+                                        def.id,
+                                        event.target.value ? timeValueToMinutes(event.target.value) : null,
+                                    )}
+                                    onFocus={event => { feedbackAnchorRef.current = event.currentTarget; }}
+                                    inputProps={{ step: 60, 'aria-label': `${def.name} time` }}
                                     sx={{ width: 160 }}
                                 />
                             )}

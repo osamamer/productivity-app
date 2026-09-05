@@ -32,7 +32,7 @@ function customDateTime(initialDate?: string): string {
 export function TaskComposerSheet({ visible, onClose, onCreated, initialDate }: {
   visible: boolean;
   onClose: () => void;
-  onCreated: (task: Task) => void;
+  onCreated: (task: Task) => void | Promise<void>;
   initialDate?: string;
 }) {
   const [name, setName] = useState('');
@@ -98,7 +98,7 @@ export function TaskComposerSheet({ visible, onClose, onCreated, initialDate }: 
         tag: '',
         importance,
       });
-      onCreated(task);
+      await onCreated(task);
       close();
     } catch (cause) {
       setError(reportError('Could not create task', cause));

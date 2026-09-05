@@ -8,6 +8,10 @@ const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:8080'}
 export interface UserPreferences {
     includeUnloggedNumericDaysAsZero: boolean;
     autoStartPomodoroSessions: boolean;
+    checkupNotificationsEnabled: boolean;
+    checkupIntervalMinutes: number;
+    checkupStartTime: string;
+    checkupTimesPerDay: number;
 }
 
 const USER_PREFERENCES_TTL_MS = 5 * 60 * 1000;

@@ -134,3 +134,11 @@ databaseChangeLog:
   # Give the built-in Sleep stat its positive seven-hour target
   - include:
       file: db/changelog/changes/038-set-sleep-stat-morality.yaml
+
+  # Built-in time-of-day stats for sleep and waking
+  - include:
+      file: db/changelog/changes/039-add-sleep-wake-time-system-stats.yaml
+
+  # User-configurable mental state check-up notifications
+  - include:
+      file: db/changelog/changes/040-add-checkup-notification-preferences.yaml

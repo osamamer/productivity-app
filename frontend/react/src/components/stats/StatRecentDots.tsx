@@ -12,6 +12,7 @@ import { StatDefinition, StatEntry } from '../../types/Stats';
 import { getLastMonthWindow, statService } from '../../services/api/statService';
 import { KeyboardEvent } from 'react';
 import { effectiveStatMorality, getBooleanChoiceColor, getStatFeedback, showStatFeedback } from '../../services/statFeedback';
+import { formatTimeValue, minutesToTimeValue, timeValueToMinutes } from '../../services/utils/statValues';
 
 const CIRCLE_SIZE = 24;
 
@@ -48,7 +49,10 @@ function getThresholdCircleBg(def: StatDefinition, value: number, theme: Theme):
         return `color-mix(in srgb, ${theme.palette.success.main} ${greenWeight * 100}%, ${theme.palette.background.paper} ${(1 - greenWeight) * 100}%)`;
     }
 
-    const redWeight = 0.55 + Math.min(0.45, (1 - goodnessRatio) * 0.6);
+    const redProgress = Math.min(0.45, (1 - goodnessRatio) * 0.6);
+    const redWeight = theme.palette.mode === 'dark'
+        ? 0.9 - redProgress
+        : 0.55 + redProgress;
     return `color-mix(in srgb, ${theme.palette.error.main} ${redWeight * 100}%, ${theme.palette.background.paper} ${(1 - redWeight) * 100}%)`;
 }
 
@@ -104,7 +108,7 @@ interface PopoverState {
 interface Props {
     definition: StatDefinition;
     refreshKey: number;
-    onEntryChanged?: () => void;
+    onEntryChanged?: (definitionId: string) => void;
 }
 
 function recentValueMap(entries: StatEntry[] | undefined, recentStart: string, to: string) {
@@ -180,7 +184,7 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
             });
             showStatFeedback(definition, editValue, feedbackAnchorRef.current);
             setValueMap(prev => new Map(prev).set(popover.date, editValue));
-            onEntryChanged?.();
+            onEntryChanged?.(definition.id);
             closePopover();
         } catch (err) {
             console.error('Failed to save entry:', err);
@@ -222,7 +226,9 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                     const tooltipText = hasEntry
                         ? definition.type === 'BOOLEAN'
                             ? value === 1 ? 'Yes' : 'No'
-                            : String(value)
+                            : definition.type === 'TIME'
+                                ? formatTimeValue(value)
+                                : String(value)
                         : 'No entry';
 
                     return (
@@ -330,6 +336,23 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                                 onFocus={event => { feedbackAnchorRef.current = event.currentTarget; }}
                                 autoFocus
                                 sx={{ width: 160 }}
+                            />
+                        )}
+
+                        {definition.type === 'TIME' && (
+                            <TextField
+                                type="time"
+                                autoComplete="off"
+                                size="small"
+                                value={minutesToTimeValue(editValue)}
+                                onChange={event => {
+                                    const value = event.target.value;
+                                    setEditValue(value ? timeValueToMinutes(value) : null);
+                                }}
+                                onFocus={event => { feedbackAnchorRef.current = event.currentTarget; }}
+                                autoFocus
+                                inputProps={{ step: 60, 'aria-label': `${definition.name} time` }}
+                                sx={{ width: 140 }}
                             />
                         )}
 

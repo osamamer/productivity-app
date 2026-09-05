@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.security.oauth2.jwt.Jwt;
 
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -143,13 +144,25 @@ public class UserService {
 
     @Transactional
     public User updatePreferences(String userId, Boolean includeUnloggedNumericDaysAsZero) {
-        return updatePreferences(userId, includeUnloggedNumericDaysAsZero, null);
+        return updatePreferences(userId, includeUnloggedNumericDaysAsZero, null,
+                null, null, null, null);
     }
 
     @Transactional
     public User updatePreferences(String userId, Boolean includeUnloggedNumericDaysAsZero,
                                   Boolean autoStartPomodoroSessions) {
-        if (includeUnloggedNumericDaysAsZero == null && autoStartPomodoroSessions == null) {
+        return updatePreferences(userId, includeUnloggedNumericDaysAsZero, autoStartPomodoroSessions,
+                null, null, null, null);
+    }
+
+    @Transactional
+    public User updatePreferences(String userId, Boolean includeUnloggedNumericDaysAsZero,
+                                  Boolean autoStartPomodoroSessions, Boolean checkupNotificationsEnabled,
+                                  Integer checkupIntervalMinutes, LocalTime checkupStartTime,
+                                  Integer checkupTimesPerDay) {
+        if (includeUnloggedNumericDaysAsZero == null && autoStartPomodoroSessions == null
+                && checkupNotificationsEnabled == null && checkupIntervalMinutes == null
+                && checkupStartTime == null && checkupTimesPerDay == null) {
             throw new IllegalArgumentException("At least one user preference is required.");
         }
 
@@ -159,17 +172,65 @@ public class UserService {
                 && !Objects.equals(user.getIncludeUnloggedNumericDaysAsZero(), includeUnloggedNumericDaysAsZero);
         boolean pomodoroPreferenceChanged = autoStartPomodoroSessions != null
                 && !Objects.equals(user.getAutoStartPomodoroSessions(), autoStartPomodoroSessions);
+        boolean checkupPreferenceChanged = checkupNotificationsEnabled != null
+                && !Objects.equals(user.getCheckupNotificationsEnabled(), checkupNotificationsEnabled);
+        boolean checkupScheduleChanged = checkupIntervalMinutes != null
+                || checkupStartTime != null
+                || checkupTimesPerDay != null;
+
+        int effectiveIntervalMinutes = checkupIntervalMinutes != null
+                ? checkupIntervalMinutes : user.getCheckupIntervalMinutes();
+        LocalTime effectiveStartTime = checkupStartTime != null
+                ? checkupStartTime : user.getCheckupStartTime();
+        int effectiveTimesPerDay = checkupTimesPerDay != null
+                ? checkupTimesPerDay : user.getCheckupTimesPerDay();
+        if (checkupScheduleChanged || checkupNotificationsEnabled != null) {
+            validateCheckupSchedule(effectiveIntervalMinutes, effectiveStartTime, effectiveTimesPerDay);
+        }
+
         if (includeUnloggedNumericDaysAsZero != null) {
             user.setIncludeUnloggedNumericDaysAsZero(includeUnloggedNumericDaysAsZero);
         }
         if (autoStartPomodoroSessions != null) {
             user.setAutoStartPomodoroSessions(autoStartPomodoroSessions);
         }
+        if (checkupNotificationsEnabled != null) {
+            user.setCheckupNotificationsEnabled(checkupNotificationsEnabled);
+        }
+        if (checkupIntervalMinutes != null) {
+            user.setCheckupIntervalMinutes(checkupIntervalMinutes);
+        }
+        if (checkupStartTime != null) {
+            user.setCheckupStartTime(checkupStartTime);
+        }
+        if (checkupTimesPerDay != null) {
+            user.setCheckupTimesPerDay(checkupTimesPerDay);
+        }
         User savedUser = userRepository.save(user);
-        log.info("User preferences updated: userId={} includeUnloggedNumericDaysAsZero={} autoStartPomodoroSessions={} changed={}",
+        log.info("User preferences updated: userId={} includeUnloggedNumericDaysAsZero={} autoStartPomodoroSessions={} "
+                        + "checkupNotificationsEnabled={} checkupIntervalMinutes={} checkupStartTime={} checkupTimesPerDay={} changed={}",
                 userId, savedUser.getIncludeUnloggedNumericDaysAsZero(), savedUser.getAutoStartPomodoroSessions(),
-                numericPreferenceChanged || pomodoroPreferenceChanged);
+                savedUser.getCheckupNotificationsEnabled(), savedUser.getCheckupIntervalMinutes(),
+                savedUser.getCheckupStartTime(), savedUser.getCheckupTimesPerDay(),
+                numericPreferenceChanged || pomodoroPreferenceChanged || checkupPreferenceChanged || checkupScheduleChanged);
         return savedUser;
+    }
+
+    private void validateCheckupSchedule(int intervalMinutes, LocalTime startTime, int timesPerDay) {
+        if (intervalMinutes < 15 || intervalMinutes > 720) {
+            throw new IllegalArgumentException("Check-up interval must be between 15 minutes and 12 hours.");
+        }
+        if (startTime == null) {
+            throw new IllegalArgumentException("Check-up start time is required.");
+        }
+        if (timesPerDay < 1 || timesPerDay > 24) {
+            throw new IllegalArgumentException("Check-ups per day must be between 1 and 24.");
+        }
+        long finalCheckupMinute = startTime.toSecondOfDay() / 60L
+                + (long) (timesPerDay - 1) * intervalMinutes;
+        if (finalCheckupMinute > 23 * 60 + 59) {
+            throw new IllegalArgumentException("The check-up schedule must fit within the same day.");
+        }
     }
 
     @Transactional

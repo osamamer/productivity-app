@@ -1,5 +1,5 @@
 import { ChangeEvent, FormEvent, SyntheticEvent, useEffect, useMemo, useState } from 'react';
-import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Stack, Switch, Tab, Tabs, TextField, Typography } from '@mui/material';
+import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, MenuItem, Stack, Switch, Tab, Tabs, TextField, Typography } from '@mui/material';
 import LightModeIcon from '@mui/icons-material/LightMode';
 import NightlightIcon from '@mui/icons-material/Nightlight';
 import LogoutIcon from '@mui/icons-material/Logout';
@@ -9,6 +9,7 @@ import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import QueryStatsOutlinedIcon from '@mui/icons-material/QueryStatsOutlined';
 import SecurityOutlinedIcon from '@mui/icons-material/SecurityOutlined';
 import TimerOutlinedIcon from '@mui/icons-material/TimerOutlined';
+import AccessTimeOutlinedIcon from '@mui/icons-material/AccessTimeOutlined';
 import CheckIcon from '@mui/icons-material/Check';
 import PsychologyOutlinedIcon from '@mui/icons-material/PsychologyOutlined';
 import VolumeUpOutlinedIcon from '@mui/icons-material/VolumeUpOutlined';
@@ -46,6 +47,21 @@ const pomodoroAutoStartDescription = 'Start each break and focus session automat
 const pomodoroSecondsModeDescription = 'Use 10-second focus and break durations instead of the normal 25/5/15-minute defaults.';
 const showClosedMentalThreadsDescription = 'Keep closed threads visible in the mental threads list.';
 const soundEffectsDescription = 'Play short musical cues when you complete, capture, schedule, or rate something.';
+const DEFAULT_CHECKUP_INTERVAL_MINUTES = 180;
+const DEFAULT_CHECKUP_START_TIME = '09:00';
+const DEFAULT_CHECKUP_TIMES_PER_DAY = 5;
+
+const checkupIntervalOptions = [
+    { value: 15, label: '15 minutes' },
+    { value: 30, label: '30 minutes' },
+    { value: 60, label: '1 hour' },
+    { value: 120, label: '2 hours' },
+    { value: 180, label: '3 hours' },
+    { value: 240, label: '4 hours' },
+    { value: 360, label: '6 hours' },
+    { value: 480, label: '8 hours' },
+    { value: 720, label: '12 hours' },
+];
 
 export function SettingsPage() {
     const { user, logout } = useUser();
@@ -80,6 +96,12 @@ export function SettingsPage() {
     const [pomodoroPreferenceSaving, setPomodoroPreferenceSaving] = useState(false);
     const [pomodoroConfigLoading, setPomodoroConfigLoading] = useState(true);
     const [pomodoroConfigError, setPomodoroConfigError] = useState<string | null>(null);
+    const [checkupNotificationsEnabled, setCheckupNotificationsEnabled] = useState(true);
+    const [checkupIntervalMinutes, setCheckupIntervalMinutes] = useState(DEFAULT_CHECKUP_INTERVAL_MINUTES);
+    const [checkupStartTime, setCheckupStartTime] = useState(DEFAULT_CHECKUP_START_TIME);
+    const [checkupTimesPerDay, setCheckupTimesPerDay] = useState(DEFAULT_CHECKUP_TIMES_PER_DAY);
+    const [checkupPreferenceSaving, setCheckupPreferenceSaving] = useState(false);
+    const [checkupPreferenceError, setCheckupPreferenceError] = useState<string | null>(null);
 
     useEffect(() => {
         setActiveTab(initialTab);
@@ -96,11 +118,18 @@ export function SettingsPage() {
                 if (!cancelled) {
                     setIncludeUnloggedNumericDaysAsZero(preferences.includeUnloggedNumericDaysAsZero);
                     setAutoStartPomodoroSessions(preferences.autoStartPomodoroSessions !== false);
+                    setCheckupNotificationsEnabled(preferences.checkupNotificationsEnabled !== false);
+                    setCheckupIntervalMinutes(preferences.checkupIntervalMinutes || DEFAULT_CHECKUP_INTERVAL_MINUTES);
+                    setCheckupStartTime(preferences.checkupStartTime?.slice(0, 5) || DEFAULT_CHECKUP_START_TIME);
+                    setCheckupTimesPerDay(preferences.checkupTimesPerDay || DEFAULT_CHECKUP_TIMES_PER_DAY);
                 }
             })
             .catch(error => {
                 console.error('Failed to load user preferences:', error);
-                if (!cancelled) setNumericStatsPreferenceError('Could not load user preferences right now.');
+                if (!cancelled) {
+                    setNumericStatsPreferenceError('Could not load user preferences right now.');
+                    setCheckupPreferenceError('Could not load check-up settings right now.');
+                }
             })
             .finally(() => {
                 if (!cancelled) setUserPreferencesLoading(false);
@@ -230,6 +259,50 @@ export function SettingsPage() {
         }
     }
 
+    async function handleCheckupEnabledChange(event: ChangeEvent<HTMLInputElement>) {
+        const nextValue = event.target.checked;
+        const previousValue = checkupNotificationsEnabled;
+        setCheckupNotificationsEnabled(nextValue);
+        setCheckupPreferenceSaving(true);
+        setCheckupPreferenceError(null);
+
+        try {
+            const preferences = await userService.updatePreferences({ checkupNotificationsEnabled: nextValue });
+            setCheckupNotificationsEnabled(preferences.checkupNotificationsEnabled !== false);
+        } catch (error) {
+            console.error('Failed to update check-up notification preference:', error);
+            setCheckupNotificationsEnabled(previousValue);
+            setCheckupPreferenceError('Could not save check-up settings right now.');
+        } finally {
+            setCheckupPreferenceSaving(false);
+        }
+    }
+
+    async function handleCheckupScheduleSave() {
+        const previous = { checkupIntervalMinutes, checkupStartTime, checkupTimesPerDay };
+        setCheckupPreferenceSaving(true);
+        setCheckupPreferenceError(null);
+
+        try {
+            const preferences = await userService.updatePreferences({
+                checkupIntervalMinutes,
+                checkupStartTime,
+                checkupTimesPerDay,
+            });
+            setCheckupIntervalMinutes(preferences.checkupIntervalMinutes);
+            setCheckupStartTime(preferences.checkupStartTime.slice(0, 5));
+            setCheckupTimesPerDay(preferences.checkupTimesPerDay);
+        } catch (error) {
+            console.error('Failed to update check-up notification schedule:', error);
+            setCheckupIntervalMinutes(previous.checkupIntervalMinutes);
+            setCheckupStartTime(previous.checkupStartTime);
+            setCheckupTimesPerDay(previous.checkupTimesPerDay);
+            setCheckupPreferenceError('Could not save this check-up schedule right now.');
+        } finally {
+            setCheckupPreferenceSaving(false);
+        }
+    }
+
     const displayName = user ? `${user.firstName} ${user.lastName}`.trim() || user.username : 'Unknown user';
     const userInitials = user
         ? `${user.firstName?.[0] ?? ''}${user.lastName?.[0] ?? ''}`.toUpperCase() || user.username?.[0]?.toUpperCase() || '?'
@@ -355,6 +428,88 @@ export function SettingsPage() {
                                             inputProps={{ 'aria-label': 'Show closed mental threads' }}
                                         />
                                     </Box>
+                                </Box>
+
+                                <Box sx={sectionCardSx}>
+                                    <Box sx={sectionHeadingSx}>
+                                        <AccessTimeOutlinedIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
+                                        <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                                            Mental state check-ups
+                                        </Typography>
+                                    </Box>
+
+                                    {checkupPreferenceError && (
+                                        <Alert severity="warning" sx={{ mb: 2 }}>
+                                            {checkupPreferenceError}
+                                        </Alert>
+                                    )}
+                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mb: 2 }}>
+                                        <Box sx={{ textAlign: 'left' }}>
+                                            <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                                                Send check-up notifications
+                                            </Typography>
+                                            <Typography variant="body2" color="text.secondary">
+                                                Get a reminder to pause and record how you are doing.
+                                            </Typography>
+                                        </Box>
+                                        <Switch
+                                            checked={checkupNotificationsEnabled}
+                                            onChange={handleCheckupEnabledChange}
+                                            disabled={userPreferencesLoading || checkupPreferenceSaving}
+                                            inputProps={{ 'aria-label': 'Enable mental state check-up notifications' }}
+                                        />
+                                    </Box>
+
+                                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+                                        <TextField
+                                            select
+                                            fullWidth
+                                            size="small"
+                                            label="Repeat every"
+                                            value={checkupIntervalMinutes}
+                                            onChange={event => setCheckupIntervalMinutes(Number(event.target.value))}
+                                            disabled={userPreferencesLoading || checkupPreferenceSaving}
+                                        >
+                                            {checkupIntervalOptions.map(option => (
+                                                <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                                            ))}
+                                        </TextField>
+                                        <TextField
+                                            fullWidth
+                                            size="small"
+                                            label="Start at"
+                                            type="time"
+                                            value={checkupStartTime}
+                                            onChange={event => setCheckupStartTime(event.target.value)}
+                                            disabled={userPreferencesLoading || checkupPreferenceSaving}
+                                            slotProps={{ inputLabel: { shrink: true } }}
+                                        />
+                                        <TextField
+                                            select
+                                            fullWidth
+                                            size="small"
+                                            label="Times per day"
+                                            value={checkupTimesPerDay}
+                                            onChange={event => setCheckupTimesPerDay(Number(event.target.value))}
+                                            disabled={userPreferencesLoading || checkupPreferenceSaving}
+                                        >
+                                            {Array.from({ length: 24 }, (_, index) => index + 1).map(value => (
+                                                <MenuItem key={value} value={value}>{value}</MenuItem>
+                                            ))}
+                                        </TextField>
+                                    </Stack>
+                                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.25, textAlign: 'left' }}>
+                                        Notifications are delivered at the start time and then at each interval, within the same day.
+                                    </Typography>
+                                    <Button
+                                        variant="outlined"
+                                        onClick={() => void handleCheckupScheduleSave()}
+                                        disabled={userPreferencesLoading || checkupPreferenceSaving}
+                                        startIcon={checkupPreferenceSaving ? <CircularProgress size={16} color="inherit" /> : undefined}
+                                        sx={{ mt: 2, borderRadius: 2, textTransform: 'none' }}
+                                    >
+                                        {checkupPreferenceSaving ? 'Saving...' : 'Save check-up schedule'}
+                                    </Button>
                                 </Box>
 
                                 <Box sx={sectionCardSx}>

@@ -1,5 +1,8 @@
 import { Alert, Box, Button, Chip, Paper, Stack, Typography } from '@mui/material';
 import TipsAndUpdatesOutlinedIcon from '@mui/icons-material/TipsAndUpdatesOutlined';
+import HomeOutlinedIcon from '@mui/icons-material/HomeOutlined';
+import SelfImprovementOutlinedIcon from '@mui/icons-material/SelfImprovementOutlined';
+import { useNavigate } from 'react-router-dom';
 import { MentalStateCheckIn } from '../../types/MentalState';
 
 interface MentalStateResultProps {
@@ -10,6 +13,8 @@ interface MentalStateResultProps {
 }
 
 export function MentalStateResult({ checkIn, isCurrent = true, embedded = false, onRecheck }: MentalStateResultProps) {
+    const navigate = useNavigate();
+
     if (!checkIn) {
         return (
             <Paper elevation={0} sx={{ p: 2.5, border: 1, borderColor: 'divider', borderRadius: 3, textAlign: 'left' }}>
@@ -20,6 +25,8 @@ export function MentalStateResult({ checkIn, isCurrent = true, embedded = false,
             </Paper>
         );
     }
+
+    const readyForHome = checkIn.state === 'Ready' || checkIn.state === 'Almost Ready';
 
     const content = (
         <>
@@ -51,13 +58,25 @@ export function MentalStateResult({ checkIn, isCurrent = true, embedded = false,
             <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1.25 }}>
                 Reflective guidance based on your check-in, not a diagnosis or emergency assessment.
             </Typography>
-            {onRecheck && (
-                <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
+            <Stack
+                direction={{ xs: 'column', sm: 'row' }}
+                justifyContent="flex-end"
+                spacing={1}
+                sx={{ mt: 2 }}
+            >
+                <Button
+                    variant={readyForHome ? 'contained' : 'outlined'}
+                    startIcon={readyForHome ? <HomeOutlinedIcon /> : <SelfImprovementOutlinedIcon />}
+                    onClick={() => navigate(readyForHome ? '/' : '/meditation')}
+                >
+                    {readyForHome ? 'Go to home' : 'Go to meditation'}
+                </Button>
+                {onRecheck && (
                     <Button variant="outlined" onClick={onRecheck}>
                         Recheck my state
                     </Button>
-                </Box>
-            )}
+                )}
+            </Stack>
         </>
     );
 

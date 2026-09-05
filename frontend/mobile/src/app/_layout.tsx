@@ -55,9 +55,10 @@ function Navigation() {
         </Stack.Protected>
         <Stack.Protected guard={isAuthenticated}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="mental-threads" options={{ title: 'Mental threads' }} />
+          <Stack.Screen name="mental-threads" options={{ headerShown: false }} />
           <Stack.Screen name="mental-state" options={{ title: 'Mental state' }} />
           <Stack.Screen name="meditation" options={{ title: 'Meditation' }} />
+          <Stack.Screen name="meditation-calendar" options={{ title: 'Meditation calendar' }} />
           <Stack.Screen name="notes" options={{ title: 'Notes' }} />
           <Stack.Screen name="notes/[id]" options={{ headerShown: false }} />
           <Stack.Screen name="stats" options={{ title: 'Statistics' }} />

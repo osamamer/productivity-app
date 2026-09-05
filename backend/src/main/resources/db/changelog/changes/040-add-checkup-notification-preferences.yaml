@@ -1,0 +1,44 @@
+databaseChangeLog:
+  - changeSet:
+      id: 040-add-checkup-notification-preferences
+      author: codex
+      comment: Store each user's mental state check-up notification schedule
+      changes:
+        - addColumn:
+            tableName: app_user
+            columns:
+              - column:
+                  name: checkup_notifications_enabled
+                  type: boolean
+                  defaultValueBoolean: true
+                  constraints:
+                    nullable: false
+              - column:
+                  name: checkup_interval_minutes
+                  type: int
+                  defaultValueNumeric: 180
+                  constraints:
+                    nullable: false
+              - column:
+                  name: checkup_times_per_day
+                  type: int
+                  defaultValueNumeric: 5
+                  constraints:
+                    nullable: false
+        - sql:
+            sql: |
+              ALTER TABLE app_user
+              ADD COLUMN checkup_start_time TIME NOT NULL DEFAULT '09:00:00';
+      rollback:
+        - dropColumn:
+            tableName: app_user
+            columnName: checkup_start_time
+        - dropColumn:
+            tableName: app_user
+            columnName: checkup_times_per_day
+        - dropColumn:
+            tableName: app_user
+            columnName: checkup_interval_minutes
+        - dropColumn:
+            tableName: app_user
+            columnName: checkup_notifications_enabled

@@ -119,6 +119,31 @@ public class StatServiceTest {
         statService.recordEntry(statDefinition.getId(), LocalDate.now().plusDays(1), 999999.99, TEST_USER_ID);
     }
 
+    // --- TIME ---
+
+    @Test
+    void timeStat_storesMinutesSinceMidnight() {
+        StatDefinition statDefinition = createStatDefinition(StatType.TIME, null, null);
+        statService.recordEntry(statDefinition.getId(), LocalDate.now(), 0.0, TEST_USER_ID);
+        statService.recordEntry(statDefinition.getId(), LocalDate.now().plusDays(1), 23 * 60 + 59, TEST_USER_ID);
+
+        assertEquals(1439.0, entryRepository
+                .findByStatDefinitionIdAndUserIdAndDate(
+                        statDefinition.getId(), TEST_USER_ID, LocalDate.now().plusDays(1))
+                .orElseThrow()
+                .getValue());
+    }
+
+    @Test
+    void timeStat_rejectsValuesOutsideTheDay() {
+        StatDefinition statDefinition = createStatDefinition(StatType.TIME, null, null);
+
+        assertThrows(IllegalArgumentException.class, () ->
+                statService.recordEntry(statDefinition.getId(), LocalDate.now(), -1.0, TEST_USER_ID));
+        assertThrows(IllegalArgumentException.class, () ->
+                statService.recordEntry(statDefinition.getId(), LocalDate.now(), 1440.0, TEST_USER_ID));
+    }
+
     @Test
     void meditationStats_rejectManualEntries() {
         User user = userRepository.findUserById(TEST_USER_ID).orElseThrow();

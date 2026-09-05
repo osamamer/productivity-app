@@ -1,7 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
+import { router, useNavigation } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { Animated, Easing, ScrollView, StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 
 import { MeditationStats } from '@/components/meditation/MeditationStats';
 import { AppButton } from '@/components/ui/AppButton';
@@ -17,6 +18,7 @@ import { useMeditationAudio } from '@/hooks/useMeditationAudio';
 import { clock } from '@/lib/date';
 import { MEDITATION_SOUND_OPTIONS, type MeditationSoundId } from '@/lib/meditationAudio';
 import { reportError } from '@/lib/errors';
+import { useAppPopup } from '@/providers/PopupProvider';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
 import type { MeditationSession } from '@/types/models';
@@ -45,11 +47,32 @@ function durationInSeconds(value: MeditationSession['totalSessionTime']): number
   ));
 }
 
-function elapsedSeconds(session: MeditationSession, now: number): number {
+function elapsedSince(timestamp: string, now: number): number {
+  const candidates = [new Date(timestamp).getTime()];
+  // The backend currently returns LocalDateTime without an offset. Try UTC too so
+  // a phone in a different timezone does not treat a running session as future.
+  if (!/(?:Z|[+-]\d{2}:?\d{2})$/i.test(timestamp)) {
+    candidates.push(new Date(`${timestamp}Z`).getTime());
+  }
+  const elapsed = candidates
+    .filter(candidate => Number.isFinite(candidate) && candidate <= now)
+    .map(candidate => now - candidate);
+  return elapsed.length > 0 ? Math.min(...elapsed) : 0;
+}
+
+interface ClientRunningAnchor {
+  sessionId: string;
+  startedAt: number;
+}
+
+function elapsedSeconds(session: MeditationSession, now: number, clientAnchor: ClientRunningAnchor | null): number {
   const saved = durationInSeconds(session.totalSessionTime);
-  if (!session.running || !session.lastUnpauseTime) return saved;
-  const runningSince = new Date(session.lastUnpauseTime).getTime();
-  return saved + Math.max(0, Math.floor((now - runningSince) / 1_000));
+  if (!session.running) return saved;
+  if (clientAnchor?.sessionId === session.id) {
+    return saved + Math.floor(Math.max(0, now - clientAnchor.startedAt) / 1_000);
+  }
+  if (!session.lastUnpauseTime) return saved;
+  return saved + Math.floor(elapsedSince(session.lastUnpauseTime, now) / 1_000);
 }
 
 function moodLabel(mood: number): string {
@@ -62,6 +85,42 @@ function moodLabel(mood: number): string {
 
 function soundOption(sound: MeditationSoundId) {
   return MEDITATION_SOUND_OPTIONS.find(option => option.id === sound) ?? MEDITATION_SOUND_OPTIONS[0];
+}
+
+type OptionSheet = 'mood' | 'duration' | 'bells' | 'sound' | null;
+
+function SessionOptionRow({
+  icon,
+  label,
+  value,
+  onPress,
+  active = false,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value: string;
+  onPress: () => void;
+  active?: boolean;
+}) {
+  const { colors } = useAppTheme();
+  return (
+    <SilentPressable
+      accessibilityRole="button"
+      accessibilityLabel={`${label}: ${value}`}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.optionRow,
+        { backgroundColor: active ? colors.accentSoft : colors.background, borderColor: active ? colors.accent : colors.border },
+        pressed && styles.pressed,
+      ]}>
+      <View style={[styles.optionIcon, { backgroundColor: active ? colors.accent : colors.surfaceRaised }]}>
+        <Ionicons name={icon} size={18} color={active ? colors.onAccent : colors.accent} />
+      </View>
+      <AppText variant="label" style={styles.optionLabel}>{label}</AppText>
+      <AppText variant="label" color={active ? 'accent' : 'muted'} style={styles.optionValue}>{value}</AppText>
+      <Ionicons name="chevron-forward" size={17} color={colors.textMuted} />
+    </SilentPressable>
+  );
 }
 
 const DURATION_VALUES = Array.from(
@@ -168,7 +227,10 @@ function SoundChoices({ selected, onChange, compact = false }: {
 
 export default function MeditationScreen() {
   const { colors } = useAppTheme();
+  const navigation = useNavigation();
+  const { confirm } = useAppPopup();
   const resource = useAsyncData<MeditationSession | undefined>(api.meditation.active);
+  const setSessionData = resource.setData;
   const { start: startAudio, changeSound, pause: pauseAudio, resume: resumeAudio, stop: stopAudio, setMuted, playBell } = useMeditationAudio();
   const [durationMinutes, setDurationMinutes] = useState(10);
   const [moodBefore, setMoodBefore] = useState(5);
@@ -176,9 +238,11 @@ export default function MeditationScreen() {
   const [numIntervalBells, setNumIntervalBells] = useState(2);
   const [selectedSound, setSelectedSound] = useState<MeditationSoundId>('rain');
   const [soundMuted, setSoundMuted] = useState(false);
+  const [clientRunningAnchor, setClientRunningAnchor] = useState<ClientRunningAnchor | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [saving, setSaving] = useState(false);
   const [finishSheetOpen, setFinishSheetOpen] = useState(false);
+  const [optionSheet, setOptionSheet] = useState<OptionSheet>(null);
   const [completedSession, setCompletedSession] = useState<MeditationSession | null>(null);
   const [statsRefreshKey, setStatsRefreshKey] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -186,6 +250,11 @@ export default function MeditationScreen() {
   const lastBellRef = useRef(0);
   const audioStartedRef = useRef(false);
   const lastAppliedSoundRef = useRef<MeditationSoundId>('rain');
+  const leavePromptOpenRef = useRef(false);
+  const leavingRef = useRef(false);
+  const [activeOpacity] = useState(() => new Animated.Value(0));
+  const [activeScale] = useState(() => new Animated.Value(0.94));
+  const [activeOffset] = useState(() => new Animated.Value(24));
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1_000);
@@ -201,11 +270,26 @@ export default function MeditationScreen() {
   }, []);
 
   const session = resource.data ?? null;
-  const elapsed = session ? elapsedSeconds(session, now) : 0;
+  const elapsed = session ? elapsedSeconds(session, now, clientRunningAnchor) : 0;
   const remaining = session ? Math.max(0, session.intendedLength - elapsed) : 0;
   const progress = session?.intendedLength ? Math.min(1, elapsed / session.intendedLength) : 0;
   const sessionComplete = Boolean(session && session.intendedLength > 0 && remaining === 0);
+  const sessionId = session?.id;
   const selectedSoundOption = useMemo(() => soundOption(selectedSound), [selectedSound]);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    activeOpacity.setValue(0);
+    activeScale.setValue(0.94);
+    activeOffset.setValue(24);
+    const animation = Animated.parallel([
+      Animated.timing(activeOpacity, { toValue: 1, duration: 360, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.spring(activeScale, { toValue: 1, damping: 16, stiffness: 180, mass: 0.8, useNativeDriver: true }),
+      Animated.timing(activeOffset, { toValue: 0, duration: 420, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+    ]);
+    animation.start();
+    return () => animation.stop();
+  }, [activeOffset, activeOpacity, activeScale, sessionId]);
 
   useEffect(() => {
     if (!session) {
@@ -263,11 +347,14 @@ export default function MeditationScreen() {
       audioStartedRef.current = true;
     }
     try {
-      resource.setData(await api.meditation.start(moodBefore, durationMinutes * 60, numIntervalBells));
+      const started = await api.meditation.start(moodBefore, durationMinutes * 60, numIntervalBells);
+      setClientRunningAnchor({ sessionId: started.id, startedAt: Date.now() });
+      resource.setData(started);
       setCompletedSession(null);
     } catch (cause) {
       stopAudio();
       audioStartedRef.current = false;
+      setClientRunningAnchor(null);
       setError(reportError('Could not start meditation', cause));
     } finally {
       setSaving(false);
@@ -282,8 +369,10 @@ export default function MeditationScreen() {
       const updated = session.running ? await api.meditation.pause(session.id) : await api.meditation.resume(session.id);
       resource.setData(updated);
       if (updated.running) {
+        setClientRunningAnchor({ sessionId: updated.id, startedAt: Date.now() });
         if (!soundMuted) resumeAudio();
       } else {
+        setClientRunningAnchor(null);
         pauseAudio();
       }
     } catch (cause) {
@@ -316,6 +405,7 @@ export default function MeditationScreen() {
     try {
       const finished = await api.meditation.end(session.id, moodAfter);
       resource.setData(undefined);
+      setClientRunningAnchor(null);
       setCompletedSession(finished);
       setStatsRefreshKey(key => key + 1);
       setFinishSheetOpen(false);
@@ -328,14 +418,89 @@ export default function MeditationScreen() {
     }
   }
 
+  useEffect(() => {
+    if (!session) return;
+
+    const unsubscribe = navigation.addListener('beforeRemove', event => {
+      if (leavingRef.current) return;
+      event.preventDefault();
+      if (leavePromptOpenRef.current) return;
+
+      leavePromptOpenRef.current = true;
+      void (async () => {
+        const shouldLeave = await confirm(
+          'End meditation and leave?',
+          'Your meditation session is still active. Leaving will end and save the session.',
+          'End session and leave',
+          'Keep meditating',
+        );
+        leavePromptOpenRef.current = false;
+        if (!shouldLeave) return;
+
+        leavingRef.current = true;
+        setSaving(true);
+        setError(null);
+        try {
+          await api.meditation.end(session.id);
+          setSessionData(undefined);
+          setClientRunningAnchor(null);
+          setFinishSheetOpen(false);
+          stopAudio();
+          audioStartedRef.current = false;
+          navigation.dispatch(event.data.action);
+        } catch (cause) {
+          leavingRef.current = false;
+          setError(reportError('Could not end meditation while leaving', cause));
+        } finally {
+          setSaving(false);
+        }
+      })();
+    });
+
+    return unsubscribe;
+  }, [confirm, navigation, session, setSessionData, stopAudio]);
+
   return (
-    <Screen title="Meditation" eyebrow="A little room to breathe" refreshing={resource.refreshing} onRefresh={() => void resource.reload()}>
+    <Screen contentStyle={styles.screenContent} refreshing={resource.refreshing} onRefresh={() => void resource.reload()}>
       {resource.loading && <LoadingView label="Restoring your session…" />}
       {resource.error && !resource.data && <ErrorView message={resource.error} retry={() => void resource.reload()} />}
       {error && <AppText color="danger" style={styles.error}>{error}</AppText>}
 
       {!resource.loading && !session && (
         <Card style={styles.setup}>
+          <View style={styles.setupIntro}>
+            <View style={[styles.leaf, { backgroundColor: colors.accentSoft }]}>
+              <Ionicons name="leaf" size={34} color={colors.accent} />
+            </View>
+            <AppText color="muted" style={styles.setupIntroCopy}>Choose a length, check in with yourself, and make some quiet space.</AppText>
+          </View>
+          <View style={styles.optionList}>
+            <SessionOptionRow
+              icon="happy-outline"
+              label="Mood before"
+              value={`${moodBefore} · ${moodLabel(moodBefore)}`}
+              onPress={() => setOptionSheet('mood')}
+            />
+            <SessionOptionRow
+              icon="time-outline"
+              label="Session length"
+              value={`${durationMinutes} min`}
+              onPress={() => setOptionSheet('duration')}
+            />
+            <SessionOptionRow
+              icon="notifications-outline"
+              label="Interval bells"
+              value={numIntervalBells === 0 ? 'No bells' : `${numIntervalBells} bells`}
+              onPress={() => setOptionSheet('bells')}
+            />
+            <SessionOptionRow
+              icon={SOUND_ICONS[selectedSound]}
+              label="Soundscape"
+              value={selectedSoundOption.label}
+              onPress={() => setOptionSheet('sound')}
+            />
+          </View>
+          <AppButton label="Begin meditation" icon="play" loading={saving} onPress={() => void start()} />
           {completedSession && (
             <View style={[styles.completed, { backgroundColor: `${colors.success}18`, borderColor: `${colors.success}55` }]}>
               <Ionicons name="checkmark-circle" size={22} color={colors.success} />
@@ -348,65 +513,60 @@ export default function MeditationScreen() {
               </SilentPressable>
             </View>
           )}
-          <View style={[styles.leaf, { backgroundColor: colors.accentSoft }]}><Ionicons name="leaf" size={34} color={colors.accent} /></View>
-          <View style={styles.intro}>
-            <AppText variant="title" style={styles.center}>Settle in</AppText>
-            <AppText color="muted" style={styles.center}>Choose a length, check in with yourself, and make some quiet space.</AppText>
-          </View>
-
-          <View style={styles.section}>
-            <View style={styles.sectionHeading}><AppText variant="label">How are you feeling?</AppText><AppText variant="label" color="muted">{moodBefore} · {moodLabel(moodBefore)}</AppText></View>
-            <AppSlider label="Mood before meditation" value={moodBefore} minimumValue={MIN_MOOD} maximumValue={MAX_MOOD} minimumLabel="Very low" maximumLabel="Very good" onValueChange={setMoodBefore} />
-          </View>
-
-          <View style={styles.section}>
-            <View style={styles.sectionHeading}>
-              <AppText variant="label">Session length</AppText>
-              <AppText variant="caption" color="muted">{durationMinutes} minutes</AppText>
-            </View>
-            <DurationPicker value={durationMinutes} onChange={setDurationMinutes} />
-          </View>
-
-          <View style={styles.section}>
-            <View style={styles.sectionHeading}><AppText variant="label">Interval bells</AppText><AppText variant="caption" color="muted">{numIntervalBells === 0 ? 'No bells' : `${numIntervalBells} during the session`}</AppText></View>
-            <AppSlider label="Interval bells" value={numIntervalBells} minimumValue={0} maximumValue={10} minimumLabel="No bells" maximumLabel="10 bells" onValueChange={setNumIntervalBells} />
-          </View>
-
-          <View style={styles.section}>
-            <View style={styles.sectionHeading}><AppText variant="label">Choose a soundscape</AppText><AppText variant="caption" color="muted">{selectedSoundOption.label}</AppText></View>
-            <SoundChoices selected={selectedSound} onChange={chooseSound} />
-          </View>
-
-          <AppButton label="Begin meditation" icon="play" loading={saving} onPress={() => void start()} />
-          <View style={styles.helper}><Ionicons name="sparkles-outline" size={17} color={colors.textMuted} /><AppText variant="caption" color="muted">Pause or finish whenever you need.</AppText></View>
         </Card>
       )}
 
       {session && (
-        <Card style={styles.active}>
-          <View style={[styles.timerRing, { borderColor: colors.accentSoft }]}>
-            <Ionicons name="leaf" size={28} color={colors.accent} />
-            <AppText variant="display" style={styles.timer}>{clock(remaining)}</AppText>
-            <AppText variant="caption" color="muted">{sessionComplete ? 'TIME IS UP' : session.running ? 'REMAINING' : 'PAUSED'}</AppText>
-          </View>
-          <View style={[styles.track, { backgroundColor: colors.accentSoft }]}><View style={[styles.fill, { width: `${progress * 100}%`, backgroundColor: colors.accent }]} /></View>
-          <View style={styles.activeIntro}>
-            <AppText variant="title" style={styles.center}>{sessionComplete ? 'Beautifully done.' : session.running ? 'Be here.' : 'Paused.'}</AppText>
-            <AppText color="muted" style={styles.center}>{sessionComplete ? 'Take a moment before you close the session.' : `${session.numIntervalBells} interval bell${session.numIntervalBells === 1 ? '' : 's'} · ${Math.round(session.intendedLength / 60)} minutes`}</AppText>
-          </View>
-          <View style={styles.section}>
-            <View style={styles.sectionHeading}><AppText variant="label">Soundscape</AppText><AppText variant="caption" color="muted">{selectedSoundOption.label}</AppText></View>
-            <SoundChoices selected={selectedSound} onChange={chooseSound} compact />
-            <AppButton variant="secondary" label={soundMuted ? 'Turn sound on' : 'Mute sound'} icon={soundMuted ? 'volume-mute-outline' : 'volume-high-outline'} onPress={toggleSound} />
-          </View>
-          <View style={styles.actions}>
-            {!sessionComplete && <AppButton style={styles.action} variant="secondary" label={session.running ? 'Pause' : 'Resume'} icon={session.running ? 'pause' : 'play'} loading={saving} onPress={() => void togglePause()} />}
-            <AppButton style={styles.action} variant={sessionComplete ? 'primary' : 'ghost'} label={sessionComplete ? 'Finish session' : 'End early'} icon={sessionComplete ? 'checkmark-circle-outline' : 'stop-circle-outline'} loading={saving} onPress={() => setFinishSheetOpen(true)} />
-          </View>
-        </Card>
+        <Animated.View style={[styles.activeAnimation, { opacity: activeOpacity, transform: [{ translateY: activeOffset }, { scale: activeScale }] }]}>
+          <Card style={styles.active}>
+            <View style={[styles.timerRing, { borderColor: colors.accentSoft }]}>
+              <Ionicons name="leaf" size={28} color={colors.accent} />
+              <AppText variant="display" style={styles.timer}>{clock(remaining)}</AppText>
+              <AppText variant="caption" color="muted">{sessionComplete ? 'TIME IS UP' : session.running ? 'REMAINING' : 'PAUSED'}</AppText>
+            </View>
+            <View style={[styles.track, { backgroundColor: colors.accentSoft }]}><View style={[styles.fill, { width: `${progress * 100}%`, backgroundColor: colors.accent }]} /></View>
+            <View style={styles.activeIntro}>
+              <AppText variant="title" style={styles.center}>{sessionComplete ? 'Beautifully done.' : session.running ? 'Be here.' : 'Paused.'}</AppText>
+              <AppText color="muted" style={styles.center}>{sessionComplete ? 'Take a moment before you close the session.' : `${session.numIntervalBells} interval bell${session.numIntervalBells === 1 ? '' : 's'} · ${Math.round(session.intendedLength / 60)} minutes`}</AppText>
+            </View>
+            <View style={styles.activeSoundControls}>
+              <SessionOptionRow
+                icon={SOUND_ICONS[selectedSound]}
+                label="Soundscape"
+                value={selectedSoundOption.label}
+                active={!soundMuted}
+                onPress={() => setOptionSheet('sound')}
+              />
+              <AppButton compact variant="secondary" label={soundMuted ? 'Turn sound on' : 'Mute sound'} icon={soundMuted ? 'volume-mute-outline' : 'volume-high-outline'} onPress={toggleSound} />
+            </View>
+            <View style={styles.actions}>
+              {!sessionComplete && <AppButton style={styles.action} variant="secondary" label={session.running ? 'Pause' : 'Resume'} icon={session.running ? 'pause' : 'play'} loading={saving} onPress={() => void togglePause()} />}
+              <AppButton style={styles.action} variant={sessionComplete ? 'primary' : 'ghost'} label={sessionComplete ? 'Finish session' : 'End early'} icon={sessionComplete ? 'checkmark-circle-outline' : 'stop-circle-outline'} loading={saving} onPress={() => setFinishSheetOpen(true)} />
+            </View>
+          </Card>
+        </Animated.View>
       )}
 
-      <MeditationStats refreshKey={statsRefreshKey} />
+      {!session && <MeditationStats compact refreshKey={statsRefreshKey} onViewCalendar={() => router.push('/meditation-calendar')} />}
+
+      <ModalSheet visible={optionSheet === 'mood'} onClose={() => setOptionSheet(null)} title="Mood before meditation">
+        <View style={styles.sheetValue}><AppText variant="display">{moodBefore}</AppText><AppText color="muted">{moodLabel(moodBefore)}</AppText></View>
+        <AppSlider label="Mood before meditation" value={moodBefore} minimumValue={MIN_MOOD} maximumValue={MAX_MOOD} minimumLabel="Very low" maximumLabel="Very good" onValueChange={setMoodBefore} />
+      </ModalSheet>
+
+      <ModalSheet visible={optionSheet === 'duration'} onClose={() => setOptionSheet(null)} title="Session length">
+        <View style={styles.sheetValue}><AppText variant="display">{durationMinutes}</AppText><AppText color="muted">minutes</AppText></View>
+        <DurationPicker value={durationMinutes} onChange={setDurationMinutes} />
+      </ModalSheet>
+
+      <ModalSheet visible={optionSheet === 'bells'} onClose={() => setOptionSheet(null)} title="Interval bells">
+        <View style={styles.sheetValue}><AppText variant="display">{numIntervalBells}</AppText><AppText color="muted">{numIntervalBells === 1 ? 'bell' : 'bells'}</AppText></View>
+        <AppSlider label="Interval bells" value={numIntervalBells} minimumValue={0} maximumValue={10} minimumLabel="No bells" maximumLabel="10 bells" onValueChange={setNumIntervalBells} />
+      </ModalSheet>
+
+      <ModalSheet visible={optionSheet === 'sound'} onClose={() => setOptionSheet(null)} title="Soundscape">
+        <SoundChoices selected={selectedSound} onChange={chooseSound} compact />
+      </ModalSheet>
 
       <ModalSheet
         visible={finishSheetOpen}
@@ -422,13 +582,20 @@ export default function MeditationScreen() {
 }
 
 const styles = StyleSheet.create({
-  setup: { gap: 22 },
+  screenContent: { paddingTop: 0 },
+  setup: { gap: 16, paddingTop: 12 },
+  setupIntro: { alignItems: 'center', gap: 10 },
+  setupIntroCopy: { textAlign: 'center' },
+  leaf: { width: 76, height: 76, borderRadius: 38, alignItems: 'center', justifyContent: 'center' },
+  optionList: { gap: 9 },
+  optionRow: { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 11, borderRadius: 15, borderWidth: 1 },
+  optionIcon: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  optionLabel: { flex: 1 },
+  optionValue: { maxWidth: '44%', textAlign: 'right' },
   completed: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: 15, padding: 12 },
-  leaf: { width: 76, height: 76, borderRadius: 38, alignSelf: 'center', alignItems: 'center', justifyContent: 'center' },
-  intro: { gap: 7 },
   center: { textAlign: 'center' },
-  section: { gap: 10 },
   sectionHeading: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 },
+  sheetValue: { alignItems: 'center', gap: 3 },
   durationWheel: { height: DURATION_ITEM_HEIGHT * 3, borderWidth: 1, borderRadius: 16, overflow: 'hidden' },
   durationOptions: { paddingVertical: DURATION_ITEM_HEIGHT },
   durationOption: { height: DURATION_ITEM_HEIGHT, marginHorizontal: 8, borderRadius: 11, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
@@ -437,13 +604,14 @@ const styles = StyleSheet.create({
   soundChoiceCompact: { width: '48%', minHeight: 48, padding: 8, gap: 7 },
   soundIcon: { width: 34, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   grow: { flex: 1 },
-  helper: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
-  active: { alignItems: 'stretch', gap: 20 },
+  activeAnimation: { width: '100%' },
+  active: { alignItems: 'stretch', gap: 18 },
   timerRing: { width: 236, height: 236, borderRadius: 118, borderWidth: 14, alignSelf: 'center', alignItems: 'center', justifyContent: 'center', gap: 5 },
   timer: { fontVariant: ['tabular-nums'] },
   track: { height: 8, borderRadius: 4, overflow: 'hidden' },
   fill: { height: 8, borderRadius: 4 },
   activeIntro: { gap: 7 },
+  activeSoundControls: { gap: 10 },
   actions: { flexDirection: 'row', gap: 10 },
   action: { flex: 1 },
   error: { marginHorizontal: 2 },

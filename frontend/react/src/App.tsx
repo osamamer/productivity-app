@@ -4,7 +4,7 @@ import '@fontsource/roboto/400.css';
 import '@fontsource/roboto/500.css';
 import '@fontsource/roboto/700.css';
 import {useEffect, type ReactNode} from "react";
-import {createBrowserRouter, Navigate, Outlet, RouterProvider} from "react-router-dom";
+import {createBrowserRouter, Navigate, RouterProvider} from "react-router-dom";
 import {HomePage} from "./pages/HomePage.jsx";
 import {CalendarPage} from "./pages/CalendarPage.jsx";
 import {TaskPage} from "./pages/TaskPage.jsx";
@@ -24,6 +24,7 @@ import {NotificationCenter} from "./components/notifications/NotificationCenter.
 import {AppErrorBoundary, AppErrorPage} from "./components/AppErrorBoundary.tsx";
 import {useAppContextMenuGuard} from "./components/AppContextMenuGuard.tsx";
 import {rememberMentalDestination, type MentalDestinationPath} from "./services/utils/mentalNavigation";
+import {PageTransition} from "./components/PageTransition.tsx";
 
 
 function MentalDestinationTracker({destination, children}: { destination: MentalDestinationPath; children: ReactNode }) {
@@ -40,7 +41,7 @@ function AppProviders() {
         <UserProvider>
             <TaskProvider>
                 <NotificationCenter/>
-                <Outlet/>
+                <PageTransition/>
             </TaskProvider>
         </UserProvider>
     );

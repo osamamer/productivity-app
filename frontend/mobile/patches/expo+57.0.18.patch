@@ -1,0 +1,15 @@
+diff --git a/node_modules/expo/android/src/main/java/expo/modules/fetch/NativeResponse.kt b/node_modules/expo/android/src/main/java/expo/modules/fetch/NativeResponse.kt
+--- a/node_modules/expo/android/src/main/java/expo/modules/fetch/NativeResponse.kt
++++ b/node_modules/expo/android/src/main/java/expo/modules/fetch/NativeResponse.kt
+@@ -41,9 +41,9 @@ class NativeResponse(
+   val bodyUsed: Boolean
+     get() = this.sink.bodyUsed
+ 
+-  override fun deallocate() {
++  override fun sharedObjectDidRelease() {
+     this.sink.finalize(directBuffer = false)
+-    super.deallocate()
++    super.sharedObjectDidRelease()
+   }
+ 
+   fun onStarted() {

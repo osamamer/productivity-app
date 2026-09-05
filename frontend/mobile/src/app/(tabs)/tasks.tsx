@@ -9,6 +9,7 @@ import { TaskBulkDateSheet } from '@/components/tasks/TaskBulkDateSheet';
 import { TaskSelectionActionsPopup } from '@/components/tasks/TaskSelectionActionsPopup';
 import { TaskDetailSheet } from '@/components/tasks/TaskDetailSheet';
 import { TaskRow } from '@/components/tasks/TaskRow';
+import { GroupChevron } from '@/components/tasks/GroupChevron';
 import { AppButton } from '@/components/ui/AppButton';
 import { AppText } from '@/components/ui/AppText';
 import { ChoiceChips } from '@/components/ui/ChoiceChips';
@@ -17,6 +18,7 @@ import { SilentPressable } from '@/components/ui/SilentPressable';
 import { EmptyView, ErrorView, LoadingView } from '@/components/ui/StateView';
 import { reportError } from '@/lib/errors';
 import { playAudioFeedback } from '@/lib/audioFeedback';
+import { animateLayout } from '@/lib/motion';
 import { useAppPopup } from '@/providers/PopupProvider';
 import { usePreferences } from '@/providers/PreferencesProvider';
 import { useTaskWorkspace } from '@/providers/TaskWorkspaceProvider';
@@ -90,6 +92,12 @@ export default function TasksScreen() {
   const [activePomodoroStatus, setActivePomodoroStatus] = useState<PomodoroStatus | null>(null);
   const [bulkDateOpen, setBulkDateOpen] = useState(false);
   const [bulkDateSaving, setBulkDateSaving] = useState(false);
+
+  function changeFilter(nextFilter: Filter) {
+    if (nextFilter === filter) return;
+    animateLayout();
+    setFilter(nextFilter);
+  }
 
   useFocusEffect(useCallback(() => {
     let active = true;
@@ -272,6 +280,7 @@ export default function TasksScreen() {
   }
 
   function toggleGroup(groupId: string) {
+    animateLayout();
     setCollapsedGroupIds(previous => {
       const next = new Set(previous);
       if (next.has(groupId)) next.delete(groupId);
@@ -292,7 +301,7 @@ export default function TasksScreen() {
     }
   }
 
-  function renderTask(task: Task) {
+  function renderTask(task: Task, inGroup = false, groupLast = false) {
     const selectionMode = selectedTaskIds.length > 0 || selectedGroupIds.length > 0;
     return (
       <TaskRow
@@ -309,6 +318,8 @@ export default function TasksScreen() {
         onPomodoroActiveChange={active => handlePomodoroActiveChange(task.taskId, active)}
         onPomodoroStatusChange={status => handlePomodoroStatusChange(task.taskId, status)}
         onPomodoroClose={() => setExpandedPomodoroTaskId(null)}
+        inGroup={inGroup}
+        groupLast={groupLast}
       />
     );
   }
@@ -337,7 +348,7 @@ export default function TasksScreen() {
       )}
       refreshing={loading}
       onRefresh={() => void refresh()}>
-      <ChoiceChips value={filter} onChange={setFilter} options={[
+      <ChoiceChips value={filter} onChange={changeFilter} options={[
         { value: 'today', label: 'Today' },
         { value: 'upcoming', label: 'Upcoming' },
         { value: 'all', label: 'All' },
@@ -358,9 +369,9 @@ export default function TasksScreen() {
                   accessibilityLabel={`${collapsedGroupIds.has(item.group.groupId) ? 'Expand' : 'Collapse'} ${item.group.name}`}
                   accessibilityState={{ expanded: !collapsedGroupIds.has(item.group.groupId) }}
                   onPress={() => toggleGroup(item.group.groupId)}
-                  style={({ pressed }) => [styles.groupHeader, { backgroundColor: colors.accentSoft, borderBottomColor: colors.border }, pressed && styles.pressed]}
+                  style={({ pressed }) => [styles.groupHeader, !collapsedGroupIds.has(item.group.groupId) && styles.groupHeaderExpanded, { backgroundColor: selectedGroupIdSet.has(item.group.groupId) ? colors.accentSoft : colors.surface, borderBottomColor: colors.border }, pressed && styles.pressed]}
                 >
-                  <Ionicons name={collapsedGroupIds.has(item.group.groupId) ? 'chevron-forward' : 'chevron-down'} size={18} color={colors.accent} />
+                  <GroupChevron collapsed={collapsedGroupIds.has(item.group.groupId)} color={colors.accent} />
                   <View style={styles.groupSelection}>
                     <AppText variant="label" style={styles.groupTitle}>{item.group.name}</AppText>
                     <AppText variant="caption" color="muted">{item.tasks.length}</AppText>
@@ -380,8 +391,8 @@ export default function TasksScreen() {
                   </SilentPressable>
                 </SilentPressable>
             {!collapsedGroupIds.has(item.group.groupId) && (
-              <View style={[styles.groupTasks, { backgroundColor: colors.background, borderLeftColor: colors.accent }]}>
-                {item.tasks.map(renderTask)}
+              <View style={[styles.groupTasks, { backgroundColor: colors.surface }]}>
+                {item.tasks.map((task, index) => renderTask(task, true, index === item.tasks.length - 1))}
               </View>
             )}
           </View>
@@ -421,11 +432,12 @@ export default function TasksScreen() {
 
 const styles = StyleSheet.create({
   list: { gap: 10 },
-  group: { borderWidth: 1, borderRadius: 18, overflow: 'hidden' },
-  groupHeader: { minHeight: 68, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 13, borderBottomWidth: 1 },
-  groupSelection: { flex: 1, minHeight: 68, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  group: { borderWidth: 1, borderRadius: 20, overflow: 'hidden' },
+  groupHeader: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14 },
+  groupHeaderExpanded: { borderBottomWidth: StyleSheet.hairlineWidth },
+  groupSelection: { flex: 1, minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 8 },
   groupTitle: { flex: 1 },
   groupSelect: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
-  groupTasks: { gap: 10, marginLeft: 10, paddingLeft: 10, paddingRight: 8, paddingVertical: 10, borderLeftWidth: 2 },
+  groupTasks: { paddingVertical: 0 },
   pressed: { opacity: 0.7 },
 });

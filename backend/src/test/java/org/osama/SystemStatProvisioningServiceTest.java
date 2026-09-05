@@ -70,7 +70,9 @@ class SystemStatProvisioningServiceTest {
         assertEquals(Set.of(
                 SystemStatCatalog.MEDITATED_SYSTEM_KEY,
                 SystemStatCatalog.MEDITATION_MINUTES_SYSTEM_KEY,
-                SystemStatCatalog.SLEEP_HOURS_SYSTEM_KEY
+                SystemStatCatalog.SLEEP_HOURS_SYSTEM_KEY,
+                SystemStatCatalog.SLEEP_TIME_SYSTEM_KEY,
+                SystemStatCatalog.WAKE_UP_TIME_SYSTEM_KEY
         ), systemKeys);
         assertEquals(StatType.BOOLEAN, definitionRepository
                 .findByUserIdAndSystemKey(TEST_USER_ID, SystemStatCatalog.MEDITATED_SYSTEM_KEY)
@@ -86,6 +88,14 @@ class SystemStatProvisioningServiceTest {
         assertEquals(StatType.NUMBER, sleep.getType());
         assertEquals(StatMorality.GOOD, sleep.getMorality());
         assertEquals(7.0, sleep.getGoodThreshold());
+        assertEquals(StatType.TIME, definitionRepository
+                .findByUserIdAndSystemKey(TEST_USER_ID, SystemStatCatalog.SLEEP_TIME_SYSTEM_KEY)
+                .orElseThrow()
+                .getType());
+        assertEquals(StatType.TIME, definitionRepository
+                .findByUserIdAndSystemKey(TEST_USER_ID, SystemStatCatalog.WAKE_UP_TIME_SYSTEM_KEY)
+                .orElseThrow()
+                .getType());
     }
 
     @Test

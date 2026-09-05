@@ -3,6 +3,7 @@ package org.osama.user;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.Optional;
+import java.util.List;
 
 public interface UserRepository extends JpaRepository<User, String> {
 
@@ -10,5 +11,7 @@ public interface UserRepository extends JpaRepository<User, String> {
     Optional<User> findUserByKeycloakId(String keycloakId);
     Optional<User> findUserByEmail(String email);
     Optional<User> findUserByUsername(String username);
+
+    List<User> findAllByActiveTrue();
 
 }

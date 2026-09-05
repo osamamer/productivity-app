@@ -148,7 +148,7 @@ export function MonthCalendarGrid({
                         ]}>
                         {item.completed ? <Ionicons name="checkmark" size={9} color={colors.success} /> : <View style={[styles.itemDot, { backgroundColor: accent }]} />}
                         <AppText variant="caption" numberOfLines={1} style={[styles.itemText, { color: item.kind === 'calendarEvent' ? foreground : colors.text, fontSize: 9, lineHeight: 12 }]}>
-                          {item.timeLabel ? `${item.timeLabel} ` : ''}{item.title}
+                          {item.title}{item.timeLabel ? ` · ${item.timeLabel}` : ''}
                         </AppText>
                       </SilentPressable>
                     );

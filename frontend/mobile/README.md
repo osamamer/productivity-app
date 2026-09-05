@@ -67,25 +67,34 @@ adb version
 adb devices
 ```
 
-Start the backend, PostgreSQL, Keycloak, and mobile Metro server from the repository root:
+Start the backend, PostgreSQL, Keycloak, Metro, and the native Android app from
+the repository root:
 
 ```bash
 ./run-app.sh
 ```
 
-When a device is already connected, `run-app.sh` automatically applies reverse port forwarding for the local Keycloak issuer, backend, and Metro server. If the emulator is started after `run-app.sh`, apply the mappings manually:
+`run-app.sh` uses an already-connected device when possible. If no device is
+connected and exactly one AVD is configured, it starts that emulator with two
+virtual cores and 2 GB RAM, waits for boot, applies the required reverse port
+forwarding for the local Keycloak issuer, backend, and Metro server, then
+builds and launches the Android development app. Multiple AVDs require
+`CLARITARD_ANDROID_AVD`; set `CLARITARD_ANDROID_EMULATOR=0` to keep emulator
+startup manual. If the emulator is started after `run-app.sh`, apply the
+mappings manually:
 
 ```bash
 adb reverse tcp:7070 tcp:7070
 adb reverse tcp:8080 tcp:8080
+adb reverse tcp:8081 tcp:8081
 ```
 
-Then build and run the native app:
-
-```bash
-cd frontend/mobile
-npm run android
-```
+The native build is intentionally conservative to keep the host responsive:
+it uses two Gradle/CMake workers, reduced process priority, a 1536 MB Gradle
+heap, and no persistent Gradle daemon. Override the defaults with
+`CLARITARD_MOBILE_GRADLE_WORKERS`, `CLARITARD_MOBILE_GRADLE_MAX_HEAP`, or
+`CLARITARD_MOBILE_BUILD_NICE`; set `CLARITARD_MOBILE_ANDROID=0` to run only
+the web stack and Metro.
 
 ### Node version mismatch during Gradle builds
 

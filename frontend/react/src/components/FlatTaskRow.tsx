@@ -17,12 +17,15 @@ import {
     Typography,
     useTheme,
 } from '@mui/material';
+import { keyframes } from '@mui/system';
 import TimerIcon from '@mui/icons-material/Timer';
 import TuneIcon from '@mui/icons-material/Tune';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
 import StopIcon from '@mui/icons-material/Stop';
 import SkipNextIcon from '@mui/icons-material/SkipNext';
+import VolumeOffIcon from '@mui/icons-material/VolumeOff';
+import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -43,6 +46,17 @@ import {
     PomodoroFormValues,
 } from '../services/api/pomodoroConfigService';
 import { GENERIC_ERROR_MESSAGE } from '../services/utils/userMessages';
+import {
+    getStaleTaskSubtasks,
+    setCachedTaskSubtasks,
+} from '../services/cache/taskSubtasksCache';
+import { PomodoroNumberField } from './timer/PomodoroNumberField';
+import {
+    isWhiteNoiseEnabled,
+    setWhiteNoiseEnabled,
+    startWhiteNoise,
+    stopWhiteNoise,
+} from '../services/whiteNoise';
 
 // ─── types ─────────────────────────────────────────────────────────────────
 
@@ -89,6 +103,18 @@ const PanelSlide = React.forwardRef<HTMLDivElement, React.ComponentProps<typeof 
 PanelSlide.displayName = 'PanelSlide';
 
 type PomodoroFeedback = { id: number; message: string };
+
+const EMPTY_SUBTASKS: Task[] = [];
+const subtaskReveal = keyframes`
+    from {
+        opacity: 0;
+        transform: translateY(-6px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+`;
 
 function checkboxColor(importance: number): string {
     if (importance > 7) return '#ef4444';
@@ -209,6 +235,10 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     const [actionLoading, setActionLoading] = useState(false);
     const [pomodoroFeedback, setPomodoroFeedback] = useState<PomodoroFeedback | null>(null);
     const [pomodoroHydrated, setPomodoroHydrated] = useState(!deferPomodoroHydration);
+    const [whiteNoiseEnabled, setWhiteNoiseEnabledState] = useState(isWhiteNoiseEnabled);
+    const [subtasks, setSubtasks] = useState<Task[]>(() => getStaleTaskSubtasks(task.taskId) ?? EMPTY_SUBTASKS);
+    const [subtasksLoaded, setSubtasksLoaded] = useState(() => getStaleTaskSubtasks(task.taskId) !== undefined);
+    const [newSubtaskId, setNewSubtaskId] = useState<string | null>(null);
 
     // Local description state — committed on blur to avoid an API call per keystroke
     const [localName, setLocalName] = useState(task.name ?? '');
@@ -233,8 +263,36 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         });
     }, []);
     useEffect(() => { setLocalName(task.name ?? ''); }, [task.name]);
-    const [localDesc, setLocalDesc] = useState(task.description ?? '');
-    useEffect(() => { setLocalDesc(task.description ?? ''); }, [task.description]);
+    useEffect(() => {
+        if (expandedPanel !== 'details') return;
+
+        let cancelled = false;
+        const cached = getStaleTaskSubtasks(task.taskId);
+        if (cached !== undefined) {
+            setSubtasks(cached);
+            setSubtasksLoaded(true);
+        } else {
+            setSubtasksLoaded(false);
+        }
+
+        taskService.getSubtasks(task.taskId)
+            .then(nextSubtasks => {
+                if (cancelled) return;
+                setSubtasks(nextSubtasks);
+                setCachedTaskSubtasks(task.taskId, nextSubtasks);
+                setSubtasksLoaded(true);
+            })
+            .catch(error => {
+                if (cancelled) return;
+                setSubtasks(previous => cached ?? previous);
+                setSubtasksLoaded(true);
+                console.error('Error fetching Home subtasks:', error);
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [expandedPanel, task.taskId]);
     const [scheduledDraft, setScheduledDraft] = useState<Date | null>(
         task.scheduledPerformDateTime ? new Date(task.scheduledPerformDateTime) : null,
     );
@@ -382,6 +440,12 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         onTogglePanel(task.taskId, panel);
     }, [onTogglePanel, readOnly, task.taskId]);
 
+    const prefetchSubtasks = useCallback(() => {
+        void taskService.getSubtasks(task.taskId).catch(error => {
+            console.error('Error prefetching Home subtasks:', error);
+        });
+    }, [task.taskId]);
+
     const handleStart = async () => {
         // Starting before the live timer channel is ready is harmless; the next click can try again.
         if (!wsConnected) return;
@@ -396,6 +460,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                 form.longBreakDuration, form.numFocuses, form.longBreakCooldown,
                 pomodoroConfig.secondsMode,
             );
+            void startWhiteNoise();
             onPomodoroActiveChange?.(task.taskId, true);
         } catch (e) {
             console.error('Error starting pomodoro:', e);
@@ -427,6 +492,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         if (stoppedPomodoroId) endedPomodoroIdRef.current = stoppedPomodoroId;
         try {
             await taskService.endPomodoro(task.taskId);
+            stopWhiteNoise();
             activePomodoroIdRef.current = null;
             setPomodoroStatus(null);
             onPomodoroActiveChange?.(task.taskId, false);
@@ -449,6 +515,66 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         finally { setActionLoading(false); }
     };
 
+    const handleSubtaskToggle = async (subtask: Task) => {
+        const completed = !subtask.completed;
+        const optimisticSubtasks = subtasks.map(item => item.taskId === subtask.taskId
+            ? { ...item, completed }
+            : item);
+        setSubtasks(optimisticSubtasks);
+        setCachedTaskSubtasks(task.taskId, optimisticSubtasks);
+
+        try {
+            const updatedSubtask = await taskService.toggleTaskCompletion(subtask.taskId, completed);
+            setSubtasks(previous => {
+                const reconciledSubtasks = previous.map(item => item.taskId === updatedSubtask.taskId
+                    ? updatedSubtask
+                    : item);
+                setCachedTaskSubtasks(task.taskId, reconciledSubtasks);
+                return reconciledSubtasks;
+            });
+        } catch (error) {
+            setSubtasks(previous => {
+                const rolledBackSubtasks = previous.map(item => item.taskId === subtask.taskId
+                    ? { ...item, completed: subtask.completed }
+                    : item);
+                setCachedTaskSubtasks(task.taskId, rolledBackSubtasks);
+                return rolledBackSubtasks;
+            });
+            console.error('Error toggling Home subtask completion:', error);
+        }
+    };
+
+    const handleCreateSubtask = async (event: React.FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        const input = event.currentTarget.elements.namedItem('home-subtask-name');
+        if (!(input instanceof HTMLInputElement)) return;
+        const name = input.value.trim();
+        if (!name) return;
+
+        try {
+            const createdSubtask = await taskService.createTask({
+                name,
+                description: '',
+                scheduledPerformDateTime: '',
+                tag: '',
+                importance: 0,
+                parentId: task.taskId,
+            });
+            setSubtasks(previous => {
+                const nextSubtasks = [...previous, createdSubtask];
+                setCachedTaskSubtasks(task.taskId, nextSubtasks);
+                return nextSubtasks;
+            });
+            setNewSubtaskId(createdSubtask.taskId);
+            window.setTimeout(() => {
+                setNewSubtaskId(previous => previous === createdSubtask.taskId ? null : previous);
+            }, 240);
+            input.value = '';
+        } catch (error) {
+            console.error('Error creating Home subtask:', error);
+        }
+    };
+
     const commitDateChange = (newDate: Date | null) => {
         if (readOnly) return;
         if (!newDate) {
@@ -464,13 +590,6 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         if (readOnly) return;
         setScheduledDraft(newDate);
         if (!newDate) commitDateChange(null);
-    };
-
-    const handleDescBlur = () => {
-        if (readOnly) return;
-        if (localDesc !== (task.description ?? '')) {
-            onUpdate(task.taskId, { description: localDesc });
-        }
     };
 
     const handleNameCommit = () => {
@@ -494,6 +613,23 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     const isActive  = Boolean(pomodoroStatus?.active);
     const activePomodoro = pomodoroStatus?.active;
     const sessionRunning = pomodoroStatus?.sessionRunning;
+
+    useEffect(() => {
+        const focusRunning = expectedPomodoroActive
+            && isActive
+            && sessionRunning
+            && Boolean(pomodoroStatus)
+            && !isBreakPhase(pomodoroStatus as PomodoroStatus);
+        if (focusRunning && whiteNoiseEnabled) void startWhiteNoise();
+        else if (expectedPomodoroActive) stopWhiteNoise();
+    }, [expectedPomodoroActive, isActive, pomodoroStatus, sessionRunning, whiteNoiseEnabled]);
+
+    const handleWhiteNoiseToggle = () => {
+        const nextEnabled = !whiteNoiseEnabled;
+        setWhiteNoiseEnabledState(nextEnabled);
+        setWhiteNoiseEnabled(nextEnabled);
+        if (nextEnabled && isActive) void startWhiteNoise();
+    };
 
     useEffect(() => {
         if (activePomodoro !== undefined) {
@@ -543,7 +679,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                 border: '1.5px solid transparent',
                 borderColor:
                     isActive
-                        ? (useGreenBar ? theme.palette.success.main : alpha(activeAccent, 0.7))
+                        ? (useGreenBar ? pomodoroGreen : alpha(activeAccent, 0.7))
                         : selected
                             ? alpha(activeAccent, 0.38)
                             : 'transparent',
@@ -628,16 +764,21 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                     onChange={event => onToggle(task.taskId, event.currentTarget.parentElement ?? event.currentTarget)}
                     sx={{ color: cbColor, '&.Mui-checked': { color: cbColor }, mr: 0.5 }}
                 />
-                <Box
-                    data-task-text-area="true"
-                    sx={{
+                    <Box
+                        data-task-text-area="true"
+                        onClick={event => {
+                            event.stopPropagation();
+                            handleRowSelection(event);
+                            if (!readOnly) setIsEditingName(true);
+                        }}
+                        sx={{
                         flex: 1,
                         minWidth: 0,
                         position: 'relative',
                         maxHeight: '6.3em',
-                        overflowY: 'auto',
+                        overflowY: isEditingName ? 'hidden' : 'auto',
                         overflowX: 'hidden',
-                        scrollbarGutter: 'stable',
+                        scrollbarGutter: isEditingName ? 'auto' : 'stable',
                         overflowWrap: 'anywhere',
                         wordBreak: 'break-word',
                         hyphens: 'auto',
@@ -648,12 +789,6 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                 >
                     <Box
                         component="span"
-                        onClick={event => {
-                            event.stopPropagation();
-                            handleRowSelection(event);
-                            if (readOnly) return;
-                            setIsEditingName(true);
-                        }}
                         sx={{
                             display: 'block',
                             width: '100%',
@@ -769,6 +904,9 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             <Tooltip title="Details">
                                 <IconButton
                                     size="small"
+                                    onMouseEnter={prefetchSubtasks}
+                                    onFocus={prefetchSubtasks}
+                                    onPointerDown={prefetchSubtasks}
                                     onClick={(e) => {
                                         e.stopPropagation();
                                         handleRowSelection(e);
@@ -823,16 +961,13 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                         { key: 'numFocuses',         label: 'Sessions'          },
                                     ] as const
                                 ).map(({ key, label }) => (
-                                    <TextField
+                                    <PomodoroNumberField
                                         key={key}
+                                        name={key}
                                         label={label}
-                                        type="number"
-                                        autoComplete="off"
-                                        size="small"
                                         value={form[key]}
-                                        onChange={(e) => setForm(prev => ({ ...prev, [key]: Number(e.target.value) }))}
+                                        onChange={value => setForm(prev => ({ ...prev, [key]: value }))}
                                         disabled={actionLoading}
-                            inputProps={{ style: { textAlign: 'left' }, draggable: false }}
                                     />
                                 ))}
                             </Box>
@@ -902,6 +1037,17 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             </Box>
 
                             <Box sx={{ display: 'flex', gap: 0.5, ml: 'auto' }}>
+                                <Tooltip title={whiteNoiseEnabled ? 'Mute white noise' : 'Play white noise'}>
+                                    <IconButton
+                                        size="small"
+                                        onClick={handleWhiteNoiseToggle}
+                                        disabled={actionLoading}
+                                        color={whiteNoiseEnabled ? 'primary' : 'default'}
+                                        aria-label={whiteNoiseEnabled ? 'Mute white noise' : 'Play white noise'}
+                                    >
+                                        {whiteNoiseEnabled ? <VolumeUpIcon /> : <VolumeOffIcon />}
+                                    </IconButton>
+                                </Tooltip>
                                 {(waitingForPhase || !isBreak) && (
                                     <IconButton
                                         size="small"
@@ -938,7 +1084,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
 
             {/* ── Details panel ── */}
             <Collapse
-                in={expandedPanel === 'details'}
+                in={expandedPanel === 'details' && subtasksLoaded}
                 timeout={{ enter: 260, exit: 180 }}
                 easing={{
                     enter: 'cubic-bezier(0.22, 1, 0.36, 1)',
@@ -996,21 +1142,59 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                         />
                     </LocalizationProvider>
 
-                    {/* Description */}
-                    <TextField
-                        label="Description"
-                        autoComplete="off"
-                        value={localDesc}
-                        onChange={(e) => setLocalDesc(e.target.value)}
-                        onBlur={handleDescBlur}
-                        multiline
-                        minRows={2}
-                        maxRows={5}
-                        size="small"
-                        fullWidth
-                        placeholder="Add a note…"
-                        inputProps={{ style: { textAlign: 'left' } }}
-                    />
+                    <Box>
+                        <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            sx={{ display: 'block', mb: 0.5, textAlign: 'left' }}
+                        >
+                            Subtasks {subtasks.length > 0 ? `· ${subtasks.filter(subtask => subtask.completed).length}/${subtasks.length}` : ''}
+                        </Typography>
+                        {subtasks.map(subtask => (
+                            <Box
+                                key={subtask.taskId}
+                                sx={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    minHeight: 34,
+                                    animation: newSubtaskId === subtask.taskId
+                                        ? `${subtaskReveal} 240ms ease-out`
+                                        : undefined,
+                                }}
+                            >
+                                <Checkbox
+                                    size="small"
+                                    checked={subtask.completed}
+                                    onChange={() => void handleSubtaskToggle(subtask)}
+                                    sx={{ p: 0.5, mr: 0.75 }}
+                                />
+                                <Typography
+                                    variant="body2"
+                                    sx={{
+                                        textAlign: 'left',
+                                        color: subtask.completed ? 'text.disabled' : 'text.primary',
+                                        textDecoration: subtask.completed ? 'line-through' : 'none',
+                                    }}
+                                >
+                                    {subtask.name}
+                                </Typography>
+                            </Box>
+                        ))}
+                        {subtasksLoaded && (
+                            <Box component="form" onSubmit={handleCreateSubtask} sx={{ display: 'flex', alignItems: 'center' }}>
+                                <Checkbox size="small" disabled checked={false} sx={{ p: 0.5, mr: 0.75 }} />
+                                <TextField
+                                    name="home-subtask-name"
+                                    variant="standard"
+                                    placeholder="Add a subtask"
+                                    autoComplete="off"
+                                    fullWidth
+                                    InputProps={{ disableUnderline: true }}
+                                    inputProps={{ draggable: false }}
+                                />
+                            </Box>
+                        )}
+                    </Box>
 
                     {/* Tag (read-only) */}
                     {task.tag && (
@@ -1031,9 +1215,9 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                         bottom: 0, left: 0, right: 0,
                         height: 2,
                         borderRadius: 0,
-                        backgroundColor: alpha(useGreenBar ? theme.palette.success.main : activeAccent, 0.15),
+                        backgroundColor: alpha(useGreenBar ? pomodoroGreen : activeAccent, 0.15),
                         '& .MuiLinearProgress-bar': {
-                            backgroundColor: useGreenBar ? theme.palette.success.main : activeAccent,
+                            backgroundColor: useGreenBar ? pomodoroGreen : activeAccent,
                             borderRadius: 0,
                         },
                     }}

@@ -7,6 +7,7 @@ import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import { format, subDays } from 'date-fns';
 import { StatCorrelation, StatDefinition, StatInsights } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
+import { formatTimeValue } from '../../services/utils/statValues';
 
 const INSIGHT_DATE_RANGES = [
     { label: '30d', value: 30 },
@@ -35,6 +36,7 @@ function formatCorrelation(correlation: number | null): string {
 function formatAverage(value: number | null, type: StatCorrelation['statType']): string {
     if (value === null) return '—';
     if (type === 'BOOLEAN') return `${Math.round(value * 100)}%`;
+    if (type === 'TIME') return formatTimeValue(value);
     return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 

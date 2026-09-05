@@ -207,9 +207,17 @@ export interface MeditationSession {
   intendedLength: number;
 }
 
+export type NotificationType =
+  | 'CALENDAR_EVENT'
+  | 'TASK_REMINDER'
+  | 'MENTAL_STATE_CHECKUP'
+  | 'POMODORO_FOCUS_ENDED'
+  | 'POMODORO_BREAK_ENDED'
+  | 'POMODORO_COMPLETED';
+
 export interface ApplicationNotification {
   notificationId: string;
-  type: string;
+  type: NotificationType;
   title: string;
   body: string | null;
   targetUrl: string | null;
@@ -221,6 +229,10 @@ export interface ApplicationNotification {
 export interface UserPreferences {
   includeUnloggedNumericDaysAsZero: boolean;
   autoStartPomodoroSessions: boolean;
+  checkupNotificationsEnabled: boolean;
+  checkupIntervalMinutes: number;
+  checkupStartTime: string;
+  checkupTimesPerDay: number;
 }
 
 export type PomodoroPhase = 'FOCUS' | 'BREAK' | 'WAITING_FOR_BREAK' | 'WAITING_FOR_FOCUS';

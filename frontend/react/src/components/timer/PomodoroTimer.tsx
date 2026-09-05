@@ -4,7 +4,6 @@ import keycloak from '../../services/keycloak';
 import {
     Box,
     Button,
-    TextField,
     Typography,
     Stack,
     Alert,
@@ -23,6 +22,8 @@ import StopIcon from '@mui/icons-material/Stop';
 import TimerIcon from '@mui/icons-material/Timer';
 import FreeBreakfastIcon from '@mui/icons-material/FreeBreakfast';
 import SkipNextIcon from '@mui/icons-material/SkipNext';
+import VolumeOffIcon from '@mui/icons-material/VolumeOff';
+import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { taskService } from '../../services/api/index.ts'; // Import the service
 import { requestSystemNotificationPermission } from '../../services/systemNotifications';
@@ -35,6 +36,13 @@ import {
     PomodoroFormValues,
 } from '../../services/api/pomodoroConfigService';
 import { GENERIC_ERROR_MESSAGE } from '../../services/utils/userMessages';
+import { PomodoroNumberField } from './PomodoroNumberField';
+import {
+    isWhiteNoiseEnabled,
+    setWhiteNoiseEnabled,
+    startWhiteNoise,
+    stopWhiteNoise,
+} from '../../services/whiteNoise';
 
 interface Task {
     taskId: string;
@@ -81,6 +89,7 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
     const [isConnected, setIsConnected] = useState(false);
     const [pomodoroFeedback, setPomodoroFeedback] = useState<PomodoroFeedback | null>(null);
     const [isLoading, setIsLoading] = useState(false);
+    const [whiteNoiseEnabled, setWhiteNoiseEnabledState] = useState(isWhiteNoiseEnabled);
     const stompClientRef = useRef<Client | null>(null);
     const pomodoroFeedbackIdRef = useRef(0);
 
@@ -91,6 +100,18 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
             message: GENERIC_ERROR_MESSAGE,
         });
     }, []);
+
+    useEffect(() => {
+        const focusRunning = Boolean(
+            status?.active
+            && status.sessionActive
+            && status.sessionRunning
+            && status.phase !== 'BREAK'
+            && status.phase !== 'WAITING_FOR_BREAK',
+        );
+        if (focusRunning && whiteNoiseEnabled) void startWhiteNoise();
+        else stopWhiteNoise();
+    }, [status?.active, status?.phase, status?.sessionActive, status?.sessionRunning, whiteNoiseEnabled]);
 
     const [formData, setFormData] = useState<PomodoroFormValues>(() =>
         createPomodoroFormDefaults(NORMAL_POMODORO_CONFIG)
@@ -146,6 +167,7 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
         setIsLoading(true);
         try {
             await taskService.endPomodoro(task.taskId);
+            stopWhiteNoise();
             setStatus(null);
         } catch (error) {
             console.error('Error ending session:', error);
@@ -263,14 +285,6 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
         }
     }, [task?.taskId, isConnected, subscribeToTask]);
 
-    const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-        const { name, value } = event.target;
-        setFormData(prev => ({
-            ...prev,
-            [name]: Number(value)
-        }));
-    };
-
     const startPomodoro = async () => {
         // Starting before the live timer channel is ready is harmless; the next click can try again.
         if (!task || !isConnected) {
@@ -291,6 +305,7 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
                 formData.longBreakCooldown,
                 pomodoroConfig.secondsMode
             );
+            void startWhiteNoise();
             console.log('Pomodoro started successfully');
         } catch (error) {
             console.error('Error starting pomodoro:', error);
@@ -319,6 +334,13 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
 
     const durationUnitLabel = pomodoroConfig.durationUnit;
 
+    const handleWhiteNoiseToggle = () => {
+        const nextEnabled = !whiteNoiseEnabled;
+        setWhiteNoiseEnabledState(nextEnabled);
+        setWhiteNoiseEnabled(nextEnabled);
+        if (nextEnabled && status?.active) void startWhiteNoise();
+    };
+
     if (!task) {
         return (
             <HoverCardBox>
@@ -345,44 +367,34 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
                         </Box>
 
                         <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
-                            <TextField
+                            <PomodoroNumberField
                                 name="focusDuration"
-                                autoComplete="off"
                                 label={`Focus (${durationUnitLabel})`}
-                                type="number"
-                                size="small"
                                 value={formData.focusDuration}
-                                onChange={handleInputChange}
+                                onChange={value => setFormData(prev => ({ ...prev, focusDuration: value }))}
                                 disabled={isLoading}
                             />
-                            <TextField
+                            <PomodoroNumberField
                                 name="shortBreakDuration"
-                                autoComplete="off"
                                 label={`Short Break (${durationUnitLabel})`}
-                                type="number"
-                                size="small"
                                 value={formData.shortBreakDuration}
-                                onChange={handleInputChange}
+                                onChange={value => setFormData(prev => ({ ...prev, shortBreakDuration: value }))}
                                 disabled={isLoading}
                             />
-                            <TextField
+                            <PomodoroNumberField
                                 name="longBreakDuration"
-                                autoComplete="off"
                                 label={`Long Break (${durationUnitLabel})`}
-                                type="number"
-                                size="small"
                                 value={formData.longBreakDuration}
-                                onChange={handleInputChange}
+                                onChange={value => setFormData(prev => ({ ...prev, longBreakDuration: value }))}
                                 disabled={isLoading}
                             />
-                            <TextField
+                            <PomodoroNumberField
                                 name="numFocuses"
-                                autoComplete="off"
                                 label="Focus Sessions"
-                                type="number"
-                                size="small"
                                 value={formData.numFocuses}
-                                onChange={handleInputChange}
+                                onChange={value => setFormData(prev => ({ ...prev, numFocuses: value }))}
+                                min={1}
+                                max={10}
                                 disabled={isLoading}
                             />
                         </Box>
@@ -523,6 +535,17 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
 
                             {/* Timer controls */}
                             <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
+                                <Tooltip title={whiteNoiseEnabled ? 'Mute white noise' : 'Play white noise'}>
+                                    <IconButton
+                                        onClick={handleWhiteNoiseToggle}
+                                        aria-label={whiteNoiseEnabled ? 'Mute white noise' : 'Play white noise'}
+                                        color={whiteNoiseEnabled ? 'primary' : 'inherit'}
+                                        size="large"
+                                        disabled={isLoading}
+                                    >
+                                        {whiteNoiseEnabled ? <VolumeUpIcon /> : <VolumeOffIcon />}
+                                    </IconButton>
+                                </Tooltip>
                                 {(status.sessionActive || waitingForPhase) && (
                                     <IconButton
                                         onClick={handleTogglePlayPause}

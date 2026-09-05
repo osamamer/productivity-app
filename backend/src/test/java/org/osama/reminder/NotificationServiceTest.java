@@ -24,6 +24,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -98,6 +100,20 @@ class NotificationServiceTest {
 
         assertEquals(NotificationType.POMODORO_BREAK_ENDED, notification.type());
         assertEquals("Write reliable reminders · Get back to it", notification.body());
+    }
+
+    @Test
+    void mentalStateCheckupUsesTheStatePageAndRequestedCopy() {
+        notificationService.createCheckupNotification(
+                user,
+                ZonedDateTime.now(ZoneId.of("Asia/Amman")).minusMinutes(1));
+
+        var notification = notificationService.getDue(USER_ID).get(0);
+
+        assertEquals(NotificationType.MENTAL_STATE_CHECKUP, notification.type());
+        assertEquals("Check-Up", notification.title());
+        assertEquals("Time to check what your state is.", notification.body());
+        assertEquals("/mental-state", notification.targetUrl());
     }
 
     @Test

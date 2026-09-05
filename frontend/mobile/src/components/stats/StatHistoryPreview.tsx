@@ -83,7 +83,14 @@ function mixHexColors(first: string, second: string, firstWeight: number): strin
   return `rgb(${channels.join(', ')})`;
 }
 
-function thresholdCircleColor(definition: StatDefinition, value: number, surface: string, success: string, danger: string): string | null {
+function thresholdCircleColor(
+  definition: StatDefinition,
+  value: number,
+  surface: string,
+  success: string,
+  danger: string,
+  dark: boolean,
+): string | null {
   if ((definition.type !== 'NUMBER' && definition.type !== 'RANGE')
     || definition.goodThreshold == null
     || !Number.isFinite(definition.goodThreshold)) return null;
@@ -102,14 +109,15 @@ function thresholdCircleColor(definition: StatDefinition, value: number, surface
     return mixHexColors(success, surface, greenWeight);
   }
 
-  const redWeight = 0.55 + Math.min(0.45, (1 - goodnessRatio) * 0.6);
+  const redProgress = Math.min(0.45, (1 - goodnessRatio) * 0.6);
+  const redWeight = dark ? 0.9 - redProgress : 0.55 + redProgress;
   return mixHexColors(danger, surface, redWeight);
 }
 
 function getCircleColor(definition: StatDefinition, value: number | undefined, colors: ReturnType<typeof useAppTheme>['colors'], dark: boolean): string {
   if (value === undefined) return dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)';
 
-  const thresholdColor = thresholdCircleColor(definition, value, colors.surface, colors.success, colors.danger);
+  const thresholdColor = thresholdCircleColor(definition, value, colors.surface, colors.success, colors.danger, dark);
   if (thresholdColor) return thresholdColor;
 
   const morality = effectiveMorality(definition);

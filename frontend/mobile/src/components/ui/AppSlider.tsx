@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { LayoutChangeEvent, PanResponder, StyleSheet, View, ViewStyle } from 'react-native';
 
 import { useAppTheme } from '@/providers/ThemeProvider';
@@ -35,60 +35,71 @@ export function AppSlider({
 }: AppSliderProps) {
   const { colors } = useAppTheme();
   const sliderColor = activeColor ?? colors.accent;
-  const [trackWidth, setTrackWidth] = useState(0);
   const range = maximumValue - minimumValue;
-  const percentage = range > 0 ? ((value - minimumValue) / range) * 100 : 0;
+  const trackWidthRef = useRef(0);
+  const onValueChangeRef = useRef(onValueChange);
+  const onSlidingCompleteRef = useRef(onSlidingComplete);
+  const disabledRef = useRef(disabled);
+
+  useEffect(() => {
+    onValueChangeRef.current = onValueChange;
+    onSlidingCompleteRef.current = onSlidingComplete;
+    disabledRef.current = disabled;
+  }, [disabled, onSlidingComplete, onValueChange]);
+
+  const percentage = range > 0
+    ? Math.max(0, Math.min(100, ((value - minimumValue) / range) * 100))
+    : 0;
 
   const valueFromLocation = useCallback((locationX: number): number | null => {
+    const trackWidth = trackWidthRef.current;
     if (trackWidth <= 0 || range <= 0) return null;
     const ratio = Math.max(0, Math.min(1, locationX / trackWidth));
     const rawValue = minimumValue + ratio * range;
     const steppedValue = minimumValue + Math.round((rawValue - minimumValue) / step) * step;
     return Math.max(minimumValue, Math.min(maximumValue, Number(steppedValue.toFixed(10))));
-  }, [maximumValue, minimumValue, range, step, trackWidth]);
+  }, [maximumValue, minimumValue, range, step]);
 
-  const updateFromLocation = useCallback((locationX: number) => {
+  const updateFromLocation = useCallback((locationX: number, complete = false) => {
     const nextValue = valueFromLocation(locationX);
-    if (nextValue !== null) onValueChange(nextValue);
-  }, [onValueChange, valueFromLocation]);
+    if (nextValue === null) return;
+    onValueChangeRef.current(nextValue);
+    if (complete) onSlidingCompleteRef.current?.(nextValue);
+  }, [valueFromLocation]);
 
-  const panResponder = useMemo(() => PanResponder.create({
-    onStartShouldSetPanResponder: () => !disabled,
-    onMoveShouldSetPanResponder: () => !disabled,
-    onPanResponderGrant: event => { if (!disabled) updateFromLocation(event.nativeEvent.locationX); },
-    onPanResponderMove: event => { if (!disabled) updateFromLocation(event.nativeEvent.locationX); },
-    onPanResponderTerminationRequest: () => false,
-    onPanResponderRelease: event => {
-      if (disabled) return;
-      const nextValue = valueFromLocation(event.nativeEvent.locationX);
-      if (nextValue !== null) {
-        onValueChange(nextValue);
-        onSlidingComplete?.(nextValue);
-      }
-    },
-  }), [disabled, onSlidingComplete, onValueChange, updateFromLocation, valueFromLocation]);
+  const [panResponder, setPanResponder] = useState<ReturnType<typeof PanResponder.create> | null>(null);
+  useEffect(() => {
+    setPanResponder(PanResponder.create({
+      onStartShouldSetPanResponder: () => !disabledRef.current,
+      onMoveShouldSetPanResponder: () => !disabledRef.current,
+      onPanResponderGrant: event => { if (!disabledRef.current) updateFromLocation(event.nativeEvent.locationX); },
+      onPanResponderMove: event => { if (!disabledRef.current) updateFromLocation(event.nativeEvent.locationX); },
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderRelease: event => { if (!disabledRef.current) updateFromLocation(event.nativeEvent.locationX, true); },
+    }));
+  }, [updateFromLocation]);
 
   function onTrackLayout(event: LayoutChangeEvent) {
-    setTrackWidth(event.nativeEvent.layout.width);
+    trackWidthRef.current = event.nativeEvent.layout.width;
   }
 
   function onAccessibilityAction(action: { nativeEvent: { actionName: string } }) {
     if (disabled) return;
     if (action.nativeEvent.actionName === 'increment') {
       const nextValue = Math.min(maximumValue, value + step);
-      onValueChange(nextValue);
-      onSlidingComplete?.(nextValue);
+      onValueChangeRef.current(nextValue);
+      onSlidingCompleteRef.current?.(nextValue);
     } else if (action.nativeEvent.actionName === 'decrement') {
       const nextValue = Math.max(minimumValue, value - step);
-      onValueChange(nextValue);
-      onSlidingComplete?.(nextValue);
+      onValueChangeRef.current(nextValue);
+      onSlidingCompleteRef.current?.(nextValue);
     }
   }
 
   return (
     <View style={style}>
       <View
-        {...panResponder.panHandlers}
+        {...(panResponder?.panHandlers ?? {})}
         accessible
         accessibilityRole="adjustable"
         accessibilityLabel={label}

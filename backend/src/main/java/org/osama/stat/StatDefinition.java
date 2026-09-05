@@ -31,7 +31,7 @@ public class StatDefinition {
     @Column
     private StatMorality morality;
 
-    // Only meaningful when type == RANGE; null for NUMBER and BOOLEAN.
+    // Only meaningful when type == RANGE; null for NUMBER, BOOLEAN, and TIME.
     @Column
     private Double minValue;
 

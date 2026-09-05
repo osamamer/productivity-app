@@ -20,7 +20,7 @@ interface FormValues {
 
 const validationSchema = Yup.object({
     name: Yup.string().required('Name is required'),
-    type: Yup.string().oneOf(['NUMBER', 'BOOLEAN', 'RANGE']).required(),
+    type: Yup.string().oneOf(['NUMBER', 'BOOLEAN', 'RANGE', 'TIME']).required(),
     minValue: Yup.string().when('type', {
         is: 'RANGE',
         then: schema => schema.required('Min value is required'),
@@ -156,12 +156,16 @@ export function CreateStatForm({ onCreated, onUpdated, onDelete, onCancel, initi
                         onChange={event => {
                             const type = event.target.value as StatType;
                             formik.setFieldValue('type', type);
-                            if (type === 'BOOLEAN') formik.setFieldValue('goodThreshold', '');
+                            if (type === 'BOOLEAN' || type === 'TIME') {
+                                formik.setFieldValue('goodThreshold', '');
+                                formik.setFieldValue('morality', 'NEUTRAL');
+                            }
                         }}
                     >
                         <MenuItem value="NUMBER">Number — free-form numeric value</MenuItem>
                         <MenuItem value="BOOLEAN">Boolean — Yes / No</MenuItem>
                         <MenuItem value="RANGE">Range — number within min/max bounds</MenuItem>
+                        <MenuItem value="TIME">Time — time of day</MenuItem>
                     </Select>
                     {isEditing && (
                         <FormHelperText>Type and range bounds cannot be changed after creation.</FormHelperText>
@@ -173,6 +177,7 @@ export function CreateStatForm({ onCreated, onUpdated, onDelete, onCancel, initi
                         name="morality"
                         value={formik.values.morality}
                         label="Morality"
+                        disabled={formik.values.type === 'TIME'}
                         onChange={event => {
                             const morality = event.target.value as StatMorality;
                             formik.setFieldValue('morality', morality);

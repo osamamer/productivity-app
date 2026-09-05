@@ -9,6 +9,8 @@ public final class SystemStatCatalog {
     public static final String MEDITATED_SYSTEM_KEY = "meditated";
     public static final String MEDITATION_MINUTES_SYSTEM_KEY = "meditation_minutes";
     public static final String SLEEP_HOURS_SYSTEM_KEY = "sleep_hours";
+    public static final String SLEEP_TIME_SYSTEM_KEY = "sleep_time";
+    public static final String WAKE_UP_TIME_SYSTEM_KEY = "wake_up_time";
 
     private static final Set<String> AUTOMATIC_SYSTEM_KEYS = Set.of(
             MEDITATED_SYSTEM_KEY, MEDITATION_MINUTES_SYSTEM_KEY
@@ -40,7 +42,9 @@ public final class SystemStatCatalog {
 
     public static final List<SystemStatDefinition> DAILY_LIFE_STATS = List.of(
             number(SLEEP_HOURS_SYSTEM_KEY, "Sleep", "How many hours you slept the previous night.",
-                    StatMorality.GOOD, 7.0)
+                    StatMorality.GOOD, 7.0),
+            time(SLEEP_TIME_SYSTEM_KEY, "Sleep time", "When you went to sleep."),
+            time(WAKE_UP_TIME_SYSTEM_KEY, "Wake-up time", "When you woke up.")
     );
 
     public static final List<SystemStatDefinition> SYSTEM_STATS = Stream
@@ -76,5 +80,10 @@ public final class SystemStatCatalog {
                                                StatMorality morality, Double goodThreshold) {
         return new SystemStatDefinition(systemKey, name, description, StatType.NUMBER,
                 null, null, morality, goodThreshold);
+    }
+
+    private static SystemStatDefinition time(String systemKey, String name, String description) {
+        return new SystemStatDefinition(systemKey, name, description, StatType.TIME,
+                null, null, StatMorality.NEUTRAL, null);
     }
 }

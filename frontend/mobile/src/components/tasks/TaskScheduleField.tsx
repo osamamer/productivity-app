@@ -128,7 +128,7 @@ function TimeColumn({ label, values, selected, onSelect }: {
   );
 }
 
-function TimePicker({ value, onChange }: { value: Date; onChange: (value: Date) => void }) {
+export function TimePicker({ value, onChange }: { value: Date; onChange: (value: Date) => void }) {
   const hours = Array.from({ length: 24 }, (_, value) => value);
   const minutes = Array.from({ length: 60 }, (_, value) => value);
 

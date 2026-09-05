@@ -5,7 +5,6 @@ import {
     ToggleButton, Tooltip,
 } from '@mui/material';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
-import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import { format, subDays } from 'date-fns';
 import { StatDefinition } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
@@ -61,15 +60,13 @@ function StatViewTransition({ viewKey, children }: StatViewTransitionProps) {
 interface Props {
     definition: StatDefinition;
     comparisonDefinitions: StatDefinition[];
-    onEdit: (definition: StatDefinition) => void;
     refreshKey: number;
-    onEntryChanged?: () => void;
+    onEntryChanged?: (definitionId: string) => void;
 }
 
-export function StatCard({
+export const StatCard = React.memo(function StatCard({
     definition,
     comparisonDefinitions,
-    onEdit,
     refreshKey,
     onEntryChanged,
 }: Props) {
@@ -85,7 +82,6 @@ export function StatCard({
 
     useEffect(() => {
         let cancelled = false;
-        setInsightsAvailable(false);
         const to = new Date();
         const from = subDays(to, 89);
         statService.getInsights(
@@ -144,15 +140,6 @@ export function StatCard({
                 titleTypographyProps={{ variant: 'subtitle1', fontWeight: 600 }}
                 subheader={definition.description}
                 subheaderTypographyProps={{ variant: 'caption' }}
-                action={!definition.systemKey ? (
-                    <Stack direction="row" spacing={0.25}>
-                        <Tooltip title="Edit stat">
-                            <IconButton onClick={() => onEdit(definition)} size="small" aria-label={`Edit ${definition.name}`}>
-                                <EditOutlinedIcon fontSize="small" />
-                            </IconButton>
-                        </Tooltip>
-                    </Stack>
-                ) : null}
                 sx={{ pb: 0, minHeight: 72 }}
             />
             <CardContent>
@@ -222,4 +209,4 @@ export function StatCard({
             />
         </Card>
     );
-}
+});

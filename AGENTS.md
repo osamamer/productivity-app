@@ -14,7 +14,7 @@ The developer uses Fish (`/usr/bin/fish`) as the interactive shell. Do not tell 
 ```bash
 ./run-app.sh
 ```
-This reuses healthy Docker services (PostgreSQL and Keycloak) and existing healthy app processes, starting only what is missing. It also starts the mobile Metro server when its dependencies are installed and forwards connected Android devices to the local Keycloak, backend, and Metro ports. It never uses `sudo` or kills arbitrary port owners. Ctrl+C stops only the backend, frontend, and mobile Metro processes started by that invocation; Docker services remain available for the next run.
+This reuses healthy Docker services (PostgreSQL and Keycloak) and existing healthy app processes, starting only what is missing. When mobile dependencies, Java 21, `adb`, and an Android AVD or connected device are available, it also starts Metro, starts a single configured AVD when needed, forwards the local Keycloak/backend/Metro ports, and builds/launches the native Android app. The native build and automatic emulator are capped at two workers/cores, run at reduced priority, and do not leave a Gradle daemon running; set `CLARITARD_MOBILE_ANDROID=0` or `CLARITARD_ANDROID_EMULATOR=0` to skip them. Multiple AVDs require `CLARITARD_ANDROID_AVD`. It never uses `sudo` or kills arbitrary port owners. Ctrl+C stops the backend, frontend, Metro, and emulator processes started by that invocation; Docker services remain available for the next run.
 
 ### Backend
 ```bash

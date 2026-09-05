@@ -110,6 +110,12 @@ public class StatService {
                 throw new IllegalArgumentException("Invalid range for stat.");
             }
         }
+        if (type == StatType.TIME && (minValue != null || maxValue != null)) {
+            throw new IllegalArgumentException("Time stats do not use range bounds.");
+        }
+        if (type == StatType.TIME && goodThreshold != null) {
+            throw new IllegalArgumentException("Time stats do not use a good threshold.");
+        }
         if (morality == null || morality == StatMorality.NEUTRAL) {
             if (goodThreshold != null) {
                 throw new IllegalArgumentException("A neutral stat cannot have a good threshold.");
@@ -340,7 +346,8 @@ public class StatService {
                     date -> valueByDate.containsKey(date) && valueByDate.get(date) == 1.0);
         }
 
-        if (def.getType() == StatType.NUMBER || def.getType() == StatType.RANGE) {
+        if (def.getType() == StatType.NUMBER || def.getType() == StatType.RANGE
+                || def.getType() == StatType.TIME) {
             periodTotal = entries.stream()
                     .mapToDouble(StatEntry::getValue)
                     .sum();
@@ -440,6 +447,12 @@ public class StatService {
                 if (value > statDefinition.getMaxValue() || value < statDefinition.getMinValue()) {
                     throw new IllegalArgumentException("Value out of range for stat: "
                     + statDefinition.getName());
+                }
+            }
+            case StatType.TIME -> {
+                if (!Double.isFinite(value) || value < 0 || value >= 24 * 60 || value % 1 != 0) {
+                    throw new IllegalArgumentException("Time values must be between 00:00 and 23:59: "
+                            + statDefinition.getName());
                 }
             }
             case StatType.NUMBER -> {}

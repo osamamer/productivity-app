@@ -22,6 +22,10 @@ import {
     loadTaskPomodoroStats,
     subscribeToTaskPomodoroStatsInvalidation,
 } from '../../services/cache/taskPomodoroStatsCache';
+import {
+    getStaleTaskSubtasks,
+    setCachedTaskSubtasks,
+} from '../../services/cache/taskSubtasksCache';
 
 type TaskDetailsPanelProps = {
     task: Task;
@@ -62,7 +66,6 @@ const PRIORITY_OPTIONS = [
     { label: 'High', value: 9, color: '#ef4444' },
 ];
 
-const subtaskCache = new Map<string, Task[]>();
 const EMPTY_SUBTASKS: Task[] = [];
 const TASK_NAME_SCALE_START = 48;
 const TASK_NAME_SCALE_END = 240;
@@ -243,13 +246,13 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
         && descriptionDraft.source === taskDescription
         ? descriptionDraft.value
         : taskDescription;
-    const initialSubtasks = subtaskCache.get(task.taskId);
+    const initialSubtasks = getStaleTaskSubtasks(task.taskId);
     const [subtaskState, setSubtaskState] = useState<SubtaskState>({
         taskId: task.taskId,
         items: initialSubtasks ?? EMPTY_SUBTASKS,
         loading: !initialSubtasks,
     });
-    const cachedSubtasks = subtaskCache.get(task.taskId);
+    const cachedSubtasks = getStaleTaskSubtasks(task.taskId);
     const visibleSubtaskState = subtaskState.taskId === task.taskId
         ? subtaskState
         : {
@@ -277,7 +280,7 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
     useEffect(() => {
         let cancelled = false;
         const taskId = task.taskId;
-        const cached = subtaskCache.get(taskId);
+        const cached = getStaleTaskSubtasks(taskId);
         if (cached !== undefined) {
             setSubtaskState(previous => {
                 if (previous.taskId === taskId && previous.items === cached && !previous.loading) {
@@ -285,9 +288,6 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
                 }
                 return { taskId, items: cached, loading: false };
             });
-            return () => {
-                cancelled = true;
-            };
         }
 
         taskService.getSubtasks(taskId)
@@ -298,7 +298,7 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
                             && areSubtasksEqual(previous.items, nextSubtasks)
                             ? previous.items
                             : nextSubtasks;
-                        subtaskCache.set(taskId, items);
+                        setCachedTaskSubtasks(taskId, items);
                         return previous.taskId === taskId
                             && previous.items === items
                             && !previous.loading
@@ -419,7 +419,7 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
         setSubtaskState(previous => {
             if (previous.taskId !== task.taskId) return previous;
             const items = [...previous.items, createdSubtask];
-            subtaskCache.set(task.taskId, items);
+            setCachedTaskSubtasks(task.taskId, items);
             return { ...previous, items };
         });
     }, [onCreateSubtask, task.taskId]);
@@ -432,7 +432,7 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
         setSubtaskState(previous => {
             if (previous.taskId !== task.taskId) return previous;
             const items = previous.items.map(item => updateSubtask(item, completed));
-            subtaskCache.set(task.taskId, items);
+            setCachedTaskSubtasks(task.taskId, items);
             return { ...previous, items };
         });
 
@@ -443,7 +443,7 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
             setSubtaskState(previous => {
                 if (previous.taskId !== task.taskId) return previous;
                 const items = previous.items.map(item => updateSubtask(item, subtask.completed));
-                subtaskCache.set(task.taskId, items);
+                setCachedTaskSubtasks(task.taskId, items);
                 return { ...previous, items };
             });
             console.error('Error toggling subtask completion:', error);

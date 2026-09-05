@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Snackbar, Typography } from '@mui/material';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import EditNoteRoundedIcon from '@mui/icons-material/EditNoteRounded';
@@ -29,7 +29,6 @@ export function NotesPage() {
         createNote,
         updateNote,
         updateNoteDraft,
-        commitNoteDraft,
         deleteNote,
         createCategory,
         updateCategory,
@@ -43,6 +42,7 @@ export function NotesPage() {
     const [categoryToDelete, setCategoryToDelete] = useState<NoteCategory | null>(null);
     const [noteDeleteDialogOpen, setNoteDeleteDialogOpen] = useState(false);
     const [focusMode, setFocusMode] = useState(false);
+    const [noteIdToFocus, setNoteIdToFocus] = useState<string | null>(null);
 
     const noteCounts = useMemo(() => {
         const counts: Record<string, number> = {
@@ -77,6 +77,13 @@ export function NotesPage() {
         });
     }, [activeFilter, notes, searchQuery, sort]);
 
+    const clearNoteTitleFocus = useCallback(() => setNoteIdToFocus(null), []);
+    const createNoteAndFocusTitle = useCallback(async (categoryId: string | null) => {
+        if (loading || loadError) return;
+        const noteId = await createNote(categoryId);
+        if (noteId) setNoteIdToFocus(noteId);
+    }, [createNote, loadError, loading]);
+
     useEffect(() => {
         if (!visibleNotes.some(note => note.id === selectedNoteId)) {
             selectNote(visibleNotes[0]?.id ?? null);
@@ -103,18 +110,17 @@ export function NotesPage() {
                 event.preventDefault();
                 if (loading || loadError) return;
                 const categoryId = categories.some(category => category.id === activeFilter) ? activeFilter : null;
-                void createNote(categoryId);
+                void createNoteAndFocusTitle(categoryId);
             }
         }
 
         window.addEventListener('keydown', handleKeyboardShortcut);
         return () => window.removeEventListener('keydown', handleKeyboardShortcut);
-    }, [activeFilter, categories, createNote, loadError, loading]);
+    }, [activeFilter, categories, createNoteAndFocusTitle, loadError, loading]);
 
     function handleCreateNote() {
-        if (loading || loadError) return;
         const categoryId = categories.some(category => category.id === activeFilter) ? activeFilter : null;
-        void createNote(categoryId);
+        void createNoteAndFocusTitle(categoryId);
     }
 
     async function handleCategorySave(name: string, color: string) {
@@ -197,7 +203,7 @@ export function NotesPage() {
                         }}
                         onCreateNote={category => {
                             setActiveFilter(category.id);
-                            void createNote(category.id);
+                            void createNoteAndFocusTitle(category.id);
                         }}
                         onEditCategory={category => {
                             setEditingCategory(category);
@@ -224,11 +230,12 @@ export function NotesPage() {
                             saveState={saveState}
                             onUpdate={updates => updateNote(selectedNote.id, updates)}
                             onDraftUpdate={updates => updateNoteDraft(selectedNote.id, updates)}
-                            onCommitDraft={updates => commitNoteDraft(selectedNote.id, updates)}
                             onDelete={() => setNoteDeleteDialogOpen(true)}
                             onRetrySave={retryFailedSaves}
                             focusMode={focusMode}
                             onToggleFocusMode={() => setFocusMode(current => !current)}
+                            focusTitle={noteIdToFocus === selectedNote.id}
+                            onTitleFocusHandled={clearNoteTitleFocus}
                         />
                     ) : (
                         <Box sx={{ flex: 1, display: 'grid', placeItems: 'center', p: 4 }}>

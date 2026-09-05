@@ -1,4 +1,4 @@
-export type StatType = 'NUMBER' | 'BOOLEAN' | 'RANGE';
+export type StatType = 'NUMBER' | 'BOOLEAN' | 'RANGE' | 'TIME';
 export type StatMorality = 'GOOD' | 'BAD' | 'NEUTRAL';
 export type StatFeedback = 'CELEBRATE' | 'SAD' | 'NONE';
 
@@ -53,9 +53,9 @@ export interface StatSummary {
     periodYesCount: number | null;    // BOOLEAN only
     booleanStreak: number | null;     // BOOLEAN only
     longestBooleanStreak?: number | null; // BOOLEAN only
-    periodAverage: number | null;     // NUMBER / RANGE only
-    periodTotal: number | null;       // NUMBER / RANGE only
-    periodHighest?: number | null;     // NUMBER / RANGE only
+    periodAverage: number | null;     // NUMBER / RANGE / TIME
+    periodTotal: number | null;       // NUMBER / RANGE / TIME
+    periodHighest?: number | null;     // NUMBER / RANGE / TIME
 }
 
 export interface StatBootstrapResponse {

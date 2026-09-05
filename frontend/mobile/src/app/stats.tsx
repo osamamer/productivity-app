@@ -4,6 +4,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { StatComposerSheet } from '@/components/stats/StatComposerSheet';
 import { StatEntrySheet } from '@/components/stats/StatEntrySheet';
+import { StatGroupComposerSheet } from '@/components/stats/StatGroupComposerSheet';
 import { StatHistoryPreview } from '@/components/stats/StatHistoryPreview';
 import { AppButton } from '@/components/ui/AppButton';
 import { AppText } from '@/components/ui/AppText';
@@ -14,7 +15,9 @@ import { SilentPressable } from '@/components/ui/SilentPressable';
 import { ErrorView, LoadingView } from '@/components/ui/StateView';
 import { useAsyncData } from '@/hooks/useAsyncData';
 import { useAppTheme } from '@/providers/ThemeProvider';
+import { useAppPopup } from '@/providers/PopupProvider';
 import { api } from '@/services/api';
+import { reportError } from '@/lib/errors';
 import type { StatDefinition, StatEntry, StatGroup } from '@/types/models';
 
 interface StatsData { definitions: StatDefinition[]; entries: StatEntry[]; groups: StatGroup[] }
@@ -33,6 +36,7 @@ function isManualDefinition(definition: StatDefinition): boolean {
 
 export default function StatsScreen() {
   const { colors } = useAppTheme();
+  const { confirm, showError } = useAppPopup();
   const resource = useAsyncData<StatsData>(async () => {
     const [definitions, entries, groups] = await Promise.all([
       api.stats.definitions(),
@@ -43,6 +47,9 @@ export default function StatsScreen() {
   });
   const [selected, setSelected] = useState<StatDefinition | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
+  const [groupComposerOpen, setGroupComposerOpen] = useState(false);
+  const [editingGroup, setEditingGroup] = useState<StatGroup | null>(null);
+  const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(new Set());
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
   const [dateRange, setDateRange] = useState(30);
   const entriesByDefinition = useMemo(() => new Map((resource.data?.entries ?? []).map(entry => [entry.statDefinitionId, entry])), [resource.data?.entries]);
@@ -50,8 +57,7 @@ export default function StatsScreen() {
     .map(group => ({
       group,
       definitions: (resource.data?.definitions ?? []).filter(definition => group.statDefinitionIds.includes(definition.id)),
-    }))
-    .filter(item => item.definitions.length > 0), [resource.data?.definitions, resource.data?.groups]);
+    })), [resource.data?.definitions, resource.data?.groups]);
   const groupedDefinitionIds = useMemo(
     () => new Set(groupedDefinitions.flatMap(item => item.definitions.map(definition => definition.id))),
     [groupedDefinitions],
@@ -71,6 +77,60 @@ export default function StatsScreen() {
       if (!current) return current;
       const rest = current.entries.filter(item => item.statDefinitionId !== entry.statDefinitionId);
       return { ...current, entries: [...rest, entry] };
+    });
+  }
+
+  function openCreateGroup() {
+    setEditingGroup(null);
+    setGroupComposerOpen(true);
+  }
+
+  function openEditGroup(group: StatGroup) {
+    setEditingGroup(group);
+    setGroupComposerOpen(true);
+  }
+
+  function closeGroupComposer() {
+    setGroupComposerOpen(false);
+    setEditingGroup(null);
+  }
+
+  function saveGroup(updatedGroup: StatGroup) {
+    resource.setData(current => {
+      if (!current) return current;
+      const selectedIdSet = new Set(updatedGroup.statDefinitionIds);
+      const groups = current.groups.map(group => group.groupId === updatedGroup.groupId
+        ? updatedGroup
+        : { ...group, statDefinitionIds: group.statDefinitionIds.filter(id => !selectedIdSet.has(id)) });
+      return current.groups.some(group => group.groupId === updatedGroup.groupId)
+        ? { ...current, groups }
+        : { ...current, groups: [...groups, updatedGroup] };
+    });
+  }
+
+  async function deleteGroup(group: StatGroup) {
+    const accepted = await confirm(
+      `Delete ${group.name}?`,
+      'The stats will stay intact and become ungrouped.',
+      'Delete group',
+    );
+    if (!accepted) return;
+    try {
+      await api.stats.removeGroup(group.groupId);
+      resource.setData(current => current
+        ? { ...current, groups: current.groups.filter(item => item.groupId !== group.groupId) }
+        : current);
+    } catch (cause) {
+      await showError('Could not delete group', reportError('Could not delete stat group', cause));
+    }
+  }
+
+  function toggleGroup(groupId: string) {
+    setCollapsedGroupIds(current => {
+      const next = new Set(current);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      return next;
     });
   }
 
@@ -110,7 +170,16 @@ export default function StatsScreen() {
   }
 
   return (
-    <Screen title="Statistics" action={<AppButton compact label="Stat" icon="add" onPress={() => setComposerOpen(true)} />} refreshing={resource.refreshing} onRefresh={() => void refresh()}>
+    <Screen
+      title="Statistics"
+      action={(
+        <View style={styles.headerActions}>
+          <AppButton compact variant="secondary" label="Group" icon="folder-open-outline" onPress={openCreateGroup} />
+          <AppButton compact label="Stat" icon="add" onPress={() => setComposerOpen(true)} />
+        </View>
+      )}
+      refreshing={resource.refreshing}
+      onRefresh={() => void refresh()}>
       <View style={styles.timeframe} accessibilityLabel="Statistics time frame">
         <ChoiceChips value={dateRange} options={TIME_RANGES} onChange={setDateRange} />
       </View>
@@ -120,11 +189,40 @@ export default function StatsScreen() {
         {groupedDefinitions.map(({ group, definitions }) => (
           <View key={group.groupId} style={styles.group}>
             <View style={styles.groupHeader}>
-              <Ionicons name="folder-open-outline" size={17} color={colors.textMuted} />
-              <AppText variant="label" style={styles.groupName}>{group.name}</AppText>
-              <AppText variant="caption" color="muted">{definitions.length}</AppText>
+              <SilentPressable
+                accessibilityRole="button"
+                accessibilityLabel={`${collapsedGroupIds.has(group.groupId) ? 'Expand' : 'Collapse'} ${group.name}`}
+                onPress={() => toggleGroup(group.groupId)}
+                style={({ pressed }) => [styles.groupHeaderMain, pressed && styles.pressed]}>
+                <Ionicons name={collapsedGroupIds.has(group.groupId) ? 'chevron-forward' : 'chevron-down'} size={16} color={colors.textMuted} />
+                <Ionicons name="folder-open-outline" size={17} color={colors.textMuted} />
+                <AppText variant="label" style={styles.groupName} numberOfLines={1}>{group.name}</AppText>
+                <AppText variant="caption" color="muted">{definitions.length}</AppText>
+              </SilentPressable>
+              <View style={styles.groupActions}>
+                <SilentPressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Edit ${group.name}`}
+                  hitSlop={8}
+                  onPress={() => openEditGroup(group)}
+                  style={({ pressed }) => [styles.iconAction, pressed && styles.pressed]}>
+                  <Ionicons name="create-outline" size={18} color={colors.textMuted} />
+                </SilentPressable>
+                <SilentPressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Delete ${group.name}`}
+                  hitSlop={8}
+                  onPress={() => void deleteGroup(group)}
+                  style={({ pressed }) => [styles.iconAction, pressed && styles.pressed]}>
+                  <Ionicons name="trash-outline" size={18} color={colors.danger} />
+                </SilentPressable>
+              </View>
             </View>
-            <View style={styles.groupItems}>{definitions.map(renderDefinition)}</View>
+            {!collapsedGroupIds.has(group.groupId) && (
+              definitions.length > 0
+                ? <View style={styles.groupItems}>{definitions.map(renderDefinition)}</View>
+                : <AppText variant="caption" color="muted" style={styles.emptyGroup}>No stats in this group yet.</AppText>
+            )}
           </View>
         ))}
         {ungroupedDefinitions.length > 0 && (
@@ -153,19 +251,33 @@ export default function StatsScreen() {
         })}
       />
       <StatComposerSheet visible={composerOpen} onClose={() => setComposerOpen(false)} onCreated={definition => resource.setData(current => current ? { ...current, definitions: [...current.definitions, definition] } : current)} />
+      <StatGroupComposerSheet
+        key={`${editingGroup?.groupId ?? 'new'}-${groupComposerOpen ? 'open' : 'closed'}`}
+        visible={groupComposerOpen}
+        group={editingGroup}
+        definitions={resource.data?.definitions ?? []}
+        onClose={closeGroupComposer}
+        onSaved={saveGroup}
+      />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  headerActions: { flexDirection: 'row', gap: 8 },
   timeframe: { marginTop: -8, marginBottom: -4 },
   list: { gap: 16 },
   group: { gap: 8 },
-  groupHeader: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 3 },
+  groupHeader: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 3 },
+  groupHeaderMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 7, minHeight: 36 },
   groupName: { flex: 1 },
+  groupActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  iconAction: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
   groupItems: { gap: 10 },
+  emptyGroup: { paddingHorizontal: 12, paddingVertical: 12 },
   stat: { padding: 14 },
   statHeader: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
   check: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   grow: { flex: 1 },
+  pressed: { opacity: 0.72 },
 });

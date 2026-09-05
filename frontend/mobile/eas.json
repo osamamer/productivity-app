@@ -26,6 +26,12 @@
         "EXPO_PUBLIC_KEYCLOAK_CLIENT_ID": "productivity-app-frontend"
       },
       "channel": "production"
+    },
+    "production-apk": {
+      "extends": "production",
+      "android": {
+        "buildType": "apk"
+      }
     }
   }
 }

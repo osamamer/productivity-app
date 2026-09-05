@@ -7,13 +7,14 @@ type PopupRequest = {
   message?: string;
   kind: 'info' | 'error' | 'confirm';
   confirmLabel?: string;
+  cancelLabel?: string;
   resolve: (accepted: boolean) => void;
 };
 
 interface PopupContextValue {
   showInfo: (title: string, message?: string) => Promise<void>;
   showError: (title: string, message?: string) => Promise<void>;
-  confirm: (title: string, message: string, confirmLabel?: string) => Promise<boolean>;
+  confirm: (title: string, message: string, confirmLabel?: string, cancelLabel?: string) => Promise<boolean>;
 }
 
 const PopupContext = createContext<PopupContextValue | null>(null);
@@ -48,8 +49,8 @@ export function PopupProvider({ children }: PropsWithChildren) {
     enqueue({ title, message, kind: 'error', resolve: () => resolve() });
   }), [enqueue]);
 
-  const confirm = useCallback((title: string, message: string, confirmLabel = 'Confirm') => new Promise<boolean>(resolve => {
-    enqueue({ title, message, kind: 'confirm', confirmLabel, resolve });
+  const confirm = useCallback((title: string, message: string, confirmLabel = 'Confirm', cancelLabel = 'Cancel') => new Promise<boolean>(resolve => {
+    enqueue({ title, message, kind: 'confirm', confirmLabel, resolve, cancelLabel });
   }), [enqueue]);
 
   const value = useMemo(() => ({ showInfo, showError, confirm }), [confirm, showError, showInfo]);
@@ -66,6 +67,7 @@ export function PopupProvider({ children }: PropsWithChildren) {
         onClose={() => finish(false)}
         footer={active?.kind === 'confirm' ? (
           <PopupActions
+            cancelLabel={active.cancelLabel ?? 'Cancel'}
             confirmLabel={active.confirmLabel ?? 'Confirm'}
             onCancel={() => finish(false)}
             onConfirm={() => finish(true)}

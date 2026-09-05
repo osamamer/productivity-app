@@ -8,6 +8,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 
 @NoArgsConstructor
 @AllArgsConstructor
@@ -47,6 +48,22 @@ public class User {
     @Builder.Default
     @Column(name = "auto_start_pomodoro_sessions", nullable = false)
     private Boolean autoStartPomodoroSessions = true;
+
+    @Builder.Default
+    @Column(name = "checkup_notifications_enabled", nullable = false)
+    private Boolean checkupNotificationsEnabled = true;
+
+    @Builder.Default
+    @Column(name = "checkup_interval_minutes", nullable = false)
+    private Integer checkupIntervalMinutes = 180;
+
+    @Builder.Default
+    @Column(name = "checkup_start_time", nullable = false)
+    private LocalTime checkupStartTime = LocalTime.of(9, 0);
+
+    @Builder.Default
+    @Column(name = "checkup_times_per_day", nullable = false)
+    private Integer checkupTimesPerDay = 5;
 
     @Column(nullable = false)
     private LocalDateTime createdAt;

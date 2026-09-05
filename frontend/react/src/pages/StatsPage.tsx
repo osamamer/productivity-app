@@ -3,6 +3,7 @@ import {
     Box, Button, Typography, Alert, Stack, Skeleton,
     Tooltip, IconButton, Dialog, DialogTitle, DialogContent,
     DialogContentText, DialogActions, TextField, Collapse,
+    ListItemIcon, ListItemText, Menu, MenuItem,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { keyframes } from '@mui/system';
@@ -11,7 +12,6 @@ import CreateNewFolderOutlinedIcon from '@mui/icons-material/CreateNewFolderOutl
 import DeleteOutlineOutlinedIcon from '@mui/icons-material/DeleteOutlineOutlined';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
-import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import GroupWorkIcon from '@mui/icons-material/GroupWork';
 import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded';
 import { PageWrapper } from '../components/PageWrapper';
@@ -37,13 +37,15 @@ const DEDICATED_SYSTEM_KEYS = new Set([
     'emotional_load',
 ]);
 
-const STAT_ACTIONS_WIDTH = 32;
-const STAT_ACTION_ICON_SIZE = 30;
 const SELECTION_ACTIONS_EDGE_PADDING = 12;
 const SELECTION_ACTIONS_GAP = 12;
 const SELECTION_ACTIONS_FALLBACK_WIDTH = 88;
 
 type GroupDropPosition = 'before' | 'after';
+
+type ContextMenuState =
+    | { kind: 'stat'; definition: StatDefinition; top: number; left: number }
+    | { kind: 'group'; group: StatGroup; top: number; left: number };
 
 const selectionActionsReveal = keyframes`
     from { opacity: 0; }
@@ -138,8 +140,9 @@ export function StatsPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [showCreateForm, setShowCreateForm] = useState(false);
+    const [createStatGroupTarget, setCreateStatGroupTarget] = useState<StatGroup | null>(null);
     const [editTarget, setEditTarget] = useState<StatDefinition | null>(null);
-    const [chartRefreshKey, setChartRefreshKey] = useState(0);
+    const [entryRefreshKeys, setEntryRefreshKeys] = useState<Record<string, number>>({});
     const [deleteTarget, setDeleteTarget] = useState<StatDefinition | null>(null);
     const [draggedId, setDraggedId] = useState<string | null>(null);
     const [reorderSaving, setReorderSaving] = useState(false);
@@ -162,6 +165,7 @@ export function StatsPage() {
     const [deleteSubmitting, setDeleteSubmitting] = useState(false);
     const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(new Set());
     const [selectionError, setSelectionError] = useState<string | null>(null);
+    const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
     const selectionAnchorRef = useRef<string | null>(null);
     const selectionActionsRef = useRef<HTMLDivElement | null>(null);
 
@@ -205,17 +209,54 @@ export function StatsPage() {
         return () => { active = false; };
     }, [loadDefinitions, loadGroups]);
 
-    const handleEntryChanged = useCallback(() => {
-        setChartRefreshKey(key => key + 1);
+    const handleEntryChanged = useCallback((definitionId: string) => {
+        setEntryRefreshKeys(previous => ({
+            ...previous,
+            [definitionId]: (previous[definitionId] ?? 0) + 1,
+        }));
     }, []);
 
     const handleCreated = (def: StatDefinition) => {
+        const groupTarget = createStatGroupTarget;
         setDefinitions(prev => [...prev, def]);
         setSelectedId(def.id);
         setSelectedStatIds([def.id]);
         selectionAnchorRef.current = def.id;
         setShowCreateForm(false);
+        setCreateStatGroupTarget(null);
+
+        if (groupTarget) {
+            const nextDefinitionIds = [...new Set([...groupTarget.statDefinitionIds, def.id])];
+            setGroups(previous => previous.map(group => group.groupId === groupTarget.groupId
+                ? { ...group, statDefinitionIds: nextDefinitionIds }
+                : group));
+            setGroupMembershipSaving(true);
+            statGroupService.replaceDefinitions(groupTarget.groupId, nextDefinitionIds)
+                .then(updatedGroup => {
+                    setGroups(previous => previous.map(group => group.groupId === updatedGroup.groupId
+                        ? updatedGroup
+                        : group));
+                })
+                .catch(e => {
+                    console.error('Failed to add new stat to group:', e);
+                    setGroupError('The statistic was created, but could not be added to the group.');
+                    void loadGroups();
+                })
+                .finally(() => setGroupMembershipSaving(false));
+        }
     };
+
+    const openCreateStatDialog = (group: StatGroup | null = null) => {
+        setCreateStatGroupTarget(group);
+        setShowCreateForm(true);
+    };
+
+    const closeCreateStatDialog = () => {
+        setShowCreateForm(false);
+        setCreateStatGroupTarget(null);
+    };
+
+    const closeContextMenu = () => setContextMenu(null);
 
     const handleUpdated = (updated: StatDefinition) => {
         setDefinitions(prev => prev.map(definition =>
@@ -345,7 +386,10 @@ export function StatsPage() {
         });
     };
 
-    const visibleDefinitions = definitions.filter(definition => !isDedicatedStat(definition));
+    const visibleDefinitions = useMemo(
+        () => definitions.filter(definition => !isDedicatedStat(definition)),
+        [definitions],
+    );
     const selectedDef = visibleDefinitions.find(d => d.id === selectedId) ?? null;
     const selectedStatIdSet = useMemo(() => new Set(selectedStatIds), [selectedStatIds]);
     const selectedDefinitions = useMemo(
@@ -356,13 +400,13 @@ export function StatsPage() {
         () => selectedDefinitions.filter(definition => !definition.systemKey),
         [selectedDefinitions],
     );
-    const groupedDefinitions = groups.map(group => ({
+    const groupedDefinitions = useMemo(() => groups.map(group => ({
         group,
         definitions: visibleDefinitions.filter(definition => group.statDefinitionIds.includes(definition.id)),
-    }));
-    const ungroupedDefinitions = visibleDefinitions.filter(definition =>
+    })), [groups, visibleDefinitions]);
+    const ungroupedDefinitions = useMemo(() => visibleDefinitions.filter(definition =>
         !groups.some(group => group.statDefinitionIds.includes(definition.id)),
-    );
+    ), [groups, visibleDefinitions]);
 
     const updateSelectionActionsPosition = useCallback(() => {
         if (selectedStatIds.length < 2) {
@@ -637,6 +681,11 @@ export function StatsPage() {
                 onDragEnd={finishDefinitionDragging}
                 onDragOver={event => event.preventDefault()}
                 onDrop={() => { void handleDefinitionDrop(def.id); }}
+                onContextMenu={event => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setContextMenu({ kind: 'stat', definition: def, top: event.clientY, left: event.clientX });
+                }}
                 onClick={event => handleDefinitionSelection(def, event)}
                 sx={{
                     pl: 2,
@@ -688,34 +737,9 @@ export function StatsPage() {
                     <Stack direction="row" alignItems="center" spacing={0.5} sx={{ flexShrink: 0 }}>
                         <StatRecentDots
                             definition={def}
-                            refreshKey={chartRefreshKey}
+                            refreshKey={entryRefreshKeys[def.id] ?? 0}
                             onEntryChanged={handleEntryChanged}
                         />
-                        <Stack
-                            direction="row"
-                            alignItems="center"
-                            spacing={0.5}
-                            sx={{ flexShrink: 0, width: STAT_ACTIONS_WIDTH }}
-                        >
-                            {!def.systemKey ? (
-                                <Tooltip title="Edit stat">
-                                    <IconButton
-                                        size="small"
-                                        onClick={event => { event.stopPropagation(); setEditTarget(def); }}
-                                        sx={{
-                                            width: STAT_ACTION_ICON_SIZE,
-                                            height: STAT_ACTION_ICON_SIZE,
-                                            opacity: 0.5,
-                                            '&:hover': { opacity: 1 },
-                                        }}
-                                    >
-                                        <EditOutlinedIcon sx={{ fontSize: 16 }} />
-                                    </IconButton>
-                                </Tooltip>
-                            ) : (
-                                <Box sx={{ width: STAT_ACTION_ICON_SIZE, height: STAT_ACTION_ICON_SIZE }} />
-                            )}
-                        </Stack>
                     </Stack>
                 </Stack>
             </Box>
@@ -742,7 +766,7 @@ export function StatsPage() {
                             startIcon={<AddIcon />}
                             variant="outlined"
                             size="small"
-                            onClick={() => setShowCreateForm(s => !s)}
+                            onClick={() => showCreateForm ? closeCreateStatDialog() : openCreateStatDialog()}
                         >
                             {showCreateForm ? 'Cancel' : 'Add Stat'}
                         </Button>
@@ -751,15 +775,17 @@ export function StatsPage() {
 
                 <Dialog
                     open={showCreateForm}
-                    onClose={() => setShowCreateForm(false)}
+                    onClose={closeCreateStatDialog}
                     fullWidth
                     maxWidth="xs"
                 >
-                    <DialogTitle>Add statistic</DialogTitle>
+                    <DialogTitle>
+                        {createStatGroupTarget ? `Add statistic to ${createStatGroupTarget.name}` : 'Add statistic'}
+                    </DialogTitle>
                     <DialogContent dividers sx={{ p: 1.5 }}>
                         <CreateStatForm
                             onCreated={handleCreated}
-                            onCancel={() => setShowCreateForm(false)}
+                            onCancel={closeCreateStatDialog}
                         />
                     </DialogContent>
                 </Dialog>
@@ -861,7 +887,11 @@ export function StatsPage() {
                                 const statDropTarget = draggedId !== null && groupDragTarget;
                                 const groupDraggable = !groupOrderSaving && !reorderSaving && !groupMembershipSaving;
                                 return (
-                                    <React.Fragment key={group.groupId}>
+                                    <Box
+                                        component="section"
+                                        key={group.groupId}
+                                        sx={{ flex: '0 0 auto', width: '100%', minWidth: 0 }}
+                                    >
                                         <Box
                                             data-stat-group-header="true"
                                             draggable={groupDraggable}
@@ -913,8 +943,19 @@ export function StatsPage() {
                                                     : 'after';
                                                 void handleGroupDrop(group.groupId, position);
                                             }}
+                                            onContextMenu={event => {
+                                                event.preventDefault();
+                                                event.stopPropagation();
+                                                setContextMenu({
+                                                    kind: 'group',
+                                                    group,
+                                                    top: event.clientY,
+                                                    left: event.clientX,
+                                                });
+                                            }}
                                             onDragEnd={finishGroupDragging}
                                             sx={{
+                                                width: '100%',
                                                 position: 'relative',
                                                 px: 1.5,
                                                 py: 0.75,
@@ -960,7 +1001,6 @@ export function StatsPage() {
                                                     }}
                                                 />
                                             </IconButton>
-                                            <FolderOutlinedIcon sx={{ fontSize: 17, color: 'text.secondary' }} />
                                             <Typography variant="body2" fontWeight={650} noWrap sx={{ minWidth: 0 }}>
                                                 {group.name}
                                             </Typography>
@@ -993,7 +1033,18 @@ export function StatsPage() {
                                             timeout={{ enter: 220, exit: 180 }}
                                             unmountOnExit
                                             sx={{
-                                                '& .MuiCollapse-wrapper': { willChange: 'height' },
+                                                display: 'block',
+                                                width: '100%',
+                                                flex: '0 0 auto',
+                                                overflow: 'hidden',
+                                                '& .MuiCollapse-wrapper': {
+                                                    display: 'block',
+                                                    width: '100%',
+                                                    willChange: 'height',
+                                                },
+                                                '& .MuiCollapse-wrapperInner': {
+                                                    width: '100%',
+                                                },
                                             }}
                                         >
                                             <Box>
@@ -1010,7 +1061,7 @@ export function StatsPage() {
                                                     )}
                                             </Box>
                                         </Collapse>
-                                    </React.Fragment>
+                                    </Box>
                                 );
                             })}
                             {ungroupedDefinitions.map(definition => renderDefinitionRow(definition))}
@@ -1022,8 +1073,7 @@ export function StatsPage() {
                                 <StatCard
                                     definition={selectedDef}
                                     comparisonDefinitions={visibleDefinitions}
-                                    onEdit={setEditTarget}
-                                    refreshKey={chartRefreshKey}
+                                    refreshKey={entryRefreshKeys[selectedDef.id] ?? 0}
                                     onEntryChanged={handleEntryChanged}
                                 />
                             ) : (
@@ -1088,6 +1138,63 @@ export function StatsPage() {
                     </IconButton>
                 </Box>
             )}
+
+            <Menu
+                open={Boolean(contextMenu)}
+                onClose={closeContextMenu}
+                anchorReference="anchorPosition"
+                anchorPosition={contextMenu
+                    ? { top: contextMenu.top, left: contextMenu.left }
+                    : undefined}
+                MenuListProps={{ dense: true }}
+            >
+                {contextMenu?.kind === 'stat' && !contextMenu.definition.systemKey && (
+                    <>
+                        <MenuItem onClick={() => {
+                            setEditTarget(contextMenu.definition);
+                            closeContextMenu();
+                        }}>
+                            <ListItemIcon><EditOutlinedIcon fontSize="small" /></ListItemIcon>
+                            <ListItemText>Edit statistic</ListItemText>
+                        </MenuItem>
+                        <MenuItem onClick={() => {
+                            setDeleteTarget(contextMenu.definition);
+                            closeContextMenu();
+                        }}>
+                            <ListItemIcon><DeleteOutlineOutlinedIcon fontSize="small" /></ListItemIcon>
+                            <ListItemText>Delete statistic</ListItemText>
+                        </MenuItem>
+                    </>
+                )}
+                {contextMenu?.kind === 'stat' && contextMenu.definition.systemKey && (
+                    <MenuItem disabled>Built-in statistic</MenuItem>
+                )}
+                {contextMenu?.kind === 'group' && (
+                    <>
+                        <MenuItem onClick={() => {
+                            openCreateStatDialog(contextMenu.group);
+                            closeContextMenu();
+                        }}>
+                            <ListItemIcon><AddIcon fontSize="small" /></ListItemIcon>
+                            <ListItemText>Add statistic to this group</ListItemText>
+                        </MenuItem>
+                        <MenuItem onClick={() => {
+                            openRenameGroupDialog(contextMenu.group);
+                            closeContextMenu();
+                        }}>
+                            <ListItemIcon><EditOutlinedIcon fontSize="small" /></ListItemIcon>
+                            <ListItemText>Rename group</ListItemText>
+                        </MenuItem>
+                        <MenuItem onClick={() => {
+                            setDeleteGroupTarget(contextMenu.group);
+                            closeContextMenu();
+                        }}>
+                            <ListItemIcon><DeleteOutlineOutlinedIcon fontSize="small" /></ListItemIcon>
+                            <ListItemText>Delete group</ListItemText>
+                        </MenuItem>
+                    </>
+                )}
+            </Menu>
 
             {/* Deleting a group only removes its organization metadata. */}
             <Dialog open={Boolean(deleteGroupTarget)} onClose={() => setDeleteGroupTarget(null)}>

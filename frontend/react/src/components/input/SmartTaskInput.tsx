@@ -12,6 +12,7 @@ import {
     Typography,
     Button,
 } from '@mui/material';
+import { SxProps, Theme } from '@mui/material/styles';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
@@ -29,6 +30,16 @@ type SmartTaskInputProps = {
     parentId?: string;
     placeholder?: string;
     submitOnBlur?: boolean;
+    onEscape?: () => void;
+    disabled?: boolean;
+    onBlur?: () => void;
+    onImportanceChange?: (importance: number) => void;
+    showMetadataChips?: boolean;
+    textFieldSx?: SxProps<Theme>;
+    multiline?: boolean;
+    minRows?: number;
+    maxRows?: number;
+    inputProps?: Record<string, unknown>;
 };
 
 type TaskMetadata = {
@@ -44,6 +55,16 @@ export function SmartTaskInput({
     parentId,
     placeholder,
     submitOnBlur = false,
+    onEscape,
+    disabled = false,
+    onBlur,
+    onImportanceChange,
+    showMetadataChips = true,
+    textFieldSx,
+    multiline,
+    minRows,
+    maxRows,
+    inputProps,
 }: SmartTaskInputProps) {
     const [input, setInput] = useState('');
     const [metadata, setMetadata] = useState<TaskMetadata>({
@@ -153,6 +174,7 @@ export function SmartTaskInput({
             scheduledDate: initialDate || '', // Keep the initialDate!
             tag: ''
         });
+        onImportanceChange?.(0);
     };
 
     const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -162,6 +184,7 @@ export function SmartTaskInput({
 
     const selectPriority = (value: number) => {
         setMetadata({ ...metadata, importance: value });
+        onImportanceChange?.(value);
         setInput(input.replace(/!priority|!p/gi, '').trim());
         setAnchorEl(null);
     };
@@ -181,6 +204,7 @@ export function SmartTaskInput({
 
     const clearMetadata = (field: keyof TaskMetadata) => {
         setMetadata({ ...metadata, [field]: field === 'importance' ? 0 : '' });
+        if (field === 'importance') onImportanceChange?.(0);
     };
 
     const getPriorityColor = (importance: number) => {
@@ -227,29 +251,56 @@ export function SmartTaskInput({
         selectDate(dateTimeString);
     };
 
+    const isSuggestionTarget = (target: EventTarget | null) =>
+        target instanceof HTMLElement && Boolean(target.closest('[data-smart-task-suggestions]'));
+
+    const baseTextFieldSx = {
+        '& .MuiInput-root': {
+            fontSize: '0.95rem',
+        },
+    };
+    const mergedTextFieldSx: SxProps<Theme> = textFieldSx === undefined
+        ? baseTextFieldSx
+        : Array.isArray(textFieldSx)
+            ? [baseTextFieldSx, ...textFieldSx]
+            : [baseTextFieldSx, textFieldSx];
+
     return (
         <Box sx={{ width: '100%' }}>
             <Box component="form" onSubmit={handleSubmit} sx={{ position: 'relative' }}>
                 <TextField
                     inputRef={inputRef}
                     autoComplete="off"
+                    disabled={disabled}
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
-                    onBlur={() => {
+                    onKeyDown={event => {
+                        if (event.key === 'Escape') {
+                            event.preventDefault();
+                            onEscape?.();
+                        } else if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                            event.preventDefault();
+                            submitCurrentInput();
+                        }
+                    }}
+                    onBlur={event => {
+                        // The popover may autofocus its first option, which is still part of this input interaction.
+                        if (isSuggestionTarget(event.relatedTarget)) return;
                         if (submitOnBlur) submitCurrentInput();
+                        onBlur?.();
                     }}
                     placeholder={placeholder ?? (parentId ? "Add subtask..." : "Add a task...")}
                     variant="standard"
                     fullWidth
-                    sx={{
-                        '& .MuiInput-root': {
-                            fontSize: '0.95rem',
-                        },
-                    }}
+                    multiline={multiline}
+                    minRows={minRows}
+                    maxRows={maxRows}
+                    inputProps={inputProps}
+                    sx={mergedTextFieldSx}
                 />
 
                 {/* Metadata chips */}
-                {(metadata.importance > 0 || metadata.scheduledDate || metadata.tag) && (
+                {showMetadataChips && (metadata.importance > 0 || metadata.scheduledDate || metadata.tag) && (
                     <Box sx={{ display: 'flex', gap: 0.5, mt: 1, flexWrap: 'wrap' }}>
                         {metadata.importance > 0 && (
                             <Chip
@@ -308,7 +359,10 @@ export function SmartTaskInput({
                     horizontal: 'left',
                 }}
             >
-                <Paper sx={{ width: showCustomDateTime ? 320 : 200, maxHeight: showCustomDateTime ? 450 : 200, overflow: 'auto' }}>
+                <Paper
+                    data-smart-task-suggestions
+                    sx={{ width: showCustomDateTime ? 320 : 200, maxHeight: showCustomDateTime ? 450 : 200, overflow: 'auto' }}
+                >
                     {suggestionType === 'priority' && (
                         <List
                             dense
@@ -332,6 +386,7 @@ export function SmartTaskInput({
                             {priorityOptions.map((option, index) => (
                                 <ListItemButton
                                     key={option.value}
+                                    onMouseDown={event => event.preventDefault()}
                                     onClick={() => selectPriority(option.value)}
                                     sx={{ py: 0.5, minHeight: 'auto' }}
                                     autoFocus={index === 0}
@@ -370,6 +425,7 @@ export function SmartTaskInput({
                             {dateOptions.map((option, index) => (
                                 <ListItemButton
                                     key={option.label}
+                                    onMouseDown={event => event.preventDefault()}
                                     onClick={() => selectDate(option.getValue())}
                                     sx={{ py: 0.5, minHeight: 'auto' }}
                                     autoFocus={index === 0}
@@ -383,6 +439,7 @@ export function SmartTaskInput({
                                 </ListItemButton>
                             ))}
                             <ListItemButton
+                                onMouseDown={event => event.preventDefault()}
                                 onClick={() => setShowCustomDateTime(true)}
                                 sx={{ py: 0.5, minHeight: 'auto' }}
                                 data-date-option
@@ -473,6 +530,7 @@ export function SmartTaskInput({
                             {tagOptions.map((option, index) => (
                                 <ListItemButton
                                     key={option.label}
+                                    onMouseDown={event => event.preventDefault()}
                                     onClick={() => selectTag(option.label)}
                                     sx={{ py: 0.5, minHeight: 'auto' }}
                                     autoFocus={index === 0}

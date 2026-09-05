@@ -42,10 +42,11 @@ public class StatEntry {
     @JsonDeserialize(using = LocalDateDeserializer.class)
     private LocalDate date;
 
-    // All three stat types are stored as double:
+    // Stat values are stored as double:
     //   NUMBER  -> the number itself
     //   BOOLEAN -> 1.0 (true) or 0.0 (false)
     //   RANGE   -> the value, validated against StatDefinition.minValue / maxValue
+    //   TIME    -> minutes since midnight
     @Column(name = "stat_value", nullable = false)
     private double value;
 

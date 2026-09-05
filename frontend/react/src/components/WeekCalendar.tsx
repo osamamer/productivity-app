@@ -141,8 +141,13 @@ export function WeekCalendar({ tasks }: TaskCalendarProps) {
                                         width: '4px',
                                     },
                                     '&::-webkit-scrollbar-thumb': {
-                                        backgroundColor: 'rgba(0,0,0,0.2)',
-                                        borderRadius: '2px',
+                                        backgroundColor: 'action.disabled',
+                                        borderRadius: '999px',
+                                        border: '2px solid transparent',
+                                        backgroundClip: 'content-box',
+                                    },
+                                    '&::-webkit-scrollbar-thumb:hover': {
+                                        backgroundColor: 'action.active',
                                     },
                                 }}
                             >

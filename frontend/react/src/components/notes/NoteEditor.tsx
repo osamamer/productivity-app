@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { Box, Chip, IconButton, MenuItem, Select, Tooltip, Typography } from '@mui/material';
 import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined';
 import PushPinRoundedIcon from '@mui/icons-material/PushPinRounded';
@@ -44,16 +44,17 @@ interface NoteEditorProps {
     saveState: 'saved' | 'saving' | 'error';
     onUpdate: (updates: Partial<Pick<Note, 'categoryId' | 'pinned'>>) => void;
     onDraftUpdate: (updates: NoteDraftPatch) => void;
-    onCommitDraft: (updates: NoteDraftPatch) => void;
     onDelete: () => void;
     onRetrySave: () => void;
     focusMode: boolean;
     onToggleFocusMode: () => void;
+    focusTitle: boolean;
+    onTitleFocusHandled: () => void;
 }
 
 type NoteDraftPatch = Partial<Pick<Note, 'title' | 'content'>>;
 
-const DRAFT_COMMIT_DELAY_MS = 600;
+const WORD_COUNT_UPDATE_DELAY_MS = 600;
 
 function countWords(content: string) {
     const container = document.createElement('div');
@@ -62,53 +63,158 @@ function countWords(content: string) {
     return plainText ? plainText.split(/\s+/).length : 0;
 }
 
+interface NoteDraftEditorProps {
+    noteId: string;
+    title: string;
+    content: string;
+    createdAt: string;
+    onDraftUpdate: (updates: NoteDraftPatch) => void;
+    focusTitle: boolean;
+    onTitleFocusHandled: () => void;
+}
+
+function NoteDraftEditorView({
+    noteId,
+    title,
+    content,
+    createdAt,
+    onDraftUpdate,
+    focusTitle,
+    onTitleFocusHandled,
+}: NoteDraftEditorProps) {
+    const [draftTitle, setDraftTitle] = useState(title);
+    const [wordCount, setWordCount] = useState(() => countWords(content));
+    const titleRef = useRef<HTMLInputElement | null>(null);
+    const quillRef = useRef<ReactQuill | null>(null);
+    const wordCountTimerRef = useRef<number | null>(null);
+
+    useEffect(() => {
+        if (!focusTitle) return;
+        titleRef.current?.focus();
+        onTitleFocusHandled();
+    }, [focusTitle, onTitleFocusHandled]);
+
+    useEffect(() => () => {
+        if (wordCountTimerRef.current !== null) window.clearTimeout(wordCountTimerRef.current);
+    }, []);
+
+    function queueDraftUpdate(updates: NoteDraftPatch) {
+        onDraftUpdate(updates);
+
+        const content = updates.content;
+        if (content !== undefined) {
+            if (wordCountTimerRef.current !== null) window.clearTimeout(wordCountTimerRef.current);
+            wordCountTimerRef.current = window.setTimeout(() => {
+                wordCountTimerRef.current = null;
+                setWordCount(countWords(content));
+            }, WORD_COUNT_UPDATE_DELAY_MS);
+        }
+    }
+
+    return (
+        <Box className="notes-editor-scroll" sx={{ flex: 1, overflowY: 'auto' }}>
+            <Box sx={{ maxWidth: 880, width: '100%', minHeight: '100%', mx: 'auto', px: { xs: 2.5, md: 5, xl: 7 }, pt: { xs: 3, md: 5 }, pb: 5 }}>
+                <Box
+                    component="input"
+                    ref={titleRef}
+                    value={draftTitle}
+                    onChange={event => {
+                        const nextTitle = event.target.value;
+                        setDraftTitle(nextTitle);
+                        queueDraftUpdate({ title: nextTitle });
+                    }}
+                    onKeyDown={event => {
+                        if (event.key === 'Tab' && !event.shiftKey) {
+                            event.preventDefault();
+                            quillRef.current?.focus();
+                        }
+                    }}
+                    placeholder="Untitled"
+                    aria-label="Note title"
+                    sx={{
+                        width: '100%',
+                        p: 0,
+                        mb: 1,
+                        border: 0,
+                        outline: 0,
+                        background: 'transparent',
+                        color: 'text.primary',
+                        fontSize: { xs: '2rem', md: '2.55rem' },
+                        fontWeight: 700,
+                        lineHeight: 1.15,
+                        letterSpacing: '-0.035em',
+                        '&::placeholder': { color: 'text.disabled', opacity: 1 },
+                    }}
+                />
+                <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mb: 3, textAlign: 'left' }}>
+                    Created {format(new Date(createdAt), 'MMM d, yyyy')} · {wordCount} {wordCount === 1 ? 'word' : 'words'}
+                </Typography>
+                <Box
+                    className="notes-rich-editor"
+                    sx={theme => ({
+                        '--notes-toolbar-foreground': theme.palette.text.secondary,
+                        '--notes-toolbar-foreground-strong': theme.palette.text.primary,
+                        '--notes-toolbar-surface': theme.palette.background.paper,
+                        '--notes-toolbar-border': theme.palette.divider,
+                        '--notes-toolbar-hover': alpha(theme.palette.text.primary, 0.08),
+                        '--notes-toolbar-active': alpha(theme.palette.text.primary, 0.14),
+                        color: 'text.primary',
+                        '& .ql-toolbar.ql-snow': {
+                            backgroundColor: 'background.paper',
+                        },
+                    })}
+                >
+                    <ReactQuill
+                        key={noteId}
+                        ref={quillRef}
+                        theme="snow"
+                        scrollingContainer=".notes-editor-scroll"
+                        defaultValue={content}
+                        onChange={(nextContent, _delta, source) => {
+                            if (source !== 'user') return;
+                            queueDraftUpdate({ content: nextContent });
+                        }}
+                        modules={editorModules}
+                        formats={editorFormats}
+                        placeholder="Start writing. Capture an idea, make a list, or think out loud…"
+                    />
+                </Box>
+            </Box>
+        </Box>
+    );
+}
+
+const NoteDraftEditor = memo(NoteDraftEditorView, (previous, next) => (
+    previous.noteId === next.noteId
+    && previous.focusTitle === next.focusTitle
+    && previous.onDraftUpdate === next.onDraftUpdate
+    && previous.onTitleFocusHandled === next.onTitleFocusHandled
+));
+
 export function NoteEditor({
     note,
     categories,
     saveState,
     onUpdate,
     onDraftUpdate,
-    onCommitDraft,
     onDelete,
     onRetrySave,
     focusMode,
     onToggleFocusMode,
+    focusTitle,
+    onTitleFocusHandled,
 }: NoteEditorProps) {
-    const [draftTitle, setDraftTitle] = useState(note.title);
-    const [draftContent, setDraftContent] = useState(note.content);
-    const [wordCount, setWordCount] = useState(() => countWords(note.content));
-    const quillRef = useRef<ReactQuill | null>(null);
-    const pendingDraftRef = useRef<NoteDraftPatch>({});
-    const commitTimerRef = useRef<number | null>(null);
-    const onCommitDraftRef = useRef(onCommitDraft);
+    const onDraftUpdateRef = useRef(onDraftUpdate);
 
     useEffect(() => {
-        onCommitDraftRef.current = onCommitDraft;
-    }, [onCommitDraft]);
+        onDraftUpdateRef.current = onDraftUpdate;
+    }, [onDraftUpdate]);
 
-    useEffect(() => () => {
-        if (commitTimerRef.current !== null) window.clearTimeout(commitTimerRef.current);
-        if (Object.keys(pendingDraftRef.current).length > 0) {
-            onCommitDraftRef.current(pendingDraftRef.current);
-        }
+    const handleDraftUpdate = useCallback((updates: NoteDraftPatch) => {
+        onDraftUpdateRef.current(updates);
     }, []);
 
-    function queueDraftUpdate(updates: NoteDraftPatch) {
-        pendingDraftRef.current = { ...pendingDraftRef.current, ...updates };
-        onDraftUpdate(updates);
-
-        if (commitTimerRef.current !== null) window.clearTimeout(commitTimerRef.current);
-        commitTimerRef.current = window.setTimeout(() => {
-            const pendingDraft = pendingDraftRef.current;
-            pendingDraftRef.current = {};
-            commitTimerRef.current = null;
-            if (pendingDraft.content !== undefined) {
-                setWordCount(countWords(pendingDraft.content));
-            }
-            onCommitDraftRef.current(pendingDraft);
-        }, DRAFT_COMMIT_DELAY_MS);
-    }
-
+    // Keeping Quill uncontrolled avoids replacing its whole document when save-state updates rerender this page.
     return (
         <Box component="article" sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <Box sx={{
@@ -170,74 +276,16 @@ export function NoteEditor({
                 </Tooltip>
             </Box>
 
-            <Box sx={{ flex: 1, overflowY: 'auto' }}>
-                <Box sx={{ maxWidth: 880, width: '100%', minHeight: '100%', mx: 'auto', px: { xs: 2.5, md: 5, xl: 7 }, pt: { xs: 3, md: 5 }, pb: 5 }}>
-                    <Box
-                        component="input"
-                        value={draftTitle}
-                        onChange={event => {
-                            const title = event.target.value;
-                            setDraftTitle(title);
-                            queueDraftUpdate({ title });
-                        }}
-                        onKeyDown={event => {
-                            if (event.key === 'Tab' && !event.shiftKey) {
-                                event.preventDefault();
-                                quillRef.current?.focus();
-                            }
-                        }}
-                        placeholder="Untitled"
-                        aria-label="Note title"
-                        sx={{
-                            width: '100%',
-                            p: 0,
-                            mb: 1,
-                            border: 0,
-                            outline: 0,
-                            background: 'transparent',
-                            color: 'text.primary',
-                            fontSize: { xs: '2rem', md: '2.55rem' },
-                            fontWeight: 700,
-                            lineHeight: 1.15,
-                            letterSpacing: '-0.035em',
-                            '&::placeholder': { color: 'text.disabled', opacity: 1 },
-                        }}
-                    />
-                    <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mb: 3, textAlign: 'left' }}>
-                        Created {format(new Date(note.createdAt), 'MMM d, yyyy')} · {wordCount} {wordCount === 1 ? 'word' : 'words'}
-                    </Typography>
-                    <Box
-                        className="notes-rich-editor"
-                        sx={theme => ({
-                            '--notes-toolbar-foreground': theme.palette.text.secondary,
-                            '--notes-toolbar-foreground-strong': theme.palette.text.primary,
-                            '--notes-toolbar-surface': theme.palette.background.paper,
-                            '--notes-toolbar-border': theme.palette.divider,
-                            '--notes-toolbar-hover': alpha(theme.palette.text.primary, 0.08),
-                            '--notes-toolbar-active': alpha(theme.palette.text.primary, 0.14),
-                            color: 'text.primary',
-                            '& .ql-toolbar.ql-snow': {
-                                backgroundColor: 'background.paper',
-                            },
-                        })}
-                    >
-                        <ReactQuill
-                            key={note.id}
-                            ref={quillRef}
-                            theme="snow"
-                            value={draftContent}
-                            onChange={(content, _delta, source) => {
-                                if (source !== 'user') return;
-                                setDraftContent(content);
-                                queueDraftUpdate({ content });
-                            }}
-                            modules={editorModules}
-                            formats={editorFormats}
-                            placeholder="Start writing. Capture an idea, make a list, or think out loud…"
-                        />
-                    </Box>
-                </Box>
-            </Box>
+            <NoteDraftEditor
+                key={note.id}
+                noteId={note.id}
+                title={note.title}
+                content={note.content}
+                createdAt={note.createdAt}
+                onDraftUpdate={handleDraftUpdate}
+                focusTitle={focusTitle}
+                onTitleFocusHandled={onTitleFocusHandled}
+            />
         </Box>
     );
 }

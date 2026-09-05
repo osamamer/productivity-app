@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -7,7 +7,8 @@ import { TaskDetailSheet } from '@/components/tasks/TaskDetailSheet';
 import { TaskBulkDateSheet } from '@/components/tasks/TaskBulkDateSheet';
 import { TaskGroupComposerSheet } from '@/components/tasks/TaskGroupComposerSheet';
 import { TaskSelectionActionsPopup } from '@/components/tasks/TaskSelectionActionsPopup';
-import { TaskRow } from '@/components/tasks/TaskRow';
+import { TaskRow, type TaskDragLayout } from '@/components/tasks/TaskRow';
+import { GroupChevron } from '@/components/tasks/GroupChevron';
 import { AppButton } from '@/components/ui/AppButton';
 import { AppText } from '@/components/ui/AppText';
 import { Card } from '@/components/ui/Card';
@@ -17,6 +18,7 @@ import { SilentPressable } from '@/components/ui/SilentPressable';
 import { formatLongDate, greeting } from '@/lib/date';
 import { playAudioFeedback } from '@/lib/audioFeedback';
 import { reportError } from '@/lib/errors';
+import { animateLayout } from '@/lib/motion';
 import { useAsyncData } from '@/hooks/useAsyncData';
 import { useAuth } from '@/providers/AuthProvider';
 import { useAppPopup } from '@/providers/PopupProvider';
@@ -74,6 +76,8 @@ export default function TodayScreen() {
     loading: tasksLoading,
     refresh: refreshTasks,
     moveTasksToDate,
+    reorderTasks,
+    replaceGroupTasks,
   } = useTaskWorkspace();
   const { showCompletedTasks } = usePreferences();
   const [composerOpen, setComposerOpen] = useState(false);
@@ -82,9 +86,19 @@ export default function TodayScreen() {
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
   const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(new Set());
   const [groupComposerOpen, setGroupComposerOpen] = useState(false);
+  const [groupTaskComposer, setGroupTaskComposer] = useState<TaskGroup | null>(null);
   const [bulkDateOpen, setBulkDateOpen] = useState(false);
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
   const [bulkDateSaving, setBulkDateSaving] = useState(false);
+  const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
+  const [dragTargetTaskId, setDragTargetTaskId] = useState<string | null>(null);
+  const [dragTargetEdge, setDragTargetEdge] = useState<'before' | 'after' | null>(null);
+  const [dragTargetGroupId, setDragTargetGroupId] = useState<string | null>(null);
+  const taskLayoutsRef = useRef(new Map<string, TaskDragLayout>());
+  const groupLayoutsRef = useRef(new Map<string, Pick<TaskDragLayout, 'top' | 'bottom'>>());
+  const draggedTaskRef = useRef<string | null>(null);
+  const groupHeaderRefs = useRef(new Map<string, View>());
+  const dragTargetRef = useRef<{ taskId: string | null; edge: 'before' | 'after' | null; groupId: string | null }>({ taskId: null, edge: null, groupId: null });
 
   function updateTask(updated: Task) {
     updateTaskInWorkspace(updated);
@@ -95,6 +109,7 @@ export default function TodayScreen() {
   }
 
   function toggleGroup(groupId: string) {
+    animateLayout();
     setCollapsedGroupIds(previous => {
       const next = new Set(previous);
       if (next.has(groupId)) next.delete(groupId);
@@ -139,6 +154,112 @@ export default function TodayScreen() {
     setSelectedTaskIds([]);
     setSelectedGroupIds([]);
     setBulkDateOpen(false);
+  }
+
+  function resetDrag() {
+    draggedTaskRef.current = null;
+    setDraggedTaskId(null);
+    setDragTargetTaskId(null);
+    setDragTargetEdge(null);
+    setDragTargetGroupId(null);
+    dragTargetRef.current = { taskId: null, edge: null, groupId: null };
+  }
+
+  function startDrag(taskId: string, _startY: number) {
+    clearSelection();
+    setSelected(null);
+    draggedTaskRef.current = taskId;
+    setDraggedTaskId(taskId);
+    setDragTargetTaskId(null);
+    setDragTargetEdge(null);
+    setDragTargetGroupId(null);
+    dragTargetRef.current = { taskId: null, edge: null, groupId: null };
+  }
+
+  function updateDragTarget(taskId: string, moveY: number, _dy: number) {
+    if (draggedTaskRef.current !== taskId) return;
+    const groupTarget = [...groupLayoutsRef.current.entries()].find(([, layout]) => moveY >= layout.top && moveY <= layout.bottom);
+    if (groupTarget) {
+      const next = { taskId: null, edge: null, groupId: groupTarget[0] } as const;
+      dragTargetRef.current = next;
+      setDragTargetTaskId(next.taskId);
+      setDragTargetEdge(next.edge);
+      setDragTargetGroupId(next.groupId);
+      return;
+    }
+
+    const taskTarget = [...taskLayoutsRef.current.entries()]
+      .filter(([taskId, layout]) => taskId !== draggedTaskRef.current && moveY >= layout.top && moveY <= layout.bottom)
+      .sort(([, first], [, second]) => (first.bottom - first.top) - (second.bottom - second.top))[0];
+    if (!taskTarget) {
+      dragTargetRef.current = { taskId: null, edge: null, groupId: null };
+      setDragTargetTaskId(null);
+      setDragTargetEdge(null);
+      setDragTargetGroupId(null);
+      return;
+    }
+
+    const [targetTaskId, layout] = taskTarget;
+    const edge = moveY < layout.top + (layout.bottom - layout.top) / 2 ? 'before' : 'after';
+    dragTargetRef.current = { taskId: targetTaskId, edge, groupId: null };
+    setDragTargetTaskId(targetTaskId);
+    setDragTargetEdge(edge);
+    setDragTargetGroupId(null);
+  }
+
+  async function finishDrag(taskId: string, _moveY: number) {
+    const target = dragTargetRef.current;
+    resetDrag();
+    if (target.groupId) {
+      const group = groups.find(candidate => candidate.groupId === target.groupId);
+      if (group && !group.taskIds.includes(taskId)) {
+        try {
+          animateLayout();
+          await replaceGroupTasks(group.groupId, [...group.taskIds, taskId]);
+        } catch (cause) {
+          void showError('Could not add task to group', reportError('Could not add task to group', cause));
+        }
+      }
+      return;
+    }
+
+    if (!target.taskId || !target.edge || target.taskId === taskId) return;
+    const rootTaskIds = allTasks.filter(task => !task.parentId).map(task => task.taskId);
+    const fromIndex = rootTaskIds.indexOf(taskId);
+    const targetIndex = rootTaskIds.indexOf(target.taskId);
+    if (fromIndex < 0 || targetIndex < 0) return;
+    rootTaskIds.splice(fromIndex, 1);
+    const insertionIndex = rootTaskIds.indexOf(target.taskId) + (target.edge === 'after' ? 1 : 0);
+    rootTaskIds.splice(insertionIndex, 0, taskId);
+    try {
+      animateLayout();
+      await reorderTasks(rootTaskIds);
+    } catch (cause) {
+      void showError('Could not reorder tasks', reportError('Could not reorder tasks', cause));
+    }
+  }
+
+  async function addTaskToGroup(task: Task) {
+    const group = groupTaskComposer;
+    addTask(task);
+    if (!group) return;
+    try {
+      await replaceGroupTasks(group.groupId, [...group.taskIds, task.taskId]);
+    } catch (cause) {
+      void showError('Could not add task to group', reportError('Could not add task to group', cause));
+    } finally {
+      setGroupTaskComposer(null);
+    }
+  }
+
+  function registerGroupLayout(groupId: string) {
+    groupHeaderRefs.current.get(groupId)?.measureInWindow((_x, top, _width, height) => {
+      groupLayoutsRef.current.set(groupId, { top, bottom: top + height });
+    });
+  }
+
+  function registerTaskLayout(taskId: string, layout: TaskDragLayout) {
+    taskLayoutsRef.current.set(taskId, layout);
   }
 
   async function performBulkCompletion(completed: boolean) {
@@ -212,6 +333,7 @@ export default function TodayScreen() {
   return (
     <Screen
       refreshing={resource.refreshing || tasksLoading}
+      refreshEnabled={draggedTaskId === null}
       onRefresh={() => void refreshToday()}
       overlay={(
         <TaskSelectionActionsPopup
@@ -264,40 +386,71 @@ export default function TodayScreen() {
                 onLongPress={() => startSelection(item.task.taskId)}
                 onSelectionToggle={selectedTaskIds.length || selectedGroupIds.length ? () => toggleSelection(item.task.taskId) : undefined}
                 selected={selectedTaskIdSet.has(item.task.taskId) || selectedGroupTaskIdSet.has(item.task.taskId)}
+                dragEnabled
+                dragging={draggedTaskId === item.task.taskId}
+                dropTarget={dragTargetTaskId === item.task.taskId}
+                dropTargetEdge={dragTargetTaskId === item.task.taskId ? dragTargetEdge ?? undefined : undefined}
+                onDragLayout={registerTaskLayout}
+                onDragStart={startDrag}
+                onDragMove={updateDragTarget}
+                onDragEnd={finishDrag}
+                onDragCancel={resetDrag}
               />
             ) : (
               <View
                 key={item.group.groupId}
-                style={[styles.group, { borderWidth: selectedGroupIdSet.has(item.group.groupId) ? 2 : 1, borderColor: selectedGroupIdSet.has(item.group.groupId) ? colors.accent : colors.border, backgroundColor: colors.surface }]}
+                style={[styles.group, { borderWidth: selectedGroupIdSet.has(item.group.groupId) ? 2 : 1, borderColor: selectedGroupIdSet.has(item.group.groupId) ? colors.accent : colors.border, backgroundColor: colors.surface, overflow: draggedTaskId ? 'visible' : 'hidden' }]}
               >
-                <SilentPressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`${collapsedGroupIds.has(item.group.groupId) ? 'Expand' : 'Collapse'} ${item.group.name}`}
-                  accessibilityState={{ expanded: !collapsedGroupIds.has(item.group.groupId) }}
-                  onPress={() => toggleGroup(item.group.groupId)}
-                  style={({ pressed }) => [styles.groupHeader, { backgroundColor: colors.accentSoft, borderBottomColor: colors.border }, pressed && styles.pressed]}
-                >
-                  <Ionicons name={collapsedGroupIds.has(item.group.groupId) ? 'chevron-forward' : 'chevron-down'} size={18} color={colors.accent} />
-                  <View style={styles.groupSelection}>
-                    <AppText variant="label" style={styles.groupTitle}>{item.group.name}</AppText>
-                    <AppText variant="caption" color="muted">{item.tasks.length}</AppText>
-                  </View>
+                <View
+                  ref={node => {
+                    if (node) groupHeaderRefs.current.set(item.group.groupId, node);
+                    else groupHeaderRefs.current.delete(item.group.groupId);
+                  }}
+                  onLayout={() => registerGroupLayout(item.group.groupId)}>
                   <SilentPressable
                     accessibilityRole="button"
-                    accessibilityLabel={`${selectedGroupIdSet.has(item.group.groupId) ? 'Deselect' : 'Select'} ${item.group.name}`}
-                    accessibilityState={{ selected: selectedGroupIdSet.has(item.group.groupId) }}
-                    hitSlop={8}
-                    onPress={event => { event.stopPropagation(); toggleGroupSelection(item.group.groupId); }}
-                    style={({ pressed }) => [styles.groupSelect, pressed && styles.pressed]}>
-                    <Ionicons
-                      name={selectedGroupIdSet.has(item.group.groupId) ? 'checkmark-circle' : 'ellipse-outline'}
-                      size={22}
-                      color={selectedGroupIdSet.has(item.group.groupId) ? colors.accent : colors.textMuted}
+                    accessibilityLabel={`${collapsedGroupIds.has(item.group.groupId) ? 'Expand' : 'Collapse'} ${item.group.name}`}
+                    accessibilityState={{ expanded: !collapsedGroupIds.has(item.group.groupId) }}
+                    onPress={event => { event.stopPropagation(); toggleGroup(item.group.groupId); }}
+                    style={({ pressed }) => [styles.groupHeader, !collapsedGroupIds.has(item.group.groupId) && styles.groupHeaderExpanded, { backgroundColor: selectedGroupIdSet.has(item.group.groupId) || dragTargetGroupId === item.group.groupId ? colors.accentSoft : colors.surface, borderBottomColor: colors.border }, pressed && styles.pressed]}
+                  >
+                    <GroupChevron
+                      collapsed={collapsedGroupIds.has(item.group.groupId)}
+                      color={selectedGroupIdSet.has(item.group.groupId) || dragTargetGroupId === item.group.groupId ? colors.accent : colors.textMuted}
                     />
+                    <View style={styles.groupSelection}>
+                      <AppText variant="label" style={styles.groupTitle}>{item.group.name}</AppText>
+                      <AppText variant="caption" color="muted">{item.tasks.length}</AppText>
+                    </View>
+                    <SilentPressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Add task to ${item.group.name}`}
+                      hitSlop={8}
+                      onPress={event => { event.stopPropagation(); setGroupTaskComposer(item.group); }}
+                      style={({ pressed }) => [styles.groupSelect, pressed && styles.pressed]}>
+                      <Ionicons name="add-circle-outline" size={22} color={selectedGroupIdSet.has(item.group.groupId) ? colors.accent : colors.textMuted} />
+                    </SilentPressable>
+                    <SilentPressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`${selectedGroupIdSet.has(item.group.groupId) ? 'Deselect' : 'Select'} ${item.group.name}`}
+                      accessibilityState={{ selected: selectedGroupIdSet.has(item.group.groupId) }}
+                      hitSlop={8}
+                      onPress={event => { event.stopPropagation(); toggleGroupSelection(item.group.groupId); }}
+                      style={({ pressed }) => [styles.groupSelect, pressed && styles.pressed]}>
+                      <Ionicons
+                        name={selectedGroupIdSet.has(item.group.groupId) ? 'checkmark-circle' : 'ellipse-outline'}
+                        size={22}
+                        color={selectedGroupIdSet.has(item.group.groupId) ? colors.accent : colors.textMuted}
+                      />
+                    </SilentPressable>
                   </SilentPressable>
-                </SilentPressable>
+                </View>
                 {!collapsedGroupIds.has(item.group.groupId) && (
-                  <View style={[styles.groupTasks, { backgroundColor: colors.background, borderLeftColor: colors.accent }]}>
+                  <View
+                    style={[
+                      styles.groupTasks,
+                      { backgroundColor: colors.surface },
+                    ]}>
                     {item.tasks.map(task => (
                       <TaskRow
                         key={task.taskId}
@@ -307,6 +460,17 @@ export default function TodayScreen() {
                         onLongPress={() => startSelection(task.taskId)}
                         onSelectionToggle={selectedTaskIds.length || selectedGroupIds.length ? () => toggleSelection(task.taskId) : undefined}
                         selected={selectedTaskIdSet.has(task.taskId) || selectedGroupTaskIdSet.has(task.taskId)}
+                        dragEnabled
+                        dragging={draggedTaskId === task.taskId}
+                        dropTarget={dragTargetTaskId === task.taskId}
+                        dropTargetEdge={dragTargetTaskId === task.taskId ? dragTargetEdge ?? undefined : undefined}
+                        onDragLayout={registerTaskLayout}
+                        onDragStart={startDrag}
+                        onDragMove={updateDragTarget}
+                        onDragEnd={finishDrag}
+                        onDragCancel={resetDrag}
+                        inGroup
+                        groupLast={task.taskId === item.tasks[item.tasks.length - 1]?.taskId}
                       />
                     ))}
                   </View>
@@ -325,6 +489,12 @@ export default function TodayScreen() {
         visible={composerOpen}
         onClose={() => setComposerOpen(false)}
         onCreated={addTask}
+      />
+      <TaskComposerSheet
+        key={`group-task-${groupTaskComposer?.groupId ?? 'closed'}`}
+        visible={Boolean(groupTaskComposer)}
+        onClose={() => setGroupTaskComposer(null)}
+        onCreated={task => addTaskToGroup(task)}
       />
       <TaskGroupComposerSheet
         visible={groupComposerOpen}
@@ -360,12 +530,13 @@ const styles = StyleSheet.create({
   track: { height: 8, borderRadius: 4, overflow: 'hidden' },
   fill: { height: 8, borderRadius: 4 },
   list: { gap: 10 },
-  group: { borderWidth: 1, borderRadius: 18, overflow: 'hidden' },
-  groupHeader: { minHeight: 68, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 13, borderBottomWidth: 1 },
-  groupSelection: { flex: 1, minHeight: 68, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  group: { borderWidth: 1, borderRadius: 20, overflow: 'hidden' },
+  groupHeader: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14 },
+  groupHeaderExpanded: { borderBottomWidth: StyleSheet.hairlineWidth },
+  groupSelection: { flex: 1, minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 8 },
   groupTitle: { flex: 1 },
   groupSelect: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
-  groupTasks: { gap: 10, marginLeft: 10, paddingLeft: 10, paddingRight: 8, paddingVertical: 10, borderLeftWidth: 2 },
+  groupTasks: { paddingVertical: 0 },
   pressed: { opacity: 0.7 },
   emptyCard: { alignItems: 'center', gap: 6 },
 });

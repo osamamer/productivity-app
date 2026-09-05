@@ -138,7 +138,7 @@ export const api = {
       json<void>('/api/v1/mental-threads/capacity/today', 'PUT', { capacity }),
   },
   mentalState: {
-    history: () => apiRequest<MentalStateCheckIn[]>('/api/v1/mental-state/check-ins?limit=30'),
+    history: (limit = 5) => apiRequest<MentalStateCheckIn[]>(`/api/v1/mental-state/check-ins?limit=${limit}`),
     checkIn: (input: MentalStateRequest) =>
       json<MentalStateCheckIn>('/api/v1/mental-state/check-ins', 'POST', input),
   },
@@ -168,6 +168,14 @@ export const api = {
   stats: {
     definitions: () => apiRequest<StatDefinition[]>('/api/v1/stats/definitions'),
     groups: () => apiRequest<StatGroup[]>('/api/v1/stats/groups'),
+    createGroup: (name: string, statDefinitionIds: string[] = []) =>
+      json<StatGroup>('/api/v1/stats/groups', 'POST', { name, statDefinitionIds }),
+    renameGroup: (groupId: string, name: string) =>
+      json<StatGroup>(`/api/v1/stats/groups/${groupId}`, 'PATCH', { name }),
+    replaceGroupDefinitions: (groupId: string, statDefinitionIds: string[]) =>
+      json<StatGroup>(`/api/v1/stats/groups/${groupId}/definitions`, 'PUT', { statDefinitionIds }),
+    removeGroup: (groupId: string) =>
+      apiRequest<void>(`/api/v1/stats/groups/${groupId}`, { method: 'DELETE' }),
     today: () => apiRequest<StatEntry[]>('/api/v1/stats/entries/today'),
     entries: (statDefinitionId: string, from: string, to: string) => {
       const params = new URLSearchParams({ statDefinitionId, from, to });
@@ -191,8 +199,8 @@ export const api = {
       }),
     pause: (id: string) => json<MeditationSession>(`/api/v1/meditation/${id}/pause`, 'PATCH'),
     resume: (id: string) => json<MeditationSession>(`/api/v1/meditation/${id}/unpause`, 'PATCH'),
-    end: (id: string, moodAfter: number) =>
-      json<MeditationSession>(`/api/v1/meditation/${id}/end`, 'POST', { moodAfter }),
+    end: (id: string, moodAfter?: number) =>
+      json<MeditationSession>(`/api/v1/meditation/${id}/end`, 'POST', moodAfter === undefined ? undefined : { moodAfter }),
   },
   preferences: {
     get: () => apiRequest<UserPreferences>('/api/v1/users/me/preferences'),

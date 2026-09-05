@@ -11,6 +11,7 @@ type BulkTaskDatePopoverProps = {
     loading?: boolean;
     onChange: (value: Date) => void;
     onApply: () => void;
+    onClear: () => void;
     onClose: () => void;
 };
 
@@ -20,6 +21,7 @@ export function BulkTaskDatePopover({
     loading = false,
     onChange,
     onApply,
+    onClear,
     onClose,
 }: BulkTaskDatePopoverProps) {
     return (
@@ -64,11 +66,14 @@ export function BulkTaskDatePopover({
                         slotProps={{ textField: { size: 'small', fullWidth: true } }}
                     />
                 </LocalizationProvider>
-                <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mt: 2 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, mt: 2 }}>
+                    <Button size="small" onClick={onClear} disabled={loading}>Clear date</Button>
+                    <Box sx={{ display: 'flex', gap: 1 }}>
                     <Button size="small" onClick={onClose} disabled={loading}>Cancel</Button>
                     <Button size="small" variant="contained" onClick={onApply} disabled={loading}>
                         {loading ? 'Moving…' : 'Move tasks'}
                     </Button>
+                    </Box>
                 </Box>
             </Box>
         </Popover>

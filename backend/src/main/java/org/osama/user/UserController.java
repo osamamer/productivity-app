@@ -1,5 +1,6 @@
 package org.osama.user;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -8,6 +9,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.net.URI;
+import java.time.LocalTime;
 import java.util.List;
 
 @RestController
@@ -99,7 +101,11 @@ public class UserController {
         User updatedUser = userService.updatePreferences(
                 currentUserService.getCurrentUserId(),
                 request.includeUnloggedNumericDaysAsZero(),
-                request.autoStartPomodoroSessions()
+                request.autoStartPomodoroSessions(),
+                request.checkupNotificationsEnabled(),
+                request.checkupIntervalMinutes(),
+                request.checkupStartTime(),
+                request.checkupTimesPerDay()
         );
         return UserPreferencesResponse.from(updatedUser);
     }
@@ -167,17 +173,31 @@ public class UserController {
 
     public record UpdatePreferencesRequest(
             Boolean includeUnloggedNumericDaysAsZero,
-            Boolean autoStartPomodoroSessions
+            Boolean autoStartPomodoroSessions,
+            Boolean checkupNotificationsEnabled,
+            Integer checkupIntervalMinutes,
+            @JsonFormat(pattern = "HH:mm")
+            LocalTime checkupStartTime,
+            Integer checkupTimesPerDay
     ) {}
 
     public record UserPreferencesResponse(
             boolean includeUnloggedNumericDaysAsZero,
-            boolean autoStartPomodoroSessions
+            boolean autoStartPomodoroSessions,
+            boolean checkupNotificationsEnabled,
+            int checkupIntervalMinutes,
+            @JsonFormat(pattern = "HH:mm")
+            LocalTime checkupStartTime,
+            int checkupTimesPerDay
     ) {
         static UserPreferencesResponse from(User user) {
             return new UserPreferencesResponse(
                     Boolean.TRUE.equals(user.getIncludeUnloggedNumericDaysAsZero()),
-                    !Boolean.FALSE.equals(user.getAutoStartPomodoroSessions())
+                    !Boolean.FALSE.equals(user.getAutoStartPomodoroSessions()),
+                    !Boolean.FALSE.equals(user.getCheckupNotificationsEnabled()),
+                    user.getCheckupIntervalMinutes(),
+                    user.getCheckupStartTime(),
+                    user.getCheckupTimesPerDay()
             );
         }
     }

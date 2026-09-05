@@ -1,0 +1,91 @@
+databaseChangeLog:
+  - changeSet:
+      id: 039-add-sleep-wake-time-system-stats
+      author: codex
+      comment: Add built-in sleep and wake-up time daily stats for every user
+      changes:
+        - sql:
+            sql: |
+              UPDATE stat_definition definition
+              SET system_key = 'sleep_time',
+                  name = 'Sleep time',
+                  description = 'When you went to sleep.',
+                  type = 'TIME',
+                  min_value = NULL,
+                  max_value = NULL,
+                  morality = 'NEUTRAL',
+                  good_threshold = NULL
+              WHERE definition.system_key IS NULL
+                AND lower(definition.name) = lower('Sleep time')
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM stat_definition existing
+                    WHERE existing.user_id = definition.user_id
+                      AND existing.system_key = 'sleep_time'
+                );
+        - sql:
+            sql: |
+              UPDATE stat_definition definition
+              SET system_key = 'wake_up_time',
+                  name = 'Wake-up time',
+                  description = 'When you woke up.',
+                  type = 'TIME',
+                  min_value = NULL,
+                  max_value = NULL,
+                  morality = 'NEUTRAL',
+                  good_threshold = NULL
+              WHERE definition.system_key IS NULL
+                AND lower(definition.name) = lower('Wake-up time')
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM stat_definition existing
+                    WHERE existing.user_id = definition.user_id
+                      AND existing.system_key = 'wake_up_time'
+                );
+        - sql:
+            sql: |
+              INSERT INTO stat_definition
+                  (id, name, description, type, min_value, max_value,
+                   morality, good_threshold, system_key, display_order, user_id)
+              SELECT concat('system-stat-', app_user.id, '-sleep-time'),
+                     'Sleep time', 'When you went to sleep.',
+                     'TIME', NULL, NULL, 'NEUTRAL', NULL, 'sleep_time',
+                     COALESCE((
+                         SELECT MAX(existing.display_order) + 1
+                         FROM stat_definition existing
+                         WHERE existing.user_id = app_user.id
+                     ), 0),
+                     app_user.id
+              FROM app_user
+              WHERE NOT EXISTS (
+                  SELECT 1
+                  FROM stat_definition existing
+                  WHERE existing.user_id = app_user.id
+                    AND existing.system_key = 'sleep_time'
+              );
+        - sql:
+            sql: |
+              INSERT INTO stat_definition
+                  (id, name, description, type, min_value, max_value,
+                   morality, good_threshold, system_key, display_order, user_id)
+              SELECT concat('system-stat-', app_user.id, '-wake-up-time'),
+                     'Wake-up time', 'When you woke up.',
+                     'TIME', NULL, NULL, 'NEUTRAL', NULL, 'wake_up_time',
+                     COALESCE((
+                         SELECT MAX(existing.display_order) + 1
+                         FROM stat_definition existing
+                         WHERE existing.user_id = app_user.id
+                     ), 0),
+                     app_user.id
+              FROM app_user
+              WHERE NOT EXISTS (
+                  SELECT 1
+                  FROM stat_definition existing
+                  WHERE existing.user_id = app_user.id
+                    AND existing.system_key = 'wake_up_time'
+              );
+      rollback:
+        - sql:
+            sql: |
+              DELETE FROM stat_definition
+              WHERE system_key IN ('sleep_time', 'wake_up_time');

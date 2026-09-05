@@ -8,15 +8,18 @@ import { useAppPopup } from '@/providers/PopupProvider';
 import { api } from '@/services/api';
 import {
   clearLocalCalendarReminders,
+  clearLocalCheckupNotifications,
   ensureNotificationPermission,
+  syncLocalCheckupNotifications,
   LOCAL_CALENDAR_REMINDER_KIND,
   syncCalendarReminders as syncLocalCalendarReminders,
   type CalendarReminderRecord,
 } from '@/services/localNotifications';
-import type { ApplicationNotification, CalendarEvent } from '@/types/models';
+import type { ApplicationNotification, CalendarEvent, UserPreferences } from '@/types/models';
 
 interface NotificationContextValue {
   syncCalendarReminders: (events: CalendarEvent[]) => Promise<void>;
+  syncCheckupNotifications: (preferences?: UserPreferences) => Promise<void>;
 }
 
 const NotificationContext = createContext<NotificationContextValue | null>(null);
@@ -40,6 +43,7 @@ export function NotificationProvider({ children }: PropsWithChildren) {
   const syncingRef = useRef(false);
   const shownRef = useRef(new Set<string>());
   const calendarRemindersRef = useRef<CalendarReminderRecord[]>([]);
+  const localCheckupsEnabledRef = useRef(false);
 
   const syncCalendarReminders = useCallback(async (events: CalendarEvent[]) => {
     if (!isAuthenticated) return;
@@ -52,7 +56,17 @@ export function NotificationProvider({ children }: PropsWithChildren) {
     }
   }, [isAuthenticated]);
 
+  const syncCheckupNotifications = useCallback(async (preferences?: UserPreferences) => {
+    if (!isAuthenticated) return;
+    const currentPreferences = preferences ?? await api.preferences.get();
+    const status = await syncLocalCheckupNotifications(currentPreferences);
+    localCheckupsEnabledRef.current = status === 'granted';
+  }, [isAuthenticated]);
+
   const localReminderMatches = useCallback((notification: ApplicationNotification): boolean => {
+    if (notification.type === 'MENTAL_STATE_CHECKUP') {
+      return localCheckupsEnabledRef.current;
+    }
     if (Platform.OS !== 'android' || notification.type !== 'CALENDAR_EVENT' || !notification.eventStart) return false;
     return calendarRemindersRef.current.some(record => record.eventStart === notification.eventStart
       && record.title === notification.title
@@ -112,19 +126,22 @@ export function NotificationProvider({ children }: PropsWithChildren) {
   const synchronizeAll = useCallback(async () => {
     if (!isAuthenticated) return;
     try {
+      await syncCheckupNotifications();
       const events = await api.events.all();
       await syncCalendarReminders(events);
       await syncDue();
     } catch (cause) {
       console.error('Could not synchronize mobile reminders:', errorObject(cause));
     }
-  }, [isAuthenticated, syncCalendarReminders, syncDue]);
+  }, [isAuthenticated, syncCalendarReminders, syncCheckupNotifications, syncDue]);
 
   useEffect(() => {
     if (!isAuthenticated) {
       shownRef.current.clear();
       calendarRemindersRef.current = [];
+      localCheckupsEnabledRef.current = false;
       void clearLocalCalendarReminders();
+      void clearLocalCheckupNotifications();
       return;
     }
 
@@ -144,9 +161,16 @@ export function NotificationProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     if (!isAuthenticated || Platform.OS === 'web') return;
     const openNotification = (response: Notifications.NotificationResponse) => {
-      const data = response.notification.request.content.data as { kind?: string; targetUrl?: string | null } | null | undefined;
-      if (data?.kind !== LOCAL_CALENDAR_REMINDER_KIND && data?.targetUrl !== '/calendar') return;
-      router.push('/(tabs)/calendar');
+      const data = response.notification.request.content.data as { kind?: string; targetUrl?: string | null; type?: string } | null | undefined;
+      if (data?.kind === LOCAL_CALENDAR_REMINDER_KIND || data?.targetUrl === '/calendar') {
+        router.push('/(tabs)/calendar');
+      } else if (data?.targetUrl === '/mental-state' || data?.type === 'MENTAL_STATE_CHECKUP') {
+        router.push('/mental-state');
+      } else if (data?.targetUrl === '/') {
+        router.push('/(tabs)');
+      } else {
+        return;
+      }
       void Notifications.clearLastNotificationResponseAsync().catch(cause => {
         console.error('Could not clear the opened notification response:', errorObject(cause));
       });
@@ -161,7 +185,7 @@ export function NotificationProvider({ children }: PropsWithChildren) {
   }, [isAuthenticated]);
 
   return (
-    <NotificationContext.Provider value={{ syncCalendarReminders }}>
+    <NotificationContext.Provider value={{ syncCalendarReminders, syncCheckupNotifications }}>
       {children}
     </NotificationContext.Provider>
   );

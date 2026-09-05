@@ -13,6 +13,7 @@ interface Props {
   scroll?: boolean;
   refreshing?: boolean;
   onRefresh?: () => void;
+  refreshEnabled?: boolean;
   contentStyle?: StyleProp<ViewStyle>;
   overlay?: ReactNode;
 }
@@ -25,6 +26,7 @@ export function Screen({
   scroll = true,
   refreshing = false,
   onRefresh,
+  refreshEnabled = true,
   contentStyle,
   overlay,
 }: PropsWithChildren<Props>) {
@@ -50,7 +52,7 @@ export function Screen({
         <KeyboardAwareScrollView
           contentContainerStyle={styles.scroll}
           keyboardShouldPersistTaps="handled"
-          refreshControl={onRefresh ? <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} /> : undefined}>
+          refreshControl={onRefresh ? <RefreshControl enabled={refreshEnabled} refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} /> : undefined}>
           {body}
         </KeyboardAwareScrollView>
       ) : <KeyboardAwareView>{body}</KeyboardAwareView>}

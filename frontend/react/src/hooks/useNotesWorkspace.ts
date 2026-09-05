@@ -90,7 +90,7 @@ export function useNotesWorkspace(userId: string) {
                     setWorkspace(current => ({
                         ...current,
                         notes: current.notes.map(note => note.id === noteId
-                            ? { ...note, updatedAt: newerUpdates ? note.updatedAt : savedNote.updatedAt }
+                            ? newerUpdates ? { ...note, updatedAt: note.updatedAt } : { ...note, ...savedNote }
                             : note),
                     }));
                 }
@@ -193,15 +193,6 @@ export function useNotesWorkspace(userId: string) {
         queueNoteSave(noteId, updates);
     }, [queueNoteSave]);
 
-    const commitNoteDraft = useCallback((noteId: string, updates: NotePatch) => {
-        setWorkspace(current => ({
-            ...current,
-            notes: current.notes.map(note => note.id === noteId
-                ? { ...note, ...updates }
-                : note),
-        }));
-    }, []);
-
     const deleteNote = useCallback(async (noteId: string) => {
         setOperationError(null);
         try {
@@ -292,7 +283,6 @@ export function useNotesWorkspace(userId: string) {
         createNote,
         updateNote,
         updateNoteDraft,
-        commitNoteDraft,
         deleteNote,
         createCategory,
         updateCategory,

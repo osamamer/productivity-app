@@ -155,6 +155,29 @@ export const AppThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => 
                 },
             },
             components: {
+                MuiCssBaseline: {
+                    styleOverrides: {
+                        '*': {
+                            scrollbarWidth: 'thin',
+                            scrollbarColor: `${darkMode ? 'rgba(255,255,255,0.34)' : 'rgba(26,26,46,0.24)'} transparent`,
+                        },
+                        '*::-webkit-scrollbar': {
+                            width: 8,
+                            height: 8,
+                        },
+                        '*::-webkit-scrollbar-track': {
+                            backgroundColor: 'transparent',
+                        },
+                        '*::-webkit-scrollbar-thumb': {
+                            backgroundColor: darkMode ? 'rgba(255,255,255,0.3)' : 'rgba(26,26,46,0.2)',
+                            border: `2px solid ${darkMode ? '#1e2124' : '#F7F6FB'}`,
+                            borderRadius: 999,
+                        },
+                        '*::-webkit-scrollbar-thumb:hover': {
+                            backgroundColor: darkMode ? 'rgba(255,255,255,0.48)' : 'rgba(26,26,46,0.34)',
+                        },
+                    },
+                },
                 MuiDialog: {
                     styleOverrides: {
                         paper: {
