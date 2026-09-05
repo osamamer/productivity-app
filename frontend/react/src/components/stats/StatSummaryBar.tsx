@@ -4,7 +4,7 @@ import { useTheme } from '@mui/material/styles';
 import { differenceInCalendarDays, format, parseISO, subDays } from 'date-fns';
 import { StatDefinition, StatEntry, StatSummary } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
-import { formatTimeValue } from '../../services/utils/statValues';
+import { formatDurationValue, formatTimeValue } from '../../services/utils/statValues';
 
 interface TileProps {
     label: string;
@@ -187,6 +187,21 @@ export const StatSummaryBar = React.memo(function StatSummaryBar({ definition, d
         tiles.push({
             label: 'Latest',
             value: periodHighest != null ? formatTimeValue(periodHighest) : '—',
+        });
+    }
+
+    if (definition.type === 'DURATION') {
+        tiles.push({
+            label: 'Highest',
+            value: periodHighest != null ? formatDurationValue(periodHighest) : '—',
+        });
+        tiles.push({
+            label: 'Average',
+            value: summary.periodAverage !== null ? formatDurationValue(summary.periodAverage) : '—',
+        });
+        tiles.push({
+            label: 'Total',
+            value: summary.periodTotal !== null ? formatDurationValue(summary.periodTotal) : '—',
         });
     }
 

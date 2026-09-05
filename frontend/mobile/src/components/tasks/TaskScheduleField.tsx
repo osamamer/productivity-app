@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { formatShortDate, formatTime, localDateTime } from '@/lib/date';
@@ -101,10 +101,23 @@ function TimeColumn({ label, values, selected, onSelect }: {
   onSelect: (value: number) => void;
 }) {
   const { colors } = useAppTheme();
+  const scrollRef = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    const selectedIndex = values.indexOf(selected);
+    if (selectedIndex < 0) return;
+    const optionHeight = 40;
+    const optionGap = 7;
+    const viewportHeight = 180;
+    const targetOffset = Math.max(0, selectedIndex * (optionHeight + optionGap) - (viewportHeight - optionHeight) / 2);
+    const focusTimer = setTimeout(() => scrollRef.current?.scrollTo({ y: targetOffset, animated: false }), 0);
+    return () => clearTimeout(focusTimer);
+  }, [selected, values]);
+
   return (
     <View style={styles.timeColumn}>
       <AppText variant="caption" color="muted" style={styles.timeLabel}>{label}</AppText>
-      <ScrollView style={styles.timeScroll} contentContainerStyle={styles.timeOptions} showsVerticalScrollIndicator={false}>
+      <ScrollView ref={scrollRef} style={styles.timeScroll} contentContainerStyle={styles.timeOptions} showsVerticalScrollIndicator={false}>
         {values.map(value => {
           const selectedValue = value === selected;
           return (

@@ -5,6 +5,7 @@ import { localDate, formatShortDate } from '@/lib/date';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
 import type { StatDefinition, StatEntry } from '@/types/models';
+import { formatDurationValue } from '@/lib/statValues';
 import { AppText } from '../ui/AppText';
 
 const RECENT_DAYS = 5;
@@ -91,7 +92,7 @@ function thresholdCircleColor(
   danger: string,
   dark: boolean,
 ): string | null {
-  if ((definition.type !== 'NUMBER' && definition.type !== 'RANGE')
+  if ((definition.type !== 'NUMBER' && definition.type !== 'RANGE' && definition.type !== 'DURATION')
     || definition.goodThreshold == null
     || !Number.isFinite(definition.goodThreshold)) return null;
 
@@ -183,6 +184,10 @@ function chartDomain(definition: StatDefinition, values: number[]): NumericDomai
 
 function formatChartValue(value: number): string {
   return Number.isInteger(value) ? String(value) : Number(value.toFixed(1)).toString();
+}
+
+function formatAxisValue(value: number, definition: StatDefinition): string {
+  return definition.type === 'DURATION' ? formatDurationValue(value) : formatChartValue(value);
 }
 
 interface ChartSegment {
@@ -381,7 +386,7 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, refreshK
               <View
                 key={date}
                 accessible
-                accessibilityLabel={`${date}: ${value === undefined ? 'No entry' : String(value)}`}
+                accessibilityLabel={`${date}: ${value === undefined ? 'No entry' : definition.type === 'DURATION' ? formatDurationValue(value) : String(value)}`}
                 style={[
                   styles.dot,
                   { backgroundColor: getCircleColor(definition, value, colors, dark) },
@@ -399,8 +404,8 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, refreshK
 
       <View style={[styles.chart, !hasHistory && styles.chartEmpty]}>
         <View style={styles.chartAxis}>
-          <AppText variant="caption" color="muted">{formatChartValue(domain[1])}</AppText>
-          <AppText variant="caption" color="muted">{formatChartValue(domain[0])}</AppText>
+          <AppText variant="caption" color="muted">{formatAxisValue(domain[1], definition)}</AppText>
+          <AppText variant="caption" color="muted">{formatAxisValue(domain[0], definition)}</AppText>
         </View>
         <View onLayout={event => setPlotWidth(event.nativeEvent.layout.width)} style={styles.plot}>
           {[0, 50, 100].map(position => (

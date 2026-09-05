@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { reportError } from '@/lib/errors';
+import { formatDurationValue } from '@/lib/statValues';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
 import type { StatDefinition } from '@/types/models';
@@ -11,6 +12,7 @@ import { AppSlider } from '../ui/AppSlider';
 import { AppText } from '../ui/AppText';
 import { ChoiceChips } from '../ui/ChoiceChips';
 import { ModalSheet } from '../ui/ModalSheet';
+import { DurationInput } from '../stats/DurationInput';
 
 function booleanColor(definition: StatDefinition, value: 0 | 1, colors: ReturnType<typeof useAppTheme>['colors']): string {
   const morality = definition.morality ?? 'NEUTRAL';
@@ -19,7 +21,8 @@ function booleanColor(definition: StatDefinition, value: 0 | 1, colors: ReturnTy
   return value === 1 ? colors.danger : colors.success;
 }
 
-function formatValue(value: number): string {
+function formatValue(definition: StatDefinition, value: number): string {
+  if (definition.type === 'DURATION') return formatDurationValue(value);
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
@@ -107,7 +110,7 @@ export function CalendarStatCheckInSheet({ date, definitions, onClose, onSaved }
           <View key={definition.id} style={styles.definition}>
             <View style={styles.definitionHeading}>
               <AppText variant="label">{definition.name}</AppText>
-              {value !== null && value !== undefined && <AppText variant="caption" color="muted">{formatValue(value)}</AppText>}
+              {value !== null && value !== undefined && <AppText variant="caption" color="muted">{formatValue(definition, value)}</AppText>}
             </View>
             {definition.description && <AppText variant="caption" color="muted">{definition.description}</AppText>}
             {definition.type === 'BOOLEAN' && (
@@ -136,6 +139,9 @@ export function CalendarStatCheckInSheet({ date, definitions, onClose, onSaved }
                 maximumLabel={String(max)}
                 onValueChange={next => updateValue(definition.id, next)}
                 activeColor={colors.accent} />
+            )}
+            {definition.type === 'DURATION' && (
+              <DurationInput value={value ?? null} onChange={next => updateValue(definition.id, next)} />
             )}
           </View>
         );

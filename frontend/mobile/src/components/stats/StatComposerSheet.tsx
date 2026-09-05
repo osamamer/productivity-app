@@ -42,7 +42,7 @@ export function StatComposerSheet({ visible, onClose, onCreated }: {
       <AppInput autoFocus label="Name" value={name} onChangeText={setName} error={error ?? undefined} />
       <AppInput label="Description (optional)" value={description} onChangeText={setDescription} multiline />
       <AppText variant="label">Type</AppText>
-      <ChoiceChips value={type} onChange={setType} options={[{ value: 'BOOLEAN', label: 'Yes / No' }, { value: 'NUMBER', label: 'Number' }, { value: 'RANGE', label: 'Range' }]} />
+      <ChoiceChips value={type} onChange={setType} options={[{ value: 'BOOLEAN', label: 'Yes / No' }, { value: 'NUMBER', label: 'Number' }, { value: 'RANGE', label: 'Range' }, { value: 'DURATION', label: 'Duration' }]} />
       {type === 'RANGE' && <><AppInput label="Minimum" value={min} onChangeText={setMin} keyboardType="number-pad" /><AppInput label="Maximum" value={max} onChangeText={setMax} keyboardType="number-pad" /></>}
     </ModalSheet>
   );

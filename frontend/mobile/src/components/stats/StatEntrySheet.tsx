@@ -9,6 +9,7 @@ import { AppButton } from '../ui/AppButton';
 import { AppInput } from '../ui/AppInput';
 import { AppText } from '../ui/AppText';
 import { ChoiceChips } from '../ui/ChoiceChips';
+import { DurationInput } from './DurationInput';
 import { ModalSheet } from '../ui/ModalSheet';
 
 function booleanChoiceColor(
@@ -30,16 +31,24 @@ export function StatEntrySheet({ definition, existing, onClose, onSaved, onRever
   onReverted: (entry?: StatEntry) => void;
 }) {
   const { colors } = useAppTheme();
-  const initialValue = existing?.value ?? definition?.minValue ?? 1;
-  const [value, setValue] = useState(String(initialValue));
-  const [rangeValue, setRangeValue] = useState(initialValue);
+  const initialValue = existing?.value
+    ?? (definition?.type === 'DURATION' ? null : definition?.minValue ?? 1);
+  const [value, setValue] = useState(initialValue == null ? '' : String(initialValue));
+  const [rangeValue, setRangeValue] = useState(initialValue ?? 1);
+  const [durationValue, setDurationValue] = useState<number | null>(definition?.type === 'DURATION' ? initialValue : null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function save(nextValue?: number) {
     if (!definition || saving) return;
-    const numeric = nextValue ?? Number(definition.type === 'RANGE' ? rangeValue : value);
-    if (!Number.isFinite(numeric)) return setError('Enter a number.');
+    const numeric = nextValue ?? (definition.type === 'RANGE'
+      ? rangeValue
+      : definition.type === 'DURATION'
+        ? durationValue
+        : Number(value));
+    if (numeric === null || !Number.isFinite(numeric)) {
+      return setError(definition.type === 'DURATION' ? 'Enter a duration.' : 'Enter a number.');
+    }
     const optimistic: StatEntry = {
       id: existing?.id ?? `optimistic-${definition.id}`,
       statDefinitionId: definition.id,
@@ -77,6 +86,11 @@ export function StatEntrySheet({ definition, existing, onClose, onSaved, onRever
         <>
           <AppText variant="heading">{rangeValue}</AppText>
           <ChoiceChips value={rangeValue} onChange={setRangeValue} options={range.map(item => ({ value: item, label: String(item) }))} />
+          <AppButton label="Record" loading={saving} onPress={() => void save()} />
+        </>
+      ) : definition?.type === 'DURATION' ? (
+        <>
+          <DurationInput value={durationValue} onChange={setDurationValue} autoFocus />
           <AppButton label="Record" loading={saving} onPress={() => void save()} />
         </>
       ) : (

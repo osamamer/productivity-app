@@ -1,7 +1,10 @@
-import { DarkTheme, DefaultTheme, Stack, ThemeProvider as NavigationThemeProvider } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { DarkTheme, DefaultTheme, router, Stack, ThemeProvider as NavigationThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo } from 'react';
+import { Pressable } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { AppErrorBoundary } from '@/components/ui/AppErrorBoundary';
 import { AuthProvider, useAuth } from '@/providers/AuthProvider';
@@ -55,14 +58,27 @@ function Navigation() {
         </Stack.Protected>
         <Stack.Protected guard={isAuthenticated}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="mental-threads" options={{ headerShown: false }} />
+          <Stack.Screen name="mental-threads" options={{ title: 'Mental threads' }} />
           <Stack.Screen name="mental-state" options={{ title: 'Mental state' }} />
           <Stack.Screen name="meditation" options={{ title: 'Meditation' }} />
           <Stack.Screen name="meditation-calendar" options={{ title: 'Meditation calendar' }} />
           <Stack.Screen name="notes" options={{ title: 'Notes' }} />
           <Stack.Screen name="notes/[id]" options={{ headerShown: false }} />
           <Stack.Screen name="stats" options={{ title: 'Statistics' }} />
-          <Stack.Screen name="settings" options={{ title: 'Settings' }} />
+          <Stack.Screen name="settings" options={{
+            title: 'Settings',
+            headerLeft: () => (
+              <Pressable
+                onPress={() => router.back()}
+                accessibilityRole="button"
+                accessibilityLabel="Go back"
+                hitSlop={10}
+                style={{ marginRight: 12 }}
+              >
+                <Ionicons name="arrow-back" size={24} color={colors.text} />
+              </Pressable>
+            ),
+          }} />
         </Stack.Protected>
       </Stack>
     </NavigationThemeProvider>
@@ -71,20 +87,22 @@ function Navigation() {
 
 export default function RootLayout() {
   return (
-    <AppThemeProvider>
-      <PopupProvider>
-        <AppErrorBoundary>
-          <AuthProvider>
-            <NotificationProvider>
-              <PreferencesProvider>
-                <TaskWorkspaceProvider>
-                  <Navigation />
-                </TaskWorkspaceProvider>
-              </PreferencesProvider>
-            </NotificationProvider>
-          </AuthProvider>
-        </AppErrorBoundary>
-      </PopupProvider>
-    </AppThemeProvider>
+    <GestureHandlerRootView>
+      <AppThemeProvider>
+        <PopupProvider>
+          <AppErrorBoundary>
+            <AuthProvider>
+              <NotificationProvider>
+                <PreferencesProvider>
+                  <TaskWorkspaceProvider>
+                    <Navigation />
+                  </TaskWorkspaceProvider>
+                </PreferencesProvider>
+              </NotificationProvider>
+            </AuthProvider>
+          </AppErrorBoundary>
+        </PopupProvider>
+      </AppThemeProvider>
+    </GestureHandlerRootView>
   );
 }

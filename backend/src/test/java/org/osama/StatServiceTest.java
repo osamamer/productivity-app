@@ -144,6 +144,45 @@ public class StatServiceTest {
                 statService.recordEntry(statDefinition.getId(), LocalDate.now(), 1440.0, TEST_USER_ID));
     }
 
+    // --- DURATION ---
+
+    @Test
+    void durationStat_acceptsWholeMinutesBeyondOneDay() {
+        StatDefinition statDefinition = createStatDefinition(StatType.DURATION, null, null);
+        statService.recordEntry(statDefinition.getId(), LocalDate.now(), 36 * 60 + 15, TEST_USER_ID);
+
+        assertEquals(2175.0, entryRepository
+                .findByStatDefinitionIdAndUserIdAndDate(
+                        statDefinition.getId(), TEST_USER_ID, LocalDate.now())
+                .orElseThrow()
+                .getValue());
+    }
+
+    @Test
+    void durationStat_rejectsNegativeOrFractionalMinutes() {
+        StatDefinition statDefinition = createStatDefinition(StatType.DURATION, null, null);
+
+        assertThrows(IllegalArgumentException.class, () ->
+                statService.recordEntry(statDefinition.getId(), LocalDate.now(), -1.0, TEST_USER_ID));
+        assertThrows(IllegalArgumentException.class, () ->
+                statService.recordEntry(statDefinition.getId(), LocalDate.now().plusDays(1), 1.5, TEST_USER_ID));
+    }
+
+    @Test
+    void durationSummaryUsesMinutesForAverageTotalAndHighest() {
+        StatDefinition statDefinition = createStatDefinition(StatType.DURATION, null, null);
+        LocalDate today = LocalDate.now();
+        statService.recordEntry(statDefinition.getId(), today.minusDays(1), 60.0, TEST_USER_ID);
+        statService.recordEntry(statDefinition.getId(), today, 90.0, TEST_USER_ID);
+
+        StatSummaryResponse summary = statService.getSummary(
+                statDefinition.getId(), today.minusDays(1), today, TEST_USER_ID);
+
+        assertEquals(75.0, summary.periodAverage(), 0.0001);
+        assertEquals(150.0, summary.periodTotal(), 0.0001);
+        assertEquals(90.0, summary.periodHighest(), 0.0001);
+    }
+
     @Test
     void meditationStats_rejectManualEntries() {
         User user = userRepository.findUserById(TEST_USER_ID).orElseThrow();

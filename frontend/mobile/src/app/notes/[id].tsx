@@ -104,6 +104,7 @@ export default function NoteEditorScreen() {
   const [leaving, setLeaving] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hydratedNoteId, setHydratedNoteId] = useState<string | null>(null);
   const initializedNoteIdRef = useRef<string | null>(null);
   const noteIdRef = useRef<string | null>(null);
   const currentDraftRef = useRef<Draft>({ title: '', content: '' });
@@ -125,6 +126,7 @@ export default function NoteEditorScreen() {
     lastSavedDraftRef.current = draft;
     setTitle(draft.title);
     setContent(draft.content);
+    setHydratedNoteId(resource.data.id);
   }, [resource.data]);
 
   const enqueueSave = useCallback((pending: PendingSave) => {
@@ -183,7 +185,7 @@ export default function NoteEditorScreen() {
   }, [enqueueSave]);
 
   useEffect(() => {
-    if (!resource.data || initializedNoteIdRef.current !== resource.data.id) return;
+    if (!resource.data || hydratedNoteId !== resource.data.id) return;
     const draft = { title, content };
     currentDraftRef.current = draft;
     if (draftsMatch(lastSavedDraftRef.current, draft)) return;
@@ -207,7 +209,7 @@ export default function NoteEditorScreen() {
         saveTimerRef.current = null;
       }
     };
-  }, [content, enqueueSave, resource.data, title]);
+  }, [content, enqueueSave, hydratedNoteId, resource.data, title]);
 
   function changeTitle(nextTitle: string) {
     setTitle(nextTitle);

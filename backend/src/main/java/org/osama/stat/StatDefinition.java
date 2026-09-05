@@ -31,14 +31,14 @@ public class StatDefinition {
     @Column
     private StatMorality morality;
 
-    // Only meaningful when type == RANGE; null for NUMBER, BOOLEAN, and TIME.
+    // Only meaningful when type == RANGE; null for NUMBER, BOOLEAN, TIME, and DURATION.
     @Column
     private Double minValue;
 
     @Column
     private Double maxValue;
 
-    // Only meaningful for GOOD/BAD NUMBER and RANGE stats.
+    // Only meaningful for GOOD/BAD NUMBER, RANGE, and DURATION stats.
     @Column(name = "good_threshold")
     private Double goodThreshold;
 

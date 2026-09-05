@@ -11,6 +11,7 @@ import { MonthCalendarGrid, type CalendarGridItem } from '@/components/calendar/
 import { TaskComposerSheet } from '@/components/tasks/TaskComposerSheet';
 import { TaskDetailSheet } from '@/components/tasks/TaskDetailSheet';
 import { formatCalendarTime, localDate } from '@/lib/date';
+import { formatDurationValue } from '@/lib/statValues';
 import { datesCoveredByOccurrence, expandCalendarEvent } from '@/lib/calendarRecurrence';
 import { reportError } from '@/lib/errors';
 import { taskPriorityColor } from '@/lib/taskPriority';
@@ -69,6 +70,7 @@ function priorityBucket(importance: number): number {
 
 function statValue(definition: StatDefinition, value: number): string {
   if (definition.type === 'BOOLEAN') return value === 1 ? 'Yes' : 'No';
+  if (definition.type === 'DURATION') return formatDurationValue(value);
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 

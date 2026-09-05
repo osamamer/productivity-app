@@ -20,6 +20,9 @@ import { useAppTheme } from '../hooks/useAppTheme';
 import { useSearchParams } from 'react-router-dom';
 import { userService } from '../services/api/userService.ts';
 import axios from 'axios';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { TimePicker } from '@mui/x-date-pickers/TimePicker';
 import { SHOW_COMPLETED_HOME_TASKS_STORAGE_KEY } from '../services/utils/homePreferences.ts';
 import { statService } from '../services/api/statService.ts';
 import { getPomodoroConfig, setPomodoroSecondsModePreference } from '../services/api/pomodoroConfigService.ts';
@@ -62,6 +65,56 @@ const checkupIntervalOptions = [
     { value: 480, label: '8 hours' },
     { value: 720, label: '12 hours' },
 ];
+
+function dateFromTime(value: string): Date {
+    const match = /^(\d{2}):(\d{2})/.exec(value);
+    const date = new Date();
+    date.setHours(match ? Number(match[1]) : 9, match ? Number(match[2]) : 0, 0, 0);
+    return date;
+}
+
+function timeFromDate(value: Date): string {
+    return `${String(value.getHours()).padStart(2, '0')}:${String(value.getMinutes()).padStart(2, '0')}`;
+}
+
+function CheckupStartTimeField({ value, disabled, onChange }: { value: string; disabled: boolean; onChange: (value: string) => void }) {
+    return (
+        <LocalizationProvider dateAdapter={AdapterDateFns}>
+            <TimePicker
+                label="Start at"
+                value={dateFromTime(value)}
+                onChange={nextValue => {
+                    if (nextValue) onChange(timeFromDate(nextValue));
+                }}
+                disabled={disabled}
+                ampm={false}
+                slotProps={{
+                    textField: {
+                        fullWidth: true,
+                        size: 'small',
+                    },
+                    actionBar: { actions: ['cancel', 'accept'] },
+                    desktopPaper: {
+                        sx: {
+                            borderRadius: 3,
+                            backgroundColor: 'background.paper',
+                            backgroundImage: 'none',
+                            border: theme => `1px solid ${theme.palette.divider}`,
+                        },
+                    },
+                    mobilePaper: {
+                        sx: {
+                            borderRadius: 3,
+                            backgroundColor: 'background.paper',
+                            backgroundImage: 'none',
+                            border: theme => `1px solid ${theme.palette.divider}`,
+                        },
+                    },
+                }}
+            />
+        </LocalizationProvider>
+    );
+}
 
 export function SettingsPage() {
     const { user, logout } = useUser();
@@ -460,56 +513,55 @@ export function SettingsPage() {
                                         />
                                     </Box>
 
-                                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
-                                        <TextField
-                                            select
-                                            fullWidth
-                                            size="small"
-                                            label="Repeat every"
-                                            value={checkupIntervalMinutes}
-                                            onChange={event => setCheckupIntervalMinutes(Number(event.target.value))}
-                                            disabled={userPreferencesLoading || checkupPreferenceSaving}
-                                        >
-                                            {checkupIntervalOptions.map(option => (
-                                                <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
-                                            ))}
-                                        </TextField>
-                                        <TextField
-                                            fullWidth
-                                            size="small"
-                                            label="Start at"
-                                            type="time"
-                                            value={checkupStartTime}
-                                            onChange={event => setCheckupStartTime(event.target.value)}
-                                            disabled={userPreferencesLoading || checkupPreferenceSaving}
-                                            slotProps={{ inputLabel: { shrink: true } }}
-                                        />
-                                        <TextField
-                                            select
-                                            fullWidth
-                                            size="small"
-                                            label="Times per day"
-                                            value={checkupTimesPerDay}
-                                            onChange={event => setCheckupTimesPerDay(Number(event.target.value))}
-                                            disabled={userPreferencesLoading || checkupPreferenceSaving}
-                                        >
-                                            {Array.from({ length: 24 }, (_, index) => index + 1).map(value => (
-                                                <MenuItem key={value} value={value}>{value}</MenuItem>
-                                            ))}
-                                        </TextField>
-                                    </Stack>
-                                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.25, textAlign: 'left' }}>
-                                        Notifications are delivered at the start time and then at each interval, within the same day.
-                                    </Typography>
-                                    <Button
-                                        variant="outlined"
-                                        onClick={() => void handleCheckupScheduleSave()}
-                                        disabled={userPreferencesLoading || checkupPreferenceSaving}
-                                        startIcon={checkupPreferenceSaving ? <CircularProgress size={16} color="inherit" /> : undefined}
-                                        sx={{ mt: 2, borderRadius: 2, textTransform: 'none' }}
-                                    >
-                                        {checkupPreferenceSaving ? 'Saving...' : 'Save check-up schedule'}
-                                    </Button>
+                                    {!userPreferencesLoading && checkupNotificationsEnabled && (
+                                        <>
+                                            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+                                                <TextField
+                                                    select
+                                                    fullWidth
+                                                    size="small"
+                                                    label="Repeat every"
+                                                    value={checkupIntervalMinutes}
+                                                    onChange={event => setCheckupIntervalMinutes(Number(event.target.value))}
+                                                    disabled={checkupPreferenceSaving}
+                                                >
+                                                    {checkupIntervalOptions.map(option => (
+                                                        <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                                                    ))}
+                                                </TextField>
+                                                <CheckupStartTimeField
+                                                    value={checkupStartTime}
+                                                    onChange={setCheckupStartTime}
+                                                    disabled={checkupPreferenceSaving}
+                                                />
+                                                <TextField
+                                                    select
+                                                    fullWidth
+                                                    size="small"
+                                                    label="Times per day"
+                                                    value={checkupTimesPerDay}
+                                                    onChange={event => setCheckupTimesPerDay(Number(event.target.value))}
+                                                    disabled={checkupPreferenceSaving}
+                                                >
+                                                    {Array.from({ length: 24 }, (_, index) => index + 1).map(value => (
+                                                        <MenuItem key={value} value={value}>{value}</MenuItem>
+                                                    ))}
+                                                </TextField>
+                                            </Stack>
+                                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.25, textAlign: 'left' }}>
+                                                Notifications are delivered at the start time and then at each interval, within the same day.
+                                            </Typography>
+                                            <Button
+                                                variant="outlined"
+                                                onClick={() => void handleCheckupScheduleSave()}
+                                                disabled={checkupPreferenceSaving}
+                                                startIcon={checkupPreferenceSaving ? <CircularProgress size={16} color="inherit" /> : undefined}
+                                                sx={{ mt: 2, borderRadius: 2, textTransform: 'none' }}
+                                            >
+                                                {checkupPreferenceSaving ? 'Saving...' : 'Save check-up schedule'}
+                                            </Button>
+                                        </>
+                                    )}
                                 </Box>
 
                                 <Box sx={sectionCardSx}>

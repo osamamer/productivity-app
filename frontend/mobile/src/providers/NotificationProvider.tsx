@@ -38,7 +38,7 @@ function errorObject(cause: unknown): Error {
 }
 
 export function NotificationProvider({ children }: PropsWithChildren) {
-  const { isAuthenticated } = useAuth();
+  const { loading: authLoading, isAuthenticated } = useAuth();
   const { showInfo } = useAppPopup();
   const syncingRef = useRef(false);
   const shownRef = useRef(new Set<string>());
@@ -136,6 +136,10 @@ export function NotificationProvider({ children }: PropsWithChildren) {
   }, [isAuthenticated, syncCalendarReminders, syncCheckupNotifications, syncDue]);
 
   useEffect(() => {
+    // Auth starts without a user while the encrypted session is being restored.
+    // Clearing native alarms during that window loses reminders across a cold start.
+    if (authLoading) return;
+
     if (!isAuthenticated) {
       shownRef.current.clear();
       calendarRemindersRef.current = [];
@@ -156,7 +160,7 @@ export function NotificationProvider({ children }: PropsWithChildren) {
       clearInterval(calendarTimer);
       subscription.remove();
     };
-  }, [isAuthenticated, synchronizeAll, syncDue]);
+  }, [authLoading, isAuthenticated, synchronizeAll, syncDue]);
 
   useEffect(() => {
     if (!isAuthenticated || Platform.OS === 'web') return;

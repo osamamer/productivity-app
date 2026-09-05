@@ -170,6 +170,8 @@ Docker services are defined in `deployment/docker-compose.yml`. Environment vari
 
 **Modal and popup preference.** The user does not like large modals that blur the whole app. Prefer inline editing and small anchored popups for confirmations or contextual actions.
 
+**App-styled date/time controls.** Use the app's themed date/time picker components and popup surfaces for date and time input. Do not fall back to unstyled browser or platform-native date/time controls when an app-styled picker is available; match the existing picker popup styling.
+
 **Mobile keyboard visibility.** Every new mobile screen, form, sheet, or popup that accepts text must use the shared keyboard-aware surfaces (`Screen`, `ModalSheet`, `KeyboardAwareScrollView`, or `KeyboardAwareView`) so the focused field remains visible above the opened keyboard. Do not add a standalone scroll view around inputs without keyboard avoidance and focused-input reveal behavior.
 
 **Mobile date input preference.** When a mobile scheduling control offers a date choice, use a `Custom` action that opens a themed date/time popup. Do not leave a `Someday` action that silently means “no date.”

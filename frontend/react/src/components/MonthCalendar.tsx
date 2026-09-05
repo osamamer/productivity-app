@@ -17,6 +17,7 @@ import { TaskToCreate } from "../types/TaskToCreate.tsx";
 import { TaskGroup } from "../types/TaskGroup.ts";
 import { SmartTaskInput } from "./input/SmartTaskInput.tsx";
 import { StatDefinition, StatEntry } from "../types/Stats.ts";
+import { formatDurationValue, formatTimeValue } from "../services/utils/statValues.ts";
 import { DateStatCheckIn } from "./stats/DateStatCheckIn.tsx";
 import { statService } from "../services/api/statService.ts";
 import { addMonths, format, isAfter, startOfDay, startOfMonth, subDays } from "date-fns";
@@ -107,6 +108,8 @@ function priorityBucket(importance: number): number {
 
 function statEventValue(definition: StatDefinition, value: number): string {
     if (definition.type === 'BOOLEAN') return value === 1 ? 'Yes' : 'No';
+    if (definition.type === 'TIME') return formatTimeValue(value);
+    if (definition.type === 'DURATION') return formatDurationValue(value);
     return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 

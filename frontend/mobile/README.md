@@ -135,6 +135,23 @@ npm run typecheck
 npm run export:android
 ```
 
+## Production APK build
+
+The repository-root `build-production-apk-to-drive.sh` builds the production
+environment APK and stores it in `Documents/productivity-app-apks`:
+
+```bash
+cd ../..
+./build-production-apk-to-drive.sh
+```
+
+Override the destination with `CLARITARD_APK_OUTPUT_DIR`, or set
+`CLARITARD_APK_NAME` to choose the filename. Pass `--dry-run` to build and
+verify the APK path without copying it. The generated release variant
+currently uses the local debug keystore in `android/app/build.gradle`;
+configure a private release keystore before distributing the APK as a
+production-signed artifact.
+
 ## CI Android builds
 
 The GitHub Actions workflow runs the validation commands above for every change,

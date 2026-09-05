@@ -461,7 +461,7 @@ export default function MeditationScreen() {
   }, [confirm, navigation, session, setSessionData, stopAudio]);
 
   return (
-    <Screen contentStyle={styles.screenContent} refreshing={resource.refreshing} onRefresh={() => void resource.reload()}>
+    <Screen safeAreaTop={false} contentStyle={styles.screenContent} refreshing={resource.refreshing} onRefresh={() => void resource.reload()}>
       {resource.loading && <LoadingView label="Restoring your session…" />}
       {resource.error && !resource.data && <ErrorView message={resource.error} retry={() => void resource.reload()} />}
       {error && <AppText color="danger" style={styles.error}>{error}</AppText>}

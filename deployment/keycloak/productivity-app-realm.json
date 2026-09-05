@@ -29,6 +29,9 @@
         "profile",
         "roles",
         "email"
+      ],
+      "optionalClientScopes": [
+        "offline_access"
       ]
     }
   ]

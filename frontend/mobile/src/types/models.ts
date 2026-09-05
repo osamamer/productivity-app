@@ -109,7 +109,7 @@ export interface MentalStateCheckIn {
   suggestedActions: string[];
 }
 
-export type StatType = 'NUMBER' | 'BOOLEAN' | 'RANGE';
+export type StatType = 'NUMBER' | 'BOOLEAN' | 'RANGE' | 'TIME' | 'DURATION';
 export type StatMorality = 'GOOD' | 'BAD' | 'NEUTRAL';
 
 export interface StatDefinition {

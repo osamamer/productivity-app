@@ -69,6 +69,7 @@ export default function MentalThreadsScreen() {
 
   return (
     <Screen
+      safeAreaTop={false}
       refreshing={resource.refreshing}
       onRefresh={() => void resource.reload()}
       overlay={<AppButton label="Capture" icon="add" onPress={() => setComposerOpen(true)} style={styles.capture} />}>

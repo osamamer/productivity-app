@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -29,6 +29,8 @@ import { api } from '@/services/api';
 import type { Day, Task, TaskGroup } from '@/types/models';
 
 interface TodayData { day: Day }
+
+const TASK_DROP_ZONE_RADIUS = 18;
 
 type TaskListItem =
   | { kind: 'task'; task: Task }
@@ -95,9 +97,10 @@ export default function TodayScreen() {
   const [dragTargetEdge, setDragTargetEdge] = useState<'before' | 'after' | null>(null);
   const [dragTargetGroupId, setDragTargetGroupId] = useState<string | null>(null);
   const taskLayoutsRef = useRef(new Map<string, TaskDragLayout>());
+  const taskRowRefs = useRef(new Map<string, View>());
   const groupLayoutsRef = useRef(new Map<string, Pick<TaskDragLayout, 'top' | 'bottom'>>());
   const draggedTaskRef = useRef<string | null>(null);
-  const groupHeaderRefs = useRef(new Map<string, View>());
+  const groupRefs = useRef(new Map<string, View>());
   const dragTargetRef = useRef<{ taskId: string | null; edge: 'before' | 'after' | null; groupId: string | null }>({ taskId: null, edge: null, groupId: null });
 
   function updateTask(updated: Task) {
@@ -166,6 +169,18 @@ export default function TodayScreen() {
   }
 
   function startDrag(taskId: string, _startY: number) {
+    taskLayoutsRef.current.clear();
+    groupLayoutsRef.current.clear();
+    taskRowRefs.current.forEach((view, visibleTaskId) => {
+      view.measureInWindow((left, top, width, height) => {
+        taskLayoutsRef.current.set(visibleTaskId, { left, top, width, bottom: top + height });
+      });
+    });
+    groupRefs.current.forEach((view, groupId) => {
+      view.measureInWindow((_left, top, _width, height) => {
+        groupLayoutsRef.current.set(groupId, { top, bottom: top + height });
+      });
+    });
     clearSelection();
     setSelected(null);
     draggedTaskRef.current = taskId;
@@ -178,7 +193,10 @@ export default function TodayScreen() {
 
   function updateDragTarget(taskId: string, moveY: number, _dy: number) {
     if (draggedTaskRef.current !== taskId) return;
-    const groupTarget = [...groupLayoutsRef.current.entries()].find(([, layout]) => moveY >= layout.top && moveY <= layout.bottom);
+    const groupTarget = [...groupLayoutsRef.current.entries()].find(([groupId, layout]) => {
+      const group = groups.find(candidate => candidate.groupId === groupId);
+      return !group?.taskIds.includes(taskId) && moveY >= layout.top && moveY <= layout.bottom;
+    });
     if (groupTarget) {
       const next = { taskId: null, edge: null, groupId: groupTarget[0] } as const;
       dragTargetRef.current = next;
@@ -189,8 +207,13 @@ export default function TodayScreen() {
     }
 
     const taskTarget = [...taskLayoutsRef.current.entries()]
-      .filter(([taskId, layout]) => taskId !== draggedTaskRef.current && moveY >= layout.top && moveY <= layout.bottom)
-      .sort(([, first], [, second]) => (first.bottom - first.top) - (second.bottom - second.top))[0];
+      .filter(([candidateTaskId]) => candidateTaskId !== draggedTaskRef.current)
+      .flatMap(([candidateTaskId, layout]) => ([
+        { taskId: candidateTaskId, edge: 'before' as const, distance: Math.abs(moveY - layout.top) },
+        { taskId: candidateTaskId, edge: 'after' as const, distance: Math.abs(moveY - layout.bottom) },
+      ]))
+      .filter(target => target.distance <= TASK_DROP_ZONE_RADIUS)
+      .sort((first, second) => first.distance - second.distance)[0];
     if (!taskTarget) {
       dragTargetRef.current = { taskId: null, edge: null, groupId: null };
       setDragTargetTaskId(null);
@@ -199,11 +222,9 @@ export default function TodayScreen() {
       return;
     }
 
-    const [targetTaskId, layout] = taskTarget;
-    const edge = moveY < layout.top + (layout.bottom - layout.top) / 2 ? 'before' : 'after';
-    dragTargetRef.current = { taskId: targetTaskId, edge, groupId: null };
-    setDragTargetTaskId(targetTaskId);
-    setDragTargetEdge(edge);
+    dragTargetRef.current = { taskId: taskTarget.taskId, edge: taskTarget.edge, groupId: null };
+    setDragTargetTaskId(taskTarget.taskId);
+    setDragTargetEdge(taskTarget.edge);
     setDragTargetGroupId(null);
   }
 
@@ -253,7 +274,7 @@ export default function TodayScreen() {
   }
 
   function registerGroupLayout(groupId: string) {
-    groupHeaderRefs.current.get(groupId)?.measureInWindow((_x, top, _width, height) => {
+    groupRefs.current.get(groupId)?.measureInWindow((_x, top, _width, height) => {
       groupLayoutsRef.current.set(groupId, { top, bottom: top + height });
     });
   }
@@ -261,6 +282,11 @@ export default function TodayScreen() {
   function registerTaskLayout(taskId: string, layout: TaskDragLayout) {
     taskLayoutsRef.current.set(taskId, layout);
   }
+
+  const registerTaskView = useCallback((taskId: string, view: View | null) => {
+    if (view) taskRowRefs.current.set(taskId, view);
+    else taskRowRefs.current.delete(taskId);
+  }, []);
 
   async function performBulkCompletion(completed: boolean) {
     if (bulkActionLoading || selectedTasks.length === 0) return;
@@ -391,6 +417,7 @@ export default function TodayScreen() {
                 dropTarget={dragTargetTaskId === item.task.taskId}
                 dropTargetEdge={dragTargetTaskId === item.task.taskId ? dragTargetEdge ?? undefined : undefined}
                 onDragLayout={registerTaskLayout}
+                onDragViewRef={registerTaskView}
                 onDragStart={startDrag}
                 onDragMove={updateDragTarget}
                 onDragEnd={finishDrag}
@@ -399,20 +426,33 @@ export default function TodayScreen() {
             ) : (
               <View
                 key={item.group.groupId}
-                style={[styles.group, { borderWidth: selectedGroupIdSet.has(item.group.groupId) ? 2 : 1, borderColor: selectedGroupIdSet.has(item.group.groupId) ? colors.accent : colors.border, backgroundColor: colors.surface, overflow: draggedTaskId ? 'visible' : 'hidden' }]}
+                ref={node => {
+                  if (node) groupRefs.current.set(item.group.groupId, node);
+                  else groupRefs.current.delete(item.group.groupId);
+                }}
+                onLayout={() => registerGroupLayout(item.group.groupId)}
+                style={[
+                  styles.group,
+                  {
+                    borderWidth: selectedGroupIdSet.has(item.group.groupId) || dragTargetGroupId === item.group.groupId ? 2 : 1,
+                    borderColor: selectedGroupIdSet.has(item.group.groupId) || dragTargetGroupId === item.group.groupId ? colors.accent : colors.border,
+                    backgroundColor: dragTargetGroupId === item.group.groupId ? colors.accentSoft : colors.surface,
+                    overflow: draggedTaskId ? 'visible' : 'hidden',
+                  },
+                ]}
               >
-                <View
-                  ref={node => {
-                    if (node) groupHeaderRefs.current.set(item.group.groupId, node);
-                    else groupHeaderRefs.current.delete(item.group.groupId);
-                  }}
-                  onLayout={() => registerGroupLayout(item.group.groupId)}>
+                <View>
                   <SilentPressable
                     accessibilityRole="button"
                     accessibilityLabel={`${collapsedGroupIds.has(item.group.groupId) ? 'Expand' : 'Collapse'} ${item.group.name}`}
                     accessibilityState={{ expanded: !collapsedGroupIds.has(item.group.groupId) }}
                     onPress={event => { event.stopPropagation(); toggleGroup(item.group.groupId); }}
-                    style={({ pressed }) => [styles.groupHeader, !collapsedGroupIds.has(item.group.groupId) && styles.groupHeaderExpanded, { backgroundColor: selectedGroupIdSet.has(item.group.groupId) || dragTargetGroupId === item.group.groupId ? colors.accentSoft : colors.surface, borderBottomColor: colors.border }, pressed && styles.pressed]}
+                    style={({ pressed }) => [
+                      styles.groupHeader,
+                      collapsedGroupIds.has(item.group.groupId) ? styles.groupHeaderCollapsed : styles.groupHeaderExpanded,
+                      { backgroundColor: selectedGroupIdSet.has(item.group.groupId) || dragTargetGroupId === item.group.groupId ? colors.accentSoft : colors.surface, borderBottomColor: colors.border },
+                      pressed && styles.pressed,
+                    ]}
                   >
                     <GroupChevron
                       collapsed={collapsedGroupIds.has(item.group.groupId)}
@@ -465,6 +505,7 @@ export default function TodayScreen() {
                         dropTarget={dragTargetTaskId === task.taskId}
                         dropTargetEdge={dragTargetTaskId === task.taskId ? dragTargetEdge ?? undefined : undefined}
                         onDragLayout={registerTaskLayout}
+                        onDragViewRef={registerTaskView}
                         onDragStart={startDrag}
                         onDragMove={updateDragTarget}
                         onDragEnd={finishDrag}
@@ -531,7 +572,8 @@ const styles = StyleSheet.create({
   fill: { height: 8, borderRadius: 4 },
   list: { gap: 10 },
   group: { borderWidth: 1, borderRadius: 20, overflow: 'hidden' },
-  groupHeader: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14 },
+  groupHeader: { minHeight: 64, borderTopLeftRadius: 19, borderTopRightRadius: 19, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14 },
+  groupHeaderCollapsed: { borderBottomLeftRadius: 19, borderBottomRightRadius: 19 },
   groupHeaderExpanded: { borderBottomWidth: StyleSheet.hairlineWidth },
   groupSelection: { flex: 1, minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 8 },
   groupTitle: { flex: 1 },

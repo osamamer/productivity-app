@@ -8,6 +8,7 @@ import { StatDefinition } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
 import { getBooleanChoiceColor, showStatFeedback } from '../../services/statFeedback';
 import { minutesToTimeValue, timeValueToMinutes } from '../../services/utils/statValues';
+import { DurationInput } from './DurationInput';
 
 interface Props {
     definitions: StatDefinition[];
@@ -148,6 +149,13 @@ export function TodayCheckIn({ definitions, onSaved }: Props) {
                                 onFocus={event => { feedbackAnchorRef.current = event.currentTarget; }}
                                 inputProps={{ step: 60, 'aria-label': `${def.name} time` }}
                                 sx={{ width: 160 }}
+                            />
+                        )}
+                        {def.type === 'DURATION' && (
+                            <DurationInput
+                                value={values[def.id] ?? null}
+                                onChange={value => setValue(def.id, value)}
+                                onFocus={event => { feedbackAnchorRef.current = event.currentTarget; }}
                             />
                         )}
                         {def.type === 'RANGE' && (

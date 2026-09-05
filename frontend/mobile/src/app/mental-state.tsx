@@ -117,7 +117,7 @@ export default function MentalStateScreen() {
   }
 
   return (
-    <Screen contentStyle={styles.content} refreshing={resource.refreshing} onRefresh={() => void resource.reload()}>
+    <Screen safeAreaTop={false} contentStyle={styles.content} refreshing={resource.refreshing} onRefresh={() => void resource.reload()}>
       {displayedCheckIn ? (
         <MentalStateResultCard
           checkIn={displayedCheckIn}

@@ -123,20 +123,27 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, []);
 
   const refresh = useCallback(async (): Promise<AuthSession.TokenResponse> => {
-    if (!discovery) throw new Error('Keycloak discovery is not available');
-    const refreshToken = tokenRef.current?.refreshToken ?? (await SecureStore.getItemAsync(STORAGE_KEY));
-    if (!refreshToken) throw new Error('No saved session');
-    if (!refreshPromiseRef.current) {
-      refreshPromiseRef.current = AuthSession.refreshAsync(
+    const inFlightRefresh = refreshPromiseRef.current;
+    if (inFlightRefresh) return inFlightRefresh;
+
+    const nextRefresh = (async () => {
+      if (!discovery) throw new Error('Keycloak discovery is not available');
+      const refreshToken = tokenRef.current?.refreshToken ?? (await SecureStore.getItemAsync(STORAGE_KEY));
+      if (!refreshToken) throw new Error('No saved session');
+      const token = await AuthSession.refreshAsync(
         { clientId: appConfig.keycloakClientId, refreshToken },
         discovery,
-      ).finally(() => {
-        refreshPromiseRef.current = null;
-      });
+      );
+      await commitToken(token);
+      return token;
+    })();
+
+    refreshPromiseRef.current = nextRefresh;
+    try {
+      return await nextRefresh;
+    } finally {
+      if (refreshPromiseRef.current === nextRefresh) refreshPromiseRef.current = null;
     }
-    const token = await refreshPromiseRef.current;
-    await commitToken(token);
-    return token;
   }, [commitToken, discovery]);
 
   const getAccessToken = useCallback(

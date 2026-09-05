@@ -4,7 +4,7 @@ import '@fontsource/roboto/400.css';
 import '@fontsource/roboto/500.css';
 import '@fontsource/roboto/700.css';
 import {useEffect, type ReactNode} from "react";
-import {createBrowserRouter, Navigate, RouterProvider} from "react-router-dom";
+import {createBrowserRouter, Navigate, Outlet, RouterProvider} from "react-router-dom";
 import {HomePage} from "./pages/HomePage.jsx";
 import {CalendarPage} from "./pages/CalendarPage.jsx";
 import {TaskPage} from "./pages/TaskPage.jsx";
@@ -24,7 +24,7 @@ import {NotificationCenter} from "./components/notifications/NotificationCenter.
 import {AppErrorBoundary, AppErrorPage} from "./components/AppErrorBoundary.tsx";
 import {useAppContextMenuGuard} from "./components/AppContextMenuGuard.tsx";
 import {rememberMentalDestination, type MentalDestinationPath} from "./services/utils/mentalNavigation";
-import {PageTransition} from "./components/PageTransition.tsx";
+import {AppShell} from "./components/AppShell.tsx";
 
 
 function MentalDestinationTracker({destination, children}: { destination: MentalDestinationPath; children: ReactNode }) {
@@ -41,7 +41,7 @@ function AppProviders() {
         <UserProvider>
             <TaskProvider>
                 <NotificationCenter/>
-                <PageTransition/>
+                <Outlet/>
             </TaskProvider>
         </UserProvider>
     );
@@ -54,92 +54,46 @@ const routes = [
         children: [
             { path: "/login", element: <LoginPage/> },
             {
-                path: "/",
                 element: (
                     <ProtectedRoute>
-                        <HomePage/>
+                        <AppShell/>
                     </ProtectedRoute>
                 ),
+                children: [
+                    { path: "/", element: <HomePage/> },
+                    { path: "/calendar", element: <CalendarPage/> },
+                    {
+                        path: "/meditation",
+                        element: (
+                            <MentalDestinationTracker destination="/meditation">
+                                <MeditationPage/>
+                            </MentalDestinationTracker>
+                        ),
+                    },
+                    { path: "/tasks", element: <TaskPage/> },
+                    { path: "/stats", element: <StatsPage/> },
+                    { path: "/notes", element: <NotesPage/> },
+                    { path: "/mental", element: <MentalPage/> },
+                    {
+                        path: "/mental-threads",
+                        element: (
+                            <MentalDestinationTracker destination="/mental-threads">
+                                <MentalThreadsPage/>
+                            </MentalDestinationTracker>
+                        ),
+                    },
+                    {
+                        path: "/mental-state",
+                        element: (
+                            <MentalDestinationTracker destination="/mental-state">
+                                <MentalStatePage/>
+                            </MentalDestinationTracker>
+                        ),
+                    },
+                    { path: "/settings", element: <SettingsPage/> },
+                    { path: "*", element: <Navigate to="/" replace /> },
+                ],
             },
-            {
-                path: "/calendar",
-                element: (
-                    <ProtectedRoute>
-                        <CalendarPage/>
-                    </ProtectedRoute>
-                ),
-            },
-            {
-                path: "/meditation",
-                element: (
-                    <ProtectedRoute>
-                        <MentalDestinationTracker destination="/meditation">
-                            <MeditationPage/>
-                        </MentalDestinationTracker>
-                    </ProtectedRoute>
-                ),
-            },
-            {
-                path: "/tasks",
-                element: (
-                    <ProtectedRoute>
-                        <TaskPage/>
-                    </ProtectedRoute>
-                ),
-            },
-            {
-                path: "/stats",
-                element: (
-                    <ProtectedRoute>
-                        <StatsPage/>
-                    </ProtectedRoute>
-                ),
-            },
-            {
-                path: "/notes",
-                element: (
-                    <ProtectedRoute>
-                        <NotesPage/>
-                    </ProtectedRoute>
-                ),
-            },
-            {
-                path: "/mental",
-                element: (
-                    <ProtectedRoute>
-                        <MentalPage/>
-                    </ProtectedRoute>
-                ),
-            },
-            {
-                path: "/mental-threads",
-                element: (
-                    <ProtectedRoute>
-                        <MentalDestinationTracker destination="/mental-threads">
-                            <MentalThreadsPage/>
-                        </MentalDestinationTracker>
-                    </ProtectedRoute>
-                ),
-            },
-            {
-                path: "/mental-state",
-                element: (
-                    <ProtectedRoute>
-                        <MentalDestinationTracker destination="/mental-state">
-                            <MentalStatePage/>
-                        </MentalDestinationTracker>
-                    </ProtectedRoute>
-                ),
-            },
-            {
-                path: "/settings",
-                element: (
-                    <ProtectedRoute>
-                        <SettingsPage/>
-                    </ProtectedRoute>
-                ),
-            },
-            { path: "*", element: <Navigate to="/" replace /> },
         ],
     },
 ];

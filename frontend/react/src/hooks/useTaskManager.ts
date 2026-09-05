@@ -217,6 +217,24 @@ export function useTaskManager() {
         });
     }, []);
 
+    const replaceTaskInState = useCallback((taskId: string, replacement: Task) => {
+        setTaskState(prev => {
+            const taskIndex = prev.allTasks.findIndex(task => task.taskId === taskId);
+            if (taskIndex === -1) return prev;
+
+            const updatedTasks = [...prev.allTasks];
+            updatedTasks[taskIndex] = replacement;
+            const next = withTaskBuckets(prev, updatedTasks);
+
+            return {
+                ...next,
+                highlightedTask: prev.highlightedTask?.taskId === taskId
+                    ? replacement
+                    : prev.highlightedTask,
+            };
+        });
+    }, []);
+
     const updateTaskInState = useCallback((taskId: string, updates: Partial<Task>) => {
         setTaskState(prev => {
             const taskIndex = prev.allTasks.findIndex(task => task.taskId === taskId);
@@ -290,6 +308,7 @@ export function useTaskManager() {
         refreshTaskBuckets,
         // State updaters
         addTaskToState,
+        replaceTaskInState,
         updateTaskInState,
         removeTaskFromState,
         reorderTasksInState,
@@ -310,6 +329,7 @@ export function useTaskManager() {
         fetchPastTasks,
         refreshTaskBuckets,
         addTaskToState,
+        replaceTaskInState,
         updateTaskInState,
         removeTaskFromState,
         reorderTasksInState,

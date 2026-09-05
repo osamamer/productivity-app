@@ -14,6 +14,7 @@ interface Props {
   refreshing?: boolean;
   onRefresh?: () => void;
   refreshEnabled?: boolean;
+  safeAreaTop?: boolean;
   contentStyle?: StyleProp<ViewStyle>;
   overlay?: ReactNode;
 }
@@ -27,6 +28,7 @@ export function Screen({
   refreshing = false,
   onRefresh,
   refreshEnabled = true,
+  safeAreaTop = true,
   contentStyle,
   overlay,
 }: PropsWithChildren<Props>) {
@@ -47,7 +49,7 @@ export function Screen({
   );
 
   return (
-    <SafeAreaView edges={['top']} style={[styles.safe, { backgroundColor: colors.background }]}>
+    <SafeAreaView edges={safeAreaTop ? ['top'] : []} style={[styles.safe, { backgroundColor: colors.background }]}>
       {scroll ? (
         <KeyboardAwareScrollView
           contentContainerStyle={styles.scroll}
@@ -64,7 +66,7 @@ export function Screen({
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   scroll: { flexGrow: 1 },
-  content: { paddingHorizontal: 18, paddingTop: 16, paddingBottom: 120, gap: 16 },
+  content: { paddingHorizontal: 18, paddingTop: 0, paddingBottom: 120, gap: 16 },
   header: { minHeight: 54, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 16 },
   headerWithoutTitle: { minHeight: 32 },
   headerText: { flex: 1, gap: 3 },

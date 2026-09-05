@@ -180,6 +180,13 @@ public class StatInsightService {
             int totalMinutes = (int) Math.round(value);
             return String.format(Locale.ROOT, "%02d:%02d", totalMinutes / 60, totalMinutes % 60);
         }
+        if (type == StatType.DURATION) {
+            int totalMinutes = (int) Math.round(value);
+            int hours = totalMinutes / 60;
+            int minutes = totalMinutes % 60;
+            if (hours == 0) return minutes + "m";
+            return minutes == 0 ? hours + "h" : hours + "h " + minutes + "m";
+        }
         return String.format(Locale.ROOT, "%.1f", value).replaceAll("\\.0$", "");
     }
 

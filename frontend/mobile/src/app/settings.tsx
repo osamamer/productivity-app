@@ -87,6 +87,7 @@ export default function SettingsScreen() {
   const displayedCheckupIntervalMinutes = checkupScheduleEdited ? checkupIntervalMinutes : persistedCheckupIntervalMinutes;
   const displayedCheckupStartTime = checkupScheduleEdited ? checkupStartTime : persistedCheckupStartTime;
   const displayedCheckupTimesPerDay = checkupScheduleEdited ? checkupTimesPerDay : persistedCheckupTimesPerDay;
+  const checkupScheduleVisible = resource.data !== null && resource.data.checkupNotificationsEnabled !== false;
 
   async function updatePreference(
     key: 'includeUnloggedNumericDaysAsZero' | 'autoStartPomodoroSessions' | 'checkupNotificationsEnabled',
@@ -179,7 +180,7 @@ export default function SettingsScreen() {
   }
 
   return (
-    <Screen title="Settings" eyebrow="Make it yours">
+    <Screen safeAreaTop={false}>
       <Card style={styles.section}>
         <View style={styles.sectionHeading}><Ionicons name="color-palette-outline" size={20} color={colors.textMuted} /><AppText variant="heading">Appearance</AppText></View>
         <AppText variant="label">Theme</AppText>
@@ -219,44 +220,48 @@ export default function SettingsScreen() {
         <View style={styles.sectionHeading}><Ionicons name="time-outline" size={20} color={colors.textMuted} /><AppText variant="heading">Mental state check-ups</AppText></View>
         <SettingRow label="Send check-up notifications" detail="Get reminders to pause and record how you are doing." value={resource.data?.checkupNotificationsEnabled ?? true} disabled={!resource.data} onChange={value => void updatePreference('checkupNotificationsEnabled', value)} />
         <View style={[styles.divider, { backgroundColor: colors.border }]} />
-        <AppText variant="label">Repeat every</AppText>
-        <ChoiceChips value={displayedCheckupIntervalMinutes} onChange={value => { setCheckupIntervalMinutes(value); setCheckupScheduleEdited(true); }} options={checkupIntervalOptions} />
-        <AppText variant="label">Starting time</AppText>
-        <SilentPressable
-          accessibilityRole="button"
-          accessibilityLabel={`Check-up starting time: ${displayedCheckupStartTime}`}
-          onPress={openCheckupTimePicker}
-          style={({ pressed }) => [styles.timeField, { borderColor: colors.border, backgroundColor: colors.background }, pressed && { opacity: 0.72 }]}
-        >
-          <Ionicons name="time-outline" size={19} color={colors.accent} />
-          <AppText variant="label" style={styles.grow}>{displayedCheckupStartTime}</AppText>
-          <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-        </SilentPressable>
-        <AppInput
-          label="Times per day"
-          value={displayedCheckupTimesPerDay}
-          onChangeText={value => { setCheckupTimesPerDay(value); setCheckupScheduleEdited(true); }}
-          keyboardType="number-pad"
-          maxLength={2}
-          editable={Boolean(resource.data) && !checkupScheduleSaving}
-        />
-        <AppText variant="caption" color="muted">Notifications are delivered at the start time and then at each interval, within the same day.</AppText>
-        <AppButton label="Save check-up schedule" variant="secondary" loading={checkupScheduleSaving} disabled={!resource.data} onPress={() => void saveCheckupSchedule()} />
-        <AppPopup
-          visible={checkupTimePickerOpen}
-          title="Starting time"
-          showIcon={false}
-          onClose={() => setCheckupTimePickerOpen(false)}
-          dismissOnBackdrop={false}
-          footer={(
-            <View style={styles.popupActions}>
-              <AppButton style={styles.popupAction} variant="secondary" label="Cancel" onPress={() => setCheckupTimePickerOpen(false)} />
-              <AppButton style={styles.popupAction} label="Done" onPress={() => { setCheckupStartTime(timeFromDate(checkupTimeDraft)); setCheckupScheduleEdited(true); setCheckupTimePickerOpen(false); }} />
-            </View>
-          )}
-        >
-          <TimePicker key={String(checkupTimePickerOpen)} value={checkupTimeDraft} onChange={setCheckupTimeDraft} />
-        </AppPopup>
+        {checkupScheduleVisible && (
+          <>
+            <AppText variant="label">Repeat every</AppText>
+            <ChoiceChips value={displayedCheckupIntervalMinutes} onChange={value => { setCheckupIntervalMinutes(value); setCheckupScheduleEdited(true); }} options={checkupIntervalOptions} />
+            <AppText variant="label">Starting time</AppText>
+            <SilentPressable
+              accessibilityRole="button"
+              accessibilityLabel={`Check-up starting time: ${displayedCheckupStartTime}`}
+              onPress={openCheckupTimePicker}
+              style={({ pressed }) => [styles.timeField, { borderColor: colors.border, backgroundColor: colors.background }, pressed && { opacity: 0.72 }]}
+            >
+              <Ionicons name="time-outline" size={19} color={colors.accent} />
+              <AppText variant="label" style={styles.grow}>{displayedCheckupStartTime}</AppText>
+              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+            </SilentPressable>
+            <AppInput
+              label="Times per day"
+              value={displayedCheckupTimesPerDay}
+              onChangeText={value => { setCheckupTimesPerDay(value); setCheckupScheduleEdited(true); }}
+              keyboardType="number-pad"
+              maxLength={2}
+              editable={!checkupScheduleSaving}
+            />
+            <AppText variant="caption" color="muted">Notifications are delivered at the start time and then at each interval, within the same day.</AppText>
+            <AppButton label="Save check-up schedule" variant="secondary" loading={checkupScheduleSaving} onPress={() => void saveCheckupSchedule()} />
+            <AppPopup
+              visible={checkupTimePickerOpen}
+              title="Starting time"
+              showIcon={false}
+              onClose={() => setCheckupTimePickerOpen(false)}
+              dismissOnBackdrop={false}
+              footer={(
+                <View style={styles.popupActions}>
+                  <AppButton style={styles.popupAction} variant="secondary" label="Cancel" onPress={() => setCheckupTimePickerOpen(false)} />
+                  <AppButton style={styles.popupAction} label="Done" onPress={() => { setCheckupStartTime(timeFromDate(checkupTimeDraft)); setCheckupScheduleEdited(true); setCheckupTimePickerOpen(false); }} />
+                </View>
+              )}
+            >
+              <TimePicker key={String(checkupTimePickerOpen)} value={checkupTimeDraft} onChange={setCheckupTimeDraft} />
+            </AppPopup>
+          </>
+        )}
       </Card>
 
       <Card style={styles.section}>

@@ -150,7 +150,7 @@ configure_mobile_sign_in() {
   local realm=${KEYCLOAK_REALM:-productivity-app}
   local admin_realm=${KEYCLOAK_ADMIN_REALM:-master}
   local client_name=${KEYCLOAK_CLIENT_ID:-productivity-app-frontend}
-  local client_id
+  local client_id offline_scope_id
 
   echo "Applying the mobile sign-in configuration..."
   for attempt in {1..10}; do
@@ -169,6 +169,21 @@ configure_mobile_sign_in() {
       "${compose[@]}" exec -T keycloak /opt/keycloak/bin/kcadm.sh update "clients/${client_id}" \
         -r "${realm}" \
         -s directAccessGrantsEnabled=true >/dev/null
+      offline_scope_id=$(
+        "${compose[@]}" exec -T keycloak /opt/keycloak/bin/kcadm.sh get client-scopes \
+          -r "${realm}" \
+          -q name=offline_access \
+          --fields id \
+          --format csv \
+          --noquotes 2>/dev/null | tr -d '\r' | tail -n 1
+      )
+      if [[ -n "${offline_scope_id}" ]]; then
+        "${compose[@]}" exec -T keycloak /opt/keycloak/bin/kcadm.sh update \
+          "clients/${client_id}/optional-client-scopes/${offline_scope_id}" \
+          -r "${realm}" >/dev/null
+      else
+        echo "The Keycloak offline_access scope was not found; mobile sessions may expire with the SSO session." >&2
+      fi
       return 0
     fi
 

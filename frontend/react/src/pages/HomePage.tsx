@@ -122,6 +122,17 @@ const buttonFadeIn = keyframes`
     to { opacity: 1; }
 `;
 
+const groupTaskInputReveal = keyframes`
+    from {
+        opacity: 0;
+        transform: translateY(-6px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+`;
+
 const TASKS_FADE_DURATION_MS = 140;
 const FOCUS_TASK_SLIDE_DURATION_MS = 650;
 const SELECTION_ACTIONS_EDGE_PADDING = 12;
@@ -282,18 +293,18 @@ function AnimatedTaskList({ items, renderItem }: AnimatedTaskListProps) {
 
 type GroupTaskInputRowProps = {
     groupName: string;
-    disabled: boolean;
     onSubmit: (task: TaskToCreate) => void;
     onEscape: () => void;
     onBlur: () => void;
+    animate?: boolean;
 };
 
 const GroupTaskInputRow = React.forwardRef<HTMLDivElement, GroupTaskInputRowProps>(function GroupTaskInputRow({
     groupName,
-    disabled,
     onSubmit,
     onEscape,
     onBlur,
+    animate = false,
 }, ref) {
     const [importance, setImportance] = useState(0);
     const checkboxColor = importance > 7
@@ -316,6 +327,7 @@ const GroupTaskInputRow = React.forwardRef<HTMLDivElement, GroupTaskInputRowProp
                 overflow: 'hidden',
                 mb: 0.25,
                 transition: 'background-color 0.2s',
+                animation: animate ? `${groupTaskInputReveal} 180ms ease-out` : 'none',
                 '&:hover': { backgroundColor: 'action.hover' },
             }}
         >
@@ -333,7 +345,6 @@ const GroupTaskInputRow = React.forwardRef<HTMLDivElement, GroupTaskInputRowProp
                 <Box sx={{ flex: 1, minWidth: 0, position: 'relative' }}>
                     <SmartTaskInput
                         autoFocus
-                        disabled={disabled}
                         placeholder="Add to group"
                         submitOnBlur
                         onSubmit={onSubmit}
@@ -410,6 +421,46 @@ function replaceTaskGroupIfChanged(
     return changed ? next : previous;
 }
 
+function replaceTaskIdInGroup(
+    previous: TaskGroup[] | null,
+    groupId: string,
+    previousTaskId: string,
+    nextTaskId: string,
+): TaskGroup[] | null {
+    if (!previous) return previous;
+
+    let changed = false;
+    const next = previous.map(group => {
+        if (group.groupId !== groupId || !group.taskIds.includes(previousTaskId)) return group;
+
+        changed = true;
+        return {
+            ...group,
+            taskIds: group.taskIds.map(taskId => taskId === previousTaskId ? nextTaskId : taskId),
+        };
+    });
+
+    return changed ? next : previous;
+}
+
+function removeTaskIdFromGroup(
+    previous: TaskGroup[] | null,
+    groupId: string,
+    taskId: string,
+): TaskGroup[] | null {
+    if (!previous) return previous;
+
+    let changed = false;
+    const next = previous.map(group => {
+        if (group.groupId !== groupId || !group.taskIds.includes(taskId)) return group;
+
+        changed = true;
+        return { ...group, taskIds: group.taskIds.filter(candidate => candidate !== taskId) };
+    });
+
+    return changed ? next : previous;
+}
+
 function formatLocalDateTime(date: Date): string {
     const pad = (value: number) => String(value).padStart(2, '0');
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
@@ -456,7 +507,7 @@ export function HomePage() {
     const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
     const [localGroupName, setLocalGroupName] = useState('');
     const [groupAddingTaskId, setGroupAddingTaskId] = useState<string | null>(null);
-    const [groupTaskSubmitting, setGroupTaskSubmitting] = useState(false);
+    const [groupTaskInputGeneration, setGroupTaskInputGeneration] = useState(0);
     const [bulkDateAnchorEl, setBulkDateAnchorEl] = useState<HTMLElement | null>(null);
     const [bulkDateDraft, setBulkDateDraft] = useState(() => new Date());
     const cachedGroups = taskGroupService.getCachedGroups();
@@ -553,6 +604,7 @@ export function HomePage() {
         tasksLoaded,
         refreshTaskBuckets,
         addTaskToState,
+        replaceTaskInState,
         updateTaskInState,
         removeTaskFromState,
         reorderTasksInState,
@@ -1456,11 +1508,27 @@ export function HomePage() {
 
     const applyUpdatedGroup = useCallback((updatedGroup: TaskGroup, movedTaskIds: string[]) => {
         const movedTaskIdSet = new Set(movedTaskIds);
-        setGroups(previous => (previous ?? [])
-            .map(group => group.groupId === updatedGroup.groupId
-                ? updatedGroup
-                : { ...group, taskIds: group.taskIds.filter(taskId => !movedTaskIdSet.has(taskId)) })
-            .filter(group => group.taskIds.length >= 2));
+        setGroups(previous => {
+            if (!previous) return previous;
+
+            const next = previous
+                .map(group => {
+                    if (group.groupId === updatedGroup.groupId) {
+                        return sameTaskGroup(group, updatedGroup) ? group : updatedGroup;
+                    }
+
+                    const nextTaskIds = group.taskIds.filter(taskId => !movedTaskIdSet.has(taskId));
+                    return nextTaskIds.length === group.taskIds.length
+                        ? group
+                        : { ...group, taskIds: nextTaskIds };
+                })
+                .filter(group => group.taskIds.length >= 2);
+
+            return next.length === previous.length
+                && next.every((group, index) => group === previous[index])
+                ? previous
+                : next;
+        });
     }, []);
 
     const createGroupFromTaskDrop = useCallback(async (targetTask: Task, taskIds: string[]) => {
@@ -1852,41 +1920,78 @@ export function HomePage() {
         if (!taskToCreate?.name.trim() || groupTaskSubmissionRef.current) return;
 
         groupTaskSubmissionRef.current = true;
-        setGroupTaskSubmitting(true);
+        setGroupTaskInputGeneration(previous => previous + 1);
+        const optimisticTaskId = `optimistic-task-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        const now = new Date();
+        const optimisticTask: Task = {
+            taskId: optimisticTaskId,
+            name: taskToCreate.name,
+            description: taskToCreate.description,
+            completed: false,
+            creationDateTime: formatLocalDateTime(now),
+            creationDate: formatLocalDateTime(now).slice(0, 10),
+            scheduledPerformDateTime: taskToCreate.scheduledPerformDateTime || formatLocalDateTime(now),
+            completionDateTime: '',
+            parentId: taskToCreate.parentId ?? '',
+            tag: taskToCreate.tag,
+            importance: taskToCreate.importance,
+            displayOrder: 0,
+            mentalThreadId: taskToCreate.mentalThreadId ?? null,
+        };
+        const optimisticTaskIds = [...group.taskIds, optimisticTaskId];
+        const taskOrder = allTasks.map(task => task.taskId);
+        const groupTaskIndex = taskOrder.indexOf(firstVisibleTaskId ?? group.taskIds[0]);
+        taskOrder.splice(groupTaskIndex === -1 ? taskOrder.length : groupTaskIndex, 0, optimisticTaskId);
+
+        // Put the new task in the same position as the server-created task before
+        // either network request completes. The temporary ID is reconciled below.
+        addTaskToState(optimisticTask);
+        reorderTasksInState(taskOrder);
+        setGroups(previous => (previous ?? []).map(existingGroup =>
+            existingGroup.groupId === group.groupId
+                ? { ...existingGroup, taskIds: optimisticTaskIds }
+                : existingGroup,
+        ));
+        setCollapsedGroupIds(previous => {
+            if (!previous.has(group.groupId)) return previous;
+
+            const next = new Set(previous);
+            next.delete(group.groupId);
+            return next;
+        });
+
+        let createdTaskId: string | null = null;
         try {
             const createdTask = await taskService.createTask(taskToCreate);
-            const nextTaskIds = [...group.taskIds, createdTask.taskId];
-            const taskOrder = allTasks.map(task => task.taskId);
-            const groupTaskIndex = taskOrder.indexOf(firstVisibleTaskId ?? group.taskIds[0]);
-            taskOrder.splice(groupTaskIndex === -1 ? taskOrder.length : groupTaskIndex, 0, createdTask.taskId);
-
-            addTaskToState(createdTask);
-            reorderTasksInState(taskOrder);
-            setGroups(previous => (previous ?? []).map(existingGroup =>
-                existingGroup.groupId === group.groupId
-                    ? { ...existingGroup, taskIds: nextTaskIds }
-                    : existingGroup,
+            createdTaskId = createdTask.taskId;
+            replaceTaskInState(optimisticTaskId, createdTask);
+            const nextTaskIds = optimisticTaskIds.map(taskId =>
+                taskId === optimisticTaskId ? createdTask.taskId : taskId,
+            );
+            setGroups(previous => replaceTaskIdInGroup(
+                previous,
+                group.groupId,
+                optimisticTaskId,
+                createdTask.taskId,
             ));
-            setCollapsedGroupIds(previous => {
-                if (!previous.has(group.groupId)) return previous;
 
-                const next = new Set(previous);
-                next.delete(group.groupId);
-                return next;
-            });
             const updatedGroup = await taskGroupService.replaceTasks(group.groupId, nextTaskIds);
             setGroups(previous => replaceTaskGroupIfChanged(previous, updatedGroup));
         } catch (err) {
             console.error('Error creating task in group:', err);
-            await refreshGroups();
+            if (createdTaskId === null) {
+                removeTaskFromState(optimisticTaskId);
+                setGroups(previous => removeTaskIdFromGroup(previous, group.groupId, optimisticTaskId));
+            } else {
+                await refreshGroups();
+            }
         } finally {
             groupTaskSubmissionRef.current = false;
-            setGroupTaskSubmitting(false);
         }
     }
 
     function startTaskInGroup(groupId: string) {
-        if (groupTaskSubmitting) return;
+        if (groupTaskSubmissionRef.current) return;
         setGroupAddingTaskId(groupId);
         setCollapsedGroupIds(previous => {
             if (!previous.has(groupId)) return previous;
@@ -2297,11 +2402,9 @@ export function HomePage() {
                                 event.stopPropagation();
                                 startTaskInGroup(item.group.groupId);
                             }}
-                            disabled={groupTaskSubmitting || groupAddingTaskId === item.group.groupId}
+                            disabled={groupAddingTaskId === item.group.groupId}
                         >
-                            {groupTaskSubmitting && groupAddingTaskId === item.group.groupId
-                                ? <CircularProgress size={18} />
-                                : <AddIcon fontSize="small" />}
+                            <AddIcon fontSize="small" />
                         </IconButton>
                         <IconButton
                             size="small"
@@ -2337,10 +2440,10 @@ export function HomePage() {
                             >
                                 <Fade in={groupAddingTaskId === item.group.groupId} timeout={150}>
                                     <GroupTaskInputRow
+                                        key={`${item.group.groupId}:${groupTaskInputGeneration}`}
                                         groupName={item.group.name}
-                                        disabled={groupTaskSubmitting}
+                                        animate
                                         onSubmit={taskToCreate => {
-                                            setGroupAddingTaskId(null);
                                             void createTaskInGroup(item.group, item.tasks[0]?.taskId, taskToCreate);
                                         }}
                                         onEscape={() => setGroupAddingTaskId(null)}

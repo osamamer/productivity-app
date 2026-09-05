@@ -20,7 +20,7 @@ interface FormValues {
 
 const validationSchema = Yup.object({
     name: Yup.string().required('Name is required'),
-    type: Yup.string().oneOf(['NUMBER', 'BOOLEAN', 'RANGE', 'TIME']).required(),
+    type: Yup.string().oneOf(['NUMBER', 'BOOLEAN', 'RANGE', 'TIME', 'DURATION']).required(),
     minValue: Yup.string().when('type', {
         is: 'RANGE',
         then: schema => schema.required('Min value is required'),
@@ -166,6 +166,7 @@ export function CreateStatForm({ onCreated, onUpdated, onDelete, onCancel, initi
                         <MenuItem value="BOOLEAN">Boolean — Yes / No</MenuItem>
                         <MenuItem value="RANGE">Range — number within min/max bounds</MenuItem>
                         <MenuItem value="TIME">Time — time of day</MenuItem>
+                        <MenuItem value="DURATION">Duration — hours and minutes</MenuItem>
                     </Select>
                     {isEditing && (
                         <FormHelperText>Type and range bounds cannot be changed after creation.</FormHelperText>

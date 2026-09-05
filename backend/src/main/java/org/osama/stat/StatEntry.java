@@ -47,6 +47,7 @@ public class StatEntry {
     //   BOOLEAN -> 1.0 (true) or 0.0 (false)
     //   RANGE   -> the value, validated against StatDefinition.minValue / maxValue
     //   TIME    -> minutes since midnight
+    //   DURATION -> whole minutes, with no 24-hour limit
     @Column(name = "stat_value", nullable = false)
     private double value;
 

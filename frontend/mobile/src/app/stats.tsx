@@ -171,17 +171,15 @@ export default function StatsScreen() {
 
   return (
     <Screen
-      title="Statistics"
-      action={(
-        <View style={styles.headerActions}>
-          <AppButton compact variant="secondary" label="Group" icon="folder-open-outline" onPress={openCreateGroup} />
-          <AppButton compact label="Stat" icon="add" onPress={() => setComposerOpen(true)} />
-        </View>
-      )}
+      safeAreaTop={false}
       refreshing={resource.refreshing}
       onRefresh={() => void refresh()}>
-      <View style={styles.timeframe} accessibilityLabel="Statistics time frame">
+      <View style={styles.controls} accessibilityLabel="Statistics controls">
         <ChoiceChips value={dateRange} options={TIME_RANGES} onChange={setDateRange} />
+        <View style={styles.headerActions}>
+          <AppButton compact variant="secondary" label="Group" icon="folder-open-outline" onPress={openCreateGroup} style={styles.compactAction} />
+          <AppButton compact label="Stat" icon="add" onPress={() => setComposerOpen(true)} style={styles.compactAction} />
+        </View>
       </View>
       {resource.loading && <LoadingView label="Loading statistics…" />}
       {resource.error && !resource.data && <ErrorView message={resource.error} retry={() => void resource.reload()} />}
@@ -264,8 +262,9 @@ export default function StatsScreen() {
 }
 
 const styles = StyleSheet.create({
-  headerActions: { flexDirection: 'row', gap: 8 },
-  timeframe: { marginTop: -8, marginBottom: -4 },
+  controls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  headerActions: { flexDirection: 'row', gap: 6, flexShrink: 1 },
+  compactAction: { paddingHorizontal: 8, gap: 4 },
   list: { gap: 16 },
   group: { gap: 8 },
   groupHeader: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 3 },

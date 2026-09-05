@@ -12,7 +12,8 @@ import { StatDefinition, StatEntry } from '../../types/Stats';
 import { getLastMonthWindow, statService } from '../../services/api/statService';
 import { KeyboardEvent } from 'react';
 import { effectiveStatMorality, getBooleanChoiceColor, getStatFeedback, showStatFeedback } from '../../services/statFeedback';
-import { formatTimeValue, minutesToTimeValue, timeValueToMinutes } from '../../services/utils/statValues';
+import { formatDurationValue, formatTimeValue, minutesToTimeValue, timeValueToMinutes } from '../../services/utils/statValues';
+import { DurationInput } from './DurationInput';
 
 const CIRCLE_SIZE = 24;
 
@@ -33,7 +34,7 @@ function getThresholdGoodnessRatio(
 }
 
 function getThresholdCircleBg(def: StatDefinition, value: number, theme: Theme): string | null {
-    if ((def.type !== 'NUMBER' && def.type !== 'RANGE')
+    if ((def.type !== 'NUMBER' && def.type !== 'RANGE' && def.type !== 'DURATION')
         || def.goodThreshold == null
         || !Number.isFinite(def.goodThreshold)) {
         return null;
@@ -228,6 +229,8 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                             ? value === 1 ? 'Yes' : 'No'
                             : definition.type === 'TIME'
                                 ? formatTimeValue(value)
+                                : definition.type === 'DURATION'
+                                    ? formatDurationValue(value)
                                 : String(value)
                         : 'No entry';
 
@@ -353,6 +356,15 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                                 autoFocus
                                 inputProps={{ step: 60, 'aria-label': `${definition.name} time` }}
                                 sx={{ width: 140 }}
+                            />
+                        )}
+
+                        {definition.type === 'DURATION' && (
+                            <DurationInput
+                                value={editValue}
+                                onChange={setEditValue}
+                                autoFocus
+                                onFocus={event => { feedbackAnchorRef.current = event.currentTarget; }}
                             />
                         )}
 

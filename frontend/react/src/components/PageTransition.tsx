@@ -21,9 +21,11 @@ export function PageTransition() {
 
     return (
         <Box
-            key={`${location.key}-${loading ? 'loading' : 'ready'}`}
+            key={`${location.pathname}-${loading ? 'loading' : 'ready'}`}
             sx={{
                 minHeight: '100vh',
+                display: 'flex',
+                flexDirection: 'column',
                 animation: `${pageEnter} 360ms cubic-bezier(0.22, 1, 0.36, 1) both`,
                 '@media (prefers-reduced-motion: reduce)': {
                     animation: 'none',

@@ -9,7 +9,10 @@ import { format, parseISO, subDays, eachDayOfInterval } from 'date-fns';
 import { StatDefinition, StatEntry } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
 import { showStatFeedback } from '../../services/statFeedback';
-import { formatTimeValue, minutesToTimeValue, timeValueToMinutes } from '../../services/utils/statValues';
+import {
+    durationValueToMinutes, formatDurationValue, formatTimeValue,
+    minutesToDurationValue, minutesToTimeValue, timeValueToMinutes,
+} from '../../services/utils/statValues';
 
 interface ChartPoint {
     date: string;
@@ -108,6 +111,9 @@ function formatPointValue(value: number | undefined, definition: StatDefinition,
     if (value === undefined) return 'No data';
     if (definition.type === 'BOOLEAN') return averaged ? `${Math.round(value * 100)}% yes` : value === 1 ? 'Yes' : 'No';
     if (definition.type === 'TIME') return formatTimeValue(value);
+    if (definition.type === 'DURATION') {
+        return averaged ? `Average ${formatDurationValue(value)}` : formatDurationValue(value);
+    }
     return averaged ? `Average ${formatChartValue(value)}` : formatChartValue(value);
 }
 
@@ -190,6 +196,7 @@ function axisTicks(definition: StatDefinition, domain: NumericDomain): number[] 
 
 function formatAxisValue(value: number, definition: StatDefinition): string {
     if (definition.type === 'TIME') return formatTimeValue(value);
+    if (definition.type === 'DURATION') return formatDurationValue(value);
     if (definition.type !== 'BOOLEAN') return formatChartValue(value);
     if (value === 0) return 'No';
     if (value === 1) return 'Yes';
@@ -312,6 +319,8 @@ export const StatLineChart = React.memo(function StatLineChart({
             ? ''
             : definition.type === 'TIME'
                 ? minutesToTimeValue(hoveredPoint.value)
+                : definition.type === 'DURATION'
+                    ? minutesToDurationValue(hoveredPoint.value)
                 : String(hoveredPoint.value));
         setSaveError(null);
     }, [definition.type, hoveredPoint?.date, hoveredPoint?.value]);
@@ -395,9 +404,15 @@ export const StatLineChart = React.memo(function StatLineChart({
         if (rawValue.trim() === '') return;
         const value = definition.type === 'TIME'
             ? timeValueToMinutes(rawValue)
-            : Number(rawValue);
+            : definition.type === 'DURATION'
+                ? durationValueToMinutes(rawValue)
+                : Number(rawValue);
         if (value === null || !Number.isFinite(value)) {
-            setSaveError(definition.type === 'TIME' ? 'Choose a valid time.' : 'Enter a number first.');
+            setSaveError(definition.type === 'TIME'
+                ? 'Choose a valid time.'
+                : definition.type === 'DURATION'
+                    ? 'Enter a duration as hours:minutes.'
+                    : 'Enter a number first.');
             return;
         }
         if (definition.type === 'RANGE'
@@ -560,7 +575,7 @@ export const StatLineChart = React.memo(function StatLineChart({
                         onMouseEnter={() => handleThresholdEnter('primary')}
                         onMouseLeave={() => setHoveredThreshold(null)}
                         label={{
-                            value: formatChartValue(definition.goodThreshold),
+                            value: formatAxisValue(definition.goodThreshold, definition),
                             position: 'insideBottomRight',
                             fill: theme.palette.success.main,
                             fontSize: 11,
@@ -582,7 +597,7 @@ export const StatLineChart = React.memo(function StatLineChart({
                         onMouseEnter={() => handleThresholdEnter('comparison')}
                         onMouseLeave={() => setHoveredThreshold(null)}
                         label={{
-                            value: formatChartValue(comparisonDefinition.goodThreshold),
+                            value: formatAxisValue(comparisonDefinition.goodThreshold, comparisonDefinition),
                             position: 'insideBottomLeft',
                             fill: theme.palette.success.main,
                             fontSize: 11,
@@ -668,7 +683,7 @@ export const StatLineChart = React.memo(function StatLineChart({
                     <TextField
                         size="small"
                         autoComplete="off"
-                        type={definition.type === 'TIME' ? 'time' : 'number'}
+                        type={definition.type === 'TIME' ? 'time' : definition.type === 'DURATION' ? 'text' : 'number'}
                         value={editValue}
                         onChange={event => {
                             const value = event.target.value;
@@ -682,11 +697,11 @@ export const StatLineChart = React.memo(function StatLineChart({
                         }}
                         inputProps={{
                             step: definition.type === 'TIME' ? 60 : undefined,
-                            min: definition.type === 'RANGE' ? definition.minValue : undefined,
+                            min: definition.type === 'DURATION' ? 0 : definition.type === 'RANGE' ? definition.minValue : undefined,
                             max: definition.type === 'RANGE' ? definition.maxValue : undefined,
                             'aria-label': `${definition.name} value for ${format(parseISO(hoveredPoint.date), 'MMMM d, yyyy')}`,
                         }}
-                        placeholder="Value"
+                        placeholder={definition.type === 'DURATION' ? 'H:MM' : 'Value'}
                         autoFocus
                         error={Boolean(saveError)}
                         title={saveError ?? undefined}
