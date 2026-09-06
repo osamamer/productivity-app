@@ -3,6 +3,8 @@ import {
 } from '@mui/material';
 import { useMemo, useState } from 'react';
 import { CalendarEvent, CalendarEventInput, RecurrenceFrequency, RecurrenceUnit } from '../../types/CalendarEvent';
+import { AppDateField, AppTimeField } from '../input/AppPickerFields';
+import { AppNumberField } from '../input/AppNumberField';
 
 type Props = {
     initialDate: string;
@@ -187,16 +189,12 @@ export function CalendarEventForm({ initialDate, event, onSave, onCancel, onDele
             />
 
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
-                <TextField label="Start date" type="date" value={startDate} autoComplete="off"
-                           onChange={e => handleStartDateChange(e.target.value)} slotProps={{ inputLabel: { shrink: true } }} fullWidth />
-                {!allDay && <TextField label="Start time" type="time" value={startTime} autoComplete="off"
-                                       onChange={e => handleStartTimeChange(e.target.value)} slotProps={{ inputLabel: { shrink: true } }} fullWidth />}
+                <AppDateField label="Start date" value={startDate} onChange={handleStartDateChange} />
+                {!allDay && <AppTimeField label="Start time" value={startTime} onChange={handleStartTimeChange} />}
             </Stack>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
-                <TextField label="Finish date" type="date" value={endDate} autoComplete="off"
-                           onChange={e => setEndDate(e.target.value)} slotProps={{ inputLabel: { shrink: true } }} fullWidth />
-                {!allDay && <TextField label="Finish time" type="time" value={endTime} autoComplete="off"
-                                       onChange={e => setEndTime(e.target.value)} slotProps={{ inputLabel: { shrink: true } }} fullWidth />}
+                <AppDateField label="Finish date" value={endDate} onChange={setEndDate} />
+                {!allDay && <AppTimeField label="Finish time" value={endTime} onChange={setEndTime} />}
             </Stack>
 
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
@@ -212,9 +210,10 @@ export function CalendarEventForm({ initialDate, event, onSave, onCancel, onDele
                 </TextField>
                 {recurrenceFrequency === 'CUSTOM' && (
                     <>
-                        <TextField label="Every" type="number" value={recurrenceInterval} autoComplete="off"
+                        <AppNumberField label="Every" value={recurrenceInterval} autoComplete="off"
                                    onChange={e => setRecurrenceInterval(Number(e.target.value))}
-                                   inputProps={{ min: 1, max: 999, step: 1 }} fullWidth />
+                                   onStepValueChange={setRecurrenceInterval}
+                                   min={1} max={999} step={1} fullWidth />
                         <TextField select label="Unit" value={recurrenceUnit} autoComplete="off"
                                    onChange={e => setRecurrenceUnit(e.target.value as RecurrenceUnit)} fullWidth>
                             {RECURRENCE_UNIT_OPTIONS.map(option => (
@@ -224,9 +223,7 @@ export function CalendarEventForm({ initialDate, event, onSave, onCancel, onDele
                     </>
                 )}
                 {recurrenceFrequency !== 'NONE' && (
-                    <TextField label="Repeat until (optional)" type="date" value={recurrenceEndDate} autoComplete="off"
-                               onChange={e => setRecurrenceEndDate(e.target.value)}
-                               slotProps={{ inputLabel: { shrink: true } }} fullWidth />
+                    <AppDateField label="Repeat until (optional)" value={recurrenceEndDate} onChange={setRecurrenceEndDate} />
                 )}
             </Stack>
 

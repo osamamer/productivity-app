@@ -37,6 +37,12 @@ const DEDICATED_SYSTEM_KEYS = new Set([
     'emotional_load',
 ]);
 
+const EDITABLE_SYSTEM_KEYS = new Set(['sleep_hours', 'sleep_time', 'wake_up_time']);
+
+function isEditableSystemStat(definition: StatDefinition): boolean {
+    return definition.systemKey !== undefined && EDITABLE_SYSTEM_KEYS.has(definition.systemKey);
+}
+
 const SELECTION_ACTIONS_EDGE_PADDING = 12;
 const SELECTION_ACTIONS_GAP = 12;
 const SELECTION_ACTIONS_FALLBACK_WIDTH = 88;
@@ -1148,7 +1154,8 @@ export function StatsPage() {
                     : undefined}
                 MenuListProps={{ dense: true }}
             >
-                {contextMenu?.kind === 'stat' && !contextMenu.definition.systemKey && (
+                {contextMenu?.kind === 'stat'
+                    && (!contextMenu.definition.systemKey || isEditableSystemStat(contextMenu.definition)) && (
                     <>
                         <MenuItem onClick={() => {
                             setEditTarget(contextMenu.definition);
@@ -1157,6 +1164,10 @@ export function StatsPage() {
                             <ListItemIcon><EditOutlinedIcon fontSize="small" /></ListItemIcon>
                             <ListItemText>Edit statistic</ListItemText>
                         </MenuItem>
+                    </>
+                )}
+                {contextMenu?.kind === 'stat' && !contextMenu.definition.systemKey && (
+                    <>
                         <MenuItem onClick={() => {
                             setDeleteTarget(contextMenu.definition);
                             closeContextMenu();
@@ -1166,7 +1177,9 @@ export function StatsPage() {
                         </MenuItem>
                     </>
                 )}
-                {contextMenu?.kind === 'stat' && contextMenu.definition.systemKey && (
+                {contextMenu?.kind === 'stat'
+                    && contextMenu.definition.systemKey
+                    && !isEditableSystemStat(contextMenu.definition) && (
                     <MenuItem disabled>Built-in statistic</MenuItem>
                 )}
                 {contextMenu?.kind === 'group' && (

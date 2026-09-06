@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import {
-    Box, Typography, Stack, TextField, ToggleButton, ToggleButtonGroup,
+    Box, Typography, Stack, ToggleButton, ToggleButtonGroup,
     Slider, Button, Alert, CircularProgress, Divider,
 } from '@mui/material';
 import { StatDefinition } from '../../types/Stats';
@@ -8,6 +8,8 @@ import { statService } from '../../services/api/statService';
 import { getBooleanChoiceColor, showStatFeedback } from '../../services/statFeedback';
 import { minutesToTimeValue, timeValueToMinutes } from '../../services/utils/statValues';
 import { DurationInput } from './DurationInput';
+import { AppTimeField } from '../input/AppPickerFields';
+import { AppNumberField } from '../input/AppNumberField';
 
 interface Props {
     date: string;
@@ -144,28 +146,28 @@ export function DateStatCheckIn({ date, definitions, onSaved }: Props) {
                                 </ToggleButtonGroup>
                             )}
                             {def.type === 'NUMBER' && (
-                                <TextField
-                                    type="number"
+                                <AppNumberField
                                     autoComplete="off"
                                     size="small"
                                     value={values[def.id] ?? ''}
                                     onChange={e => setValue(def.id, e.target.value === '' ? null : Number(e.target.value))}
+                                    onStepValueChange={value => setValue(def.id, value)}
                                     onFocus={event => { feedbackAnchorRef.current = event.currentTarget; }}
                                     sx={{ width: 160 }}
                                 />
                             )}
                             {def.type === 'TIME' && (
-                                <TextField
-                                    type="time"
-                                    autoComplete="off"
+                                <AppTimeField
+                                    label={def.name}
                                     size="small"
                                     value={minutesToTimeValue(values[def.id])}
-                                    onChange={event => setValue(
+                                    onChange={value => setValue(
                                         def.id,
-                                        event.target.value ? timeValueToMinutes(event.target.value) : null,
+                                        value ? timeValueToMinutes(value) : null,
                                     )}
                                     onFocus={event => { feedbackAnchorRef.current = event.currentTarget; }}
-                                    inputProps={{ step: 60, 'aria-label': `${def.name} time` }}
+                                    minutesStep={1}
+                                    inputProps={{ 'aria-label': `${def.name} time` }}
                                     sx={{ width: 160 }}
                                 />
                             )}

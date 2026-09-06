@@ -1,5 +1,6 @@
 import { StatDefinition, StatFeedback, StatMorality } from '../types/Stats';
 import { celebrateStatLogged, reprimandStatLogged } from './statCelebration';
+import { isTimeAtOrBeforeThreshold } from './utils/statValues';
 
 export function effectiveStatMorality(definition: StatDefinition): StatMorality {
     return definition.morality ?? 'NEUTRAL';
@@ -19,6 +20,9 @@ export function getStatFeedback(definition: StatDefinition, value: number): Stat
     }
 
     if (definition.goodThreshold == null) return 'NONE';
+    if (definition.type === 'TIME') {
+        return isTimeAtOrBeforeThreshold(definition, value, definition.goodThreshold) ? 'CELEBRATE' : 'SAD';
+    }
     if (morality === 'GOOD') return value >= definition.goodThreshold ? 'CELEBRATE' : 'NONE';
     return value <= definition.goodThreshold ? 'CELEBRATE' : 'SAD';
 }

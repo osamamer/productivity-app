@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, unstable_batchedUpdates, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { TaskComposerSheet } from '@/components/tasks/TaskComposerSheet';
@@ -8,6 +8,7 @@ import { TaskBulkDateSheet } from '@/components/tasks/TaskBulkDateSheet';
 import { TaskGroupComposerSheet } from '@/components/tasks/TaskGroupComposerSheet';
 import { TaskSelectionActionsPopup } from '@/components/tasks/TaskSelectionActionsPopup';
 import { TaskRow, type TaskDragLayout } from '@/components/tasks/TaskRow';
+import { DraggableTaskGroup } from '@/components/tasks/DraggableTaskGroup';
 import { GroupChevron } from '@/components/tasks/GroupChevron';
 import { AppButton } from '@/components/ui/AppButton';
 import { AppText } from '@/components/ui/AppText';
@@ -30,11 +31,96 @@ import type { Day, Task, TaskGroup } from '@/types/models';
 
 interface TodayData { day: Day }
 
-const TASK_DROP_ZONE_RADIUS = 18;
-
 type TaskListItem =
   | { kind: 'task'; task: Task }
   | { kind: 'group'; group: TaskGroup; tasks: Task[] };
+
+type DragItemKey = `task:${string}` | `group:${string}`;
+
+interface DragSource {
+  kind: 'task' | 'group';
+  id: string;
+  itemKey: DragItemKey;
+  groupId: string | null;
+  taskIds: string[];
+  height: number;
+}
+
+interface DragTarget {
+  itemKey: DragItemKey | null;
+  edge: 'before' | 'after' | null;
+  groupId: string | null;
+}
+
+const taskItemKey = (taskId: string): DragItemKey => `task:${taskId}`;
+const groupItemKey = (groupId: string): DragItemKey => `group:${groupId}`;
+const TASK_LIST_GAP = 10;
+
+function nearestTarget(
+  absoluteY: number,
+  candidates: [DragItemKey, Pick<TaskDragLayout, 'top' | 'bottom'>][],
+): { itemKey: DragItemKey; edge: 'before' | 'after' } | null {
+  const nearest = candidates
+    .map(([itemKey, layout]) => {
+      const midpoint = (layout.top + layout.bottom) / 2;
+      const distance = absoluteY < layout.top
+        ? layout.top - absoluteY
+        : absoluteY > layout.bottom
+          ? absoluteY - layout.bottom
+          : 0;
+      return { itemKey, edge: absoluteY < midpoint ? 'before' as const : 'after' as const, distance };
+    })
+    .sort((first, second) => first.distance - second.distance)[0];
+  return nearest ?? null;
+}
+
+function moveTaskBlock(
+  orderedTaskIds: string[],
+  sourceTaskIds: string[],
+  targetTaskIds: string[],
+  edge: 'before' | 'after',
+): string[] {
+  const sourceSet = new Set(sourceTaskIds);
+  const remaining = orderedTaskIds.filter(taskId => !sourceSet.has(taskId));
+  const source = orderedTaskIds.filter(taskId => sourceSet.has(taskId));
+  const targetIndexes = targetTaskIds
+    .map(taskId => remaining.indexOf(taskId))
+    .filter(index => index >= 0);
+  if (!source.length || !targetIndexes.length) return orderedTaskIds;
+  const insertionIndex = edge === 'before'
+    ? Math.min(...targetIndexes)
+    : Math.max(...targetIndexes) + 1;
+  remaining.splice(insertionIndex, 0, ...source);
+  return remaining;
+}
+
+function previewOffsetsForDrag(
+  orderedKeys: DragItemKey[],
+  sourceKey: DragItemKey,
+  targetKey: DragItemKey,
+  edge: 'before' | 'after',
+  sourceExtent: number,
+): Map<DragItemKey, number> {
+  const sourceIndex = orderedKeys.indexOf(sourceKey);
+  if (sourceIndex < 0) return new Map();
+
+  const remainingKeys = orderedKeys.filter(key => key !== sourceKey);
+  const targetIndex = remainingKeys.indexOf(targetKey);
+  if (targetIndex < 0) return new Map();
+
+  const insertionIndex = targetIndex + (edge === 'after' ? 1 : 0);
+  if (insertionIndex === sourceIndex) return new Map();
+
+  const offsets = new Map<DragItemKey, number>();
+  if (insertionIndex > sourceIndex) {
+    orderedKeys.slice(sourceIndex + 1, insertionIndex + 1)
+      .forEach(key => offsets.set(key, -sourceExtent));
+  } else {
+    orderedKeys.slice(insertionIndex, sourceIndex)
+      .forEach(key => offsets.set(key, sourceExtent));
+  }
+  return offsets;
+}
 
 function buildTaskListItems(tasks: Task[], groups: TaskGroup[]): TaskListItem[] {
   const visibleTaskIds = new Set(tasks.map(task => task.taskId));
@@ -92,16 +178,17 @@ export default function TodayScreen() {
   const [bulkDateOpen, setBulkDateOpen] = useState(false);
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
   const [bulkDateSaving, setBulkDateSaving] = useState(false);
-  const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
-  const [dragTargetTaskId, setDragTargetTaskId] = useState<string | null>(null);
+  const [dragSource, setDragSource] = useState<DragSource | null>(null);
+  const [dragTargetItemKey, setDragTargetItemKey] = useState<DragItemKey | null>(null);
   const [dragTargetEdge, setDragTargetEdge] = useState<'before' | 'after' | null>(null);
   const [dragTargetGroupId, setDragTargetGroupId] = useState<string | null>(null);
   const taskLayoutsRef = useRef(new Map<string, TaskDragLayout>());
   const taskRowRefs = useRef(new Map<string, View>());
   const groupLayoutsRef = useRef(new Map<string, Pick<TaskDragLayout, 'top' | 'bottom'>>());
-  const draggedTaskRef = useRef<string | null>(null);
+  const itemLayoutsRef = useRef(new Map<DragItemKey, Pick<TaskDragLayout, 'top' | 'bottom'>>());
+  const dragSourceRef = useRef<DragSource | null>(null);
   const groupRefs = useRef(new Map<string, View>());
-  const dragTargetRef = useRef<{ taskId: string | null; edge: 'before' | 'after' | null; groupId: string | null }>({ taskId: null, edge: null, groupId: null });
+  const dragTargetRef = useRef<DragTarget>({ itemKey: null, edge: null, groupId: null });
 
   function updateTask(updated: Task) {
     updateTaskInWorkspace(updated);
@@ -160,83 +247,137 @@ export default function TodayScreen() {
   }
 
   function resetDrag() {
-    draggedTaskRef.current = null;
-    setDraggedTaskId(null);
-    setDragTargetTaskId(null);
+    dragSourceRef.current = null;
+    setDragSource(null);
+    setDragTargetItemKey(null);
     setDragTargetEdge(null);
     setDragTargetGroupId(null);
-    dragTargetRef.current = { taskId: null, edge: null, groupId: null };
+    dragTargetRef.current = { itemKey: null, edge: null, groupId: null };
   }
 
-  function startDrag(taskId: string, _startY: number) {
+  function measureDragItems() {
     taskLayoutsRef.current.clear();
     groupLayoutsRef.current.clear();
+    itemLayoutsRef.current.clear();
+    const rootTaskIds = new Set(listItems.filter(item => item.kind === 'task').map(item => item.task.taskId));
     taskRowRefs.current.forEach((view, visibleTaskId) => {
       view.measureInWindow((left, top, width, height) => {
-        taskLayoutsRef.current.set(visibleTaskId, { left, top, width, bottom: top + height });
+        const layout = { left, top, width, bottom: top + height };
+        taskLayoutsRef.current.set(visibleTaskId, layout);
+        if (rootTaskIds.has(visibleTaskId)) itemLayoutsRef.current.set(taskItemKey(visibleTaskId), layout);
       });
     });
     groupRefs.current.forEach((view, groupId) => {
       view.measureInWindow((_left, top, _width, height) => {
-        groupLayoutsRef.current.set(groupId, { top, bottom: top + height });
+        const layout = { top, bottom: top + height };
+        groupLayoutsRef.current.set(groupId, layout);
+        itemLayoutsRef.current.set(groupItemKey(groupId), layout);
       });
     });
+  }
+
+  function beginDrag(source: DragSource) {
+    measureDragItems();
     clearSelection();
     setSelected(null);
-    draggedTaskRef.current = taskId;
-    setDraggedTaskId(taskId);
-    setDragTargetTaskId(null);
+    dragSourceRef.current = source;
+    setDragSource(source);
+    setDragTargetItemKey(null);
     setDragTargetEdge(null);
     setDragTargetGroupId(null);
-    dragTargetRef.current = { taskId: null, edge: null, groupId: null };
+    dragTargetRef.current = { itemKey: null, edge: null, groupId: null };
   }
 
-  function updateDragTarget(taskId: string, moveY: number, _dy: number) {
-    if (draggedTaskRef.current !== taskId) return;
-    const groupTarget = [...groupLayoutsRef.current.entries()].find(([groupId, layout]) => {
-      const group = groups.find(candidate => candidate.groupId === groupId);
-      return !group?.taskIds.includes(taskId) && moveY >= layout.top && moveY <= layout.bottom;
+  function startTaskDrag(taskId: string, _startY: number) {
+    const containingGroup = listItems.find(
+      (item): item is Extract<TaskListItem, { kind: 'group' }> => item.kind === 'group' && item.tasks.some(task => task.taskId === taskId),
+    );
+    beginDrag({
+      kind: 'task',
+      id: taskId,
+      itemKey: taskItemKey(taskId),
+      groupId: containingGroup?.group.groupId ?? null,
+      taskIds: [taskId],
+      height: Math.max(68, (taskLayoutsRef.current.get(taskId)?.bottom ?? 0) - (taskLayoutsRef.current.get(taskId)?.top ?? 0)),
     });
-    if (groupTarget) {
-      const next = { taskId: null, edge: null, groupId: groupTarget[0] } as const;
-      dragTargetRef.current = next;
-      setDragTargetTaskId(next.taskId);
-      setDragTargetEdge(next.edge);
-      setDragTargetGroupId(next.groupId);
-      return;
-    }
-
-    const taskTarget = [...taskLayoutsRef.current.entries()]
-      .filter(([candidateTaskId]) => candidateTaskId !== draggedTaskRef.current)
-      .flatMap(([candidateTaskId, layout]) => ([
-        { taskId: candidateTaskId, edge: 'before' as const, distance: Math.abs(moveY - layout.top) },
-        { taskId: candidateTaskId, edge: 'after' as const, distance: Math.abs(moveY - layout.bottom) },
-      ]))
-      .filter(target => target.distance <= TASK_DROP_ZONE_RADIUS)
-      .sort((first, second) => first.distance - second.distance)[0];
-    if (!taskTarget) {
-      dragTargetRef.current = { taskId: null, edge: null, groupId: null };
-      setDragTargetTaskId(null);
-      setDragTargetEdge(null);
-      setDragTargetGroupId(null);
-      return;
-    }
-
-    dragTargetRef.current = { taskId: taskTarget.taskId, edge: taskTarget.edge, groupId: null };
-    setDragTargetTaskId(taskTarget.taskId);
-    setDragTargetEdge(taskTarget.edge);
-    setDragTargetGroupId(null);
   }
 
-  async function finishDrag(taskId: string, _moveY: number) {
+  function startGroupDrag(groupId: string, _startY: number) {
+    const group = groups.find(candidate => candidate.groupId === groupId);
+    if (!group) return;
+    beginDrag({
+      kind: 'group',
+      id: groupId,
+      itemKey: groupItemKey(groupId),
+      groupId,
+      taskIds: group.taskIds,
+      height: Math.max(64, (groupLayoutsRef.current.get(groupId)?.bottom ?? 0) - (groupLayoutsRef.current.get(groupId)?.top ?? 0)),
+    });
+  }
+
+  function showTarget(target: DragTarget) {
+    const current = dragTargetRef.current;
+    if (current.itemKey === target.itemKey && current.edge === target.edge && current.groupId === target.groupId) return;
+    dragTargetRef.current = target;
+    setDragTargetItemKey(target.itemKey);
+    setDragTargetEdge(target.edge);
+    setDragTargetGroupId(target.groupId);
+  }
+
+  function updateDragTarget(id: string, moveY: number, _dy: number) {
+    const source = dragSourceRef.current;
+    if (!source || source.id !== id) return;
+
+    if (source.kind === 'task') {
+      const groupTarget = [...groupLayoutsRef.current.entries()].find(([groupId, layout]) => {
+        if (groupId === source.groupId) return false;
+        const edgeZone = Math.min(40, (layout.bottom - layout.top) * 0.22);
+        return moveY >= layout.top + edgeZone && moveY <= layout.bottom - edgeZone;
+      });
+      if (groupTarget) {
+        showTarget({ itemKey: null, edge: null, groupId: groupTarget[0] });
+        return;
+      }
+    }
+
+    if (source.kind === 'task' && source.groupId) {
+      const groupItem = listItems.find(
+        (item): item is Extract<TaskListItem, { kind: 'group' }> => item.kind === 'group' && item.group.groupId === source.groupId,
+      );
+      const orderedKeys = groupItem?.tasks.map(task => taskItemKey(task.taskId)) ?? [];
+      const childLayouts = new Map<DragItemKey, Pick<TaskDragLayout, 'top' | 'bottom'>>();
+      orderedKeys.forEach(key => {
+        const layout = taskLayoutsRef.current.get(key.slice('task:'.length));
+        if (layout) childLayouts.set(key, layout);
+      });
+      const target = nearestTarget(moveY, [...childLayouts.entries()].filter(([key]) => key !== source.itemKey));
+      if (!target) {
+        showTarget({ itemKey: null, edge: null, groupId: null });
+        return;
+      }
+      showTarget({ itemKey: target.itemKey, edge: target.edge, groupId: null });
+      return;
+    }
+
+    const target = nearestTarget(moveY, [...itemLayoutsRef.current.entries()].filter(([key]) => key !== source.itemKey));
+    if (!target) {
+      showTarget({ itemKey: null, edge: null, groupId: null });
+      return;
+    }
+    showTarget({ itemKey: target.itemKey, edge: target.edge, groupId: null });
+  }
+
+  async function finishDrag(id: string, _moveY: number) {
+    const source = dragSourceRef.current;
+    if (!source || source.id !== id) return;
     const target = dragTargetRef.current;
-    resetDrag();
-    if (target.groupId) {
+    if (target.groupId && source.kind === 'task') {
       const group = groups.find(candidate => candidate.groupId === target.groupId);
-      if (group && !group.taskIds.includes(taskId)) {
+      resetDrag();
+      if (group && !group.taskIds.includes(source.id)) {
         try {
           animateLayout();
-          await replaceGroupTasks(group.groupId, [...group.taskIds, taskId]);
+          await replaceGroupTasks(group.groupId, [...group.taskIds, source.id]);
         } catch (cause) {
           void showError('Could not add task to group', reportError('Could not add task to group', cause));
         }
@@ -244,17 +385,26 @@ export default function TodayScreen() {
       return;
     }
 
-    if (!target.taskId || !target.edge || target.taskId === taskId) return;
+    if (!target.itemKey || !target.edge || target.itemKey === source.itemKey) {
+      resetDrag();
+      return;
+    }
+    const targetItem = listItems.find(item => (item.kind === 'task'
+      ? taskItemKey(item.task.taskId)
+      : groupItemKey(item.group.groupId)) === target.itemKey);
+    if (!targetItem) {
+      resetDrag();
+      return;
+    }
+    const targetTaskIds = targetItem.kind === 'task' ? [targetItem.task.taskId] : targetItem.group.taskIds;
     const rootTaskIds = allTasks.filter(task => !task.parentId).map(task => task.taskId);
-    const fromIndex = rootTaskIds.indexOf(taskId);
-    const targetIndex = rootTaskIds.indexOf(target.taskId);
-    if (fromIndex < 0 || targetIndex < 0) return;
-    rootTaskIds.splice(fromIndex, 1);
-    const insertionIndex = rootTaskIds.indexOf(target.taskId) + (target.edge === 'after' ? 1 : 0);
-    rootTaskIds.splice(insertionIndex, 0, taskId);
+    const reorderedTaskIds = moveTaskBlock(rootTaskIds, source.taskIds, targetTaskIds, target.edge);
     try {
-      animateLayout();
-      await reorderTasks(rootTaskIds);
+      const reorderPromise = unstable_batchedUpdates(() => {
+        resetDrag();
+        return reorderTasks(reorderedTaskIds);
+      });
+      await reorderPromise;
     } catch (cause) {
       void showError('Could not reorder tasks', reportError('Could not reorder tasks', cause));
     }
@@ -346,8 +496,38 @@ export default function TodayScreen() {
   }
 
   const name = user?.firstName || user?.username;
-  const tasks = todayTasks.filter(task => showCompletedTasks || !task.completed);
-  const listItems = useMemo(() => buildTaskListItems(tasks, groups), [groups, tasks]);
+  const listItems = buildTaskListItems(
+    todayTasks.filter(task => showCompletedTasks || !task.completed),
+    groups,
+  );
+  const groupableTodayTasks = todayTasks.filter(
+    task => !task.parentId && (showCompletedTasks || !task.completed),
+  );
+  const selectionActive = selectedTaskIds.length > 0 || selectedGroupIds.length > 0;
+  const draggedTaskId = dragSource?.kind === 'task' ? dragSource.id : null;
+  const draggedGroupId = dragSource?.kind === 'group' ? dragSource.id : null;
+  const dragPreviewOffsets = (() => {
+    if (!dragSource || !dragTargetItemKey || !dragTargetEdge || dragTargetGroupId) return new Map<DragItemKey, number>();
+    if (dragSource.kind === 'task' && dragSource.groupId) {
+      const sourceGroup = listItems.find(
+        (item): item is Extract<TaskListItem, { kind: 'group' }> => item.kind === 'group' && item.group.groupId === dragSource.groupId,
+      );
+      return previewOffsetsForDrag(
+        sourceGroup?.tasks.map(task => taskItemKey(task.taskId)) ?? [],
+        dragSource.itemKey,
+        dragTargetItemKey,
+        dragTargetEdge,
+        dragSource.height,
+      );
+    }
+    return previewOffsetsForDrag(
+      listItems.map(item => item.kind === 'task' ? taskItemKey(item.task.taskId) : groupItemKey(item.group.groupId)),
+      dragSource.itemKey,
+      dragTargetItemKey,
+      dragTargetEdge,
+      dragSource.height + TASK_LIST_GAP,
+    );
+  })();
   const completed = todayTasks.filter(task => task.completed).length;
   const remaining = todayTasks.length - completed;
   const progress = todayTasks.length ? completed / todayTasks.length : 0;
@@ -359,7 +539,7 @@ export default function TodayScreen() {
   return (
     <Screen
       refreshing={resource.refreshing || tasksLoading}
-      refreshEnabled={draggedTaskId === null}
+      refreshEnabled={dragSource === null}
       onRefresh={() => void refreshToday()}
       overlay={(
         <TaskSelectionActionsPopup
@@ -400,48 +580,70 @@ export default function TodayScreen() {
 
           <View style={styles.spaceBetween}>
             <AppText variant="heading">Today’s tasks</AppText>
-            <AppButton compact label="Add" icon="add" onPress={() => setComposerOpen(true)} />
+            <View style={styles.taskActions}>
+              <AppButton
+                compact
+                label="Group"
+                icon="folder-open-outline"
+                variant="secondary"
+                disabled={groupableTodayTasks.length < 2}
+                onPress={() => setGroupComposerOpen(true)}
+              />
+              <AppButton compact label="Add" icon="add" onPress={() => setComposerOpen(true)} />
+            </View>
           </View>
           <View style={styles.list}>
-            {listItems.length ? listItems.map(item => item.kind === 'task' ? (
+            {listItems.length ? listItems.map(item => {
+              const itemKey = item.kind === 'task' ? taskItemKey(item.task.taskId) : groupItemKey(item.group.groupId);
+              return item.kind === 'task' ? (
               <TaskRow
-                key={item.task.taskId}
+                key={itemKey}
                 task={item.task}
                 onToggle={() => void toggle(item.task)}
                 onPress={() => selectedTaskIds.length || selectedGroupIds.length ? toggleSelection(item.task.taskId) : setSelected(item.task)}
                 onLongPress={() => startSelection(item.task.taskId)}
                 onSelectionToggle={selectedTaskIds.length || selectedGroupIds.length ? () => toggleSelection(item.task.taskId) : undefined}
                 selected={selectedTaskIdSet.has(item.task.taskId) || selectedGroupTaskIdSet.has(item.task.taskId)}
-                dragEnabled
+                dragEnabled={!selectionActive}
                 dragging={draggedTaskId === item.task.taskId}
-                dropTarget={dragTargetTaskId === item.task.taskId}
-                dropTargetEdge={dragTargetTaskId === item.task.taskId ? dragTargetEdge ?? undefined : undefined}
+                dragInProgress={Boolean(dragSource)}
+                dragPreviewOffset={dragPreviewOffsets.get(itemKey) ?? 0}
+                dropTarget={dragTargetItemKey === taskItemKey(item.task.taskId)}
+                dropTargetEdge={dragTargetItemKey === taskItemKey(item.task.taskId) ? dragTargetEdge ?? undefined : undefined}
                 onDragLayout={registerTaskLayout}
                 onDragViewRef={registerTaskView}
-                onDragStart={startDrag}
+                onDragStart={startTaskDrag}
                 onDragMove={updateDragTarget}
                 onDragEnd={finishDrag}
                 onDragCancel={resetDrag}
               />
-            ) : (
-              <View
-                key={item.group.groupId}
-                ref={node => {
+              ) : (
+              <DraggableTaskGroup
+                key={itemKey}
+                groupId={item.group.groupId}
+                enabled={!selectionActive}
+                dragging={draggedGroupId === item.group.groupId}
+                dragInProgress={Boolean(dragSource)}
+                dragPreviewOffset={dragPreviewOffsets.get(itemKey) ?? 0}
+                onViewRef={(_groupId, node) => {
                   if (node) groupRefs.current.set(item.group.groupId, node);
                   else groupRefs.current.delete(item.group.groupId);
                 }}
                 onLayout={() => registerGroupLayout(item.group.groupId)}
+                onDragStart={startGroupDrag}
+                onDragMove={updateDragTarget}
+                onDragEnd={finishDrag}
+                onDragCancel={resetDrag}
                 style={[
                   styles.group,
                   {
                     borderWidth: selectedGroupIdSet.has(item.group.groupId) || dragTargetGroupId === item.group.groupId ? 2 : 1,
                     borderColor: selectedGroupIdSet.has(item.group.groupId) || dragTargetGroupId === item.group.groupId ? colors.accent : colors.border,
                     backgroundColor: dragTargetGroupId === item.group.groupId ? colors.accentSoft : colors.surface,
-                    overflow: draggedTaskId ? 'visible' : 'hidden',
+                    overflow: dragSource ? 'visible' : 'hidden',
                   },
                 ]}
-              >
-                <View>
+                header={(
                   <SilentPressable
                     accessibilityRole="button"
                     accessibilityLabel={`${collapsedGroupIds.has(item.group.groupId) ? 'Expand' : 'Collapse'} ${item.group.name}`}
@@ -484,7 +686,8 @@ export default function TodayScreen() {
                       />
                     </SilentPressable>
                   </SilentPressable>
-                </View>
+                )}
+              >
                 {!collapsedGroupIds.has(item.group.groupId) && (
                   <View
                     style={[
@@ -492,7 +695,7 @@ export default function TodayScreen() {
                       { backgroundColor: colors.surface },
                     ]}>
                     {item.tasks.map(task => (
-                      <TaskRow
+                        <TaskRow
                         key={task.taskId}
                         task={task}
                         onToggle={() => void toggle(task)}
@@ -500,24 +703,37 @@ export default function TodayScreen() {
                         onLongPress={() => startSelection(task.taskId)}
                         onSelectionToggle={selectedTaskIds.length || selectedGroupIds.length ? () => toggleSelection(task.taskId) : undefined}
                         selected={selectedTaskIdSet.has(task.taskId) || selectedGroupTaskIdSet.has(task.taskId)}
-                        dragEnabled
+                        dragEnabled={!selectionActive}
                         dragging={draggedTaskId === task.taskId}
-                        dropTarget={dragTargetTaskId === task.taskId}
-                        dropTargetEdge={dragTargetTaskId === task.taskId ? dragTargetEdge ?? undefined : undefined}
+                        dragInProgress={Boolean(dragSource)}
+                        dragPreviewOffset={dragPreviewOffsets.get(taskItemKey(task.taskId)) ?? 0}
+                        dropTarget={dragTargetItemKey === taskItemKey(task.taskId)}
+                        dropTargetEdge={dragTargetItemKey === taskItemKey(task.taskId) ? dragTargetEdge ?? undefined : undefined}
                         onDragLayout={registerTaskLayout}
                         onDragViewRef={registerTaskView}
-                        onDragStart={startDrag}
+                        onDragStart={startTaskDrag}
                         onDragMove={updateDragTarget}
                         onDragEnd={finishDrag}
                         onDragCancel={resetDrag}
                         inGroup
                         groupLast={task.taskId === item.tasks[item.tasks.length - 1]?.taskId}
-                      />
+                        />
                     ))}
                   </View>
                 )}
-              </View>
-            )) : (
+                {dragTargetItemKey === groupItemKey(item.group.groupId) && (
+                  <View
+                    pointerEvents="none"
+                    style={[
+                      styles.groupDropIndicator,
+                      dragTargetEdge === 'after' ? styles.groupDropIndicatorAfter : styles.groupDropIndicatorBefore,
+                      { backgroundColor: colors.accent, shadowColor: colors.accent },
+                    ]}
+                  />
+                )}
+              </DraggableTaskGroup>
+              );
+            }) : (
               <Card style={styles.emptyCard}>
                 <AppText variant="heading">Nothing scheduled</AppText>
                 <AppText color="muted">Leave the space open, or add one small next action.</AppText>
@@ -540,6 +756,7 @@ export default function TodayScreen() {
       <TaskGroupComposerSheet
         visible={groupComposerOpen}
         taskIds={selectedTaskActionIds}
+        availableTasks={groupableTodayTasks}
         onClose={() => setGroupComposerOpen(false)}
         onCreated={clearSelection}
       />
@@ -567,10 +784,11 @@ const styles = StyleSheet.create({
   heroCopy: { gap: 5, paddingTop: 4 },
   overview: { gap: 18 },
   spaceBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 14 },
+  taskActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   progressCircle: { width: 54, height: 54, borderRadius: 27, borderWidth: 6, alignItems: 'center', justifyContent: 'center' },
   track: { height: 8, borderRadius: 4, overflow: 'hidden' },
   fill: { height: 8, borderRadius: 4 },
-  list: { gap: 10 },
+  list: { gap: TASK_LIST_GAP },
   group: { borderWidth: 1, borderRadius: 20, overflow: 'hidden' },
   groupHeader: { minHeight: 64, borderTopLeftRadius: 19, borderTopRightRadius: 19, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14 },
   groupHeaderCollapsed: { borderBottomLeftRadius: 19, borderBottomRightRadius: 19 },
@@ -579,6 +797,9 @@ const styles = StyleSheet.create({
   groupTitle: { flex: 1 },
   groupSelect: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
   groupTasks: { paddingVertical: 0 },
+  groupDropIndicator: { position: 'absolute', left: 12, right: 12, height: 3, borderRadius: 2, zIndex: 22, elevation: 4, shadowOpacity: 0.5, shadowRadius: 4 },
+  groupDropIndicatorBefore: { top: -6.5 },
+  groupDropIndicatorAfter: { bottom: -6.5 },
   pressed: { opacity: 0.7 },
   emptyCard: { alignItems: 'center', gap: 6 },
 });

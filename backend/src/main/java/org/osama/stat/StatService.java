@@ -62,7 +62,8 @@ public class StatService {
                                            String userId) {
         StatDefinition definition = definitionRepository.findByIdAndUserId(definitionId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("No such stat."));
-        if (definition.getSystemKey() != null) {
+        if (definition.getSystemKey() != null
+                && !SystemStatCatalog.isUserEditableSystemKey(definition.getSystemKey())) {
             throw new IllegalArgumentException("Cannot edit a system stat.");
         }
 
@@ -114,9 +115,6 @@ public class StatService {
                 && (minValue != null || maxValue != null)) {
             throw new IllegalArgumentException("Time and duration stats do not use range bounds.");
         }
-        if (type == StatType.TIME && goodThreshold != null) {
-            throw new IllegalArgumentException("Time stats do not use a good threshold.");
-        }
         if (morality == null || morality == StatMorality.NEUTRAL) {
             if (goodThreshold != null) {
                 throw new IllegalArgumentException("A neutral stat cannot have a good threshold.");
@@ -131,6 +129,9 @@ public class StatService {
         }
         if (goodThreshold == null || !Double.isFinite(goodThreshold)) {
             throw new IllegalArgumentException("A non-neutral numeric stat must have a good threshold.");
+        }
+        if (type == StatType.TIME && (goodThreshold < 0 || goodThreshold >= 24 * 60)) {
+            throw new IllegalArgumentException("The good threshold for a time stat must be within the day.");
         }
         if (type == StatType.RANGE
                 && (goodThreshold < minValue || goodThreshold > maxValue)) {
@@ -348,7 +349,7 @@ public class StatService {
         }
 
         if (def.getType() == StatType.NUMBER || def.getType() == StatType.RANGE
-                || def.getType() == StatType.TIME || def.getType() == StatType.DURATION) {
+                || def.getType() == StatType.DURATION) {
             periodTotal = entries.stream()
                     .mapToDouble(StatEntry::getValue)
                     .sum();
@@ -361,6 +362,21 @@ public class StatService {
                 periodAverage = periodTotal / periodDays;
             } else if (!entries.isEmpty()) {
                 periodAverage = periodTotal / entries.size();
+            }
+        }
+
+        if (def.getType() == StatType.TIME) {
+            periodTotal = entries.stream()
+                    .mapToDouble(entry -> StatTimeScale.toLinearValue(def, entry.getValue()))
+                    .sum();
+            var latest = entries.stream()
+                    .mapToDouble(entry -> StatTimeScale.toLinearValue(def, entry.getValue()))
+                    .max();
+            periodHighest = latest.isPresent()
+                    ? StatTimeScale.fromLinearValue(def, latest.getAsDouble())
+                    : null;
+            if (!entries.isEmpty()) {
+                periodAverage = StatTimeScale.fromLinearValue(def, periodTotal / entries.size());
             }
         }
 

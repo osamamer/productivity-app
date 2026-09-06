@@ -14,7 +14,9 @@ export const MEDITATION_SOUND_OPTIONS: MeditationSoundOption[] = [
 ];
 
 const SOUND_URLS: Record<MeditationSoundId, string> = {
-    rain: '/audio/rain.mp3',
+    // Versioned filename prevents browsers and service workers from reusing
+    // the old short rain clip that was previously published at /audio/rain.mp3.
+    rain: '/audio/rain-5m.mp3',
     ocean: '/audio/ocean.mp3',
     forest: '/audio/forest.mp3',
     bowls: '/audio/bowls.mp3',

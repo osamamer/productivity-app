@@ -17,8 +17,12 @@ export interface AppColors {
   accentSoft: string;
   onAccent: string;
   success: string;
+  successLight: string;
+  successDark: string;
   warning: string;
   danger: string;
+  dangerLight: string;
+  dangerDark: string;
   low: string;
   medium: string;
   high: string;
@@ -51,8 +55,12 @@ function palette(dark: boolean, accentColor: AccentColor): AppColors {
         accentSoft: `${accent}26`,
         onAccent: '#111827',
         success: '#4ADE80',
+        successLight: '#4ADE80',
+        successDark: '#16A34A',
         warning: '#F5C451',
         danger: '#FF7A68',
+        dangerLight: '#FF9A8E',
+        dangerDark: '#C43D30',
         low: '#9FCAFA',
         medium: '#FAEC66',
         high: '#FF614B',
@@ -70,8 +78,12 @@ function palette(dark: boolean, accentColor: AccentColor): AppColors {
         accentSoft: `${accent}18`,
         onAccent: '#FFFFFF',
         success: '#22C55E',
+        successLight: '#4ADE80',
+        successDark: '#16A34A',
         warning: '#D18B00',
         danger: '#E35440',
+        dangerLight: '#FF9A8E',
+        dangerDark: '#C43D30',
         low: '#9FCAFA',
         medium: '#FAEC66',
         high: '#FF614B',

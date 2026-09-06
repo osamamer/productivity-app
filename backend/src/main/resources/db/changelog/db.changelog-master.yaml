@@ -142,3 +142,15 @@ databaseChangeLog:
   # User-configurable mental state check-up notifications
   - include:
       file: db/changelog/changes/040-add-checkup-notification-preferences.yaml
+
+  # Give sleep and wake-up time built-ins earlier-is-better defaults
+  - include:
+      file: db/changelog/changes/041-set-sleep-wake-time-morality.yaml
+
+  # Store the built-in Sleep stat as a duration in whole minutes
+  - include:
+      file: db/changelog/changes/042-convert-sleep-to-duration.yaml
+
+  # Set the built-in Sleep duration target to eight hours
+  - include:
+      file: db/changelog/changes/043-set-sleep-duration-target.yaml

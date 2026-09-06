@@ -78,6 +78,8 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
   const [error, setError] = useState<string | null>(null);
   const loadedAtRef = useRef(0);
   const requestRef = useRef<Promise<void> | null>(null);
+  const reorderVersionRef = useRef(0);
+  const reorderSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   const load = useCallback(async (force = false) => {
     if (!isAuthenticated) return;
@@ -169,7 +171,7 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
   const reorderTasks = useCallback(async (taskIds: string[]) => {
     const reorderedIds = [...new Set(taskIds)];
     const reorderedIdSet = new Set(reorderedIds);
-    animateLayout();
+    const reorderVersion = ++reorderVersionRef.current;
     setAllTasks(previous => {
       const currentRootTasks = previous.filter(task => !task.parentId);
       const orderedRootTasks = reorderedIds
@@ -184,12 +186,18 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
       }));
       return [...reorderedRootTasksWithOrder, ...previous.filter(task => task.parentId)];
     });
+
+    const save = reorderSaveQueueRef.current
+      .catch(() => undefined)
+      .then(() => api.tasks.reorder(reorderedIds));
+    reorderSaveQueueRef.current = save.then(() => undefined, () => undefined);
     try {
-      const saved = await api.tasks.reorder(reorderedIds);
+      const saved = await save;
+      if (reorderVersion !== reorderVersionRef.current) return;
       setAllTasks(previous => previous.map(task => saved.find(item => item.taskId === task.taskId) ?? task));
     } catch (cause) {
       console.error('Could not reorder mobile tasks:', cause);
-      await load(true);
+      if (reorderVersion === reorderVersionRef.current) await load(true);
       throw cause;
     }
   }, [load]);

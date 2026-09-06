@@ -13,14 +13,13 @@ import {
     durationValueToMinutes, formatDurationValue, formatTimeValue,
     minutesToDurationValue, minutesToTimeValue, timeValueToMinutes,
 } from '../../services/utils/statValues';
+import { DurationStatChart } from './DurationStatChart';
+import { TimeStatChart } from './TimeStatChart';
+import { StatChartPoint, StatChartPointClickEvent } from './statChartTypes';
+import { AppTimeField } from '../input/AppPickerFields';
+import { AppNumberField } from '../input/AppNumberField';
 
-interface ChartPoint {
-    date: string;
-    value: number | undefined;
-    comparisonValue: number | undefined;
-    hoverTarget: number;
-    periodEnd?: string;
-}
+type ChartPoint = StatChartPoint;
 
 interface Props {
     definition: StatDefinition;
@@ -216,8 +215,9 @@ export const StatLineChart = React.memo(function StatLineChart({
     const fromStr = format(from, 'yyyy-MM-dd');
     const toStr = format(to, 'yyyy-MM-dd');
     const isYearView = dateRange >= 365;
+    const aggregateWeekly = isYearView && definition.type !== 'TIME';
     const comparisonId = comparisonDefinition?.id;
-    const createChartPoints = (entries: StatEntry[], comparisonEntries: StatEntry[]) => isYearView
+    const createChartPoints = (entries: StatEntry[], comparisonEntries: StatEntry[]) => aggregateWeekly
         ? buildWeeklyChartPoints(
             from,
             to,
@@ -286,7 +286,7 @@ export const StatLineChart = React.memo(function StatLineChart({
                 if (!cancelled) {
                     setDataState({
                         key: dataKey,
-                        points: isYearView
+                        points: aggregateWeekly
                             ? buildWeeklyChartPoints(
                                 parseISO(fromStr),
                                 parseISO(toStr),
@@ -312,7 +312,7 @@ export const StatLineChart = React.memo(function StatLineChart({
                 if (!cancelled) setLoadingKey(current => current === dataKey ? null : current);
             });
         return () => { cancelled = true; };
-    }, [comparisonDefinition, comparisonId, dataKey, definition, fromStr, isYearView, refreshKey, toStr]);
+    }, [aggregateWeekly, comparisonDefinition, comparisonId, dataKey, definition, fromStr, refreshKey, toStr]);
 
     useEffect(() => {
         setEditValue(hoveredPoint?.value === undefined
@@ -482,6 +482,45 @@ export const StatLineChart = React.memo(function StatLineChart({
         }
     };
 
+    const openSpecialEditor = (point: ChartPoint, event: StatChartPointClickEvent) => {
+        if (point.value === undefined || !chartRef.current) return;
+        chartHoveredRef.current = true;
+        clearCloseTimer();
+        setHoveredPoint(point);
+        const bounds = chartRef.current.getBoundingClientRect();
+        const editorWidth = 112;
+        const editorHeight = 50;
+        setEditorPosition({
+            left: Math.min(Math.max(8, event.clientX - bounds.left + 10), Math.max(8, bounds.width - editorWidth - 8)),
+            top: Math.min(Math.max(8, event.clientY - bounds.top + 10), Math.max(8, bounds.height - editorHeight - 8)),
+        });
+    };
+
+    const comparisonHasSameType = !comparisonDefinition || comparisonDefinition.type === definition.type;
+    const specialChart = definition.type === 'TIME' && comparisonHasSameType
+        ? (
+            <TimeStatChart
+                definition={definition}
+                comparisonDefinition={comparisonDefinition}
+                points={data}
+                dateRange={dateRange}
+                theme={theme}
+                onPointClick={openSpecialEditor}
+            />
+        )
+        : definition.type === 'DURATION' && comparisonHasSameType
+            ? (
+                <DurationStatChart
+                    definition={definition}
+                    comparisonDefinition={comparisonDefinition}
+                    points={data}
+                    dateRange={dateRange}
+                    theme={theme}
+                    onPointClick={openSpecialEditor}
+                />
+            )
+            : null;
+
     return (
         <Box sx={{ position: 'relative' }}>
             {comparisonDefinition && (
@@ -500,9 +539,9 @@ export const StatLineChart = React.memo(function StatLineChart({
                 ref={chartRef}
                 onMouseEnter={handleChartEnter}
                 onMouseLeave={handleChartLeave}
-                sx={{ height: 200, opacity: loading ? 0.55 : 1, transition: 'opacity 120ms ease' }}
+                sx={{ minHeight: definition.type === 'TIME' && dateRange <= 7 ? 220 : 200, opacity: loading ? 0.55 : 1, transition: 'opacity 120ms ease', pb: definition.type === 'DURATION' ? 3 : 0 }}
             >
-                <ResponsiveContainer width="100%" height={200}>
+                {specialChart ?? <ResponsiveContainer width="100%" height={200}>
                 <AreaChart
                     data={data}
                     margin={{ top: 12, right: comparisonDefinition ? 48 : 12, left: 48, bottom: 5 }}
@@ -518,6 +557,7 @@ export const StatLineChart = React.memo(function StatLineChart({
                 <XAxis
                     dataKey="date"
                     tickFormatter={tickFormat}
+                    padding={{ left: 6, right: 6 }}
                     minTickGap={isYearView ? 28 : 5}
                     tick={{ fontSize: 11, fill: theme.palette.text.secondary }}
                     axisLine={{ stroke: theme.palette.divider }}
@@ -642,7 +682,7 @@ export const StatLineChart = React.memo(function StatLineChart({
                     isAnimationActive={false}
                 />
                 </AreaChart>
-                </ResponsiveContainer>
+                </ResponsiveContainer>}
             </Box>
 
             {loading && (
@@ -680,33 +720,82 @@ export const StatLineChart = React.memo(function StatLineChart({
                             </Typography>
                         </Box>
                     )}
-                    <TextField
-                        size="small"
-                        autoComplete="off"
-                        type={definition.type === 'TIME' ? 'time' : definition.type === 'DURATION' ? 'text' : 'number'}
-                        value={editValue}
-                        onChange={event => {
-                            const value = event.target.value;
-                            setEditValue(value);
-                            setSaveError(null);
-                            queueEntrySave(hoveredPoint.date, value);
-                        }}
-                        onBlur={flushEntrySave}
-                        onKeyDown={event => {
-                            if (event.key === 'Enter') event.currentTarget.blur();
-                        }}
-                        inputProps={{
-                            step: definition.type === 'TIME' ? 60 : undefined,
-                            min: definition.type === 'DURATION' ? 0 : definition.type === 'RANGE' ? definition.minValue : undefined,
-                            max: definition.type === 'RANGE' ? definition.maxValue : undefined,
-                            'aria-label': `${definition.name} value for ${format(parseISO(hoveredPoint.date), 'MMMM d, yyyy')}`,
-                        }}
-                        placeholder={definition.type === 'DURATION' ? 'H:MM' : 'Value'}
-                        autoFocus
-                        error={Boolean(saveError)}
-                        title={saveError ?? undefined}
-                        sx={{ width: 102 }}
-                    />
+                    {definition.type === 'TIME' ? (
+                        <AppTimeField
+                            label="Time"
+                            value={editValue}
+                            onChange={value => {
+                                setEditValue(value);
+                                setSaveError(null);
+                                queueEntrySave(hoveredPoint.date, value);
+                            }}
+                            onBlur={flushEntrySave}
+                            inputProps={{
+                                'aria-label': `${definition.name} value for ${format(parseISO(hoveredPoint.date), 'MMMM d, yyyy')}`,
+                            }}
+                            autoFocus
+                            error={Boolean(saveError)}
+                            sx={{ width: 140 }}
+                        />
+                    ) : definition.type === 'DURATION' ? (
+                        <TextField
+                            size="small"
+                            autoComplete="off"
+                            type="text"
+                            value={editValue}
+                            onChange={event => {
+                                const value = event.target.value;
+                                setEditValue(value);
+                                setSaveError(null);
+                                queueEntrySave(hoveredPoint.date, value);
+                            }}
+                            onBlur={flushEntrySave}
+                            onKeyDown={event => {
+                                if (event.key === 'Enter') event.currentTarget.blur();
+                            }}
+                            inputProps={{
+                                min: 0,
+                                'aria-label': `${definition.name} value for ${format(parseISO(hoveredPoint.date), 'MMMM d, yyyy')}`,
+                            }}
+                            placeholder="H:MM"
+                            autoFocus
+                            error={Boolean(saveError)}
+                            title={saveError ?? undefined}
+                            sx={{ width: 102 }}
+                        />
+                    ) : (
+                        <AppNumberField
+                            size="small"
+                            autoComplete="off"
+                            value={editValue}
+                            onChange={event => {
+                                const value = event.target.value;
+                                setEditValue(value);
+                                setSaveError(null);
+                                queueEntrySave(hoveredPoint.date, value);
+                            }}
+                            onStepValueChange={value => {
+                                const nextValue = String(value);
+                                setEditValue(nextValue);
+                                setSaveError(null);
+                                queueEntrySave(hoveredPoint.date, nextValue);
+                            }}
+                            onBlur={flushEntrySave}
+                            onKeyDown={event => {
+                                if (event.key === 'Enter') event.currentTarget.blur();
+                            }}
+                            min={definition.type === 'RANGE' ? definition.minValue : undefined}
+                            max={definition.type === 'RANGE' ? definition.maxValue : undefined}
+                            inputProps={{
+                                'aria-label': `${definition.name} value for ${format(parseISO(hoveredPoint.date), 'MMMM d, yyyy')}`,
+                            }}
+                            placeholder="Value"
+                            autoFocus
+                            error={Boolean(saveError)}
+                            title={saveError ?? undefined}
+                            sx={{ width: 102 }}
+                        />
+                    )}
                 </Box>
             )}
 

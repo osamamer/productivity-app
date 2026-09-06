@@ -18,6 +18,7 @@ import {
 } from '@mui/material';
 import { AttentionState, MentalThreadInput } from '../../types/MentalThread.ts';
 import { attentionStateDetails, attentionStates } from './mentalThreadPresentation.ts';
+import { AppDateField } from '../input/AppPickerFields';
 
 interface MentalThreadCreateDialogProps {
     open: boolean;
@@ -138,13 +139,10 @@ export function MentalThreadCreateDialog({ open, onClose, onSave }: MentalThread
                         />
                     </Box>
 
-                    <TextField
+                    <AppDateField
                         label="Target close"
-                        autoComplete="off"
-                        type="date"
                         value={input.targetCloseDate ?? ''}
-                        onChange={event => update('targetCloseDate', event.target.value || null)}
-                        InputLabelProps={{ shrink: true }}
+                        onChange={value => update('targetCloseDate', value || null)}
                         helperText="When you hope it is settled"
                     />
                 </Stack>

@@ -4,7 +4,12 @@ import { useTheme } from '@mui/material/styles';
 import { differenceInCalendarDays, format, parseISO, subDays } from 'date-fns';
 import { StatDefinition, StatEntry, StatSummary } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
-import { formatDurationValue, formatTimeValue } from '../../services/utils/statValues';
+import {
+    averageTimeValues,
+    formatDurationValue,
+    formatTimeValue,
+    timeValueToScale,
+} from '../../services/utils/statValues';
 
 interface TileProps {
     label: string;
@@ -138,10 +143,12 @@ export const StatSummaryBar = React.memo(function StatSummaryBar({ definition, d
     const tiles: TileProps[] = [];
     const derivedLongestBooleanStreak = entries ? computeLongestBooleanStreak(entries) : null;
     const derivedPeriodHighest = entries && entries.length > 0
-        ? Math.max(...entries.map(entry => entry.value))
+        ? definition.type === 'TIME'
+            ? entries.reduce((latest, entry) => timeValueToScale(definition, entry.value) > timeValueToScale(definition, latest) ? entry.value : latest, entries[0].value)
+            : Math.max(...entries.map(entry => entry.value))
         : null;
     const derivedPeriodEarliest = entries && entries.length > 0
-        ? Math.min(...entries.map(entry => entry.value))
+        ? entries.reduce((earliest, entry) => timeValueToScale(definition, entry.value) < timeValueToScale(definition, earliest) ? entry.value : earliest, entries[0].value)
         : null;
     const periodHighest = summary.periodHighest ?? derivedPeriodHighest;
 
@@ -176,17 +183,18 @@ export const StatSummaryBar = React.memo(function StatSummaryBar({ definition, d
     }
 
     if (definition.type === 'TIME') {
+        const timeAverage = entries ? averageTimeValues(definition, entries.map(entry => entry.value)) : null;
         tiles.push({
             label: 'Earliest',
             value: derivedPeriodEarliest != null ? formatTimeValue(derivedPeriodEarliest) : '—',
         });
         tiles.push({
             label: 'Average',
-            value: summary.periodAverage !== null ? formatTimeValue(summary.periodAverage) : '—',
+            value: timeAverage !== null ? formatTimeValue(timeAverage) : '—',
         });
         tiles.push({
             label: 'Latest',
-            value: periodHighest != null ? formatTimeValue(periodHighest) : '—',
+            value: derivedPeriodHighest != null ? formatTimeValue(derivedPeriodHighest) : '—',
         });
     }
 

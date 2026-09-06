@@ -14,6 +14,7 @@ import { loadTaskPomodoroStats } from '../services/cache/taskPomodoroStatsCache'
 
 type SectionName = 'today' | 'comingUp' | 'leftovers' | 'undated';
 type DeleteRequest = { task: Task; anchorEl: HTMLElement };
+type EditRequest = { taskId: string; requestId: number };
 
 export function TaskPage() {
     const {
@@ -38,6 +39,7 @@ export function TaskPage() {
     });
     const [deleteRequest, setDeleteRequest] = useState<DeleteRequest | null>(null);
     const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+    const [editRequest, setEditRequest] = useState<EditRequest | null>(null);
     const allTasksRef = useRef(allTasks);
     const todayRef = useRef<HTMLDivElement>(null);
     const comingUpRef = useRef<HTMLDivElement>(null);
@@ -173,6 +175,30 @@ export function TaskPage() {
     const selectedTask = highlightedTask && (showCompletedTasks || !highlightedTask.completed)
         ? highlightedTask
         : null;
+    const selectedEditRequestId = editRequest && editRequest.taskId === selectedTask?.taskId
+        ? editRequest.requestId
+        : null;
+
+    useEffect(() => {
+        const handleRightArrow = (event: KeyboardEvent) => {
+            if (event.key !== 'ArrowRight' || event.defaultPrevented || event.altKey
+                || event.ctrlKey || event.metaKey || event.shiftKey || !selectedTask) return;
+
+            const target = event.target;
+            if (target instanceof Element && target.closest(
+                'input, textarea, select, button, [role="button"], [contenteditable="true"]',
+            )) return;
+
+            event.preventDefault();
+            setEditRequest(previous => ({
+                taskId: selectedTask.taskId,
+                requestId: (previous?.requestId ?? 0) + 1,
+            }));
+        };
+
+        window.addEventListener('keydown', handleRightArrow);
+        return () => window.removeEventListener('keydown', handleRightArrow);
+    }, [selectedTask]);
 
     const sectionRefs: Record<SectionName, React.RefObject<HTMLDivElement>> = {
         today: todayRef,
@@ -233,6 +259,7 @@ export function TaskPage() {
                                 onToggle={toggleSection}
                                 onTaskClick={handleTaskSelect}
                                 selectedTaskId={selectedTask?.taskId}
+                                editRequestId={selectedEditRequestId}
                                 toggleTaskCompletion={toggleTaskCompletion}
                                 updateTask={updateTask}
                                 emptyMessage="No tasks scheduled for today"
@@ -249,6 +276,7 @@ export function TaskPage() {
                                     onToggle={toggleSection}
                                     onTaskClick={handleTaskSelect}
                                     selectedTaskId={selectedTask?.taskId}
+                                    editRequestId={selectedEditRequestId}
                                     toggleTaskCompletion={toggleTaskCompletion}
                                     updateTask={updateTask}
                                     emptyMessage="No upcoming tasks"
@@ -267,6 +295,7 @@ export function TaskPage() {
                                     onToggle={toggleSection}
                                     onTaskClick={handleTaskSelect}
                                     selectedTaskId={selectedTask?.taskId}
+                                    editRequestId={selectedEditRequestId}
                                     toggleTaskCompletion={toggleTaskCompletion}
                                     updateTask={updateTask}
                                     emptyMessage="No older tasks"
@@ -285,6 +314,7 @@ export function TaskPage() {
                                     onToggle={toggleSection}
                                     onTaskClick={handleTaskSelect}
                                     selectedTaskId={selectedTask?.taskId}
+                                    editRequestId={selectedEditRequestId}
                                     toggleTaskCompletion={toggleTaskCompletion}
                                     updateTask={updateTask}
                                     emptyMessage="No undated tasks"

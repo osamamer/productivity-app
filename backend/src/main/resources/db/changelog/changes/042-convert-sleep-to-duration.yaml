@@ -1,0 +1,43 @@
+databaseChangeLog:
+  - changeSet:
+      id: 042-convert-sleep-to-duration
+      author: codex
+      comment: Convert the built-in Sleep stat from hours to whole-minute duration values
+      changes:
+        - sql:
+            sql: |
+              UPDATE stat_entry
+              SET stat_value = ROUND(stat_value * 60)
+              WHERE stat_definition_id IN (
+                  SELECT id
+                  FROM stat_definition
+                  WHERE system_key = 'sleep_hours'
+                    AND type = 'NUMBER'
+              );
+        - sql:
+            sql: |
+              UPDATE stat_definition
+              SET type = 'DURATION',
+                  description = 'How long you slept the previous night, in minutes.',
+                  good_threshold = good_threshold * 60
+              WHERE system_key = 'sleep_hours'
+                AND type = 'NUMBER';
+      rollback:
+        - sql:
+            sql: |
+              UPDATE stat_entry
+              SET stat_value = stat_value / 60
+              WHERE stat_definition_id IN (
+                  SELECT id
+                  FROM stat_definition
+                  WHERE system_key = 'sleep_hours'
+                    AND type = 'DURATION'
+              );
+        - sql:
+            sql: |
+              UPDATE stat_definition
+              SET type = 'NUMBER',
+                  description = 'How many hours you slept the previous night.',
+                  good_threshold = good_threshold / 60
+              WHERE system_key = 'sleep_hours'
+                AND type = 'DURATION';

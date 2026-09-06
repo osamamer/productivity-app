@@ -41,10 +41,12 @@ public final class SystemStatCatalog {
     );
 
     public static final List<SystemStatDefinition> DAILY_LIFE_STATS = List.of(
-            number(SLEEP_HOURS_SYSTEM_KEY, "Sleep", "How many hours you slept the previous night.",
-                    StatMorality.GOOD, 7.0),
-            time(SLEEP_TIME_SYSTEM_KEY, "Sleep time", "When you went to sleep."),
-            time(WAKE_UP_TIME_SYSTEM_KEY, "Wake-up time", "When you woke up.")
+            duration(SLEEP_HOURS_SYSTEM_KEY, "Sleep", "How long you slept the previous night, in minutes.",
+                    StatMorality.GOOD, 8 * 60.0),
+            time(SLEEP_TIME_SYSTEM_KEY, "Sleep time", "When you went to sleep.",
+                    StatMorality.GOOD, 4 * 60.0),
+            time(WAKE_UP_TIME_SYSTEM_KEY, "Wake-up time", "When you woke up.",
+                    StatMorality.GOOD, 10 * 60.0 + 30.0)
     );
 
     public static final List<SystemStatDefinition> SYSTEM_STATS = Stream
@@ -60,6 +62,12 @@ public final class SystemStatCatalog {
 
     public static boolean isAutomaticallyLoggedSystemKey(String systemKey) {
         return systemKey != null && AUTOMATIC_SYSTEM_KEYS.contains(systemKey);
+    }
+
+    public static boolean isUserEditableSystemKey(String systemKey) {
+        return SLEEP_HOURS_SYSTEM_KEY.equals(systemKey)
+                || SLEEP_TIME_SYSTEM_KEY.equals(systemKey)
+                || WAKE_UP_TIME_SYSTEM_KEY.equals(systemKey);
     }
 
     private static SystemStatDefinition range(String systemKey, String name, String description) {
@@ -82,8 +90,15 @@ public final class SystemStatCatalog {
                 null, null, morality, goodThreshold);
     }
 
-    private static SystemStatDefinition time(String systemKey, String name, String description) {
+    private static SystemStatDefinition duration(String systemKey, String name, String description,
+                                                 StatMorality morality, Double goodThreshold) {
+        return new SystemStatDefinition(systemKey, name, description, StatType.DURATION,
+                null, null, morality, goodThreshold);
+    }
+
+    private static SystemStatDefinition time(String systemKey, String name, String description,
+                                             StatMorality morality, Double goodThreshold) {
         return new SystemStatDefinition(systemKey, name, description, StatType.TIME,
-                null, null, StatMorality.NEUTRAL, null);
+                null, null, morality, goodThreshold);
     }
 }

@@ -2,6 +2,7 @@ import { useState } from 'react';
 
 import { localDate } from '@/lib/date';
 import { reportError } from '@/lib/errors';
+import { formatTimeValue } from '@/lib/statValues';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
 import type { StatDefinition, StatEntry } from '@/types/models';
@@ -11,6 +12,14 @@ import { AppText } from '../ui/AppText';
 import { ChoiceChips } from '../ui/ChoiceChips';
 import { DurationInput } from './DurationInput';
 import { ModalSheet } from '../ui/ModalSheet';
+import { AppPopup } from '../ui/AppPopup';
+import { TimePicker } from '../tasks/TaskScheduleField';
+
+function dateForMinutes(value: number): Date {
+  const date = new Date();
+  date.setHours(Math.floor(value / 60), value % 60, 0, 0);
+  return date;
+}
 
 function booleanChoiceColor(
   definition: StatDefinition,
@@ -32,10 +41,12 @@ export function StatEntrySheet({ definition, existing, onClose, onSaved, onRever
 }) {
   const { colors } = useAppTheme();
   const initialValue = existing?.value
-    ?? (definition?.type === 'DURATION' ? null : definition?.minValue ?? 1);
+    ?? (definition?.type === 'DURATION' || definition?.type === 'TIME' ? null : definition?.minValue ?? 1);
   const [value, setValue] = useState(initialValue == null ? '' : String(initialValue));
   const [rangeValue, setRangeValue] = useState(initialValue ?? 1);
   const [durationValue, setDurationValue] = useState<number | null>(definition?.type === 'DURATION' ? initialValue : null);
+  const [timeValue, setTimeValue] = useState(() => dateForMinutes(definition?.type === 'TIME' && initialValue != null ? initialValue : 12 * 60));
+  const [timePickerOpen, setTimePickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -45,9 +56,11 @@ export function StatEntrySheet({ definition, existing, onClose, onSaved, onRever
       ? rangeValue
       : definition.type === 'DURATION'
         ? durationValue
+        : definition.type === 'TIME'
+          ? timeValue.getHours() * 60 + timeValue.getMinutes()
         : Number(value));
     if (numeric === null || !Number.isFinite(numeric)) {
-      return setError(definition.type === 'DURATION' ? 'Enter a duration.' : 'Enter a number.');
+      return setError(definition.type === 'DURATION' ? 'Enter a duration.' : definition.type === 'TIME' ? 'Choose a time.' : 'Enter a number.');
     }
     const optimistic: StatEntry = {
       id: existing?.id ?? `optimistic-${definition.id}`,
@@ -92,6 +105,29 @@ export function StatEntrySheet({ definition, existing, onClose, onSaved, onRever
         <>
           <DurationInput value={durationValue} onChange={setDurationValue} autoFocus />
           <AppButton label="Record" loading={saving} onPress={() => void save()} />
+        </>
+      ) : definition?.type === 'TIME' ? (
+        <>
+          <AppText variant="label">Time of day</AppText>
+          <AppButton
+            variant="secondary"
+            label={formatTimeValue(timeValue.getHours() * 60 + timeValue.getMinutes())}
+            icon="time-outline"
+            onPress={() => setTimePickerOpen(true)}
+          />
+          <AppButton label="Record" loading={saving} onPress={() => void save()} />
+          <AppPopup
+            visible={timePickerOpen}
+            title="Choose time"
+            showIcon={false}
+            onClose={() => setTimePickerOpen(false)}
+            dismissOnBackdrop={false}
+            footer={(
+              <AppButton label="Done" onPress={() => setTimePickerOpen(false)} />
+            )}
+          >
+            <TimePicker value={timeValue} onChange={setTimeValue} />
+          </AppPopup>
         </>
       ) : (
         <>

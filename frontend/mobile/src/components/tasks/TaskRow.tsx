@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useRef, useState } from 'react';
-import { Animated, StyleSheet, View } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { Animated as NativeAnimated, StyleSheet, View } from 'react-native';
+import { GestureDetector } from 'react-native-gesture-handler';
+import Reanimated from 'react-native-reanimated';
 
 import { formatShortDate, formatTime } from '@/lib/date';
 import { taskPriorityColor } from '@/lib/taskPriority';
@@ -10,6 +11,7 @@ import type { PomodoroStatus, Task } from '@/types/models';
 import { PomodoroPanel } from '../pomodoro/PomodoroPanel';
 import { AppText } from '../ui/AppText';
 import { SilentPressable } from '../ui/SilentPressable';
+import { DRAG_HOLD_DURATION_MS, useLongPressDrag } from './useLongPressDrag';
 
 export interface TaskDragLayout {
   left: number;
@@ -80,6 +82,7 @@ function TaskRowBody({ task, onToggle, onPress, onLongPress, onSelectionToggle, 
     <SilentPressable
       onPress={event => { event.stopPropagation(); (onSelectionToggle ?? onPress)?.(); }}
       onLongPress={event => { event.stopPropagation(); onLongPress?.(); }}
+      delayLongPress={DRAG_HOLD_DURATION_MS}
       accessibilityState={selected ? { selected: true } : undefined}
       style={({ pressed }) => [styles.row, pressed && { opacity: 0.75 }]}>
       {content}
@@ -87,7 +90,7 @@ function TaskRowBody({ task, onToggle, onPress, onLongPress, onSelectionToggle, 
   );
 }
 
-export function TaskRow({ task, onToggle, onPress, onLongPress, onSelectionToggle, selected = false, onDelete, onPomodoroPress, pomodoroOpen, pomodoroStatus, onPomodoroClose, onPomodoroActiveChange, onPomodoroStatusChange, dragEnabled = false, dragging = false, dropTarget = false, dropTargetEdge, onDragLayout, onDragViewRef, onDragStart, onDragMove, onDragEnd, onDragCancel, inGroup = false, groupLast = false }: {
+export function TaskRow({ task, onToggle, onPress, onLongPress, onSelectionToggle, selected = false, onDelete, onPomodoroPress, pomodoroOpen, pomodoroStatus, onPomodoroClose, onPomodoroActiveChange, onPomodoroStatusChange, dragEnabled = false, dragging = false, dragInProgress = false, dragPreviewOffset = 0, dropTarget = false, dropTargetEdge, onDragLayout, onDragViewRef, onDragStart, onDragMove, onDragEnd, onDragCancel, inGroup = false, groupLast = false }: {
   task: Task;
   onToggle: () => void;
   onPress?: () => void;
@@ -103,6 +106,8 @@ export function TaskRow({ task, onToggle, onPress, onLongPress, onSelectionToggl
   onPomodoroStatusChange?: (status: PomodoroStatus) => void;
   dragEnabled?: boolean;
   dragging?: boolean;
+  dragInProgress?: boolean;
+  dragPreviewOffset?: number;
   dropTarget?: boolean;
   dropTargetEdge?: 'before' | 'after';
   onDragLayout?: (taskId: string, layout: TaskDragLayout) => void;
@@ -116,48 +121,31 @@ export function TaskRow({ task, onToggle, onPress, onLongPress, onSelectionToggl
 }) {
   const { colors } = useAppTheme();
   const rowRef = useRef<View>(null);
-  const draggingRef = useRef(false);
-  const [localDragging, setLocalDragging] = useState(false);
-  const [dragOffset] = useState(() => new Animated.Value(0));
-  const onDragStartRef = useRef(onDragStart);
-  const onDragMoveRef = useRef(onDragMove);
-  const onDragEndRef = useRef(onDragEnd);
-  const onDragCancelRef = useRef(onDragCancel);
+  const [animatedPreviewOffset] = useState(() => new NativeAnimated.Value(0));
+  const drag = useLongPressDrag({
+    id: task.taskId,
+    enabled: dragEnabled,
+    onStart: onDragStart,
+    onMove: onDragMove,
+    onEnd: onDragEnd,
+    onCancel: onDragCancel,
+    onHold: onLongPress ? () => onLongPress() : undefined,
+  });
   useEffect(() => {
-    onDragStartRef.current = onDragStart;
-    onDragMoveRef.current = onDragMove;
-    onDragEndRef.current = onDragEnd;
-    onDragCancelRef.current = onDragCancel;
-  }, [onDragCancel, onDragEnd, onDragMove, onDragStart]);
-
-  const [dragGesture, setDragGesture] = useState(() => Gesture.Pan().enabled(false));
-  useEffect(() => {
-    setDragGesture(Gesture.Pan()
-      .enabled(dragEnabled)
-      .activateAfterLongPress(250)
-      .onStart(event => {
-        dragOffset.setValue(0);
-        draggingRef.current = true;
-        setLocalDragging(true);
-        onDragStartRef.current?.(task.taskId, event.absoluteY);
-      })
-      .onUpdate(event => {
-        dragOffset.setValue(event.translationY);
-        onDragMoveRef.current?.(task.taskId, event.absoluteY, event.translationY);
-      })
-      .onEnd((event, success) => {
-        if (success && draggingRef.current) onDragEndRef.current?.(task.taskId, event.absoluteY);
-        draggingRef.current = false;
-        setLocalDragging(false);
-      })
-      .onFinalize((_event, success) => {
-        if (!success && draggingRef.current) onDragCancelRef.current?.(task.taskId);
-        draggingRef.current = false;
-        setLocalDragging(false);
-      })
-      .runOnJS(true));
-  }, [dragEnabled, dragOffset, task.taskId]);
-
+    animatedPreviewOffset.stopAnimation();
+    if (!dragInProgress) {
+      animatedPreviewOffset.setValue(0);
+      return;
+    }
+    NativeAnimated.spring(animatedPreviewOffset, {
+      toValue: dragPreviewOffset,
+      stiffness: 520,
+      damping: 48,
+      mass: 0.7,
+      overshootClamping: true,
+      useNativeDriver: true,
+    }).start();
+  }, [animatedPreviewOffset, dragInProgress, dragPreviewOffset]);
   function measureRow() {
     if (!onDragLayout) return;
     rowRef.current?.measureInWindow((left, top, width, height) => onDragLayout(task.taskId, { left, top, width, bottom: top + height }));
@@ -174,79 +162,68 @@ export function TaskRow({ task, onToggle, onPress, onLongPress, onSelectionToggl
   const resting = pomodoroStatus?.phase === 'BREAK'
     || pomodoroStatus?.phase === 'WAITING_FOR_BREAK'
     || Boolean(pomodoroStatus && !pomodoroStatus.sessionActive);
-  const showDrag = dragging || localDragging;
+  const showDrag = dragging || drag.dragging;
   return (
-    <GestureDetector gesture={dragGesture}>
+    <GestureDetector gesture={drag.gesture}>
       <View
+        collapsable={false}
         ref={view => {
           rowRef.current = view;
           onDragViewRef?.(task.taskId, view);
         }}
         onLayout={measureRow}
-        style={[styles.container, inGroup && styles.groupedContainer, groupLast && styles.groupedLast, {
-          backgroundColor: active ? colors.accentSoft : colors.surface,
-          borderColor: active ? (resting ? colors.success : colors.accent) : colors.border,
-          borderBottomColor: inGroup ? colors.border : undefined,
-        }, selected && (inGroup ? { backgroundColor: colors.accentSoft, borderLeftWidth: 3, borderLeftColor: colors.accent } : { borderColor: colors.accent, borderWidth: 2 }),
-        showDrag && styles.dragging,
-        ]}>
-        <View style={showDrag && styles.dragPlaceholder}>
+        style={showDrag && styles.dragHost}>
+        <NativeAnimated.View style={{ transform: [{ translateY: animatedPreviewOffset }] }}>
+          <Reanimated.View
+            style={[styles.container, inGroup && styles.groupedContainer, groupLast && styles.groupedLast, {
+              backgroundColor: active ? colors.accentSoft : colors.surface,
+              borderColor: active ? (resting ? colors.success : colors.accent) : colors.border,
+              borderBottomColor: inGroup ? colors.border : undefined,
+            }, selected && (inGroup ? { backgroundColor: colors.accentSoft, borderLeftWidth: 3, borderLeftColor: colors.accent } : { borderColor: colors.accent, borderWidth: 2 }),
+            drag.animatedStyle,
+            showDrag && styles.dragging,
+            ]}>
           <TaskRowBody
             task={task}
             onToggle={onToggle}
             onPress={onPress}
-            onLongPress={onLongPress}
+            onLongPress={() => undefined}
             onSelectionToggle={onSelectionToggle}
             selected={selected}
             onDelete={onDelete}
             onPomodoroPress={onPomodoroPress}
             pomodoroOpen={pomodoroOpen}
             pomodoroStatus={pomodoroStatus}
-            interactive
+            interactive={!showDrag}
           />
-        </View>
-        {showDrag && (
-          <Animated.View
-            pointerEvents="none"
-            style={[styles.dragPreview, { backgroundColor: colors.surface, borderColor: colors.accent }, { transform: [{ translateY: dragOffset }] }]}>
-            <TaskRowBody
-              task={task}
-              onToggle={onToggle}
-              selected={selected}
-              onDelete={onDelete}
-              onPomodoroPress={onPomodoroPress}
-              pomodoroOpen={pomodoroOpen}
-              pomodoroStatus={pomodoroStatus}
-              interactive={false}
+          {dropTarget && (
+            <View
+              pointerEvents="none"
+              style={[
+                styles.dropIndicator,
+                { backgroundColor: colors.accent, shadowColor: colors.accent },
+                dropTargetEdge === 'after'
+                  ? [styles.dropIndicatorAfter, !inGroup && styles.dropIndicatorAfterGap]
+                  : [styles.dropIndicatorBefore, !inGroup && styles.dropIndicatorBeforeGap],
+              ]}
             />
-          </Animated.View>
-        )}
-        {dropTarget && (
-          <View
-            pointerEvents="none"
-            style={[
-              styles.dropIndicator,
-              { backgroundColor: colors.accent, shadowColor: colors.accent },
-              dropTargetEdge === 'after'
-                ? [styles.dropIndicatorAfter, !inGroup && styles.dropIndicatorAfterGap]
-                : [styles.dropIndicatorBefore, !inGroup && styles.dropIndicatorBeforeGap],
-            ]}
-          />
-        )}
-        {pomodoroOpen && onPomodoroActiveChange && onPomodoroStatusChange && (
-          <PomodoroPanel
-            taskId={task.taskId}
-            initialStatus={pomodoroStatus}
-            onClose={onPomodoroClose ?? (() => undefined)}
-            onActiveChange={onPomodoroActiveChange}
-            onStatusChange={onPomodoroStatusChange}
-          />
-        )}
-        {active && (
-          <View style={[styles.progressTrack, { backgroundColor: resting ? `${colors.success}28` : colors.accentSoft }]}>
-            <View style={[styles.progressFill, { width: `${progress * 100}%`, backgroundColor: resting ? colors.success : colors.accent }]} />
-          </View>
-        )}
+          )}
+          {pomodoroOpen && onPomodoroActiveChange && onPomodoroStatusChange && (
+            <PomodoroPanel
+              taskId={task.taskId}
+              initialStatus={pomodoroStatus}
+              onClose={onPomodoroClose ?? (() => undefined)}
+              onActiveChange={onPomodoroActiveChange}
+              onStatusChange={onPomodoroStatusChange}
+            />
+          )}
+          {active && (
+            <View style={[styles.progressTrack, { backgroundColor: resting ? `${colors.success}28` : colors.accentSoft }]}>
+              <View style={[styles.progressFill, { width: `${progress * 100}%`, backgroundColor: resting ? colors.success : colors.accent }]} />
+            </View>
+          )}
+          </Reanimated.View>
+        </NativeAnimated.View>
       </View>
     </GestureDetector>
   );
@@ -256,9 +233,8 @@ const styles = StyleSheet.create({
   container: { borderRadius: 18, borderWidth: 1, overflow: 'visible', position: 'relative' },
   groupedContainer: { borderRadius: 0, borderWidth: 0, borderBottomWidth: StyleSheet.hairlineWidth },
   groupedLast: { borderBottomLeftRadius: 18, borderBottomRightRadius: 18, borderBottomWidth: 0 },
-  dragging: { zIndex: 20, elevation: 7 },
-  dragPlaceholder: { opacity: 0.2 },
-  dragPreview: { position: 'absolute', left: 0, right: 0, top: 0, borderRadius: 18, borderWidth: 1, overflow: 'hidden', zIndex: 21, shadowColor: '#11111A', shadowOffset: { width: 0, height: 7 }, shadowRadius: 12, shadowOpacity: 0.24, elevation: 8 },
+  dragHost: { zIndex: 20 },
+  dragging: { zIndex: 20, borderRadius: 18, borderWidth: 1, shadowColor: '#11111A', shadowOffset: { width: 0, height: 7 }, shadowRadius: 12, shadowOpacity: 0.24 },
   dropIndicator: { position: 'absolute', left: 12, right: 12, height: 3, borderRadius: 2, zIndex: 22, elevation: 4, shadowOpacity: 0.5, shadowRadius: 4 },
   dropIndicatorBefore: { top: -1.5 },
   dropIndicatorAfter: { bottom: -1.5 },

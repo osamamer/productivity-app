@@ -5,16 +5,29 @@ import { localDate, formatShortDate } from '@/lib/date';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
 import type { StatDefinition, StatEntry } from '@/types/models';
-import { formatDurationValue } from '@/lib/statValues';
+import {
+  formatTimeCircleValue,
+  formatTimeValue,
+  formatDurationValue,
+  isTimeAtOrBeforeThreshold,
+  timeDisplayScaleMaximum,
+  timeDisplayScaleTicks,
+  timeValueFromDisplayScale,
+  timeValueToScale,
+  timeValueToDisplayScale,
+} from '@/lib/statValues';
 import { AppText } from '../ui/AppText';
 
 const RECENT_DAYS = 5;
 const PLOT_HEIGHT = 108;
 const PLOT_VERTICAL_INSET = 12;
+const PLOT_HORIZONTAL_INSET = 7;
 const WEEKDAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+const DURATION_TICK_STEPS = [15, 30, 60, 120, 180, 240, 360, 480, 720, 960, 1440];
 
 type NumericDomain = [number, number];
-interface ChartPoint { x: number; y: number; value: number; }
+interface ChartPoint { x: number; y: number; value: number; date?: string; }
+type DatedChartPoint = ChartPoint & { date: string };
 
 function calendarWeeks(dates: string[]): (string | null)[][] {
   if (dates.length === 0) return [];
@@ -65,6 +78,32 @@ function chartBuckets(dates: string[], dateRange: number): string[][] {
   return buckets;
 }
 
+function durationTarget(definition: StatDefinition): number | undefined {
+  const target = definition.goodThreshold;
+  return target != null
+    && Number.isFinite(target)
+    && definition.morality !== undefined
+    && definition.morality !== 'NEUTRAL'
+    ? target
+    : undefined;
+}
+
+function durationAxis(maximum: number): { maximum: number; ticks: number[] } {
+  const desiredStep = maximum / 4;
+  const step = DURATION_TICK_STEPS.find(candidate => candidate >= desiredStep)
+    ?? Math.ceil(desiredStep / 15) * 15;
+  const axisMaximum = Math.max(step, Math.ceil(maximum / step) * step);
+  return {
+    maximum: axisMaximum,
+    ticks: Array.from({ length: axisMaximum / step + 1 }, (_, index) => index * step),
+  };
+}
+
+function formatDurationAxisValue(value: number): string {
+  const rounded = Math.round(value);
+  return rounded % 60 === 0 ? `${rounded / 60}h` : formatDurationValue(rounded);
+}
+
 function effectiveMorality(definition: StatDefinition): 'GOOD' | 'BAD' | 'NEUTRAL' {
   return definition.morality ?? 'NEUTRAL';
 }
@@ -87,12 +126,12 @@ function mixHexColors(first: string, second: string, firstWeight: number): strin
 function thresholdCircleColor(
   definition: StatDefinition,
   value: number,
-  surface: string,
-  success: string,
-  danger: string,
-  dark: boolean,
+  successLight: string,
+  successDark: string,
+  dangerLight: string,
+  dangerDark: string,
 ): string | null {
-  if ((definition.type !== 'NUMBER' && definition.type !== 'RANGE' && definition.type !== 'DURATION')
+  if ((definition.type !== 'NUMBER' && definition.type !== 'RANGE' && definition.type !== 'TIME' && definition.type !== 'DURATION')
     || definition.goodThreshold == null
     || !Number.isFinite(definition.goodThreshold)) return null;
 
@@ -100,25 +139,34 @@ function thresholdCircleColor(
   if (morality === 'NEUTRAL') return null;
 
   const threshold = definition.goodThreshold;
-  const goodnessRatio = threshold > 0
+  const goodnessRatio = definition.type === 'TIME'
+    ? timeValueToScale(definition, threshold) === 0
+      ? timeValueToScale(definition, value) === 0 ? 2 : 0
+      : timeValueToScale(definition, threshold) / Math.max(timeValueToScale(definition, value), 1)
+    : threshold > 0
     ? morality === 'GOOD' ? value / threshold : value <= 0 ? 3 : threshold / value
     : 1 + (morality === 'GOOD' ? value - threshold : threshold - value) / Math.max(Math.abs(threshold), 1);
 
   if (goodnessRatio >= 1) {
     const progressToMaximum = Math.min(1, (goodnessRatio - 1) / 2);
-    const greenWeight = 0.55 + progressToMaximum * 0.45;
-    return mixHexColors(success, surface, greenWeight);
+    return mixHexColors(successDark, successLight, progressToMaximum);
   }
 
-  const redProgress = Math.min(0.45, (1 - goodnessRatio) * 0.6);
-  const redWeight = dark ? 0.9 - redProgress : 0.55 + redProgress;
-  return mixHexColors(danger, surface, redWeight);
+  const redProgress = Math.min(1, Math.max(0, 1 - goodnessRatio));
+  return mixHexColors(dangerDark, dangerLight, redProgress);
 }
 
 function getCircleColor(definition: StatDefinition, value: number | undefined, colors: ReturnType<typeof useAppTheme>['colors'], dark: boolean): string {
   if (value === undefined) return dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)';
 
-  const thresholdColor = thresholdCircleColor(definition, value, colors.surface, colors.success, colors.danger, dark);
+  const thresholdColor = thresholdCircleColor(
+    definition,
+    value,
+    colors.successLight,
+    colors.successDark,
+    colors.dangerLight,
+    colors.dangerDark,
+  );
   if (thresholdColor) return thresholdColor;
 
   const morality = effectiveMorality(definition);
@@ -128,6 +176,8 @@ function getCircleColor(definition: StatDefinition, value: number | undefined, c
       ? morality === 'GOOD' ? value === 1 ? 'CELEBRATE' : 'NONE' : value === 1 ? 'SAD' : 'CELEBRATE'
       : definition.goodThreshold == null
         ? 'NONE'
+        : definition.type === 'TIME'
+          ? isTimeAtOrBeforeThreshold(definition, value, definition.goodThreshold) ? 'CELEBRATE' : 'SAD'
         : morality === 'GOOD'
           ? value >= definition.goodThreshold ? 'CELEBRATE' : 'NONE'
           : value <= definition.goodThreshold ? 'CELEBRATE' : 'SAD';
@@ -152,6 +202,11 @@ function getCircleColor(definition: StatDefinition, value: number | undefined, c
     const ratio = maximum === minimum ? 0 : Math.max(0, Math.min(1, (value - minimum) / (maximum - minimum)));
     return `hsl(${Math.round(ratio * 120)}, 65%, 42%)`;
   }
+  if (definition.type === 'TIME' || definition.type === 'DURATION') {
+    if (morality === 'GOOD') return colors.success;
+    if (morality === 'BAD') return colors.danger;
+    return colors.accent;
+  }
   return dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)';
 }
 
@@ -160,6 +215,299 @@ function formatCircleValue(value: number): string {
   if (Math.abs(value) >= 1000) return `${(value / 1000).toFixed(1)}k`;
   if (Number.isInteger(value)) return String(value);
   return value.toFixed(1);
+}
+
+function formatStatValue(definition: StatDefinition, value: number): string {
+  if (definition.type === 'TIME') return formatTimeCircleValue(definition, value);
+  if (definition.type === 'DURATION') return formatDurationValue(value);
+  return formatCircleValue(value);
+}
+
+const DENSITY_SAMPLE_STEP = 30;
+const DENSITY_BANDWIDTH = 50;
+const DENSITY_PLOT_HEIGHT = 72;
+const DENSITY_VERTICAL_INSET = 6;
+
+function timePosition(definition: StatDefinition, value: number): number {
+  return Math.max(0, Math.min(100, (timeValueToDisplayScale(definition, value) / timeDisplayScaleMaximum(definition)) * 100));
+}
+
+function timeAxisLabel(definition: StatDefinition, scaleValue: number): string {
+  return formatTimeValue(timeValueFromDisplayScale(definition, scaleValue));
+}
+
+function gaussianDensity(values: number[], sample: number): number {
+  if (values.length === 0) return 0;
+  return values.reduce((total, value) => {
+    const distance = (sample - value) / DENSITY_BANDWIDTH;
+    return total + Math.exp(-0.5 * distance * distance);
+  }, 0) / values.length;
+}
+
+function timeDensity(definition: StatDefinition, values: number[]): number[] {
+  const scaleMaximum = timeDisplayScaleMaximum(definition);
+  const scaledValues = values.map(value => timeValueToDisplayScale(definition, value));
+  return Array.from(
+    { length: scaleMaximum / DENSITY_SAMPLE_STEP + 1 },
+    (_, index) => gaussianDensity(scaledValues, index * DENSITY_SAMPLE_STEP),
+  );
+}
+
+function TimeOfDayHistory({
+  definition,
+  dates,
+  entriesByDate,
+  dateRange,
+  colors,
+}: {
+  definition: StatDefinition;
+  dates: string[];
+  entriesByDate: Map<string, number>;
+  dateRange: number;
+  colors: ReturnType<typeof useAppTheme>['colors'];
+}) {
+  const [plotWidth, setPlotWidth] = useState(0);
+  const plotHeight = dates.length * 28;
+  const scaleMaximum = timeDisplayScaleMaximum(definition);
+  const timeTicks = timeDisplayScaleTicks(definition);
+
+  if (dateRange <= 7) {
+    const timingPoints = dates.map((date, index) => {
+      const value = entriesByDate.get(date);
+      if (value === undefined) return undefined;
+      return {
+        date,
+        value,
+        x: 7 + (timePosition(definition, value) / 100) * Math.max(0, plotWidth - 14),
+        y: index * 28 + 14,
+      };
+    });
+    return (
+      <View style={styles.timeHistory} accessibilityLabel={`${definition.name} timing over seven days`}>
+        <View style={styles.timeAxisRow}>
+          <View style={styles.timeDateLabel} />
+          <View style={styles.timeAxis}>
+            {timeTicks.map(tick => (
+              <AppText key={tick} variant="caption" color="muted" style={styles.timeAxisLabel}>
+                {timeAxisLabel(definition, tick)}
+              </AppText>
+            ))}
+          </View>
+          <View style={styles.timeValueLabel} />
+        </View>
+        <View style={styles.timePlotRow}>
+          <View style={[styles.timeLabelsColumn, { height: plotHeight }]}>
+            {dates.map(date => (
+              <View key={date} style={styles.timePlotLabelRow}>
+                <AppText variant="caption" color="muted" style={styles.timeDateLabel}>{formatShortDate(date)}</AppText>
+              </View>
+            ))}
+          </View>
+          <View
+            onLayout={event => setPlotWidth(event.nativeEvent.layout.width)}
+            style={[styles.timePlot, { height: plotHeight }]}
+          >
+            {timeTicks.map(tick => (
+              <View key={tick} style={[styles.timeVerticalGrid, { left: `${tick / scaleMaximum * 100}%`, backgroundColor: colors.border }]} />
+            ))}
+            {dates.slice(1).map((date, index) => (
+              <View key={date} style={[styles.timeHorizontalGrid, { top: (index + 1) * 28, backgroundColor: colors.border }]} />
+            ))}
+            {timingPoints.map(point => point && (
+              <View
+                key={point.date}
+                style={[styles.timeTrendDot, {
+                  left: point.x - 4,
+                  top: point.y - 4,
+                  backgroundColor: colors.accent,
+                }]}
+              />
+            ))}
+          </View>
+          <View style={[styles.timeLabelsColumn, styles.timeValueColumn, { height: plotHeight }]}>
+            {dates.map(date => {
+              const value = entriesByDate.get(date);
+              return (
+                <View key={date} style={styles.timePlotLabelRow} accessible accessibilityLabel={`${date}: ${value === undefined ? 'No entry' : formatTimeValue(value)}`}>
+                  <AppText variant="caption" style={[styles.timeValueLabel, { color: value === undefined ? colors.textMuted : colors.text }]}>
+                    {value === undefined ? '—' : formatTimeValue(value)}
+                  </AppText>
+                </View>
+              );
+            })}
+          </View>
+        </View>
+      </View>
+    );
+  }
+
+  const values = dates.map(date => entriesByDate.get(date)).filter((value): value is number => value !== undefined);
+  const density = timeDensity(definition, values);
+  const maximumDensity = Math.max(0.0001, ...density);
+  const densityPoints = density.map((sample, index) => ({
+    x: density.length === 1
+      ? plotWidth / 2
+      : DENSITY_VERTICAL_INSET + (index / (density.length - 1)) * Math.max(0, plotWidth - DENSITY_VERTICAL_INSET * 2),
+    y: DENSITY_VERTICAL_INSET + (1 - sample / maximumDensity) * (DENSITY_PLOT_HEIGHT - DENSITY_VERTICAL_INSET * 2),
+    value: sample,
+  }));
+  const densitySegments = curvedSegments(densityPoints, DENSITY_PLOT_HEIGHT, DENSITY_VERTICAL_INSET);
+  return (
+    <View style={styles.timeHistory} accessibilityLabel={`${definition.name} time of day density`}>
+      <AppText variant="caption" color="muted" style={styles.densityCount}>
+        {values.length} {values.length === 1 ? 'entry' : 'entries'}
+      </AppText>
+      <View onLayout={event => setPlotWidth(event.nativeEvent.layout.width)} style={[styles.densityPlot, { borderBottomColor: colors.border }]}>
+        {densitySegments.map((segment, index) => {
+          const width = Math.hypot(segment.end.x - segment.start.x, segment.end.y - segment.start.y);
+          const angle = Math.atan2(segment.end.y - segment.start.y, segment.end.x - segment.start.x) * (180 / Math.PI);
+          return (
+            <View
+              key={`${index}-${segment.end.x}`}
+              style={[styles.densityLineSegment, {
+                width,
+                left: (segment.start.x + segment.end.x) / 2 - width / 2,
+                top: (segment.start.y + segment.end.y) / 2 - 1,
+                backgroundColor: colors.accent,
+                transform: [{ rotate: `${angle}deg` }],
+              }]}
+            />
+          );
+        })}
+      </View>
+      <View style={styles.densityLabels}>
+        {timeTicks.map(tick => (
+          <AppText key={tick} variant="caption" color="muted">{timeAxisLabel(definition, tick)}</AppText>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function DurationLineHistory({
+  definition,
+  entriesByDate,
+  buckets,
+  colors,
+}: {
+  definition: StatDefinition;
+  entriesByDate: Map<string, number>;
+  buckets: string[][];
+  colors: ReturnType<typeof useAppTheme>['colors'];
+}) {
+  const [plotWidth, setPlotWidth] = useState(0);
+  const bars = buckets.map(bucket => {
+    const values = bucket.map(date => entriesByDate.get(date)).filter((value): value is number => value !== undefined);
+    return {
+      date: bucket[0],
+      value: values.length > 0 ? values.reduce((total, value) => total + value, 0) / values.length : undefined,
+    };
+  });
+  const recordedValues = bars.map(bar => bar.value).filter((value): value is number => value !== undefined);
+  const axis = durationAxis(Math.max(60, durationTarget(definition) ?? 0, ...recordedValues) * 1.08);
+  const maximum = axis.maximum;
+  const target = durationTarget(definition);
+  const gridValues = [...axis.ticks].reverse();
+  const trendPoints = bars.map((bar, index) => bar.value === undefined ? undefined : ({
+    date: bar.date,
+    value: bar.value,
+    x: bars.length === 1
+      ? plotWidth / 2
+      : PLOT_HORIZONTAL_INSET + (index / (bars.length - 1)) * Math.max(0, plotWidth - PLOT_HORIZONTAL_INSET * 2),
+    y: PLOT_VERTICAL_INSET + (1 - Math.max(0, Math.min(1, bar.value / maximum))) * (PLOT_HEIGHT - PLOT_VERTICAL_INSET * 2),
+  }));
+  const recordedTrendPoints = trendPoints.filter((point): point is DatedChartPoint => point !== undefined);
+  const trendSegments = curvedSegments(recordedTrendPoints);
+
+  return (
+    <View style={styles.durationHistory} accessibilityLabel={`${definition.name} duration trend`}>
+      <View style={styles.durationChart}>
+        <View style={styles.durationAxis}>
+          {gridValues.map(value => <AppText key={value} variant="caption" color="muted" numberOfLines={1}>{formatDurationAxisValue(value)}</AppText>)}
+        </View>
+        <View onLayout={event => setPlotWidth(event.nativeEvent.layout.width)} style={styles.durationPlot}>
+          {axis.ticks.map(value => <View key={value} style={[styles.gridLine, { top: `${100 - value / maximum * 100}%`, backgroundColor: colors.border }]} />)}
+          {target !== undefined && <View style={[styles.targetLine, { bottom: `${target / maximum * 100}%`, borderTopColor: colors.success }]} />}
+          {trendSegments.map((segment, index) => {
+            const width = Math.hypot(segment.end.x - segment.start.x, segment.end.y - segment.start.y);
+            const angle = Math.atan2(segment.end.y - segment.start.y, segment.end.x - segment.start.x) * (180 / Math.PI);
+            return (
+              <View
+                key={`${index}-${segment.end.x}`}
+                style={[styles.durationTrendSegment, {
+                  width,
+                  left: (segment.start.x + segment.end.x) / 2 - width / 2,
+                  top: (segment.start.y + segment.end.y) / 2 - 1,
+                  backgroundColor: colors.accent,
+                  transform: [{ rotate: `${angle}deg` }],
+                }]}
+              />
+            );
+          })}
+          {recordedTrendPoints.map((point, index) => (
+            <View
+              key={`${index}-${point.x}-point`}
+              accessible
+              accessibilityLabel={`${point.date}: ${formatDurationValue(point.value)}`}
+              style={[styles.durationTrendPoint, { left: point.x - 3, top: point.y - 3, backgroundColor: colors.accent }]}
+            />
+          ))}
+        </View>
+      </View>
+      <View style={styles.durationRangeLabels}>
+        <AppText variant="caption" color="muted">{formatShortDate(bars[0].date)}</AppText>
+        <AppText variant="caption" color="muted">{formatShortDate(bars[bars.length - 1].date)}</AppText>
+      </View>
+      {recordedValues.length === 0 && <AppText variant="caption" color="muted">No history yet</AppText>}
+    </View>
+  );
+}
+
+function RecentValueDots({
+  definition,
+  dates,
+  entriesByDate,
+  colors,
+  dark,
+}: {
+  definition: StatDefinition;
+  dates: string[];
+  entriesByDate: Map<string, number>;
+  colors: ReturnType<typeof useAppTheme>['colors'];
+  dark: boolean;
+}) {
+  return (
+    <View style={styles.recentDots}>
+      {dates.map(date => {
+        const value = entriesByDate.get(date);
+        const label = value === undefined ? '—' : formatStatValue(definition, value);
+        const isUnboundedNumber = definition.type === 'NUMBER';
+        const hasVisibleValue = definition.type === 'NUMBER'
+          || definition.type === 'TIME'
+          || definition.type === 'DURATION';
+        return (
+          <View
+            key={date}
+            accessible
+            accessibilityLabel={`${date}: ${value === undefined ? 'No entry' : label}`}
+            style={[
+              styles.dot,
+              { backgroundColor: getCircleColor(definition, value, colors, dark) },
+              isUnboundedNumber && value === undefined && { borderColor: colors.border, borderStyle: 'dashed', borderWidth: 1 },
+            ]}>
+            {hasVisibleValue && value !== undefined && (
+              <AppText
+                variant="caption"
+                style={[styles.dotValue, { fontSize: label.length > 5 ? 6 : label.length > 3 ? 7 : 9 }, definition.type !== 'NUMBER' && { color: colors.onAccent }]}
+              >
+                {label}
+              </AppText>
+            )}
+          </View>
+        );
+      })}
+    </View>
+  );
 }
 
 function chartDomain(definition: StatDefinition, values: number[]): NumericDomain {
@@ -176,14 +524,63 @@ function chartDomain(definition: StatDefinition, values: number[]): NumericDomai
 
   const minimum = Math.min(...finiteValues);
   const maximum = Math.max(...finiteValues);
-  if (minimum >= 0) return [0, maximum === 0 ? 1 : maximum * 1.1];
-  if (maximum <= 0) return [minimum * 1.1, 0];
-  const padding = (maximum - minimum) * 0.1;
+  if (minimum >= 0) {
+    if (maximum === 0) return [0, 1];
+    const paddedMaximum = maximum * 1.1;
+    const step = niceTickStep(paddedMaximum);
+    const nextNiceTick = Math.ceil(maximum / step) * step;
+    return [0, Math.max(paddedMaximum, nextNiceTick + step * 0.1)];
+  }
+  if (maximum <= 0) {
+    const paddedMinimum = minimum * 1.1;
+    const step = niceTickStep(Math.abs(paddedMinimum));
+    const nextNiceTick = Math.floor(minimum / step) * step;
+    return [Math.min(paddedMinimum, nextNiceTick - step * 0.1), 0];
+  }
+  return paddedDomain(minimum, maximum);
+}
+
+function paddedDomain(minimum: number, maximum: number): NumericDomain {
+  const span = maximum - minimum;
+  const padding = span === 0 ? Math.max(Math.abs(maximum) * 0.1, 1) : span * 0.1;
   return [minimum - padding, maximum + padding];
 }
 
+function niceTickStep(range: number, targetTickCount = 5): number {
+  if (range <= 0 || !Number.isFinite(range)) return 1;
+  const rawStep = range / targetTickCount;
+  const magnitude = 10 ** Math.floor(Math.log10(rawStep));
+  const normalizedStep = rawStep / magnitude;
+  const multiplier = normalizedStep < Math.sqrt(2)
+    ? 1
+    : normalizedStep < Math.sqrt(10)
+      ? 2
+      : normalizedStep < Math.sqrt(50)
+        ? 5
+        : 10;
+  return multiplier * magnitude;
+}
+
+function roundTick(value: number, step: number): number {
+  const decimalPlaces = Math.max(0, Math.ceil(-Math.log10(step)) + 2);
+  return Number(value.toFixed(decimalPlaces));
+}
+
+function axisTicks(definition: StatDefinition, domain: NumericDomain): number[] {
+  if (definition.type === 'BOOLEAN') return [0, 1];
+  const [minimum, maximum] = domain;
+  const step = niceTickStep(maximum - minimum);
+  const firstIndex = Math.ceil(minimum / step - 1e-9);
+  const lastIndex = Math.floor(maximum / step + 1e-9);
+  const ticks = Array.from(
+    { length: Math.max(0, lastIndex - firstIndex + 1) },
+    (_, index) => roundTick((firstIndex + index) * step, step),
+  );
+  return [...new Set(ticks)].sort((left, right) => left - right);
+}
+
 function formatChartValue(value: number): string {
-  return Number.isInteger(value) ? String(value) : Number(value.toFixed(1)).toString();
+  return Number.isInteger(value) ? String(value) : Number(value.toFixed(2)).toString();
 }
 
 function formatAxisValue(value: number, definition: StatDefinition): string {
@@ -210,7 +607,11 @@ function cubicPoint(start: ChartPoint, controlOne: ChartPoint, controlTwo: Chart
   };
 }
 
-function curvedSegments(points: ChartPoint[]): ChartSegment[] {
+function curvedSegments(
+  points: ChartPoint[],
+  plotHeight = PLOT_HEIGHT,
+  verticalInset = PLOT_VERTICAL_INSET,
+): ChartSegment[] {
   const segments: ChartSegment[] = [];
   const sampleCount = 8;
 
@@ -218,7 +619,7 @@ function curvedSegments(points: ChartPoint[]): ChartSegment[] {
     const start = points[index];
     const previous = points[index - 1] ?? start;
     const next = points[index + 2] ?? end;
-    const clampY = (value: number) => Math.max(PLOT_VERTICAL_INSET, Math.min(PLOT_HEIGHT - PLOT_VERTICAL_INSET, value));
+    const clampY = (value: number) => Math.max(verticalInset, Math.min(plotHeight - verticalInset, value));
     const controlOne = {
       x: start.x + (end.x - previous.x) / 6,
       y: clampY(start.y + (end.y - previous.y) / 6),
@@ -290,9 +691,12 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, refreshK
   const recordedValues = Array.from(entriesByDate.values());
   const hasHistory = recordedValues.length > 0;
   const domain = chartDomain(definition, recordedValues);
+  const domainMinimum = domain[0];
+  const domainMaximum = domain[1];
+  const chartTicks = axisTicks(definition, domain);
+  const chartSpan = domainMaximum - domainMinimum || 1;
   const [plotWidth, setPlotWidth] = useState(0);
   const chartPoints = useMemo(() => {
-    const span = domain[1] - domain[0] || 1;
     return buckets
       .map((bucket, index) => {
         const values = bucket
@@ -300,17 +704,59 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, refreshK
           .filter((value): value is number => value !== undefined);
         const value = values.length > 0 ? values.reduce((total, item) => total + item, 0) / values.length : undefined;
         if (value === undefined || !hasHistory) return undefined;
-        const ratio = Math.max(0, Math.min(1, (value - domain[0]) / span));
+        const ratio = Math.max(0, Math.min(1, (value - domainMinimum) / chartSpan));
         return {
-          x: buckets.length === 1 ? 0 : (index / (buckets.length - 1)) * plotWidth,
+          x: buckets.length === 1
+            ? plotWidth / 2
+            : PLOT_HORIZONTAL_INSET + (index / (buckets.length - 1)) * Math.max(0, plotWidth - PLOT_HORIZONTAL_INSET * 2),
           y: PLOT_VERTICAL_INSET + (1 - ratio) * (PLOT_HEIGHT - PLOT_VERTICAL_INSET * 2),
           value,
         };
       })
       .filter((point): point is ChartPoint => point !== undefined);
-  }, [buckets, definition.type, domain, entriesByDate, hasHistory, plotWidth]);
+  }, [buckets, chartSpan, definition.type, domainMinimum, entriesByDate, hasHistory, plotWidth]);
   const chartSegments = useMemo(() => curvedSegments(chartPoints), [chartPoints]);
   const calendar = useMemo(() => calendarWeeks(dates), [dates]);
+
+  if (definition.type === 'TIME') {
+    return (
+      <View style={styles.history}>
+        <View style={styles.compactHeader}>
+          {header && <View style={styles.headerSlot}>{header}</View>}
+          <RecentValueDots definition={definition} dates={recentDates} entriesByDate={entriesByDate} colors={colors} dark={dark} />
+          {loading && <ActivityIndicator size="small" color={colors.accent} />}
+        </View>
+        <TimeOfDayHistory
+          definition={definition}
+          dates={dates}
+          entriesByDate={entriesByDate}
+          dateRange={dateRange}
+          colors={colors}
+        />
+        {error && <AppText variant="caption" color="danger">History unavailable</AppText>}
+        {!error && dateRange > 7 && <AppText variant="caption" color="muted">{formatShortDate(dates[0])} – {formatShortDate(dates[dates.length - 1])}</AppText>}
+      </View>
+    );
+  }
+
+  if (definition.type === 'DURATION') {
+    return (
+      <View style={styles.history}>
+        <View style={styles.compactHeader}>
+          {header && <View style={styles.headerSlot}>{header}</View>}
+          <RecentValueDots definition={definition} dates={recentDates} entriesByDate={entriesByDate} colors={colors} dark={dark} />
+          {loading && <ActivityIndicator size="small" color={colors.accent} />}
+        </View>
+        <DurationLineHistory
+          definition={definition}
+          entriesByDate={entriesByDate}
+          buckets={buckets}
+          colors={colors}
+        />
+        {error && <AppText variant="caption" color="danger">History unavailable</AppText>}
+      </View>
+    );
+  }
 
   if (definition.type === 'BOOLEAN') {
     const yesColor = getCircleColor(definition, 1, colors, dark);
@@ -378,39 +824,23 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, refreshK
     <View style={styles.history}>
       <View style={styles.compactHeader}>
         {header && <View style={styles.headerSlot}>{header}</View>}
-        <View style={styles.recentDots}>
-          {recentDates.map(date => {
-            const value = entriesByDate.get(date);
-            const isUnboundedNumber = definition.type === 'NUMBER';
-            return (
-              <View
-                key={date}
-                accessible
-                accessibilityLabel={`${date}: ${value === undefined ? 'No entry' : definition.type === 'DURATION' ? formatDurationValue(value) : String(value)}`}
-                style={[
-                  styles.dot,
-                  { backgroundColor: getCircleColor(definition, value, colors, dark) },
-                  isUnboundedNumber && value === undefined && { borderColor: colors.border, borderStyle: 'dashed', borderWidth: 1 },
-              ]}>
-                {isUnboundedNumber && value !== undefined && (
-                  <AppText variant="caption" style={styles.dotValue}>{formatCircleValue(value)}</AppText>
-                )}
-              </View>
-            );
-          })}
-        </View>
+        <RecentValueDots definition={definition} dates={recentDates} entriesByDate={entriesByDate} colors={colors} dark={dark} />
         {loading && <ActivityIndicator size="small" color={colors.accent} />}
       </View>
 
       <View style={[styles.chart, !hasHistory && styles.chartEmpty]}>
         <View style={styles.chartAxis}>
-          <AppText variant="caption" color="muted">{formatAxisValue(domain[1], definition)}</AppText>
-          <AppText variant="caption" color="muted">{formatAxisValue(domain[0], definition)}</AppText>
+          {[...chartTicks].reverse().map(value => (
+            <AppText key={value} variant="caption" color="muted" numberOfLines={1}>
+              {formatAxisValue(value, definition)}
+            </AppText>
+          ))}
         </View>
         <View onLayout={event => setPlotWidth(event.nativeEvent.layout.width)} style={styles.plot}>
-          {[0, 50, 100].map(position => (
-            <View key={position} style={[styles.gridLine, { top: `${position}%`, backgroundColor: colors.border }]} />
-          ))}
+          {chartTicks.map(value => {
+            const position = 100 - ((value - domainMinimum) / chartSpan) * 100;
+            return <View key={value} style={[styles.gridLine, { top: `${position}%`, backgroundColor: colors.border }]} />;
+          })}
           {chartSegments.map((segment, index) => {
             const width = Math.hypot(segment.end.x - segment.start.x, segment.end.y - segment.start.y);
             const angle = Math.atan2(segment.end.y - segment.start.y, segment.end.x - segment.start.x) * (180 / Math.PI);
@@ -450,9 +880,34 @@ const styles = StyleSheet.create({
   history: { gap: 8 },
   compactHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   headerSlot: { flex: 1, minWidth: 0 },
-  recentDots: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  dot: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  recentDots: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  dot: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   dotValue: { fontSize: 9, lineHeight: 10, fontWeight: '700' },
+  timeHistory: { gap: 7 },
+  timeAxisRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
+  timeDateLabel: { width: 45, fontSize: 10, lineHeight: 13 },
+  timeAxis: { flex: 1, flexDirection: 'row', justifyContent: 'space-between' },
+  timeAxisLabel: { fontSize: 8, lineHeight: 11 },
+  timeValueLabel: { width: 48, textAlign: 'right', fontSize: 10, lineHeight: 13, fontWeight: '700' },
+  timePlotRow: { flexDirection: 'row', alignItems: 'stretch', gap: 8 },
+  timeLabelsColumn: { width: 45 },
+  timeValueColumn: { width: 48 },
+  timePlotLabelRow: { height: 28, justifyContent: 'center' },
+  timePlot: { flex: 1, position: 'relative', overflow: 'hidden', borderRadius: 8 },
+  timeVerticalGrid: { position: 'absolute', top: 0, bottom: 0, width: 1, opacity: 0.7 },
+  timeHorizontalGrid: { position: 'absolute', left: 0, right: 0, height: 1, opacity: 0.55 },
+  timeTrendDot: { position: 'absolute', width: 8, height: 8, borderRadius: 4 },
+  densityCount: { alignSelf: 'flex-end' },
+  densityPlot: { height: DENSITY_PLOT_HEIGHT, overflow: 'hidden', position: 'relative', borderBottomWidth: 1, borderTopLeftRadius: 8, borderTopRightRadius: 8 },
+  densityLineSegment: { height: 2, position: 'absolute', borderRadius: 1 },
+  densityLabels: { flexDirection: 'row', justifyContent: 'space-between' },
+  durationHistory: { gap: 5 },
+  durationChart: { flexDirection: 'row', height: PLOT_HEIGHT, gap: 8 },
+  durationAxis: { width: 52, justifyContent: 'space-between', alignItems: 'flex-end', paddingVertical: 3 },
+  durationPlot: { flex: 1, position: 'relative', overflow: 'hidden', borderRadius: 8 },
+  durationTrendSegment: { position: 'absolute', height: 2, borderRadius: 1 },
+  durationTrendPoint: { position: 'absolute', width: 6, height: 6, borderRadius: 3 },
+  durationRangeLabels: { flexDirection: 'row', justifyContent: 'space-between', marginLeft: 60 },
   booleanCalendar: { gap: 4 },
   calendarGrid: { gap: 4 },
   calendarWeek: { flexDirection: 'row', gap: 4 },
@@ -463,9 +918,10 @@ const styles = StyleSheet.create({
   legendSwatch: { width: 8, height: 8, borderRadius: 3, marginLeft: 4 },
   chart: { flexDirection: 'row', height: PLOT_HEIGHT, gap: 8 },
   chartEmpty: { opacity: 0.55 },
-  chartAxis: { width: 34, justifyContent: 'space-between', alignItems: 'flex-end', paddingVertical: 3 },
+  chartAxis: { width: 46, justifyContent: 'space-between', alignItems: 'flex-end', paddingVertical: 3 },
   plot: { flex: 1, height: PLOT_HEIGHT, overflow: 'hidden', position: 'relative', borderRadius: 8 },
   gridLine: { position: 'absolute', left: 0, right: 0, height: 1 },
+  targetLine: { position: 'absolute', left: 0, right: 0, borderTopWidth: 2, borderStyle: 'dashed', opacity: 0.75 },
   segment: { height: 2, position: 'absolute', borderRadius: 1 },
   plotPoint: { position: 'absolute', width: 6, height: 6, borderRadius: 3 },
   dateLabels: { flexDirection: 'row', justifyContent: 'space-between' },

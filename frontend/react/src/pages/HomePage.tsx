@@ -69,6 +69,7 @@ type TaskListItem =
 type SelectionEntity =
     | { kind: 'task'; id: string }
     | { kind: 'group'; id: string };
+type EditRequest = { taskId: string; requestId: number };
 type ActiveDrag =
     | { kind: 'tasks'; taskIds: string[]; primaryTaskId: string; preservedGroupIds: string[] }
     | { kind: 'group'; groupId: string };
@@ -495,6 +496,7 @@ export function HomePage() {
     const [activeExpansion, setActiveExpansion] = useState<ActiveExpansion>(null);
     const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
     const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
+    const [editRequest, setEditRequest] = useState<EditRequest | null>(null);
     const [selectionActionsPosition, setSelectionActionsPosition] = useState<{ top: number; left: number } | null>(null);
     const [taskFeedback, setTaskFeedback] = useState<TaskFeedback | null>(null);
     const [showOlderTasks, setShowOlderTasks] = useState(false);
@@ -656,10 +658,9 @@ export function HomePage() {
             : visibleTasks,
         [focusedPomodoroTask, visibleTasks],
     );
-    const tasksInTransition = focusVisibility === 'fading' ? visibleTasks : tasksBelowFocus;
     const taskListItems = useMemo(
-        () => buildTaskListItems(tasksInTransition, groups ?? []),
-        [groups, tasksInTransition],
+        () => buildTaskListItems(tasksBelowFocus, groups ?? []),
+        [groups, tasksBelowFocus],
     );
     const olderTaskListItems = useMemo(
         () => buildTaskListItems(olderTasks, groups ?? []),
@@ -1168,7 +1169,31 @@ export function HomePage() {
     }, [renderedSelectionEntities]);
 
     useEffect(() => {
-        const handleTaskTab = (event: KeyboardEvent) => {
+        const handleTaskKeyboard = (event: KeyboardEvent) => {
+            if (event.key === 'ArrowRight') {
+                if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+
+                const target = event.target;
+                if (target instanceof Element && target.closest(
+                    'input, textarea, select, button, [role="button"], [contenteditable="true"]',
+                )) return;
+
+                const taskIds = renderedSelectionEntities
+                    .filter((entity): entity is Extract<SelectionEntity, { kind: 'task' }> => entity.kind === 'task')
+                    .map(entity => entity.id);
+                const currentTaskId = selectionAnchorRef.current && taskIds.includes(selectionAnchorRef.current)
+                    ? selectionAnchorRef.current
+                    : selectedTaskIds[selectedTaskIds.length - 1];
+                if (!currentTaskId || !taskIds.includes(currentTaskId)) return;
+
+                event.preventDefault();
+                setEditRequest(previous => ({
+                    taskId: currentTaskId,
+                    requestId: (previous?.requestId ?? 0) + 1,
+                }));
+                return;
+            }
+
             if (event.key !== 'Tab') return;
             const target = event.target;
             const editingTaskName = target instanceof Element
@@ -1200,8 +1225,8 @@ export function HomePage() {
             selectionAnchorRef.current = nextTaskId;
         };
 
-        window.addEventListener('keydown', handleTaskTab);
-        return () => window.removeEventListener('keydown', handleTaskTab);
+        window.addEventListener('keydown', handleTaskKeyboard);
+        return () => window.removeEventListener('keydown', handleTaskKeyboard);
     }, [renderedSelectionEntities, selectedTaskIds]);
 
     const handlePomodoroActiveChange = useCallback((
@@ -2146,6 +2171,7 @@ export function HomePage() {
                 onAutoExpand={handleAutoExpand}
                 onDelete={deleteTask}
                 selected={selectedTaskIdSet.has(task.taskId) || selectedGroupTaskIdSet.has(task.taskId)}
+                editRequestId={editRequest?.taskId === task.taskId ? editRequest.requestId : null}
                 onSelectionClick={handleTaskSelection}
                 showScheduledDate={options.showScheduledDate}
                 reorderable={reorderable}
@@ -2595,10 +2621,13 @@ export function HomePage() {
 
                     {homeContentReady && visibleTasks.length > 0 ? (
                         <>
-                            {focusedPomodoroTask && focusVisibility !== 'fading' && (
+                            {/* Keep the live Pomodoro row mounted while the surrounding task list animates. */}
+                            {focusedPomodoroTask && (
                                 <Box
                                     sx={{
                                         '--focus-task-offset': `${focusTaskOffset}px`,
+                                        opacity: focusVisibility === 'fading' ? 0 : 1,
+                                        pointerEvents: focusVisibility === 'fading' ? 'none' : 'auto',
                                         animation: focusVisibility === 'sliding' && focusTaskOffset !== 0
                                             ? `${focusTaskSlide} ${FOCUS_TASK_SLIDE_DURATION_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`
                                             : 'none',

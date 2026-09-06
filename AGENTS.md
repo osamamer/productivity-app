@@ -69,6 +69,7 @@ Reminder delivery is database-first. `ScheduledJobExecutor` locks and runs each 
 - **Tests**: H2 in-memory; Liquibase disabled; `spring.jpa.hibernate.ddl-auto=create-drop`
 - **Migrations**: Liquibase YAML files in `backend/src/main/resources/db/changelog/changes/`; master file is `db.changelog-master.yaml`. Mental threads, load history, daily capacity check-ins, task connections, and the Sleep system stat are persisted by the latest migrations.
 - Dev applies Liquibase migrations incrementally with `spring.liquibase.drop-first=false`; PostgreSQL data persists in the named `postgres_data` Docker volume across normal app restarts
+- The `dev` profile fills missing `sleep_time` entries across the latest year with deterministic demo values after startup, while preserving any dates the user already recorded; test and production profiles never seed this data
 
 ### Auth / User Identity
 

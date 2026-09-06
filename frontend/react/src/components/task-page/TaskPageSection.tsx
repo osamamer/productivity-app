@@ -19,6 +19,7 @@ type TaskPageSectionProps = {
     onToggle: (section: SectionName) => void;
     onTaskClick: (task: Task) => void;
     selectedTaskId?: string | null;
+    editRequestId?: number | null;
     toggleTaskCompletion: (taskId: string) => void;
     updateTask: (taskId: string, updates: Partial<Task>) => Promise<void>;
     emptyMessage: string;
@@ -35,6 +36,7 @@ export const TaskPageSection = React.memo(function TaskPageSection({
     onToggle,
     onTaskClick,
     selectedTaskId,
+    editRequestId = null,
     toggleTaskCompletion,
     updateTask,
     emptyMessage,
@@ -105,6 +107,7 @@ export const TaskPageSection = React.memo(function TaskPageSection({
                                     onAutoExpand={noopAutoExpand}
                                     onSelect={onTaskClick}
                                     selected={selectedTaskId === task.taskId}
+                                    editRequestId={selectedTaskId === task.taskId ? editRequestId : null}
                                     showScheduledDate={showScheduledDate}
                                     showPomodoroButton={false}
                                     showDetailsButton={false}

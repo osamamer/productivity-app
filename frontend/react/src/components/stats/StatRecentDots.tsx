@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import {
     alpha, Box, Stack, Tooltip, Typography, CircularProgress, Popover,
-    ToggleButton, ToggleButtonGroup, TextField, Slider, Button,
+    ToggleButton, ToggleButtonGroup, Slider, Button,
     Alert,
 } from '@mui/material';
 import { useTheme, Theme } from '@mui/material/styles';
@@ -12,8 +12,17 @@ import { StatDefinition, StatEntry } from '../../types/Stats';
 import { getLastMonthWindow, statService } from '../../services/api/statService';
 import { KeyboardEvent } from 'react';
 import { effectiveStatMorality, getBooleanChoiceColor, getStatFeedback, showStatFeedback } from '../../services/statFeedback';
-import { formatDurationValue, formatTimeValue, minutesToTimeValue, timeValueToMinutes } from '../../services/utils/statValues';
+import {
+    formatDurationValue,
+    formatTimeValue,
+    minutesToTimeValue,
+    timeValueToMinutes,
+    timeValueToScale,
+} from '../../services/utils/statValues';
 import { DurationInput } from './DurationInput';
+import { statValueColor, statValueLabel } from './statVisualization';
+import { AppTimeField } from '../input/AppPickerFields';
+import { AppNumberField } from '../input/AppNumberField';
 
 const CIRCLE_SIZE = 24;
 
@@ -34,7 +43,7 @@ function getThresholdGoodnessRatio(
 }
 
 function getThresholdCircleBg(def: StatDefinition, value: number, theme: Theme): string | null {
-    if ((def.type !== 'NUMBER' && def.type !== 'RANGE' && def.type !== 'DURATION')
+    if ((def.type !== 'NUMBER' && def.type !== 'RANGE' && def.type !== 'TIME' && def.type !== 'DURATION')
         || def.goodThreshold == null
         || !Number.isFinite(def.goodThreshold)) {
         return null;
@@ -43,18 +52,18 @@ function getThresholdCircleBg(def: StatDefinition, value: number, theme: Theme):
     const morality = effectiveStatMorality(def);
     if (morality !== 'GOOD' && morality !== 'BAD') return null;
 
-    const goodnessRatio = getThresholdGoodnessRatio(value, def.goodThreshold, morality);
+    const goodnessRatio = def.type === 'TIME'
+        ? timeValueToScale(def, def.goodThreshold) === 0
+            ? timeValueToScale(def, value) === 0 ? 2 : 0
+            : timeValueToScale(def, def.goodThreshold) / Math.max(timeValueToScale(def, value), 1)
+        : getThresholdGoodnessRatio(value, def.goodThreshold, morality);
     if (goodnessRatio >= 1) {
         const progressToMaximum = Math.min(1, (goodnessRatio - 1) / 2);
-        const greenWeight = 0.55 + progressToMaximum * 0.45;
-        return `color-mix(in srgb, ${theme.palette.success.main} ${greenWeight * 100}%, ${theme.palette.background.paper} ${(1 - greenWeight) * 100}%)`;
+        return `color-mix(in srgb, ${theme.palette.success.dark} ${progressToMaximum * 100}%, ${theme.palette.success.light} ${(1 - progressToMaximum) * 100}%)`;
     }
 
-    const redProgress = Math.min(0.45, (1 - goodnessRatio) * 0.6);
-    const redWeight = theme.palette.mode === 'dark'
-        ? 0.9 - redProgress
-        : 0.55 + redProgress;
-    return `color-mix(in srgb, ${theme.palette.error.main} ${redWeight * 100}%, ${theme.palette.background.paper} ${(1 - redWeight) * 100}%)`;
+    const redProgress = Math.min(1, Math.max(0, 1 - goodnessRatio));
+    return `color-mix(in srgb, ${theme.palette.error.dark} ${redProgress * 100}%, ${theme.palette.error.light} ${(1 - redProgress) * 100}%)`;
 }
 
 function getCircleBg(def: StatDefinition, value: number | undefined, theme: Theme): string {
@@ -86,6 +95,9 @@ function getCircleBg(def: StatDefinition, value: number | undefined, theme: Them
             const t = Math.max(0, Math.min(1, (value - def.minValue!) / (def.maxValue! - def.minValue!)));
             return `hsl(${Math.round(t * 120)}, 65%, 42%)`;
         }
+        case 'TIME':
+        case 'DURATION':
+            return statValueColor(def, value, theme);
         case 'NUMBER':
         default:
             return theme.palette.mode === 'dark'
@@ -137,6 +149,7 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
     const feedbackAnchorRef = useRef<HTMLElement | null>(null);
+    const popoverContentRef = useRef<HTMLDivElement | null>(null);
 
     useEffect(() => {
         let cancelled = false;
@@ -206,6 +219,12 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
         void handleSave();
     };
 
+    const handleDurationBlur = (event: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+        const nextTarget = event.relatedTarget;
+        if (nextTarget instanceof Node && popoverContentRef.current?.contains(nextTarget)) return;
+        closePopover();
+    };
+
     if (loading) {
         return <CircularProgress size={14} sx={{ mx: 1 }} />;
     }
@@ -217,8 +236,12 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                     const value = valueMap.get(date);
                     const hasEntry = value !== undefined;
                     const bg = getCircleBg(definition, value, theme);
-                    const isUnboundedNumber = definition.type === 'NUMBER';
-                    const label = hasEntry && isUnboundedNumber ? formatCircleValue(value!) : null;
+                    const hasVisibleValue = definition.type === 'NUMBER'
+                        || definition.type === 'TIME'
+                        || definition.type === 'DURATION';
+                    const label = hasEntry && hasVisibleValue
+                        ? definition.type === 'NUMBER' ? formatCircleValue(value!) : statValueLabel(definition, value!)
+                        : null;
                     const booleanIcon = hasEntry && definition.type === 'BOOLEAN'
                         ? value === 1
                             ? <CheckIcon sx={{ fontSize: 18, color: alpha(theme.palette.common.white, 0.78), fontWeight: 700 }} />
@@ -252,7 +275,7 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                                     justifyContent: 'center',
                                     flexShrink: 0,
                                     cursor: 'pointer',
-                                    border: isUnboundedNumber && !hasEntry
+                                    border: definition.type === 'NUMBER' && !hasEntry
                                         ? `1px dashed ${theme.palette.divider}`
                                         : 'none',
                                     transition: 'filter 0.15s, transform 0.15s',
@@ -266,9 +289,11 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                                 {label && !booleanIcon && (
                                     <Typography
                                         sx={{
-                                            fontSize: label.length > 3 ? 7 : 9,
+                                            fontSize: label.length > 5 ? 6 : label.length > 3 ? 7 : 9,
                                             fontWeight: 700,
-                                            color: theme.palette.text.primary,
+                                            color: definition.type === 'TIME' || definition.type === 'DURATION'
+                                                ? theme.palette.common.white
+                                                : theme.palette.text.primary,
                                             lineHeight: 1,
                                             userSelect: 'none',
                                         }}
@@ -300,7 +325,7 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                 }}
             >
                 {popover && (
-                    <Box onKeyDown={handleKeyDown}>
+                    <Box ref={popoverContentRef} onKeyDown={handleKeyDown}>
                         <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1.5 }}>
                             {definition.name} — {format(new Date(popover.date + 'T12:00:00'), 'EEEE, MMM d')}
                         </Typography>
@@ -330,12 +355,12 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                         )}
 
                         {definition.type === 'NUMBER' && (
-                            <TextField
-                                type="number"
+                            <AppNumberField
                                 autoComplete="off"
                                 size="small"
                                 value={editValue ?? ''}
                                 onChange={e => setEditValue(e.target.value === '' ? null : Number(e.target.value))}
+                                onStepValueChange={value => setEditValue(value)}
                                 onFocus={event => { feedbackAnchorRef.current = event.currentTarget; }}
                                 autoFocus
                                 sx={{ width: 160 }}
@@ -343,18 +368,17 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                         )}
 
                         {definition.type === 'TIME' && (
-                            <TextField
-                                type="time"
-                                autoComplete="off"
+                            <AppTimeField
+                                label={definition.name}
                                 size="small"
                                 value={minutesToTimeValue(editValue)}
-                                onChange={event => {
-                                    const value = event.target.value;
+                                onChange={value => {
                                     setEditValue(value ? timeValueToMinutes(value) : null);
                                 }}
                                 onFocus={event => { feedbackAnchorRef.current = event.currentTarget; }}
                                 autoFocus
-                                inputProps={{ step: 60, 'aria-label': `${definition.name} time` }}
+                                minutesStep={1}
+                                inputProps={{ 'aria-label': `${definition.name} time` }}
                                 sx={{ width: 140 }}
                             />
                         )}
@@ -365,6 +389,7 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                                 onChange={setEditValue}
                                 autoFocus
                                 onFocus={event => { feedbackAnchorRef.current = event.currentTarget; }}
+                                onBlur={handleDurationBlur}
                             />
                         )}
 

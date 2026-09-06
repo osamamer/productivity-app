@@ -7,6 +7,15 @@ import {
 } from '@mui/material';
 import { StatDefinition, StatMorality, StatType } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
+import {
+    durationValueToMinutes,
+    minutesToDurationValue,
+    minutesToTimeValue,
+    timeValueToMinutes,
+} from '../../services/utils/statValues';
+import { AppTimeField } from '../input/AppPickerFields';
+import { AppNumberField } from '../input/AppNumberField';
+import { DurationInput } from './DurationInput';
 
 interface FormValues {
     name: string;
@@ -44,11 +53,15 @@ const validationSchema = Yup.object({
         function (threshold) {
             const { type, morality, minValue, maxValue } = this.parent as FormValues;
             if (type === 'BOOLEAN' || morality === 'NEUTRAL') return true;
-            if (!threshold || !Number.isFinite(Number(threshold))) {
-                return this.createError({ message: 'A threshold is required for a non-neutral numeric stat' });
+            const numericThreshold = type === 'TIME'
+                ? timeValueToMinutes(threshold ?? '')
+                : type === 'DURATION'
+                    ? durationValueToMinutes(threshold ?? '')
+                    : Number(threshold);
+            if (!threshold || numericThreshold == null || !Number.isFinite(numericThreshold)) {
+                return this.createError({ message: 'A threshold is required for a non-neutral stat' });
             }
             if (type === 'RANGE') {
-                const numericThreshold = Number(threshold);
                 if (numericThreshold < Number(minValue) || numericThreshold > Number(maxValue)) {
                     return this.createError({ message: 'Threshold must be inside the stat range' });
                 }
@@ -79,18 +92,29 @@ export function CreateStatForm({ onCreated, onUpdated, onDelete, onCancel, initi
             morality: initialDefinition?.morality ?? 'NEUTRAL',
             goodThreshold: initialDefinition?.goodThreshold == null
                 ? ''
-                : String(initialDefinition.goodThreshold),
+                : initialDefinition.type === 'TIME'
+                    ? minutesToTimeValue(initialDefinition.goodThreshold)
+                    : initialDefinition.type === 'DURATION'
+                        ? minutesToDurationValue(initialDefinition.goodThreshold)
+                        : String(initialDefinition.goodThreshold),
         },
         validationSchema,
         onSubmit: async (values, { setSubmitting, setFieldError }) => {
             try {
+                const threshold = values.type === 'TIME'
+                    ? timeValueToMinutes(values.goodThreshold)
+                    : values.type === 'DURATION'
+                        ? durationValueToMinutes(values.goodThreshold)
+                        : values.type !== 'BOOLEAN' && values.morality !== 'NEUTRAL'
+                            ? Number(values.goodThreshold)
+                            : undefined;
                 if (initialDefinition) {
                     const def = await statService.updateDefinition(initialDefinition.id, {
                         name: values.name,
                         description: values.description || undefined,
                         morality: values.morality,
                         goodThreshold: values.type !== 'BOOLEAN' && values.morality !== 'NEUTRAL'
-                            ? Number(values.goodThreshold)
+                            ? threshold ?? undefined
                             : undefined,
                     });
                     onUpdated?.(def);
@@ -103,7 +127,7 @@ export function CreateStatForm({ onCreated, onUpdated, onDelete, onCancel, initi
                         maxValue: values.type === 'RANGE' ? Number(values.maxValue) : undefined,
                         morality: values.morality,
                         goodThreshold: values.type !== 'BOOLEAN' && values.morality !== 'NEUTRAL'
-                            ? Number(values.goodThreshold)
+                            ? threshold ?? undefined
                             : undefined,
                     });
                     onCreated?.(def);
@@ -156,8 +180,8 @@ export function CreateStatForm({ onCreated, onUpdated, onDelete, onCancel, initi
                         onChange={event => {
                             const type = event.target.value as StatType;
                             formik.setFieldValue('type', type);
-                            if (type === 'BOOLEAN' || type === 'TIME') {
-                                formik.setFieldValue('goodThreshold', '');
+                            formik.setFieldValue('goodThreshold', '');
+                            if (type === 'BOOLEAN') {
                                 formik.setFieldValue('morality', 'NEUTRAL');
                             }
                         }}
@@ -178,39 +202,38 @@ export function CreateStatForm({ onCreated, onUpdated, onDelete, onCancel, initi
                         name="morality"
                         value={formik.values.morality}
                         label="Morality"
-                        disabled={formik.values.type === 'TIME'}
                         onChange={event => {
                             const morality = event.target.value as StatMorality;
                             formik.setFieldValue('morality', morality);
                             if (morality === 'NEUTRAL') formik.setFieldValue('goodThreshold', '');
                         }}
                     >
-                        <MenuItem value="GOOD">Good / positive — higher is better</MenuItem>
-                        <MenuItem value="BAD">Bad / negative — lower is better</MenuItem>
+                        <MenuItem value="GOOD">{formik.values.type === 'TIME' ? 'Good — earlier is better' : 'Good / positive — higher is better'}</MenuItem>
+                        <MenuItem value="BAD">{formik.values.type === 'TIME' ? 'Bad — later is worse' : 'Bad / negative — lower is better'}</MenuItem>
                         <MenuItem value="NEUTRAL">Neutral</MenuItem>
                     </Select>
                 </FormControl>
                 <Collapse in={formik.values.type === 'RANGE'}>
                     <Stack direction="row" spacing={2}>
-                        <TextField
+                        <AppNumberField
                             name="minValue"
                             autoComplete="off"
                             label="Min"
-                            type="number"
                             value={formik.values.minValue}
                             onChange={formik.handleChange}
+                            onStepValueChange={value => void formik.setFieldValue('minValue', String(value))}
                             disabled={isEditing}
                             error={formik.touched.minValue && Boolean(formik.errors.minValue)}
                             helperText={formik.touched.minValue && formik.errors.minValue}
                             size="small"
                         />
-                        <TextField
+                        <AppNumberField
                             name="maxValue"
                             autoComplete="off"
                             label="Max"
-                            type="number"
                             value={formik.values.maxValue}
                             onChange={formik.handleChange}
+                            onStepValueChange={value => void formik.setFieldValue('maxValue', String(value))}
                             disabled={isEditing}
                             error={formik.touched.maxValue && Boolean(formik.errors.maxValue)}
                             helperText={formik.touched.maxValue && formik.errors.maxValue}
@@ -219,26 +242,62 @@ export function CreateStatForm({ onCreated, onUpdated, onDelete, onCancel, initi
                     </Stack>
                 </Collapse>
                 <Collapse in={formik.values.type !== 'BOOLEAN' && formik.values.morality !== 'NEUTRAL'}>
-                    <TextField
-                        name="goodThreshold"
-                        autoComplete="off"
-                        label={formik.values.morality === 'BAD' ? 'Good at or below' : 'Good at or above'}
-                        type="number"
-                        value={formik.values.goodThreshold}
-                        onChange={formik.handleChange}
-                        onBlur={formik.handleBlur}
-                        error={formik.touched.goodThreshold && Boolean(formik.errors.goodThreshold)}
-                        helperText={formik.touched.goodThreshold && formik.errors.goodThreshold
-                            ? formik.errors.goodThreshold
-                            : formik.values.type === 'RANGE'
-                            ? `Choose a value from ${formik.values.minValue || 'min'} to ${formik.values.maxValue || 'max'}`
-                            : 'Values on this side of the threshold feel good to record'}
-                        size="small"
-                        inputProps={{ step: 'any' }}
-                    />
+                    {formik.values.type === 'TIME' ? (
+                        <AppTimeField
+                            label="Good at or before"
+                            value={formik.values.goodThreshold}
+                            onChange={value => void formik.setFieldValue('goodThreshold', value)}
+                            onBlur={() => void formik.setFieldTouched('goodThreshold', true)}
+                            error={formik.touched.goodThreshold && Boolean(formik.errors.goodThreshold)}
+                            helperText={formik.touched.goodThreshold && formik.errors.goodThreshold
+                                ? formik.errors.goodThreshold
+                                : 'Earlier times are treated as better.'}
+                            minutesStep={1}
+                            inputProps={{ 'aria-label': 'Good at or before' }}
+                        />
+                    ) : formik.values.type === 'DURATION' ? (
+                        <Box>
+                            <Typography variant="body2" color="text.secondary" sx={{ mb: 0.75 }}>
+                                {formik.values.morality === 'BAD' ? 'Good at or below' : 'Good at or above'}
+                            </Typography>
+                            <DurationInput
+                                value={durationValueToMinutes(formik.values.goodThreshold)}
+                                onChange={value => void formik.setFieldValue(
+                                    'goodThreshold',
+                                    value == null ? '' : minutesToDurationValue(value),
+                                )}
+                                onBlur={() => void formik.setFieldTouched('goodThreshold', true)}
+                            />
+                            <FormHelperText
+                                error={formik.touched.goodThreshold && Boolean(formik.errors.goodThreshold)}
+                            >
+                                {formik.touched.goodThreshold && formik.errors.goodThreshold
+                                    ? formik.errors.goodThreshold
+                                    : 'Set the duration that counts as good to record.'}
+                            </FormHelperText>
+                        </Box>
+                    ) : (
+                        <AppNumberField
+                            name="goodThreshold"
+                            autoComplete="off"
+                            label={formik.values.morality === 'BAD' ? 'Good at or below' : 'Good at or above'}
+                            value={formik.values.goodThreshold}
+                            onChange={formik.handleChange}
+                            onStepValueChange={value => void formik.setFieldValue('goodThreshold', String(value))}
+                            onBlur={formik.handleBlur}
+                            error={formik.touched.goodThreshold && Boolean(formik.errors.goodThreshold)}
+                            helperText={formik.touched.goodThreshold && formik.errors.goodThreshold
+                                ? formik.errors.goodThreshold
+                                : formik.values.type === 'RANGE'
+                                ? `Choose a value from ${formik.values.minValue || 'min'} to ${formik.values.maxValue || 'max'}`
+                                : 'Values on this side of the threshold feel good to record'}
+                            size="small"
+                            step="any"
+                        />
+                    )}
                 </Collapse>
                 <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="center">
-                    {isEditing && (
+                    {isEditing && !initialDefinition?.systemKey && (
                         <Button type="button" onClick={onDelete} color="error" size="small">
                             Delete statistic
                         </Button>

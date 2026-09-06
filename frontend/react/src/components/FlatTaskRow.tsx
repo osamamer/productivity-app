@@ -73,6 +73,7 @@ export type FlatTaskRowProps = {
     showDetailsButton?: boolean;
     onSelect?: (task: Task) => void;
     selected?: boolean;
+    editRequestId?: number | null;
     onSelectionClick?: (task: Task, event: React.MouseEvent<HTMLElement>) => void;
     reorderable?: boolean;
     draggable?: boolean;
@@ -205,6 +206,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     showDetailsButton = true,
     onSelect,
     selected = false,
+    editRequestId = null,
     onSelectionClick,
     reorderable = false,
     draggable = reorderable,
@@ -246,6 +248,13 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     const nameInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
     const dragAllowedRef = useRef(true);
     const pomodoroFeedbackIdRef = useRef(0);
+    const handledEditRequestIdRef = useRef<number | null>(null);
+
+    useEffect(() => {
+        if (editRequestId === null || editRequestId === handledEditRequestIdRef.current) return;
+        handledEditRequestIdRef.current = editRequestId;
+        if (!readOnly) setIsEditingName(true);
+    }, [editRequestId, readOnly]);
 
     useEffect(() => {
         if (!isEditingName || !nameInputRef.current) return;
@@ -1037,13 +1046,13 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             </Box>
 
                             <Box sx={{ display: 'flex', gap: 0.5, ml: 'auto' }}>
-                                <Tooltip title={whiteNoiseEnabled ? 'Mute white noise' : 'Play white noise'}>
+                                <Tooltip title={whiteNoiseEnabled ? 'Mute brown noise' : 'Play brown noise'}>
                                     <IconButton
                                         size="small"
                                         onClick={handleWhiteNoiseToggle}
                                         disabled={actionLoading}
                                         color={whiteNoiseEnabled ? 'primary' : 'default'}
-                                        aria-label={whiteNoiseEnabled ? 'Mute white noise' : 'Play white noise'}
+                                        aria-label={whiteNoiseEnabled ? 'Mute brown noise' : 'Play brown noise'}
                                     >
                                         {whiteNoiseEnabled ? <VolumeUpIcon /> : <VolumeOffIcon />}
                                     </IconButton>

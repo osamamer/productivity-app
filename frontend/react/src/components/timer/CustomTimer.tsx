@@ -523,10 +523,10 @@ export function CustomTimer({ task }: Props) {
                             {/* Controls */}
                             {(status.sessionActive || waitingForPhase || status.phase === 'BREAK') && (
                                 <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
-                                    <Tooltip title={whiteNoiseEnabled ? 'Mute white noise' : 'Play white noise'}>
+                                    <Tooltip title={whiteNoiseEnabled ? 'Mute brown noise' : 'Play brown noise'}>
                                         <IconButton
                                             onClick={handleWhiteNoiseToggle}
-                                            aria-label={whiteNoiseEnabled ? 'Mute white noise' : 'Play white noise'}
+                                            aria-label={whiteNoiseEnabled ? 'Mute brown noise' : 'Play brown noise'}
                                             color={whiteNoiseEnabled ? 'primary' : 'inherit'}
                                             size="large"
                                             disabled={isLoading}

@@ -61,7 +61,9 @@ public class StatInsightService {
                                               Map<LocalDate, Double> otherValues) {
         List<PairedValue> pairs = driverValues.entrySet().stream()
                 .filter(entry -> otherValues.containsKey(entry.getKey()))
-                .map(entry -> new PairedValue(entry.getValue(), otherValues.get(entry.getKey())))
+                .map(entry -> new PairedValue(
+                        StatTimeScale.toLinearValue(driver, entry.getValue()),
+                        StatTimeScale.toLinearValue(other, otherValues.get(entry.getKey()))))
                 .filter(pair -> Double.isFinite(pair.driver()) && Double.isFinite(pair.other()))
                 .toList();
 
@@ -82,8 +84,8 @@ public class StatInsightService {
                 .filter(pair -> !isDriverHigher(driver, pair, driverAverage))
                 .map(PairedValue::other)
                 .toList();
-        Double highAverage = average(otherWhenDriverHigher);
-        Double lowAverage = average(otherWhenDriverLower);
+        Double highAverage = denormalizeTimeAverage(other, average(otherWhenDriverHigher));
+        Double lowAverage = denormalizeTimeAverage(other, average(otherWhenDriverLower));
 
         String insight = buildInsight(driver, other, pairs.size(), correlation, strength,
                 highAverage, lowAverage);
@@ -166,6 +168,10 @@ public class StatInsightService {
 
     private Double average(List<Double> values) {
         return values.isEmpty() ? null : values.stream().mapToDouble(Double::doubleValue).average().orElseThrow();
+    }
+
+    private Double denormalizeTimeAverage(StatDefinition definition, Double value) {
+        return value == null ? null : StatTimeScale.fromLinearValue(definition, value);
     }
 
     private boolean isDriverHigher(StatDefinition driver, PairedValue pair, double driverAverage) {

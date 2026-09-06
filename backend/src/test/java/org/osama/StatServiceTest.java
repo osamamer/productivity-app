@@ -144,6 +144,36 @@ public class StatServiceTest {
                 statService.recordEntry(statDefinition.getId(), LocalDate.now(), 1440.0, TEST_USER_ID));
     }
 
+    @Test
+    void timeStatSupportsAnEarlierIsBetterThreshold() {
+        StatDefinition statDefinition = statService.createDefinition(
+                "Bedtime", null, StatType.TIME, null, null,
+                StatMorality.GOOD, 180.0, TEST_USER_ID);
+
+        assertEquals(StatMorality.GOOD, statDefinition.getMorality());
+        assertEquals(180.0, statDefinition.getGoodThreshold());
+    }
+
+    @Test
+    void sleepTimeSummaryTreatsTenPmAsEarlierThanFourAm() {
+        User user = userRepository.findUserById(TEST_USER_ID).orElseThrow();
+        provisioningService.createMissingSystemStatsFor(user);
+        StatDefinition sleepTime = definitionRepository
+                .findByUserIdAndSystemKey(TEST_USER_ID, SystemStatCatalog.SLEEP_TIME_SYSTEM_KEY)
+                .orElseThrow();
+        LocalDate today = LocalDate.now();
+        statService.recordEntry(sleepTime.getId(), today.minusDays(1), 22 * 60.0, TEST_USER_ID);
+        statService.recordEntry(sleepTime.getId(), today, 4 * 60.0, TEST_USER_ID);
+
+        StatSummaryResponse summary = statService.getSummary(
+                sleepTime.getId(), today.minusDays(1), today, TEST_USER_ID);
+
+        assertEquals(60.0, summary.periodAverage(), 0.0001);
+        assertEquals(4 * 60.0, summary.periodHighest(), 0.0001);
+        assertTrue(StatTimeScale.toLinearValue(sleepTime, 22 * 60.0)
+                < StatTimeScale.toLinearValue(sleepTime, 4 * 60.0));
+    }
+
     // --- DURATION ---
 
     @Test

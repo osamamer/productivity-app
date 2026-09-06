@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { reportError } from '@/lib/errors';
-import { formatDurationValue } from '@/lib/statValues';
+import { formatDurationValue, formatTimeValue } from '@/lib/statValues';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
 import type { StatDefinition } from '@/types/models';
@@ -13,6 +13,8 @@ import { AppText } from '../ui/AppText';
 import { ChoiceChips } from '../ui/ChoiceChips';
 import { ModalSheet } from '../ui/ModalSheet';
 import { DurationInput } from '../stats/DurationInput';
+import { AppPopup } from '../ui/AppPopup';
+import { TimePicker } from '../tasks/TaskScheduleField';
 
 function booleanColor(definition: StatDefinition, value: 0 | 1, colors: ReturnType<typeof useAppTheme>['colors']): string {
   const morality = definition.morality ?? 'NEUTRAL';
@@ -22,8 +24,50 @@ function booleanColor(definition: StatDefinition, value: 0 | 1, colors: ReturnTy
 }
 
 function formatValue(definition: StatDefinition, value: number): string {
+  if (definition.type === 'TIME') return formatTimeValue(value);
   if (definition.type === 'DURATION') return formatDurationValue(value);
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function dateForMinutes(value: number | null | undefined): Date {
+  const date = new Date();
+  const minutes = value ?? 12 * 60;
+  date.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
+  return date;
+}
+
+function TimeValueField({ value, onChange }: { value: number | null | undefined; onChange: (value: number) => void }) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(() => dateForMinutes(value));
+
+  function openPicker() {
+    setDraft(dateForMinutes(value));
+    setOpen(true);
+  }
+
+  return (
+    <>
+      <AppButton
+        variant="secondary"
+        label={value == null ? 'Choose time' : formatTimeValue(value)}
+        icon="time-outline"
+        onPress={openPicker}
+      />
+      <AppPopup
+        visible={open}
+        title="Choose time"
+        showIcon={false}
+        onClose={() => setOpen(false)}
+        dismissOnBackdrop={false}
+        footer={<AppButton label="Done" onPress={() => setOpen(false)} />}
+      >
+        <TimePicker value={draft} onChange={next => {
+          setDraft(next);
+          onChange(next.getHours() * 60 + next.getMinutes());
+        }} />
+      </AppPopup>
+    </>
+  );
 }
 
 export function CalendarStatCheckInSheet({ date, definitions, onClose, onSaved }: {
@@ -139,6 +183,9 @@ export function CalendarStatCheckInSheet({ date, definitions, onClose, onSaved }
                 maximumLabel={String(max)}
                 onValueChange={next => updateValue(definition.id, next)}
                 activeColor={colors.accent} />
+            )}
+            {definition.type === 'TIME' && (
+              <TimeValueField value={value} onChange={next => updateValue(definition.id, next)} />
             )}
             {definition.type === 'DURATION' && (
               <DurationInput value={value ?? null} onChange={next => updateValue(definition.id, next)} />

@@ -1,7 +1,9 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
+import { usePomodoroAudio } from '@/hooks/usePomodoroAudio';
 import { appConfig } from '@/lib/config';
 import { GENERIC_ERROR_MESSAGE } from '@/lib/errors';
 import { useAppTheme } from '@/providers/ThemeProvider';
@@ -36,6 +38,8 @@ const DEFAULT_FORM: PomodoroFormValues = {
   numFocuses: 4,
   longBreakCooldown: 4,
 };
+
+const BROWN_NOISE_STORAGE_KEY = 'solife.pomodoro-brown-noise-enabled';
 
 function websocketUrl(): string {
   return `${appConfig.apiUrl.replace(/^http/, 'ws')}/ws`;
@@ -111,11 +115,29 @@ export function PomodoroPanel({ taskId, initialStatus, onClose, onActiveChange, 
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [statusReceivedAt, setStatusReceivedAt] = useState(0);
+  const [brownNoiseEnabled, setBrownNoiseEnabled] = useState(true);
+  const { ready: brownNoiseReady, start: startBrownNoise, stop: stopBrownNoise } = usePomodoroAudio();
   const onActiveChangeRef = useRef(onActiveChange);
   const onStatusChangeRef = useRef(onStatusChange);
 
   useEffect(() => { onActiveChangeRef.current = onActiveChange; }, [onActiveChange]);
   useEffect(() => { onStatusChangeRef.current = onStatusChange; }, [onStatusChange]);
+
+  useEffect(() => {
+    let active = true;
+    void AsyncStorage.getItem(BROWN_NOISE_STORAGE_KEY).then(value => {
+      if (active) setBrownNoiseEnabled(value !== 'false');
+    }).catch(cause => console.warn('Could not load Pomodoro sound preference:', cause));
+    return () => { active = false; };
+  }, []);
+
+  const breakPhase = Boolean(status && isBreakPhase(status));
+  const focusRunning = Boolean(status?.active && status.sessionActive && status.sessionRunning && !breakPhase);
+
+  useEffect(() => {
+    if (brownNoiseReady && focusRunning && brownNoiseEnabled) startBrownNoise();
+    else stopBrownNoise();
+  }, [brownNoiseEnabled, brownNoiseReady, focusRunning, startBrownNoise, stopBrownNoise]);
 
   const commitStatus = useCallback((next: PomodoroStatus | null) => {
     setStatusReceivedAt(Date.now());
@@ -220,7 +242,6 @@ export function PomodoroPanel({ taskId, initialStatus, onClose, onActiveChange, 
   const remaining = status
     ? Math.max(0, status.secondsUntilNextTransition - (timerAdvances ? elapsedSinceStatus : 0))
     : 0;
-  const breakPhase = Boolean(status && isBreakPhase(status));
   const waiting = isWaitingForPhase(status);
   const progress = status
     ? (() => {
@@ -285,6 +306,16 @@ export function PomodoroPanel({ taskId, initialStatus, onClose, onActiveChange, 
     });
   }, [commitStatus, runAction, taskId]);
 
+  const toggleBrownNoise = useCallback(() => {
+    setBrownNoiseEnabled(previous => {
+      const next = !previous;
+      void AsyncStorage.setItem(BROWN_NOISE_STORAGE_KEY, String(next)).catch(cause => {
+        console.warn('Could not save Pomodoro sound preference:', cause);
+      });
+      return next;
+    });
+  }, []);
+
   const controls = status ? (
     <View style={styles.controls}>
       {(waiting || !breakPhase) && (
@@ -309,6 +340,14 @@ export function PomodoroPanel({ taskId, initialStatus, onClose, onActiveChange, 
       {status.phase === 'BREAK' && (
         <AppButton compact variant="primary" icon="play-forward" label="Start focus" loading={actionLoading} onPress={() => void runAction(() => api.pomodoro.finishBreakEarly(taskId))} />
       )}
+      <AppButton
+        compact
+        variant="secondary"
+        icon={brownNoiseEnabled ? 'volume-high-outline' : 'volume-mute-outline'}
+        label={brownNoiseEnabled ? 'Mute brown noise' : 'Play brown noise'}
+        loading={actionLoading}
+        onPress={toggleBrownNoise}
+      />
       <AppButton compact variant="danger" icon="stop" label="Stop" loading={actionLoading} onPress={stop} />
     </View>
   ) : null;

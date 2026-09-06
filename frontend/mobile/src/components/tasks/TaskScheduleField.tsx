@@ -1,10 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { formatShortDate, formatTime, localDateTime } from '@/lib/date';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { AppButton } from '../ui/AppButton';
+import { CalendarDatePicker } from '../ui/CalendarDatePicker';
 import { AppPopup } from '../ui/AppPopup';
 import { AppText } from '../ui/AppText';
 import { SilentPressable } from '../ui/SilentPressable';
@@ -17,81 +18,6 @@ export function dateFromScheduleValue(value: string | null | undefined): Date {
     if (!Number.isNaN(parsed.getTime())) return parsed;
   }
   return new Date();
-}
-
-function monthStart(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth(), 1);
-}
-
-function sameCalendarDay(first: Date, second: Date): boolean {
-  return first.getFullYear() === second.getFullYear()
-    && first.getMonth() === second.getMonth()
-    && first.getDate() === second.getDate();
-}
-
-function CalendarPicker({ value, onChange }: { value: Date; onChange: (value: Date) => void }) {
-  const { colors } = useAppTheme();
-  const [month, setMonth] = useState(() => monthStart(value));
-
-  const days = useMemo(() => {
-    const firstDay = monthStart(month);
-    const firstWeekday = firstDay.getDay();
-    const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
-    const cellCount = Math.ceil((firstWeekday + daysInMonth) / 7) * 7;
-    return Array.from({ length: cellCount }, (_, index) => {
-      const dayNumber = index - firstWeekday + 1;
-      return dayNumber >= 1 && dayNumber <= daysInMonth
-        ? new Date(month.getFullYear(), month.getMonth(), dayNumber)
-        : null;
-    });
-  }, [month]);
-
-  const monthLabel = new Intl.DateTimeFormat(undefined, { month: 'long', year: 'numeric' }).format(month);
-
-  return (
-    <View style={styles.calendar}>
-      <View style={styles.calendarHeader}>
-        <SilentPressable
-          accessibilityRole="button"
-          accessibilityLabel="Previous month"
-          hitSlop={8}
-          onPress={() => setMonth(current => new Date(current.getFullYear(), current.getMonth() - 1, 1))}>
-          <Ionicons name="chevron-back" size={20} color={colors.textMuted} />
-        </SilentPressable>
-        <AppText variant="label">{monthLabel}</AppText>
-        <SilentPressable
-          accessibilityRole="button"
-          accessibilityLabel="Next month"
-          hitSlop={8}
-          onPress={() => setMonth(current => new Date(current.getFullYear(), current.getMonth() + 1, 1))}>
-          <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-        </SilentPressable>
-      </View>
-      <View style={styles.weekdays}>
-        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => (
-          <AppText key={`${day}-${index}`} variant="caption" color="muted" style={styles.dayLabel}>
-            {day}
-          </AppText>
-        ))}
-      </View>
-      <View style={styles.calendarGrid}>
-        {days.map((day, index) => day ? (
-          <SilentPressable
-            key={day.toISOString()}
-            accessibilityRole="button"
-            accessibilityLabel={day.toLocaleDateString()}
-            onPress={() => onChange(day)}
-            style={styles.day}>
-            <View style={[styles.dayButton, sameCalendarDay(day, value) && { backgroundColor: colors.accent }]}>
-              <AppText variant="label" style={{ color: sameCalendarDay(day, value) ? colors.onAccent : colors.text }}>
-                {day.getDate()}
-              </AppText>
-            </View>
-          </SilentPressable>
-        ) : <View key={`empty-${index}`} style={styles.day} />)}
-      </View>
-    </View>
-  );
 }
 
 function TimeColumn({ label, values, selected, onSelect }: {
@@ -174,7 +100,7 @@ export function TaskDateTimePicker({ value, onChange }: { value: Date; onChange:
 
   return (
     <>
-      <CalendarPicker value={value} onChange={onChange} />
+      <CalendarDatePicker value={value} onChange={onChange} />
       <View style={[styles.divider, { backgroundColor: colors.border }]} />
       <AppText variant="label">Time</AppText>
       <TimePicker value={value} onChange={onChange} />
@@ -260,13 +186,6 @@ const styles = StyleSheet.create({
   clearButton: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   field: { minHeight: 58, paddingHorizontal: 13, paddingVertical: 10, borderWidth: 1, borderRadius: 14, flexDirection: 'row', alignItems: 'center', gap: 10 },
   fieldValue: { flex: 1 },
-  calendar: { gap: 13 },
-  calendarHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  weekdays: { flexDirection: 'row' },
-  dayLabel: { flex: 1, textAlign: 'center' },
-  calendarGrid: { flexDirection: 'row', flexWrap: 'wrap', rowGap: 7 },
-  day: { width: '14.2857%', height: 40, alignItems: 'center', justifyContent: 'center' },
-  dayButton: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   timePicker: { flexDirection: 'row', gap: 12 },
   timeColumn: { flex: 1, gap: 8 },
   timeLabel: { textAlign: 'center' },

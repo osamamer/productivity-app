@@ -1,0 +1,21 @@
+databaseChangeLog:
+  - changeSet:
+      id: 043-set-sleep-duration-target
+      author: codex
+      comment: Set the built-in Sleep duration target to eight hours
+      changes:
+        - sql:
+            sql: |
+              UPDATE stat_definition
+              SET good_threshold = 480
+              WHERE system_key = 'sleep_hours'
+                AND type = 'DURATION'
+                AND good_threshold = 420;
+      rollback:
+        - sql:
+            sql: |
+              UPDATE stat_definition
+              SET good_threshold = 420
+              WHERE system_key = 'sleep_hours'
+                AND type = 'DURATION'
+                AND good_threshold = 480;

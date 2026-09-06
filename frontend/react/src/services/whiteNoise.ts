@@ -1,5 +1,5 @@
 const WHITE_NOISE_STORAGE_KEY = 'pomodoro-white-noise-enabled';
-const WHITE_NOISE_URL = '/audio/rain.mp3';
+const BROWN_NOISE_URL = '/audio/brown-noise.mp3';
 
 let enabled = readEnabled();
 let player: HTMLAudioElement | null = null;
@@ -18,7 +18,7 @@ function getPlayer(): HTMLAudioElement | null {
     if (typeof window === 'undefined') return null;
     if (player) return player;
 
-    player = new Audio(WHITE_NOISE_URL);
+    player = new Audio(BROWN_NOISE_URL);
     player.loop = true;
     player.volume = 0.22;
     return player;

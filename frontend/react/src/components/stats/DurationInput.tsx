@@ -1,11 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Stack, TextField, Typography } from '@mui/material';
+import { Stack, Typography } from '@mui/material';
+import { AppNumberField } from '../input/AppNumberField';
 
 interface Props {
     value: number | null;
     onChange: (value: number | null) => void;
     autoFocus?: boolean;
     onFocus?: React.FocusEventHandler<HTMLInputElement | HTMLTextAreaElement>;
+    onBlur?: React.FocusEventHandler<HTMLInputElement | HTMLTextAreaElement>;
 }
 
 function durationParts(value: number | null): { hours: string; minutes: string } {
@@ -17,7 +19,7 @@ function durationParts(value: number | null): { hours: string; minutes: string }
     };
 }
 
-export function DurationInput({ value, onChange, autoFocus = false, onFocus }: Props) {
+export function DurationInput({ value, onChange, autoFocus = false, onFocus, onBlur }: Props) {
     const initialParts = durationParts(value);
     const [hours, setHours] = useState(initialParts.hours);
     const [minutes, setMinutes] = useState(initialParts.minutes);
@@ -52,28 +54,35 @@ export function DurationInput({ value, onChange, autoFocus = false, onFocus }: P
 
     return (
         <Stack direction="row" spacing={0.75} alignItems="center">
-            <TextField
-                type="number"
+            <AppNumberField
                 autoComplete="off"
                 size="small"
                 label="Hours"
                 value={hours}
                 onChange={event => updateValue(event.target.value, minutes)}
+                onStepValueChange={value => updateValue(String(value), minutes)}
                 onFocus={onFocus}
-                inputProps={{ min: 0, step: 1, inputMode: 'numeric', 'aria-label': 'Duration hours' }}
+                onBlur={onBlur}
+                min={0}
+                step={1}
+                inputProps={{ inputMode: 'numeric', 'aria-label': 'Duration hours' }}
                 autoFocus={autoFocus}
                 sx={{ width: 92 }}
             />
             <Typography color="text.secondary">:</Typography>
-            <TextField
-                type="number"
+            <AppNumberField
                 autoComplete="off"
                 size="small"
                 label="Minutes"
                 value={minutes}
                 onChange={event => updateValue(hours, event.target.value)}
+                onStepValueChange={value => updateValue(hours, String(value))}
                 onFocus={onFocus}
-                inputProps={{ min: 0, max: 59, step: 1, inputMode: 'numeric', 'aria-label': 'Duration minutes' }}
+                onBlur={onBlur}
+                min={0}
+                max={59}
+                step={1}
+                inputProps={{ inputMode: 'numeric', 'aria-label': 'Duration minutes' }}
                 sx={{ width: 100 }}
             />
         </Stack>

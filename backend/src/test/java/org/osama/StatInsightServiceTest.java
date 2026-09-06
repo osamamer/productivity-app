@@ -6,10 +6,13 @@ import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.osama.stat.StatCorrelationResponse;
 import org.osama.stat.StatDefinition;
+import org.osama.stat.StatDefinitionRepository;
 import org.osama.stat.StatInsightService;
 import org.osama.stat.StatInsightsResponse;
 import org.osama.stat.StatService;
 import org.osama.stat.StatType;
+import org.osama.stat.SystemStatCatalog;
+import org.osama.stat.SystemStatProvisioningService;
 import org.osama.user.User;
 import org.osama.user.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,6 +36,8 @@ class StatInsightServiceTest {
 
     @Autowired private StatInsightService statInsightService;
     @Autowired private StatService statService;
+    @Autowired private StatDefinitionRepository definitionRepository;
+    @Autowired private SystemStatProvisioningService provisioningService;
     @Autowired private UserRepository userRepository;
 
     @BeforeEach
@@ -101,5 +106,34 @@ class StatInsightServiceTest {
         assertEquals("INSUFFICIENT_DATA", correlation.strength());
         assertFalse(correlation.meaningful());
         assertTrue(correlation.insight().contains("Not enough shared entries yet"));
+    }
+
+    @Test
+    void bedtimeCorrelationContinuesForwardAcrossMidnight() {
+        User user = userRepository.findUserById(TEST_USER_ID).orElseThrow();
+        provisioningService.createMissingSystemStatsFor(user);
+        StatDefinition bedtime = definitionRepository
+                .findByUserIdAndSystemKey(TEST_USER_ID, SystemStatCatalog.SLEEP_TIME_SYSTEM_KEY)
+                .orElseThrow();
+        StatDefinition writing = statService.createDefinition(
+                "Writing", null, StatType.NUMBER, null, null, TEST_USER_ID);
+        LocalDate start = LocalDate.of(2026, 3, 1);
+        double[] bedtimes = {22 * 60, 23 * 60, 0, 60, 2 * 60, 3 * 60};
+
+        for (int day = 0; day < bedtimes.length; day++) {
+            LocalDate date = start.plusDays(day);
+            statService.recordEntry(bedtime.getId(), date, bedtimes[day], TEST_USER_ID);
+            statService.recordEntry(writing.getId(), date, day + 1, TEST_USER_ID);
+        }
+
+        StatCorrelationResponse correlation = statInsightService
+                .getInsights(bedtime.getId(), start, start.plusDays(5), TEST_USER_ID)
+                .correlations().stream()
+                .filter(item -> item.statDefinitionId().equals(writing.getId()))
+                .findFirst()
+                .orElseThrow();
+
+        assertEquals(1.0, correlation.correlation(), 0.0001);
+        assertEquals("POSITIVE", correlation.direction());
     }
 }

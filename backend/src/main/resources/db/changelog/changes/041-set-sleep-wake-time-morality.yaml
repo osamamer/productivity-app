@@ -1,0 +1,29 @@
+databaseChangeLog:
+  - changeSet:
+      id: 041-set-sleep-wake-time-morality
+      author: codex
+      comment: Give built-in sleep and wake-up time stats earlier-is-better defaults
+      changes:
+        - sql:
+            sql: |
+              UPDATE stat_definition
+              SET morality = 'GOOD',
+                  good_threshold = 180
+              WHERE system_key = 'sleep_time'
+                AND (morality IS NULL OR morality = 'NEUTRAL')
+                AND good_threshold IS NULL;
+        - sql:
+            sql: |
+              UPDATE stat_definition
+              SET morality = 'GOOD',
+                  good_threshold = 630
+              WHERE system_key = 'wake_up_time'
+                AND (morality IS NULL OR morality = 'NEUTRAL')
+                AND good_threshold IS NULL;
+      rollback:
+        - sql:
+            sql: |
+              UPDATE stat_definition
+              SET morality = 'NEUTRAL',
+                  good_threshold = NULL
+              WHERE system_key IN ('sleep_time', 'wake_up_time')

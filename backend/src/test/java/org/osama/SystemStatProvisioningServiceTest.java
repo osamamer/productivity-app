@@ -85,17 +85,21 @@ class SystemStatProvisioningServiceTest {
         StatDefinition sleep = definitionRepository
                 .findByUserIdAndSystemKey(TEST_USER_ID, SystemStatCatalog.SLEEP_HOURS_SYSTEM_KEY)
                 .orElseThrow();
-        assertEquals(StatType.NUMBER, sleep.getType());
+        assertEquals(StatType.DURATION, sleep.getType());
         assertEquals(StatMorality.GOOD, sleep.getMorality());
-        assertEquals(7.0, sleep.getGoodThreshold());
-        assertEquals(StatType.TIME, definitionRepository
+        assertEquals(8 * 60.0, sleep.getGoodThreshold());
+        StatDefinition sleepTime = definitionRepository
                 .findByUserIdAndSystemKey(TEST_USER_ID, SystemStatCatalog.SLEEP_TIME_SYSTEM_KEY)
-                .orElseThrow()
-                .getType());
-        assertEquals(StatType.TIME, definitionRepository
+                .orElseThrow();
+        assertEquals(StatType.TIME, sleepTime.getType());
+        assertEquals(StatMorality.GOOD, sleepTime.getMorality());
+        assertEquals(240.0, sleepTime.getGoodThreshold());
+        StatDefinition wakeUpTime = definitionRepository
                 .findByUserIdAndSystemKey(TEST_USER_ID, SystemStatCatalog.WAKE_UP_TIME_SYSTEM_KEY)
-                .orElseThrow()
-                .getType());
+                .orElseThrow();
+        assertEquals(StatType.TIME, wakeUpTime.getType());
+        assertEquals(StatMorality.GOOD, wakeUpTime.getMorality());
+        assertEquals(630.0, wakeUpTime.getGoodThreshold());
     }
 
     @Test
@@ -108,9 +112,9 @@ class SystemStatProvisioningServiceTest {
         StatDefinition adopted = definitionRepository.findById(existing.getId()).orElseThrow();
         assertEquals(SystemStatCatalog.SLEEP_HOURS_SYSTEM_KEY, adopted.getSystemKey());
         assertEquals("Sleep", adopted.getName());
-        assertEquals(StatType.NUMBER, adopted.getType());
+        assertEquals(StatType.DURATION, adopted.getType());
         assertEquals(StatMorality.GOOD, adopted.getMorality());
-        assertEquals(7.0, adopted.getGoodThreshold());
+        assertEquals(8 * 60.0, adopted.getGoodThreshold());
         assertEquals(SystemStatCatalog.SYSTEM_STATS.size(),
                 definitionRepository.findAllByUserId(TEST_USER_ID).size());
     }
@@ -123,6 +127,38 @@ class SystemStatProvisioningServiceTest {
         assertThrows(IllegalArgumentException.class,
                 () -> statService.deleteDefinition(systemDefinition.getId(), TEST_USER_ID));
         assertTrue(definitionRepository.existsById(systemDefinition.getId()));
+    }
+
+    @Test
+    void usersCanCustomizeSleepAndWakeUpTimeJudgement() {
+        provisioningService.createMissingSystemStatsFor(user);
+        StatDefinition sleepTime = definitionRepository
+                .findByUserIdAndSystemKey(TEST_USER_ID, SystemStatCatalog.SLEEP_TIME_SYSTEM_KEY)
+                .orElseThrow();
+
+        StatDefinition updated = statService.updateDefinition(
+                sleepTime.getId(), sleepTime.getName(), sleepTime.getDescription(),
+                StatMorality.GOOD, 150.0, TEST_USER_ID);
+
+        assertEquals(150.0, updated.getGoodThreshold());
+        provisioningService.createMissingSystemStatsFor(user);
+        assertEquals(150.0, definitionRepository.findById(sleepTime.getId()).orElseThrow().getGoodThreshold());
+    }
+
+    @Test
+    void usersCanCustomizeSleepDurationTarget() {
+        provisioningService.createMissingSystemStatsFor(user);
+        StatDefinition sleep = definitionRepository
+                .findByUserIdAndSystemKey(TEST_USER_ID, SystemStatCatalog.SLEEP_HOURS_SYSTEM_KEY)
+                .orElseThrow();
+
+        StatDefinition updated = statService.updateDefinition(
+                sleep.getId(), sleep.getName(), sleep.getDescription(),
+                StatMorality.GOOD, 9 * 60.0, TEST_USER_ID);
+
+        assertEquals(9 * 60.0, updated.getGoodThreshold());
+        provisioningService.createMissingSystemStatsFor(user);
+        assertEquals(9 * 60.0, definitionRepository.findById(sleep.getId()).orElseThrow().getGoodThreshold());
     }
 
     @Test

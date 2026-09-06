@@ -157,6 +157,9 @@ export const AppThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => 
             components: {
                 MuiCssBaseline: {
                     styleOverrides: {
+                        ':root': {
+                            colorScheme: darkMode ? 'dark' : 'light',
+                        },
                         '*': {
                             scrollbarWidth: 'thin',
                             scrollbarColor: `${darkMode ? 'rgba(255,255,255,0.34)' : 'rgba(26,26,46,0.24)'} transparent`,
@@ -176,6 +179,115 @@ export const AppThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => 
                         '*::-webkit-scrollbar-thumb:hover': {
                             backgroundColor: darkMode ? 'rgba(255,255,255,0.48)' : 'rgba(26,26,46,0.34)',
                         },
+                        '.MuiPickersPopper-root .MuiPaper-root, .MuiPickerStaticWrapper-root .MuiPaper-root': {
+                            backgroundImage: 'none',
+                            backgroundColor: darkMode ? '#1e2124' : '#FFFFFF',
+                            border: darkMode ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(26,26,46,0.1)',
+                            borderRadius: '20px',
+                            boxShadow: darkMode
+                                ? '0 18px 48px rgba(0,0,0,0.42)'
+                                : '0 18px 48px rgba(26,26,46,0.16)',
+                            overflow: 'hidden',
+                        },
+                        '.MuiPickersLayout-root': {
+                            display: 'flex',
+                            flexDirection: 'column',
+                            backgroundColor: darkMode ? '#1e2124' : '#FFFFFF',
+                            color: darkMode ? '#FFFFFF' : '#1A1A2E',
+                        },
+                        '.MuiPickersLayout-contentWrapper': {
+                            display: 'flex',
+                            flexDirection: 'column',
+                            width: '100%',
+                        },
+                        '.MuiPickersToolbar-root': {
+                            backgroundColor: darkMode ? 'rgba(163,149,242,0.16)' : 'rgba(148,106,245,0.1)',
+                            borderBottom: darkMode ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(26,26,46,0.08)',
+                            padding: '14px 18px',
+                        },
+                        '.MuiPickersToolbar-root .MuiTypography-root': {
+                            fontWeight: 700,
+                        },
+                        '.MuiPickersCalendarHeader-root': {
+                            padding: '12px 16px 6px',
+                        },
+                        '.MuiPickersCalendarHeader-label': {
+                            fontWeight: 700,
+                        },
+                        '.MuiPickersArrowSwitcher-button, .MuiPickersCalendarHeader-switchViewButton': {
+                            color: darkMode ? '#FFFFFF' : '#1A1A2E',
+                            borderRadius: '10px',
+                        },
+                        '.MuiPickersArrowSwitcher-button:hover, .MuiPickersCalendarHeader-switchViewButton:hover': {
+                            backgroundColor: darkMode ? 'rgba(255,255,255,0.09)' : 'rgba(26,26,46,0.06)',
+                        },
+                        '.MuiDayCalendar-weekDayLabel': {
+                            color: darkMode ? 'rgba(255,255,255,0.62)' : 'rgba(26,26,46,0.62)',
+                            fontWeight: 700,
+                        },
+                        '.MuiPickersDay-root': {
+                            color: darkMode ? '#FFFFFF' : '#1A1A2E',
+                            borderRadius: '11px',
+                            fontWeight: 600,
+                        },
+                        '.MuiPickersDay-root:hover': {
+                            backgroundColor: darkMode ? 'rgba(163,149,242,0.2)' : 'rgba(148,106,245,0.12)',
+                        },
+                        '.MuiPickersDay-root.Mui-selected': {
+                            backgroundColor: primaryPalette.main,
+                            color: primaryPalette.contrastText,
+                            fontWeight: 800,
+                        },
+                        '.MuiPickersDay-root.Mui-selected:hover': {
+                            backgroundColor: primaryPalette.dark,
+                        },
+                        '.MuiPickersDay-root.MuiPickersDay-today': {
+                            border: `1px solid ${primaryPalette.main}`,
+                        },
+                        '.MuiPickersDay-root.MuiPickersDay-dayOutsideMonth': {
+                            color: darkMode ? 'rgba(255,255,255,0.32)' : 'rgba(26,26,46,0.32)',
+                        },
+                        '.MuiPickersLayout-actionBar': {
+                            width: '100%',
+                            borderTop: darkMode ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(26,26,46,0.08)',
+                            padding: '10px 14px 14px',
+                        },
+                        '.MuiPickersLayout-actionBar .MuiButton-root': {
+                            borderRadius: '10px',
+                            fontWeight: 700,
+                            textTransform: 'none',
+                        },
+                        '.MuiClock-clock': {
+                            backgroundColor: darkMode ? '#30343a' : '#F7F6FB',
+                        },
+                        '.MuiClockNumber-root': {
+                            color: darkMode ? '#FFFFFF' : '#1A1A2E',
+                        },
+                        '.MuiClockNumber-root.Mui-selected': {
+                            color: primaryPalette.contrastText,
+                        },
+                        '.MuiClock-pin, .MuiClockPointer-root': {
+                            backgroundColor: primaryPalette.main,
+                        },
+                        '.MuiClockPointer-thumb': {
+                            borderColor: primaryPalette.main,
+                            backgroundColor: primaryPalette.main,
+                        },
+                        '.MuiMultiSectionDigitalClock-root': {
+                            backgroundColor: darkMode ? '#1e2124' : '#FFFFFF',
+                        },
+                        '.MuiMultiSectionDigitalClockSection-item': {
+                            borderRadius: '9px',
+                            color: darkMode ? '#FFFFFF' : '#1A1A2E',
+                            fontWeight: 600,
+                        },
+                        '.MuiMultiSectionDigitalClockSection-item:hover': {
+                            backgroundColor: darkMode ? 'rgba(163,149,242,0.2)' : 'rgba(148,106,245,0.12)',
+                        },
+                        '.MuiMultiSectionDigitalClockSection-item.Mui-selected': {
+                            backgroundColor: primaryPalette.main,
+                            color: primaryPalette.contrastText,
+                        },
                     },
                 },
                 MuiDialog: {
@@ -184,6 +296,8 @@ export const AppThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => 
                             backgroundImage: 'none',
                             backgroundColor: darkMode ? '#1e2124' : '#FFFFFF',
                             border: darkMode ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(26,26,46,0.08)',
+                            borderRadius: '20px',
+                            boxShadow: darkMode ? '0 18px 48px rgba(0,0,0,0.42)' : '0 18px 48px rgba(26,26,46,0.16)',
                         },
                     },
                 },
@@ -193,6 +307,8 @@ export const AppThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => 
                             backgroundImage: 'none',
                             backgroundColor: darkMode ? '#1e2124' : '#FFFFFF',
                             border: darkMode ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(26,26,46,0.08)',
+                            borderRadius: '14px',
+                            boxShadow: darkMode ? '0 12px 32px rgba(0,0,0,0.36)' : '0 12px 32px rgba(26,26,46,0.14)',
                         },
                     },
                 },
@@ -202,6 +318,8 @@ export const AppThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => 
                             backgroundImage: 'none',
                             backgroundColor: darkMode ? '#1e2124' : '#FFFFFF',
                             border: darkMode ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(26,26,46,0.08)',
+                            borderRadius: '14px',
+                            boxShadow: darkMode ? '0 12px 32px rgba(0,0,0,0.36)' : '0 12px 32px rgba(26,26,46,0.14)',
                         },
                     },
                 },
