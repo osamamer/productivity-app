@@ -8,6 +8,7 @@ interface Props {
     autoFocus?: boolean;
     onFocus?: React.FocusEventHandler<HTMLInputElement | HTMLTextAreaElement>;
     onBlur?: React.FocusEventHandler<HTMLInputElement | HTMLTextAreaElement>;
+    onTabFromMinutes?: React.KeyboardEventHandler<HTMLDivElement>;
 }
 
 function durationParts(value: number | null): { hours: string; minutes: string } {
@@ -19,11 +20,19 @@ function durationParts(value: number | null): { hours: string; minutes: string }
     };
 }
 
-export function DurationInput({ value, onChange, autoFocus = false, onFocus, onBlur }: Props) {
+export function DurationInput({
+    value,
+    onChange,
+    autoFocus = false,
+    onFocus,
+    onBlur,
+    onTabFromMinutes,
+}: Props) {
     const initialParts = durationParts(value);
     const [hours, setHours] = useState(initialParts.hours);
     const [minutes, setMinutes] = useState(initialParts.minutes);
     const lastEmittedValue = useRef<number | null>(value);
+    const minutesInputRef = useRef<HTMLInputElement | null>(null);
 
     useEffect(() => {
         if (value === lastEmittedValue.current) return;
@@ -36,14 +45,14 @@ export function DurationInput({ value, onChange, autoFocus = false, onFocus, onB
     const updateValue = (nextHours: string, nextMinutes: string) => {
         setHours(nextHours);
         setMinutes(nextMinutes);
-        if (nextHours === '' || nextMinutes === '') {
+        if (nextHours === '' && nextMinutes === '') {
             lastEmittedValue.current = null;
             onChange(null);
             return;
         }
 
-        const parsedHours = Number(nextHours);
-        const parsedMinutes = Number(nextMinutes);
+        const parsedHours = nextHours === '' ? 0 : Number(nextHours);
+        const parsedMinutes = nextMinutes === '' ? 0 : Number(nextMinutes);
         const nextValue = Number.isSafeInteger(parsedHours) && parsedHours >= 0
             && Number.isSafeInteger(parsedMinutes) && parsedMinutes >= 0 && parsedMinutes < 60
             ? parsedHours * 60 + parsedMinutes
@@ -61,6 +70,12 @@ export function DurationInput({ value, onChange, autoFocus = false, onFocus, onB
                 value={hours}
                 onChange={event => updateValue(event.target.value, minutes)}
                 onStepValueChange={value => updateValue(String(value), minutes)}
+                onKeyDown={event => {
+                    if (event.key !== 'Tab' || event.shiftKey) return;
+                    if (!minutesInputRef.current) return;
+                    event.preventDefault();
+                    minutesInputRef.current.focus();
+                }}
                 onFocus={onFocus}
                 onBlur={onBlur}
                 min={0}
@@ -77,6 +92,12 @@ export function DurationInput({ value, onChange, autoFocus = false, onFocus, onB
                 value={minutes}
                 onChange={event => updateValue(hours, event.target.value)}
                 onStepValueChange={value => updateValue(hours, String(value))}
+                inputRef={minutesInputRef}
+                onKeyDown={event => {
+                    if (event.key === 'Tab' && !event.shiftKey) {
+                        onTabFromMinutes?.(event);
+                    }
+                }}
                 onFocus={onFocus}
                 onBlur={onBlur}
                 min={0}

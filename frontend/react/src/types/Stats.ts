@@ -12,6 +12,7 @@ export interface StatDefinition {
     maxValue?: number;
     goodThreshold?: number | null;
     systemKey?: string;
+    recurringTaskSeriesId?: string | null;
     displayOrder: number;
     userId: string;
 }
@@ -25,6 +26,11 @@ export interface StatEntry {
     userId: string;
 }
 
+export interface StatFocusTimeEntry {
+    date: string;
+    totalFocusSeconds: number;
+}
+
 export interface CreateDefinitionRequest {
     name: string;
     description?: string;
@@ -33,6 +39,7 @@ export interface CreateDefinitionRequest {
     maxValue?: number;
     morality?: StatMorality;
     goodThreshold?: number;
+    createRecurringTask?: boolean;
 }
 
 export interface UpdateDefinitionRequest {

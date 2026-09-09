@@ -24,6 +24,7 @@ const SOUND_URLS: Record<MeditationSoundId, string> = {
 
 class MeditationSoundscape {
     private player: HTMLAudioElement | null = null;
+    private previewTimeout: number | null = null;
 
     async start(sound: MeditationSoundId): Promise<void> {
         this.stop();
@@ -37,6 +38,24 @@ class MeditationSoundscape {
         } catch (error) {
             if (this.player === player) this.stop();
             console.error('Could not play meditation soundscape:', error);
+        }
+    }
+
+    async preview(sound: MeditationSoundId): Promise<void> {
+        this.stop();
+        if (typeof window === 'undefined') return;
+        const player = new Audio(SOUND_URLS[sound]);
+        player.volume = 0.38;
+        this.player = player;
+        try {
+            await player.play();
+            if (this.player !== player) return;
+            this.previewTimeout = window.setTimeout(() => {
+                if (this.player === player) this.stop();
+            }, 5_000);
+        } catch (error) {
+            if (this.player === player) this.stop();
+            console.error('Could not preview meditation soundscape:', error);
         }
     }
 
@@ -54,29 +73,13 @@ class MeditationSoundscape {
     }
 
     stop(): void {
-        stopIntervalBell();
+        if (this.previewTimeout !== null && typeof window !== 'undefined') {
+            window.clearTimeout(this.previewTimeout);
+        }
+        this.previewTimeout = null;
         this.player?.pause();
         this.player = null;
     }
 }
 
 export const meditationSoundscape = new MeditationSoundscape();
-
-let intervalBell: HTMLAudioElement | null = null;
-let intervalBellTimeout: number | null = null;
-
-export function playIntervalBell(): void {
-    if (typeof window === 'undefined') return;
-    intervalBell ??= new Audio(SOUND_URLS.bowls);
-    intervalBell.volume = 0.42;
-    intervalBell.currentTime = 0;
-    void intervalBell.play().catch(error => console.error('Could not play meditation interval bell:', error));
-    if (intervalBellTimeout !== null) window.clearTimeout(intervalBellTimeout);
-    intervalBellTimeout = window.setTimeout(() => intervalBell?.pause(), 2200);
-}
-
-export function stopIntervalBell(): void {
-    if (intervalBellTimeout !== null) window.clearTimeout(intervalBellTimeout);
-    intervalBellTimeout = null;
-    intervalBell?.pause();
-}

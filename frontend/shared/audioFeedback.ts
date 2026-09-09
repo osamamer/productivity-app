@@ -3,7 +3,10 @@ export type AudioFeedbackKind =
   | 'eventCreated'
   | 'dayRatingHigh'
   | 'dayRatingLow'
-  | 'mentalThreadCreated';
+  | 'mentalThreadCreated'
+  | 'pomodoroFocusEnded'
+  | 'pomodoroBreakEnded'
+  | 'pomodoroCompleted';
 
 export const AUDIO_FEEDBACK_STORAGE_KEY = 'claritard.audio-feedback-enabled';
 
@@ -65,6 +68,23 @@ export const AUDIO_FEEDBACK_SOUNDS: Record<AudioFeedbackKind, readonly AudioFeed
     NOTE(D4, 0.12, { waveform: 'triangle', volume: 0.06 }),
     NOTE(G4, 0.14, { waveform: 'triangle', volume: 0.065 }),
     NOTE(B4, 0.24, { gapAfter: 0, waveform: 'triangle', volume: 0.075 }),
+  ],
+  // A soft handoff cue for moving from focused work into a break.
+  pomodoroFocusEnded: [
+    NOTE(G4, 0.12, { waveform: 'triangle', volume: 0.06 }),
+    NOTE(C5, 0.22, { gapAfter: 0, waveform: 'triangle', volume: 0.07 }),
+  ],
+  // A clear but unobtrusive cue for returning to focused work.
+  pomodoroBreakEnded: [
+    NOTE(C5, 0.11, { volume: 0.065 }),
+    NOTE(G5, 0.22, { gapAfter: 0, volume: 0.075 }),
+  ],
+  // A resolved cadence for completing the full Pomodoro.
+  pomodoroCompleted: [
+    NOTE(C5, 0.1),
+    NOTE(E5, 0.1),
+    NOTE(G5, 0.1),
+    NOTE(C6, 0.28, { gapAfter: 0, volume: 0.09 }),
   ],
 };
 
@@ -135,4 +155,56 @@ export function renderAudioFeedback(context: AudioContextLike, kind: AudioFeedba
 
     offset += note.duration + (note.gapAfter ?? 0);
   });
+}
+
+interface ResonantPartial {
+  ratio: number;
+  level: number;
+  waveform: 'sine' | 'triangle';
+}
+
+const RESONANT_BELL_PARTIALS: readonly ResonantPartial[] = [
+  { ratio: 1, level: 1, waveform: 'sine' },
+  { ratio: 2.01, level: 0.36, waveform: 'sine' },
+  { ratio: 3.02, level: 0.18, waveform: 'triangle' },
+  { ratio: 4.17, level: 0.09, waveform: 'sine' },
+];
+
+function renderResonantTone(
+  context: AudioContextLike,
+  start: number,
+  frequency: number,
+  duration: number,
+  volume: number,
+): void {
+  RESONANT_BELL_PARTIALS.forEach(partial => {
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    const peak = volume * partial.level;
+    const attackEnd = start + Math.min(0.035, duration * 0.08);
+    const decayEnd = start + duration * 0.24;
+
+    oscillator.type = partial.waveform;
+    oscillator.frequency.setValueAtTime(frequency * partial.ratio, start);
+    gain.gain.setValueAtTime(0, start);
+    gain.gain.linearRampToValueAtTime(peak, attackEnd);
+    gain.gain.linearRampToValueAtTime(peak * 0.48, decayEnd);
+    gain.gain.linearRampToValueAtTime(0, start + duration);
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.start(start);
+    oscillator.stop(start + duration + 0.02);
+  });
+}
+
+/** A full-decay cue for the quiet boundaries inside a meditation. */
+export function renderMeditationIntervalBell(context: AudioContextLike): void {
+  renderResonantTone(context, context.currentTime + 0.01, 293.66, 3.2, 0.12);
+}
+
+/** A lower, longer two-tone gong that marks the end of a meditation. */
+export function renderMeditationCompletionGong(context: AudioContextLike): void {
+  const start = context.currentTime + 0.01;
+  renderResonantTone(context, start, 146.83, 4.2, 0.14);
+  renderResonantTone(context, start + 0.22, 220, 3.7, 0.07);
 }

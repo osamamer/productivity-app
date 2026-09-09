@@ -2,9 +2,11 @@ import {
     Alert, Box, Button, FormControlLabel, MenuItem, Stack, Switch, TextField, Typography,
 } from '@mui/material';
 import { useMemo, useState } from 'react';
-import { CalendarEvent, CalendarEventInput, RecurrenceFrequency, RecurrenceUnit } from '../../types/CalendarEvent';
+import { CalendarEvent, CalendarEventInput, CalendarEventStatus, RecurrenceFrequency, RecurrenceUnit } from '../../types/CalendarEvent';
+import { readEventTimePreferences, saveEventTimePreferences } from '../../services/utils/inputPreferences';
 import { AppDateField, AppTimeField } from '../input/AppPickerFields';
 import { AppNumberField } from '../input/AppNumberField';
+import { useKeyboardDelete } from '../../hooks/useKeyboardDelete';
 
 type Props = {
     initialDate: string;
@@ -37,6 +39,12 @@ const RECURRENCE_UNIT_OPTIONS: { value: RecurrenceUnit; label: string }[] = [
     { value: 'MONTHS', label: 'months' },
 ];
 
+const STATUS_OPTIONS: { value: CalendarEventStatus; label: string }[] = [
+    { value: 'CONFIRMED', label: 'Confirmed' },
+    { value: 'TENTATIVE', label: 'Tentative' },
+    { value: 'CANCELLED', label: 'Cancelled' },
+];
+
 function localDatePart(value: string | null | undefined, fallback: string): string {
     if (!value) return fallback;
     const date = new Date(value);
@@ -67,13 +75,15 @@ function addDay(date: string): string {
 }
 
 export function CalendarEventForm({ initialDate, event, onSave, onCancel, onDelete }: Props) {
+    const [rememberedTimes] = useState(() => event ? {} : readEventTimePreferences());
     const [title, setTitle] = useState(event?.title ?? '');
     const [description, setDescription] = useState(event?.description ?? '');
     const [allDay, setAllDay] = useState(event?.allDay ?? false);
     const [startDate, setStartDate] = useState(event?.startDate ?? localDatePart(event?.startTime, initialDate));
     const [endDate, setEndDate] = useState(event?.endDate ?? localDatePart(event?.endTime, initialDate));
-    const [startTime, setStartTime] = useState(localTimePart(event?.startTime, '17:00'));
-    const [endTime, setEndTime] = useState(localTimePart(event?.endTime, '18:00'));
+    const [startTime, setStartTime] = useState(localTimePart(event?.startTime, rememberedTimes.startTime ?? '17:00'));
+    const [endTime, setEndTime] = useState(localTimePart(event?.endTime, rememberedTimes.endTime ?? '18:00'));
+    const [status, setStatus] = useState<CalendarEventStatus>(event?.status ?? 'CONFIRMED');
     const [recurrenceFrequency, setRecurrenceFrequency] = useState<RecurrenceFrequency>(
         event?.recurrenceFrequency ?? 'NONE'
     );
@@ -152,12 +162,14 @@ export function CalendarEventForm({ initialDate, event, onSave, onCancel, onDele
                 startTime: startInstant,
                 endTime: endInstant,
                 timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+                status,
                 recurrenceFrequency,
                 recurrenceEndDate: recurrenceFrequency === 'NONE' || !recurrenceEndDate ? null : recurrenceEndDate,
                 recurrenceInterval: recurrenceFrequency === 'CUSTOM' ? recurrenceInterval : null,
                 recurrenceUnit: recurrenceFrequency === 'CUSTOM' ? recurrenceUnit : null,
                 reminderMinutesBefore: reminderMinutes,
             });
+            if (!allDay) saveEventTimePreferences(startTime, endTime);
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Failed to save the event.');
         } finally {
@@ -177,11 +189,24 @@ export function CalendarEventForm({ initialDate, event, onSave, onCancel, onDele
         }
     };
 
+    useKeyboardDelete({
+        enabled: Boolean(onDelete) && !saving && !deleting,
+        allowDialog: true,
+        onDelete: () => { void remove(); },
+    });
+
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, p: 2 }}>
             <TextField label="Event title" value={title} onChange={e => setTitle(e.target.value)} autoFocus autoComplete="off" fullWidth />
             <TextField label="Description" value={description} onChange={e => setDescription(e.target.value)} autoComplete="off"
                        multiline minRows={2} maxRows={5} fullWidth />
+
+            <TextField select label="Status" value={status} autoComplete="off"
+                       onChange={e => setStatus(e.target.value as CalendarEventStatus)} fullWidth>
+                {STATUS_OPTIONS.map(option => (
+                    <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                ))}
+            </TextField>
 
             <FormControlLabel
                 control={<Switch checked={allDay} onChange={e => setAllDay(e.target.checked)} />}

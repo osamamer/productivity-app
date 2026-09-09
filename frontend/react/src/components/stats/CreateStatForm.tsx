@@ -3,9 +3,9 @@ import { useFormik } from 'formik';
 import * as Yup from 'yup';
 import {
     Box, TextField, Button, Select, MenuItem, FormControl,
-    InputLabel, Typography, Stack, Collapse, FormHelperText,
+    InputLabel, Typography, Stack, Collapse, FormHelperText, Checkbox, FormControlLabel,
 } from '@mui/material';
-import { StatDefinition, StatMorality, StatType } from '../../types/Stats';
+import { CreateDefinitionRequest, StatDefinition, StatMorality, StatType } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
 import {
     durationValueToMinutes,
@@ -16,6 +16,7 @@ import {
 import { AppTimeField } from '../input/AppPickerFields';
 import { AppNumberField } from '../input/AppNumberField';
 import { DurationInput } from './DurationInput';
+import { useKeyboardDelete } from '../../hooks/useKeyboardDelete';
 
 interface FormValues {
     name: string;
@@ -25,6 +26,7 @@ interface FormValues {
     maxValue: string;
     morality: StatMorality;
     goodThreshold: string;
+    createRecurringTask: boolean;
 }
 
 const validationSchema = Yup.object({
@@ -72,15 +74,32 @@ const validationSchema = Yup.object({
 });
 
 interface Props {
-    onCreated?: (def: StatDefinition) => void;
+    onCreated?: (def: StatDefinition, operationId?: string) => void;
+    onCreatedOptimistically?: (def: StatDefinition, operationId: string) => void;
+    onCreationFailed?: (operationId: string) => void;
     onUpdated?: (def: StatDefinition) => void;
     onDelete?: () => void;
     onCancel: () => void;
     initialDefinition?: StatDefinition;
 }
 
-export function CreateStatForm({ onCreated, onUpdated, onDelete, onCancel, initialDefinition }: Props) {
+export function CreateStatForm({
+    onCreated,
+    onCreatedOptimistically,
+    onCreationFailed,
+    onUpdated,
+    onDelete,
+    onCancel,
+    initialDefinition,
+}: Props) {
     const isEditing = Boolean(initialDefinition);
+    const [disconnectError, setDisconnectError] = React.useState<string | null>(null);
+    const [disconnecting, setDisconnecting] = React.useState(false);
+    useKeyboardDelete({
+        enabled: Boolean(onDelete) && isEditing && !initialDefinition?.systemKey,
+        allowDialog: true,
+        onDelete: () => onDelete?.(),
+    });
     const formik = useFormik<FormValues>({
         enableReinitialize: true,
         initialValues: {
@@ -97,6 +116,7 @@ export function CreateStatForm({ onCreated, onUpdated, onDelete, onCancel, initi
                     : initialDefinition.type === 'DURATION'
                         ? minutesToDurationValue(initialDefinition.goodThreshold)
                         : String(initialDefinition.goodThreshold),
+            createRecurringTask: false,
         },
         validationSchema,
         onSubmit: async (values, { setSubmitting, setFieldError }) => {
@@ -119,7 +139,7 @@ export function CreateStatForm({ onCreated, onUpdated, onDelete, onCancel, initi
                     });
                     onUpdated?.(def);
                 } else {
-                    const def = await statService.createDefinition({
+                    const request: CreateDefinitionRequest = {
                         name: values.name,
                         description: values.description || undefined,
                         type: values.type,
@@ -129,8 +149,35 @@ export function CreateStatForm({ onCreated, onUpdated, onDelete, onCancel, initi
                         goodThreshold: values.type !== 'BOOLEAN' && values.morality !== 'NEUTRAL'
                             ? threshold ?? undefined
                             : undefined,
-                    });
-                    onCreated?.(def);
+                        createRecurringTask: values.type === 'BOOLEAN' && values.createRecurringTask,
+                    };
+
+                    if (request.createRecurringTask && onCreatedOptimistically && onCreationFailed) {
+                        const operationId = `pending-stat-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+                        onCreatedOptimistically({
+                            id: operationId,
+                            name: request.name,
+                            description: request.description,
+                            type: request.type,
+                            morality: request.morality,
+                            minValue: request.minValue,
+                            maxValue: request.maxValue,
+                            goodThreshold: request.goodThreshold,
+                            recurringTaskSeriesId: null,
+                            displayOrder: Number.MAX_SAFE_INTEGER,
+                            userId: '',
+                        }, operationId);
+                        onCancel();
+                        void statService.createDefinition(request)
+                            .then(def => onCreated?.(def, operationId))
+                            .catch(error => {
+                                console.error('Failed to create linked statistic:', error);
+                                onCreationFailed(operationId);
+                            });
+                    } else {
+                        const def = await statService.createDefinition(request);
+                        onCreated?.(def);
+                    }
                 }
             } catch (e) {
                 console.error(`Failed to ${isEditing ? 'update' : 'create'} stat definition:`, e);
@@ -140,6 +187,22 @@ export function CreateStatForm({ onCreated, onUpdated, onDelete, onCancel, initi
             }
         },
     });
+
+    const disconnectRecurringTask = async () => {
+        if (!initialDefinition?.recurringTaskSeriesId || disconnecting) return;
+
+        setDisconnecting(true);
+        setDisconnectError(null);
+        try {
+            const definition = await statService.disconnectRecurringTask(initialDefinition.id);
+            onUpdated?.(definition);
+        } catch (error) {
+            console.error('Failed to disconnect recurring task:', error);
+            setDisconnectError('Could not disconnect the recurring task. Please try again.');
+        } finally {
+            setDisconnecting(false);
+        }
+    };
 
     return (
         <Box
@@ -183,6 +246,8 @@ export function CreateStatForm({ onCreated, onUpdated, onDelete, onCancel, initi
                             formik.setFieldValue('goodThreshold', '');
                             if (type === 'BOOLEAN') {
                                 formik.setFieldValue('morality', 'NEUTRAL');
+                            } else {
+                                formik.setFieldValue('createRecurringTask', false);
                             }
                         }}
                     >
@@ -296,6 +361,37 @@ export function CreateStatForm({ onCreated, onUpdated, onDelete, onCancel, initi
                         />
                     )}
                 </Collapse>
+                <Collapse in={!isEditing && formik.values.type === 'BOOLEAN'}>
+                    <FormControlLabel
+                        control={(
+                            <Checkbox
+                                name="createRecurringTask"
+                                checked={formik.values.createRecurringTask}
+                                onChange={formik.handleChange}
+                            />
+                        )}
+                        label="Create a daily recurring task linked to this statistic"
+                    />
+                </Collapse>
+                {isEditing && initialDefinition?.recurringTaskSeriesId && (
+                    <Box sx={{ borderTop: 1, borderColor: 'divider', pt: 1.5 }}>
+                        <Button
+                            type="button"
+                            onClick={() => { void disconnectRecurringTask(); }}
+                            color="error"
+                            size="small"
+                            disabled={disconnecting || formik.isSubmitting}
+                        >
+                            {disconnecting ? 'Disconnecting…' : 'Disconnect recurring task'}
+                        </Button>
+                        <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                            This keeps the existing tasks and statistic entries; it only removes their link.
+                        </Typography>
+                        {disconnectError && (
+                            <FormHelperText error>{disconnectError}</FormHelperText>
+                        )}
+                    </Box>
+                )}
                 <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="center">
                     {isEditing && !initialDefinition?.systemKey && (
                         <Button type="button" onClick={onDelete} color="error" size="small">

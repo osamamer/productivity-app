@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -70,6 +71,19 @@ class MeditationSystemStatIntegrationTest {
                         meditationMinutes.getId(), TEST_USER_ID, secondSession.getEndTime().toLocalDate())
                 .orElseThrow()
                 .getValue(), 0.05);
+    }
+
+    @Test
+    void discardingMeditationSessionsRemovesThemWithoutRecordingStats() {
+        MeditationSession session = meditationSessionService.startSession(5, 0, 600, TEST_USER_ID);
+
+        meditationSessionService.discardSession(session.getId(), TEST_USER_ID);
+
+        assertFalse(meditationSessionRepository.findById(session.getId()).isPresent());
+        assertEquals(0, entryRepository.findAllByUserIdAndDateBetween(
+                TEST_USER_ID,
+                session.getStartTime().toLocalDate(),
+                session.getStartTime().toLocalDate()).size());
     }
 
     private MeditationSession endSessionWithElapsedMinutes(long minutes) {

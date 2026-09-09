@@ -50,6 +50,7 @@ app_tables=(
   stat_definition
   stat_entry
   task
+  task_series
   task_group
   task_group_task
   task_session

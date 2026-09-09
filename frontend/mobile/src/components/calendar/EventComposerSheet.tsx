@@ -4,9 +4,11 @@ import { useEffect, useRef, useState } from 'react';
 import { eventDateInTimeZone, localDate, localDateTimeToInstant } from '@/lib/date';
 import { playAudioFeedback } from '@/lib/audioFeedback';
 import { reportError } from '@/lib/errors';
+import { readEventTimePreferences, saveEventTimePreferences } from '@/lib/inputPreferences';
 import { useAppTheme } from '@/providers/ThemeProvider';
+import { useAuth } from '@/providers/AuthProvider';
 import { api } from '@/services/api';
-import type { CalendarEvent, CalendarEventInput, RecurrenceFrequency, RecurrenceUnit } from '@/types/models';
+import type { CalendarEvent, CalendarEventInput, CalendarEventStatus, RecurrenceFrequency, RecurrenceUnit } from '@/types/models';
 import { AppButton } from '../ui/AppButton';
 import { CalendarDatePicker } from '../ui/CalendarDatePicker';
 import { AppInput } from '../ui/AppInput';
@@ -167,6 +169,7 @@ function eventDefaults(event: CalendarEvent | null | undefined, initialDate?: st
     recurrenceEndDate: event?.recurrenceEndDate ?? '',
     recurrenceInterval: event?.recurrenceInterval ?? 1,
     recurrenceUnit: event?.recurrenceUnit ?? 'WEEKS' as RecurrenceUnit,
+    status: event?.status ?? 'CONFIRMED' as CalendarEventStatus,
     reminder: event ? event.reminderMinutesBefore === null ? 'none' : String(event.reminderMinutesBefore) : '1440',
   };
 }
@@ -225,6 +228,7 @@ export function EventComposerSheet({ visible, onClose, event, initialDate, onSav
   onSaved: (event: CalendarEvent) => void;
   onDelete?: () => Promise<boolean>;
 }) {
+  const { user } = useAuth();
   const defaults = eventDefaults(event, initialDate);
   const [title, setTitle] = useState(defaults.title);
   const [description, setDescription] = useState(defaults.description);
@@ -237,10 +241,23 @@ export function EventComposerSheet({ visible, onClose, event, initialDate, onSav
   const [recurrenceEndDate, setRecurrenceEndDate] = useState(defaults.recurrenceEndDate);
   const [recurrenceInterval, setRecurrenceInterval] = useState(defaults.recurrenceInterval);
   const [recurrenceUnit, setRecurrenceUnit] = useState<RecurrenceUnit>(defaults.recurrenceUnit);
+  const [status, setStatus] = useState<CalendarEventStatus>(defaults.status);
   const [reminder, setReminder] = useState<ReminderValue>(defaults.reminder);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const timeFieldsChanged = useRef(false);
+
+  useEffect(() => {
+    if (!visible || event) return;
+    let active = true;
+    void readEventTimePreferences(user?.id).then(preferences => {
+      if (!active || timeFieldsChanged.current) return;
+      if (preferences.startTime) setStartTime(preferences.startTime);
+      if (preferences.endTime) setEndTime(preferences.endTime);
+    });
+    return () => { active = false; };
+  }, [event, user?.id, visible]);
 
   function reset() {
     const next = eventDefaults(null, initialDate);
@@ -255,8 +272,10 @@ export function EventComposerSheet({ visible, onClose, event, initialDate, onSav
     setRecurrenceEndDate(next.recurrenceEndDate);
     setRecurrenceInterval(next.recurrenceInterval);
     setRecurrenceUnit(next.recurrenceUnit);
+    setStatus(next.status);
     setReminder(next.reminder);
     setError(null);
+    timeFieldsChanged.current = false;
   }
 
   function close() {
@@ -265,6 +284,7 @@ export function EventComposerSheet({ visible, onClose, event, initialDate, onSav
   }
 
   function handleStartTimeChange(nextStartTime: string) {
+    timeFieldsChanged.current = true;
     setStartTime(nextStartTime);
     if (!nextStartTime || !endTime || date !== endDate || nextStartTime < endTime) return;
     const adjustedEnd = addHour(nextStartTime);
@@ -273,6 +293,7 @@ export function EventComposerSheet({ visible, onClose, event, initialDate, onSav
   }
 
   function handleStartDateChange(nextDate: string) {
+    timeFieldsChanged.current = true;
     setDate(nextDate);
     if (!nextDate) return;
     if (allDay === 'yes') {
@@ -316,6 +337,7 @@ export function EventComposerSheet({ visible, onClose, event, initialDate, onSav
       startTime: startInstant,
       endTime: endInstant,
       timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+      status,
       recurrenceFrequency: recurrence,
       recurrenceEndDate: recurrence === 'NONE' ? null : recurrenceEndDate || null,
       recurrenceInterval: recurrence === 'CUSTOM' ? recurrenceInterval : null,
@@ -325,6 +347,7 @@ export function EventComposerSheet({ visible, onClose, event, initialDate, onSav
 
     try {
       const saved = event ? await api.events.update(event.id, input) : await api.events.create(input);
+      if (allDay === 'no') void saveEventTimePreferences(user?.id, startTime, endTime);
       onSaved(saved);
       if (!event) playAudioFeedback('eventCreated');
       close();
@@ -369,6 +392,12 @@ export function EventComposerSheet({ visible, onClose, event, initialDate, onSav
       )}>
       <AppInput autoFocus label="Event" value={title} onChangeText={setTitle} error={error ?? undefined} />
       <AppInput label="Details (optional)" multiline value={description} onChangeText={setDescription} />
+      <AppText variant="label">Status</AppText>
+      <ChoiceChips value={status} onChange={setStatus} options={[
+        { value: 'CONFIRMED' as const, label: 'Confirmed' },
+        { value: 'TENTATIVE' as const, label: 'Tentative' },
+        { value: 'CANCELLED' as const, label: 'Cancelled' },
+      ]} />
       <AppText variant="label">When</AppText>
       <ChoiceChips value={allDay} onChange={setAllDay} options={[{ value: 'no', label: 'Timed' }, { value: 'yes', label: 'All day' }]} />
       <View style={styles.fieldRow}>

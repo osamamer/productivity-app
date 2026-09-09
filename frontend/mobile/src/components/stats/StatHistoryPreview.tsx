@@ -1,7 +1,7 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
-import { localDate, formatShortDate } from '@/lib/date';
+import { formatShortDate, formatWeekday, localDate } from '@/lib/date';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
 import type { StatDefinition, StatEntry } from '@/types/models';
@@ -22,8 +22,9 @@ const RECENT_DAYS = 5;
 const PLOT_HEIGHT = 108;
 const PLOT_VERTICAL_INSET = 12;
 const PLOT_HORIZONTAL_INSET = 7;
-const WEEKDAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const DURATION_TICK_STEPS = [15, 30, 60, 120, 180, 240, 360, 480, 720, 960, 1440];
+const THRESHOLD_COLOR_TRANSITION = 0.75;
 
 type NumericDomain = [number, number];
 interface ChartPoint { x: number; y: number; value: number; date?: string; }
@@ -32,7 +33,7 @@ type DatedChartPoint = ChartPoint & { date: string };
 function calendarWeeks(dates: string[]): (string | null)[][] {
   if (dates.length === 0) return [];
   const firstDay = new Date(`${dates[0]}T12:00:00`);
-  const leadingEmptyDays = (firstDay.getDay() + 6) % 7;
+  const leadingEmptyDays = firstDay.getDay();
   const calendarDays: (string | null)[] = [
     ...Array<string | null>(leadingEmptyDays).fill(null),
     ...dates,
@@ -123,14 +124,7 @@ function mixHexColors(first: string, second: string, firstWeight: number): strin
   return `rgb(${channels.join(', ')})`;
 }
 
-function thresholdCircleColor(
-  definition: StatDefinition,
-  value: number,
-  successLight: string,
-  successDark: string,
-  dangerLight: string,
-  dangerDark: string,
-): string | null {
+function thresholdGoodnessRatio(definition: StatDefinition, value: number): number | null {
   if ((definition.type !== 'NUMBER' && definition.type !== 'RANGE' && definition.type !== 'TIME' && definition.type !== 'DURATION')
     || definition.goodThreshold == null
     || !Number.isFinite(definition.goodThreshold)) return null;
@@ -139,21 +133,51 @@ function thresholdCircleColor(
   if (morality === 'NEUTRAL') return null;
 
   const threshold = definition.goodThreshold;
-  const goodnessRatio = definition.type === 'TIME'
+  return definition.type === 'TIME'
     ? timeValueToScale(definition, threshold) === 0
       ? timeValueToScale(definition, value) === 0 ? 2 : 0
       : timeValueToScale(definition, threshold) / Math.max(timeValueToScale(definition, value), 1)
     : threshold > 0
     ? morality === 'GOOD' ? value / threshold : value <= 0 ? 3 : threshold / value
     : 1 + (morality === 'GOOD' ? value - threshold : threshold - value) / Math.max(Math.abs(threshold), 1);
+}
 
-  if (goodnessRatio >= 1) {
-    const progressToMaximum = Math.min(1, (goodnessRatio - 1) / 2);
-    return mixHexColors(successDark, successLight, progressToMaximum);
-  }
+function thresholdColorProgress(definition: StatDefinition, value: number): number | null {
+  const goodnessRatio = thresholdGoodnessRatio(definition, value);
+  return goodnessRatio == null
+    ? null
+    : Math.min(1, Math.abs(goodnessRatio - 1) / THRESHOLD_COLOR_TRANSITION);
+}
 
-  const redProgress = Math.min(1, Math.max(0, 1 - goodnessRatio));
-  return mixHexColors(dangerDark, dangerLight, redProgress);
+function thresholdCircleColor(
+  definition: StatDefinition,
+  value: number,
+  successDark: string,
+  dangerDark: string,
+  thresholdColor: string,
+): string | null {
+  const goodnessRatio = thresholdGoodnessRatio(definition, value);
+  if (goodnessRatio == null) return null;
+
+  const progressFromThreshold = Math.min(
+    1,
+    Math.abs(goodnessRatio - 1) / THRESHOLD_COLOR_TRANSITION,
+  );
+  const directionColor = goodnessRatio >= 1 ? successDark : dangerDark;
+  const subduedThresholdColor = mixHexColors(thresholdColor, '#111827', 0.78);
+  return mixHexColors(directionColor, subduedThresholdColor, progressFromThreshold);
+}
+
+function getCircleTextColor(
+  definition: StatDefinition,
+  value: number,
+  colors: ReturnType<typeof useAppTheme>['colors'],
+): string {
+  const progress = thresholdColorProgress(definition, value);
+  if (progress != null) return progress < 0.72 ? '#111827' : '#FFFFFF';
+  return definition.type === 'TIME' || definition.type === 'DURATION'
+    ? colors.onAccent
+    : colors.text;
 }
 
 function getCircleColor(definition: StatDefinition, value: number | undefined, colors: ReturnType<typeof useAppTheme>['colors'], dark: boolean): string {
@@ -162,10 +186,9 @@ function getCircleColor(definition: StatDefinition, value: number | undefined, c
   const thresholdColor = thresholdCircleColor(
     definition,
     value,
-    colors.successLight,
     colors.successDark,
-    colors.dangerLight,
     colors.dangerDark,
+    colors.medium,
   );
   if (thresholdColor) return thresholdColor;
 
@@ -299,7 +322,7 @@ function TimeOfDayHistory({
           <View style={[styles.timeLabelsColumn, { height: plotHeight }]}>
             {dates.map(date => (
               <View key={date} style={styles.timePlotLabelRow}>
-                <AppText variant="caption" color="muted" style={styles.timeDateLabel}>{formatShortDate(date)}</AppText>
+                <AppText variant="caption" color="muted" style={styles.timeDateLabel}>{formatWeekday(date)}</AppText>
               </View>
             ))}
           </View>
@@ -388,11 +411,13 @@ function DurationLineHistory({
   definition,
   entriesByDate,
   buckets,
+  dateRange,
   colors,
 }: {
   definition: StatDefinition;
   entriesByDate: Map<string, number>;
   buckets: string[][];
+  dateRange: number;
   colors: ReturnType<typeof useAppTheme>['colors'];
 }) {
   const [plotWidth, setPlotWidth] = useState(0);
@@ -408,6 +433,7 @@ function DurationLineHistory({
   const maximum = axis.maximum;
   const target = durationTarget(definition);
   const gridValues = [...axis.ticks].reverse();
+  const isWeekView = dateRange <= 7;
   const trendPoints = bars.map((bar, index) => bar.value === undefined ? undefined : ({
     date: bar.date,
     value: bar.value,
@@ -421,38 +447,63 @@ function DurationLineHistory({
 
   return (
     <View style={styles.durationHistory} accessibilityLabel={`${definition.name} duration trend`}>
-      <View style={styles.durationChart}>
+      <View style={isWeekView ? styles.durationWeekChart : styles.durationChart}>
         <View style={styles.durationAxis}>
           {gridValues.map(value => <AppText key={value} variant="caption" color="muted" numberOfLines={1}>{formatDurationAxisValue(value)}</AppText>)}
         </View>
-        <View onLayout={event => setPlotWidth(event.nativeEvent.layout.width)} style={styles.durationPlot}>
-          {axis.ticks.map(value => <View key={value} style={[styles.gridLine, { top: `${100 - value / maximum * 100}%`, backgroundColor: colors.border }]} />)}
-          {target !== undefined && <View style={[styles.targetLine, { bottom: `${target / maximum * 100}%`, borderTopColor: colors.success }]} />}
-          {trendSegments.map((segment, index) => {
-            const width = Math.hypot(segment.end.x - segment.start.x, segment.end.y - segment.start.y);
-            const angle = Math.atan2(segment.end.y - segment.start.y, segment.end.x - segment.start.x) * (180 / Math.PI);
-            return (
+        {isWeekView ? (
+          <View style={styles.durationBarPlot}>
+            <View style={styles.durationBarArea}>
+              {axis.ticks.map(value => <View key={value} style={[styles.gridLine, { top: `${100 - value / maximum * 100}%`, backgroundColor: colors.border }]} />)}
+              {target !== undefined && <View style={[styles.targetLine, { bottom: `${target / maximum * 100}%`, borderTopColor: colors.success }]} />}
+              <View style={styles.durationBars}>
+                {bars.map(bar => (
+                  <View
+                    key={bar.date}
+                    style={styles.durationBarColumn}
+                    accessible
+                    accessibilityLabel={`${bar.date}: ${bar.value === undefined ? 'No entry' : formatDurationValue(bar.value)}`}>
+                    {bar.value !== undefined && (
+                      <View style={[styles.durationBar, { height: `${Math.max(3, bar.value / maximum * 100)}%`, backgroundColor: colors.accent }]} />
+                    )}
+                  </View>
+                ))}
+              </View>
+            </View>
+            <View style={styles.durationBarLabels}>
+              {bars.map(bar => <AppText key={bar.date} variant="caption" color="muted" style={styles.durationBarLabel}>{formatWeekday(bar.date)}</AppText>)}
+            </View>
+          </View>
+        ) : (
+          <View onLayout={event => setPlotWidth(event.nativeEvent.layout.width)} style={styles.durationPlot}>
+            {axis.ticks.map(value => <View key={value} style={[styles.gridLine, { top: `${100 - value / maximum * 100}%`, backgroundColor: colors.border }]} />)}
+            {target !== undefined && <View style={[styles.targetLine, { bottom: `${target / maximum * 100}%`, borderTopColor: colors.success }]} />}
+            {trendSegments.map((segment, index) => {
+              const width = Math.hypot(segment.end.x - segment.start.x, segment.end.y - segment.start.y);
+              const angle = Math.atan2(segment.end.y - segment.start.y, segment.end.x - segment.start.x) * (180 / Math.PI);
+              return (
+                <View
+                  key={`${index}-${segment.end.x}`}
+                  style={[styles.durationTrendSegment, {
+                    width,
+                    left: (segment.start.x + segment.end.x) / 2 - width / 2,
+                    top: (segment.start.y + segment.end.y) / 2 - 1,
+                    backgroundColor: colors.accent,
+                    transform: [{ rotate: `${angle}deg` }],
+                  }]}
+                />
+              );
+            })}
+            {recordedTrendPoints.map((point, index) => (
               <View
-                key={`${index}-${segment.end.x}`}
-                style={[styles.durationTrendSegment, {
-                  width,
-                  left: (segment.start.x + segment.end.x) / 2 - width / 2,
-                  top: (segment.start.y + segment.end.y) / 2 - 1,
-                  backgroundColor: colors.accent,
-                  transform: [{ rotate: `${angle}deg` }],
-                }]}
+                key={`${index}-${point.x}-point`}
+                accessible
+                accessibilityLabel={`${point.date}: ${formatDurationValue(point.value)}`}
+                style={[styles.durationTrendPoint, { left: point.x - 3, top: point.y - 3, backgroundColor: colors.accent }]}
               />
-            );
-          })}
-          {recordedTrendPoints.map((point, index) => (
-            <View
-              key={`${index}-${point.x}-point`}
-              accessible
-              accessibilityLabel={`${point.date}: ${formatDurationValue(point.value)}`}
-              style={[styles.durationTrendPoint, { left: point.x - 3, top: point.y - 3, backgroundColor: colors.accent }]}
-            />
-          ))}
-        </View>
+            ))}
+          </View>
+        )}
       </View>
       <View style={styles.durationRangeLabels}>
         <AppText variant="caption" color="muted">{formatShortDate(bars[0].date)}</AppText>
@@ -498,7 +549,7 @@ function RecentValueDots({
             {hasVisibleValue && value !== undefined && (
               <AppText
                 variant="caption"
-                style={[styles.dotValue, { fontSize: label.length > 5 ? 6 : label.length > 3 ? 7 : 9 }, definition.type !== 'NUMBER' && { color: colors.onAccent }]}
+                style={[styles.dotValue, { fontSize: label.length > 5 ? 6 : label.length > 3 ? 7 : 9, color: getCircleTextColor(definition, value, colors) }]}
               >
                 {label}
               </AppText>
@@ -751,6 +802,7 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, refreshK
           definition={definition}
           entriesByDate={entriesByDate}
           buckets={buckets}
+          dateRange={dateRange}
           colors={colors}
         />
         {error && <AppText variant="caption" color="danger">History unavailable</AppText>}
@@ -903,8 +955,16 @@ const styles = StyleSheet.create({
   densityLabels: { flexDirection: 'row', justifyContent: 'space-between' },
   durationHistory: { gap: 5 },
   durationChart: { flexDirection: 'row', height: PLOT_HEIGHT, gap: 8 },
+  durationWeekChart: { flexDirection: 'row', height: PLOT_HEIGHT + 18, gap: 8 },
   durationAxis: { width: 52, justifyContent: 'space-between', alignItems: 'flex-end', paddingVertical: 3 },
   durationPlot: { flex: 1, position: 'relative', overflow: 'hidden', borderRadius: 8 },
+  durationBarPlot: { flex: 1, position: 'relative', height: PLOT_HEIGHT + 18 },
+  durationBarArea: { position: 'absolute', top: 0, left: 0, right: 0, height: PLOT_HEIGHT, overflow: 'hidden', borderRadius: 8 },
+  durationBars: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, flexDirection: 'row', alignItems: 'flex-end', gap: 3, paddingHorizontal: 2 },
+  durationBarColumn: { flex: 1, height: '100%', alignItems: 'center', justifyContent: 'flex-end' },
+  durationBar: { width: '72%', minHeight: 3, borderRadius: 5 },
+  durationBarLabels: { position: 'absolute', left: 0, right: 0, top: PLOT_HEIGHT + 2, flexDirection: 'row', gap: 3, paddingHorizontal: 2 },
+  durationBarLabel: { flex: 1, textAlign: 'center', fontSize: 9 },
   durationTrendSegment: { position: 'absolute', height: 2, borderRadius: 1 },
   durationTrendPoint: { position: 'absolute', width: 6, height: 6, borderRadius: 3 },
   durationRangeLabels: { flexDirection: 'row', justifyContent: 'space-between', marginLeft: 60 },

@@ -1,0 +1,40 @@
+databaseChangeLog:
+  - changeSet:
+      id: 049-add-task-reminder-settings
+      author: codex
+      comment: Persist task time zones and recurring task reminder settings
+      changes:
+        - addColumn:
+            tableName: task
+            columns:
+              - column:
+                  name: time_zone
+                  type: varchar(80)
+                  defaultValue: UTC
+                  constraints:
+                    nullable: false
+        - addColumn:
+            tableName: task_series
+            columns:
+              - column:
+                  name: reminder_minutes_before
+                  type: integer
+        - createIndex:
+            tableName: reminder
+            indexName: idx_app_reminder_task_type
+            ifNotExists: true
+            columns:
+              - column:
+                  name: task_id
+              - column:
+                  name: notification_type
+      rollback:
+        - dropIndex:
+            tableName: reminder
+            indexName: idx_app_reminder_task_type
+        - dropColumn:
+            tableName: task_series
+            columnName: reminder_minutes_before
+        - dropColumn:
+            tableName: task
+            columnName: time_zone

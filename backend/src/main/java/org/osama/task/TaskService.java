@@ -6,20 +6,29 @@ import org.osama.exceptions.ResourceNotFoundException;
 import org.osama.mentalthread.MentalThread;
 import org.osama.mentalthread.MentalThreadRepository;
 import org.osama.mentalthread.MentalThreadStatus;
+import org.osama.reminder.NotificationType;
+import org.osama.reminder.Reminder;
+import org.osama.reminder.ReminderRepository;
 import org.osama.requests.UpdateTaskRequest;
 import org.osama.requests.NewTaskRequest;
 import org.osama.session.task.TaskSession;
 import org.osama.session.task.TaskSessionRepository;
+import org.osama.stat.StatTaskLinkService;
 import org.osama.taskgroup.TaskGroupService;
+import org.osama.task.recurrence.TaskSeriesRepository;
 import org.osama.user.User;
 import org.osama.user.UserRepository;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.DateTimeException;
+import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -27,43 +36,90 @@ import java.util.stream.Collectors;
 @Service
 @Slf4j
 public class TaskService {
+    private static final int MAX_PAGED_TASK_LIMIT = 100;
+    private static final int MAX_REMINDER_MINUTES = 8 * 7 * 24 * 60;
+
     private final TaskRepository taskRepository;
     private final TaskSessionRepository taskSessionRepository;
     private final UserRepository userRepository;
     private final MentalThreadRepository mentalThreadRepository;
     private final TaskGroupService taskGroupService;
+    private final StatTaskLinkService statTaskLinkService;
+    private final TaskSeriesRepository taskSeriesRepository;
+    private final ReminderRepository reminderRepository;
 
     public TaskService(TaskRepository taskRepository, TaskSessionRepository taskSessionRepository,
                        UserRepository userRepository, MentalThreadRepository mentalThreadRepository,
-                       TaskGroupService taskGroupService) {
+                       TaskGroupService taskGroupService, StatTaskLinkService statTaskLinkService,
+                       TaskSeriesRepository taskSeriesRepository, ReminderRepository reminderRepository) {
         this.taskRepository = taskRepository;
         this.taskSessionRepository = taskSessionRepository;
         this.userRepository = userRepository;
         this.mentalThreadRepository = mentalThreadRepository;
         this.taskGroupService = taskGroupService;
+        this.statTaskLinkService = statTaskLinkService;
+        this.taskSeriesRepository = taskSeriesRepository;
+        this.reminderRepository = reminderRepository;
     }
 
     public List<Task> findTasks(TaskQuery query) {
         Specification<Task> spec = TaskSpecifications.matchesQuery(query);
 
-        // Add sorting
-        Sort sort = Sort.by(
+        List<Task> tasks = taskRepository.findAll(spec, taskSort(query));
+        attachReminderMinutes(tasks);
+        return tasks;
+    }
+
+    public List<Task> findTasks(TaskQuery query, int limit, int offset) {
+        if (limit < 1 || limit > MAX_PAGED_TASK_LIMIT) {
+            throw new IllegalArgumentException("Task query limit must be between 1 and " + MAX_PAGED_TASK_LIMIT + ".");
+        }
+        if (offset < 0 || offset % limit != 0) {
+            throw new IllegalArgumentException("Task query offset must be a non-negative multiple of the limit.");
+        }
+
+        Specification<Task> spec = TaskSpecifications.matchesQuery(query);
+        List<Task> tasks = taskRepository.findAll(
+                spec,
+                PageRequest.of(offset / limit, limit, taskSort(query))
+        ).getContent();
+        attachReminderMinutes(tasks);
+        return tasks;
+    }
+
+    private Sort taskSort(TaskQuery query) {
+        if (query.getPeriod() == TaskQuery.DatePeriod.FUTURE) {
+            return Sort.by(
+                    Sort.Order.asc("scheduledPerformDateTime"),
+                    Sort.Order.asc("completed"),
+                    Sort.Order.desc("importance"),
+                    Sort.Order.asc("taskId")
+            );
+        }
+        if (query.getPeriod() == TaskQuery.DatePeriod.PAST) {
+            return Sort.by(
+                    Sort.Order.desc("scheduledPerformDateTime"),
+                    Sort.Order.asc("completed"),
+                    Sort.Order.desc("importance"),
+                    Sort.Order.asc("taskId")
+            );
+        }
+        return Sort.by(
                 Sort.Order.asc("displayOrder"),
                 Sort.Order.asc("completed"),
                 Sort.Order.desc("importance"),
                 Sort.Order.desc("creationDateTime"),
                 Sort.Order.asc("taskId")
         );
-
-        return taskRepository.findAll(spec, sort);
     }
 
     public Optional<Task> getTask(String taskId) {
-        return taskRepository.findTaskByTaskId(taskId);
+        return taskRepository.findTaskByTaskId(taskId).map(this::attachReminderMinutes);
     }
 
     public Optional<Task> getTaskForUser(String taskId, String userId) {
-        return taskRepository.findTaskByTaskIdAndUserId(taskId, userId);
+        return taskRepository.findTaskByTaskIdAndUserId(taskId, userId)
+                .map(this::attachReminderMinutes);
     }
 
     public Task getTaskForUserOrThrow(String taskId, String userId) {
@@ -91,6 +147,58 @@ public class TaskService {
         );
     }
 
+    @Transactional(readOnly = true)
+    public Map<LocalDate, Long> getPomodoroFocusTimeForSeries(String seriesId,
+                                                               LocalDate from,
+                                                               LocalDate to,
+                                                               String userId) {
+        List<Task> occurrences = taskRepository
+                .findAllByTaskSeriesIdAndUserIdAndSeriesOccurrenceAtGreaterThanEqualAndSeriesOccurrenceAtLessThanOrderBySeriesOccurrenceAtAsc(
+                        seriesId, userId, from.atStartOfDay(), to.plusDays(1).atStartOfDay());
+        if (occurrences.isEmpty()) return Map.of();
+
+        Map<String, LocalDate> occurrenceDates = new HashMap<>();
+        Map<LocalDate, Long> focusByDate = new TreeMap<>();
+        for (Task occurrence : occurrences) {
+            LocalDate occurrenceDate = occurrence.getSeriesOccurrenceAt().toLocalDate();
+            occurrenceDates.put(occurrence.getTaskId(), occurrenceDate);
+            focusByDate.putIfAbsent(occurrenceDate, 0L);
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        taskSessionRepository.findAllByAssociatedTaskIdIn(occurrenceDates.keySet()).stream()
+                .filter(TaskSession::isPomodoro)
+                .forEach(session -> {
+                    LocalDate occurrenceDate = occurrenceDates.get(session.getAssociatedTaskId());
+                    if (occurrenceDate != null) {
+                        focusByDate.merge(occurrenceDate,
+                                TaskPomodoroStatsCalculator.focusSeconds(session, now), Long::sum);
+                    }
+                });
+
+        return focusByDate;
+    }
+
+    @Transactional(readOnly = true)
+    public TodayFocusSummaryResponse getTodayFocusSummary(String userId, LocalDate date) {
+        List<String> taskIds = taskRepository.findAllByUserId(userId).stream()
+                .map(Task::getTaskId)
+                .toList();
+        if (taskIds.isEmpty()) {
+            return new TodayFocusSummaryResponse(date, 0);
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        long totalFocusSeconds = taskSessionRepository.findAllByAssociatedTaskIdIn(taskIds).stream()
+                .filter(TaskSession::isPomodoro)
+                .filter(session -> session.getStartTime() != null
+                        && date.equals(session.getStartTime().toLocalDate()))
+                .mapToLong(session -> TaskPomodoroStatsCalculator.focusSeconds(session, now))
+                .sum();
+
+        return new TodayFocusSummaryResponse(date, totalFocusSeconds);
+    }
+
     public Duration getAccumulatedTime(String taskId) {
         Duration totalDuration = Duration.ZERO;
         List<TaskSession> taskSessionList = taskSessionRepository.findAllByAssociatedTaskId(taskId);
@@ -102,6 +210,15 @@ public class TaskService {
 
     @Transactional
     public Task createTask(NewTaskRequest request, String userId) {
+        return createTaskInternal(request, userId, false);
+    }
+
+    @Transactional
+    public Task createTaskFromSeries(NewTaskRequest request, String userId) {
+        return createTaskInternal(request, userId, true);
+    }
+
+    private Task createTaskInternal(NewTaskRequest request, String userId, boolean allowClosedMentalThread) {
         // Validate required field
         if (request.getName() == null || request.getName().isBlank()) {
             throw new IllegalArgumentException("Task name is required");
@@ -125,7 +242,7 @@ public class TaskService {
         if (mentalThreadId != null) {
             mentalThread = mentalThreadRepository.findByIdAndUserId(mentalThreadId, userId)
                     .orElseThrow(() -> new IllegalArgumentException("Mental thread not found: " + mentalThreadId));
-            if (mentalThread.getStatus() != MentalThreadStatus.OPEN) {
+            if (!allowClosedMentalThread && mentalThread.getStatus() != MentalThreadStatus.OPEN) {
                 throw new IllegalArgumentException("Tasks can only be added to an open mental thread.");
             }
         }
@@ -136,6 +253,7 @@ public class TaskService {
 
         // Optional fields with null checks
         task.setDescription(request.getDescription()); // null is fine for description
+        task.setTimeZone(normalizeTimeZone(request.getTimeZone()));
 
         // Thread next actions stay unscheduled until the user chooses a date.
         if (request.getScheduledPerformDateTime() != null && !request.getScheduledPerformDateTime().isBlank()) {
@@ -146,9 +264,6 @@ public class TaskService {
                         request.getScheduledPerformDateTime(), e);
                 throw new IllegalArgumentException("Invalid datetime format. Use ISO format: 2024-01-20T10:30:00", e);
             }
-        } else if (mentalThread == null) {
-            // Keep the existing default for tasks created outside a mental thread.
-            task.setScheduledPerformDateTime(LocalDateTime.now());
         }
 
         task.setParentId(parentId); // null is fine for main tasks
@@ -164,10 +279,13 @@ public class TaskService {
         }
         task.setMentalThreadId(mentalThreadId);
         task.setCompleted(false);
+        task.setSkipped(false);
+        task.setSkipReason(null);
         task.setCreationDateTime(LocalDateTime.now());
         task.setUser(user);
 
         Task savedTask = taskRepository.save(task);
+        replaceTaskReminder(savedTask, requestedReminderMinutes(request), user);
         if (mentalThread != null) {
             taskGroupService.addTaskToDefaultMentalThreadGroup(savedTask, mentalThread, userId);
         }
@@ -176,6 +294,7 @@ public class TaskService {
         return savedTask;
     }
 
+    @Transactional
     public Optional<Task> updateTask(String taskId, UpdateTaskRequest request, String userId) {
         Optional<Task> existingTask = taskRepository.findTaskByTaskIdAndUserId(taskId, userId);
         if (existingTask.isEmpty()) {
@@ -184,6 +303,9 @@ public class TaskService {
         }
 
         Task task = existingTask.get();
+        Optional<Reminder> existingReminder = findTaskReminder(taskId);
+        boolean scheduleChanged = request.getScheduledPerformDateTime() != null;
+        boolean timeZoneChanged = request.getTimeZone() != null;
         List<String> changedFields = new ArrayList<>();
         if (request.getName() != null) {
             task.setName(request.getName());
@@ -198,6 +320,8 @@ public class TaskService {
             changedFields.add("completed");
             if (request.getCompleted()) {
                 task.setCompletionDateTime(LocalDateTime.now());
+            } else {
+                task.setCompletionDateTime(null);
             }
         }
         if (request.getTag() != null) {
@@ -224,11 +348,104 @@ public class TaskService {
             }
             changedFields.add("scheduledPerformDateTime");
         }
+        if (request.getTimeZone() != null) {
+            task.setTimeZone(normalizeTimeZone(request.getTimeZone()));
+            changedFields.add("timeZone");
+        }
 
         Task savedTask = taskRepository.save(task);
+        if (request.isReminderMinutesBeforePresent() || scheduleChanged || timeZoneChanged) {
+            Integer minutesBefore = request.isReminderMinutesBeforePresent()
+                    ? requestedReminderMinutes(request.getReminderMinutesBefore())
+                    : existingReminder.map(Reminder::getMinutesBefore).orElse(null);
+            replaceTaskReminder(savedTask, minutesBefore, task.getUser());
+        } else if (existingReminder.isPresent() && request.getName() != null) {
+            Reminder reminder = existingReminder.get();
+            reminder.setTitle(savedTask.getName());
+            reminderRepository.save(reminder);
+            savedTask.setReminderMinutesBefore(reminder.getMinutesBefore());
+        } else {
+            savedTask.setReminderMinutesBefore(existingReminder.map(Reminder::getMinutesBefore).orElse(null));
+        }
+        if (request.getCompleted() != null) {
+            statTaskLinkService.synchronizeTaskCompletion(savedTask, userId);
+        }
         log.info("Task updated: userId={} taskId={} changedFields={}",
                 task.getUserId(), savedTask.getTaskId(), changedFields);
         return Optional.of(savedTask);
+    }
+
+    private Integer requestedReminderMinutes(NewTaskRequest request) {
+        if (!request.isReminderMinutesBeforePresent()) return null;
+        return requestedReminderMinutes(request.getReminderMinutesBefore());
+    }
+
+    private Integer requestedReminderMinutes(Integer minutesBefore) {
+        if (minutesBefore != null && (minutesBefore < 0 || minutesBefore > MAX_REMINDER_MINUTES)) {
+            throw new IllegalArgumentException("Reminder must be between the task time and eight weeks before it.");
+        }
+        return minutesBefore;
+    }
+
+    private void replaceTaskReminder(Task task, Integer minutesBefore, User user) {
+        reminderRepository.findByTaskIdAndNotificationType(task.getTaskId(), NotificationType.TASK_REMINDER)
+                .ifPresent(reminder -> {
+                    reminderRepository.delete(reminder);
+                    reminderRepository.flush();
+                });
+
+        if (minutesBefore == null || task.getScheduledPerformDateTime() == null) {
+            task.setReminderMinutesBefore(null);
+            return;
+        }
+
+        Reminder reminder = new Reminder();
+        reminder.setReminderId(UUID.randomUUID().toString());
+        reminder.setTaskId(task.getTaskId());
+        reminder.setDateTime(task.getScheduledPerformDateTime()
+                .atZone(ZoneId.of(normalizeTimeZone(task.getTimeZone())))
+                .toInstant()
+                .minusSeconds(minutesBefore.longValue() * 60));
+        reminder.setRepeat(0);
+        reminder.setNotificationType(NotificationType.TASK_REMINDER);
+        reminder.setTitle(task.getName());
+        reminder.setBody("Task reminder");
+        reminder.setTargetUrl("/tasks");
+        reminder.setMinutesBefore(minutesBefore);
+        reminder.setUser(user);
+        reminderRepository.save(reminder);
+        task.setReminderMinutesBefore(minutesBefore);
+    }
+
+    private Optional<Reminder> findTaskReminder(String taskId) {
+        return reminderRepository.findByTaskIdAndNotificationType(taskId, NotificationType.TASK_REMINDER);
+    }
+
+    private Task attachReminderMinutes(Task task) {
+        task.setReminderMinutesBefore(findTaskReminder(task.getTaskId())
+                .map(Reminder::getMinutesBefore)
+                .orElse(null));
+        return task;
+    }
+
+    private void attachReminderMinutes(List<Task> tasks) {
+        if (tasks.isEmpty()) return;
+        Map<String, Integer> reminderMinutes = reminderRepository
+                .findAllByTaskIdInAndNotificationType(
+                        tasks.stream().map(Task::getTaskId).toList(), NotificationType.TASK_REMINDER)
+                .stream()
+                .collect(Collectors.toMap(Reminder::getTaskId, Reminder::getMinutesBefore, (first, ignored) -> first));
+        tasks.forEach(task -> task.setReminderMinutesBefore(reminderMinutes.get(task.getTaskId())));
+    }
+
+    private String normalizeTimeZone(String timeZone) {
+        String normalized = timeZone == null || timeZone.isBlank() ? "UTC" : timeZone.trim();
+        try {
+            ZoneId.of(normalized);
+        } catch (DateTimeException exception) {
+            throw new IllegalArgumentException("Task time zone is invalid.", exception);
+        }
+        return normalized;
     }
 
     @Transactional
@@ -248,12 +465,103 @@ public class TaskService {
         List<String> deletedTaskIds = new ArrayList<>(subtasks.stream().map(Task::getTaskId).toList());
         deletedTaskIds.add(taskId);
         taskGroupService.removeTasksFromGroups(deletedTaskIds, userId);
+        deleteTaskReminders(deletedTaskIds);
         subtasks.forEach(subtask -> taskRepository.deleteTaskByTaskId(subtask.getTaskId()));
+
+        if (taskToDelete.get().getTaskSeriesId() != null) {
+            deleteRecurringSeries(taskToDelete.get().getTaskSeriesId(), userId);
+            return;
+        }
 
         // Delete main task
         taskRepository.deleteTaskByTaskId(taskId);
         log.info("Task deleted: userId={} taskId={} deletedSubtaskCount={}",
                 userId, taskId, subtasks.size());
+    }
+
+    /**
+     * Deletes every task scheduled after today, including completed and skipped tasks.
+     * Recurring series are deactivated so their deleted future occurrences cannot return.
+     */
+    @Transactional
+    public int deleteAllFutureTasks(String userId) {
+        LocalDateTime futureBoundary = LocalDate.now().plusDays(1).atStartOfDay();
+        List<Task> scheduledFutureTasks = taskRepository
+                .findAllByUserIdAndScheduledPerformDateTimeGreaterThanEqualOrderByScheduledPerformDateTimeAsc(
+                        userId, futureBoundary);
+        if (scheduledFutureTasks.isEmpty()) {
+            return 0;
+        }
+
+        Map<String, Task> tasksToDelete = new LinkedHashMap<>();
+        ArrayDeque<String> taskIdsToExpand = new ArrayDeque<>();
+        scheduledFutureTasks.forEach(task -> {
+            tasksToDelete.put(task.getTaskId(), task);
+            taskIdsToExpand.add(task.getTaskId());
+        });
+
+        while (!taskIdsToExpand.isEmpty()) {
+            String parentId = taskIdsToExpand.removeFirst();
+            taskRepository.findAllByUserIdAndParentIdOrderByDisplayOrderAsc(userId, parentId)
+                    .forEach(subtask -> {
+                        if (tasksToDelete.putIfAbsent(subtask.getTaskId(), subtask) == null) {
+                            taskIdsToExpand.addLast(subtask.getTaskId());
+                        }
+                    });
+        }
+
+        taskGroupService.removeTasksFromGroups(tasksToDelete.keySet(), userId);
+        deleteTaskReminders(tasksToDelete.keySet());
+
+        tasksToDelete.values().stream()
+                .map(Task::getTaskSeriesId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .forEach(seriesId -> taskSeriesRepository.findBySeriesIdAndUserId(seriesId, userId)
+                        .ifPresent(series -> {
+                            series.setActive(false);
+                            taskSeriesRepository.save(series);
+                        }));
+
+        List<Task> deletionOrder = new ArrayList<>(tasksToDelete.values());
+        Collections.reverse(deletionOrder);
+        deletionOrder.forEach(task -> taskRepository.deleteTaskByTaskId(task.getTaskId()));
+
+        log.info("Future tasks deleted: userId={} futureBoundary={} taskCount={}",
+                userId, futureBoundary, deletionOrder.size());
+        return deletionOrder.size();
+    }
+
+    private void deleteRecurringSeries(String seriesId, String userId) {
+        List<Task> occurrences = taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(seriesId);
+        List<String> deletedTaskIds = new ArrayList<>(occurrences.stream().map(Task::getTaskId).toList());
+        List<Task> occurrenceSubtasksToDelete = new ArrayList<>();
+
+        for (Task occurrence : occurrences) {
+            List<Task> occurrenceSubtasks = taskRepository
+                    .findAllByUserIdAndParentIdOrderByDisplayOrderAsc(userId, occurrence.getTaskId());
+            deletedTaskIds.addAll(occurrenceSubtasks.stream().map(Task::getTaskId).toList());
+            occurrenceSubtasksToDelete.addAll(occurrenceSubtasks);
+            occurrence.setSkipped(true);
+            occurrence.setSkipReason(TaskSkipReason.USER);
+        }
+
+        taskGroupService.removeTasksFromGroups(deletedTaskIds, userId);
+        deleteTaskReminders(deletedTaskIds);
+        taskRepository.deleteAll(occurrenceSubtasksToDelete);
+        taskRepository.saveAll(occurrences);
+        taskSeriesRepository.findBySeriesIdAndUserId(seriesId, userId).ifPresentOrElse(series -> {
+            series.setActive(false);
+            taskSeriesRepository.save(series);
+        }, () -> log.warn("Recurring task series deletion found no series: userId={} seriesId={}",
+                userId, seriesId));
+        log.info("Recurring task series deleted: userId={} seriesId={} occurrenceCount={}",
+                userId, seriesId, occurrences.size());
+    }
+
+    private void deleteTaskReminders(Collection<String> taskIds) {
+        taskIds.forEach(reminderRepository::deleteByTaskId);
+        reminderRepository.flush();
     }
 
     // Convenience methods for common queries
@@ -263,6 +571,10 @@ public class TaskService {
 
     public List<Task> getTodayTasks(String userId) {
         return findTasks(TaskQuery.builder().period(TaskQuery.DatePeriod.TODAY).userId(userId).build());
+    }
+
+    public List<Task> getUndatedTasks(String userId) {
+        return findTasks(TaskQuery.builder().scheduled(false).userId(userId).build());
     }
 
     public List<Task> getIncompleteTasks(String userId) {
@@ -283,6 +595,7 @@ public class TaskService {
         );
         return taskRepository.findAll(TaskSpecifications.matchesQuery(query), prioritySort)
                 .stream()
+                .map(this::attachReminderMinutes)
                 .findFirst();
     }
 
@@ -317,6 +630,7 @@ public class TaskService {
 
         taskRepository.saveAll(allMainTasks);
         log.info("Tasks reordered: userId={} count={} orderedTaskIds={}", userId, taskIds.size(), taskIds);
+        attachReminderMinutes(allMainTasks);
         return allMainTasks;
     }
 

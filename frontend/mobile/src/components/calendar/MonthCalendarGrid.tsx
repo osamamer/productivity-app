@@ -4,6 +4,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { localDate } from '@/lib/date';
 import { useAppTheme } from '@/providers/ThemeProvider';
+import type { CalendarEventStatus } from '@/types/models';
 import { AppText } from '../ui/AppText';
 import { Card } from '../ui/Card';
 import { SilentPressable } from '../ui/SilentPressable';
@@ -20,6 +21,7 @@ export interface CalendarGridItem {
   timeLabel?: string;
   color?: string;
   textColor?: string;
+  eventStatus?: CalendarEventStatus;
 }
 
 interface MonthCalendarGridProps {
@@ -53,7 +55,8 @@ function monthLabel(month: Date): string {
 
 function itemLabel(item: CalendarGridItem): string {
   const prefix = item.kind === 'taskGroup' ? 'Group' : item.kind === 'task' ? 'Task' : item.kind === 'stat' ? 'Stat' : 'Event';
-  return `${prefix}: ${item.title}${item.timeLabel ? ` at ${item.timeLabel}` : ''}`;
+  const status = item.eventStatus ? `, ${item.eventStatus.toLowerCase()}` : '';
+  return `${prefix}: ${item.title}${item.timeLabel ? ` at ${item.timeLabel}` : ''}${status}`;
 }
 
 export function MonthCalendarGrid({
@@ -143,11 +146,13 @@ export function MonthCalendarGrid({
                           {
                             backgroundColor: item.kind === 'calendarEvent' ? accent : `${accent}20`,
                             borderColor: item.kind === 'calendarEvent' ? accent : `${accent}70`,
+                            borderStyle: item.eventStatus === 'TENTATIVE' ? 'dashed' : 'solid',
+                            opacity: item.eventStatus === 'CANCELLED' ? 0.65 : 1,
                           },
                           pressed && styles.pressed,
                         ]}>
                         {item.completed ? <Ionicons name="checkmark" size={9} color={colors.success} /> : <View style={[styles.itemDot, { backgroundColor: accent }]} />}
-                        <AppText variant="caption" numberOfLines={1} style={[styles.itemText, { color: item.kind === 'calendarEvent' ? foreground : colors.text, fontSize: 9, lineHeight: 12 }]}>
+                        <AppText variant="caption" numberOfLines={1} style={[styles.itemText, { color: item.kind === 'calendarEvent' ? foreground : colors.text, fontSize: 9, lineHeight: 12 }, item.eventStatus === 'CANCELLED' && styles.cancelledText]}>
                           {item.title}{item.timeLabel ? ` · ${item.timeLabel}` : ''}
                         </AppText>
                       </SilentPressable>
@@ -187,6 +192,7 @@ const styles = StyleSheet.create({
   itemDot: { width: 4, height: 4, borderRadius: 2, flexShrink: 0 },
   itemText: { flex: 1, minWidth: 0 },
   more: { fontSize: 9, lineHeight: 12, paddingHorizontal: 2 },
+  cancelledText: { textDecorationLine: 'line-through' },
   loadingGrid: { minHeight: 500, alignItems: 'center', justifyContent: 'center' },
   pressed: { opacity: 0.7 },
 });

@@ -87,15 +87,38 @@ class NoteServiceTest {
                 USER_ID
         );
 
-        assertEquals("Untitled 1", emptyNote.title());
+        assertEquals("", emptyNote.title());
         assertEquals("", emptyNote.content());
         assertTrue(formattedNote.content().contains("<h1>Heading</h1>"));
         assertTrue(formattedNote.content().contains("<s>old</s>"));
         assertFalse(formattedNote.content().contains("<script>"));
     }
 
-    private void saveNote(String title) {
-        noteRepository.save(Note.builder()
+    @Test
+    void bulkOperationsOnlyAffectOwnedNotes() {
+        Note first = saveNote("First");
+        Note second = saveNote("Second");
+
+        BulkNoteRequest update = new BulkNoteRequest();
+        update.setNoteIds(java.util.List.of(first.getId(), second.getId()));
+        update.setPinned(true);
+        update.setCategoryId(null);
+
+        noteService.updateNotes(update, USER_ID);
+
+        assertTrue(noteRepository.findById(first.getId()).orElseThrow().isPinned());
+        assertTrue(noteRepository.findById(second.getId()).orElseThrow().isPinned());
+
+        BulkNoteRequest delete = new BulkNoteRequest();
+        delete.setNoteIds(java.util.List.of(first.getId(), second.getId()));
+        noteService.deleteNotes(delete, USER_ID);
+
+        assertFalse(noteRepository.existsById(first.getId()));
+        assertFalse(noteRepository.existsById(second.getId()));
+    }
+
+    private Note saveNote(String title) {
+        return noteRepository.save(Note.builder()
                 .id(UUID.randomUUID().toString())
                 .user(user)
                 .title(title)

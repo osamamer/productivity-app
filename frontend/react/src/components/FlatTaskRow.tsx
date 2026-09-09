@@ -27,16 +27,21 @@ import SkipNextIcon from '@mui/icons-material/SkipNext';
 import VolumeOffIcon from '@mui/icons-material/VolumeOff';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
+import { TimePicker } from '@mui/x-date-pickers/TimePicker';
 import { Client, StompSubscription } from '@stomp/stompjs';
 import keycloak from '../services/keycloak';
 import { taskService } from '../services/api';
 import { Task } from '../types/Task';
+import { TaskSeries } from '../types/TaskSeries';
+import { defaultTaskRecurrence, TaskRecurrenceDraft } from '../types/TaskRecurrence';
 import { PomodoroStatus } from '../types/PomodoroStatus';
 import { requestSystemNotificationPermission } from '../services/systemNotifications';
+import { playAudioFeedback } from '../services/audioFeedback';
 import {
     createPomodoroFormDefaults,
     getPomodoroConfig,
@@ -47,10 +52,13 @@ import {
 } from '../services/api/pomodoroConfigService';
 import { GENERIC_ERROR_MESSAGE } from '../services/utils/userMessages';
 import {
-    getStaleTaskSubtasks,
-    setCachedTaskSubtasks,
-} from '../services/cache/taskSubtasksCache';
+    getStaleTaskDetails,
+    updateCachedTaskDetails,
+    type TaskDetailsCacheEntry,
+} from '../services/cache/taskDetailsCache';
 import { PomodoroNumberField } from './timer/PomodoroNumberField';
+import { AppDateField } from './input/AppPickerFields';
+import { TaskRecurrenceCustomOptions, TaskRecurrencePicker } from './task/TaskRecurrencePicker';
 import {
     isWhiteNoiseEnabled,
     setWhiteNoiseEnabled,
@@ -75,6 +83,7 @@ export type FlatTaskRowProps = {
     selected?: boolean;
     editRequestId?: number | null;
     onSelectionClick?: (task: Task, event: React.MouseEvent<HTMLElement>) => void;
+    onContextMenu?: (task: Task, event: React.MouseEvent<HTMLElement>) => void;
     reorderable?: boolean;
     draggable?: boolean;
     onDragStart?: (task: Task) => void;
@@ -92,6 +101,7 @@ export type FlatTaskRowProps = {
     initialPomodoroStatus?: PomodoroStatus | null;
     expectedPomodoroActive?: boolean;
     readOnly?: boolean;
+    onRefreshTasks?: () => Promise<void>;
 };
 
 // ─── helpers ───────────────────────────────────────────────────────────────
@@ -117,6 +127,17 @@ const subtaskReveal = keyframes`
     }
 `;
 
+const pomodoroPanelReveal = keyframes`
+    from {
+        opacity: 0;
+        transform: translateY(-5px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+`;
+
 function checkboxColor(importance: number): string {
     if (importance > 7) return '#ef4444';
     if (importance > 4) return '#eab308';
@@ -128,6 +149,16 @@ function formatSeconds(seconds: number): string {
     const m = Math.floor(safeSeconds / 60);
     const s = safeSeconds % 60;
     return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function formatFocusDuration(seconds: number): string {
+    const safeSeconds = Math.max(0, Math.floor(seconds));
+    const hours = Math.floor(safeSeconds / 3600);
+    const minutes = Math.floor((safeSeconds % 3600) / 60);
+    const remainingSeconds = safeSeconds % 60;
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    if (minutes > 0) return `${minutes}m ${remainingSeconds.toString().padStart(2, '0')}s`;
+    return `${remainingSeconds}s`;
 }
 
 function isWaitingForPhase(status: PomodoroStatus | null): boolean {
@@ -180,6 +211,24 @@ function formatScheduledDate(dateTime: string): string {
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+function formatTaskDateTime(date: Date | null): string {
+    if (!date || Number.isNaN(date.getTime())) return '';
+    const pad = (value: number) => String(value).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+        + `T${pad(date.getHours())}:${pad(date.getMinutes())}:00`;
+}
+
+function recurrenceDraftFromSeries(series: TaskSeries | null | undefined): TaskRecurrenceDraft {
+    if (!series?.active) return defaultTaskRecurrence();
+    return {
+        recurrenceFrequency: series.recurrenceFrequency,
+        recurrenceEndDate: series.recurrenceEndDate,
+        recurrenceInterval: series.recurrenceInterval,
+        recurrenceUnit: series.recurrenceUnit,
+        timeZone: series.timeZone,
+    };
+}
+
 function isEditableDragOrigin(target: EventTarget | null): boolean {
     if (!(target instanceof Element)) return false;
 
@@ -208,6 +257,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     selected = false,
     editRequestId = null,
     onSelectionClick,
+    onContextMenu,
     reorderable = false,
     draggable = reorderable,
     onDragStart,
@@ -225,6 +275,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     initialPomodoroStatus = null,
     expectedPomodoroActive = false,
     readOnly = false,
+    onRefreshTasks,
 }: FlatTaskRowProps) {
     const theme = useTheme();
     const accent = theme.palette.primary.light;
@@ -237,10 +288,23 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     const [actionLoading, setActionLoading] = useState(false);
     const [pomodoroFeedback, setPomodoroFeedback] = useState<PomodoroFeedback | null>(null);
     const [pomodoroHydrated, setPomodoroHydrated] = useState(!deferPomodoroHydration);
+    const [detailsLoading, setDetailsLoading] = useState(false);
     const [whiteNoiseEnabled, setWhiteNoiseEnabledState] = useState(isWhiteNoiseEnabled);
-    const [subtasks, setSubtasks] = useState<Task[]>(() => getStaleTaskSubtasks(task.taskId) ?? EMPTY_SUBTASKS);
-    const [subtasksLoaded, setSubtasksLoaded] = useState(() => getStaleTaskSubtasks(task.taskId) !== undefined);
+    const taskRef = useRef(task);
+    taskRef.current = task;
+    const initialTaskDetails = getStaleTaskDetails(task.taskId);
+    const [subtasks, setSubtasks] = useState<Task[]>(() => initialTaskDetails?.subtasks ?? EMPTY_SUBTASKS);
     const [newSubtaskId, setNewSubtaskId] = useState<string | null>(null);
+    const initialTaskSeries = initialTaskDetails?.taskSeries;
+    const [recurrenceDraft, setRecurrenceDraft] = useState<TaskRecurrenceDraft>(() =>
+        recurrenceDraftFromSeries(initialTaskSeries),
+    );
+    const [recurrenceError, setRecurrenceError] = useState<string | null>(null);
+    const recurrenceDraftRef = useRef<TaskRecurrenceDraft>(recurrenceDraftFromSeries(initialTaskSeries));
+    const taskSeriesRef = useRef<TaskSeries | null>(initialTaskSeries ?? null);
+    const recurrenceMutationRef = useRef<Promise<void>>(Promise.resolve());
+    const recurrenceRequestIdRef = useRef(0);
+    const detailsRequestRef = useRef<Promise<void> | null>(null);
 
     // Local description state — committed on blur to avoid an API call per keystroke
     const [localName, setLocalName] = useState(task.name ?? '');
@@ -272,36 +336,41 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         });
     }, []);
     useEffect(() => { setLocalName(task.name ?? ''); }, [task.name]);
+
+    const applyTaskDetails = useCallback((details: TaskDetailsCacheEntry) => {
+        setSubtasks(details.subtasks);
+        const nextDraft = recurrenceDraftFromSeries(details.taskSeries);
+        taskSeriesRef.current = details.taskSeries;
+        recurrenceDraftRef.current = nextDraft;
+        setRecurrenceDraft(nextDraft);
+    }, []);
+
     useEffect(() => {
         if (expandedPanel !== 'details') return;
 
         let cancelled = false;
-        const cached = getStaleTaskSubtasks(task.taskId);
-        if (cached !== undefined) {
-            setSubtasks(cached);
-            setSubtasksLoaded(true);
-        } else {
-            setSubtasksLoaded(false);
+        setRecurrenceError(null);
+        const cached = getStaleTaskDetails(task.taskId);
+        if (cached) {
+            applyTaskDetails(cached);
         }
 
-        taskService.getSubtasks(task.taskId)
-            .then(nextSubtasks => {
+        taskService.getTaskDetails(taskRef.current)
+            .then(details => {
                 if (cancelled) return;
-                setSubtasks(nextSubtasks);
-                setCachedTaskSubtasks(task.taskId, nextSubtasks);
-                setSubtasksLoaded(true);
+                applyTaskDetails(details);
             })
             .catch(error => {
                 if (cancelled) return;
-                setSubtasks(previous => cached ?? previous);
-                setSubtasksLoaded(true);
+                setSubtasks(previous => cached?.subtasks ?? previous);
+                setRecurrenceError('Unable to load recurrence.');
                 console.error('Error fetching Home subtasks:', error);
             });
 
         return () => {
             cancelled = true;
         };
-    }, [expandedPanel, task.taskId]);
+    }, [applyTaskDetails, expandedPanel, task.taskId]);
     const [scheduledDraft, setScheduledDraft] = useState<Date | null>(
         task.scheduledPerformDateTime ? new Date(task.scheduledPerformDateTime) : null,
     );
@@ -339,6 +408,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     const previousSessionRunningRef = useRef<boolean | undefined>(initialPomodoroStatus?.sessionRunning);
     const activePomodoroIdRef = useRef<string | null>(initialPomodoroStatus?.pomodoroId ?? null);
     const endedPomodoroIdRef = useRef<string | null>(null);
+    const lastPomodoroStatusRef = useRef<PomodoroStatus | null>(initialPomodoroStatus);
     const onPomodoroActiveChangeRef = useRef(onPomodoroActiveChange);
     const onPomodoroStatusChangeRef = useRef(onPomodoroStatusChange);
 
@@ -357,6 +427,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         if (initialPomodoroStatus?.active) {
             activePomodoroIdRef.current = initialPomodoroStatus.pomodoroId;
             setPomodoroStatus(initialPomodoroStatus);
+            lastPomodoroStatusRef.current = initialPomodoroStatus;
         }
     }, [expandedPanel, initialPomodoroStatus]);
 
@@ -381,6 +452,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                 (msg) => {
                     try {
                         const nextStatus: PomodoroStatus = JSON.parse(msg.body);
+                        const previousStatus = lastPomodoroStatusRef.current;
                         if (!nextStatus.active) {
                             if (activePomodoroIdRef.current !== null
                                 && activePomodoroIdRef.current !== nextStatus.pomodoroId) {
@@ -388,10 +460,26 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             }
                             activePomodoroIdRef.current = null;
                             endedPomodoroIdRef.current = nextStatus.pomodoroId;
-                            setPomodoroStatus(null);
-                            onPomodoroActiveChangeRef.current?.(task.taskId, false);
+                            stopWhiteNoise();
+                            if (nextStatus.phase === 'COMPLETED') {
+                                lastPomodoroStatusRef.current = nextStatus;
+                                setPomodoroStatus(nextStatus);
+                                onPomodoroStatusChangeRef.current?.(task.taskId, nextStatus);
+                                if (previousStatus?.active) playAudioFeedback('pomodoroCompleted');
+                            } else {
+                                lastPomodoroStatusRef.current = null;
+                                setPomodoroStatus(null);
+                                onPomodoroActiveChangeRef.current?.(task.taskId, false);
+                            }
                         } else if (endedPomodoroIdRef.current !== nextStatus.pomodoroId) {
+                            if (previousStatus?.active) {
+                                const wasBreak = isBreakPhase(previousStatus);
+                                const isBreak = isBreakPhase(nextStatus);
+                                if (!wasBreak && isBreak) playAudioFeedback('pomodoroFocusEnded');
+                                if (wasBreak && !isBreak) playAudioFeedback('pomodoroBreakEnded');
+                            }
                             activePomodoroIdRef.current = nextStatus.pomodoroId;
+                            lastPomodoroStatusRef.current = nextStatus;
                             setPomodoroStatus(nextStatus);
                             onPomodoroStatusChangeRef.current?.(task.taskId, nextStatus);
                         }
@@ -429,31 +517,56 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
             .then(status => {
                 if (status?.active && status.associatedTaskId === task.taskId) {
                     activePomodoroIdRef.current = status.pomodoroId;
+                    lastPomodoroStatusRef.current = status;
                     setPomodoroStatus(status);
                     onPomodoroStatusChangeRef.current?.(task.taskId, status);
                     onAutoExpand(task.taskId, 'pomodoro');
-                } else if (expectedPomodoroActive) {
+                } else if (expectedPomodoroActive && pomodoroStatus?.phase !== 'COMPLETED') {
                     activePomodoroIdRef.current = null;
                     setPomodoroStatus(null);
                     onPomodoroActiveChangeRef.current?.(task.taskId, false);
                 }
             })
             .catch(e => console.error('Error checking pomodoro status:', e));
-    }, [expectedPomodoroActive, initialPomodoroStatus, onAutoExpand, pomodoroHydrated, task.taskId]);
+    }, [expectedPomodoroActive, initialPomodoroStatus, onAutoExpand, pomodoroHydrated, pomodoroStatus?.phase, task.taskId]);
+
+    const prefetchTaskDetails = useCallback(() => {
+        void taskService.getTaskDetails(task).catch(error => {
+            console.error('Error prefetching Home task details:', error);
+        });
+    }, [task]);
 
     const togglePanel = useCallback((panel: 'pomodoro' | 'details') => {
         if (readOnly) return;
         if (panel === 'pomodoro') {
             setPomodoroHydrated(true);
+            onTogglePanel(task.taskId, panel);
+            return;
         }
-        onTogglePanel(task.taskId, panel);
-    }, [onTogglePanel, readOnly, task.taskId]);
 
-    const prefetchSubtasks = useCallback(() => {
-        void taskService.getSubtasks(task.taskId).catch(error => {
-            console.error('Error prefetching Home subtasks:', error);
-        });
-    }, [task.taskId]);
+        if (expandedPanel === 'details') {
+            onTogglePanel(task.taskId, panel);
+            return;
+        }
+        if (detailsRequestRef.current) return;
+
+        setDetailsLoading(true);
+        const request = taskService.getTaskDetails(task)
+            .then(details => {
+                applyTaskDetails(details);
+                onTogglePanel(task.taskId, panel);
+            })
+            .catch(error => {
+                setRecurrenceError('Unable to load task details.');
+                console.error('Error loading Home task details:', error);
+                onTogglePanel(task.taskId, panel);
+            })
+            .finally(() => {
+                if (detailsRequestRef.current === request) detailsRequestRef.current = null;
+                setDetailsLoading(false);
+            });
+        detailsRequestRef.current = request;
+    }, [applyTaskDetails, expandedPanel, onTogglePanel, readOnly, task]);
 
     const handleStart = async () => {
         // Starting before the live timer channel is ready is harmless; the next click can try again.
@@ -500,11 +613,12 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         const stoppedPomodoroId = activePomodoroIdRef.current;
         if (stoppedPomodoroId) endedPomodoroIdRef.current = stoppedPomodoroId;
         try {
-            await taskService.endPomodoro(task.taskId);
+            const completedStatus = await taskService.endPomodoro(task.taskId);
             stopWhiteNoise();
             activePomodoroIdRef.current = null;
-            setPomodoroStatus(null);
-            onPomodoroActiveChange?.(task.taskId, false);
+            lastPomodoroStatusRef.current = completedStatus;
+            setPomodoroStatus(completedStatus);
+            onPomodoroStatusChange?.(task.taskId, completedStatus);
         } catch (e) {
             endedPomodoroIdRef.current = null;
             console.error('Error stopping pomodoro:', e);
@@ -530,7 +644,11 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
             ? { ...item, completed }
             : item);
         setSubtasks(optimisticSubtasks);
-        setCachedTaskSubtasks(task.taskId, optimisticSubtasks);
+        updateCachedTaskDetails(task.taskId, { subtasks: optimisticSubtasks }, {
+            task,
+            subtasks: optimisticSubtasks,
+            taskSeries: taskSeriesRef.current,
+        });
 
         try {
             const updatedSubtask = await taskService.toggleTaskCompletion(subtask.taskId, completed);
@@ -538,7 +656,11 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                 const reconciledSubtasks = previous.map(item => item.taskId === updatedSubtask.taskId
                     ? updatedSubtask
                     : item);
-                setCachedTaskSubtasks(task.taskId, reconciledSubtasks);
+                updateCachedTaskDetails(task.taskId, { subtasks: reconciledSubtasks }, {
+                    task,
+                    subtasks: reconciledSubtasks,
+                    taskSeries: taskSeriesRef.current,
+                });
                 return reconciledSubtasks;
             });
         } catch (error) {
@@ -546,7 +668,11 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                 const rolledBackSubtasks = previous.map(item => item.taskId === subtask.taskId
                     ? { ...item, completed: subtask.completed }
                     : item);
-                setCachedTaskSubtasks(task.taskId, rolledBackSubtasks);
+                updateCachedTaskDetails(task.taskId, { subtasks: rolledBackSubtasks }, {
+                    task,
+                    subtasks: rolledBackSubtasks,
+                    taskSeries: taskSeriesRef.current,
+                });
                 return rolledBackSubtasks;
             });
             console.error('Error toggling Home subtask completion:', error);
@@ -571,7 +697,11 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
             });
             setSubtasks(previous => {
                 const nextSubtasks = [...previous, createdSubtask];
-                setCachedTaskSubtasks(task.taskId, nextSubtasks);
+                updateCachedTaskDetails(task.taskId, { subtasks: nextSubtasks }, {
+                    task,
+                    subtasks: nextSubtasks,
+                    taskSeries: taskSeriesRef.current,
+                });
                 return nextSubtasks;
             });
             setNewSubtaskId(createdSubtask.taskId);
@@ -584,21 +714,72 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         }
     };
 
-    const commitDateChange = (newDate: Date | null) => {
+    const commitDateChange = async (newDate: Date | null) => {
         if (readOnly) return;
-        if (!newDate) {
-            void onUpdate(task.taskId, { scheduledPerformDateTime: '' });
-            return;
+        const scheduledPerformDateTime = newDate
+            ? (() => {
+                const pad = (n: number) => String(n).padStart(2, '0');
+                return `${newDate.getFullYear()}-${pad(newDate.getMonth() + 1)}-${pad(newDate.getDate())}T${pad(newDate.getHours())}:${pad(newDate.getMinutes())}:00`;
+            })()
+            : '';
+        await onUpdate(task.taskId, { scheduledPerformDateTime });
+        if (newDate && recurrenceDraftRef.current.recurrenceFrequency !== 'NONE'
+            && !taskSeriesRef.current) {
+            handleRecurrenceChange(recurrenceDraftRef.current, scheduledPerformDateTime);
         }
-        const pad = (n: number) => String(n).padStart(2, '0');
-        const iso = `${newDate.getFullYear()}-${pad(newDate.getMonth() + 1)}-${pad(newDate.getDate())}T${pad(newDate.getHours())}:${pad(newDate.getMinutes())}:00`;
-        void onUpdate(task.taskId, { scheduledPerformDateTime: iso });
     };
 
     const handleDateChange = (newDate: Date | null) => {
         if (readOnly) return;
         setScheduledDraft(newDate);
         if (!newDate) commitDateChange(null);
+    };
+
+    const handleRecurrenceChange = (
+        nextDraft: TaskRecurrenceDraft,
+        scheduledPerformDateTime = formatTaskDateTime(scheduledDraft),
+    ) => {
+        if (readOnly) return;
+        const previousDraft = recurrenceDraftRef.current;
+        const requestId = recurrenceRequestIdRef.current + 1;
+        recurrenceRequestIdRef.current = requestId;
+        recurrenceDraftRef.current = nextDraft;
+        setRecurrenceDraft(nextDraft);
+        setRecurrenceError(null);
+
+        const persist = async () => {
+            if (requestId !== recurrenceRequestIdRef.current) return;
+            const currentSeries = taskSeriesRef.current;
+
+            if (nextDraft.recurrenceFrequency === 'NONE') {
+                if (!currentSeries?.active) return;
+                await taskService.stopTaskSeries(currentSeries.seriesId);
+                taskSeriesRef.current = { ...currentSeries, active: false };
+                if (requestId !== recurrenceRequestIdRef.current) return;
+                void onRefreshTasks?.();
+                return;
+            }
+
+            if (!scheduledPerformDateTime) return;
+            const savedSeries = currentSeries
+                ? await taskService.updateTaskSeries(currentSeries.seriesId, nextDraft, true)
+                : await taskService.startTaskRecurrence(task.taskId, nextDraft);
+            taskSeriesRef.current = savedSeries;
+            if (requestId !== recurrenceRequestIdRef.current) return;
+            void onRefreshTasks?.();
+        };
+
+        recurrenceMutationRef.current = recurrenceMutationRef.current
+            .catch(() => undefined)
+            .then(persist)
+            .catch(error => {
+                if (requestId !== recurrenceRequestIdRef.current) return;
+                recurrenceDraftRef.current = previousDraft;
+                setRecurrenceDraft(previousDraft);
+                setRecurrenceError(error instanceof Error
+                    ? error.message
+                    : 'Unable to update recurrence.');
+            });
     };
 
     const handleNameCommit = () => {
@@ -620,6 +801,13 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     };
 
     const isActive  = Boolean(pomodoroStatus?.active);
+    const pomodoroCompleted = pomodoroStatus?.phase === 'COMPLETED';
+    const completedFocusSessions = pomodoroStatus?.completedFocusSessions
+        ?? pomodoroStatus?.currentFocusNumber
+        ?? 0;
+    const totalFocusSeconds = pomodoroStatus?.totalFocusSeconds
+        ?? pomodoroStatus?.secondsPassedInSession
+        ?? 0;
     const activePomodoro = pomodoroStatus?.active;
     const sessionRunning = pomodoroStatus?.sessionRunning;
 
@@ -641,10 +829,10 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     };
 
     useEffect(() => {
-        if (activePomodoro !== undefined) {
+        if (activePomodoro !== undefined && pomodoroStatus?.phase !== 'COMPLETED') {
             onPomodoroActiveChange?.(task.taskId, activePomodoro);
         }
-    }, [activePomodoro, onPomodoroActiveChange, task.taskId]);
+    }, [activePomodoro, onPomodoroActiveChange, pomodoroStatus?.phase, task.taskId]);
 
     useEffect(() => {
         const wasRunning = previousSessionRunningRef.current;
@@ -672,6 +860,8 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
 
     const cbColor = checkboxColor(task.importance);
     const scheduledLabel = task.scheduledPerformDateTime ? formatScheduledDate(task.scheduledPerformDateTime) : '';
+    const showTimeOnlySchedule = Boolean(scheduledDraft)
+        && recurrenceDraft.recurrenceFrequency !== 'NONE';
     const handleRowSelection = (event: React.MouseEvent<HTMLElement>) => {
         onSelectionClick?.(task, event);
         onSelect?.(task);
@@ -729,6 +919,12 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                 } : undefined,
             }}
             onClick={handleRowSelection}
+            onContextMenu={event => {
+                if (!onContextMenu) return;
+                event.preventDefault();
+                event.stopPropagation();
+                onContextMenu(task, event);
+            }}
             onMouseDownCapture={(event) => {
                 dragAllowedRef.current = Boolean(draggable && !isEditableDragOrigin(event.target));
                 event.currentTarget.draggable = dragAllowedRef.current;
@@ -904,6 +1100,10 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                         togglePanel('pomodoro');
                                     }}
                                     color={expandedPanel === 'pomodoro' || isActive ? 'primary' : 'default'}
+                                    sx={{
+                                        transition: 'color 180ms ease, background-color 180ms ease, transform 180ms ease',
+                                        transform: expandedPanel === 'pomodoro' ? 'scale(1.04)' : 'scale(1)',
+                                    }}
                                 >
                                     <TimerIcon sx={{ fontSize: '1.1rem' }} />
                                 </IconButton>
@@ -913,9 +1113,10 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             <Tooltip title="Details">
                                 <IconButton
                                     size="small"
-                                    onMouseEnter={prefetchSubtasks}
-                                    onFocus={prefetchSubtasks}
-                                    onPointerDown={prefetchSubtasks}
+                                    onMouseEnter={prefetchTaskDetails}
+                                    onFocus={prefetchTaskDetails}
+                                    onPointerDown={prefetchTaskDetails}
+                                    disabled={detailsLoading}
                                     onClick={(e) => {
                                         e.stopPropagation();
                                         handleRowSelection(e);
@@ -923,7 +1124,9 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                     }}
                                     color={expandedPanel === 'details' ? 'primary' : 'default'}
                                 >
-                                    <TuneIcon sx={{ fontSize: '1.1rem' }} />
+                                    {detailsLoading
+                                        ? <CircularProgress size={17} />
+                                        : <TuneIcon sx={{ fontSize: '1.1rem' }} />}
                                 </IconButton>
                             </Tooltip>
                         )}
@@ -958,8 +1161,37 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                 unmountOnExit
                 sx={{ willChange: 'height', '& .MuiCollapse-wrapper': { willChange: 'height' } }}
             >
-                <Box sx={{ px: 2, pb: 2, pt: 0.5 }}>
-                    {!isActive ? (
+                <Box
+                    sx={{
+                        px: 2,
+                        pb: 2,
+                        pt: 0.5,
+                        animation: `${pomodoroPanelReveal} 220ms cubic-bezier(0.22, 1, 0.36, 1)`,
+                        willChange: 'opacity, transform',
+                    }}
+                >
+                    {pomodoroCompleted ? (
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minHeight: 52 }}>
+                            <CheckCircleOutlineIcon color="success" />
+                            <Box sx={{ flex: 1, textAlign: 'left' }}>
+                                <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>Pomodoro complete</Typography>
+                                <Typography variant="body2" color="text.secondary">
+                                    {formatFocusDuration(totalFocusSeconds)} focused · {completedFocusSessions} of {pomodoroStatus?.numFocuses ?? 0} sessions completed
+                                </Typography>
+                            </Box>
+                            <Button
+                                size="small"
+                                variant="outlined"
+                                onClick={() => {
+                                    setPomodoroStatus(null);
+                                    lastPomodoroStatusRef.current = null;
+                                    onPomodoroActiveChange?.(task.taskId, false);
+                                }}
+                            >
+                                Dismiss
+                            </Button>
+                        </Box>
+                    ) : !isActive ? (
                         <Box>
                             <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5, mb: 1.5 }}>
                                 {(
@@ -1093,7 +1325,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
 
             {/* ── Details panel ── */}
             <Collapse
-                in={expandedPanel === 'details' && subtasksLoaded}
+                in={expandedPanel === 'details'}
                 timeout={{ enter: 260, exit: 180 }}
                 easing={{
                     enter: 'cubic-bezier(0.22, 1, 0.36, 1)',
@@ -1103,7 +1335,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                 unmountOnExit
                 sx={{ willChange: 'height', '& .MuiCollapse-wrapper': { willChange: 'height' } }}
             >
-                <Box sx={{ px: 2, pb: 2, pt: 0.5, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <Box data-task-details="true" sx={{ px: 2, pb: 2, pt: 0.5, display: 'flex', flexDirection: 'column', gap: 2 }}>
 
                     {/* Priority chips */}
                     <Box>
@@ -1116,6 +1348,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                 return (
                                     <Chip
                                         key={opt.label}
+                                        data-task-details-first-focus={opt === PRIORITY_OPTIONS[0] ? 'true' : undefined}
                                         label={opt.label}
                                         size="small"
                                         onClick={() => onUpdate(task.taskId, { importance: opt.value })}
@@ -1136,19 +1369,92 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
 
                     {/* Scheduled date/time */}
                     <LocalizationProvider dateAdapter={AdapterDateFns}>
-                        <DateTimePicker
-                            label="Scheduled"
-                            value={scheduledDraft}
-                            onChange={handleDateChange}
-                            onAccept={commitDateChange}
-                            closeOnSelect={false}
-                            ampm={false}
-                            slotProps={{
-                                field: { clearable: true },
-                                actionBar: { actions: ['cancel', 'accept'] },
-                                textField: { size: 'small', fullWidth: true },
-                            }}
-                        />
+                        <Box>
+                            <Box
+                                sx={{
+                                    display: 'grid',
+                                    gridTemplateColumns: task.parentId || readOnly
+                                        ? 'minmax(0, 1fr)'
+                                        : { xs: 'minmax(0, 1fr)', sm: 'minmax(0, 3fr) minmax(0, 1fr)' },
+                                    gap: 1.25,
+                                    alignItems: 'start',
+                                }}
+                            >
+                                <Box sx={{ minWidth: 0 }}>
+                                    <Collapse in={showTimeOnlySchedule} timeout={180} unmountOnExit>
+                                        <TimePicker
+                                            label="Scheduled"
+                                            value={scheduledDraft}
+                                            onChange={handleDateChange}
+                                            onAccept={commitDateChange}
+                                            ampm={false}
+                                            slotProps={{
+                                                field: { clearable: false },
+                                                actionBar: { actions: ['cancel', 'accept'] },
+                                                textField: { size: 'small', fullWidth: true },
+                                            }}
+                                        />
+                                    </Collapse>
+                                    <Collapse in={!showTimeOnlySchedule} timeout={180} unmountOnExit>
+                                        <DateTimePicker
+                                            label="Scheduled"
+                                            value={scheduledDraft}
+                                            onChange={handleDateChange}
+                                            onAccept={commitDateChange}
+                                            closeOnSelect={false}
+                                            ampm={false}
+                                            slotProps={{
+                                                field: { clearable: true },
+                                                actionBar: { actions: ['cancel', 'accept'] },
+                                                textField: { size: 'small', fullWidth: true },
+                                            }}
+                                        />
+                                    </Collapse>
+                                </Box>
+
+                                {!task.parentId && !readOnly && (
+                                    <TaskRecurrencePicker
+                                        value={recurrenceDraft}
+                                        onChange={handleRecurrenceChange}
+                                        showEndDate={false}
+                                        showCustomOptions={false}
+                                    />
+                                )}
+                            </Box>
+                            {!task.parentId && !readOnly && (
+                                <Collapse in={recurrenceDraft.recurrenceFrequency !== 'NONE'} timeout={180} unmountOnExit>
+                                    <Box sx={{
+                                        mt: 1.25,
+                                        display: 'grid',
+                                        gridTemplateColumns: recurrenceDraft.recurrenceFrequency === 'CUSTOM'
+                                            ? { xs: 'minmax(0, 1fr)', sm: 'minmax(0, 1fr) minmax(0, 1fr)' }
+                                            : 'minmax(0, 1fr)',
+                                        gap: 1.25,
+                                        alignItems: 'start',
+                                    }}>
+                                        {recurrenceDraft.recurrenceFrequency === 'CUSTOM' && (
+                                            <TaskRecurrenceCustomOptions
+                                                value={recurrenceDraft}
+                                                onChange={handleRecurrenceChange}
+                                            />
+                                        )}
+                                        <AppDateField
+                                            label="Repeat until (optional)"
+                                            value={recurrenceDraft.recurrenceEndDate ?? ''}
+                                            onChange={recurrenceEndDate => handleRecurrenceChange({
+                                                ...recurrenceDraft,
+                                                recurrenceEndDate: recurrenceEndDate || null,
+                                            })}
+                                        />
+                                    </Box>
+                                </Collapse>
+                            )}
+                            {recurrenceError && (
+                                <Typography variant="caption" color="error" sx={{ display: 'block', mt: 1, textAlign: 'left' }}>
+                                    {recurrenceError}
+                                </Typography>
+                            )}
+                        </Box>
                     </LocalizationProvider>
 
                     <Box>
@@ -1189,20 +1495,18 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                 </Typography>
                             </Box>
                         ))}
-                        {subtasksLoaded && (
-                            <Box component="form" onSubmit={handleCreateSubtask} sx={{ display: 'flex', alignItems: 'center' }}>
-                                <Checkbox size="small" disabled checked={false} sx={{ p: 0.5, mr: 0.75 }} />
-                                <TextField
-                                    name="home-subtask-name"
-                                    variant="standard"
-                                    placeholder="Add a subtask"
-                                    autoComplete="off"
-                                    fullWidth
-                                    InputProps={{ disableUnderline: true }}
-                                    inputProps={{ draggable: false }}
-                                />
-                            </Box>
-                        )}
+                        <Box component="form" onSubmit={handleCreateSubtask} sx={{ display: 'flex', alignItems: 'center' }}>
+                            <Checkbox size="small" disabled checked={false} sx={{ p: 0.5, mr: 0.75 }} />
+                            <TextField
+                                name="home-subtask-name"
+                                variant="standard"
+                                placeholder="Add a subtask"
+                                autoComplete="off"
+                                fullWidth
+                                InputProps={{ disableUnderline: true }}
+                                inputProps={{ draggable: false }}
+                            />
+                        </Box>
                     </Box>
 
                     {/* Tag (read-only) */}

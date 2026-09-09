@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
 
 import { formatShortDate, formatTime, localDateTime } from '@/lib/date';
 import { useAppTheme } from '@/providers/ThemeProvider';
@@ -95,29 +95,35 @@ export function TimePicker({ value, onChange }: { value: Date; onChange: (value:
   );
 }
 
-export function TaskDateTimePicker({ value, onChange }: { value: Date; onChange: (value: Date) => void }) {
+export function TaskDateTimePicker({ value, onChange, timeOnly = false }: {
+  value: Date;
+  onChange: (value: Date) => void;
+  timeOnly?: boolean;
+}) {
   const { colors } = useAppTheme();
 
   return (
     <>
-      <CalendarDatePicker value={value} onChange={onChange} />
-      <View style={[styles.divider, { backgroundColor: colors.border }]} />
+      {!timeOnly && <CalendarDatePicker value={value} onChange={onChange} />}
+      {!timeOnly && <View style={[styles.divider, { backgroundColor: colors.border }]} />}
       <AppText variant="label">Time</AppText>
       <TimePicker value={value} onChange={onChange} />
     </>
   );
 }
 
-export function TaskScheduleField({ value, onChange }: {
+export function TaskScheduleField({ value, onChange, timeOnly = false, style }: {
   value: string | null | undefined;
   onChange: (value: string) => void;
+  timeOnly?: boolean;
+  style?: StyleProp<ViewStyle>;
 }) {
   const { colors } = useAppTheme();
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(() => dateFromScheduleValue(value));
   const hasSchedule = Boolean(value && !Number.isNaN(new Date(value).getTime()));
   const displayedValue = hasSchedule
-    ? `${formatShortDate(value)} · ${formatTime(value)}`
+    ? timeOnly ? formatTime(value) : `${formatShortDate(value)} · ${formatTime(value)}`
     : 'Not scheduled';
 
   function openPicker() {
@@ -136,10 +142,10 @@ export function TaskScheduleField({ value, onChange }: {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, style]}>
       <View style={styles.heading}>
-        <AppText variant="label">Scheduled</AppText>
-        {hasSchedule && (
+        <AppText variant="label">{timeOnly ? 'Scheduled time' : 'Scheduled'}</AppText>
+        {hasSchedule && !timeOnly && (
           <SilentPressable
             accessibilityRole="button"
             accessibilityLabel="Clear scheduled date and time"
@@ -164,7 +170,7 @@ export function TaskScheduleField({ value, onChange }: {
       </SilentPressable>
       <AppPopup
         visible={open}
-        title="Scheduled"
+        title={timeOnly ? 'Scheduled time' : 'Scheduled'}
         showIcon={false}
         onClose={() => setOpen(false)}
         dismissOnBackdrop={false}
@@ -174,7 +180,7 @@ export function TaskScheduleField({ value, onChange }: {
             <AppButton style={styles.popupAction} label="Done" onPress={save} />
           </View>
         )}>
-        <TaskDateTimePicker key={`${open}-${value ?? ''}`} value={draft} onChange={setDraft} />
+        <TaskDateTimePicker key={`${open}-${value ?? ''}-${timeOnly}`} value={draft} onChange={setDraft} timeOnly={timeOnly} />
       </AppPopup>
     </View>
   );

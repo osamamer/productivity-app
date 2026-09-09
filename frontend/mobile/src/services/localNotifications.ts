@@ -3,10 +3,11 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
 import { expandCalendarEvent, type CalendarEventOccurrence } from '@/lib/calendarRecurrence';
-import type { CalendarEvent, UserPreferences } from '@/types/models';
+import type { CalendarEvent, Task, UserPreferences } from '@/types/models';
 
 export const REMINDER_CHANNEL_ID = 'default';
 export const LOCAL_CALENDAR_REMINDER_KIND = 'calendar-event-reminder';
+export const LOCAL_TASK_REMINDER_KIND = 'task-reminder';
 export const LOCAL_CHECKUP_KIND = 'mental-state-checkup';
 export const CHECKUP_NOTIFICATION_TITLE = 'Check-Up';
 export const CHECKUP_NOTIFICATION_BODY = 'Time to check what your state is.';
@@ -16,8 +17,10 @@ export const DEFAULT_CHECKUP_START_TIME = '09:00';
 export const DEFAULT_CHECKUP_TIMES_PER_DAY = 5;
 
 const LOCAL_NOTIFICATION_PREFIX = 'calendar-event-reminder-';
+const LOCAL_TASK_NOTIFICATION_PREFIX = 'task-reminder-';
 const LOCAL_CHECKUP_PREFIX = 'mental-state-checkup-';
 const REMINDER_LEDGER_KEY = 'solife.calendar-local-reminder-ledger';
+const TASK_REMINDER_LEDGER_KEY = 'solife.task-local-reminder-ledger';
 const REMINDER_HORIZON_MS = 90 * 24 * 60 * 60 * 1000;
 const MAX_REMINDER_MINUTES = 8 * 7 * 24 * 60;
 const RECENT_REMINDER_WINDOW_MS = 48 * 60 * 60 * 1000;
@@ -38,11 +41,26 @@ export interface CalendarReminderSyncResult {
   reminders: CalendarReminderRecord[];
 }
 
+export interface TaskReminderRecord {
+  taskId: string;
+  scheduledAt: string;
+  title: string;
+  triggerAt: number;
+}
+
 interface LocalReminderData {
   kind: typeof LOCAL_CALENDAR_REMINDER_KIND;
   eventId: string;
   eventStart: string;
   allDay: boolean;
+  triggerAt: number;
+}
+
+interface LocalTaskReminderData {
+  kind: typeof LOCAL_TASK_REMINDER_KIND;
+  targetUrl: '/tasks';
+  taskId: string;
+  scheduledAt: string;
   triggerAt: number;
 }
 
@@ -69,6 +87,14 @@ function notificationId(eventId: string, eventStart: string): string {
   return `${LOCAL_NOTIFICATION_PREFIX}${encodeURIComponent(eventId)}-${encodeURIComponent(eventStart)}`;
 }
 
+function taskNotificationId(taskId: string, scheduledAt: string): string {
+  return `${LOCAL_TASK_NOTIFICATION_PREFIX}${encodeURIComponent(taskId)}-${encodeURIComponent(scheduledAt)}`;
+}
+
+function taskRecordKey(record: Pick<TaskReminderRecord, 'taskId' | 'scheduledAt'>): string {
+  return `${record.taskId}\u0000${record.scheduledAt}`;
+}
+
 function isLocalReminderData(value: unknown): value is LocalReminderData {
   if (!value || typeof value !== 'object') return false;
   const data = value as Partial<LocalReminderData>;
@@ -81,6 +107,17 @@ function isLocalReminderData(value: unknown): value is LocalReminderData {
 
 function dataFromRequest(request: Notifications.NotificationRequest): LocalReminderData | null {
   return isLocalReminderData(request.content.data) ? request.content.data : null;
+}
+
+function taskDataFromRequest(request: Notifications.NotificationRequest): LocalTaskReminderData | null {
+  const value = request.content.data;
+  if (!value || typeof value !== 'object') return null;
+  const data = value as Partial<LocalTaskReminderData>;
+  if (data.kind !== LOCAL_TASK_REMINDER_KIND
+    || typeof data.taskId !== 'string'
+    || typeof data.scheduledAt !== 'string'
+    || typeof data.triggerAt !== 'number') return null;
+  return data as LocalTaskReminderData;
 }
 
 function isLocalCheckupData(value: unknown): value is LocalCheckupData {
@@ -171,6 +208,35 @@ async function writeLedger(records: CalendarReminderRecord[]): Promise<void> {
     await AsyncStorage.setItem(REMINDER_LEDGER_KEY, JSON.stringify([...unique.values()].slice(-MAX_LEDGER_SIZE)));
   } catch (cause) {
     logNotificationError('Could not persist local reminder ledger', cause);
+  }
+}
+
+async function readTaskLedger(): Promise<TaskReminderRecord[]> {
+  try {
+    const stored = await AsyncStorage.getItem(TASK_REMINDER_LEDGER_KEY);
+    if (!stored) return [];
+    const value = JSON.parse(stored);
+    if (!Array.isArray(value)) return [];
+    return value.filter((item): item is TaskReminderRecord => {
+      if (!item || typeof item !== 'object') return false;
+      const record = item as Partial<TaskReminderRecord>;
+      return typeof record.taskId === 'string'
+        && typeof record.scheduledAt === 'string'
+        && typeof record.title === 'string'
+        && typeof record.triggerAt === 'number';
+    });
+  } catch (cause) {
+    logNotificationError('Could not read local task reminder ledger', cause);
+    return [];
+  }
+}
+
+async function writeTaskLedger(records: TaskReminderRecord[]): Promise<void> {
+  try {
+    const unique = new Map(records.map(record => [taskRecordKey(record), record]));
+    await AsyncStorage.setItem(TASK_REMINDER_LEDGER_KEY, JSON.stringify([...unique.values()].slice(-MAX_LEDGER_SIZE)));
+  } catch (cause) {
+    logNotificationError('Could not persist local task reminder ledger', cause);
   }
 }
 
@@ -423,6 +489,89 @@ async function reconcileCalendarReminders(events: CalendarEvent[]): Promise<Cale
   };
 }
 
+async function reconcileTaskReminders(tasks: Task[]): Promise<TaskReminderRecord[]> {
+  const now = Date.now();
+  let scheduled: Notifications.NotificationRequest[];
+  try {
+    scheduled = await Notifications.getAllScheduledNotificationsAsync();
+  } catch (cause) {
+    logNotificationError('Could not inspect scheduled Android task reminders', cause);
+    return [];
+  }
+
+  const managed = scheduled.filter(request => taskDataFromRequest(request) !== null);
+  const ledger = (await readTaskLedger()).filter(record => record.triggerAt >= now - RECENT_REMINDER_WINDOW_MS);
+  const expected = tasks.flatMap(task => {
+    if (task.reminderMinutesBefore == null || !task.scheduledPerformDateTime) return [];
+    const scheduledAt = new Date(task.scheduledPerformDateTime);
+    if (Number.isNaN(scheduledAt.getTime())) return [];
+    const triggerAt = scheduledAt.getTime() - task.reminderMinutesBefore * 60 * 1000;
+    if (triggerAt <= now) return [];
+    return [{
+      taskId: task.taskId,
+      scheduledAt: scheduledAt.toISOString(),
+      title: task.name.trim() || 'Task reminder',
+      triggerAt,
+    } satisfies TaskReminderRecord];
+  });
+  const expectedById = new Map(expected.map(record => [taskNotificationId(record.taskId, record.scheduledAt), record]));
+  const existingById = new Map(managed.map(request => [request.identifier, request]));
+  await cancelRequests(managed.filter(request => {
+    const expectedRecord = expectedById.get(request.identifier);
+    if (!expectedRecord) return true;
+    const data = taskDataFromRequest(request);
+    return !data
+      || data.taskId !== expectedRecord.taskId
+      || data.scheduledAt !== expectedRecord.scheduledAt
+      || data.triggerAt !== expectedRecord.triggerAt
+      || request.content.title !== expectedRecord.title;
+  }));
+  const scheduledRecords: TaskReminderRecord[] = [];
+
+  for (const record of expected) {
+    const id = taskNotificationId(record.taskId, record.scheduledAt);
+    const existing = existingById.get(id);
+    if (existing) {
+      const data = taskDataFromRequest(existing);
+      if (data?.taskId === record.taskId && data.scheduledAt === record.scheduledAt
+        && data.triggerAt === record.triggerAt && existing.content.title === record.title) {
+        scheduledRecords.push(record);
+        continue;
+      }
+    }
+    try {
+      await Notifications.scheduleNotificationAsync({
+        identifier: id,
+        content: {
+          title: record.title,
+          body: 'Task reminder',
+          sound: true,
+          data: {
+            kind: LOCAL_TASK_REMINDER_KIND,
+            targetUrl: '/tasks',
+            taskId: record.taskId,
+            scheduledAt: record.scheduledAt,
+            triggerAt: record.triggerAt,
+          } satisfies LocalTaskReminderData,
+        },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.DATE,
+          date: new Date(record.triggerAt),
+          channelId: REMINDER_CHANNEL_ID,
+        },
+      });
+      scheduledRecords.push(record);
+    } catch (cause) {
+      logNotificationError(`Could not schedule local reminder for task ${record.taskId}`, cause);
+    }
+  }
+
+  const recentLedger = ledger.filter(record => record.triggerAt <= now);
+  const knownRecords = [...recentLedger, ...scheduledRecords];
+  await writeTaskLedger(knownRecords);
+  return knownRecords;
+}
+
 async function queued<T>(work: () => Promise<T>): Promise<T> {
   const next = syncQueue.then(work, work);
   syncQueue = next.catch(() => undefined);
@@ -458,6 +607,35 @@ export function syncCalendarReminders(events: CalendarEvent[]): Promise<Calendar
   });
 }
 
+export function syncTaskReminders(tasks: Task[]): Promise<TaskReminderRecord[]> {
+  return queued(async () => {
+    if (Platform.OS !== 'android') return [];
+    const hasReminders = tasks.some(task => task.reminderMinutesBefore != null && Boolean(task.scheduledPerformDateTime));
+    if (!hasReminders) {
+      let scheduled: Notifications.NotificationRequest[] = [];
+      try {
+        scheduled = await Notifications.getAllScheduledNotificationsAsync();
+      } catch (cause) {
+        logNotificationError('Could not inspect scheduled Android task reminders', cause);
+      }
+      await cancelRequests(scheduled.filter(request => taskDataFromRequest(request) !== null));
+      await AsyncStorage.removeItem(TASK_REMINDER_LEDGER_KEY).catch(cause => logNotificationError('Could not clear local task reminder ledger', cause));
+      return [];
+    }
+    if (!await ensureNotificationPermission()) {
+      let scheduled: Notifications.NotificationRequest[] = [];
+      try {
+        scheduled = await Notifications.getAllScheduledNotificationsAsync();
+      } catch (cause) {
+        logNotificationError('Could not inspect scheduled Android task reminders after permission denial', cause);
+      }
+      await cancelRequests(scheduled.filter(request => taskDataFromRequest(request) !== null));
+      return [];
+    }
+    return reconcileTaskReminders(tasks);
+  });
+}
+
 export function clearLocalCalendarReminders(): Promise<void> {
   return queued(async () => {
     if (Platform.OS === 'android') {
@@ -469,6 +647,20 @@ export function clearLocalCalendarReminders(): Promise<void> {
       }
     }
     await AsyncStorage.removeItem(REMINDER_LEDGER_KEY).catch(cause => logNotificationError('Could not clear local reminder ledger', cause));
+  });
+}
+
+export function clearLocalTaskReminders(): Promise<void> {
+  return queued(async () => {
+    if (Platform.OS === 'android') {
+      try {
+        const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+        await cancelRequests(scheduled.filter(request => taskDataFromRequest(request) !== null));
+      } catch (cause) {
+        logNotificationError('Could not clear scheduled Android task reminders', cause);
+      }
+    }
+    await AsyncStorage.removeItem(TASK_REMINDER_LEDGER_KEY).catch(cause => logNotificationError('Could not clear local task reminder ledger', cause));
   });
 }
 

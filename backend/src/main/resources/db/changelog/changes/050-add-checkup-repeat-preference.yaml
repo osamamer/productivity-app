@@ -1,0 +1,19 @@
+databaseChangeLog:
+  - changeSet:
+      id: 050-add-checkup-repeat-preference
+      author: codex
+      comment: Store whether unanswered mental state check-ups repeat every thirty minutes
+      changes:
+        - addColumn:
+            tableName: app_user
+            columns:
+              - column:
+                  name: repeat_checkup_notifications_enabled
+                  type: boolean
+                  defaultValueBoolean: true
+                  constraints:
+                    nullable: false
+      rollback:
+        - dropColumn:
+            tableName: app_user
+            columnName: repeat_checkup_notifications_enabled

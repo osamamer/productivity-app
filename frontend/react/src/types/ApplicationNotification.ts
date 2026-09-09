@@ -15,4 +15,5 @@ export type ApplicationNotification = {
     scheduledAt: string;
     eventStart: string | null;
     allDay: boolean | null;
+    taskId: string | null;
 };

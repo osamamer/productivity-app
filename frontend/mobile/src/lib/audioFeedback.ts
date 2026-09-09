@@ -1,6 +1,8 @@
 import {
   dayRatingFeedback,
   renderAudioFeedback,
+  renderMeditationCompletionGong,
+  renderMeditationIntervalBell,
   type AudioContextLike,
   type AudioFeedbackKind,
 } from '../../../shared/audioFeedback';
@@ -47,6 +49,12 @@ export function setAudioFeedbackEnabled(nextEnabled: boolean): void {
   enabled = nextEnabled;
 }
 
+export function prepareMeditationAudio(): void {
+  void getAudioContext().then(async context => {
+    if (context && context.state === 'suspended') await context.resume();
+  }).catch(error => console.warn('Could not unlock meditation audio:', error));
+}
+
 export function playAudioFeedback(kind: AudioFeedbackKind): void {
   if (!enabled) return;
 
@@ -56,6 +64,25 @@ export function playAudioFeedback(kind: AudioFeedbackKind): void {
     if (context.state === 'suspended') await context.resume();
     renderAudioFeedback(context as unknown as AudioContextLike, kind);
   })().catch(error => console.warn('Could not play sound effect:', error));
+}
+
+function playMeditationCue(render: (context: AudioContextLike) => void, respectPreference = true): void {
+  if (respectPreference && !enabled) return;
+
+  void (async () => {
+    const context = await getAudioContext();
+    if (!context) return;
+    if (context.state === 'suspended') await context.resume();
+    render(context as unknown as AudioContextLike);
+  })().catch(error => console.warn('Could not play meditation cue:', error));
+}
+
+export function playMeditationIntervalBell(): void {
+  playMeditationCue(renderMeditationIntervalBell);
+}
+
+export function playMeditationCompletionGong(): void {
+  playMeditationCue(renderMeditationCompletionGong, false);
 }
 
 export { dayRatingFeedback };

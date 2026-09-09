@@ -7,3 +7,8 @@ export interface TaskPomodoroStats {
     longestStreakDays: number;
     lastWorkedOnDate: string | null;
 }
+
+export interface TodayFocusSummary {
+    date: string;
+    totalFocusSeconds: number;
+}

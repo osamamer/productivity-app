@@ -2,6 +2,8 @@ package org.osama.mentalstate;
 
 import lombok.extern.slf4j.Slf4j;
 import org.osama.exceptions.ResourceNotFoundException;
+import org.osama.reminder.NotificationType;
+import org.osama.reminder.ReminderRepository;
 import org.osama.user.User;
 import org.osama.user.UserRepository;
 import org.springframework.data.domain.PageRequest;
@@ -9,6 +11,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 
@@ -21,13 +25,16 @@ public class MentalStateService {
     private final MentalStateCheckInRepository checkInRepository;
     private final MentalStateAdviceService adviceService;
     private final UserRepository userRepository;
+    private final ReminderRepository reminderRepository;
 
     public MentalStateService(MentalStateCheckInRepository checkInRepository,
                               MentalStateAdviceService adviceService,
-                              UserRepository userRepository) {
+                              UserRepository userRepository,
+                              ReminderRepository reminderRepository) {
         this.checkInRepository = checkInRepository;
         this.adviceService = adviceService;
         this.userRepository = userRepository;
+        this.reminderRepository = reminderRepository;
     }
 
     @Transactional
@@ -48,6 +55,12 @@ public class MentalStateService {
                 .emotionalLoad(request.emotionalLoad())
                 .build();
         MentalStateCheckIn saved = checkInRepository.save(checkIn);
+        int clearedNotifications = reminderRepository.deletePendingByUserIdAndNotificationType(
+                userId, NotificationType.MENTAL_STATE_CHECKUP);
+        if (clearedNotifications > 0) {
+            log.info("Mental state check-in cleared pending check-up notifications: userId={} count={}",
+                    userId, clearedNotifications);
+        }
         log.info("Mental state check-in recorded: userId={} checkInId={} energy={} activation={} stimulationHunger={} clarity={} valence={} emotionalLoad={}",
                 userId, saved.getId(), saved.getEnergy(), saved.getActivation(),
                 saved.getStimulationHunger(), saved.getClarity(), saved.getValence(), saved.getEmotionalLoad());
@@ -59,6 +72,22 @@ public class MentalStateService {
         int safeLimit = Math.max(1, Math.min(limit, MAX_HISTORY_LIMIT));
         return checkInRepository
                 .findAllByUserIdOrderByRecordedAtDesc(userId, PageRequest.of(0, safeLimit))
+                .stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<MentalStateCheckInResponse> getHistoryForDate(LocalDate date, String userId) {
+        Instant from = date.atStartOfDay(ZoneId.systemDefault()).toInstant();
+        Instant to = date.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant();
+        return getHistoryBetween(from, to, userId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<MentalStateCheckInResponse> getHistoryBetween(Instant from, Instant to, String userId) {
+        return checkInRepository
+                .findAllByUserIdAndRecordedAtGreaterThanEqualAndRecordedAtLessThanOrderByRecordedAtAsc(userId, from, to)
                 .stream()
                 .map(this::toResponse)
                 .toList();

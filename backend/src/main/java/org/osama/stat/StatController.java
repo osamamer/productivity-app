@@ -35,6 +35,7 @@ public class StatController {
                 request.maxValue,
                 request.morality,
                 request.goodThreshold,
+                request.createRecurringTask,
                 currentUserService.getCurrentUserId()
         );
     }
@@ -69,6 +70,21 @@ public class StatController {
         );
     }
 
+    @PostMapping("/definitions/{id}/recurring-task")
+    public StatDefinition createRecurringTask(@PathVariable String id,
+                                              @RequestBody(required = false) CreateRecurringTaskRequest request) {
+        return statService.createRecurringTask(
+                id,
+                currentUserService.getCurrentUserId(),
+                request == null ? null : request.timeZone
+        );
+    }
+
+    @DeleteMapping("/definitions/{id}/recurring-task")
+    public StatDefinition disconnectRecurringTask(@PathVariable String id) {
+        return statService.disconnectRecurringTask(id, currentUserService.getCurrentUserId());
+    }
+
     @PutMapping("/definitions/order")
     public List<StatDefinition> reorderDefinitions(@RequestBody ReorderDefinitionsRequest request) {
         return statService.reorderDefinitions(request.definitionIds,
@@ -94,6 +110,14 @@ public class StatController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
         return statService.getEntries(statDefinitionId, from, to, currentUserService.getCurrentUserId());
+    }
+
+    @GetMapping("/definitions/{id}/focus-time")
+    public List<StatFocusTimeEntryResponse> getFocusTime(
+            @PathVariable String id,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return statService.getFocusTime(id, from, to, currentUserService.getCurrentUserId());
     }
 
     @GetMapping("/entries/today")
@@ -134,6 +158,7 @@ public class StatController {
         Double maxValue;
         StatMorality morality;
         Double goodThreshold;
+        boolean createRecurringTask;
     }
 
     @Data
@@ -155,5 +180,10 @@ public class StatController {
     @Data
     public static class ReorderDefinitionsRequest {
         List<String> definitionIds;
+    }
+
+    @Data
+    public static class CreateRecurringTaskRequest {
+        String timeZone;
     }
 }

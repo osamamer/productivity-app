@@ -9,6 +9,7 @@ export interface UserPreferences {
     includeUnloggedNumericDaysAsZero: boolean;
     autoStartPomodoroSessions: boolean;
     checkupNotificationsEnabled: boolean;
+    repeatCheckupNotificationsEnabled: boolean;
     checkupIntervalMinutes: number;
     checkupStartTime: string;
     checkupTimesPerDay: number;

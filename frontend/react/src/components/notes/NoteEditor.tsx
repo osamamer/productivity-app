@@ -23,6 +23,29 @@ const editorModules = {
         ['link'],
         ['clean'],
     ],
+    keyboard: {
+        bindings: {
+            // Quill's default binding only indents when the cursor is at the start of a list item.
+            // Keep Tab useful for nested lists even after the item already contains text.
+            'notes indent list': {
+                key: 'Tab',
+                format: ['list'],
+                handler: function (this: { quill: { format: (name: string, value: string, source: string) => void } }, _range: unknown, context: { collapsed: boolean; offset: number }) {
+                    if (context.collapsed && context.offset === 0) return true;
+                    this.quill.format('indent', '+1', 'user');
+                },
+            },
+            'notes outdent list': {
+                key: 'Tab',
+                shiftKey: true,
+                format: ['list'],
+                handler: function (this: { quill: { format: (name: string, value: string, source: string) => void } }, _range: unknown, context: { collapsed: boolean; offset: number }) {
+                    if (context.collapsed && context.offset === 0) return true;
+                    this.quill.format('indent', '-1', 'user');
+                },
+            },
+        },
+    },
 };
 
 const editorFormats = [
@@ -33,6 +56,7 @@ const editorFormats = [
     'strike',
     'list',
     'bullet',
+    'indent',
     'blockquote',
     'code-block',
     'link',
@@ -94,6 +118,10 @@ function NoteDraftEditorView({
         onTitleFocusHandled();
     }, [focusTitle, onTitleFocusHandled]);
 
+    useEffect(() => {
+        if (title.trim() && !draftTitle.trim()) setDraftTitle(title);
+    }, [draftTitle, title]);
+
     useEffect(() => () => {
         if (wordCountTimerRef.current !== null) window.clearTimeout(wordCountTimerRef.current);
     }, []);
@@ -122,6 +150,9 @@ function NoteDraftEditorView({
                         const nextTitle = event.target.value;
                         setDraftTitle(nextTitle);
                         queueDraftUpdate({ title: nextTitle });
+                    }}
+                    onBlur={() => {
+                        if (!draftTitle.trim()) queueDraftUpdate({ title: '' });
                     }}
                     onKeyDown={event => {
                         if (event.key === 'Tab' && !event.shiftKey) {
@@ -186,6 +217,7 @@ function NoteDraftEditorView({
 
 const NoteDraftEditor = memo(NoteDraftEditorView, (previous, next) => (
     previous.noteId === next.noteId
+    && previous.title === next.title
     && previous.focusTitle === next.focusTitle
     && previous.onDraftUpdate === next.onDraftUpdate
     && previous.onTitleFocusHandled === next.onTitleFocusHandled

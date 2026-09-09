@@ -77,7 +77,7 @@ public class ScheduledJobExecutor {
                 JobType.END_SESSION, taskSessionService::endSession,
                 JobType.PAUSE_SESSION, taskSessionService::pauseSession,
                 JobType.UNPAUSE_SESSION, taskSessionService::unpauseSession,
-                JobType.END_POMODORO, pomodoroService::endPomodoro
+                JobType.END_POMODORO, pomodoroService::completePomodoro
         );
     }
 }

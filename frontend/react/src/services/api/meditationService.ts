@@ -52,6 +52,15 @@ export const meditationService = {
         return response.json();
     },
 
+    async discardSession(sessionId: string): Promise<void> {
+        const response = await fetch(`${MEDITATION_URL}/${sessionId}`, {
+            method: 'DELETE',
+            headers: getAuthHeaders(),
+        });
+
+        if (!response.ok) throw new Error('Failed to dismiss meditation session');
+    },
+
     endSessionOnUnload(sessionId: string): void {
         void fetch(`${MEDITATION_URL}/${sessionId}/end`, {
             method: 'POST',

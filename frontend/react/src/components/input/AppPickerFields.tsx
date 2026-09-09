@@ -1,4 +1,4 @@
-import type { FocusEventHandler, ReactNode } from 'react';
+import type { FocusEventHandler, KeyboardEventHandler, ReactNode } from 'react';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
@@ -18,6 +18,7 @@ type PickerFieldProps = {
     inputProps?: Record<string, unknown>;
     onFocus?: FocusEventHandler<HTMLInputElement | HTMLTextAreaElement>;
     onBlur?: FocusEventHandler<HTMLInputElement | HTMLTextAreaElement>;
+    onKeyDown?: KeyboardEventHandler<HTMLDivElement>;
 };
 
 export type AppDateFieldProps = PickerFieldProps & {
@@ -123,6 +124,21 @@ export function AppDateField({ label, value, onChange, ...props }: AppDateFieldP
 }
 
 export function AppTimeField({ label, value, onChange, minutesStep = 1, ...props }: AppTimeFieldProps) {
+    const handleKeyDown: KeyboardEventHandler<HTMLDivElement> = event => {
+        props.onKeyDown?.(event);
+        if (event.defaultPrevented || event.key !== 'Tab' || event.shiftKey) return;
+
+        const activeSection = event.target as HTMLElement;
+        if (!activeSection.getAttribute('aria-label')?.toLowerCase().includes('hour')) return;
+        const minuteSection = Array.from(
+            event.currentTarget.querySelectorAll<HTMLElement>('[role="spinbutton"]'),
+        ).find(section => section.getAttribute('aria-label')?.toLowerCase().includes('minute'));
+        if (!minuteSection) return;
+
+        event.preventDefault();
+        minuteSection.focus();
+    };
+
     return (
         <LocalizationProvider dateAdapter={AdapterDateFns}>
             <TimePicker
@@ -133,7 +149,7 @@ export function AppTimeField({ label, value, onChange, minutesStep = 1, ...props
                 format="HH:mm"
                 minutesStep={minutesStep}
                 slotProps={{
-                    field: { clearable: true },
+                    field: { clearable: true, onKeyDown: handleKeyDown },
                     textField: pickerTextFieldProps(props),
                     popper: { sx: pickerPopperSx },
                 }}

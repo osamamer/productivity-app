@@ -1,7 +1,10 @@
 import { memo } from 'react';
-import { Box, Chip, InputAdornment, MenuItem, Select, TextField, Typography } from '@mui/material';
+import { Box, Checkbox, Chip, IconButton, InputAdornment, MenuItem, Select, TextField, Tooltip, Typography } from '@mui/material';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import PushPinRoundedIcon from '@mui/icons-material/PushPinRounded';
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
+import CheckBoxOutlinedIcon from '@mui/icons-material/CheckBoxOutlined';
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import NotesRoundedIcon from '@mui/icons-material/NotesRounded';
 import { formatDistanceToNow } from 'date-fns';
 import { Note, NoteCategory, NoteSort } from '../../types/Note.ts';
@@ -15,6 +18,15 @@ interface NotesListProps {
     onSearchChange: (query: string) => void;
     onSortChange: (sort: NoteSort) => void;
     onSelectNote: (noteId: string) => void;
+    onSelectionGesture: (noteId: string, shiftKey: boolean, additive: boolean) => void;
+    selectedNoteIds: string[];
+    selectionMode: boolean;
+    bulkActionLoading: boolean;
+    onToggleSelectionMode: () => void;
+    onToggleNoteSelection: (noteId: string) => void;
+    onSelectAllVisible: () => void;
+    onClearSelection: () => void;
+    onRequestBulkDelete: () => void;
 }
 
 function notePreview(content: string) {
@@ -32,8 +44,19 @@ export const NotesList = memo(function NotesList({
     onSearchChange,
     onSortChange,
     onSelectNote,
+    onSelectionGesture,
+    selectedNoteIds,
+    selectionMode,
+    bulkActionLoading,
+    onToggleSelectionMode,
+    onToggleNoteSelection,
+    onSelectAllVisible,
+    onClearSelection,
+    onRequestBulkDelete,
 }: NotesListProps) {
     const categoriesById = new Map(categories.map(category => [category.id, category]));
+    const selectedIds = new Set(selectedNoteIds);
+    const allVisibleSelected = notes.length > 0 && notes.every(note => selectedIds.has(note.id));
 
     return (
         <Box
@@ -49,25 +72,61 @@ export const NotesList = memo(function NotesList({
                 maxHeight: { xs: 380, md: 'none' },
             }}
         >
-            <Box sx={{ p: 1.5, display: 'flex', gap: 1 }}>
-                <TextField
-                    value={searchQuery}
-                    autoComplete="off"
-                    onChange={event => onSearchChange(event.target.value)}
-                    placeholder="Search notes"
-                    size="small"
-                    fullWidth
-                    slotProps={{
-                        input: {
-                            startAdornment: (
-                                <InputAdornment position="start">
-                                    <SearchRoundedIcon sx={{ fontSize: 18 }} />
-                                </InputAdornment>
-                            ),
-                        },
-                    }}
-                    sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2.5 } }}
-                />
+            <Box sx={{ p: 1.5, display: 'flex', gap: 1, alignItems: 'center' }}>
+                {selectionMode ? (
+                    <>
+                        <Checkbox
+                            size="small"
+                            checked={allVisibleSelected}
+                            indeterminate={selectedNoteIds.length > 0 && !allVisibleSelected}
+                            onChange={onSelectAllVisible}
+                            inputProps={{ 'aria-label': allVisibleSelected ? 'Clear visible note selection' : 'Select all visible notes' }}
+                        />
+                        <Typography variant="body2" sx={{ whiteSpace: 'nowrap', fontWeight: 650 }}>
+                            {selectedNoteIds.length} selected
+                        </Typography>
+                        <Tooltip title="Delete selected notes">
+                            <IconButton
+                                size="small"
+                                color="error"
+                                disabled={bulkActionLoading || selectedNoteIds.length === 0}
+                                onClick={onRequestBulkDelete}
+                                aria-label="Delete selected notes"
+                            >
+                                <DeleteOutlineRoundedIcon fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Close selection">
+                            <IconButton size="small" onClick={onClearSelection} aria-label="Close note selection">
+                                <CloseRoundedIcon fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
+                    </>
+                ) : (
+                    <Tooltip title="Select notes">
+                        <IconButton size="small" onClick={onToggleSelectionMode} aria-label="Select notes">
+                            <CheckBoxOutlinedIcon fontSize="small" />
+                        </IconButton>
+                    </Tooltip>
+                )}
+                {!selectionMode && <TextField
+                        value={searchQuery}
+                        autoComplete="off"
+                        onChange={event => onSearchChange(event.target.value)}
+                        placeholder="Search notes"
+                        size="small"
+                        fullWidth
+                        slotProps={{
+                            input: {
+                                startAdornment: (
+                                    <InputAdornment position="start">
+                                        <SearchRoundedIcon sx={{ fontSize: 18 }} />
+                                    </InputAdornment>
+                                ),
+                            },
+                        }}
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2.5 } }}
+                    />}
                 <Select
                     value={sort}
                     onChange={event => onSortChange(event.target.value as NoteSort)}
@@ -92,13 +151,36 @@ export const NotesList = memo(function NotesList({
 
                 {notes.map(note => {
                     const category = note.categoryId ? categoriesById.get(note.categoryId) : undefined;
-                    const selected = note.id === selectedNoteId;
+                    const selected = note.id === selectedNoteId || selectedIds.has(note.id);
                     return (
                         <Box
-                            component="button"
                             key={note.id}
-                            type="button"
-                            onClick={() => onSelectNote(note.id)}
+                            role="button"
+                            tabIndex={0}
+                            onMouseDown={event => {
+                                if (event.target === event.currentTarget && (event.shiftKey || event.ctrlKey || event.metaKey || selectionMode)) {
+                                    event.preventDefault();
+                                } else if (event.shiftKey || event.ctrlKey || event.metaKey) {
+                                    event.preventDefault();
+                                }
+                            }}
+                            onClick={event => {
+                                const additive = event.ctrlKey || event.metaKey;
+                                if (event.shiftKey || additive) {
+                                    event.preventDefault();
+                                    onSelectionGesture(note.id, event.shiftKey, additive);
+                                } else if (selectionMode) {
+                                    onToggleNoteSelection(note.id);
+                                } else {
+                                    onSelectNote(note.id);
+                                }
+                            }}
+                            onKeyDown={event => {
+                                if (event.key !== 'Enter' && event.key !== ' ') return;
+                                event.preventDefault();
+                                if (selectionMode) onToggleNoteSelection(note.id);
+                                else onSelectNote(note.id);
+                            }}
                             sx={{
                                 width: '100%',
                                 display: 'block',
@@ -110,10 +192,19 @@ export const NotesList = memo(function NotesList({
                                 color: 'text.primary',
                                 backgroundColor: selected ? 'action.selected' : 'transparent',
                                 cursor: 'pointer',
+                                userSelect: 'none',
                                 '&:hover': { backgroundColor: 'action.hover' },
                             }}
                         >
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 0.5 }}>
+                                {selectionMode && <Checkbox
+                                    size="small"
+                                    checked={selectedIds.has(note.id)}
+                                    onClick={event => event.stopPropagation()}
+                                    onChange={() => onToggleNoteSelection(note.id)}
+                                    inputProps={{ 'aria-label': `${selectedIds.has(note.id) ? 'Deselect' : 'Select'} ${note.title.trim() || 'Untitled'}` }}
+                                    sx={{ p: 0, mr: 0.25 }}
+                                />}
                                 <Typography variant="subtitle2" noWrap sx={{ flex: 1, fontWeight: 700 }}>
                                     {note.title.trim() || 'Untitled'}
                                 </Typography>

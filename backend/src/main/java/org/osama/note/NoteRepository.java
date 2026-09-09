@@ -11,6 +11,7 @@ import java.util.Optional;
 public interface NoteRepository extends JpaRepository<Note, String> {
     List<Note> findAllByUserIdOrderByPinnedDescUpdatedAtDesc(String userId);
     Optional<Note> findByIdAndUserId(String id, String userId);
+    List<Note> findAllByIdInAndUserId(List<String> ids, String userId);
 
     @Modifying
     @Query("update Note note set note.category = null where note.category.id = :categoryId and note.userId = :userId")

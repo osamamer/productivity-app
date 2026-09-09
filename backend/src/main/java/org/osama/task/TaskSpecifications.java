@@ -19,12 +19,24 @@ public class TaskSpecifications {
         return (root, query, cb) -> cb.equal(root.get("completed"), completed);
     }
 
+    public static Specification<Task> isNotSkipped() {
+        return (root, query, cb) -> cb.isFalse(root.get("skipped"));
+    }
+
     public static Specification<Task> hasScheduledDate(LocalDate date) {
         return (root, query, cb) -> {
             LocalDateTime startOfDay = date.atStartOfDay();
             LocalDateTime endOfDay = date.plusDays(1).atStartOfDay();
             return cb.between(root.get("scheduledPerformDateTime"), startOfDay, endOfDay);
         };
+    }
+
+    public static Specification<Task> hasAnyScheduledDate() {
+        return (root, query, cb) -> cb.isNotNull(root.get("scheduledPerformDateTime"));
+    }
+
+    public static Specification<Task> hasNoScheduledDate() {
+        return (root, query, cb) -> cb.isNull(root.get("scheduledPerformDateTime"));
     }
 
     public static Specification<Task> scheduledBefore(LocalDate date) {
@@ -62,11 +74,17 @@ public class TaskSpecifications {
             spec = spec.and(hasUserId(taskQuery.getUserId()));
         }
 
+        spec = spec.and(isNotSkipped());
+
         // Main tasks by default (unless parentId is specified)
         if (taskQuery.getParentId() == null) {
             spec = spec.and(isMainTask());
         } else if (!taskQuery.getParentId().equals("*")) {
             spec = spec.and(hasParent(taskQuery.getParentId()));
+        }
+
+        if (taskQuery.getScheduled() != null) {
+            spec = spec.and(taskQuery.getScheduled() ? hasAnyScheduledDate() : hasNoScheduledDate());
         }
 
         // Date filtering

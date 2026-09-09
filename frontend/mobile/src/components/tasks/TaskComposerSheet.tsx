@@ -16,6 +16,16 @@ import { dateFromScheduleValue, TaskDateTimePicker } from './TaskScheduleField';
 
 type Schedule = 'today' | 'tomorrow' | 'custom';
 
+const REMINDER_OPTIONS = [
+  { value: -1, label: 'No reminder' },
+  { value: 5, label: '5 min before' },
+  { value: 15, label: '15 min before' },
+  { value: 30, label: '30 min before' },
+  { value: 60, label: '1 hour before' },
+  { value: 1440, label: '1 day before' },
+  { value: 10080, label: '1 week before' },
+];
+
 function scheduledDate(choice: Exclude<Schedule, 'custom'>): string {
   const date = new Date();
   if (choice === 'tomorrow') date.setDate(date.getDate() + 1);
@@ -41,6 +51,7 @@ export function TaskComposerSheet({ visible, onClose, onCreated, initialDate }: 
   const [schedule, setSchedule] = useState<Schedule>(initialDate ? 'custom' : 'today');
   const [customSchedule, setCustomSchedule] = useState(() => customDateTime(initialDate));
   const [customScheduleOpen, setCustomScheduleOpen] = useState(false);
+  const [reminderMinutesBefore, setReminderMinutesBefore] = useState<number | null>(null);
   const [customScheduleDraft, setCustomScheduleDraft] = useState(() => dateFromScheduleValue(null));
   const previousSchedule = useRef<Exclude<Schedule, 'custom'>>('today');
   const [saving, setSaving] = useState(false);
@@ -53,6 +64,7 @@ export function TaskComposerSheet({ visible, onClose, onCreated, initialDate }: 
     setSchedule(initialDate ? 'custom' : 'today');
     setCustomSchedule(customDateTime(initialDate));
     setCustomScheduleOpen(false);
+    setReminderMinutesBefore(null);
     setError(null);
   }
 
@@ -97,6 +109,7 @@ export function TaskComposerSheet({ visible, onClose, onCreated, initialDate }: 
         scheduledPerformDateTime: schedule === 'custom' ? customSchedule : scheduledDate(schedule),
         tag: '',
         importance,
+        reminderMinutesBefore,
       });
       await onCreated(task);
       close();
@@ -128,6 +141,12 @@ export function TaskComposerSheet({ visible, onClose, onCreated, initialDate }: 
       )}
       <AppText variant="label">Priority</AppText>
       <ChoiceChips value={importance} onChange={setImportance} options={[...TASK_PRIORITY_OPTIONS]} />
+      <AppText variant="label">Remind me</AppText>
+      <ChoiceChips
+        value={reminderMinutesBefore ?? -1}
+        onChange={value => setReminderMinutesBefore(value === -1 ? null : value)}
+        options={REMINDER_OPTIONS}
+      />
       <AppPopup
         visible={customScheduleOpen}
         title="Custom schedule"

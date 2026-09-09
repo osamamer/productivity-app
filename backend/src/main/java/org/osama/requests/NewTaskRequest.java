@@ -2,6 +2,10 @@ package org.osama.requests;
 
 import lombok.Data;
 import javax.validation.constraints.*;
+import org.osama.task.recurrence.TaskRecurrenceFrequency;
+import org.osama.task.recurrence.TaskRecurrenceUnit;
+
+import java.time.LocalDate;
 
 @Data
 public class NewTaskRequest {
@@ -24,4 +28,30 @@ public class NewTaskRequest {
     @Min(value = 0, message = "Importance must be at least 0")
     @Max(value = 10, message = "Importance must not exceed 10")
     private int importance = 0;
+
+    private TaskRecurrenceFrequency recurrenceFrequency;
+
+    private LocalDate recurrenceEndDate;
+
+    private Integer recurrenceInterval;
+
+    private TaskRecurrenceUnit recurrenceUnit;
+
+    private String timeZone;
+
+    private Integer reminderMinutesBefore;
+    private boolean reminderMinutesBeforePresent;
+
+    public void setReminderMinutesBefore(Integer reminderMinutesBefore) {
+        this.reminderMinutesBefore = reminderMinutesBefore;
+        this.reminderMinutesBeforePresent = true;
+    }
+
+    public boolean isReminderMinutesBeforePresent() {
+        return reminderMinutesBeforePresent;
+    }
+
+    public boolean isRecurring() {
+        return recurrenceFrequency != null;
+    }
 }

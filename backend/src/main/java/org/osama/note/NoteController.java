@@ -44,9 +44,20 @@ public class NoteController {
         return noteService.updateNote(noteId, request, currentUserService.getCurrentUserId());
     }
 
+    @PatchMapping("/bulk")
+    public List<NoteResponse> updateNotes(@RequestBody BulkNoteRequest request) {
+        return noteService.updateNotes(request, currentUserService.getCurrentUserId());
+    }
+
     @DeleteMapping("/{noteId}")
     public ResponseEntity<Void> deleteNote(@PathVariable String noteId) {
         noteService.deleteNote(noteId, currentUserService.getCurrentUserId());
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/bulk")
+    public ResponseEntity<Void> deleteNotes(@RequestBody BulkNoteRequest request) {
+        noteService.deleteNotes(request, currentUserService.getCurrentUserId());
         return ResponseEntity.noContent().build();
     }
 }

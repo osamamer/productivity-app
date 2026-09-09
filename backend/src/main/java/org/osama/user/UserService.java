@@ -2,6 +2,7 @@ package org.osama.user;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.osama.reminder.NotificationService;
 import org.osama.stat.SystemStatProvisioningService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,6 +25,7 @@ public class UserService {
     private final UserRepository userRepository;
     private final KeycloakAccountService keycloakAccountService;
     private final SystemStatProvisioningService systemStatProvisioningService;
+    private final NotificationService notificationService;
 
     /**
      * Looks up the app User by Keycloak subject, creating one on first login.
@@ -145,14 +147,14 @@ public class UserService {
     @Transactional
     public User updatePreferences(String userId, Boolean includeUnloggedNumericDaysAsZero) {
         return updatePreferences(userId, includeUnloggedNumericDaysAsZero, null,
-                null, null, null, null);
+                null, null, null, null, null);
     }
 
     @Transactional
     public User updatePreferences(String userId, Boolean includeUnloggedNumericDaysAsZero,
                                   Boolean autoStartPomodoroSessions) {
         return updatePreferences(userId, includeUnloggedNumericDaysAsZero, autoStartPomodoroSessions,
-                null, null, null, null);
+                null, null, null, null, null);
     }
 
     @Transactional
@@ -160,8 +162,18 @@ public class UserService {
                                   Boolean autoStartPomodoroSessions, Boolean checkupNotificationsEnabled,
                                   Integer checkupIntervalMinutes, LocalTime checkupStartTime,
                                   Integer checkupTimesPerDay) {
+        return updatePreferences(userId, includeUnloggedNumericDaysAsZero, autoStartPomodoroSessions,
+                checkupNotificationsEnabled, null, checkupIntervalMinutes, checkupStartTime, checkupTimesPerDay);
+    }
+
+    @Transactional
+    public User updatePreferences(String userId, Boolean includeUnloggedNumericDaysAsZero,
+                                  Boolean autoStartPomodoroSessions, Boolean checkupNotificationsEnabled,
+                                  Boolean repeatCheckupNotificationsEnabled, Integer checkupIntervalMinutes,
+                                  LocalTime checkupStartTime, Integer checkupTimesPerDay) {
         if (includeUnloggedNumericDaysAsZero == null && autoStartPomodoroSessions == null
-                && checkupNotificationsEnabled == null && checkupIntervalMinutes == null
+                && checkupNotificationsEnabled == null && repeatCheckupNotificationsEnabled == null
+                && checkupIntervalMinutes == null
                 && checkupStartTime == null && checkupTimesPerDay == null) {
             throw new IllegalArgumentException("At least one user preference is required.");
         }
@@ -174,6 +186,8 @@ public class UserService {
                 && !Objects.equals(user.getAutoStartPomodoroSessions(), autoStartPomodoroSessions);
         boolean checkupPreferenceChanged = checkupNotificationsEnabled != null
                 && !Objects.equals(user.getCheckupNotificationsEnabled(), checkupNotificationsEnabled);
+        boolean repeatCheckupPreferenceChanged = repeatCheckupNotificationsEnabled != null
+                && !Objects.equals(user.getRepeatCheckupNotificationsEnabled(), repeatCheckupNotificationsEnabled);
         boolean checkupScheduleChanged = checkupIntervalMinutes != null
                 || checkupStartTime != null
                 || checkupTimesPerDay != null;
@@ -197,6 +211,9 @@ public class UserService {
         if (checkupNotificationsEnabled != null) {
             user.setCheckupNotificationsEnabled(checkupNotificationsEnabled);
         }
+        if (repeatCheckupNotificationsEnabled != null) {
+            user.setRepeatCheckupNotificationsEnabled(repeatCheckupNotificationsEnabled);
+        }
         if (checkupIntervalMinutes != null) {
             user.setCheckupIntervalMinutes(checkupIntervalMinutes);
         }
@@ -208,11 +225,18 @@ public class UserService {
         }
         User savedUser = userRepository.save(user);
         log.info("User preferences updated: userId={} includeUnloggedNumericDaysAsZero={} autoStartPomodoroSessions={} "
-                        + "checkupNotificationsEnabled={} checkupIntervalMinutes={} checkupStartTime={} checkupTimesPerDay={} changed={}",
+                        + "checkupNotificationsEnabled={} repeatCheckupNotificationsEnabled={} checkupIntervalMinutes={} "
+                        + "checkupStartTime={} checkupTimesPerDay={} changed={}",
                 userId, savedUser.getIncludeUnloggedNumericDaysAsZero(), savedUser.getAutoStartPomodoroSessions(),
-                savedUser.getCheckupNotificationsEnabled(), savedUser.getCheckupIntervalMinutes(),
+                savedUser.getCheckupNotificationsEnabled(), savedUser.getRepeatCheckupNotificationsEnabled(),
+                savedUser.getCheckupIntervalMinutes(),
                 savedUser.getCheckupStartTime(), savedUser.getCheckupTimesPerDay(),
-                numericPreferenceChanged || pomodoroPreferenceChanged || checkupPreferenceChanged || checkupScheduleChanged);
+                numericPreferenceChanged || pomodoroPreferenceChanged || checkupPreferenceChanged
+                        || repeatCheckupPreferenceChanged || checkupScheduleChanged);
+        if (Boolean.FALSE.equals(savedUser.getCheckupNotificationsEnabled())
+                || Boolean.FALSE.equals(savedUser.getRepeatCheckupNotificationsEnabled())) {
+            notificationService.clearPendingCheckupNotifications(userId);
+        }
         return savedUser;
     }
 

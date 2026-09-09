@@ -23,7 +23,8 @@ interface Props {
     points: StatChartPoint[];
     dateRange: number;
     theme: Theme;
-    onPointClick: (point: StatChartPoint, event: StatChartPointClickEvent) => void;
+    onPointClick?: (point: StatChartPoint, event: StatChartPointClickEvent) => void;
+    onDateContextMenu?: (date: string, event: React.MouseEvent<Element>) => void;
 }
 
 function targetValue(definition: StatDefinition): number | undefined {
@@ -88,7 +89,7 @@ function chartMaximum(definition: StatDefinition, points: StatChartPoint[]): num
     return Math.max(60, targetValue(definition) ?? 0, ...values) * 1.08;
 }
 
-function SevenDayDurationBars({ definition, comparisonDefinition, points, theme, onPointClick }: Omit<Props, 'dateRange'>) {
+function SevenDayDurationBars({ definition, comparisonDefinition, points, theme, onPointClick, onDateContextMenu }: Omit<Props, 'dateRange'>) {
     const axis = durationAxis(chartMaximum(definition, points));
     const maximum = axis.maximum;
     const target = targetValue(definition);
@@ -149,14 +150,19 @@ function SevenDayDurationBars({ definition, comparisonDefinition, points, theme,
                                             slotProps={tooltipSlotProps}
                                         >
                                             <Box
-                                                onClick={event => onPointClick(point, event)}
+                                                onClick={onPointClick ? event => onPointClick(point, event) : undefined}
+                                                onContextMenu={onDateContextMenu ? event => {
+                                                    event.preventDefault();
+                                                    event.stopPropagation();
+                                                    onDateContextMenu(point.date, event);
+                                                } : undefined}
                                                 sx={{
                                                     width: comparisonDefinition ? 'clamp(4px, 20%, 8px)' : 'clamp(5px, 28%, 11px)',
                                                     height: `${primaryHeight}%`,
                                                     minHeight: 3,
                                                     borderRadius: '6px 6px 1px 1px',
                                                     bgcolor: primaryColor,
-                                                    cursor: 'pointer',
+                                                    cursor: onPointClick ? 'pointer' : 'default',
                                                     transition: 'filter 120ms ease',
                                                     '&:hover': { filter: 'brightness(1.16)' },
                                                 }}

@@ -1,5 +1,6 @@
 // src/services/api/dayService.ts
 import { DayEntity } from '../../types/DayEntity';
+import { DayOverview } from '../../types/DayOverview';
 import { getAuthCacheScope, getAuthHeaders } from '../utils/authHeaders';
 import { CachedResource } from '../cache/ttlCache';
 
@@ -13,6 +14,17 @@ function todayCacheKey(): string {
 }
 
 export const dayService = {
+
+    async getOverview(date: string, signal?: AbortSignal): Promise<DayOverview> {
+        const response = await fetch(`${DAY_URL}/overview/${encodeURIComponent(date)}`, {
+            headers: getAuthHeaders(),
+            signal,
+        });
+        if (!response.ok) {
+            throw new Error('Failed to fetch day overview');
+        }
+        return response.json();
+    },
 
     async getToday(): Promise<DayEntity> {
         return todayCache.get(todayCacheKey(), async () => {

@@ -11,15 +11,14 @@ import { StatDefinition } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
 import { getBooleanChoiceColor, showStatFeedback } from '../../services/statFeedback';
 
-// Week starts on Monday. Offset maps JS getDay() (0=Sun) to Mon-based index (0=Mon, 6=Sun).
-const toMondayIndex = (jsDay: number) => (jsDay + 6) % 7;
-const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 interface Props {
     definition: StatDefinition;
     dateRange: number;
     refreshKey: number;
     onEntryChanged?: (definitionId: string) => void;
+    onDateContextMenu?: (date: string, event: React.MouseEvent<Element>) => void;
 }
 
 export const BooleanCalendarView = React.memo(function BooleanCalendarView({
@@ -27,6 +26,7 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
     dateRange,
     refreshKey,
     onEntryChanged,
+    onDateContextMenu,
 }: Props) {
     const theme = useTheme();
     const yesColor = theme.palette[getBooleanChoiceColor(definition, 1)].main;
@@ -57,7 +57,7 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
     const feedbackAnchorRef = useRef<HTMLElement | null>(null);
 
     const allDays = eachDayOfInterval({ start: from, end: to });
-    const startOffset = toMondayIndex(getDay(from));
+    const startOffset = getDay(from);
     const days: (Date | null)[] = [...Array(startOffset).fill(null), ...allDays];
     while (days.length % 7 !== 0) days.push(null);
 
@@ -167,6 +167,11 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
                                 key={di}
                                 title={day ? format(day, 'MMMM d, yyyy') : undefined}
                                 onClick={day ? event => openEditor(event, dateKey!) : undefined}
+                                onContextMenu={day ? event => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    onDateContextMenu?.(dateKey!, event);
+                                } : undefined}
                                 sx={{
                                     height: 62,
                                     minHeight: 52,

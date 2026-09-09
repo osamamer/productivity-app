@@ -103,6 +103,7 @@ public class UserController {
                 request.includeUnloggedNumericDaysAsZero(),
                 request.autoStartPomodoroSessions(),
                 request.checkupNotificationsEnabled(),
+                request.repeatCheckupNotificationsEnabled(),
                 request.checkupIntervalMinutes(),
                 request.checkupStartTime(),
                 request.checkupTimesPerDay()
@@ -175,6 +176,7 @@ public class UserController {
             Boolean includeUnloggedNumericDaysAsZero,
             Boolean autoStartPomodoroSessions,
             Boolean checkupNotificationsEnabled,
+            Boolean repeatCheckupNotificationsEnabled,
             Integer checkupIntervalMinutes,
             @JsonFormat(pattern = "HH:mm")
             LocalTime checkupStartTime,
@@ -185,6 +187,7 @@ public class UserController {
             boolean includeUnloggedNumericDaysAsZero,
             boolean autoStartPomodoroSessions,
             boolean checkupNotificationsEnabled,
+            boolean repeatCheckupNotificationsEnabled,
             int checkupIntervalMinutes,
             @JsonFormat(pattern = "HH:mm")
             LocalTime checkupStartTime,
@@ -195,6 +198,7 @@ public class UserController {
                     Boolean.TRUE.equals(user.getIncludeUnloggedNumericDaysAsZero()),
                     !Boolean.FALSE.equals(user.getAutoStartPomodoroSessions()),
                     !Boolean.FALSE.equals(user.getCheckupNotificationsEnabled()),
+                    !Boolean.FALSE.equals(user.getRepeatCheckupNotificationsEnabled()),
                     user.getCheckupIntervalMinutes(),
                     user.getCheckupStartTime(),
                     user.getCheckupTimesPerDay()

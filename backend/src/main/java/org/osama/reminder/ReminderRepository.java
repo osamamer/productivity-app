@@ -10,11 +10,17 @@ import jakarta.persistence.LockModeType;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Collection;
 import org.springframework.data.domain.Pageable;
 
 public interface ReminderRepository extends JpaRepository<Reminder, String> {
     Optional<Reminder> findByEventId(String eventId);
     void deleteByEventId(String eventId);
+    Optional<Reminder> findByTaskIdAndNotificationType(String taskId, NotificationType notificationType);
+    List<Reminder> findAllByTaskIdInAndNotificationType(Collection<String> taskIds, NotificationType notificationType);
+    void deleteByTaskIdAndNotificationType(String taskId, NotificationType notificationType);
+    void deleteByTaskId(String taskId);
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<Reminder> findByReminderIdAndUserId(String reminderId, String userId);
 
     @Modifying

@@ -2,6 +2,9 @@ package org.osama.task;
 
 import org.osama.requests.UpdateTaskRequest;
 import org.osama.requests.NewTaskRequest;
+import org.osama.task.recurrence.TaskSeriesResponse;
+import org.osama.task.recurrence.TaskSeriesRuleRequest;
+import org.osama.task.recurrence.TaskSeriesService;
 import org.osama.user.CurrentUserService;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
@@ -13,15 +16,19 @@ import javax.validation.Valid;
 import java.net.URI;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/tasks")
 public class TaskController {
     private final TaskService taskService;
+    private final TaskSeriesService taskSeriesService;
     private final CurrentUserService currentUserService;
 
-    public TaskController(TaskService taskService, CurrentUserService currentUserService) {
+    public TaskController(TaskService taskService, TaskSeriesService taskSeriesService,
+                          CurrentUserService currentUserService) {
         this.taskService = taskService;
+        this.taskSeriesService = taskSeriesService;
         this.currentUserService = currentUserService;
     }
 
@@ -46,7 +53,16 @@ public class TaskController {
             Integer minImportance,
 
             @RequestParam(required = false)
-            String tag
+            String tag,
+
+            @RequestParam(required = false)
+            Boolean scheduled,
+
+            @RequestParam(required = false)
+            Integer limit,
+
+            @RequestParam(defaultValue = "0")
+            Integer offset
     ) {
         String userId = currentUserService.getCurrentUserId();
         TaskQuery query = TaskQuery.builder()
@@ -56,10 +72,13 @@ public class TaskController {
                 .parentId(parentId)
                 .minImportance(minImportance)
                 .tag(tag)
+                .scheduled(scheduled)
                 .userId(userId)
                 .build();
 
-        List<Task> tasks = taskService.findTasks(query);
+        List<Task> tasks = limit == null
+                ? taskService.findTasks(query)
+                : taskService.findTasks(query, limit, offset);
         return ResponseEntity.ok(tasks);
     }
 
@@ -67,6 +86,17 @@ public class TaskController {
     public ResponseEntity<List<Task>> reorderTasks(@RequestBody ReorderTasksRequest request) {
         return ResponseEntity.ok(taskService.reorderMainTasks(
                 request.getTaskIds(), currentUserService.getCurrentUserId()));
+    }
+
+    @GetMapping("/focus-today")
+    public ResponseEntity<TodayFocusSummaryResponse> getTodayFocusSummary(
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+            LocalDate date
+    ) {
+        LocalDate targetDate = date == null ? LocalDate.now() : date;
+        return ResponseEntity.ok(taskService.getTodayFocusSummary(
+                currentUserService.getCurrentUserId(), targetDate));
     }
 
     // ============ Single Task Operations ============
@@ -86,13 +116,38 @@ public class TaskController {
     @PostMapping
     public ResponseEntity<Task> createTask(@RequestBody @Valid NewTaskRequest request) {
         String userId = currentUserService.getCurrentUserId();
-        Task task = taskService.createTask(request, userId);
+        Task task = request.isRecurring()
+                ? taskSeriesService.createSeries(request, userId)
+                : taskService.createTask(request, userId);
         URI location = ServletUriComponentsBuilder
                 .fromCurrentRequest()
                 .path("/{id}")
                 .buildAndExpand(task.getTaskId())
                 .toUri();
         return ResponseEntity.created(location).body(task);
+    }
+
+    /** Manual maintenance endpoint; intentionally not used by the frontend. */
+    @DeleteMapping("/future")
+    public ResponseEntity<Map<String, Integer>> deleteAllFutureTasks() {
+        int deletedTaskCount = taskService.deleteAllFutureTasks(currentUserService.getCurrentUserId());
+        return ResponseEntity.ok(Map.of("deletedTaskCount", deletedTaskCount));
+    }
+
+    @GetMapping("/{taskId}/recurrence")
+    public ResponseEntity<TaskSeriesResponse> getTaskRecurrence(@PathVariable String taskId) {
+        return taskSeriesService.getSeriesForTask(taskId, currentUserService.getCurrentUserId())
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    @PostMapping("/{taskId}/recurrence")
+    public ResponseEntity<TaskSeriesResponse> startTaskRecurrence(
+            @PathVariable String taskId,
+            @RequestBody TaskSeriesRuleRequest request
+    ) {
+        return ResponseEntity.ok(taskSeriesService.createSeriesFromTask(
+                taskId, request, currentUserService.getCurrentUserId()));
     }
 
     @PatchMapping("/{taskId}")
@@ -148,6 +203,11 @@ public class TaskController {
     @GetMapping("/today")
     public ResponseEntity<List<Task>> getTodayTasks() {
         return ResponseEntity.ok(taskService.getTodayTasks(currentUserService.getCurrentUserId()));
+    }
+
+    @GetMapping("/undated")
+    public ResponseEntity<List<Task>> getUndatedTasks() {
+        return ResponseEntity.ok(taskService.getUndatedTasks(currentUserService.getCurrentUserId()));
     }
 
     @GetMapping("/incomplete")

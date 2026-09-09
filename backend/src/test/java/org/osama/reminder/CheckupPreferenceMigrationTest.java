@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class CheckupPreferenceMigrationTest {
     @Test
-    void addsTheDefaultCheckupScheduleForExistingUsers() throws Exception {
+    void addsTheDefaultCheckupScheduleAndRepeatPreferenceForExistingUsers() throws Exception {
         try (var connection = DriverManager.getConnection(
                 "jdbc:h2:mem:checkup-preferences-migration;MODE=PostgreSQL;DB_CLOSE_DELAY=-1")) {
             connection.createStatement().execute("""
@@ -35,9 +35,17 @@ class CheckupPreferenceMigrationTest {
             );
             liquibase.update(new Contexts(), new LabelExpression());
 
+            Liquibase repeatPreferenceMigration = new Liquibase(
+                    "db/changelog/changes/050-add-checkup-repeat-preference.yaml",
+                    new ClassLoaderResourceAccessor(),
+                    database
+            );
+            repeatPreferenceMigration.update(new Contexts(), new LabelExpression());
+
             try (var result = connection.createStatement().executeQuery("""
                     SELECT checkup_notifications_enabled, checkup_interval_minutes,
-                           checkup_start_time, checkup_times_per_day
+                           checkup_start_time, checkup_times_per_day,
+                           repeat_checkup_notifications_enabled
                     FROM app_user
                     WHERE id = 'user-1'
                     """)) {
@@ -46,6 +54,7 @@ class CheckupPreferenceMigrationTest {
                 assertThat(result.getInt("checkup_interval_minutes")).isEqualTo(180);
                 assertThat(result.getTime("checkup_start_time").toLocalTime()).isEqualTo(LocalTime.of(9, 0));
                 assertThat(result.getInt("checkup_times_per_day")).isEqualTo(5);
+                assertThat(result.getBoolean("repeat_checkup_notifications_enabled")).isTrue();
             }
             database.close();
         }

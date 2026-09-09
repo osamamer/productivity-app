@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Snackbar, Typography } from '@mui/material';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Box, Button, CircularProgress, ClickAwayListener, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Snackbar, Typography } from '@mui/material';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import EditNoteRoundedIcon from '@mui/icons-material/EditNoteRounded';
 import { PageWrapper } from '../components/PageWrapper.tsx';
@@ -8,8 +8,9 @@ import { NotesList } from '../components/notes/NotesList.tsx';
 import { NoteEditor } from '../components/notes/NoteEditor.tsx';
 import { CategoryDialog } from '../components/notes/CategoryDialog.tsx';
 import { useNotesWorkspace } from '../hooks/useNotesWorkspace.ts';
+import { useKeyboardDelete } from '../hooks/useKeyboardDelete';
 import { useUser } from '../hooks/useUser';
-import { NoteCategory, NoteSort } from '../types/Note.ts';
+import { Note, NoteCategory, NoteSort } from '../types/Note.ts';
 
 export function NotesPage() {
     const { user } = useUser();
@@ -30,6 +31,8 @@ export function NotesPage() {
         updateNote,
         updateNoteDraft,
         deleteNote,
+        updateNotes,
+        deleteNotes,
         createCategory,
         updateCategory,
         deleteCategory,
@@ -40,7 +43,12 @@ export function NotesPage() {
     const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
     const [editingCategory, setEditingCategory] = useState<NoteCategory | null>(null);
     const [categoryToDelete, setCategoryToDelete] = useState<NoteCategory | null>(null);
-    const [noteDeleteDialogOpen, setNoteDeleteDialogOpen] = useState(false);
+    const [noteDeleteTarget, setNoteDeleteTarget] = useState<Note | null>(null);
+    const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
+    const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
+    const [selectionMode, setSelectionMode] = useState(false);
+    const [bulkActionLoading, setBulkActionLoading] = useState(false);
+    const selectionAnchorIdRef = useRef<string | null>(null);
     const [focusMode, setFocusMode] = useState(false);
     const [noteIdToFocus, setNoteIdToFocus] = useState<string | null>(null);
 
@@ -77,6 +85,11 @@ export function NotesPage() {
         });
     }, [activeFilter, notes, searchQuery, sort]);
 
+    useEffect(() => {
+        const visibleIds = new Set(visibleNotes.map(note => note.id));
+        setSelectedNoteIds(current => current.filter(noteId => visibleIds.has(noteId)));
+    }, [visibleNotes]);
+
     const clearNoteTitleFocus = useCallback(() => setNoteIdToFocus(null), []);
     const createNoteAndFocusTitle = useCallback(async (categoryId: string | null) => {
         if (loading || loadError) return;
@@ -104,6 +117,12 @@ export function NotesPage() {
         return () => window.removeEventListener('keydown', exitFocusMode);
     }, [focusMode]);
 
+    useKeyboardDelete({
+        enabled: Boolean(selectedNote) && !noteDeleteTarget && !bulkDeleteDialogOpen
+            && !categoryToDelete && !categoryDialogOpen,
+        onDelete: () => requestKeyboardNoteDelete(),
+    });
+
     useEffect(() => {
         function handleKeyboardShortcut(event: KeyboardEvent) {
             if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'n') {
@@ -121,6 +140,117 @@ export function NotesPage() {
     function handleCreateNote() {
         const categoryId = categories.some(category => category.id === activeFilter) ? activeFilter : null;
         void createNoteAndFocusTitle(categoryId);
+    }
+
+    function toggleNoteSelection(noteId: string) {
+        selectionAnchorIdRef.current = noteId;
+        setSelectedNoteIds(current => current.includes(noteId)
+            ? current.filter(id => id !== noteId)
+            : [...current, noteId]);
+    }
+
+    function handlePlainNoteSelection(noteId: string) {
+        selectionAnchorIdRef.current = noteId;
+        selectNote(noteId);
+    }
+
+    function handleSelectionGesture(noteId: string, shiftKey: boolean, additive: boolean) {
+        const visibleIds = visibleNotes.map(note => note.id);
+        const anchorId = selectionAnchorIdRef.current ?? selectedNoteId;
+        const anchorIndex = anchorId ? visibleIds.indexOf(anchorId) : -1;
+        const noteIndex = visibleIds.indexOf(noteId);
+        setSelectionMode(true);
+        setSelectedNoteIds(current => {
+            if (shiftKey && anchorIndex >= 0 && noteIndex >= 0) {
+                const start = Math.min(anchorIndex, noteIndex);
+                const end = Math.max(anchorIndex, noteIndex);
+                const range = visibleIds.slice(start, end + 1);
+                return [...new Set([...current, ...range])];
+            }
+            if (additive) {
+                return current.includes(noteId)
+                    ? current.filter(id => id !== noteId)
+                    : [...current, noteId];
+            }
+            return [noteId];
+        });
+        if (!shiftKey) selectionAnchorIdRef.current = noteId;
+    }
+
+    function selectAllVisibleNotes() {
+        const visibleIds = visibleNotes.map(note => note.id);
+        setSelectedNoteIds(current => {
+            const currentSet = new Set(current);
+            const allSelected = visibleIds.every(noteId => currentSet.has(noteId));
+            if (allSelected) return current.filter(noteId => !visibleIds.includes(noteId));
+            return [...new Set([...current, ...visibleIds])];
+        });
+    }
+
+    function clearNoteSelection() {
+        setSelectedNoteIds([]);
+        setSelectionMode(false);
+        selectionAnchorIdRef.current = null;
+    }
+
+    function handleNotesListClickAway() {
+        if (selectionMode && !noteDeleteTarget && !bulkDeleteDialogOpen && !categoryDialogOpen && !categoryToDelete) {
+            clearNoteSelection();
+        }
+    }
+
+    function handleFilterChange(filter: NotesFilter) {
+        const categoryId = filter === 'uncategorized'
+            ? null
+            : categories.some(category => category.id === filter)
+                ? filter
+                : undefined;
+
+        if (selectionMode && selectedNoteIds.length > 0 && categoryId !== undefined && !bulkActionLoading) {
+            setActiveFilter(filter);
+            void handleBulkUpdate({ categoryId });
+            return;
+        }
+
+        setActiveFilter(filter);
+    }
+
+    async function handleBulkUpdate(updates: { pinned?: boolean; categoryId?: string | null }) {
+        if (!selectedNoteIds.length || bulkActionLoading) return;
+        setBulkActionLoading(true);
+        const succeeded = await updateNotes(selectedNoteIds, updates);
+        setBulkActionLoading(false);
+        if (succeeded) clearNoteSelection();
+    }
+
+    async function handleBulkDelete() {
+        if (!selectedNoteIds.length || bulkActionLoading) return;
+        setBulkActionLoading(true);
+        const succeeded = await deleteNotes(selectedNoteIds);
+        setBulkActionLoading(false);
+        setBulkDeleteDialogOpen(false);
+        if (succeeded) clearNoteSelection();
+    }
+
+    function requestNoteDelete(note: Note | null = selectedNote) {
+        if (!note) return;
+        if (selectedNoteIds.length > 1 && selectedNoteIds.includes(note.id)) {
+            setBulkDeleteDialogOpen(true);
+        } else {
+            setNoteDeleteTarget(note);
+        }
+    }
+
+    function requestKeyboardNoteDelete() {
+        if (selectedNoteIds.length > 1) {
+            setBulkDeleteDialogOpen(true);
+            return;
+        }
+
+        const selectedKeyboardNote = selectedNoteIds.length === 1
+            ? notes.find(note => note.id === selectedNoteIds[0]) ?? null
+            : selectedNote;
+        requestNoteDelete(selectedKeyboardNote);
     }
 
     async function handleCategorySave(name: string, color: string) {
@@ -196,7 +326,7 @@ export function NotesPage() {
                         categories={categories}
                         activeFilter={activeFilter}
                         noteCounts={noteCounts}
-                        onFilterChange={setActiveFilter}
+                        onFilterChange={handleFilterChange}
                         onAddCategory={() => {
                             setEditingCategory(null);
                             setCategoryDialogOpen(true);
@@ -211,17 +341,30 @@ export function NotesPage() {
                         }}
                         onDeleteCategory={setCategoryToDelete}
                     />}
-                    {!focusMode && <NotesList
-                        key="notes-list"
-                        notes={visibleNotes}
-                        categories={categories}
-                        selectedNoteId={selectedNoteId}
-                        searchQuery={searchQuery}
-                        sort={sort}
-                        onSearchChange={setSearchQuery}
-                        onSortChange={setSort}
-                        onSelectNote={selectNote}
-                    />}
+                    {!focusMode && <ClickAwayListener onClickAway={handleNotesListClickAway}>
+                        <Box sx={{ display: 'contents' }}>
+                            <NotesList
+                                key="notes-list"
+                                notes={visibleNotes}
+                                categories={categories}
+                                selectedNoteId={selectedNoteId}
+                                searchQuery={searchQuery}
+                                sort={sort}
+                                onSearchChange={setSearchQuery}
+                                onSortChange={setSort}
+                                onSelectNote={handlePlainNoteSelection}
+                                onSelectionGesture={handleSelectionGesture}
+                                selectedNoteIds={selectedNoteIds}
+                                selectionMode={selectionMode}
+                                bulkActionLoading={bulkActionLoading}
+                                onToggleSelectionMode={() => setSelectionMode(true)}
+                                onToggleNoteSelection={toggleNoteSelection}
+                                onSelectAllVisible={selectAllVisibleNotes}
+                            onClearSelection={clearNoteSelection}
+                            onRequestBulkDelete={() => setBulkDeleteDialogOpen(true)}
+                        />
+                        </Box>
+                    </ClickAwayListener>}
                     {selectedNote ? (
                         <NoteEditor
                             key={selectedNote.id}
@@ -230,7 +373,7 @@ export function NotesPage() {
                             saveState={saveState}
                             onUpdate={updates => updateNote(selectedNote.id, updates)}
                             onDraftUpdate={updates => updateNoteDraft(selectedNote.id, updates)}
-                            onDelete={() => setNoteDeleteDialogOpen(true)}
+                            onDelete={() => requestNoteDelete(selectedNote)}
                             onRetrySave={retryFailedSaves}
                             focusMode={focusMode}
                             onToggleFocusMode={() => setFocusMode(current => !current)}
@@ -264,21 +407,34 @@ export function NotesPage() {
                 onSave={handleCategorySave}
             />
 
-            <Dialog open={noteDeleteDialogOpen} onClose={() => setNoteDeleteDialogOpen(false)}>
-                <DialogTitle>Delete this note?</DialogTitle>
+            <Dialog open={noteDeleteTarget !== null} onClose={() => setNoteDeleteTarget(null)}>
+                <DialogTitle>Delete “{noteDeleteTarget?.title.trim() || 'Untitled'}”?</DialogTitle>
                 <DialogContent>
                     <DialogContentText>This cannot be undone.</DialogContentText>
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={() => setNoteDeleteDialogOpen(false)}>Cancel</Button>
+                    <Button onClick={() => setNoteDeleteTarget(null)}>Cancel</Button>
                     <Button
                         color="error"
                         onClick={() => {
-                            if (selectedNote) void deleteNote(selectedNote.id);
-                            setNoteDeleteDialogOpen(false);
+                            if (noteDeleteTarget) void deleteNote(noteDeleteTarget.id);
+                            setNoteDeleteTarget(null);
                         }}
                     >
                         Delete
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            <Dialog open={bulkDeleteDialogOpen} onClose={() => setBulkDeleteDialogOpen(false)}>
+                <DialogTitle>Delete {selectedNoteIds.length} notes?</DialogTitle>
+                <DialogContent>
+                    <DialogContentText>This cannot be undone.</DialogContentText>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setBulkDeleteDialogOpen(false)} disabled={bulkActionLoading}>Cancel</Button>
+                    <Button color="error" onClick={() => void handleBulkDelete()} disabled={bulkActionLoading}>
+                        Delete notes
                     </Button>
                 </DialogActions>
             </Dialog>

@@ -11,6 +11,7 @@ import { minutesToTimeValue, timeValueToMinutes } from '../../services/utils/sta
 import { DurationInput } from './DurationInput';
 import { AppTimeField } from '../input/AppPickerFields';
 import { AppNumberField } from '../input/AppNumberField';
+import { readStatInputPreference, saveStatInputPreference } from '../../services/utils/inputPreferences';
 
 interface Props {
     definitions: StatDefinition[];
@@ -36,7 +37,11 @@ export function TodayCheckIn({ definitions, onSaved }: Props) {
             .then(entries => {
                 const initial: Record<string, number | null> = {};
                 const preTouched = new Set<string>();
-                definitions.forEach(d => { initial[d.id] = null; });
+                definitions.forEach(d => {
+                    initial[d.id] = d.type === 'TIME' || d.type === 'DURATION'
+                        ? readStatInputPreference(d.id, d.type)
+                        : null;
+                });
                 entries.forEach(e => {
                     initial[e.statDefinitionId] = e.value;
                     preTouched.add(e.statDefinitionId);
@@ -53,6 +58,10 @@ export function TodayCheckIn({ definitions, onSaved }: Props) {
 
     const setValue = (id: string, v: number | null) => {
         setValues(prev => ({ ...prev, [id]: v }));
+        const definition = definitions.find(item => item.id === id);
+        if (v !== null && (definition?.type === 'TIME' || definition?.type === 'DURATION')) {
+            saveStatInputPreference(id, definition.type, v);
+        }
         setTouched(prev => {
             const next = new Set(prev);
             if (v !== null) next.add(id); else next.delete(id);

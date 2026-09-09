@@ -6,6 +6,7 @@ import { StyleSheet, View } from 'react-native';
 import { usePomodoroAudio } from '@/hooks/usePomodoroAudio';
 import { appConfig } from '@/lib/config';
 import { GENERIC_ERROR_MESSAGE } from '@/lib/errors';
+import { playAudioFeedback } from '@/lib/audioFeedback';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { resolveAccessToken } from '@/services/auth-session';
 import { api } from '@/services/api';
@@ -67,6 +68,16 @@ function formatSeconds(seconds: number): string {
   return `${Math.floor(safe / 60)}:${String(safe % 60).padStart(2, '0')}`;
 }
 
+function formatFocusDuration(seconds: number): string {
+  const safe = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(safe / 3600);
+  const minutes = Math.floor((safe % 3600) / 60);
+  const remainingSeconds = safe % 60;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${String(remainingSeconds).padStart(2, '0')}s`;
+  return `${remainingSeconds}s`;
+}
+
 function isWaitingForPhase(status: PomodoroStatus | null): boolean {
   return status?.phase === 'WAITING_FOR_BREAK' || status?.phase === 'WAITING_FOR_FOCUS';
 }
@@ -119,6 +130,7 @@ export function PomodoroPanel({ taskId, initialStatus, onClose, onActiveChange, 
   const { ready: brownNoiseReady, start: startBrownNoise, stop: stopBrownNoise } = usePomodoroAudio();
   const onActiveChangeRef = useRef(onActiveChange);
   const onStatusChangeRef = useRef(onStatusChange);
+  const lastStatusRef = useRef<PomodoroStatus | null>(initialStatus ?? null);
 
   useEffect(() => { onActiveChangeRef.current = onActiveChange; }, [onActiveChange]);
   useEffect(() => { onStatusChangeRef.current = onStatusChange; }, [onStatusChange]);
@@ -139,10 +151,18 @@ export function PomodoroPanel({ taskId, initialStatus, onClose, onActiveChange, 
     else stopBrownNoise();
   }, [brownNoiseEnabled, brownNoiseReady, focusRunning, startBrownNoise, stopBrownNoise]);
 
-  const commitStatus = useCallback((next: PomodoroStatus | null) => {
+  const commitStatus = useCallback((next: PomodoroStatus | null, announceTransition = false) => {
+    const previous = lastStatusRef.current;
+    if (announceTransition && previous?.active && next?.active) {
+      const wasBreak = isBreakPhase(previous);
+      const isBreak = isBreakPhase(next);
+      if (!wasBreak && isBreak) playAudioFeedback('pomodoroFocusEnded');
+      if (wasBreak && !isBreak) playAudioFeedback('pomodoroBreakEnded');
+    }
+    lastStatusRef.current = next?.active || next?.phase === 'COMPLETED' ? next : null;
     setStatusReceivedAt(Date.now());
     setStatus(next);
-    if (next?.active) {
+    if (next?.active || next?.phase === 'COMPLETED') {
       onActiveChangeRef.current(true);
       onStatusChangeRef.current(next);
     } else {
@@ -218,8 +238,13 @@ export function PomodoroPanel({ taskId, initialStatus, onClose, onActiveChange, 
         if (frame.command === 'MESSAGE') {
           try {
             const next = JSON.parse(frame.body) as PomodoroStatus;
-            if (next.active) commitStatus(next);
-            else commitStatus(null);
+            if (next.active) commitStatus(next, true);
+            else {
+              if (next.phase === 'COMPLETED' && lastStatusRef.current?.active) {
+                playAudioFeedback('pomodoroCompleted');
+              }
+              commitStatus(next.phase === 'COMPLETED' ? next : null, true);
+            }
           } catch (cause) {
             // Ignore malformed broadcasts; REST status remains the recovery path.
             console.warn('Could not parse Pomodoro WebSocket message:', cause);
@@ -301,8 +326,8 @@ export function PomodoroPanel({ taskId, initialStatus, onClose, onActiveChange, 
 
   const stop = useCallback(() => {
     void runAction(async () => {
-      await api.pomodoro.end(taskId);
-      commitStatus(null);
+      const completedStatus = await api.pomodoro.end(taskId);
+      commitStatus(completedStatus);
     });
   }, [commitStatus, runAction, taskId]);
 
@@ -351,6 +376,26 @@ export function PomodoroPanel({ taskId, initialStatus, onClose, onActiveChange, 
       <AppButton compact variant="danger" icon="stop" label="Stop" loading={actionLoading} onPress={stop} />
     </View>
   ) : null;
+
+  if (status?.phase === 'COMPLETED') {
+    return (
+      <ModalSheet visible title="Focus timer" onClose={onClose}>
+        <View style={styles.completed}>
+          <Ionicons name="checkmark-circle-outline" size={30} color={colors.success} />
+          <AppText variant="heading">Pomodoro complete</AppText>
+          <AppText color="muted">
+            {formatFocusDuration(status.totalFocusSeconds ?? status.secondsPassedInSession)} focused · {'\n'}
+            {status.completedFocusSessions ?? status.currentFocusNumber} of {status.numFocuses} sessions completed
+          </AppText>
+          <AppButton label="Dismiss" variant="secondary" onPress={() => {
+            setStatus(null);
+            lastStatusRef.current = null;
+            onActiveChangeRef.current(false);
+          }} />
+        </View>
+      </ModalSheet>
+    );
+  }
 
   if (!status?.active) {
     return (
@@ -424,6 +469,7 @@ export function PomodoroPanel({ taskId, initialStatus, onClose, onActiveChange, 
 }
 
 const styles = StyleSheet.create({
+  completed: { alignItems: 'center', gap: 10, paddingVertical: 18 },
   setup: { gap: 14, paddingTop: 4, paddingBottom: 14 },
   setupHeading: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   grow: { flex: 1, gap: 3 },

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { notesService, NotePatch } from '../services/api/notesService.ts';
+import { BulkNotePatch, notesService, NotePatch } from '../services/api/notesService.ts';
 import { Note, NoteCategory } from '../types/Note.ts';
 
 const SAVE_DELAY_MS = 500;
@@ -90,7 +90,9 @@ export function useNotesWorkspace(userId: string) {
                     setWorkspace(current => ({
                         ...current,
                         notes: current.notes.map(note => note.id === noteId
-                            ? newerUpdates ? { ...note, updatedAt: note.updatedAt } : { ...note, ...savedNote }
+                            ? newerUpdates
+                                ? { ...note, ...savedNote, ...newerUpdates, updatedAt: note.updatedAt }
+                                : { ...note, ...savedNote }
                             : note),
                     }));
                 }
@@ -211,6 +213,50 @@ export function useNotesWorkspace(userId: string) {
         }
     }, [flushNote, updateSaveState]);
 
+    const updateNotes = useCallback(async (noteIds: string[], updates: BulkNotePatch) => {
+        setOperationError(null);
+        try {
+            await Promise.all(noteIds.map(noteId => flushNote(noteId)));
+            const updatedNotes = await notesService.updateNotes(noteIds, updates);
+            const updatedById = new Map(updatedNotes.map(note => [note.id, note]));
+            setWorkspace(current => ({
+                ...current,
+                notes: current.notes.map(note => updatedById.get(note.id) ?? note),
+            }));
+            updateSaveState();
+            return true;
+        } catch (error) {
+            setOperationError(errorMessage(error, 'Could not update notes.'));
+            return false;
+        }
+    }, [flushNote, updateSaveState]);
+
+    const deleteNotes = useCallback(async (noteIds: string[]) => {
+        setOperationError(null);
+        try {
+            await Promise.all(noteIds.map(noteId => flushNote(noteId)));
+            await notesService.deleteNotes(noteIds);
+            for (const noteId of noteIds) {
+                const timer = saveTimersRef.current.get(noteId);
+                if (timer !== undefined) window.clearTimeout(timer);
+                saveTimersRef.current.delete(noteId);
+                pendingUpdatesRef.current.delete(noteId);
+                failedUpdatesRef.current.delete(noteId);
+            }
+            const deletedIds = new Set(noteIds);
+            setWorkspace(current => ({
+                ...current,
+                notes: current.notes.filter(note => !deletedIds.has(note.id)),
+            }));
+            setSelectedNoteId(current => current && deletedIds.has(current) ? null : current);
+            updateSaveState();
+            return true;
+        } catch (error) {
+            setOperationError(errorMessage(error, 'Could not delete notes.'));
+            return false;
+        }
+    }, [flushNote, updateSaveState]);
+
     const createCategory = useCallback(async (name: string, color: string) => {
         setOperationError(null);
         try {
@@ -284,6 +330,8 @@ export function useNotesWorkspace(userId: string) {
         updateNote,
         updateNoteDraft,
         deleteNote,
+        updateNotes,
+        deleteNotes,
         createCategory,
         updateCategory,
         deleteCategory,

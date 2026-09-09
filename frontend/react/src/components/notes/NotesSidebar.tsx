@@ -28,10 +28,11 @@ interface SidebarRowProps {
     label: string;
     onClick: () => void;
     onContextMenu?: (event: React.MouseEvent) => void;
+    onDelete?: () => void;
     actions?: React.ReactNode;
 }
 
-function SidebarRow({ active, count, icon, label, onClick, onContextMenu, actions }: SidebarRowProps) {
+function SidebarRow({ active, count, icon, label, onClick, onContextMenu, onDelete, actions }: SidebarRowProps) {
     return (
         <Box
             role="button"
@@ -39,6 +40,12 @@ function SidebarRow({ active, count, icon, label, onClick, onContextMenu, action
             onClick={onClick}
             onContextMenu={onContextMenu}
             onKeyDown={event => {
+                if (event.key === 'Delete' && onDelete && event.target === event.currentTarget) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onDelete();
+                    return;
+                }
                 if (event.key === 'Enter' || event.key === ' ') onClick();
             }}
             sx={{
@@ -152,6 +159,7 @@ export function NotesSidebar({
                     label={category.name}
                     onClick={() => onFilterChange(category.id)}
                     onContextMenu={event => handleCategoryContextMenu(event, category)}
+                    onDelete={() => onDeleteCategory(category)}
                     actions={(
                         <Box className="category-actions" sx={{ display: 'flex', alignItems: 'center', opacity: activeFilter === category.id ? 1 : 0, transition: 'opacity 0.15s' }}>
                             <Typography variant="caption" color="text.disabled" sx={{ mr: 0.25 }}>

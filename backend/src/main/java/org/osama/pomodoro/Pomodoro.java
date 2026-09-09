@@ -55,6 +55,12 @@ public class Pomodoro {
     @Column
     int currentFocusNumber;
 
+    @Column(nullable = false)
+    private int completedFocusSessions;
+
+    @Column(nullable = false)
+    private long totalFocusSeconds;
+
     @Column
     long secondsUntilNextTransition;
 

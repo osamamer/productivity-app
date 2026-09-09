@@ -1,0 +1,16 @@
+databaseChangeLog:
+  - changeSet:
+      id: 045-add-task-skip-reason
+      author: codex
+      comment: Distinguish explicit skips from occurrences retired by series changes
+      changes:
+        - addColumn:
+            tableName: task
+            columns:
+              - column:
+                  name: skip_reason
+                  type: varchar(30)
+      rollback:
+        - dropColumn:
+            tableName: task
+            columnName: skip_reason

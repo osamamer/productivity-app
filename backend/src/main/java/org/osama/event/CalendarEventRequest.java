@@ -12,6 +12,7 @@ public class CalendarEventRequest {
     private Instant startTime;
     private Instant endTime;
     private String timeZone;
+    private CalendarEventStatus status;
     private RecurrenceFrequency recurrenceFrequency;
     private LocalDate recurrenceEndDate;
     private Integer recurrenceInterval;
@@ -35,6 +36,8 @@ public class CalendarEventRequest {
     public void setEndTime(Instant endTime) { this.endTime = endTime; }
     public String getTimeZone() { return timeZone; }
     public void setTimeZone(String timeZone) { this.timeZone = timeZone; }
+    public CalendarEventStatus getStatus() { return status; }
+    public void setStatus(CalendarEventStatus status) { this.status = status; }
     public RecurrenceFrequency getRecurrenceFrequency() { return recurrenceFrequency; }
     public void setRecurrenceFrequency(RecurrenceFrequency recurrenceFrequency) {
         this.recurrenceFrequency = recurrenceFrequency;

@@ -10,6 +10,7 @@ import { userService } from '../services/api/userService';
 import { clearMentalThreadHistoryCache } from '../services/cache/mentalThreadHistoryCache';
 import { clearPomodoroConfigCache } from '../services/api/pomodoroConfigService';
 import { clearAppBootstrap } from '../services/bootstrap/appBootstrap';
+import { sideNavSnapshotCache } from '../services/cache/sideNavSnapshotCache';
 
 interface UserInfo {
     id: string;
@@ -67,6 +68,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
         userService.clearPreferencesCache();
         clearMentalThreadHistoryCache();
         clearPomodoroConfigCache();
+        sideNavSnapshotCache.clear();
         return keycloak.logout({ redirectUri: window.location.origin + '/' });
     }, []);
 

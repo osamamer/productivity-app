@@ -1,0 +1,28 @@
+databaseChangeLog:
+  - changeSet:
+      id: 047-add-pomodoro-completion-summary
+      author: codex
+      comment: Preserve completed focus-session counts and total focus time
+      changes:
+        - addColumn:
+            tableName: pomodoro
+            columns:
+              - column:
+                  name: completed_focus_sessions
+                  type: int
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: total_focus_seconds
+                  type: bigint
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+      rollback:
+        - dropColumn:
+            tableName: pomodoro
+            columnName: total_focus_seconds
+        - dropColumn:
+            tableName: pomodoro
+            columnName: completed_focus_sessions

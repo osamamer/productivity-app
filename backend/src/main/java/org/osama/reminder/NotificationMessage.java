@@ -11,7 +11,8 @@ public record NotificationMessage(
         String targetUrl,
         Instant scheduledAt,
         Instant eventStart,
-        Boolean allDay
+        Boolean allDay,
+        String taskId
 ) {
     static NotificationMessage from(Reminder reminder) {
         if (reminder.getNotificationType() == NotificationType.CALENDAR_EVENT && reminder.getEvent() != null) {
@@ -29,7 +30,8 @@ public record NotificationMessage(
                     "/calendar",
                     reminder.getDateTime(),
                     eventStart,
-                    event.isAllDay()
+                    event.isAllDay(),
+                    null
             );
         }
 
@@ -41,7 +43,8 @@ public record NotificationMessage(
                 reminder.getTargetUrl(),
                 reminder.getDateTime(),
                 null,
-                null
+                null,
+                reminder.getTaskId()
         );
     }
 }

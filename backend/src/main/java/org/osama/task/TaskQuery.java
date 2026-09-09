@@ -15,6 +15,7 @@ public class TaskQuery {
     private LocalDate date;
     private DatePeriod period;
     private Boolean completed;
+    private Boolean scheduled;
     private String parentId;
     private Integer minImportance;
     private String tag;

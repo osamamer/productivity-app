@@ -18,6 +18,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -67,6 +68,16 @@ class TaskGroupServiceTest {
                 List.of(second.getTaskId(), first.getTaskId()),
                 taskService.getTodayTasks(TEST_USER_ID).stream().map(Task::getTaskId).toList()
         );
+    }
+
+    @Test
+    void createTask_withoutADateRemainsUndated() {
+        NewTaskRequest request = new NewTaskRequest();
+        request.setName("Capture without scheduling");
+
+        Task created = taskService.createTask(request, TEST_USER_ID);
+
+        assertNull(created.getScheduledPerformDateTime());
     }
 
     @Test
@@ -207,10 +218,44 @@ class TaskGroupServiceTest {
         assertEquals(0, taskGroupService.getGroups(TEST_USER_ID).size());
     }
 
+    @Test
+    void deletingAllFutureTasksKeepsNonFutureTasksAndOtherUsersTasks() {
+        LocalDateTime futureDate = LocalDate.now().plusDays(2).atTime(9, 0);
+        Task futureTask = createTask(TEST_USER_ID, "Future task", futureDate);
+        NewTaskRequest subtaskRequest = new NewTaskRequest();
+        subtaskRequest.setName("Future child");
+        subtaskRequest.setParentId(futureTask.getTaskId());
+        subtaskRequest.setScheduledPerformDateTime(futureDate.toString());
+        Task futureSubtask = taskService.createTask(subtaskRequest, TEST_USER_ID);
+
+        UpdateTaskRequest completeFutureTask = new UpdateTaskRequest();
+        completeFutureTask.setCompleted(true);
+        taskService.updateTask(futureTask.getTaskId(), completeFutureTask, TEST_USER_ID);
+
+        Task todayTask = createTask(TEST_USER_ID, "Today task", LocalDate.now().atTime(9, 0));
+        Task pastTask = createTask(TEST_USER_ID, "Past task", LocalDate.now().minusDays(1).atTime(9, 0));
+        Task undatedTask = createTask(TEST_USER_ID, "Undated task", null);
+        Task otherUserFutureTask = createTask(OTHER_USER_ID, "Other user's future task", futureDate);
+
+        int deletedTaskCount = taskService.deleteAllFutureTasks(TEST_USER_ID);
+
+        assertEquals(2, deletedTaskCount);
+        assertFalse(taskService.getTaskForUser(futureTask.getTaskId(), TEST_USER_ID).isPresent());
+        assertFalse(taskService.getTaskForUser(futureSubtask.getTaskId(), TEST_USER_ID).isPresent());
+        assertTrue(taskService.getTaskForUser(todayTask.getTaskId(), TEST_USER_ID).isPresent());
+        assertTrue(taskService.getTaskForUser(pastTask.getTaskId(), TEST_USER_ID).isPresent());
+        assertTrue(taskService.getTaskForUser(undatedTask.getTaskId(), TEST_USER_ID).isPresent());
+        assertTrue(taskService.getTaskForUser(otherUserFutureTask.getTaskId(), OTHER_USER_ID).isPresent());
+    }
+
     private Task createTask(String userId, String name) {
+        return createTask(userId, name, LocalDate.now().atTime(9, 0));
+    }
+
+    private Task createTask(String userId, String name, LocalDateTime scheduledDateTime) {
         NewTaskRequest request = new NewTaskRequest();
         request.setName(name);
-        request.setScheduledPerformDateTime(LocalDate.now().atTime(9, 0).toString());
+        request.setScheduledPerformDateTime(scheduledDateTime == null ? null : scheduledDateTime.toString());
         return taskService.createTask(request, userId);
     }
 

@@ -33,6 +33,7 @@ interface Props {
     dateRange: number;
     theme: Theme;
     onPointClick: (point: StatChartPoint, event: StatChartPointClickEvent) => void;
+    onDateContextMenu?: (date: string, event: React.MouseEvent<Element>) => void;
 }
 
 function axisLabel(definition: StatDefinition, scaleValue: number): string {
@@ -46,12 +47,14 @@ function SevenDayTimingPlot({
     color,
     theme,
     onPointClick,
+    onDateContextMenu,
 }: {
     definition: StatDefinition;
     points: StatChartPoint[];
     color: string;
     theme: Theme;
     onPointClick?: (point: StatChartPoint, event: StatChartPointClickEvent) => void;
+    onDateContextMenu?: (date: string, event: React.MouseEvent<Element>) => void;
 }) {
     const svgRef = useRef<SVGSVGElement>(null);
     const [hoveredPoint, setHoveredPoint] = useState<{ point: StatChartPoint; left: number; top: number } | null>(null);
@@ -131,7 +134,7 @@ function SevenDayTimingPlot({
                                 <line x1={left} x2={width - right} y1={y - rowHeight / 2} y2={y - rowHeight / 2} stroke={gridColor} strokeOpacity={0.55} />
                             )}
                             <text x={0} y={y + 4} fill={mutedColor} fontSize={10}>
-                                {format(parseISO(point.date), 'EEE d')}
+                                {format(parseISO(point.date), 'EEE')}
                             </text>
                         </g>
                     );
@@ -143,6 +146,11 @@ function SevenDayTimingPlot({
                         aria-label={`${format(parseISO(point.date), 'EEEE, MMMM d')}: ${formatTimeValue(point.value)}`}
                         tabIndex={onPointClick ? 0 : undefined}
                         onClick={onPointClick ? event => onPointClick(point, event) : undefined}
+                        onContextMenu={onDateContextMenu ? event => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            onDateContextMenu(point.date, event);
+                        } : undefined}
                         onMouseEnter={event => updateHoveredPoint(point, event.clientX, event.clientY)}
                         onMouseMove={event => updateHoveredPoint(point, event.clientX, event.clientY)}
                         onMouseLeave={() => setHoveredPoint(null)}
@@ -307,7 +315,7 @@ function TimeDensityPlot({
     );
 }
 
-export function TimeStatChart({ definition, comparisonDefinition, points, dateRange, theme, onPointClick }: Props) {
+export function TimeStatChart({ definition, comparisonDefinition, points, dateRange, theme, onPointClick, onDateContextMenu }: Props) {
     const primaryColor = theme.palette.primary.main;
     const comparisonColor = theme.palette.secondary.main;
     const comparisonPoints = points.map(point => ({ ...point, value: point.comparisonValue }));
@@ -315,7 +323,7 @@ export function TimeStatChart({ definition, comparisonDefinition, points, dateRa
     if (dateRange <= 7) {
         return (
             <Box sx={{ display: 'grid', gap: comparisonDefinition ? 2 : 0 }}>
-                <SevenDayTimingPlot definition={definition} points={points} color={primaryColor} theme={theme} onPointClick={onPointClick} />
+                <SevenDayTimingPlot definition={definition} points={points} color={primaryColor} theme={theme} onPointClick={onPointClick} onDateContextMenu={onDateContextMenu} />
                 {comparisonDefinition && (
                     <SevenDayTimingPlot definition={comparisonDefinition} points={comparisonPoints} color={comparisonColor} theme={theme} />
                 )}

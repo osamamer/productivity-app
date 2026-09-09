@@ -13,6 +13,8 @@ public interface StatEntryRepository extends JpaRepository<StatEntry, String> {
     List<StatEntry> findAllByStatDefinitionIdAndUserIdAndDateBetween(
             String statDefinitionId, String userId, LocalDate from, LocalDate to);
 
+    List<StatEntry> findAllByStatDefinitionIdAndUserId(String statDefinitionId, String userId);
+
     List<StatEntry> findAllByUserIdAndDateBetween(String userId, LocalDate from, LocalDate to);
 
     List<StatEntry> findAllByUserIdAndDate(String userId, LocalDate date);

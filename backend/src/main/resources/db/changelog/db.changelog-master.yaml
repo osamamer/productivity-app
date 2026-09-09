@@ -154,3 +154,35 @@ databaseChangeLog:
   # Set the built-in Sleep duration target to eight hours
   - include:
       file: db/changelog/changes/043-set-sleep-duration-target.yaml
+
+  # Persist recurring task rules and concrete task occurrences
+  - include:
+      file: db/changelog/changes/044-add-recurring-tasks.yaml
+
+  # Reusable daily event and task templates
+  - include:
+      file: db/changelog/changes/045-create-day-templates.yaml
+
+  # Preserve explicit occurrence skips across series edits
+  - include:
+      file: db/changelog/changes/045-add-task-skip-reason.yaml
+
+  # Preserve Pomodoro completion totals for the summary shown after ending
+  - include:
+      file: db/changelog/changes/047-add-pomodoro-completion-summary.yaml
+
+  # Link boolean statistics to their optional daily recurring task series
+  - include:
+      file: db/changelog/changes/048-link-boolean-stat-recurring-task.yaml
+
+  # Persist task reminder settings and index task notifications
+  - include:
+      file: db/changelog/changes/049-add-task-reminders.yaml
+
+  # Store whether unanswered mental state check-ups repeat every thirty minutes
+  - include:
+      file: db/changelog/changes/050-add-checkup-repeat-preference.yaml
+
+  # Store confirmed, tentative, or cancelled calendar event status
+  - include:
+      file: db/changelog/changes/051-add-calendar-event-status.yaml

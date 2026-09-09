@@ -25,14 +25,14 @@ export function DurationInput({ value, onChange, autoFocus = false }: {
   function updateValue(nextHours: string, nextMinutes: string) {
     setHours(nextHours);
     setMinutes(nextMinutes);
-    if (nextHours === '' || nextMinutes === '') {
+    if (nextHours === '' && nextMinutes === '') {
       lastEmittedValue.current = null;
       onChange(null);
       return;
     }
 
-    const parsedHours = Number(nextHours);
-    const parsedMinutes = Number(nextMinutes);
+    const parsedHours = nextHours === '' ? 0 : Number(nextHours);
+    const parsedMinutes = nextMinutes === '' ? 0 : Number(nextMinutes);
     const nextValue = Number.isSafeInteger(parsedHours) && parsedHours >= 0
       && Number.isSafeInteger(parsedMinutes) && parsedMinutes >= 0 && parsedMinutes < 60
       ? parsedHours * 60 + parsedMinutes

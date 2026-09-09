@@ -11,4 +11,16 @@ public class UpdateTaskRequest {
     private Integer importance;
 
     private String scheduledPerformDateTime;
+    private String timeZone;
+    private Integer reminderMinutesBefore;
+    private boolean reminderMinutesBeforePresent;
+
+    public void setReminderMinutesBefore(Integer reminderMinutesBefore) {
+        this.reminderMinutesBefore = reminderMinutesBefore;
+        this.reminderMinutesBeforePresent = true;
+    }
+
+    public boolean isReminderMinutesBeforePresent() {
+        return reminderMinutesBeforePresent;
+    }
 }

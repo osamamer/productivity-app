@@ -77,11 +77,9 @@ export function formatTimeCircleValue(
 ): string {
   if (value == null || !Number.isFinite(value)) return '—';
 
-  const wholeMinutes = Math.floor(value);
-  if (wholeMinutes < 0 || wholeMinutes > MINUTES_PER_DAY) return '—';
+  if (value < 0 || value > MINUTES_PER_DAY) return '—';
 
-  const minutes = wholeMinutes === MINUTES_PER_DAY ? 0 : wholeMinutes;
-  const hour24 = Math.floor(minutes / 60);
+  const hour24 = Math.round(value / 60) % 24;
   const uses12HourClock = definition.systemKey === 'sleep_time'
     || definition.systemKey === 'wake_up_time';
   return String(uses12HourClock ? hour24 % 12 || 12 : hour24);

@@ -2,6 +2,11 @@ package org.osama.stat;
 
 import lombok.extern.slf4j.Slf4j;
 import org.osama.exceptions.ResourceNotFoundException;
+import org.osama.requests.NewTaskRequest;
+import org.osama.task.Task;
+import org.osama.task.TaskService;
+import org.osama.task.recurrence.TaskRecurrenceFrequency;
+import org.osama.task.recurrence.TaskSeriesService;
 import org.osama.user.User;
 import org.osama.user.UserRepository;
 import org.springframework.stereotype.Service;
@@ -9,6 +14,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -27,33 +34,54 @@ public class StatService {
     private final StatEntryRepository entryRepository;
     private final UserRepository userRepository;
     private final StatGroupService statGroupService;
+    private final TaskSeriesService taskSeriesService;
+    private final StatTaskLinkService statTaskLinkService;
+    private final TaskService taskService;
 
     public StatService(StatDefinitionRepository definitionRepository,
                        StatEntryRepository entryRepository,
                        UserRepository userRepository,
-                       StatGroupService statGroupService) {
+                       StatGroupService statGroupService,
+                       TaskSeriesService taskSeriesService,
+                       StatTaskLinkService statTaskLinkService,
+                       TaskService taskService) {
         this.definitionRepository = definitionRepository;
         this.entryRepository = entryRepository;
         this.userRepository = userRepository;
         this.statGroupService = statGroupService;
+        this.taskSeriesService = taskSeriesService;
+        this.statTaskLinkService = statTaskLinkService;
+        this.taskService = taskService;
     }
 
+    @Transactional
     public StatDefinition createDefinition(String name, String description, StatType type,
                                            Double minValue, Double maxValue, String userId) {
         return createDefinition(name, description, type, minValue, maxValue,
-                null, null, userId);
+                null, null, false, userId);
     }
 
+    @Transactional
     public StatDefinition createDefinition(String name, String description, StatType type,
                                            Double minValue, Double maxValue,
                                            StatMorality morality, Double goodThreshold,
                                            String userId) {
+        return createDefinition(name, description, type, minValue, maxValue,
+                morality, goodThreshold, false, userId);
+    }
+
+    @Transactional
+    public StatDefinition createDefinition(String name, String description, StatType type,
+                                           Double minValue, Double maxValue,
+                                           StatMorality morality, Double goodThreshold,
+                                           boolean createRecurringTask, String userId) {
         User user = userRepository.findUserById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
 
         validateDefinition(name, type, minValue, maxValue, morality, goodThreshold, userId, null);
-        return saveDefinition(name, description, type, minValue, maxValue,
+        StatDefinition definition = saveDefinition(name, description, type, minValue, maxValue,
                 morality, goodThreshold, null, user);
+        return createRecurringTask ? createRecurringTask(definition.getId(), userId) : definition;
     }
 
     @Transactional
@@ -77,6 +105,60 @@ public class StatService {
         log.info("Stat definition updated: userId={} statDefinitionId={} name={} morality={} goodThreshold={}",
                 userId, savedDefinition.getId(), savedDefinition.getName(),
                 savedDefinition.getMorality(), savedDefinition.getGoodThreshold());
+        return savedDefinition;
+    }
+
+    @Transactional
+    public StatDefinition createRecurringTask(String definitionId, String userId) {
+        return createRecurringTask(definitionId, userId, null);
+    }
+
+    @Transactional
+    public StatDefinition createRecurringTask(String definitionId, String userId, String requestedTimeZone) {
+        StatDefinition definition = definitionRepository.findByIdAndUserId(definitionId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("No such stat."));
+        if (definition.getType() != StatType.BOOLEAN) {
+            throw new IllegalArgumentException("Only boolean statistics can have a recurring task.");
+        }
+        if (definition.getRecurringTaskSeriesId() != null) {
+            throw new IllegalArgumentException("This statistic already has a recurring task.");
+        }
+
+        ZoneId timeZone;
+        try {
+            timeZone = requestedTimeZone == null || requestedTimeZone.isBlank()
+                    ? ZoneId.systemDefault()
+                    : ZoneId.of(requestedTimeZone);
+        } catch (java.time.DateTimeException exception) {
+            throw new IllegalArgumentException("The task time zone is invalid.", exception);
+        }
+        LocalDateTime start = LocalDateTime.now(timeZone).withSecond(0).withNano(0);
+        NewTaskRequest request = new NewTaskRequest();
+        request.setName(definition.getName());
+        request.setScheduledPerformDateTime(start.toString());
+        request.setRecurrenceFrequency(TaskRecurrenceFrequency.DAILY);
+        request.setTimeZone(timeZone.getId());
+
+        Task firstOccurrence = taskSeriesService.createSeries(request, userId);
+        definition.setRecurringTaskSeriesId(firstOccurrence.getTaskSeriesId());
+        StatDefinition savedDefinition = definitionRepository.save(definition);
+        statTaskLinkService.synchronizeExistingEntries(savedDefinition, userId);
+        log.info("Recurring task linked to boolean stat: userId={} statDefinitionId={} seriesId={}",
+                userId, savedDefinition.getId(), savedDefinition.getRecurringTaskSeriesId());
+        return savedDefinition;
+    }
+
+    @Transactional
+    public StatDefinition disconnectRecurringTask(String definitionId, String userId) {
+        StatDefinition definition = definitionRepository.findByIdAndUserId(definitionId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("No such stat."));
+        String seriesId = definition.getRecurringTaskSeriesId();
+        if (seriesId == null) return definition;
+
+        definition.setRecurringTaskSeriesId(null);
+        StatDefinition savedDefinition = definitionRepository.save(definition);
+        log.info("Recurring task disconnected from boolean stat: userId={} statDefinitionId={} seriesId={}",
+                userId, savedDefinition.getId(), seriesId);
         return savedDefinition;
     }
 
@@ -236,6 +318,7 @@ public class StatService {
                 userId, definitionId, statDefinition.getName());
     }
 
+    @Transactional
     public StatEntry recordEntry(String statDefinitionId, LocalDate date, double value, String userId) {
         return recordEntry(statDefinitionId, date, value, userId, false);
     }
@@ -267,6 +350,7 @@ public class StatService {
         log.info("Stat value {}: userId={} statDefinitionId={} statName={} date={} value={} previousValue={}",
                 previousValue == null ? "recorded" : "updated",
                 userId, definition.getId(), definition.getName(), date, value, previousValue);
+        statTaskLinkService.synchronizeStatEntry(definition, date, value, userId);
         return savedEntry;
     }
 
@@ -300,6 +384,21 @@ public class StatService {
 
         return entryRepository.findAllByStatDefinitionIdAndUserIdAndDateBetween(statDefinitionId,
                 userId, from, to);
+    }
+
+    @Transactional(readOnly = true)
+    public List<StatFocusTimeEntryResponse> getFocusTime(String definitionId, LocalDate from,
+                                                         LocalDate to, String userId) {
+        StatDefinition definition = definitionRepository.findByIdAndUserId(definitionId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("No such stat exists."));
+        validatePeriod(from, to);
+        if (definition.getRecurringTaskSeriesId() == null) return List.of();
+
+        return taskService.getPomodoroFocusTimeForSeries(
+                        definition.getRecurringTaskSeriesId(), from, to, userId)
+                .entrySet().stream()
+                .map(entry -> new StatFocusTimeEntryResponse(entry.getKey(), entry.getValue()))
+                .toList();
     }
 
     public List<StatEntry> getTodayEntries(String userId) {
@@ -357,7 +456,9 @@ public class StatService {
                     .map(StatEntry::getValue)
                     .max(Double::compareTo)
                     .orElse(null);
-            if (Boolean.TRUE.equals(user.getIncludeUnloggedNumericDaysAsZero())) {
+            boolean countUnloggedDaysAsZero = !SystemStatCatalog.SLEEP_HOURS_SYSTEM_KEY.equals(def.getSystemKey())
+                    && Boolean.TRUE.equals(user.getIncludeUnloggedNumericDaysAsZero());
+            if (countUnloggedDaysAsZero) {
                 long periodDays = ChronoUnit.DAYS.between(from, to) + 1;
                 periodAverage = periodTotal / periodDays;
             } else if (!entries.isEmpty()) {

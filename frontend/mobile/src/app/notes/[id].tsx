@@ -136,7 +136,11 @@ export default function NoteEditorScreen() {
           title: pending.draft.title.trim() || 'Untitled',
           content: pending.draft.content,
         });
-        lastSavedDraftRef.current = pending.draft;
+        lastSavedDraftRef.current = {
+          ...pending.draft,
+          title: updated.title,
+        };
+        setTitle(current => current.trim() ? current : updated.title);
         if (saveVersionRef.current === pending.version) {
           setData(current => current?.id === pending.noteId ? updated : current);
           setError(null);
@@ -151,7 +155,7 @@ export default function NoteEditorScreen() {
     return operation;
   }, [setData]);
 
-  const flushPendingSave = useCallback(async () => {
+  const flushPendingSave = useCallback(async (force = false) => {
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
       saveTimerRef.current = null;
@@ -159,7 +163,7 @@ export default function NoteEditorScreen() {
 
     const currentDraft = currentDraftRef.current;
     const noteIdForSave = noteIdRef.current;
-    if (noteIdForSave && !draftsMatch(lastSavedDraftRef.current, currentDraft)) {
+    if (noteIdForSave && (force || !draftsMatch(lastSavedDraftRef.current, currentDraft))) {
       const queuedDraft = pendingSaveRef.current?.draft;
       if (!queuedDraft || !draftsMatch(queuedDraft, currentDraft)) {
         pendingSaveRef.current = {
@@ -279,10 +283,14 @@ export default function NoteEditorScreen() {
           style={({ pressed }) => [styles.headerButton, pressed && styles.pressed, (leaving || deleting) && styles.disabled]}>
           <Ionicons name="arrow-back" size={23} color={colors.text} />
         </SilentPressable>
-        <AppInput
-          value={title}
-          onChangeText={changeTitle}
-          placeholder="Untitled"
+          <AppInput
+            value={title}
+            onChangeText={changeTitle}
+            autoFocus={Boolean(hydratedNoteId)}
+            onBlur={() => {
+              if (!title.trim()) void flushPendingSave(true);
+            }}
+            placeholder="Untitled"
           containerStyle={styles.titleContainer}
           style={[styles.titleInput, { color: colors.text }]}
           editable={!deleting} />

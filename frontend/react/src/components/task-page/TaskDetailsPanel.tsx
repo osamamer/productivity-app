@@ -1,8 +1,9 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     Box,
     Chip,
     Checkbox,
+    Collapse,
     IconButton,
     TextField,
     Typography,
@@ -12,10 +13,16 @@ import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
+import { TimePicker } from '@mui/x-date-pickers/TimePicker';
 import { Task } from '../../types/Task.tsx';
 import { TaskToCreate } from '../../types/TaskToCreate.tsx';
+import { TaskSeries } from '../../types/TaskSeries';
+import { defaultTaskRecurrence, TaskRecurrenceDraft } from '../../types/TaskRecurrence';
 import { TaskPomodoroStats } from '../../types/TaskPomodoroStats';
 import { taskService } from '../../services/api';
+import { AppDateField } from '../input/AppPickerFields';
+import { TaskRecurrenceCustomOptions, TaskRecurrencePicker } from '../task/TaskRecurrencePicker';
+import { TaskReminderPicker } from '../task/TaskReminderPicker';
 import { playAudioFeedback } from '../../services/audioFeedback';
 import {
     getStaleTaskPomodoroStats,
@@ -23,9 +30,9 @@ import {
     subscribeToTaskPomodoroStatsInvalidation,
 } from '../../services/cache/taskPomodoroStatsCache';
 import {
-    getStaleTaskSubtasks,
-    setCachedTaskSubtasks,
-} from '../../services/cache/taskSubtasksCache';
+    getStaleTaskDetails,
+    updateCachedTaskDetails,
+} from '../../services/cache/taskDetailsCache';
 
 type TaskDetailsPanelProps = {
     task: Task;
@@ -34,6 +41,7 @@ type TaskDetailsPanelProps = {
     onToggleCompletion: (taskId: string) => void;
     onDelete: (task: Task, anchorEl: HTMLElement) => void;
     onCreateSubtask: (task: TaskToCreate) => Promise<Task>;
+    onRefreshTasks?: () => Promise<void>;
 };
 
 type DescriptionDraft = {
@@ -82,6 +90,7 @@ function areSubtasksEqual(previous: Task[], next: Task[]): boolean {
             && subtask.creationDateTime === nextSubtask.creationDateTime
             && subtask.creationDate === nextSubtask.creationDate
             && subtask.scheduledPerformDateTime === nextSubtask.scheduledPerformDateTime
+            && subtask.reminderMinutesBefore === nextSubtask.reminderMinutesBefore
             && subtask.completionDateTime === nextSubtask.completionDateTime
             && subtask.parentId === nextSubtask.parentId
             && subtask.tag === nextSubtask.tag
@@ -111,6 +120,17 @@ function getPriorityLabel(importance: number): string {
     if (importance > 7) return 'High';
     if (importance > 4) return 'Medium';
     return 'Low';
+}
+
+function recurrenceDraftFromSeries(series: TaskSeries | null | undefined): TaskRecurrenceDraft {
+    if (!series?.active) return defaultTaskRecurrence();
+    return {
+        recurrenceFrequency: series.recurrenceFrequency,
+        recurrenceEndDate: series.recurrenceEndDate,
+        recurrenceInterval: series.recurrenceInterval,
+        recurrenceUnit: series.recurrenceUnit,
+        timeZone: series.timeZone,
+    };
 }
 
 function formatFocusTime(seconds: number): string {
@@ -235,6 +255,7 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
     onToggleCompletion,
     onDelete,
     onCreateSubtask,
+    onRefreshTasks,
 }: TaskDetailsPanelProps) {
     const taskDescription = task.description ?? '';
     const [descriptionDraft, setDescriptionDraft] = useState<DescriptionDraft>({
@@ -242,23 +263,33 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
         source: taskDescription,
         value: taskDescription,
     });
+    const initialTaskDetails = getStaleTaskDetails(task.taskId);
+    const [recurrenceDraft, setRecurrenceDraft] = useState<TaskRecurrenceDraft>(() =>
+        recurrenceDraftFromSeries(initialTaskDetails?.taskSeries),
+    );
+    const [recurrenceError, setRecurrenceError] = useState<string | null>(null);
+    const recurrenceDraftRef = useRef<TaskRecurrenceDraft>(
+        recurrenceDraftFromSeries(initialTaskDetails?.taskSeries),
+    );
+    const taskSeriesRef = useRef<TaskSeries | null>(initialTaskDetails?.taskSeries ?? null);
+    const recurrenceMutationRef = useRef<Promise<void>>(Promise.resolve());
+    const recurrenceRequestIdRef = useRef(0);
     const visibleDescription = descriptionDraft.taskId === task.taskId
         && descriptionDraft.source === taskDescription
         ? descriptionDraft.value
         : taskDescription;
-    const initialSubtasks = getStaleTaskSubtasks(task.taskId);
     const [subtaskState, setSubtaskState] = useState<SubtaskState>({
         taskId: task.taskId,
-        items: initialSubtasks ?? EMPTY_SUBTASKS,
-        loading: !initialSubtasks,
+        items: initialTaskDetails?.subtasks ?? EMPTY_SUBTASKS,
+        loading: !initialTaskDetails,
     });
-    const cachedSubtasks = getStaleTaskSubtasks(task.taskId);
+    const cachedTaskDetails = getStaleTaskDetails(task.taskId);
     const visibleSubtaskState = subtaskState.taskId === task.taskId
         ? subtaskState
         : {
             taskId: task.taskId,
-            items: cachedSubtasks ?? EMPTY_SUBTASKS,
-            loading: !cachedSubtasks,
+            items: cachedTaskDetails?.subtasks ?? EMPTY_SUBTASKS,
+            loading: !cachedTaskDetails,
         };
     const initialPomodoroStats = getStaleTaskPomodoroStats(task.taskId) ?? null;
     const [pomodoroStatsState, setPomodoroStatsState] = useState<PomodoroStatsState>({
@@ -280,46 +311,51 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
     useEffect(() => {
         let cancelled = false;
         const taskId = task.taskId;
-        const cached = getStaleTaskSubtasks(taskId);
-        if (cached !== undefined) {
-            setSubtaskState(previous => {
-                if (previous.taskId === taskId && previous.items === cached && !previous.loading) {
-                    return previous;
-                }
-                return { taskId, items: cached, loading: false };
-            });
+        const cached = getStaleTaskDetails(taskId);
+        setRecurrenceError(null);
+        if (cached) {
+            const nextDraft = recurrenceDraftFromSeries(cached.taskSeries);
+            taskSeriesRef.current = cached.taskSeries;
+            recurrenceDraftRef.current = nextDraft;
+            setRecurrenceDraft(nextDraft);
+            setSubtaskState({ taskId, items: cached.subtasks, loading: false });
+        } else {
+            taskSeriesRef.current = null;
+            recurrenceDraftRef.current = defaultTaskRecurrence();
+            setRecurrenceDraft(recurrenceDraftRef.current);
+            setSubtaskState({ taskId, items: EMPTY_SUBTASKS, loading: true });
         }
 
-        taskService.getSubtasks(taskId)
-            .then(nextSubtasks => {
-                if (!cancelled) {
-                    setSubtaskState(previous => {
-                        const items = previous.taskId === taskId
-                            && areSubtasksEqual(previous.items, nextSubtasks)
-                            ? previous.items
-                            : nextSubtasks;
-                        setCachedTaskSubtasks(taskId, items);
-                        return previous.taskId === taskId
-                            && previous.items === items
-                            && !previous.loading
-                            ? previous
-                            : { taskId, items, loading: false };
-                    });
-                }
+        taskService.getTaskDetails(task)
+            .then(details => {
+                if (cancelled) return;
+                const nextDraft = recurrenceDraftFromSeries(details.taskSeries);
+                taskSeriesRef.current = details.taskSeries;
+                recurrenceDraftRef.current = nextDraft;
+                setRecurrenceDraft(nextDraft);
+                setSubtaskState(previous => {
+                    const items = previous.taskId === taskId
+                        && areSubtasksEqual(previous.items, details.subtasks)
+                        ? previous.items
+                        : details.subtasks;
+                    return { taskId, items, loading: false };
+                });
             })
             .catch(error => {
-                if (!cancelled) {
-                    setSubtaskState(previous => previous.taskId === taskId && !previous.loading
-                        ? previous
-                        : { taskId, items: previous.taskId === taskId ? previous.items : EMPTY_SUBTASKS, loading: false });
-                    console.error('Error fetching subtasks for task details:', error);
-                }
+                if (cancelled) return;
+                setSubtaskState(previous => ({
+                    taskId,
+                    items: previous.taskId === taskId ? previous.items : cached?.subtasks ?? EMPTY_SUBTASKS,
+                    loading: false,
+                }));
+                setRecurrenceError('Unable to load task details.');
+                console.error('Error fetching task details:', error);
             });
 
         return () => {
             cancelled = true;
         };
-    }, [task.taskId]);
+    }, [task]);
 
     useEffect(() => {
         let cancelled = false;
@@ -398,13 +434,71 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
         }
     };
 
-    const commitDateChange = (date: Date | null) => {
-        void onUpdate(task.taskId, { scheduledPerformDateTime: formatTaskDateTime(date) });
+    const commitDateChange = async (date: Date | null) => {
+        const scheduledPerformDateTime = formatTaskDateTime(date);
+        await onUpdate(task.taskId, {
+            scheduledPerformDateTime,
+            ...(date ? {} : { reminderMinutesBefore: null }),
+        });
+        if (date && recurrenceDraftRef.current.recurrenceFrequency !== 'NONE'
+            && !taskSeriesRef.current) {
+            handleRecurrenceChange(recurrenceDraftRef.current, scheduledPerformDateTime);
+        }
     };
 
     const handleDateChange = (date: Date | null) => {
         setScheduledDraft(date);
         if (!date) commitDateChange(null);
+    };
+
+    const scheduledPerformDateTime = formatTaskDateTime(scheduledDraft);
+    const canStartRecurrence = Boolean(scheduledPerformDateTime);
+    const showTimeOnlySchedule = canStartRecurrence
+        && recurrenceDraft.recurrenceFrequency !== 'NONE';
+    const handleRecurrenceChange = (
+        nextDraft: TaskRecurrenceDraft,
+        nextScheduledPerformDateTime = scheduledPerformDateTime,
+    ) => {
+        const previousDraft = recurrenceDraftRef.current;
+        const requestId = recurrenceRequestIdRef.current + 1;
+        recurrenceRequestIdRef.current = requestId;
+        recurrenceDraftRef.current = nextDraft;
+        setRecurrenceDraft(nextDraft);
+        setRecurrenceError(null);
+
+        const persist = async () => {
+            if (requestId !== recurrenceRequestIdRef.current) return;
+            const currentSeries = taskSeriesRef.current;
+
+            if (nextDraft.recurrenceFrequency === 'NONE') {
+                if (!currentSeries?.active) return;
+                await taskService.stopTaskSeries(currentSeries.seriesId);
+                taskSeriesRef.current = { ...currentSeries, active: false };
+                if (requestId !== recurrenceRequestIdRef.current) return;
+                void onRefreshTasks?.();
+                return;
+            }
+
+            if (!nextScheduledPerformDateTime) return;
+            const savedSeries = currentSeries
+                ? await taskService.updateTaskSeries(currentSeries.seriesId, nextDraft, true)
+                : await taskService.startTaskRecurrence(task.taskId, nextDraft);
+            taskSeriesRef.current = savedSeries;
+            if (requestId !== recurrenceRequestIdRef.current) return;
+            void onRefreshTasks?.();
+        };
+
+        recurrenceMutationRef.current = recurrenceMutationRef.current
+            .catch(() => undefined)
+            .then(persist)
+            .catch(error => {
+                if (requestId !== recurrenceRequestIdRef.current) return;
+                recurrenceDraftRef.current = previousDraft;
+                setRecurrenceDraft(previousDraft);
+                setRecurrenceError(error instanceof Error
+                    ? error.message
+                    : 'Unable to update recurrence.');
+            });
     };
 
     const handleCreateSubtask = useCallback(async (name: string) => {
@@ -419,10 +513,14 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
         setSubtaskState(previous => {
             if (previous.taskId !== task.taskId) return previous;
             const items = [...previous.items, createdSubtask];
-            setCachedTaskSubtasks(task.taskId, items);
+            updateCachedTaskDetails(task.taskId, { subtasks: items }, {
+                task,
+                subtasks: items,
+                taskSeries: taskSeriesRef.current,
+            });
             return { ...previous, items };
         });
-    }, [onCreateSubtask, task.taskId]);
+    }, [onCreateSubtask, task]);
 
     const handleToggleSubtask = useCallback(async (subtask: Task) => {
         const completed = !subtask.completed;
@@ -432,7 +530,11 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
         setSubtaskState(previous => {
             if (previous.taskId !== task.taskId) return previous;
             const items = previous.items.map(item => updateSubtask(item, completed));
-            setCachedTaskSubtasks(task.taskId, items);
+            updateCachedTaskDetails(task.taskId, { subtasks: items }, {
+                task,
+                subtasks: items,
+                taskSeries: taskSeriesRef.current,
+            });
             return { ...previous, items };
         });
 
@@ -443,12 +545,16 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
             setSubtaskState(previous => {
                 if (previous.taskId !== task.taskId) return previous;
                 const items = previous.items.map(item => updateSubtask(item, subtask.completed));
-                setCachedTaskSubtasks(task.taskId, items);
+                updateCachedTaskDetails(task.taskId, { subtasks: items }, {
+                    task,
+                    subtasks: items,
+                    taskSeries: taskSeriesRef.current,
+                });
                 return { ...previous, items };
             });
             console.error('Error toggling subtask completion:', error);
         }
-    }, [task.taskId]);
+    }, [task]);
 
     return (
         <Box
@@ -527,6 +633,7 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
                             return (
                                 <Chip
                                     key={option.label}
+                                    data-task-details-first-focus={option === PRIORITY_OPTIONS[0] ? 'true' : undefined}
                                     label={option.label}
                                     size="small"
                                     onClick={() => void onUpdate(task.taskId, { importance: option.value })}
@@ -544,19 +651,97 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
                 </Box>
 
                 <LocalizationProvider dateAdapter={AdapterDateFns}>
-                        <DateTimePicker
-                            label="Scheduled"
-                            value={scheduledDraft}
-                            onChange={handleDateChange}
-                            onAccept={commitDateChange}
-                            closeOnSelect={false}
-                            ampm={false}
-                            slotProps={{
-                                field: { clearable: true },
-                                actionBar: { actions: ['cancel', 'accept'] },
-                                textField: { size: 'small', fullWidth: true },
+                    <Box>
+                        <Box
+                            sx={{
+                                display: 'grid',
+                                gridTemplateColumns: task.parentId
+                                    ? 'minmax(0, 1fr)'
+                                    : { xs: 'minmax(0, 1fr)', sm: 'minmax(0, 3fr) minmax(0, 1fr)' },
+                                gap: 1.25,
+                                alignItems: 'start',
                             }}
-                    />
+                        >
+                            <Box sx={{ minWidth: 0 }}>
+                                <Collapse in={showTimeOnlySchedule} timeout={180} unmountOnExit>
+                                    <TimePicker
+                                        label="Scheduled"
+                                        value={scheduledDraft}
+                                        onChange={handleDateChange}
+                                        onAccept={commitDateChange}
+                                        ampm={false}
+                                        slotProps={{
+                                            field: { clearable: false },
+                                            actionBar: { actions: ['cancel', 'accept'] },
+                                            textField: { size: 'small', fullWidth: true },
+                                        }}
+                                    />
+                                </Collapse>
+                                <Collapse in={!showTimeOnlySchedule} timeout={180} unmountOnExit>
+                                    <DateTimePicker
+                                        label="Scheduled"
+                                        value={scheduledDraft}
+                                        onChange={handleDateChange}
+                                        onAccept={commitDateChange}
+                                        closeOnSelect={false}
+                                        ampm={false}
+                                        slotProps={{
+                                            field: { clearable: true },
+                                            actionBar: { actions: ['cancel', 'accept'] },
+                                            textField: { size: 'small', fullWidth: true },
+                                        }}
+                                    />
+                                </Collapse>
+                            </Box>
+
+                            {!task.parentId && (
+                                <TaskRecurrencePicker
+                                    value={recurrenceDraft}
+                                    onChange={handleRecurrenceChange}
+                                    showEndDate={false}
+                                    showCustomOptions={false}
+                                />
+                            )}
+                        </Box>
+                        {!task.parentId && (
+                            <Collapse in={recurrenceDraft.recurrenceFrequency !== 'NONE'} timeout={180} unmountOnExit>
+                                <Box sx={{
+                                    mt: 1.25,
+                                    display: 'grid',
+                                    gridTemplateColumns: recurrenceDraft.recurrenceFrequency === 'CUSTOM'
+                                        ? { xs: 'minmax(0, 1fr)', sm: 'minmax(0, 1fr) minmax(0, 1fr)' }
+                                        : 'minmax(0, 1fr)',
+                                    gap: 1.25,
+                                    alignItems: 'start',
+                                }}>
+                                    {recurrenceDraft.recurrenceFrequency === 'CUSTOM' && (
+                                        <TaskRecurrenceCustomOptions
+                                            value={recurrenceDraft}
+                                            onChange={handleRecurrenceChange}
+                                        />
+                                    )}
+                                    <AppDateField
+                                        label="Repeat until (optional)"
+                                        value={recurrenceDraft.recurrenceEndDate ?? ''}
+                                        onChange={recurrenceEndDate => handleRecurrenceChange({
+                                            ...recurrenceDraft,
+                                            recurrenceEndDate: recurrenceEndDate || null,
+                                        })}
+                                    />
+                                </Box>
+                            </Collapse>
+                        )}
+                        {recurrenceError && (
+                            <Typography variant="caption" color="error" sx={{ display: 'block', mt: 1 }}>
+                                {recurrenceError}
+                            </Typography>
+                        )}
+                        <TaskReminderPicker
+                            value={task.reminderMinutesBefore}
+                            disabled={!scheduledPerformDateTime}
+                            onChange={reminderMinutesBefore => void onUpdate(task.taskId, { reminderMinutesBefore })}
+                        />
+                    </Box>
                 </LocalizationProvider>
 
                 <TextField

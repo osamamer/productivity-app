@@ -1,4 +1,4 @@
-export { taskService } from './taskService';
+export { taskService, TASK_PAGE_BATCH_SIZE } from './taskService';
 export { dayService } from './dayService';
 export { userService } from './userService.ts';
 export { statService } from './statService';
@@ -8,6 +8,7 @@ export { meditationService } from './meditationService';
 export { notesService } from './notesService';
 export { taskGroupService } from './taskGroupService';
 export { eventService } from './eventService';
+export { dayTemplateService } from './dayTemplateService';
 export { notificationService } from './notificationService';
 export {
     createPomodoroFormDefaults,

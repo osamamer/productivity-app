@@ -49,6 +49,7 @@ const MentalThreadRow = memo(function MentalThreadRow({
 
     return (
         <ListItemButton
+            data-mental-thread-id={thread.id}
             selected={isSelected}
             onClick={() => onSelect(thread.id)}
             onContextMenu={(event: MouseEvent<HTMLElement>) => {

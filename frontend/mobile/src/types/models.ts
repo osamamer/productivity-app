@@ -14,12 +14,38 @@ export interface Task {
   creationDateTime: string;
   creationDate: string;
   scheduledPerformDateTime: string;
+  timeZone?: string;
+  reminderMinutesBefore?: number | null;
   completionDateTime: string;
   parentId: string;
   tag: string;
   importance: number;
   displayOrder: number;
   mentalThreadId: string | null;
+  taskSeriesId: string | null;
+  seriesOccurrenceAt: string | null;
+  skipped: boolean;
+}
+
+export type TaskRecurrenceFrequency = 'NONE' | 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'CUSTOM';
+export type TaskRecurrenceUnit = 'DAYS' | 'WEEKS' | 'MONTHS';
+
+export interface TaskSeries {
+  seriesId: string;
+  name: string;
+  description: string | null;
+  tag: string | null;
+  importance: number;
+  mentalThreadId: string | null;
+  startDateTime: string;
+  recurrenceFrequency: Exclude<TaskRecurrenceFrequency, 'NONE'>;
+  recurrenceEndDate: string | null;
+  recurrenceInterval: number | null;
+  recurrenceUnit: TaskRecurrenceUnit | null;
+  timeZone: string;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface TaskInput {
@@ -30,6 +56,12 @@ export interface TaskInput {
   importance: number;
   parentId?: string;
   mentalThreadId?: string;
+  recurrenceFrequency?: Exclude<TaskRecurrenceFrequency, 'NONE'>;
+  recurrenceEndDate?: string | null;
+  recurrenceInterval?: number | null;
+  recurrenceUnit?: TaskRecurrenceUnit | null;
+  timeZone?: string;
+  reminderMinutesBefore?: number | null;
 }
 
 export interface TaskGroup {
@@ -170,6 +202,7 @@ export interface Note {
 
 export type RecurrenceFrequency = 'NONE' | 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'CUSTOM';
 export type RecurrenceUnit = 'DAYS' | 'WEEKS' | 'MONTHS';
+export type CalendarEventStatus = 'CONFIRMED' | 'TENTATIVE' | 'CANCELLED';
 
 export interface CalendarEvent {
   id: string;
@@ -181,6 +214,7 @@ export interface CalendarEvent {
   startTime: string | null;
   endTime: string | null;
   timeZone: string;
+  status: CalendarEventStatus;
   recurrenceFrequency: RecurrenceFrequency;
   recurrenceEndDate: string | null;
   recurrenceInterval: number | null;
@@ -224,18 +258,20 @@ export interface ApplicationNotification {
   scheduledAt: string;
   eventStart: string | null;
   allDay: boolean | null;
+  taskId: string | null;
 }
 
 export interface UserPreferences {
   includeUnloggedNumericDaysAsZero: boolean;
   autoStartPomodoroSessions: boolean;
   checkupNotificationsEnabled: boolean;
+  repeatCheckupNotificationsEnabled: boolean;
   checkupIntervalMinutes: number;
   checkupStartTime: string;
   checkupTimesPerDay: number;
 }
 
-export type PomodoroPhase = 'FOCUS' | 'BREAK' | 'WAITING_FOR_BREAK' | 'WAITING_FOR_FOCUS';
+export type PomodoroPhase = 'FOCUS' | 'BREAK' | 'WAITING_FOR_BREAK' | 'WAITING_FOR_FOCUS' | 'COMPLETED';
 
 export interface PomodoroStatus {
   pomodoroId: string;
@@ -247,6 +283,8 @@ export interface PomodoroStatus {
   secondsUntilNextTransition: number;
   currentFocusNumber: number;
   numFocuses: number;
+  completedFocusSessions?: number;
+  totalFocusSeconds?: number;
   phase?: PomodoroPhase;
 }
 

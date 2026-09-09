@@ -150,6 +150,23 @@ public class MeditationSessionService {
         return endSession(sessionId, null, null);
     }
 
+    public void discardSession(String sessionId, String userId) {
+        Optional<MeditationSession> activeSession = userId == null
+                ? meditationSessionRepository.findMeditationSessionByIdAndActiveIsTrue(sessionId)
+                : meditationSessionRepository.findByIdAndActiveIsTrueAndUserId(sessionId, userId);
+        if (activeSession.isEmpty()) {
+            throw new IllegalStateException("Cannot discard a meditation session when it is not active.");
+        }
+
+        MeditationSession session = activeSession.get();
+        meditationSessionRepository.delete(session);
+        log.info("Meditation session discarded: userId={} sessionId={}", userId, session.getId());
+    }
+
+    public void discardSession(String sessionId) {
+        discardSession(sessionId, null);
+    }
+
     public MeditationSession createSession() {
         return MeditationSession.builder()
                 .id(UUID.randomUUID().toString())

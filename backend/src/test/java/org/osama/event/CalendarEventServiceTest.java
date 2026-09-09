@@ -55,9 +55,34 @@ class CalendarEventServiceTest {
         CalendarEventResponse event = eventService.createEvent(timedRequest(start, start.plusSeconds(3600)), USER_ID);
 
         Reminder reminder = reminderRepository.findByEventId(event.id()).orElseThrow();
+        assertEquals(CalendarEventStatus.CONFIRMED, event.status());
         assertEquals(1440, event.reminderMinutesBefore());
         assertEquals(start.minusSeconds(24 * 60 * 60), reminder.getDateTime());
         assertEquals(USER_ID, reminder.getUser().getId());
+    }
+
+    @Test
+    void eventStatusCanBeTentative() {
+        CalendarEventRequest request = timedRequest(
+                Instant.parse("2027-01-10T10:00:00Z"), Instant.parse("2027-01-10T11:00:00Z"));
+        request.setStatus(CalendarEventStatus.TENTATIVE);
+
+        CalendarEventResponse event = eventService.createEvent(request, USER_ID);
+
+        assertEquals(CalendarEventStatus.TENTATIVE, event.status());
+    }
+
+    @Test
+    void cancelledEventDoesNotKeepAReminder() {
+        CalendarEventRequest request = timedRequest(
+                Instant.parse("2027-01-10T10:00:00Z"), Instant.parse("2027-01-10T11:00:00Z"));
+        request.setStatus(CalendarEventStatus.CANCELLED);
+
+        CalendarEventResponse event = eventService.createEvent(request, USER_ID);
+
+        assertEquals(CalendarEventStatus.CANCELLED, event.status());
+        assertNull(event.reminderMinutesBefore());
+        assertTrue(reminderRepository.findByEventId(event.id()).isEmpty());
     }
 
     @Test

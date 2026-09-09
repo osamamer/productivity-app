@@ -54,6 +54,10 @@ public class User {
     private Boolean checkupNotificationsEnabled = true;
 
     @Builder.Default
+    @Column(name = "repeat_checkup_notifications_enabled", nullable = false)
+    private Boolean repeatCheckupNotificationsEnabled = true;
+
+    @Builder.Default
     @Column(name = "checkup_interval_minutes", nullable = false)
     private Integer checkupIntervalMinutes = 180;
 

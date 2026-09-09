@@ -7,6 +7,7 @@ const CATEGORIES_URL = `${API_BASE_URL}/api/v1/note-categories`;
 
 export type NotePatch = Partial<Pick<Note, 'title' | 'content' | 'categoryId' | 'pinned'>>;
 export type CategoryInput = Pick<NoteCategory, 'name' | 'color'>;
+export type BulkNotePatch = Partial<Pick<Note, 'categoryId' | 'pinned'>>;
 
 function jsonHeaders() {
     return {
@@ -30,7 +31,7 @@ export const notesService = {
         const response = await fetch(NOTES_URL, {
             method: 'POST',
             headers: jsonHeaders(),
-            body: JSON.stringify({ title: 'Untitled', content: '', categoryId, pinned: false }),
+            body: JSON.stringify({ title: '', content: '', categoryId, pinned: false }),
         });
         return responseJson(response, 'Failed to create note');
     },
@@ -51,6 +52,24 @@ export const notesService = {
             headers: getAuthHeaders(),
         });
         if (!response.ok) throw new Error('Failed to delete note');
+    },
+
+    async updateNotes(noteIds: string[], updates: BulkNotePatch): Promise<Note[]> {
+        const response = await fetch(`${NOTES_URL}/bulk`, {
+            method: 'PATCH',
+            headers: jsonHeaders(),
+            body: JSON.stringify({ noteIds, ...updates }),
+        });
+        return responseJson(response, 'Failed to update notes');
+    },
+
+    async deleteNotes(noteIds: string[]): Promise<void> {
+        const response = await fetch(`${NOTES_URL}/bulk`, {
+            method: 'DELETE',
+            headers: jsonHeaders(),
+            body: JSON.stringify({ noteIds }),
+        });
+        if (!response.ok) throw new Error('Failed to delete notes');
     },
 
     async getCategories(signal?: AbortSignal): Promise<NoteCategory[]> {

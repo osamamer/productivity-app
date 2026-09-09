@@ -42,6 +42,7 @@ import {
 } from '../types/MentalThread.ts';
 import { getShowClosedMentalThreads } from '../services/utils/mentalThreadPreferences.ts';
 import { playAudioFeedback } from '../services/audioFeedback.ts';
+import { findKeyboardDeleteAnchor, useKeyboardDelete } from '../hooks/useKeyboardDelete';
 
 type StateFilter = AttentionState | 'ALL';
 type ThreadActionRequest = { thread: MentalThread; anchorEl: HTMLElement };
@@ -234,6 +235,22 @@ export function MentalThreadsPage() {
             : [],
         [allTasks, selectedThread],
     );
+
+    useKeyboardDelete({
+        enabled: Boolean(selectedThread)
+            && !formOpen
+            && !closingThread
+            && !threadMenu
+            && !deleteRequest
+            && !deleteSubmitting,
+        onDelete: () => {
+            if (!selectedThread) return;
+            setDeleteRequest({
+                thread: selectedThread,
+                anchorEl: findKeyboardDeleteAnchor('data-mental-thread-id', selectedThread.id) ?? document.body,
+            });
+        },
+    });
 
     useEffect(() => {
         const selectedThreadStillVisible = visibleThreads.some(thread => thread.id === selectedId);

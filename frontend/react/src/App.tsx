@@ -25,6 +25,7 @@ import {AppErrorBoundary, AppErrorPage} from "./components/AppErrorBoundary.tsx"
 import {useAppContextMenuGuard} from "./components/AppContextMenuGuard.tsx";
 import {rememberMentalDestination, type MentalDestinationPath} from "./services/utils/mentalNavigation";
 import {AppShell} from "./components/AppShell.tsx";
+import {DayPage} from "./pages/DayPage.tsx";
 
 
 function MentalDestinationTracker({destination, children}: { destination: MentalDestinationPath; children: ReactNode }) {
@@ -72,6 +73,7 @@ const routes = [
                     },
                     { path: "/tasks", element: <TaskPage/> },
                     { path: "/stats", element: <StatsPage/> },
+                    { path: "/day/:date", element: <DayPage/> },
                     { path: "/notes", element: <NotesPage/> },
                     { path: "/mental", element: <MentalPage/> },
                     {
@@ -98,11 +100,9 @@ const routes = [
     },
 ];
 
-let appRouter: ReturnType<typeof createBrowserRouter> | null = null;
-
 function App() {
     useAppContextMenuGuard();
-    appRouter ??= createBrowserRouter(routes);
+    const appRouter = createBrowserRouter(routes);
     return (
         <AppErrorBoundary>
             <RouterProvider router={appRouter}/>

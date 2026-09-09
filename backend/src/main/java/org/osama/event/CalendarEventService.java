@@ -51,9 +51,10 @@ public class CalendarEventService {
         event.setUser(user);
         applyRequest(event, request);
         CalendarEvent saved = eventRepository.save(event);
-        replaceReminder(saved, requestedReminderMinutes(request), user);
-        log.info("Calendar event created: userId={} eventId={} allDay={} reminderMinutesBefore={}",
-                userId, saved.getId(), saved.isAllDay(), requestedReminderMinutes(request));
+        Integer reminderMinutes = reminderMinutesForEvent(request, saved);
+        replaceReminder(saved, reminderMinutes, user);
+        log.info("Calendar event created: userId={} eventId={} allDay={} status={} reminderMinutesBefore={}",
+                userId, saved.getId(), saved.isAllDay(), saved.getStatus(), reminderMinutes);
         return toResponse(saved);
     }
 
@@ -63,10 +64,10 @@ public class CalendarEventService {
                 .orElseThrow(() -> new ResourceNotFoundException("Calendar event not found: " + eventId));
         applyRequest(event, request);
         CalendarEvent saved = eventRepository.save(event);
-        Integer reminderMinutes = requestedReminderMinutes(request);
+        Integer reminderMinutes = reminderMinutesForEvent(request, saved);
         replaceReminder(saved, reminderMinutes, event.getUser());
-        log.info("Calendar event updated: userId={} eventId={} allDay={} reminderMinutesBefore={}",
-                userId, eventId, saved.isAllDay(), reminderMinutes);
+        log.info("Calendar event updated: userId={} eventId={} allDay={} status={} reminderMinutesBefore={}",
+                userId, eventId, saved.isAllDay(), saved.getStatus(), reminderMinutes);
         return toResponse(saved);
     }
 
@@ -105,6 +106,7 @@ public class CalendarEventService {
         event.setDescription(request.getDescription() == null ? "" : request.getDescription().trim());
         event.setAllDay(request.isAllDay());
         event.setTimeZone(timeZone == null || timeZone.isBlank() ? "UTC" : timeZone);
+        event.setStatus(request.getStatus() == null ? CalendarEventStatus.CONFIRMED : request.getStatus());
         event.setStartDate(request.isAllDay() ? request.getStartDate() : null);
         event.setEndDate(request.isAllDay() ? request.getEndDate() : null);
         event.setStartTime(request.isAllDay() ? null : request.getStartTime());
@@ -150,6 +152,10 @@ public class CalendarEventService {
         return minutes;
     }
 
+    private Integer reminderMinutesForEvent(CalendarEventRequest request, CalendarEvent event) {
+        return event.getStatus() == CalendarEventStatus.CANCELLED ? null : requestedReminderMinutes(request);
+    }
+
     private void replaceReminder(CalendarEvent event, Integer minutesBefore, User user) {
         var existingReminder = reminderRepository.findByEventId(event.getId());
         existingReminder.ifPresent(reminderRepository::delete);
@@ -185,7 +191,7 @@ public class CalendarEventService {
                 .orElse(null);
         return new CalendarEventResponse(event.getId(), event.getTitle(), event.getDescription(),
                 event.isAllDay(), event.getStartDate(), event.getEndDate(), event.getStartTime(),
-                event.getEndTime(), event.getTimeZone(), event.getRecurrenceFrequency(),
+                event.getEndTime(), event.getTimeZone(), event.getStatus(), event.getRecurrenceFrequency(),
                 event.getRecurrenceEndDate(), event.getRecurrenceInterval(), event.getRecurrenceUnit(), reminderMinutes,
                 event.getCreatedAt(), event.getUpdatedAt());
     }

@@ -1,0 +1,31 @@
+databaseChangeLog:
+  - changeSet:
+      id: 051-add-calendar-event-status
+      author: codex
+      comment: Store the status of calendar events and reusable event templates
+      changes:
+        - addColumn:
+            tableName: calendar_event
+            columns:
+              - column:
+                  name: status
+                  type: varchar(20)
+                  defaultValue: CONFIRMED
+                  constraints:
+                    nullable: false
+        - addColumn:
+            tableName: day_template_event
+            columns:
+              - column:
+                  name: status
+                  type: varchar(20)
+                  defaultValue: CONFIRMED
+                  constraints:
+                    nullable: false
+      rollback:
+        - dropColumn:
+            tableName: day_template_event
+            columnName: status
+        - dropColumn:
+            tableName: calendar_event
+            columnName: status

@@ -45,6 +45,9 @@ public class StatDefinition {
     @Column(name = "system_key")
     private String systemKey;
 
+    @Column(name = "recurring_task_series_id", unique = true)
+    private String recurringTaskSeriesId;
+
     @Column(name = "display_order", nullable = false)
     private Integer displayOrder;
 

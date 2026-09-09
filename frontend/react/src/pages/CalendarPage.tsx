@@ -3,27 +3,32 @@ import {PageWrapper} from "../components/PageWrapper.tsx";
 import {MonthCalendar} from "../components/MonthCalendar.tsx";
 import {useGlobalTasks} from "../hooks/useGlobalTasks";
 import {useEffect, useState} from "react";
-import {eventService, taskGroupService, taskService} from "../services/api";
+import {dayTemplateService, eventService, taskGroupService, taskService} from "../services/api";
 import {TaskToCreate} from "../types/TaskToCreate.tsx";
 import {StatDefinition} from "../types/Stats.ts";
 import {statService} from "../services/api/statService.ts";
 import {Task} from "../types/Task.tsx";
 import {TaskGroup} from "../types/TaskGroup.ts";
 import {CalendarEvent, CalendarEventInput} from "../types/CalendarEvent.ts";
+import {DayTemplate, DayTemplateApplication, DayTemplateRequest} from "../types/DayTemplate.ts";
 import { playAudioFeedback } from '../services/audioFeedback';
+import { useNavigate } from 'react-router-dom';
 
 export function CalendarPage() {
+    const navigate = useNavigate();
     const {
         allTasks,
         loading: tasksLoading,
         fetchAllTasks,
         addTaskToState,
+        appendTasksToState,
         updateTaskInState,
     } = useGlobalTasks();
 
     const [statDefinitions, setStatDefinitions] = useState<StatDefinition[]>([]);
     const [events, setEvents] = useState<CalendarEvent[]>([]);
     const [groups, setGroups] = useState<TaskGroup[]>([]);
+    const [dayTemplates, setDayTemplates] = useState<DayTemplate[]>([]);
     const [calendarDataLoading, setCalendarDataLoading] = useState(true);
 
     useEffect(() => {
@@ -38,6 +43,9 @@ export function CalendarPage() {
             taskGroupService.getGroups()
                 .then(taskGroups => { if (!cancelled) setGroups(taskGroups); })
                 .catch(e => console.error('Failed to load task groups:', e)),
+            dayTemplateService.getTemplates()
+                .then(templates => { if (!cancelled) setDayTemplates(templates); })
+                .catch(e => console.error('Failed to load day templates:', e)),
         ]).finally(() => {
             if (!cancelled) setCalendarDataLoading(false);
         });
@@ -59,6 +67,17 @@ export function CalendarPage() {
     const handleDeleteEvent = async (eventId: string) => {
         await eventService.deleteEvent(eventId);
         setEvents(current => current.filter(event => event.id !== eventId));
+    };
+
+    const handleCreateDayTemplate = async (request: DayTemplateRequest) => {
+        const created = await dayTemplateService.createTemplate(request);
+        setDayTemplates(current => [...current, created].sort((first, second) => first.name.localeCompare(second.name)));
+    };
+
+    const handleApplyDayTemplate = async (templateId: string, date: string) => {
+        const applied: DayTemplateApplication = await dayTemplateService.applyTemplate(templateId, date);
+        setEvents(current => [...current, ...applied.events]);
+        appendTasksToState(applied.tasks);
     };
 
     const handleCreateTask = async (taskToCreate: TaskToCreate) => {
@@ -108,8 +127,13 @@ export function CalendarPage() {
                     onCreateEvent={handleCreateEvent}
                     onUpdateEvent={handleUpdateEvent}
                     onDeleteEvent={handleDeleteEvent}
+                    dayTemplates={dayTemplates}
+                    onCreateDayTemplate={handleCreateDayTemplate}
+                    onApplyDayTemplate={handleApplyDayTemplate}
                     statDefinitions={statDefinitions}
                     loading={calendarDataLoading || tasksLoading}
+                    onRefreshTasks={() => fetchAllTasks(true)}
+                    onOpenDay={date => navigate(`/day/${date}`, { state: { returnTo: '/calendar' } })}
                 />
             </Box>
         </PageWrapper>

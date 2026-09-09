@@ -260,6 +260,7 @@ export function MonthCalendar({
           timeLabel: occurrence.allDay ? undefined : formatCalendarTime(occurrence.start, event.timeZone),
           color: colors.accent,
           textColor: colors.onAccent,
+          eventStatus: event.status,
         }));
       }));
     }

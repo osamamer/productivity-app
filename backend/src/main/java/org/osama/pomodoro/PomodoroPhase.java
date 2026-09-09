@@ -4,5 +4,6 @@ public enum PomodoroPhase {
     FOCUS,
     BREAK,
     WAITING_FOR_BREAK,
-    WAITING_FOR_FOCUS
+    WAITING_FOR_FOCUS,
+    COMPLETED
 }

@@ -29,6 +29,13 @@ export function formatShortDate(value: string | null | undefined): string {
   return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(date);
 }
 
+export function formatWeekday(value: string | null | undefined): string {
+  if (!value) return 'No date';
+  const date = new Date(value.length === 10 ? `${value}T12:00:00` : value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat(undefined, { weekday: 'short' }).format(date);
+}
+
 function formatInTimeZone(value: string, timeZone: string | undefined, options: Intl.DateTimeFormatOptions): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';

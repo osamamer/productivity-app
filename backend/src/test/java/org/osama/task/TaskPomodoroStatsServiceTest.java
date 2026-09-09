@@ -16,6 +16,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -32,6 +34,7 @@ class TaskPomodoroStatsServiceTest {
     @Autowired private TaskService taskService;
     @Autowired private TaskSessionRepository taskSessionRepository;
     @Autowired private UserRepository userRepository;
+    @Autowired private TaskRepository taskRepository;
 
     @BeforeEach
     void setUp() {
@@ -64,12 +67,59 @@ class TaskPomodoroStatsServiceTest {
                 () -> taskService.getPomodoroStats(task.getTaskId(), OTHER_USER_ID));
     }
 
+    @Test
+    void sumsTodayFocusAcrossOwnedTasks() {
+        Task firstTask = createTask(USER_ID, "Write report");
+        Task secondTask = createTask(USER_ID, "Review report");
+        Task otherUsersTask = createTask(OTHER_USER_ID, "Private report");
+        LocalDate today = LocalDate.now();
+
+        taskSessionRepository.save(session(firstTask.getTaskId(), true, today, 25));
+        taskSessionRepository.save(session(secondTask.getTaskId(), true, today, 40));
+        taskSessionRepository.save(session(firstTask.getTaskId(), true, today.minusDays(1), 100));
+        taskSessionRepository.save(session(secondTask.getTaskId(), false, today, 90));
+        taskSessionRepository.save(session(otherUsersTask.getTaskId(), true, today, 60));
+
+        TodayFocusSummaryResponse summary = taskService.getTodayFocusSummary(USER_ID, today);
+
+        assertEquals(Duration.ofMinutes(65).toSeconds(), summary.totalFocusSeconds());
+        assertEquals(today, summary.date());
+    }
+
+    @Test
+    void groupsRecurringTaskFocusByOccurrenceDateAndIncludesUnfocusedOccurrences() {
+        LocalDate today = LocalDate.now();
+        String seriesId = "focus-series";
+        Task olderOccurrence = recurringOccurrence(USER_ID, seriesId, today.minusDays(2));
+        Task previousOccurrence = recurringOccurrence(USER_ID, seriesId, today.minusDays(1));
+        Task currentOccurrence = recurringOccurrence(USER_ID, seriesId, today);
+
+        taskSessionRepository.save(session(previousOccurrence.getTaskId(), true, today.minusDays(1), 10));
+        taskSessionRepository.save(session(currentOccurrence.getTaskId(), true, today, 25));
+        taskSessionRepository.save(session(olderOccurrence.getTaskId(), false, today.minusDays(2), 90));
+
+        Map<LocalDate, Long> focusByDate = taskService.getPomodoroFocusTimeForSeries(
+                seriesId, today.minusDays(2), today, USER_ID);
+
+        assertEquals(Map.of(
+                today.minusDays(2), 0L,
+                today.minusDays(1), Duration.ofMinutes(10).toSeconds(),
+                today, Duration.ofMinutes(25).toSeconds()), focusByDate);
+    }
+
     private Task createTask(String userId, String name) {
         NewTaskRequest request = new NewTaskRequest();
         request.setName(name);
         request.setDescription("");
         request.setScheduledPerformDateTime("");
         return taskService.createTask(request, userId);
+    }
+
+    private Task recurringOccurrence(String userId, String seriesId, LocalDate date) {
+        Task task = createTask(userId, "Recurring focus");
+        task.setTaskSeriesId(seriesId);
+        task.setSeriesOccurrenceAt(LocalDateTime.of(date, java.time.LocalTime.NOON));
+        return taskRepository.save(task);
     }
 
     private TaskSession session(String taskId, boolean pomodoro, LocalDate date, long minutes) {

@@ -8,6 +8,7 @@ import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.osama.exceptions.ResourceNotFoundException;
 import org.osama.pomodoro.PomodoroRepository;
+import org.osama.pomodoro.Pomodoro;
 import org.osama.pomodoro.PomodoroService;
 import org.osama.pomodoro.PomodoroPhase;
 import org.osama.scheduling.JobType;
@@ -205,6 +206,40 @@ public class PomoTest {
         assertTrue(restartedPomodoro.isSessionRunning());
         assertEquals(1, restartedPomodoro.getCurrentFocusNumber());
     }
+
+    @Test
+    @org.springframework.transaction.annotation.Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void scheduledCompletionPublishesACompletedPomodoroState() {
+        Task task = createTask();
+        pomodoroService.startPomodoro(task.getTaskId(), 25, 5, 15, 1, 1, testUserId);
+
+        pomodoroService.completePomodoro(task.getTaskId());
+
+        Pomodoro completedPomodoro = pomodoroRepository.findAll().stream()
+                .filter(pomodoro -> pomodoro.getAssociatedTaskId().equals(task.getTaskId()))
+                .findFirst()
+                .orElseThrow();
+        assertFalse(completedPomodoro.isActive());
+        assertEquals(PomodoroPhase.COMPLETED, completedPomodoro.getPhase());
+        assertEquals(1, completedPomodoro.getCompletedFocusSessions());
+        assertTrue(completedPomodoro.getTotalFocusSeconds() >= 0);
+    }
+
+    @Test
+    @org.springframework.transaction.annotation.Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void manuallyEndedPomodoroPublishesACompletedSummary() {
+        Task task = createTask();
+        pomodoroService.startPomodoro(task.getTaskId(), 25, 5, 15, 3, 2, testUserId);
+
+        Pomodoro completedPomodoro = pomodoroService.endPomodoro(task.getTaskId(), testUserId);
+
+        assertFalse(completedPomodoro.isActive());
+        assertEquals(PomodoroPhase.COMPLETED, completedPomodoro.getPhase());
+        assertEquals(1, completedPomodoro.getCompletedFocusSessions());
+        assertTrue(completedPomodoro.getTotalFocusSeconds() >= 0);
+    }
+
+
     @Test
     void pomoUserInterventionTest() throws InterruptedException {
         Task task = createTask();

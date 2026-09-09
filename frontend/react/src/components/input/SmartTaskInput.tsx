@@ -26,6 +26,7 @@ import { TaskToCreate } from '../../types/TaskToCreate';
 type SmartTaskInputProps = {
     onSubmit: (taskToCreate: TaskToCreate) => void;
     initialDate?: string;
+    defaultToToday?: boolean;
     autoFocus?: boolean;
     parentId?: string;
     placeholder?: string;
@@ -51,6 +52,7 @@ type TaskMetadata = {
 export function SmartTaskInput({
     onSubmit,
     initialDate,
+    defaultToToday = false,
     autoFocus,
     parentId,
     placeholder,
@@ -78,6 +80,14 @@ export function SmartTaskInput({
     const [selectedDate, setSelectedDate] = useState<Date>(new Date());
     const [selectedTime, setSelectedTime] = useState<Date | null>(new Date());
     const inputRef = useRef<HTMLInputElement>(null);
+
+    const todayDateTime = () => {
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const day = String(today.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}T12:00:00`;
+    };
 
     useEffect(() => {
         if (autoFocus && inputRef.current) {
@@ -158,7 +168,7 @@ export function SmartTaskInput({
             name: taskName,
             description: '',
             // CRITICAL FIX: Use metadata date OR fall back to initialDate
-            scheduledPerformDateTime: metadata.scheduledDate || initialDate || '',
+            scheduledPerformDateTime: metadata.scheduledDate || initialDate || (defaultToToday ? todayDateTime() : ''),
             tag: metadata.tag,
             importance: metadata.importance,
         };

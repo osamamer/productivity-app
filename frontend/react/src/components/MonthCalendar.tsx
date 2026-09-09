@@ -1,18 +1,18 @@
 import {
-    Alert, Box, Button, Checkbox, Chip, Dialog, DialogActions, DialogContent,
+    Alert, Box, Button, Checkbox, Chip, Collapse, Dialog, DialogActions, DialogContent,
     DialogTitle, Divider, FormControlLabel, FormGroup, List, ListItem,
     ListItemButton, ListItemText, Popover,
-    Skeleton, Stack, Switch, Tabs, Tab, TextField, ToggleButton, ToggleButtonGroup, Typography,
+    Fade, Skeleton, Stack, Switch, Tabs, Tab, TextField, ToggleButton, ToggleButtonGroup, Typography, Menu, MenuItem, ListItemIcon,
 } from "@mui/material";
 import { HoverCardBox } from "./box/HoverCardBox.tsx";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin, { DateClickArg } from "@fullcalendar/interaction";
 import FullCalendar from "@fullcalendar/react";
-import React, { useMemo, useState, useCallback } from "react";
+import React, { useMemo, useState, useCallback, useRef } from "react";
 import { keyframes } from '@mui/system';
 import { Task } from "../types/Task.tsx";
 import { useTheme } from "@mui/material";
-import { DatesSetArg, EventClickArg, EventContentArg, EventMountArg } from '@fullcalendar/core';
+import { DayCellMountArg, DatesSetArg, EventClickArg, EventContentArg, EventMountArg } from '@fullcalendar/core';
 import { TaskToCreate } from "../types/TaskToCreate.tsx";
 import { TaskGroup } from "../types/TaskGroup.ts";
 import { SmartTaskInput } from "./input/SmartTaskInput.tsx";
@@ -24,12 +24,25 @@ import { addMonths, format, isAfter, startOfDay, startOfMonth, subDays } from "d
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
 import { DateTimePicker } from "@mui/x-date-pickers/DateTimePicker";
+import { TimePicker } from "@mui/x-date-pickers/TimePicker";
 import FilterListIcon from '@mui/icons-material/FilterList';
 import CheckIcon from '@mui/icons-material/Check';
+import SaveAsIcon from '@mui/icons-material/SaveAs';
+import ViewDayIcon from '@mui/icons-material/ViewDay';
 import { CalendarEvent, CalendarEventInput } from "../types/CalendarEvent.ts";
+import { DayTemplate, DayTemplateRequest } from "../types/DayTemplate.ts";
 import { CalendarEventForm } from "./calendar/CalendarEventForm.tsx";
+import { DayTemplateCreationDialog } from "./calendar/DayTemplateCreationDialog.tsx";
+import { DAY_TEMPLATE_DRAG_TYPE, DayTemplatePanel } from "./calendar/DayTemplatePanel.tsx";
 import { expandCalendarEvent } from "./calendar/recurrence.ts";
 import { getBooleanChoiceColor } from "../services/statFeedback.ts";
+import { taskService } from "../services/api";
+import { getShowCompletedHomeTasks } from "../services/utils/homePreferences.ts";
+import { AppDateField } from "./input/AppPickerFields";
+import { TaskRecurrenceCustomOptions, TaskRecurrencePicker } from "./task/TaskRecurrencePicker";
+import { TaskReminderPicker } from "./task/TaskReminderPicker";
+import { defaultTaskRecurrence, TaskRecurrenceDraft } from "../types/TaskRecurrence";
+import { TaskSeries } from "../types/TaskSeries";
 
 type MonthCalenderProps = {
     tasks: Task[],
@@ -40,8 +53,13 @@ type MonthCalenderProps = {
     onCreateEvent: (event: CalendarEventInput) => Promise<void>,
     onUpdateEvent: (eventId: string, event: CalendarEventInput) => Promise<void>,
     onDeleteEvent: (eventId: string) => Promise<void>,
+    dayTemplates: DayTemplate[],
+    onCreateDayTemplate: (request: DayTemplateRequest) => Promise<void>,
+    onApplyDayTemplate: (templateId: string, date: string) => Promise<void>,
     statDefinitions?: StatDefinition[],
     loading?: boolean,
+    onRefreshTasks?: () => Promise<void>,
+    onOpenDay?: (date: string) => void,
 }
 
 type TaskStatusFilter = 'all' | 'open' | 'completed';
@@ -195,19 +213,30 @@ function CalendarLoadingState() {
 }
 
 export function MonthCalendar({
-    tasks, groups, events, onCreateTask, onUpdateTask, onCreateEvent, onUpdateEvent, onDeleteEvent, statDefinitions, loading = false,
+    tasks, groups, events, onCreateTask, onUpdateTask, onCreateEvent, onUpdateEvent, onDeleteEvent,
+    dayTemplates, onCreateDayTemplate, onApplyDayTemplate, statDefinitions, loading = false, onRefreshTasks, onOpenDay,
 }: MonthCalenderProps) {
     const theme = useTheme();
     const availableStatDefinitions = useMemo(() => statDefinitions ?? [], [statDefinitions]);
     const [initialDisplayPreferences] = useState(readCalendarDisplayPreferences);
     const [editingDate, setEditingDate] = useState<string | null>(null);
+    const [editingDialogOpen, setEditingDialogOpen] = useState(false);
     const [activeTab, setActiveTab] = useState<CreateTab>('event');
     const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+    const [selectedEventDialogOpen, setSelectedEventDialogOpen] = useState(false);
     const [selectedTaskGroupId, setSelectedTaskGroupId] = useState<string | null>(null);
+    const [selectedTaskGroupDialogOpen, setSelectedTaskGroupDialogOpen] = useState(false);
     const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+    const [taskDialogOpen, setTaskDialogOpen] = useState(false);
     const [taskDraft, setTaskDraft] = useState<Partial<Task> | null>(null);
     const [taskSaveError, setTaskSaveError] = useState<string | null>(null);
     const [taskSaving, setTaskSaving] = useState(false);
+    const [recurrenceDraft, setRecurrenceDraft] = useState<TaskRecurrenceDraft>(defaultTaskRecurrence);
+    const [recurrenceError, setRecurrenceError] = useState<string | null>(null);
+    const recurrenceDraftRef = useRef<TaskRecurrenceDraft>(defaultTaskRecurrence());
+    const taskSeriesRef = useRef<TaskSeries | null>(null);
+    const recurrenceMutationRef = useRef<Promise<void>>(Promise.resolve());
+    const recurrenceRequestIdRef = useRef(0);
     const [showTasks, setShowTasks] = useState(initialDisplayPreferences.showTasks);
     const [showStats, setShowStats] = useState(initialDisplayPreferences.showStats);
     const [taskStatus, setTaskStatus] = useState<TaskStatusFilter>(initialDisplayPreferences.taskStatus);
@@ -216,6 +245,24 @@ export function MonthCalendar({
     // immediately visible as soon as they arrive from the parent.
     const [selectedStatIds, setSelectedStatIds] = useState<string[] | null>(initialDisplayPreferences.selectedStatIds);
     const [filterAnchor, setFilterAnchor] = useState<HTMLElement | null>(null);
+    const [showTemplatePanel, setShowTemplatePanel] = useState(false);
+    const [templateCreationOpen, setTemplateCreationOpen] = useState(false);
+    const [templateSourceDate, setTemplateSourceDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+    const [templateActionError, setTemplateActionError] = useState<string | null>(null);
+    const [dayContextMenu, setDayContextMenu] = useState<{ date: string; top: number; left: number } | null>(null);
+    const [applyingTemplateId, setApplyingTemplateId] = useState<string | null>(null);
+    const applyingTemplateRef = useRef<string | null>(null);
+    const onApplyDayTemplateRef = useRef(onApplyDayTemplate);
+    const dayCellListenersRef = useRef(new Map<HTMLElement, {
+        dragOver: (event: DragEvent) => void;
+        dragLeave: (event: DragEvent) => void;
+        drop: (event: DragEvent) => void;
+        contextMenu: (event: MouseEvent) => void;
+    }>());
+
+    React.useEffect(() => {
+        onApplyDayTemplateRef.current = onApplyDayTemplate;
+    }, [onApplyDayTemplate]);
     const [calendarRange, setCalendarRange] = useState({
         start: startOfMonth(new Date()),
         end: addMonths(startOfMonth(new Date()), 1),
@@ -246,6 +293,49 @@ export function MonthCalendar({
         () => groups.find(group => group.groupId === selectedTaskGroupId) ?? null,
         [groups, selectedTaskGroupId]
     );
+
+    React.useEffect(() => {
+        let cancelled = false;
+        setRecurrenceError(null);
+        if (!selectedTask) {
+            taskSeriesRef.current = null;
+            recurrenceDraftRef.current = defaultTaskRecurrence();
+            setRecurrenceDraft(recurrenceDraftRef.current);
+            return () => {
+                cancelled = true;
+            };
+        }
+
+        if (!selectedTask.taskSeriesId) {
+            taskSeriesRef.current = null;
+            recurrenceDraftRef.current = defaultTaskRecurrence();
+            setRecurrenceDraft(recurrenceDraftRef.current);
+        }
+
+        taskService.getTaskSeries(selectedTask.taskId)
+            .then(series => {
+                if (cancelled) return;
+                const nextDraft = series?.active
+                    ? {
+                        recurrenceFrequency: series.recurrenceFrequency,
+                        recurrenceEndDate: series.recurrenceEndDate,
+                        recurrenceInterval: series.recurrenceInterval,
+                        recurrenceUnit: series.recurrenceUnit,
+                        timeZone: series.timeZone,
+                    }
+                    : defaultTaskRecurrence();
+                taskSeriesRef.current = series;
+                recurrenceDraftRef.current = nextDraft;
+                setRecurrenceDraft(nextDraft);
+            })
+            .catch(() => {
+                if (!cancelled) setRecurrenceError('Unable to load recurrence.');
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [selectedTask]);
     const taskGroupByTaskId = useMemo(() => {
         const groupByTaskId = new Map<string, TaskGroup>();
         [...groups]
@@ -257,6 +347,8 @@ export function MonthCalendar({
             });
         return groupByTaskId;
     }, [groups]);
+
+    const showCompletedTasks = getShowCompletedHomeTasks();
 
     React.useEffect(() => {
         try {
@@ -294,10 +386,11 @@ export function MonthCalendar({
 
     const calendarTasks = useMemo(() => tasks.filter(task => {
         if (!task.scheduledPerformDateTime) return false;
+        if (!showCompletedTasks && task.completed) return false;
         if (taskStatus === 'open' && task.completed) return false;
         if (taskStatus === 'completed' && !task.completed) return false;
         return priorityFilters.includes(priorityBucket(task.importance));
-    }), [priorityFilters, taskStatus, tasks]);
+    }), [priorityFilters, showCompletedTasks, taskStatus, tasks]);
 
     const selectedTaskGroupTasks = useMemo(() => {
         if (!selectedTaskGroup) return [];
@@ -324,14 +417,27 @@ export function MonthCalendar({
             start: occurrence.start,
             end: occurrence.end,
             allDay: occurrence.allDay,
-            backgroundColor: theme.palette.primary.main,
-            borderColor: 'transparent',
-            textColor: theme.palette.primary.contrastText,
-            classNames: ['calendar-accent-event'],
+            backgroundColor: event.status === 'CANCELLED'
+                ? `${theme.palette.text.disabled}30`
+                : event.status === 'TENTATIVE'
+                    ? `${theme.palette.primary.main}70`
+                    : theme.palette.primary.main,
+            borderColor: event.status === 'CANCELLED'
+                ? theme.palette.text.disabled
+                : theme.palette.primary.main,
+            textColor: event.status === 'CANCELLED'
+                ? theme.palette.text.secondary
+                : theme.palette.primary.contrastText,
+            classNames: [event.status === 'CANCELLED'
+                ? 'calendar-cancelled-event'
+                : event.status === 'TENTATIVE'
+                    ? 'calendar-tentative-event'
+                    : 'calendar-accent-event'],
             extendedProps: {
                 eventType: 'calendarEvent',
                 calendarEventId: event.id,
-                fullDescription: event.description || event.title,
+                status: event.status,
+                fullDescription: `${event.description || event.title} · ${event.status.toLowerCase()}`,
             },
         })));
 
@@ -456,36 +562,118 @@ export function MonthCalendar({
     const handleDateClick = useCallback((arg: DateClickArg) => {
         setEditingDate(arg.dateStr);
         setActiveTab('event');
+        setEditingDialogOpen(true);
+    }, []);
+
+    const closeEditingDialog = useCallback(() => {
+        setEditingDialogOpen(false);
+        setActiveTab('event');
+    }, []);
+
+    const openTemplateCreation = useCallback((sourceDate?: string) => {
+        setTemplateSourceDate(sourceDate ?? (editingDialogOpen ? editingDate : null) ?? format(new Date(), 'yyyy-MM-dd'));
+        setTemplateActionError(null);
+        setTemplateCreationOpen(true);
+        setEditingDialogOpen(false);
+    }, [editingDate, editingDialogOpen]);
+
+    const handleTemplateDrop = useCallback(async (templateId: string, date: string) => {
+        if (applyingTemplateRef.current !== null) return;
+
+        applyingTemplateRef.current = templateId;
+        setApplyingTemplateId(templateId);
+        setTemplateActionError(null);
+        try {
+            await onApplyDayTemplateRef.current(templateId, date);
+        } catch (error) {
+            console.error('Failed to apply day template:', error);
+            setTemplateActionError('Unable to apply that template. Please try again.');
+        } finally {
+            applyingTemplateRef.current = null;
+            setApplyingTemplateId(null);
+        }
+    }, []);
+
+    const handleDayCellDidMount = useCallback((arg: DayCellMountArg) => {
+        const contextMenu = (event: MouseEvent) => {
+            event.preventDefault();
+            event.stopPropagation();
+            setDayContextMenu({
+                date: format(arg.date, 'yyyy-MM-dd'),
+                top: event.clientY,
+                left: event.clientX,
+            });
+        };
+        const dragOver = (event: DragEvent) => {
+            const types = event.dataTransfer ? Array.from(event.dataTransfer.types) : [];
+            if (!types.includes(DAY_TEMPLATE_DRAG_TYPE)) return;
+
+            event.preventDefault();
+            if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+            arg.el.classList.add('calendar-template-drop-target');
+        };
+        const dragLeave = (event: DragEvent) => {
+            if (!(event.relatedTarget instanceof Node) || !arg.el.contains(event.relatedTarget)) {
+                arg.el.classList.remove('calendar-template-drop-target');
+            }
+        };
+        const drop = (event: DragEvent) => {
+            event.preventDefault();
+            arg.el.classList.remove('calendar-template-drop-target');
+            const templateId = event.dataTransfer?.getData(DAY_TEMPLATE_DRAG_TYPE);
+            if (templateId) void handleTemplateDrop(templateId, format(arg.date, 'yyyy-MM-dd'));
+        };
+
+        arg.el.addEventListener('dragover', dragOver);
+        arg.el.addEventListener('dragleave', dragLeave);
+        arg.el.addEventListener('drop', drop);
+        arg.el.addEventListener('contextmenu', contextMenu);
+        dayCellListenersRef.current.set(arg.el, { dragOver, dragLeave, drop, contextMenu });
+    }, [handleTemplateDrop]);
+
+    const handleDayCellWillUnmount = useCallback((arg: DayCellMountArg) => {
+        const listeners = dayCellListenersRef.current.get(arg.el);
+        if (!listeners) return;
+        arg.el.removeEventListener('dragover', listeners.dragOver);
+        arg.el.removeEventListener('dragleave', listeners.dragLeave);
+        arg.el.removeEventListener('drop', listeners.drop);
+        arg.el.removeEventListener('contextmenu', listeners.contextMenu);
+        dayCellListenersRef.current.delete(arg.el);
     }, []);
 
     const openTaskEditor = useCallback((task: Task) => {
-        setSelectedTaskGroupId(null);
+        setSelectedTaskGroupDialogOpen(false);
         setTaskDraft({
             name: task.name,
             description: task.description ?? '',
             importance: task.importance,
             scheduledPerformDateTime: task.scheduledPerformDateTime,
+            reminderMinutesBefore: task.reminderMinutesBefore,
             tag: task.tag ?? '',
             completed: task.completed,
         });
         setTaskSaveError(null);
         setSelectedTaskId(task.taskId);
+        setTaskDialogOpen(true);
     }, []);
 
     const handleEventClick = useCallback((arg: EventClickArg) => {
         if (arg.event.extendedProps.eventType === 'taskGroup') {
             const groupId = arg.event.extendedProps.groupId;
             if (typeof groupId === 'string') setSelectedTaskGroupId(groupId);
+            setSelectedTaskGroupDialogOpen(true);
             return;
         }
         if (arg.event.extendedProps.eventType === 'calendarEvent') {
             const calendarEventId = arg.event.extendedProps.calendarEventId;
             setSelectedEventId(typeof calendarEventId === 'string' ? calendarEventId : arg.event.id);
+            setSelectedEventDialogOpen(true);
             return;
         }
         if (arg.event.extendedProps.eventType === 'stat') {
             setEditingDate(arg.event.extendedProps.date ?? arg.event.startStr);
             setActiveTab('stats');
+            setEditingDialogOpen(true);
             return;
         }
 
@@ -530,25 +718,69 @@ export function MonthCalendar({
         };
 
         onCreateTask(finalTask);
-        setEditingDate(null);
+        setEditingDialogOpen(false);
     }, [editingDate, onCreateTask]);
 
     const closeTaskDialog = useCallback(() => {
-        setSelectedTaskId(null);
-        setTaskDraft(null);
-        setTaskSaveError(null);
+        setTaskDialogOpen(false);
         setTaskSaving(false);
     }, []);
 
     const handleTaskDateChange = useCallback((newDate: Date | null) => {
         if (!newDate) {
-            setTaskDraft(prev => prev ? { ...prev, scheduledPerformDateTime: '' } : prev);
+            setTaskDraft(prev => prev
+                ? { ...prev, scheduledPerformDateTime: '', reminderMinutesBefore: null }
+                : prev);
             return;
         }
         const pad = (n: number) => String(n).padStart(2, '0');
         const iso = `${newDate.getFullYear()}-${pad(newDate.getMonth() + 1)}-${pad(newDate.getDate())}T${pad(newDate.getHours())}:${pad(newDate.getMinutes())}:00`;
         setTaskDraft(prev => prev ? { ...prev, scheduledPerformDateTime: iso } : prev);
     }, []);
+
+    const handleTaskRecurrenceChange = (nextDraft: TaskRecurrenceDraft) => {
+        if (!selectedTask || selectedTask.parentId) return;
+        const previousDraft = recurrenceDraftRef.current;
+        const requestId = recurrenceRequestIdRef.current + 1;
+        recurrenceRequestIdRef.current = requestId;
+        recurrenceDraftRef.current = nextDraft;
+        setRecurrenceDraft(nextDraft);
+        setRecurrenceError(null);
+
+        const persist = async () => {
+            if (requestId !== recurrenceRequestIdRef.current) return;
+            const currentSeries = taskSeriesRef.current;
+
+            if (nextDraft.recurrenceFrequency === 'NONE') {
+                if (!currentSeries?.active) return;
+                await taskService.stopTaskSeries(currentSeries.seriesId);
+                taskSeriesRef.current = { ...currentSeries, active: false };
+                if (requestId !== recurrenceRequestIdRef.current) return;
+                void onRefreshTasks?.();
+                return;
+            }
+
+            if (!taskDraft?.scheduledPerformDateTime) return;
+            const savedSeries = currentSeries
+                ? await taskService.updateTaskSeries(currentSeries.seriesId, nextDraft, true)
+                : await taskService.startTaskRecurrence(selectedTask.taskId, nextDraft);
+            taskSeriesRef.current = savedSeries;
+            if (requestId !== recurrenceRequestIdRef.current) return;
+            void onRefreshTasks?.();
+        };
+
+        recurrenceMutationRef.current = recurrenceMutationRef.current
+            .catch(() => undefined)
+            .then(persist)
+            .catch(error => {
+                if (requestId !== recurrenceRequestIdRef.current) return;
+                recurrenceDraftRef.current = previousDraft;
+                setRecurrenceDraft(previousDraft);
+                setRecurrenceError(error instanceof Error
+                    ? error.message
+                    : 'Unable to update recurrence.');
+            });
+    };
 
     const handleTaskSave = useCallback(async () => {
         if (!selectedTask || !taskDraft) return;
@@ -562,6 +794,7 @@ export function MonthCalendar({
                 importance: taskDraft.importance ?? selectedTask.importance,
                 scheduledPerformDateTime: taskDraft.scheduledPerformDateTime ?? selectedTask.scheduledPerformDateTime,
                 completed: taskDraft.completed ?? selectedTask.completed,
+                reminderMinutesBefore: taskDraft.reminderMinutesBefore ?? null,
             });
             closeTaskDialog();
         } catch (error) {
@@ -604,21 +837,44 @@ export function MonthCalendar({
                                 {showTasks ? 'Tasks' : 'Tasks hidden'} · {hasVisibleStats ? `${selectedStatDefinitions.length} stat${selectedStatDefinitions.length === 1 ? '' : 's'}` : 'Stats hidden'}
                             </Typography>
                         </Box>
-                        <Button
-                            size="small"
-                            variant="outlined"
-                            startIcon={<FilterListIcon />}
-                            onClick={event => setFilterAnchor(event.currentTarget)}
-                            disabled={loading}
-                        >
-                            Display
-                        </Button>
+                        <Stack direction="row" spacing={1}>
+                            <Button
+                                size="small"
+                                variant={showTemplatePanel ? 'contained' : 'outlined'}
+                                startIcon={<ViewDayIcon />}
+                                onClick={() => setShowTemplatePanel(previous => !previous)}
+                                disabled={loading}
+                            >
+                                Templates{dayTemplates.length > 0 ? ` (${dayTemplates.length})` : ''}
+                            </Button>
+                            <Button
+                                size="small"
+                                variant="outlined"
+                                startIcon={<FilterListIcon />}
+                                onClick={event => setFilterAnchor(event.currentTarget)}
+                                disabled={loading}
+                            >
+                                Display
+                            </Button>
+                        </Stack>
                     </Stack>
 
-                    <Popover
+                    <Collapse in={showTemplatePanel} timeout={180} unmountOnExit>
+                        <DayTemplatePanel
+                            templates={dayTemplates}
+                            applyingTemplateId={applyingTemplateId}
+                            error={templateActionError}
+                            onCreate={() => openTemplateCreation()}
+                            onDragStart={() => setTemplateActionError(null)}
+                        />
+                    </Collapse>
+
+            <Popover
                         open={Boolean(filterAnchor)}
                         anchorEl={filterAnchor}
                         onClose={() => setFilterAnchor(null)}
+                        TransitionComponent={Fade}
+                        transitionDuration={{ enter: 180, exit: 140 }}
                         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
                         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
                         slotProps={{ paper: { sx: { p: 2, width: 320, maxHeight: '75vh' } } }}
@@ -705,7 +961,36 @@ export function MonthCalendar({
                                 </FormGroup>
                             </>
                         )}
-                    </Popover>
+            </Popover>
+
+            <Menu
+                open={Boolean(dayContextMenu)}
+                onClose={() => setDayContextMenu(null)}
+                TransitionComponent={Fade}
+                transitionDuration={{ enter: 160, exit: 120 }}
+                anchorReference="anchorPosition"
+                anchorPosition={dayContextMenu
+                    ? { top: dayContextMenu.top, left: dayContextMenu.left }
+                    : undefined}
+                MenuListProps={{ dense: true }}
+            >
+                <MenuItem onClick={() => {
+                    if (!dayContextMenu) return;
+                    const { date } = dayContextMenu;
+                    setDayContextMenu(null);
+                    openTemplateCreation(date);
+                }}>
+                    <ListItemIcon><SaveAsIcon fontSize="small" /></ListItemIcon>
+                    Save day as template
+                </MenuItem>
+                <MenuItem onClick={() => {
+                    if (dayContextMenu) onOpenDay?.(dayContextMenu.date);
+                    setDayContextMenu(null);
+                }}>
+                    <ListItemIcon><ViewDayIcon fontSize="small" /></ListItemIcon>
+                    View day
+                </MenuItem>
+            </Menu>
 
                     <Box
                         sx={{
@@ -742,6 +1027,11 @@ export function MonthCalendar({
                                 transform: 'scale(1.01)',
                             },
                         },
+                        '& .fc-daygrid-day.calendar-template-drop-target': {
+                            background: `${theme.palette.primary.main}35 !important`,
+                            outline: `2px solid ${theme.palette.primary.main}`,
+                            outlineOffset: '-2px',
+                        },
                         '& .fc-daygrid-day-frame': {
                             minHeight: '80px',
                             display: 'flex',
@@ -750,6 +1040,12 @@ export function MonthCalendar({
                         '& .fc-day-today': {
                             background: `${theme.palette.primary.main}20 !important`,
                             borderRadius: '0px',
+                            outline: `2px solid ${theme.palette.primary.main}`,
+                            outlineOffset: '-2px',
+                        },
+                        '& .fc-day-today .fc-daygrid-day-number': {
+                            color: theme.palette.primary.main,
+                            fontWeight: 800,
                         },
                         '& .fc-toolbar-title': {
                             fontSize: '1.5rem',
@@ -790,6 +1086,26 @@ export function MonthCalendar({
                         },
                         '& .fc .calendar-accent-event .fc-event-main': {
                             color: `${theme.palette.primary.contrastText} !important`,
+                        },
+                        '& .fc .calendar-tentative-event': {
+                            backgroundColor: `${theme.palette.primary.main}70 !important`,
+                            border: `1px dashed ${theme.palette.primary.main} !important`,
+                            color: `${theme.palette.primary.contrastText} !important`,
+                        },
+                        '& .fc .calendar-tentative-event .fc-event-main': {
+                            color: `${theme.palette.primary.contrastText} !important`,
+                        },
+                        '& .fc .calendar-cancelled-event': {
+                            backgroundColor: `${theme.palette.text.disabled}30 !important`,
+                            borderColor: `${theme.palette.text.disabled} !important`,
+                            color: `${theme.palette.text.secondary} !important`,
+                            opacity: 0.75,
+                        },
+                        '& .fc .calendar-cancelled-event .fc-event-main': {
+                            color: `${theme.palette.text.secondary} !important`,
+                        },
+                        '& .fc .calendar-cancelled-event .calendar-event-title': {
+                            textDecoration: 'line-through',
                         },
                         '& .fc .calendar-neutral-event': {
                             backgroundColor: `${neutralCalendarColor} !important`,
@@ -890,6 +1206,8 @@ export function MonthCalendar({
                             eventClick={handleEventClick}
                             dateClick={handleDateClick}
                             datesSet={handleDatesSet}
+                            dayCellDidMount={handleDayCellDidMount}
+                            dayCellWillUnmount={handleDayCellWillUnmount}
                             dayMaxEvents={4}
                             headerToolbar={{
                                 left: 'prev,next today',
@@ -907,11 +1225,10 @@ export function MonthCalendar({
             </HoverCardBox>
 
             <Dialog
-                open={Boolean(editingDate)}
-                onClose={() => {
-                    setEditingDate(null);
-                    setActiveTab('event');
-                }}
+                open={editingDialogOpen}
+                onClose={closeEditingDialog}
+                TransitionComponent={Fade}
+                transitionDuration={{ enter: 180, exit: 140 }}
                 fullWidth
                 maxWidth="sm"
                 scroll="paper"
@@ -921,7 +1238,6 @@ export function MonthCalendar({
                             backgroundColor: theme.palette.mode === 'dark'
                                 ? 'rgba(30, 30, 30, 0.98)'
                                 : 'rgba(250, 250, 250, 0.98)',
-                            backdropFilter: 'blur(10px)',
                             boxShadow: theme.shadows[8],
                             width: '100%',
                             maxHeight: '80vh',
@@ -931,9 +1247,14 @@ export function MonthCalendar({
             >
                 <Box sx={{ pt: 2 }}>
                     {editingDate && (
-                        <Typography variant="caption" color="text.secondary" sx={{ px: 2, display: 'block' }}>
-                            {format(new Date(editingDate + 'T12:00:00'), 'MMMM d, yyyy')}
-                        </Typography>
+                        <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 2 }}>
+                            <Typography variant="caption" color="text.secondary">
+                                {format(new Date(editingDate + 'T12:00:00'), 'MMMM d, yyyy')}
+                            </Typography>
+                            <Button size="small" onClick={() => openTemplateCreation(editingDate)}>
+                                Save day as template
+                            </Button>
+                        </Stack>
                     )}
                     {(showTasks || (hasVisibleStats && !isFutureDate)) && (
                         <Tabs
@@ -955,9 +1276,9 @@ export function MonthCalendar({
                             initialDate={editingDate}
                             onSave={async event => {
                                 await onCreateEvent(event);
-                                setEditingDate(null);
+                                setEditingDialogOpen(false);
                             }}
-                            onCancel={() => setEditingDate(null)}
+                            onCancel={closeEditingDialog}
                         />
                     )}
                     {activeTab === 'task' && showTasks && (
@@ -975,16 +1296,27 @@ export function MonthCalendar({
                             definitions={selectedStatDefinitions}
                             onSaved={() => {
                                 setStatRefreshKey(key => key + 1);
-                                setEditingDate(null);
+                                setEditingDialogOpen(false);
                             }}
                         />
                     )}
                 </DialogContent>
             </Dialog>
 
+            <DayTemplateCreationDialog
+                open={templateCreationOpen}
+                initialDate={templateSourceDate}
+                events={events}
+                tasks={tasks}
+                onSave={onCreateDayTemplate}
+                onClose={() => setTemplateCreationOpen(false)}
+            />
+
             <Dialog
-                open={Boolean(selectedCalendarEvent)}
-                onClose={() => setSelectedEventId(null)}
+                open={selectedEventDialogOpen}
+                onClose={() => setSelectedEventDialogOpen(false)}
+                TransitionComponent={Fade}
+                transitionDuration={{ enter: 180, exit: 140 }}
                 fullWidth
                 maxWidth="sm"
             >
@@ -998,21 +1330,23 @@ export function MonthCalendar({
                             event={selectedCalendarEvent}
                             onSave={async event => {
                                 await onUpdateEvent(selectedCalendarEvent.id, event);
-                                setSelectedEventId(null);
+                                setSelectedEventDialogOpen(false);
                             }}
                             onDelete={async () => {
                                 await onDeleteEvent(selectedCalendarEvent.id);
-                                setSelectedEventId(null);
+                                setSelectedEventDialogOpen(false);
                             }}
-                            onCancel={() => setSelectedEventId(null)}
+                            onCancel={() => setSelectedEventDialogOpen(false)}
                         />
                     )}
                 </DialogContent>
             </Dialog>
 
             <Dialog
-                open={Boolean(selectedTaskGroup)}
-                onClose={() => setSelectedTaskGroupId(null)}
+                open={selectedTaskGroupDialogOpen}
+                onClose={() => setSelectedTaskGroupDialogOpen(false)}
+                TransitionComponent={Fade}
+                transitionDuration={{ enter: 180, exit: 140 }}
                 fullWidth
                 maxWidth="sm"
             >
@@ -1046,13 +1380,15 @@ export function MonthCalendar({
                     )}
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={() => setSelectedTaskGroupId(null)}>Close</Button>
+                    <Button onClick={() => setSelectedTaskGroupDialogOpen(false)}>Close</Button>
                 </DialogActions>
             </Dialog>
 
             <Dialog
-                open={Boolean(selectedTask && taskDraft)}
+                open={taskDialogOpen}
                 onClose={closeTaskDialog}
+                TransitionComponent={Fade}
+                transitionDuration={{ enter: 180, exit: 140 }}
                 fullWidth
                 maxWidth="sm"
             >
@@ -1107,17 +1443,109 @@ export function MonthCalendar({
                             </Box>
 
                             <LocalizationProvider dateAdapter={AdapterDateFns}>
-                                <DateTimePicker
-                                    label="Scheduled"
-                                    value={taskDraft.scheduledPerformDateTime ? new Date(taskDraft.scheduledPerformDateTime) : null}
-                                    onChange={handleTaskDateChange}
-                                    ampm={false}
-                                    slotProps={{
-                                        field: { clearable: true },
-                                        textField: { size: 'small', fullWidth: true },
-                                    }}
-                                />
+                                <Box>
+                                    <Box
+                                        sx={{
+                                            display: 'grid',
+                                            gridTemplateColumns: selectedTask.parentId
+                                                ? 'minmax(0, 1fr)'
+                                                : { xs: 'minmax(0, 1fr)', sm: 'minmax(0, 3fr) minmax(0, 1fr)' },
+                                            gap: 1.25,
+                                            alignItems: 'start',
+                                        }}
+                                    >
+                                        <Box sx={{ minWidth: 0 }}>
+                                            <Collapse
+                                                in={Boolean(taskDraft.scheduledPerformDateTime)
+                                                    && recurrenceDraft.recurrenceFrequency !== 'NONE'}
+                                                timeout={180}
+                                                unmountOnExit
+                                            >
+                                                <TimePicker
+                                                    label="Scheduled"
+                                                    value={taskDraft.scheduledPerformDateTime
+                                                        ? new Date(taskDraft.scheduledPerformDateTime)
+                                                        : null}
+                                                    onChange={handleTaskDateChange}
+                                                    ampm={false}
+                                                    slotProps={{
+                                                        field: { clearable: false },
+                                                        textField: { size: 'small', fullWidth: true },
+                                                    }}
+                                                />
+                                            </Collapse>
+                                            <Collapse
+                                                in={!taskDraft.scheduledPerformDateTime
+                                                    || recurrenceDraft.recurrenceFrequency === 'NONE'}
+                                                timeout={180}
+                                                unmountOnExit
+                                            >
+                                                <DateTimePicker
+                                                    label="Scheduled"
+                                                    value={taskDraft.scheduledPerformDateTime
+                                                        ? new Date(taskDraft.scheduledPerformDateTime)
+                                                        : null}
+                                                    onChange={handleTaskDateChange}
+                                                    ampm={false}
+                                                    slotProps={{
+                                                        field: { clearable: true },
+                                                        textField: { size: 'small', fullWidth: true },
+                                                    }}
+                                                />
+                                            </Collapse>
+                                        </Box>
+                                        {!selectedTask.parentId && (
+                                            <TaskRecurrencePicker
+                                                value={recurrenceDraft}
+                                                onChange={handleTaskRecurrenceChange}
+                                                showEndDate={false}
+                                                showCustomOptions={false}
+                                            />
+                                        )}
+                                    </Box>
+                                    {!selectedTask.parentId && (
+                                        <Collapse in={recurrenceDraft.recurrenceFrequency !== 'NONE'} timeout={180} unmountOnExit>
+                                            <Box sx={{
+                                                mt: 1.25,
+                                                display: 'grid',
+                                                gridTemplateColumns: recurrenceDraft.recurrenceFrequency === 'CUSTOM'
+                                                    ? { xs: 'minmax(0, 1fr)', sm: 'minmax(0, 1fr) minmax(0, 1fr)' }
+                                                    : 'minmax(0, 1fr)',
+                                                gap: 1.25,
+                                                alignItems: 'start',
+                                            }}>
+                                                {recurrenceDraft.recurrenceFrequency === 'CUSTOM' && (
+                                                    <TaskRecurrenceCustomOptions
+                                                        value={recurrenceDraft}
+                                                        onChange={handleTaskRecurrenceChange}
+                                                    />
+                                                )}
+                                                <AppDateField
+                                                    label="Repeat until (optional)"
+                                                    value={recurrenceDraft.recurrenceEndDate ?? ''}
+                                                    onChange={recurrenceEndDate => handleTaskRecurrenceChange({
+                                                        ...recurrenceDraft,
+                                                        recurrenceEndDate: recurrenceEndDate || null,
+                                                    })}
+                                                />
+                                            </Box>
+                                        </Collapse>
+                                    )}
+                                    {recurrenceError && (
+                                        <Typography variant="caption" color="error" sx={{ display: 'block', mt: 1 }}>
+                                            {recurrenceError}
+                                        </Typography>
+                                    )}
+                                </Box>
                             </LocalizationProvider>
+
+                            <TaskReminderPicker
+                                value={taskDraft.reminderMinutesBefore}
+                                disabled={!taskDraft.scheduledPerformDateTime}
+                                onChange={reminderMinutesBefore => setTaskDraft(prev => prev
+                                    ? { ...prev, reminderMinutesBefore }
+                                    : prev)}
+                            />
 
                             <TextField
                                 label="Description"

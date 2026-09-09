@@ -1,6 +1,7 @@
-import { StatBootstrapResponse, StatDefinition, StatEntry, StatSummary, StatInsights, CreateDefinitionRequest, RecordEntryRequest, UpdateDefinitionRequest } from '../../types/Stats';
+import { StatBootstrapResponse, StatDefinition, StatEntry, StatSummary, StatInsights, StatFocusTimeEntry, CreateDefinitionRequest, RecordEntryRequest, UpdateDefinitionRequest } from '../../types/Stats';
 import { getAuthCacheScope, getAuthHeaders } from '../utils/authHeaders';
 import { CachedResource, TtlCache } from '../cache/ttlCache';
+import { invalidateResource, subscribeToResourceInvalidation } from '../cache/resourceInvalidation';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 const STATS_URL = `${API_BASE_URL}/api/v1/stats`;
@@ -18,6 +19,8 @@ const STAT_CACHE_MAX_ENTRIES = 100;
 
 const entryCache = new TtlCache<StatEntry[]>({ ttlMs: HISTORICAL_STAT_ENTRIES_TTL_MS, maxEntries: STAT_CACHE_MAX_ENTRIES });
 const entryRequests = new Map<string, Promise<StatEntry[]>>();
+const focusTimeCache = new TtlCache<StatFocusTimeEntry[]>({ ttlMs: DERIVED_STAT_DATA_TTL_MS, maxEntries: STAT_CACHE_MAX_ENTRIES });
+const focusTimeRequests = new Map<string, Promise<StatFocusTimeEntry[]>>();
 const summaryCache = new TtlCache<StatSummary>({ ttlMs: DERIVED_STAT_DATA_TTL_MS, maxEntries: STAT_CACHE_MAX_ENTRIES });
 const summaryRequests = new Map<string, Promise<StatSummary>>();
 const insightsCache = new TtlCache<StatInsights>({ ttlMs: DERIVED_STAT_DATA_TTL_MS, maxEntries: STAT_CACHE_MAX_ENTRIES });
@@ -45,6 +48,10 @@ function entryCacheKey(definitionId: string, from: string, to: string): string {
 
 function summaryCacheKey(definitionId: string, from: string, to: string): string {
     return `${getAuthCacheScope()}:${definitionId}:${from}:${to}`;
+}
+
+function focusTimeCacheKey(definitionId: string, from: string, to: string): string {
+    return `${getAuthCacheScope()}:focus-time:${definitionId}:${from}:${to}`;
 }
 
 function insightsCacheKey(definitionId: string, from: string, to: string): string {
@@ -100,6 +107,8 @@ function invalidateEntryCache(definitionId?: string): void {
 function invalidateDefinitionsCache(): void {
     statCacheGeneration += 1;
     definitionsCache.delete(definitionsCacheKey());
+    focusTimeCache.clear();
+    focusTimeRequests.clear();
     insightsCache.clear();
 }
 
@@ -116,13 +125,18 @@ function invalidateInsightsCache(): void {
 function clearDataCaches(): void {
     statCacheGeneration += 1;
     entryCache.clear();
+    focusTimeCache.clear();
     summaryCache.clear();
     insightsCache.clear();
     entryRequests.clear();
+    focusTimeRequests.clear();
     summaryRequests.clear();
     insightsRequests.clear();
     dailyEntriesCache.clear();
+    lastMonthPrefetchRequests.clear();
 }
+
+subscribeToResourceInvalidation('tasks', clearDataCaches);
 
 export const statService = {
     async getDefinitions(): Promise<StatDefinition[]> {
@@ -204,8 +218,10 @@ export const statService = {
             headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getAuthHeaders() },
         });
         if (!response.ok) throw new Error('Failed to create stat definition');
+        const definition = await response.json() as StatDefinition;
         invalidateDefinitionsCache();
-        return response.json();
+        if (req.createRecurringTask) invalidateResource('stats');
+        return definition;
     },
 
     async deleteDefinition(id: string): Promise<void> {
@@ -234,6 +250,28 @@ export const statService = {
         return response.json();
     },
 
+    async createRecurringTask(definitionId: string): Promise<StatDefinition> {
+        const response = await fetch(`${STATS_URL}/definitions/${definitionId}/recurring-task`, {
+            method: 'POST',
+            body: JSON.stringify({ timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' }),
+            headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getAuthHeaders() },
+        });
+        if (!response.ok) throw new Error('Failed to create recurring task');
+        invalidateDefinitionsCache();
+        invalidateResource('stats');
+        return response.json();
+    },
+
+    async disconnectRecurringTask(definitionId: string): Promise<StatDefinition> {
+        const response = await fetch(`${STATS_URL}/definitions/${definitionId}/recurring-task`, {
+            method: 'DELETE',
+            headers: getAuthHeaders(),
+        });
+        if (!response.ok) throw new Error('Failed to disconnect recurring task');
+        invalidateDefinitionsCache();
+        return response.json();
+    },
+
     async reorderDefinitions(definitionIds: string[]): Promise<StatDefinition[]> {
         const response = await fetch(`${STATS_URL}/definitions/order`, {
             method: 'PUT',
@@ -253,6 +291,7 @@ export const statService = {
         const pendingRequest = entryRequests.get(key);
         if (pendingRequest) return pendingRequest;
 
+        const requestGeneration = statCacheGeneration;
         const params = new URLSearchParams({ statDefinitionId: definitionId, from, to });
         const request = fetch(`${STATS_URL}/entries?${params}`, { headers: getAuthHeaders() })
             .then(response => {
@@ -260,11 +299,13 @@ export const statService = {
                 return response.json() as Promise<StatEntry[]>;
             })
             .then(entries => {
-                entryCache.set(
-                    key,
-                    entries,
-                    isCurrentOrFutureRange(to) ? CURRENT_STAT_DATA_TTL_MS : HISTORICAL_STAT_ENTRIES_TTL_MS,
-                );
+                if (requestGeneration === statCacheGeneration) {
+                    entryCache.set(
+                        key,
+                        entries,
+                        isCurrentOrFutureRange(to) ? CURRENT_STAT_DATA_TTL_MS : HISTORICAL_STAT_ENTRIES_TTL_MS,
+                    );
+                }
                 return entries;
             });
 
@@ -278,6 +319,46 @@ export const statService = {
 
     getCachedEntries(definitionId: string, from: string, to: string): StatEntry[] | undefined {
         return entryCache.getStale(entryCacheKey(definitionId, from, to));
+    },
+
+    async getFocusTime(definitionId: string, from: string, to: string): Promise<StatFocusTimeEntry[]> {
+        const key = focusTimeCacheKey(definitionId, from, to);
+        const cachedFocusTime = focusTimeCache.get(key);
+        if (cachedFocusTime) return cachedFocusTime;
+
+        const pendingRequest = focusTimeRequests.get(key);
+        if (pendingRequest) return pendingRequest;
+
+        const requestGeneration = statCacheGeneration;
+        const params = new URLSearchParams({ from, to });
+        const request = fetch(`${STATS_URL}/definitions/${definitionId}/focus-time?${params}`, {
+            headers: getAuthHeaders(),
+        })
+            .then(response => {
+                if (!response.ok) throw new Error('Failed to fetch task focus time');
+                return response.json() as Promise<StatFocusTimeEntry[]>;
+            })
+            .then(entries => {
+                if (requestGeneration === statCacheGeneration) {
+                    focusTimeCache.set(
+                        key,
+                        entries,
+                        isCurrentOrFutureRange(to) ? CURRENT_STAT_DATA_TTL_MS : DERIVED_STAT_DATA_TTL_MS,
+                    );
+                }
+                return entries;
+            });
+
+        focusTimeRequests.set(key, request);
+        try {
+            return await request;
+        } finally {
+            if (focusTimeRequests.get(key) === request) focusTimeRequests.delete(key);
+        }
+    },
+
+    getCachedFocusTime(definitionId: string, from: string, to: string): StatFocusTimeEntry[] | undefined {
+        return focusTimeCache.getStale(focusTimeCacheKey(definitionId, from, to));
     },
 
     async getTodayEntries(): Promise<StatEntry[]> {
@@ -297,6 +378,7 @@ export const statService = {
         const pendingRequest = summaryRequests.get(key);
         if (pendingRequest) return pendingRequest;
 
+        const requestGeneration = statCacheGeneration;
         const params = new URLSearchParams({ from, to });
         const request = fetch(`${STATS_URL}/definitions/${definitionId}/summary?${params}`, {
             headers: getAuthHeaders(),
@@ -306,11 +388,13 @@ export const statService = {
                 return response.json() as Promise<StatSummary>;
             })
             .then(summary => {
-                summaryCache.set(
-                    key,
-                    summary,
-                    isCurrentOrFutureRange(to) ? CURRENT_STAT_DATA_TTL_MS : DERIVED_STAT_DATA_TTL_MS,
-                );
+                if (requestGeneration === statCacheGeneration) {
+                    summaryCache.set(
+                        key,
+                        summary,
+                        isCurrentOrFutureRange(to) ? CURRENT_STAT_DATA_TTL_MS : DERIVED_STAT_DATA_TTL_MS,
+                    );
+                }
                 return summary;
             });
 
@@ -349,6 +433,7 @@ export const statService = {
         const pendingRequest = insightsRequests.get(key);
         if (pendingRequest) return pendingRequest;
 
+        const requestGeneration = statCacheGeneration;
         const params = new URLSearchParams({ from, to });
         const request = fetch(`${STATS_URL}/definitions/${definitionId}/insights?${params}`, {
             headers: getAuthHeaders(),
@@ -358,11 +443,13 @@ export const statService = {
                 return response.json() as Promise<StatInsights>;
             })
             .then(insights => {
-                insightsCache.set(
-                    key,
-                    insights,
-                    isCurrentOrFutureRange(to) ? CURRENT_STAT_DATA_TTL_MS : DERIVED_STAT_DATA_TTL_MS,
-                );
+                if (requestGeneration === statCacheGeneration) {
+                    insightsCache.set(
+                        key,
+                        insights,
+                        isCurrentOrFutureRange(to) ? CURRENT_STAT_DATA_TTL_MS : DERIVED_STAT_DATA_TTL_MS,
+                    );
+                }
                 return insights;
             });
 
@@ -396,6 +483,7 @@ export const statService = {
         if (responseEntry.date) dailyEntriesCache.invalidate(dailyEntriesCacheKey(responseEntry.date));
         invalidateSummaryCache(req.statDefinitionId);
         invalidateInsightsCache();
+        invalidateResource('stats');
         return entry;
     },
 };

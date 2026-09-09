@@ -41,7 +41,7 @@ final class TaskPomodoroStatsCalculator {
         );
     }
 
-    private static long focusSeconds(TaskSession session, LocalDateTime now) {
+    static long focusSeconds(TaskSession session, LocalDateTime now) {
         Duration storedDuration = session.getTotalSessionTime();
         long seconds = storedDuration == null ? 0 : Math.max(0, storedDuration.toSeconds());
         if (session.isRunning() && session.getLastUnpauseTime() != null) {

@@ -4,15 +4,25 @@ import lombok.Data;
 import org.osama.user.CurrentUserService;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
+
 @RestController
 @RequestMapping("/api/v1/day")
 public class DayController {
     private final DayService dayService;
+    private final DayOverviewService dayOverviewService;
     private final CurrentUserService currentUserService;
 
-    public DayController(DayService dayService, CurrentUserService currentUserService) {
+    public DayController(DayService dayService, DayOverviewService dayOverviewService,
+                         CurrentUserService currentUserService) {
         this.dayService = dayService;
+        this.dayOverviewService = dayOverviewService;
         this.currentUserService = currentUserService;
+    }
+
+    @GetMapping("/overview/{date}")
+    public DayOverviewResponse getOverview(@PathVariable LocalDate date) {
+        return dayOverviewService.getOverview(date, currentUserService.getCurrentUserId());
     }
 
     @GetMapping("/get-today")

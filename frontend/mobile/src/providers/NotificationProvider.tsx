@@ -8,12 +8,16 @@ import { useAppPopup } from '@/providers/PopupProvider';
 import { api } from '@/services/api';
 import {
   clearLocalCalendarReminders,
+  clearLocalTaskReminders,
   clearLocalCheckupNotifications,
   ensureNotificationPermission,
   syncLocalCheckupNotifications,
   LOCAL_CALENDAR_REMINDER_KIND,
+  LOCAL_TASK_REMINDER_KIND,
   syncCalendarReminders as syncLocalCalendarReminders,
+  syncTaskReminders as syncLocalTaskReminders,
   type CalendarReminderRecord,
+  type TaskReminderRecord,
 } from '@/services/localNotifications';
 import type { ApplicationNotification, CalendarEvent, UserPreferences } from '@/types/models';
 
@@ -43,6 +47,7 @@ export function NotificationProvider({ children }: PropsWithChildren) {
   const syncingRef = useRef(false);
   const shownRef = useRef(new Set<string>());
   const calendarRemindersRef = useRef<CalendarReminderRecord[]>([]);
+  const taskRemindersRef = useRef<TaskReminderRecord[]>([]);
   const localCheckupsEnabledRef = useRef(false);
 
   const syncCalendarReminders = useCallback(async (events: CalendarEvent[]) => {
@@ -65,12 +70,21 @@ export function NotificationProvider({ children }: PropsWithChildren) {
 
   const localReminderMatches = useCallback((notification: ApplicationNotification): boolean => {
     if (notification.type === 'MENTAL_STATE_CHECKUP') {
-      return localCheckupsEnabledRef.current;
+      return localCheckupsEnabledRef.current
+        && !notification.notificationId.startsWith('mental-state-checkup-repeat-');
     }
-    if (Platform.OS !== 'android' || notification.type !== 'CALENDAR_EVENT' || !notification.eventStart) return false;
-    return calendarRemindersRef.current.some(record => record.eventStart === notification.eventStart
-      && record.title === notification.title
-      && record.allDay === Boolean(notification.allDay));
+    if (Platform.OS !== 'android') return false;
+    if (notification.type === 'CALENDAR_EVENT' && notification.eventStart) {
+      return calendarRemindersRef.current.some(record => record.eventStart === notification.eventStart
+        && record.title === notification.title
+        && record.allDay === Boolean(notification.allDay));
+    }
+    if (notification.type === 'TASK_REMINDER' && notification.taskId) {
+      return taskRemindersRef.current.some(record => record.taskId === notification.taskId
+        && record.title === notification.title
+        && record.triggerAt === new Date(notification.scheduledAt).getTime());
+    }
+    return false;
   }, []);
 
   const presentDueNotification = useCallback(async (notification: ApplicationNotification) => {
@@ -127,8 +141,11 @@ export function NotificationProvider({ children }: PropsWithChildren) {
     if (!isAuthenticated) return;
     try {
       await syncCheckupNotifications();
-      const events = await api.events.all();
-      await syncCalendarReminders(events);
+      const [events, tasks] = await Promise.all([api.events.all(), api.tasks.scheduled()]);
+      await Promise.all([
+        syncCalendarReminders(events),
+        syncLocalTaskReminders(tasks).then(reminders => { taskRemindersRef.current = reminders; }),
+      ]);
       await syncDue();
     } catch (cause) {
       console.error('Could not synchronize mobile reminders:', errorObject(cause));
@@ -143,8 +160,10 @@ export function NotificationProvider({ children }: PropsWithChildren) {
     if (!isAuthenticated) {
       shownRef.current.clear();
       calendarRemindersRef.current = [];
+      taskRemindersRef.current = [];
       localCheckupsEnabledRef.current = false;
       void clearLocalCalendarReminders();
+      void clearLocalTaskReminders();
       void clearLocalCheckupNotifications();
       return;
     }
@@ -168,6 +187,8 @@ export function NotificationProvider({ children }: PropsWithChildren) {
       const data = response.notification.request.content.data as { kind?: string; targetUrl?: string | null; type?: string } | null | undefined;
       if (data?.kind === LOCAL_CALENDAR_REMINDER_KIND || data?.targetUrl === '/calendar') {
         router.push('/(tabs)/calendar');
+      } else if (data?.kind === LOCAL_TASK_REMINDER_KIND || data?.targetUrl === '/tasks' || data?.type === 'TASK_REMINDER') {
+        router.push('/(tabs)/tasks');
       } else if (data?.targetUrl === '/mental-state' || data?.type === 'MENTAL_STATE_CHECKUP') {
         router.push('/mental-state');
       } else if (data?.targetUrl === '/') {

@@ -5,6 +5,12 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.osama.stat.*;
+import org.osama.requests.UpdateTaskRequest;
+import org.osama.task.Task;
+import org.osama.task.TaskRepository;
+import org.osama.task.TaskService;
+import org.osama.session.task.TaskSession;
+import org.osama.session.task.TaskSessionRepository;
 import org.osama.user.User;
 import org.osama.user.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,7 +19,9 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -30,6 +38,9 @@ public class StatServiceTest {
     @Autowired private StatDefinitionRepository definitionRepository;
     @Autowired private UserRepository userRepository;
     @Autowired private SystemStatProvisioningService provisioningService;
+    @Autowired private TaskRepository taskRepository;
+    @Autowired private TaskSessionRepository taskSessionRepository;
+    @Autowired private TaskService taskService;
 
     @BeforeEach
     void setUp() {
@@ -403,6 +414,45 @@ public class StatServiceTest {
     }
 
     @Test
+    void sleepDurationSummaryNeverCountsUnloggedDaysAsZero() {
+        User user = userRepository.findUserById(TEST_USER_ID).orElseThrow();
+        provisioningService.createMissingSystemStatsFor(user);
+        StatDefinition sleep = definitionRepository
+                .findByUserIdAndSystemKey(TEST_USER_ID, SystemStatCatalog.SLEEP_HOURS_SYSTEM_KEY)
+                .orElseThrow();
+        LocalDate today = LocalDate.now();
+        statService.recordEntry(sleep.getId(), today.minusDays(2), 480.0, TEST_USER_ID);
+        statService.recordEntry(sleep.getId(), today, 360.0, TEST_USER_ID);
+
+        user.setIncludeUnloggedNumericDaysAsZero(true);
+        userRepository.save(user);
+
+        StatSummaryResponse summary = statService.getSummary(
+                sleep.getId(), today.minusDays(2), today, TEST_USER_ID);
+
+        assertEquals(420.0, summary.periodAverage(), 0.0001);
+        assertEquals(840.0, summary.periodTotal(), 0.0001);
+    }
+
+    @Test
+    void durationSummaryCanIncludeUnloggedDaysAsZeroWhenPreferenceIsEnabled() {
+        StatDefinition duration = createStatDefinition(StatType.DURATION, null, null);
+        LocalDate today = LocalDate.now();
+        statService.recordEntry(duration.getId(), today.minusDays(2), 60.0, TEST_USER_ID);
+        statService.recordEntry(duration.getId(), today, 90.0, TEST_USER_ID);
+
+        User user = userRepository.findUserById(TEST_USER_ID).orElseThrow();
+        user.setIncludeUnloggedNumericDaysAsZero(true);
+        userRepository.save(user);
+
+        StatSummaryResponse summary = statService.getSummary(
+                duration.getId(), today.minusDays(2), today, TEST_USER_ID);
+
+        assertEquals(50.0, summary.periodAverage(), 0.0001);
+        assertEquals(150.0, summary.periodTotal(), 0.0001);
+    }
+
+    @Test
     void booleanSummaryCountsAndBoundsStreaksToRequestedPeriod() {
         StatDefinition statDefinition = createStatDefinition(StatType.BOOLEAN, null, null);
         LocalDate today = LocalDate.now();
@@ -475,6 +525,86 @@ public class StatServiceTest {
         assertEquals(0, definitionRepository.findById(third.getId()).orElseThrow().getDisplayOrder());
         assertEquals(1, definitionRepository.findById(first.getId()).orElseThrow().getDisplayOrder());
         assertEquals(2, definitionRepository.findById(second.getId()).orElseThrow().getDisplayOrder());
+    }
+
+    @Test
+    void booleanStatAndDailyTaskStaySynchronizedInBothDirections() {
+        StatDefinition definition = createNamedStatDefinition("Drink water", StatType.BOOLEAN);
+        StatDefinition linkedDefinition = statService.createRecurringTask(definition.getId(), TEST_USER_ID);
+        Task todayTask = taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(
+                        linkedDefinition.getRecurringTaskSeriesId()).stream()
+                .filter(task -> LocalDate.now().equals(task.getSeriesOccurrenceAt().toLocalDate()))
+                .findFirst()
+                .orElseThrow();
+
+        statService.recordEntry(definition.getId(), LocalDate.now(), 1.0, TEST_USER_ID);
+        assertTrue(taskRepository.findTaskByTaskId(todayTask.getTaskId()).orElseThrow().isCompleted());
+
+        statService.recordEntry(definition.getId(), LocalDate.now(), 0.0, TEST_USER_ID);
+        assertFalse(taskRepository.findTaskByTaskId(todayTask.getTaskId()).orElseThrow().isCompleted());
+
+        UpdateTaskRequest completeTask = new UpdateTaskRequest();
+        completeTask.setCompleted(true);
+        taskService.updateTask(todayTask.getTaskId(), completeTask, TEST_USER_ID);
+        assertEquals(1.0, entryRepository.findByStatDefinitionIdAndUserIdAndDate(
+                definition.getId(), TEST_USER_ID, LocalDate.now()).orElseThrow().getValue());
+
+        UpdateTaskRequest reopenTask = new UpdateTaskRequest();
+        reopenTask.setCompleted(false);
+        taskService.updateTask(todayTask.getTaskId(), reopenTask, TEST_USER_ID);
+        assertEquals(0.0, entryRepository.findByStatDefinitionIdAndUserIdAndDate(
+                definition.getId(), TEST_USER_ID, LocalDate.now()).orElseThrow().getValue());
+    }
+
+    @Test
+    void linkedBooleanStatExposesFocusTimeForItsRecurringOccurrences() {
+        StatDefinition definition = statService.createDefinition(
+                "Daily focus", null, StatType.BOOLEAN, null, null,
+                StatMorality.NEUTRAL, null, true, TEST_USER_ID);
+        LocalDate today = LocalDate.now();
+        Task todayTask = taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(
+                        definition.getRecurringTaskSeriesId()).stream()
+                .filter(task -> today.equals(task.getSeriesOccurrenceAt().toLocalDate()))
+                .findFirst()
+                .orElseThrow();
+
+        TaskSession focusSession = new TaskSession();
+        focusSession.setSessionId("daily-focus-session");
+        focusSession.setAssociatedTaskId(todayTask.getTaskId());
+        focusSession.setPomodoro(true);
+        focusSession.setActive(false);
+        focusSession.setRunning(false);
+        focusSession.setTotalSessionTime(Duration.ofMinutes(25));
+        focusSession.setStartTime(today.atTime(9, 0));
+        focusSession.setEndTime(today.atTime(9, 25));
+        taskSessionRepository.save(focusSession);
+
+        Map<LocalDate, Long> focusByDate = statService.getFocusTime(
+                        definition.getId(), today.minusDays(1), today, TEST_USER_ID).stream()
+                .collect(java.util.stream.Collectors.toMap(StatFocusTimeEntryResponse::date,
+                        StatFocusTimeEntryResponse::totalFocusSeconds));
+
+        assertEquals(Map.of(today, Duration.ofMinutes(25).toSeconds()), focusByDate);
+    }
+
+    @Test
+    void booleanStatCanCreateAndDisconnectRecurringTaskWithoutDeletingData() {
+        StatDefinition definition = statService.createDefinition(
+                "Daily reading", "description", StatType.BOOLEAN, null, null,
+                StatMorality.NEUTRAL, null, true, TEST_USER_ID);
+        String seriesId = definition.getRecurringTaskSeriesId();
+        assertNotNull(seriesId);
+        List<Task> tasksBeforeDisconnect = taskRepository
+                .findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(seriesId);
+
+        statService.recordEntry(definition.getId(), LocalDate.now(), 1.0, TEST_USER_ID);
+        StatDefinition disconnected = statService.disconnectRecurringTask(definition.getId(), TEST_USER_ID);
+
+        assertNull(disconnected.getRecurringTaskSeriesId());
+        assertEquals(tasksBeforeDisconnect.size(),
+                taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(seriesId).size());
+        assertEquals(1.0, entryRepository.findByStatDefinitionIdAndUserIdAndDate(
+                definition.getId(), TEST_USER_ID, LocalDate.now()).orElseThrow().getValue());
     }
 
     StatDefinition createStatDefinition(StatType statType, Double minValue, Double maxValue) {

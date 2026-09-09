@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.osama.event.CalendarEvent;
 import org.osama.event.RecurrenceFrequency;
 import org.osama.exceptions.ResourceNotFoundException;
+import org.osama.mentalstate.MentalStateCheckInRepository;
 import org.osama.pomodoro.PomodoroTransition;
 import org.osama.scheduling.ScheduledJob;
 import org.osama.user.User;
@@ -27,16 +28,21 @@ import java.util.UUID;
 public class NotificationService {
     private static final int PUSH_BATCH_SIZE = 100;
     private static final long PUSH_RETRY_SECONDS = 30;
+    private static final long CHECKUP_REPEAT_MINUTES = 30;
     private static final String USER_DESTINATION = "/queue/notifications";
     public static final String CHECKUP_TITLE = "Check-Up";
     public static final String CHECKUP_BODY = "Time to check what your state is.";
     public static final String CHECKUP_TARGET_URL = "/mental-state";
 
     private final ReminderRepository reminderRepository;
+    private final MentalStateCheckInRepository checkInRepository;
     private final SimpMessagingTemplate messagingTemplate;
 
-    public NotificationService(ReminderRepository reminderRepository, SimpMessagingTemplate messagingTemplate) {
+    public NotificationService(ReminderRepository reminderRepository,
+                               MentalStateCheckInRepository checkInRepository,
+                               SimpMessagingTemplate messagingTemplate) {
         this.reminderRepository = reminderRepository;
+        this.checkInRepository = checkInRepository;
         this.messagingTemplate = messagingTemplate;
     }
 
@@ -76,13 +82,41 @@ public class NotificationService {
         Reminder reminder = reminderRepository.findByReminderIdAndUserId(notificationId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Notification not found: " + notificationId));
         if (reminder.getAcknowledgedAt() == null) {
-            if (scheduleNextRecurringEventReminder(reminder, Instant.now())) {
+            Instant acknowledgedAt = Instant.now();
+            if (scheduleNextCheckupReminder(reminder, acknowledgedAt)) {
+                reminder.setAcknowledgedAt(acknowledgedAt);
+            } else if (scheduleNextRecurringEventReminder(reminder, acknowledgedAt)) {
                 return;
+            } else {
+                reminder.setAcknowledgedAt(acknowledgedAt);
             }
-            reminder.setAcknowledgedAt(Instant.now());
             log.info("Notification acknowledged: userId={} notificationId={} type={}",
                     userId, notificationId, reminder.getNotificationType());
         }
+    }
+
+    private boolean scheduleNextCheckupReminder(Reminder reminder, Instant now) {
+        if (reminder.getNotificationType() != NotificationType.MENTAL_STATE_CHECKUP
+                || Boolean.FALSE.equals(reminder.getUser().getRepeatCheckupNotificationsEnabled())
+                || checkInRepository.existsByUserIdAndRecordedAtAfter(
+                reminder.getUser().getId(), reminder.getDateTime())) {
+            return false;
+        }
+
+        Reminder nextReminder = new Reminder();
+        nextReminder.setReminderId("mental-state-checkup-repeat-" + UUID.randomUUID());
+        nextReminder.setDateTime(now.plus(CHECKUP_REPEAT_MINUTES, ChronoUnit.MINUTES));
+        nextReminder.setRepeat(0);
+        nextReminder.setMinutesBefore(0);
+        nextReminder.setUser(reminder.getUser());
+        nextReminder.setNotificationType(NotificationType.MENTAL_STATE_CHECKUP);
+        nextReminder.setTitle(CHECKUP_TITLE);
+        nextReminder.setBody(CHECKUP_BODY);
+        nextReminder.setTargetUrl(CHECKUP_TARGET_URL);
+        reminderRepository.save(nextReminder);
+        log.info("Mental state check-up repeat scheduled: userId={} previousNotificationId={} nextNotificationId={} scheduledAt={}",
+                reminder.getUser().getId(), reminder.getReminderId(), nextReminder.getReminderId(), nextReminder.getDateTime());
+        return true;
     }
 
     private boolean scheduleNextRecurringEventReminder(Reminder reminder, Instant now) {

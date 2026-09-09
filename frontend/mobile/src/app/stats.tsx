@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { StatComposerSheet } from '@/components/stats/StatComposerSheet';
@@ -14,10 +14,14 @@ import { Screen } from '@/components/ui/Screen';
 import { SilentPressable } from '@/components/ui/SilentPressable';
 import { ErrorView, LoadingView } from '@/components/ui/StateView';
 import { useAsyncData } from '@/hooks/useAsyncData';
+import { statGroupPreferencesStorageKey, readOpenStatGroupIds, writeOpenStatGroupIds } from '@/lib/statGroupPreferences';
+import { subscribeToResourceInvalidation } from '@/lib/resourceInvalidation';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { useAppPopup } from '@/providers/PopupProvider';
+import { useAuth } from '@/providers/AuthProvider';
 import { api } from '@/services/api';
 import { reportError } from '@/lib/errors';
+import { localDate } from '@/lib/date';
 import type { StatDefinition, StatEntry, StatGroup } from '@/types/models';
 
 interface StatsData { definitions: StatDefinition[]; entries: StatEntry[]; groups: StatGroup[] }
@@ -37,6 +41,8 @@ function isManualDefinition(definition: StatDefinition): boolean {
 export default function StatsScreen() {
   const { colors } = useAppTheme();
   const { confirm, showError } = useAppPopup();
+  const { user } = useAuth();
+  const groupPreferencesKey = statGroupPreferencesStorageKey(user?.id);
   const resource = useAsyncData<StatsData>(async () => {
     const [definitions, entries, groups] = await Promise.all([
       api.stats.definitions(),
@@ -49,9 +55,26 @@ export default function StatsScreen() {
   const [composerOpen, setComposerOpen] = useState(false);
   const [groupComposerOpen, setGroupComposerOpen] = useState(false);
   const [editingGroup, setEditingGroup] = useState<StatGroup | null>(null);
-  const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(new Set());
+  const [openGroupIds, setOpenGroupIds] = useState<Set<string>>(new Set());
+  const [loadedGroupPreferencesKey, setLoadedGroupPreferencesKey] = useState<string | null>(null);
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
-  const [dateRange, setDateRange] = useState(30);
+  const [dateRange, setDateRange] = useState(7);
+  const { reload } = resource;
+
+  useEffect(() => {
+    let active = true;
+    void readOpenStatGroupIds(groupPreferencesKey).then(ids => {
+      if (!active) return;
+      setOpenGroupIds(ids);
+      setLoadedGroupPreferencesKey(groupPreferencesKey);
+    });
+    return () => { active = false; };
+  }, [groupPreferencesKey]);
+
+  useEffect(() => {
+    if (loadedGroupPreferencesKey !== groupPreferencesKey) return;
+    void writeOpenStatGroupIds(groupPreferencesKey, openGroupIds);
+  }, [groupPreferencesKey, loadedGroupPreferencesKey, openGroupIds]);
   const entriesByDefinition = useMemo(() => new Map((resource.data?.entries ?? []).map(entry => [entry.statDefinitionId, entry])), [resource.data?.entries]);
   const groupedDefinitions = useMemo(() => (resource.data?.groups ?? [])
     .map(group => ({
@@ -66,13 +89,22 @@ export default function StatsScreen() {
     () => (resource.data?.definitions ?? []).filter(definition => !groupedDefinitionIds.has(definition.id)),
     [groupedDefinitionIds, resource.data?.definitions],
   );
+  const groupPreferencesReady = loadedGroupPreferencesKey === groupPreferencesKey;
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     setHistoryRefreshKey(key => key + 1);
-    await resource.reload();
-  }
+    await reload();
+  }, [reload]);
+
+  useEffect(() => subscribeToResourceInvalidation('tasks', () => {
+    void refresh();
+  }), [refresh]);
 
   function saveEntry(entry: StatEntry) {
+    if (entry.date !== localDate()) {
+      if (!entry.id.startsWith('optimistic-')) void refresh();
+      return;
+    }
     resource.setData(current => {
       if (!current) return current;
       const rest = current.entries.filter(item => item.statDefinitionId !== entry.statDefinitionId);
@@ -120,13 +152,18 @@ export default function StatsScreen() {
       resource.setData(current => current
         ? { ...current, groups: current.groups.filter(item => item.groupId !== group.groupId) }
         : current);
+      setOpenGroupIds(current => {
+        const next = new Set(current);
+        next.delete(group.groupId);
+        return next;
+      });
     } catch (cause) {
       await showError('Could not delete group', reportError('Could not delete stat group', cause));
     }
   }
 
   function toggleGroup(groupId: string) {
-    setCollapsedGroupIds(current => {
+    setOpenGroupIds(current => {
       const next = new Set(current);
       if (next.has(groupId)) next.delete(groupId);
       else next.add(groupId);
@@ -184,45 +221,48 @@ export default function StatsScreen() {
       {resource.loading && <LoadingView label="Loading statistics…" />}
       {resource.error && !resource.data && <ErrorView message={resource.error} retry={() => void resource.reload()} />}
       <View style={styles.list}>
-        {groupedDefinitions.map(({ group, definitions }) => (
-          <View key={group.groupId} style={styles.group}>
-            <View style={styles.groupHeader}>
-              <SilentPressable
-                accessibilityRole="button"
-                accessibilityLabel={`${collapsedGroupIds.has(group.groupId) ? 'Expand' : 'Collapse'} ${group.name}`}
-                onPress={() => toggleGroup(group.groupId)}
-                style={({ pressed }) => [styles.groupHeaderMain, pressed && styles.pressed]}>
-                <Ionicons name={collapsedGroupIds.has(group.groupId) ? 'chevron-forward' : 'chevron-down'} size={16} color={colors.textMuted} />
-                <Ionicons name="folder-open-outline" size={17} color={colors.textMuted} />
-                <AppText variant="label" style={styles.groupName} numberOfLines={1}>{group.name}</AppText>
-                <AppText variant="caption" color="muted">{definitions.length}</AppText>
-              </SilentPressable>
-              <View style={styles.groupActions}>
+        {groupedDefinitions.map(({ group, definitions }) => {
+          const open = groupPreferencesReady && openGroupIds.has(group.groupId);
+          return (
+            <View key={group.groupId} style={styles.group}>
+              <View style={styles.groupHeader}>
                 <SilentPressable
                   accessibilityRole="button"
-                  accessibilityLabel={`Edit ${group.name}`}
-                  hitSlop={8}
-                  onPress={() => openEditGroup(group)}
-                  style={({ pressed }) => [styles.iconAction, pressed && styles.pressed]}>
-                  <Ionicons name="create-outline" size={18} color={colors.textMuted} />
+                  accessibilityLabel={`${open ? 'Collapse' : 'Expand'} ${group.name}`}
+                  onPress={() => toggleGroup(group.groupId)}
+                  style={({ pressed }) => [styles.groupHeaderMain, pressed && styles.pressed]}>
+                  <Ionicons name={open ? 'chevron-down' : 'chevron-forward'} size={16} color={colors.textMuted} />
+                  <Ionicons name="folder-open-outline" size={17} color={colors.textMuted} />
+                  <AppText variant="label" style={styles.groupName} numberOfLines={1}>{group.name}</AppText>
+                  <AppText variant="caption" color="muted">{definitions.length}</AppText>
                 </SilentPressable>
-                <SilentPressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`Delete ${group.name}`}
-                  hitSlop={8}
-                  onPress={() => void deleteGroup(group)}
-                  style={({ pressed }) => [styles.iconAction, pressed && styles.pressed]}>
-                  <Ionicons name="trash-outline" size={18} color={colors.danger} />
-                </SilentPressable>
+                <View style={styles.groupActions}>
+                  <SilentPressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Edit ${group.name}`}
+                    hitSlop={8}
+                    onPress={() => openEditGroup(group)}
+                    style={({ pressed }) => [styles.iconAction, pressed && styles.pressed]}>
+                    <Ionicons name="create-outline" size={18} color={colors.textMuted} />
+                  </SilentPressable>
+                  <SilentPressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Delete ${group.name}`}
+                    hitSlop={8}
+                    onPress={() => void deleteGroup(group)}
+                    style={({ pressed }) => [styles.iconAction, pressed && styles.pressed]}>
+                    <Ionicons name="trash-outline" size={18} color={colors.danger} />
+                  </SilentPressable>
+                </View>
               </View>
+              {open && (
+                definitions.length > 0
+                  ? <View style={styles.groupItems}>{definitions.map(renderDefinition)}</View>
+                  : <AppText variant="caption" color="muted" style={styles.emptyGroup}>No stats in this group yet.</AppText>
+              )}
             </View>
-            {!collapsedGroupIds.has(group.groupId) && (
-              definitions.length > 0
-                ? <View style={styles.groupItems}>{definitions.map(renderDefinition)}</View>
-                : <AppText variant="caption" color="muted" style={styles.emptyGroup}>No stats in this group yet.</AppText>
-            )}
-          </View>
-        ))}
+          );
+        })}
         {ungroupedDefinitions.length > 0 && (
           <View style={styles.group}>
             {groupedDefinitions.length > 0 && (
@@ -242,8 +282,9 @@ export default function StatsScreen() {
         existing={selected ? entriesByDefinition.get(selected.id) : undefined}
         onClose={() => setSelected(null)}
         onSaved={saveEntry}
-        onReverted={entry => resource.setData(current => {
+        onReverted={(entry, date) => resource.setData(current => {
           if (!current || !selected) return current;
+          if (date !== localDate()) return current;
           const rest = current.entries.filter(item => item.statDefinitionId !== selected.id);
           return { ...current, entries: entry ? [...rest, entry] : rest };
         })}

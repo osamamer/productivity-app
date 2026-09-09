@@ -8,6 +8,10 @@ import {
     Alert,
     Fade,
     IconButton,
+    ListItemIcon,
+    ListItemText,
+    Menu,
+    MenuItem,
     Popover,
     Portal,
     Slide,
@@ -30,6 +34,7 @@ import HistoryIcon from '@mui/icons-material/History';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import ReplayIcon from '@mui/icons-material/Replay';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
+import NotificationsNoneIcon from '@mui/icons-material/NotificationsNone';
 import { taskGroupService, taskService } from '../services/api';
 import { Task } from '../types/Task';
 import { TaskGroup } from '../types/TaskGroup';
@@ -44,15 +49,20 @@ import { PomodoroStatus } from '../types/PomodoroStatus';
 import { celebrateStatLogged } from '../services/statCelebration';
 import { playAudioFeedback } from '../services/audioFeedback';
 import { BulkTaskDatePopover } from '../components/task/BulkTaskDatePopover';
+import { findKeyboardDeleteAnchor, useKeyboardDelete } from '../hooks/useKeyboardDelete';
+import { TaskReminderPicker } from '../components/task/TaskReminderPicker';
 
 type ActiveExpansion = { taskId: string; panel: 'pomodoro' | 'details' } | null;
 type FocusVisibility = 'all' | 'fading' | 'sliding' | 'hidden' | 'revealing';
 type DropEdge = 'before' | 'after';
 type GroupDropIntent = DropEdge | 'inside';
+type GroupTaskDropPlacement = { targetTaskId: string; edge: DropEdge };
 type BulkAction = 'complete' | 'reopen' | 'move-to-today' | 'move-to-date' | 'clear-date';
 type DeleteRequest =
     | { kind: 'single' | 'bulk'; tasks: Task[]; anchorEl: HTMLElement }
     | { kind: 'group'; group: TaskGroup; tasks: Task[]; anchorEl: HTMLElement };
+type TaskContextMenuState = { task: Task; top: number; left: number; anchorEl: HTMLElement };
+type TaskReminderEditorState = { taskId: string; top: number; left: number };
 type TaskFeedback = {
     id: number;
     severity: 'success' | 'error';
@@ -200,6 +210,31 @@ function dropIntent(event: React.DragEvent<HTMLElement>): GroupDropIntent {
     return 'inside';
 }
 
+function isDragOverTask(event: React.DragEvent<HTMLElement>): boolean {
+    const target = event.target;
+    return target instanceof Element && target.closest('[data-task-id]') !== null;
+}
+
+function groupTaskDropPlacement(
+    event: React.DragEvent<HTMLElement>,
+    group: TaskGroup,
+): GroupTaskDropPlacement | null {
+    const groupTaskIdSet = new Set(group.taskIds);
+    const taskRows = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[data-task-id]'))
+        .filter(row => groupTaskIdSet.has(row.dataset.taskId ?? ''))
+        .sort((first, second) => first.getBoundingClientRect().top - second.getBoundingClientRect().top);
+    if (taskRows.length === 0) return null;
+
+    for (const taskRow of taskRows) {
+        const bounds = taskRow.getBoundingClientRect();
+        if (event.clientY < bounds.top + bounds.height / 2) {
+            return { targetTaskId: taskRow.dataset.taskId!, edge: 'before' };
+        }
+    }
+
+    return { targetTaskId: taskRows[taskRows.length - 1].dataset.taskId!, edge: 'after' };
+}
+
 type AnimatedTaskListProps = {
     items: TaskListItem[];
     renderItem: (item: TaskListItem) => React.ReactNode;
@@ -345,6 +380,7 @@ const GroupTaskInputRow = React.forwardRef<HTMLDivElement, GroupTaskInputRowProp
                 />
                 <Box sx={{ flex: 1, minWidth: 0, position: 'relative' }}>
                     <SmartTaskInput
+                        defaultToToday
                         autoFocus
                         placeholder="Add to group"
                         submitOnBlur
@@ -503,6 +539,8 @@ export function HomePage() {
     const [bulkActionLoading, setBulkActionLoading] = useState(false);
     const [deleteRequest, setDeleteRequest] = useState<DeleteRequest | null>(null);
     const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+    const [taskContextMenu, setTaskContextMenu] = useState<TaskContextMenuState | null>(null);
+    const [taskReminderEditor, setTaskReminderEditor] = useState<TaskReminderEditorState | null>(null);
     const [groupAnchorEl, setGroupAnchorEl] = useState<HTMLElement | null>(null);
     const [groupName, setGroupName] = useState('');
     const [groupSubmitting, setGroupSubmitting] = useState(false);
@@ -538,6 +576,7 @@ export function HomePage() {
     const focusTaskSourceTopRef = useRef<number | null>(null);
     const latestPomodoroStatusRef = useRef<PomodoroStatus | null>(null);
     const taskListTopRef = useRef<HTMLDivElement | null>(null);
+    const olderTasksSectionRef = useRef<HTMLDivElement | null>(null);
     const selectionActionsRef = useRef<HTMLDivElement | null>(null);
     const taskFeedbackIdRef = useRef(0);
     const pendingUndoRef = useRef<PendingUndo | null>(null);
@@ -612,12 +651,17 @@ export function HomePage() {
         reorderTasksInState,
     } = useGlobalTasks();
 
+    useEffect(() => {
+        if (!tasksLoaded || todayTasks.length === 0) return;
+        void taskService.prefetchTodayTaskDetails(todayTasks);
+    }, [tasksLoaded, todayTasks]);
+
     const visibleTasks = useMemo(
         () => todayTasks.filter(task => !task.parentId && (getShowCompletedHomeTasks() || !task.completed)),
         [todayTasks],
     );
     const olderTasks = useMemo(
-        () => pastTasks.filter(task => !task.parentId && (getShowCompletedHomeTasks() || !task.completed)),
+        () => pastTasks.filter(task => !task.parentId && !task.completed),
         [pastTasks],
     );
     const selectedTaskIdSet = useMemo(() => new Set(selectedTaskIds), [selectedTaskIds]);
@@ -644,6 +688,35 @@ export function HomePage() {
     const selectionEntityCount = selectedTaskIds.length + selectedGroupIds.length;
     const selectionActionsVisible = selectionEntityCount > 1 || selectedGroupIds.length > 0;
     const canGroupSelectedTasks = selectedGroupIds.length === 0 && selectedTaskIds.length >= 2;
+
+    useKeyboardDelete({
+        enabled: selectionEntityCount > 0 && !deleteRequest && !deleteSubmitting && !bulkActionLoading,
+        onDelete: () => {
+            const selectedGroupId = [...selectedGroupIds].reverse().find(groupId =>
+                (groups ?? []).some(group => group.groupId === groupId),
+            );
+            if (selectedGroupId) {
+                const group = (groups ?? []).find(candidate => candidate.groupId === selectedGroupId);
+                if (group) {
+                    requestGroupDelete(
+                        group,
+                        findKeyboardDeleteAnchor('data-task-group-id', group.groupId) ?? document.body,
+                    );
+                }
+                return;
+            }
+
+            if (selectedTasks.length === 1) {
+                const task = selectedTasks[0];
+                deleteTask(task, findKeyboardDeleteAnchor('data-task-id', task.taskId) ?? document.body);
+            } else if (selectedTasks.length > 1) {
+                requestBulkDelete(
+                    findKeyboardDeleteAnchor('data-task-id', selectedTasks[selectedTasks.length - 1].taskId) ?? document.body,
+                );
+            }
+        },
+    });
+
     const activePomodoroTask = useMemo(
         () => visibleTasks.find(task => task.taskId === activePomodoroTaskId) ?? null,
         [activePomodoroTaskId, visibleTasks],
@@ -694,7 +767,6 @@ export function HomePage() {
 
     const updateSelectionActionsPosition = useCallback(() => {
         if (!selectionActionsVisible) {
-            setSelectionActionsPosition(null);
             return;
         }
 
@@ -733,7 +805,6 @@ export function HomePage() {
 
     useLayoutEffect(() => {
         if (!selectionActionsVisible) {
-            setSelectionActionsPosition(previous => previous === null ? previous : null);
             return undefined;
         }
 
@@ -1030,7 +1101,7 @@ export function HomePage() {
             }));
             updatedTasks.forEach(updatedTask => updateTaskInState(updatedTask.taskId, updatedTask));
             if (action === 'move-to-date' && scheduledDateTime && isSameLocalDay(new Date(scheduledDateTime), new Date())) {
-                appendTasksToTodayOrder(
+                await appendTasksToTodayOrder(
                     tasksToUpdate.filter(task => !isScheduledForToday(task)).map(task => task.taskId),
                 );
             }
@@ -1130,6 +1201,19 @@ export function HomePage() {
         selectionAnchorRef.current = taskId;
     }, [activeExpansion, renderedSelectionEntities]);
 
+    const handleTaskContextMenu = useCallback((task: Task, event: React.MouseEvent<HTMLElement>) => {
+        setTaskReminderEditor(null);
+        setSelectedTaskIds([task.taskId]);
+        setSelectedGroupIds([]);
+        selectionAnchorRef.current = task.taskId;
+        setTaskContextMenu({
+            task,
+            top: event.clientY,
+            left: event.clientX,
+            anchorEl: event.currentTarget,
+        });
+    }, []);
+
     const handleGroupSelection = useCallback((groupId: string, event: React.MouseEvent<HTMLElement>) => {
         event.stopPropagation();
         const anchorId = selectionAnchorRef.current;
@@ -1203,6 +1287,7 @@ export function HomePage() {
                 && !editingTaskName) {
                 return;
             }
+            if (target instanceof Element && target.closest('[data-task-details="true"]')) return;
 
             const taskIds = renderedSelectionEntities
                 .filter((entity): entity is Extract<SelectionEntity, { kind: 'task' }> => entity.kind === 'task')
@@ -1212,6 +1297,18 @@ export function HomePage() {
             const currentTaskId = selectionAnchorRef.current && taskIds.includes(selectionAnchorRef.current)
                 ? selectionAnchorRef.current
                 : selectedTaskIds[selectedTaskIds.length - 1];
+            if (!event.shiftKey && activeExpansion?.panel === 'details'
+                && activeExpansion.taskId === currentTaskId
+                && !(target instanceof Element && target.closest('[data-task-details="true"]'))) {
+                const detailsFirstControl = Array.from(
+                    document.querySelectorAll<HTMLElement>('[data-task-details-first-focus="true"]'),
+                ).find(control => control.closest('[data-task-id]')?.getAttribute('data-task-id') === currentTaskId);
+                if (detailsFirstControl) {
+                    event.preventDefault();
+                    detailsFirstControl.focus();
+                    return;
+                }
+            }
             const currentIndex = currentTaskId ? taskIds.indexOf(currentTaskId) : -1;
             const nextIndex = event.shiftKey
                 ? (currentIndex <= 0 ? taskIds.length - 1 : currentIndex - 1)
@@ -1227,7 +1324,7 @@ export function HomePage() {
 
         window.addEventListener('keydown', handleTaskKeyboard);
         return () => window.removeEventListener('keydown', handleTaskKeyboard);
-    }, [renderedSelectionEntities, selectedTaskIds]);
+    }, [activeExpansion, renderedSelectionEntities, selectedTaskIds]);
 
     const handlePomodoroActiveChange = useCallback((
         taskId: string,
@@ -1357,15 +1454,18 @@ export function HomePage() {
         setDragTargetBottom(false);
     }, []);
 
-    const persistTaskOrder = useCallback((orderedTaskIds: string[]) => {
+    const persistTaskOrder = useCallback(async (orderedTaskIds: string[], failOnError = false) => {
         reorderTasksInState(orderedTaskIds);
-        taskService.reorderTasks(orderedTaskIds).catch(err => {
+        try {
+            await taskService.reorderTasks(orderedTaskIds);
+        } catch (err) {
             console.error('Error reordering tasks:', err);
-            refreshTaskBuckets(true);
-        });
+            await refreshTaskBuckets(true);
+            if (failOnError) throw err;
+        }
     }, [refreshTaskBuckets, reorderTasksInState]);
 
-    const placeTasksAfterGroup = useCallback((targetGroup: TaskGroup, taskIds: string[]) => {
+    const placeTasksAfterGroup = useCallback(async (targetGroup: TaskGroup, taskIds: string[]) => {
         const taskIdSet = new Set(taskIds);
         const orderedTaskIds = allTasks.map(task => task.taskId);
         const existingGroupTaskIds = orderedTaskIds.filter(taskId =>
@@ -1380,10 +1480,26 @@ export function HomePage() {
         if (lastGroupTaskIndex === -1) return;
 
         orderWithoutAddedTasks.splice(lastGroupTaskIndex + 1, 0, ...taskIds);
-        persistTaskOrder(orderWithoutAddedTasks);
+        await persistTaskOrder(orderWithoutAddedTasks, true);
     }, [allTasks, persistTaskOrder]);
 
-    const appendTasksToTodayOrder = useCallback((taskIds: string[]) => {
+    const placeTasksRelativeToTask = useCallback(async (
+        targetTaskId: string,
+        taskIds: string[],
+        edge: DropEdge,
+    ) => {
+        const taskIdSet = new Set(taskIds);
+        const orderWithoutAddedTasks = allTasks
+            .map(task => task.taskId)
+            .filter(taskId => !taskIdSet.has(taskId));
+        const targetIndex = orderWithoutAddedTasks.indexOf(targetTaskId);
+        if (targetIndex === -1) return;
+
+        orderWithoutAddedTasks.splice(targetIndex + (edge === 'after' ? 1 : 0), 0, ...taskIds);
+        await persistTaskOrder(orderWithoutAddedTasks, true);
+    }, [allTasks, persistTaskOrder]);
+
+    const appendTasksToTodayOrder = useCallback(async (taskIds: string[]) => {
         const movedTaskIdSet = new Set(taskIds);
         const movedTaskIds = allTasks
             .map(task => task.taskId)
@@ -1404,10 +1520,10 @@ export function HomePage() {
         } else {
             orderWithoutMovedTasks.splice(lastTodayIndex + 1, 0, ...movedTaskIds);
         }
-        persistTaskOrder(orderWithoutMovedTasks);
+        await persistTaskOrder(orderWithoutMovedTasks);
     }, [allTasks, persistTaskOrder, todayTasks]);
 
-    const placeTasksInTodayOrder = useCallback((taskIds: string[], placement: TodayDropPlacement) => {
+    const placeTasksInTodayOrder = useCallback(async (taskIds: string[], placement: TodayDropPlacement) => {
         const movedTaskIdSet = new Set(taskIds);
         const movedTaskIds = allTasks
             .map(task => task.taskId)
@@ -1451,7 +1567,7 @@ export function HomePage() {
         }
 
         orderWithoutMovedTasks.splice(insertionIndex, 0, ...movedTaskIds);
-        persistTaskOrder(orderWithoutMovedTasks);
+        await persistTaskOrder(orderWithoutMovedTasks);
     }, [allTasks, persistTaskOrder, todayTasks, visibleTasks]);
 
     const moveTasksToToday = useCallback(async (
@@ -1469,13 +1585,16 @@ export function HomePage() {
         updates.forEach(({ task, scheduledPerformDateTime }) => {
             updateTaskInState(task.taskId, { scheduledPerformDateTime });
         });
-        if (placement) placeTasksInTodayOrder(tasksToMove.map(task => task.taskId), placement);
 
         try {
             const updatedTasks = await Promise.all(updates.map(({ task, scheduledPerformDateTime }) =>
                 taskService.updateTask(task.taskId, { scheduledPerformDateTime }),
             ));
             updatedTasks.forEach(updatedTask => updateTaskInState(updatedTask.taskId, updatedTask));
+            // The reorder endpoint saves full task rows, so let the date PATCHes commit first.
+            if (placement) {
+                await placeTasksInTodayOrder(tasksToMove.map(task => task.taskId), placement);
+            }
             return true;
         } catch (err) {
             console.error('Error moving dragged tasks to today:', err);
@@ -1496,11 +1615,12 @@ export function HomePage() {
         updates.forEach(({ task, scheduledPerformDateTime }) => {
             updateTaskInState(task.taskId, { scheduledPerformDateTime });
         });
-        if (placement) placeTasksInTodayOrder(tasksToMove.map(task => task.taskId), placement);
-
         try {
             const updatedTasks = await taskGroupService.moveToToday(group.groupId);
             updatedTasks.forEach(updatedTask => updateTaskInState(updatedTask.taskId, updatedTask));
+            if (placement) {
+                await placeTasksInTodayOrder(tasksToMove.map(task => task.taskId), placement);
+            }
         } catch (err) {
             console.error('Error moving task group to today:', err);
             await refreshTaskBuckets(true);
@@ -1587,28 +1707,46 @@ export function HomePage() {
         await createGroupFromTaskDrop(targetTask, taskIds);
     }, [createGroupFromTaskDrop, moveTasksToToday, olderTaskIdSet]);
 
-    const addTasksToGroup = useCallback(async (targetGroup: TaskGroup, taskIds: string[]) => {
+    const addTasksToGroup = useCallback(async (
+        targetGroup: TaskGroup,
+        taskIds: string[],
+        placement?: GroupTaskDropPlacement,
+    ) => {
         const taskIdsToAdd = taskIds.filter(taskId => !targetGroup.taskIds.includes(taskId));
         if (taskIdsToAdd.length === 0) return;
 
         minimizePomodoroTask(taskIdsToAdd[0]);
-        placeTasksAfterGroup(targetGroup, taskIdsToAdd);
+        const nextTaskIds = [...targetGroup.taskIds];
+        if (placement) {
+            const targetIndex = nextTaskIds.indexOf(placement.targetTaskId);
+            if (targetIndex === -1) {
+                nextTaskIds.push(...taskIdsToAdd);
+            } else {
+                nextTaskIds.splice(targetIndex + (placement.edge === 'after' ? 1 : 0), 0, ...taskIdsToAdd);
+            }
+        } else {
+            nextTaskIds.push(...taskIdsToAdd);
+        }
+        const taskOrderPromise = placement
+            ? placeTasksRelativeToTask(placement.targetTaskId, taskIdsToAdd, placement.edge)
+            : placeTasksAfterGroup(targetGroup, taskIdsToAdd);
         applyUpdatedGroup({
             ...targetGroup,
-            taskIds: [...targetGroup.taskIds, ...taskIdsToAdd],
+            taskIds: nextTaskIds,
         }, taskIdsToAdd);
 
         try {
+            await taskOrderPromise;
             const updatedGroup = await taskGroupService.replaceTasks(
                 targetGroup.groupId,
-                [...targetGroup.taskIds, ...taskIdsToAdd],
+                nextTaskIds,
             );
             applyUpdatedGroup(updatedGroup, taskIdsToAdd);
         } catch (err) {
             console.error('Error adding task to group:', err);
             await refreshGroups();
         }
-    }, [applyUpdatedGroup, minimizePomodoroTask, placeTasksAfterGroup, refreshGroups]);
+    }, [applyUpdatedGroup, minimizePomodoroTask, placeTasksAfterGroup, placeTasksRelativeToTask, refreshGroups]);
 
     const removeTasksFromGroup = useCallback(async (sourceGroup: TaskGroup, taskIds: string[]) => {
         const taskIdsInGroup = taskIds.filter(taskId => sourceGroup.taskIds.includes(taskId));
@@ -1883,6 +2021,7 @@ export function HomePage() {
         setBulkDateAnchorEl(null);
         setGroupAnchorEl(null);
         setGroupName('');
+        setTaskContextMenu(null);
         selectionAnchorRef.current = null;
     }
 
@@ -1962,6 +2101,9 @@ export function HomePage() {
             importance: taskToCreate.importance,
             displayOrder: 0,
             mentalThreadId: taskToCreate.mentalThreadId ?? null,
+            taskSeriesId: null,
+            seriesOccurrenceAt: null,
+            skipped: false,
         };
         const optimisticTaskIds = [...group.taskIds, optimisticTaskId];
         const taskOrder = allTasks.map(task => task.taskId);
@@ -1993,6 +2135,11 @@ export function HomePage() {
             const nextTaskIds = optimisticTaskIds.map(taskId =>
                 taskId === optimisticTaskId ? createdTask.taskId : taskId,
             );
+            const nextTaskOrder = taskOrder.map(taskId =>
+                taskId === optimisticTaskId ? createdTask.taskId : taskId,
+            );
+            reorderTasksInState(nextTaskOrder);
+            await taskService.reorderTasks(nextTaskOrder);
             setGroups(previous => replaceTaskIdInGroup(
                 previous,
                 group.groupId,
@@ -2102,9 +2249,10 @@ export function HomePage() {
                 && currentDraggedTaskIds.some(taskId => !containingGroup.taskIds.includes(taskId)),
             );
             if (addingToExpandedGroup) {
+                const edge = taskDropEdge(event);
                 setDragTargetTaskId(dragTargetTask.taskId);
                 setDragTargetGroupId(containingGroup!.groupId);
-                setDragTargetPosition('inside');
+                setDragTargetPosition(edge);
                 setDragTargetTop(false);
                 setDragTargetBottom(false);
                 return;
@@ -2119,13 +2267,17 @@ export function HomePage() {
         }
     }, [getDraggedGroupId, getDraggedTaskIds, groups]);
 
-    const handleTaskDrop = useCallback((droppedTask: Task, event: React.DragEvent<HTMLElement>) => {
+    const handleTaskDrop = useCallback((
+        droppedTask: Task,
+        event: React.DragEvent<HTMLElement>,
+        groupPlacement?: GroupTaskDropPlacement,
+    ) => {
         const currentDraggedTaskIds = getDraggedTaskIds();
         const activeGroupId = getDraggedGroupId();
         const containingGroup = groups?.find(group => group.taskIds.includes(droppedTask.taskId));
         const olderTaskIdSet = new Set(olderTasks.map(olderTask => olderTask.taskId));
         const draggedOlderTaskIds = currentDraggedTaskIds.filter(taskId => olderTaskIdSet.has(taskId));
-        const intent = activeGroupId ? taskDropEdge(event) : dropIntent(event);
+        const intent = activeGroupId ? taskDropEdge(event) : groupPlacement?.edge ?? dropIntent(event);
         const canAddToContainingGroup = Boolean(
             containingGroup
             && !activeGroupId
@@ -2135,7 +2287,10 @@ export function HomePage() {
         if (canAddToContainingGroup) {
             void (async () => {
                 if (draggedOlderTaskIds.length > 0 && !(await moveTasksToToday(draggedOlderTaskIds))) return;
-                await addTasksToGroup(containingGroup!, currentDraggedTaskIds);
+                await addTasksToGroup(containingGroup!, currentDraggedTaskIds, groupPlacement ?? {
+                    targetTaskId: droppedTask.taskId,
+                    edge: taskDropEdge(event),
+                });
             })();
             finishDragging();
             return;
@@ -2173,6 +2328,7 @@ export function HomePage() {
                 selected={selectedTaskIdSet.has(task.taskId) || selectedGroupTaskIdSet.has(task.taskId)}
                 editRequestId={editRequest?.taskId === task.taskId ? editRequest.requestId : null}
                 onSelectionClick={handleTaskSelection}
+                onContextMenu={handleTaskContextMenu}
                 showScheduledDate={options.showScheduledDate}
                 reorderable={reorderable}
                 draggable={options.draggable ?? reorderable}
@@ -2187,6 +2343,7 @@ export function HomePage() {
                 onPomodoroActiveChange={handlePomodoroActiveChange}
                 onPomodoroStatusChange={handlePomodoroStatusChange}
                 onPomodoroFocusStart={handlePomodoroFocusStart}
+                onRefreshTasks={() => refreshTaskBuckets(true)}
                 deferPomodoroHydration={task.taskId !== activePomodoroTaskId}
                 initialPomodoroStatus={task.taskId === activePomodoroTaskId ? initialPomodoroStatus : null}
                 expectedPomodoroActive={task.taskId === activePomodoroTaskId}
@@ -2325,7 +2482,7 @@ export function HomePage() {
                                     ? theme => alpha(theme.palette.primary.main, 0.09)
                                     : 'action.hover',
                             },
-                            '&::before': groupDragTarget && dragTargetPosition !== 'inside' ? {
+                            '&::before': groupDragTarget && !dragTargetTaskId && dragTargetPosition !== 'inside' ? {
                                 content: '""',
                                 position: 'absolute',
                                 top: dragTargetPosition === 'before' ? 0 : 'auto',
@@ -2454,7 +2611,59 @@ export function HomePage() {
                             '& .MuiCollapse-wrapper': { willChange: 'height' },
                         }}
                     >
-                        <Box sx={{ ml: 1.7, pl: 1.1, borderLeft: '1px solid', borderColor: 'divider' }}>
+                        <Box
+                            data-task-group-content={item.group.groupId}
+                            onDragOver={reorderable ? (event) => {
+                                if (isDragOverTask(event) || getDraggedGroupId() || getDraggedTaskIds().length === 0) return;
+
+                                event.preventDefault();
+                                event.dataTransfer.dropEffect = 'move';
+                                const placement = groupTaskDropPlacement(event, item.group);
+                                if (placement) {
+                                    setDragTargetGroupId(item.group.groupId);
+                                    setDragTargetTaskId(placement.targetTaskId);
+                                    setDragTargetPosition(placement.edge);
+                                    setDragTargetTop(false);
+                                    setDragTargetBottom(false);
+                                    return;
+                                }
+
+                                setDragTargetGroupId(item.group.groupId);
+                                setDragTargetTaskId(null);
+                                setDragTargetPosition('inside');
+                                setDragTargetTop(false);
+                                setDragTargetBottom(false);
+                            } : undefined}
+                            onDrop={reorderable ? (event) => {
+                                if (isDragOverTask(event) || getDraggedGroupId() || getDraggedTaskIds().length === 0) return;
+
+                                const placement = groupTaskDropPlacement(event, item.group);
+                                const droppedTask = placement
+                                    ? item.tasks.find(task => task.taskId === placement.targetTaskId)
+                                    : undefined;
+                                if (placement && droppedTask) {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    handleTaskDrop(droppedTask, event, placement);
+                                    return;
+                                }
+
+                                event.preventDefault();
+                                event.stopPropagation();
+                                handleDropOnGroup(item.group, 'inside');
+                            } : undefined}
+                            sx={{
+                                ml: 1.7,
+                                pl: 1.1,
+                                borderLeft: '1px solid',
+                                borderColor: 'divider',
+                                borderRadius: 1,
+                                backgroundColor: groupDragTarget && dragTargetPosition === 'inside'
+                                    ? theme => alpha(theme.palette.primary.main, 0.045)
+                                    : 'transparent',
+                                transition: 'background-color 0.18s',
+                            }}
+                        >
                             <Collapse
                                 in={groupAddingTaskId === item.group.groupId}
                                 timeout={180}
@@ -2531,7 +2740,7 @@ export function HomePage() {
                             '& .MuiInput-root': { fontSize: '1.1rem' },
                         }}
                     >
-                        <SmartTaskInput onSubmit={createTask} />
+                        <SmartTaskInput defaultToToday onSubmit={createTask} />
                     </Box>
 
                     {selectionActionsVisible && selectionActionsPosition && (
@@ -2628,6 +2837,8 @@ export function HomePage() {
                                         '--focus-task-offset': `${focusTaskOffset}px`,
                                         opacity: focusVisibility === 'fading' ? 0 : 1,
                                         pointerEvents: focusVisibility === 'fading' ? 'none' : 'auto',
+                                        transition: 'opacity 180ms ease-out',
+                                        willChange: focusVisibility === 'sliding' ? 'transform, opacity' : 'opacity',
                                         animation: focusVisibility === 'sliding' && focusTaskOffset !== 0
                                             ? `${focusTaskSlide} ${FOCUS_TASK_SLIDE_DURATION_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`
                                             : 'none',
@@ -2658,6 +2869,9 @@ export function HomePage() {
                                         animation: focusVisibility === 'revealing'
                                             ? `${tasksFadeBack} 260ms ease-out`
                                             : 'none',
+                                        willChange: focusVisibility === 'fading' || focusVisibility === 'revealing'
+                                            ? 'opacity, transform'
+                                            : 'auto',
                                         '& [data-task-id]:not([data-pomodoro-focus-task="true"]), & [data-task-group-header="true"]': {
                                             animation: focusVisibility === 'fading'
                                                 ? `${tasksFadeAway} ${TASKS_FADE_DURATION_MS}ms ease-out forwards`
@@ -2781,8 +2995,13 @@ export function HomePage() {
                         timeout={{ enter: 260, exit: 220 }}
                         mountOnEnter
                         unmountOnExit
+                        onEntered={() => olderTasksSectionRef.current?.scrollIntoView({
+                            behavior: 'smooth',
+                            block: 'center',
+                        })}
                     >
                         <Box
+                            ref={olderTasksSectionRef}
                             onClick={clearSelection}
                             sx={{ mt: 2, pt: 1.25, borderTop: '1px solid', borderColor: 'divider' }}
                         >
@@ -2831,6 +3050,98 @@ export function HomePage() {
                 </Box>
 
                 <Popover
+                    open={taskReminderEditor !== null}
+                    onClose={() => setTaskReminderEditor(null)}
+                    anchorReference="anchorPosition"
+                    anchorPosition={taskReminderEditor
+                        ? { top: taskReminderEditor.top, left: taskReminderEditor.left }
+                        : undefined}
+                    slotProps={{
+                        paper: {
+                            sx: {
+                                p: 1.5,
+                                width: 280,
+                                maxWidth: 'calc(100vw - 32px)',
+                                borderRadius: 2.5,
+                            },
+                        },
+                    }}
+                >
+                    {taskReminderEditor && (() => {
+                        const task = allTasks.find(item => item.taskId === taskReminderEditor.taskId);
+                        if (!task) return null;
+                        return (
+                            <Box onClick={event => event.stopPropagation()}>
+                                <Typography variant="subtitle2" sx={{ mb: 1.25 }} noWrap>
+                                    {task.reminderMinutesBefore == null ? 'Add reminder' : 'Edit reminder'}
+                                </Typography>
+                                <TaskReminderPicker
+                                    value={task.reminderMinutesBefore}
+                                    disabled={!task.scheduledPerformDateTime}
+                                    onChange={reminderMinutesBefore => {
+                                        void updateTask(task.taskId, { reminderMinutesBefore });
+                                    }}
+                                />
+                                {!task.scheduledPerformDateTime && (
+                                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+                                        Schedule this task first to add a reminder.
+                                    </Typography>
+                                )}
+                                {task.reminderMinutesBefore != null && (
+                                    <Button
+                                        size="small"
+                                        color="error"
+                                        sx={{ mt: 1.25 }}
+                                        onClick={() => void updateTask(task.taskId, { reminderMinutesBefore: null })}
+                                    >
+                                        Delete reminder
+                                    </Button>
+                                )}
+                            </Box>
+                        );
+                    })()}
+                </Popover>
+
+                <Menu
+                    open={taskContextMenu !== null}
+                    onClose={() => setTaskContextMenu(null)}
+                    anchorReference="anchorPosition"
+                    anchorPosition={taskContextMenu
+                        ? { top: taskContextMenu.top, left: taskContextMenu.left }
+                        : undefined}
+                    MenuListProps={{ dense: true }}
+                >
+                    {taskContextMenu && (
+                        <>
+                            <MenuItem onClick={() => {
+                                const menu = taskContextMenu;
+                                setTaskContextMenu(null);
+                                window.setTimeout(() => setTaskReminderEditor({
+                                    taskId: menu.task.taskId,
+                                    top: menu.top,
+                                    left: menu.left,
+                                }), 0);
+                            }}>
+                                <ListItemIcon><NotificationsNoneIcon fontSize="small" /></ListItemIcon>
+                                <ListItemText>
+                                    {taskContextMenu.task.reminderMinutesBefore == null
+                                        ? 'Add reminder'
+                                        : 'Edit reminder'}
+                                </ListItemText>
+                            </MenuItem>
+                            <MenuItem onClick={() => {
+                                const menu = taskContextMenu;
+                                setTaskContextMenu(null);
+                                deleteTask(menu.task, menu.anchorEl);
+                            }}>
+                                <ListItemIcon><DeleteOutlineIcon fontSize="small" /></ListItemIcon>
+                                <ListItemText>Delete task</ListItemText>
+                            </MenuItem>
+                        </>
+                    )}
+                </Menu>
+
+                <Popover
                     open={deleteRequest !== null}
                     anchorEl={deleteRequest?.anchorEl}
                     onClose={closeDeleteRequest}
@@ -2851,9 +3162,11 @@ export function HomePage() {
                         <Box>
                             <Typography variant="body2" sx={{ mb: 1.25 }}>
                                 {deleteRequest.kind === 'group'
-                                    ? `Delete “${deleteRequest.group.name}” and its ${deleteRequest.tasks.length} tasks?`
+                                    ? `Delete “${deleteRequest.group.name}” and its ${deleteRequest.tasks.length} tasks${deleteRequest.tasks.some(task => task.taskSeriesId) ? ' and their recurring series' : ''}?`
                                     : deleteRequest.kind === 'bulk'
-                                    ? `Delete ${deleteRequest.tasks.length} selected task${deleteRequest.tasks.length > 1 ? 's' : ''} and their subtasks?`
+                                    ? `Delete ${deleteRequest.tasks.length} selected task${deleteRequest.tasks.length > 1 ? 's' : ''}${deleteRequest.tasks.some(task => task.taskSeriesId) ? ' and their recurring series' : ' and their subtasks'}?`
+                                    : deleteRequest.tasks[0].taskSeriesId
+                                    ? `Delete “${deleteRequest.tasks[0].name}” and all occurrences in its series?`
                                     : `Delete “${deleteRequest.tasks[0].name}” and its subtasks?`}
                             </Typography>
                             <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 0.75 }}>

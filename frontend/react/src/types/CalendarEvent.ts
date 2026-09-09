@@ -1,5 +1,6 @@
 export type RecurrenceFrequency = 'NONE' | 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'CUSTOM';
 export type RecurrenceUnit = 'DAYS' | 'WEEKS' | 'MONTHS';
+export type CalendarEventStatus = 'CONFIRMED' | 'TENTATIVE' | 'CANCELLED';
 
 export type CalendarEvent = {
     id: string;
@@ -11,6 +12,7 @@ export type CalendarEvent = {
     startTime: string | null;
     endTime: string | null;
     timeZone: string;
+    status: CalendarEventStatus;
     recurrenceFrequency: RecurrenceFrequency;
     recurrenceEndDate: string | null;
     recurrenceInterval: number | null;
@@ -29,6 +31,7 @@ export type CalendarEventInput = {
     startTime: string | null;
     endTime: string | null;
     timeZone: string;
+    status: CalendarEventStatus;
     recurrenceFrequency: RecurrenceFrequency;
     recurrenceEndDate: string | null;
     recurrenceInterval: number | null;

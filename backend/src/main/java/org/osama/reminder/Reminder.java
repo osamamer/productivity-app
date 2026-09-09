@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.osama.event.CalendarEvent;
+import org.osama.task.Task;
 import org.osama.user.User;
 
 import java.time.Instant;
@@ -16,8 +17,12 @@ public class Reminder {
     @Column(nullable = false)
     private String reminderId;
 
-    @Column
+    @Column(name = "task_id")
     private String taskId;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "task_id", insertable = false, updatable = false)
+    private Task task;
 
     @Column(nullable = false)
     private Instant dateTime;

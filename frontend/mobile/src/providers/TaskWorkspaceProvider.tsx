@@ -3,7 +3,8 @@ import { createContext, PropsWithChildren, useCallback, useContext, useEffect, u
 import { localDate } from '@/lib/date';
 import { reportError } from '@/lib/errors';
 import { animateLayout } from '@/lib/motion';
-import { api } from '@/services/api';
+import { subscribeToResourceInvalidation } from '@/lib/resourceInvalidation';
+import { api, TASK_PAGE_BATCH_SIZE } from '@/services/api';
 import type { Task, TaskGroup } from '@/types/models';
 import { useAuth } from './AuthProvider';
 
@@ -12,10 +13,16 @@ type TaskWorkspaceValue = {
   todayTasks: Task[];
   futureTasks: Task[];
   pastTasks: Task[];
+  undatedTasks: Task[];
   groups: TaskGroup[];
   loading: boolean;
+  ready: boolean;
   error: string | null;
   refresh: () => Promise<void>;
+  hasMoreFutureTasks: boolean;
+  hasMorePastTasks: boolean;
+  loadMoreFutureTasks: () => Promise<void>;
+  loadMorePastTasks: () => Promise<void>;
   addTask: (task: Task) => void;
   updateTask: (task: Task) => void;
   removeTask: (taskId: string) => void;
@@ -42,6 +49,12 @@ function dateBucket(task: Task): 'today' | 'future' | 'past' | null {
 
 function replaceTask(tasks: Task[], updated: Task): Task[] {
   return tasks.map(task => task.taskId === updated.taskId ? updated : task);
+}
+
+function appendUniqueTasks(current: Task[], additions: Task[]): Task[] {
+  const knownTaskIds = new Set(current.map(task => task.taskId));
+  const uniqueAdditions = additions.filter(task => !knownTaskIds.has(task.taskId));
+  return uniqueAdditions.length > 0 ? [...current, ...uniqueAdditions] : current;
 }
 
 function usableGroups(taskGroups: TaskGroup[], tasks?: Task[]): TaskGroup[] {
@@ -75,9 +88,16 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
   const [allTasks, setAllTasks] = useState<Task[]>([]);
   const [groups, setGroups] = useState<TaskGroup[]>([]);
   const [loading, setLoading] = useState(true);
+  const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasMoreFutureTasks, setHasMoreFutureTasks] = useState(false);
+  const [hasMorePastTasks, setHasMorePastTasks] = useState(false);
   const loadedAtRef = useRef(0);
   const requestRef = useRef<Promise<void> | null>(null);
+  const futureOffsetRef = useRef(0);
+  const pastOffsetRef = useRef(0);
+  const futureRequestRef = useRef<Promise<void> | null>(null);
+  const pastRequestRef = useRef<Promise<void> | null>(null);
   const reorderVersionRef = useRef(0);
   const reorderSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
 
@@ -90,15 +110,31 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
       setLoading(true);
       setError(null);
       try {
-        const [tasks, taskGroups] = await Promise.all([api.tasks.all(), api.taskGroups.all()]);
+        const [today, future, past, undated, taskGroups] = await Promise.all([
+          api.tasks.today(),
+          api.tasks.future(TASK_PAGE_BATCH_SIZE, 0),
+          api.tasks.past(TASK_PAGE_BATCH_SIZE, 0),
+          api.tasks.undated(),
+          api.taskGroups.all(),
+        ]);
+        const tasks = appendUniqueTasks(
+          appendUniqueTasks(appendUniqueTasks(today, future), past),
+          undated,
+        );
         animateLayout();
         setAllTasks(tasks);
-        setGroups(usableGroups(taskGroups, tasks));
+        setGroups(usableGroups(taskGroups));
+        futureOffsetRef.current = future.length;
+        pastOffsetRef.current = past.length;
+        setHasMoreFutureTasks(future.length === TASK_PAGE_BATCH_SIZE);
+        setHasMorePastTasks(past.length === TASK_PAGE_BATCH_SIZE);
         loadedAtRef.current = Date.now();
+        setReady(true);
       } catch (cause) {
         console.error('Could not load mobile task workspace:', cause);
         setError(reportError('Could not load tasks', cause));
         loadedAtRef.current = 0;
+        setReady(true);
       } finally {
         setLoading(false);
       }
@@ -117,6 +153,11 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
         loadedAtRef.current = 0;
         setAllTasks([]);
         setGroups([]);
+        futureOffsetRef.current = 0;
+        pastOffsetRef.current = 0;
+        setHasMoreFutureTasks(false);
+        setHasMorePastTasks(false);
+        setReady(false);
         setLoading(false);
         setError(null);
       }, 0);
@@ -124,6 +165,45 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
     }
     void load(true);
   }, [isAuthenticated, load]);
+
+  useEffect(() => subscribeToResourceInvalidation('stats', () => {
+    void load(true);
+  }), [load]);
+
+  const loadMore = useCallback(async (period: 'PAST' | 'FUTURE') => {
+    const requestReference = period === 'FUTURE' ? futureRequestRef : pastRequestRef;
+    const inFlight = requestReference.current;
+    if (inFlight) return inFlight;
+
+    const offsetReference = period === 'FUTURE' ? futureOffsetRef : pastOffsetRef;
+    const hasMore = period === 'FUTURE' ? hasMoreFutureTasks : hasMorePastTasks;
+    if (!hasMore) return;
+
+    const offset = offsetReference.current;
+    const request = (async () => {
+      try {
+        const tasks = period === 'FUTURE'
+          ? await api.tasks.future(TASK_PAGE_BATCH_SIZE, offset)
+          : await api.tasks.past(TASK_PAGE_BATCH_SIZE, offset);
+        setAllTasks(previous => appendUniqueTasks(previous, tasks));
+        offsetReference.current = offset + tasks.length;
+        if (period === 'FUTURE') setHasMoreFutureTasks(tasks.length === TASK_PAGE_BATCH_SIZE);
+        else setHasMorePastTasks(tasks.length === TASK_PAGE_BATCH_SIZE);
+      } catch (cause) {
+        console.error(`Could not load more ${period.toLowerCase()} mobile tasks:`, cause);
+        throw cause;
+      }
+    })();
+    requestReference.current = request;
+    try {
+      await request;
+    } finally {
+      if (requestReference.current === request) requestReference.current = null;
+    }
+  }, [hasMoreFutureTasks, hasMorePastTasks]);
+
+  const loadMoreFutureTasks = useCallback(() => loadMore('FUTURE'), [loadMore]);
+  const loadMorePastTasks = useCallback(() => loadMore('PAST'), [loadMore]);
 
   const addTask = useCallback((task: Task) => {
     animateLayout();
@@ -296,15 +376,22 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
       if (bucket) result[bucket].push(task);
       return result;
     }, { today: [] as Task[], future: [] as Task[], past: [] as Task[] });
+    const undatedTasks = allTasks.filter(task => dateBucket(task) === null);
     return {
       allTasks,
       todayTasks: buckets.today,
       futureTasks: buckets.future,
       pastTasks: buckets.past,
+      undatedTasks,
       groups,
       loading,
+      ready,
       error,
       refresh: () => load(true),
+      hasMoreFutureTasks,
+      hasMorePastTasks,
+      loadMoreFutureTasks,
+      loadMorePastTasks,
       addTask,
       updateTask,
       removeTask,
@@ -316,7 +403,7 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
       replaceGroupTasks,
       deleteGroup,
     };
-  }, [addTask, allTasks, createGroup, deleteGroup, error, groups, load, loading, moveTask, moveTasksToDate, moveTasksToToday, removeTask, reorderTasks, replaceGroupTasks, updateTask]);
+  }, [addTask, allTasks, createGroup, deleteGroup, error, groups, hasMoreFutureTasks, hasMorePastTasks, load, loadMoreFutureTasks, loadMorePastTasks, loading, moveTask, moveTasksToDate, moveTasksToToday, ready, removeTask, reorderTasks, replaceGroupTasks, updateTask]);
 
   return <TaskWorkspaceContext.Provider value={value}>{children}</TaskWorkspaceContext.Provider>;
 }

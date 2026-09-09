@@ -1,6 +1,7 @@
 package org.osama.session.task;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -12,6 +13,7 @@ public interface TaskSessionRepository extends JpaRepository<TaskSession, String
     List<TaskSession> findAllByAssociatedTaskIdAndActiveIsTrue(String taskId);
 
     List<TaskSession> findAllByAssociatedTaskId(String taskId);
+    List<TaskSession> findAllByAssociatedTaskIdIn(Collection<String> taskIds);
     List<TaskSession> findAllByRunningIsTrue();
     List<TaskSession> findAllByActiveIsTrue();
     int countAllByAssociatedTaskIdAndActiveIsFalse(String taskId);

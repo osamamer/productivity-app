@@ -90,7 +90,7 @@ export default function SettingsScreen() {
   const checkupScheduleVisible = resource.data !== null && resource.data.checkupNotificationsEnabled !== false;
 
   async function updatePreference(
-    key: 'includeUnloggedNumericDaysAsZero' | 'autoStartPomodoroSessions' | 'checkupNotificationsEnabled',
+    key: 'includeUnloggedNumericDaysAsZero' | 'autoStartPomodoroSessions' | 'checkupNotificationsEnabled' | 'repeatCheckupNotificationsEnabled',
     value: boolean,
   ) {
     if (!resource.data) return;
@@ -222,6 +222,8 @@ export default function SettingsScreen() {
         <View style={[styles.divider, { backgroundColor: colors.border }]} />
         {checkupScheduleVisible && (
           <>
+            <SettingRow label="Keep reminding until check-in" detail="If you do not check in, remind you again every 30 minutes." value={resource.data?.repeatCheckupNotificationsEnabled ?? true} disabled={!resource.data} onChange={value => void updatePreference('repeatCheckupNotificationsEnabled', value)} />
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
             <AppText variant="label">Repeat every</AppText>
             <ChoiceChips value={displayedCheckupIntervalMinutes} onChange={value => { setCheckupIntervalMinutes(value); setCheckupScheduleEdited(true); }} options={checkupIntervalOptions} />
             <AppText variant="label">Starting time</AppText>

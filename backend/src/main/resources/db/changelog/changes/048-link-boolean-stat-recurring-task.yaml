@@ -1,0 +1,44 @@
+databaseChangeLog:
+  - changeSet:
+      id: 048-link-boolean-stat-recurring-task
+      author: codex
+      comment: Link a boolean statistic to its optional daily recurring task series
+      changes:
+        - addColumn:
+            tableName: stat_definition
+            columns:
+              - column:
+                  name: recurring_task_series_id
+                  type: varchar(255)
+        - addForeignKeyConstraint:
+            baseTableName: stat_definition
+            baseColumnNames: recurring_task_series_id
+            referencedTableName: task_series
+            referencedColumnNames: series_id
+            constraintName: fk_app_stat_definition_task_series
+            onDelete: SET NULL
+            onUpdate: CASCADE
+        - addUniqueConstraint:
+            tableName: stat_definition
+            columnNames: recurring_task_series_id
+            constraintName: uq_app_stat_definition_task_series
+        - createIndex:
+            tableName: stat_definition
+            indexName: idx_app_stat_definition_task_series
+            ifNotExists: true
+            columns:
+              - column:
+                  name: recurring_task_series_id
+      rollback:
+        - dropIndex:
+            tableName: stat_definition
+            indexName: idx_app_stat_definition_task_series
+        - dropUniqueConstraint:
+            tableName: stat_definition
+            constraintName: uq_app_stat_definition_task_series
+        - dropForeignKeyConstraint:
+            baseTableName: stat_definition
+            constraintName: fk_app_stat_definition_task_series
+        - dropColumn:
+            tableName: stat_definition
+            columnName: recurring_task_series_id

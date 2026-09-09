@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
     Box, Button, Typography, Alert, Stack, Skeleton,
-    Tooltip, IconButton, Dialog, DialogTitle, DialogContent,
+    IconButton, Dialog, DialogTitle, DialogContent,
     DialogContentText, DialogActions, TextField, Collapse,
     ListItemIcon, ListItemText, Menu, MenuItem,
 } from '@mui/material';
@@ -12,16 +13,26 @@ import CreateNewFolderOutlinedIcon from '@mui/icons-material/CreateNewFolderOutl
 import DeleteOutlineOutlinedIcon from '@mui/icons-material/DeleteOutlineOutlined';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
+import FolderIcon from '@mui/icons-material/Folder';
 import GroupWorkIcon from '@mui/icons-material/GroupWork';
-import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded';
+import ViewDayIcon from '@mui/icons-material/ViewDay';
 import { PageWrapper } from '../components/PageWrapper';
 import { CreateStatForm } from '../components/stats/CreateStatForm';
 import { StatRecentDots } from '../components/stats/StatRecentDots';
 import { StatCard } from '../components/stats/StatCard';
 import { StatDefinition } from '../types/Stats';
 import { StatGroup } from '../types/StatGroup';
+import { useUser } from '../hooks/useUser';
+import { useKeyboardDelete } from '../hooks/useKeyboardDelete';
 import { statService } from '../services/api/statService';
 import { statGroupService } from '../services/api/statGroupService';
+import { subscribeToResourceInvalidation } from '../services/cache/resourceInvalidation';
+import {
+    readOpenStatGroupIds,
+    statGroupPreferencesStorageKey,
+    writeOpenStatGroupIds,
+} from '../services/utils/statGroupPreferences';
 
 const DEDICATED_SYSTEM_KEYS = new Set([
     'meditated',
@@ -52,6 +63,13 @@ type GroupDropPosition = 'before' | 'after';
 type ContextMenuState =
     | { kind: 'stat'; definition: StatDefinition; top: number; left: number }
     | { kind: 'group'; group: StatGroup; top: number; left: number };
+
+type PendingStatCreation = {
+    tempId: string;
+    groupId: string | null;
+    groupDefinitionIds: string[];
+    selectedIdBeforeCreation: string | null;
+};
 
 const selectionActionsReveal = keyframes`
     from { opacity: 0; }
@@ -139,6 +157,9 @@ function StatsLoadingState() {
 
 export function StatsPage() {
     const theme = useTheme();
+    const navigate = useNavigate();
+    const { user } = useUser();
+    const groupPreferencesKey = statGroupPreferencesStorageKey(user?.id);
     const [definitions, setDefinitions] = useState<StatDefinition[]>([]);
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [selectedStatIds, setSelectedStatIds] = useState<string[]>([]);
@@ -149,6 +170,7 @@ export function StatsPage() {
     const [createStatGroupTarget, setCreateStatGroupTarget] = useState<StatGroup | null>(null);
     const [editTarget, setEditTarget] = useState<StatDefinition | null>(null);
     const [entryRefreshKeys, setEntryRefreshKeys] = useState<Record<string, number>>({});
+    const [resourceRefreshKey, setResourceRefreshKey] = useState(0);
     const [deleteTarget, setDeleteTarget] = useState<StatDefinition | null>(null);
     const [draggedId, setDraggedId] = useState<string | null>(null);
     const [reorderSaving, setReorderSaving] = useState(false);
@@ -169,11 +191,25 @@ export function StatsPage() {
     const [dragTargetGroupPosition, setDragTargetGroupPosition] = useState<GroupDropPosition | null>(null);
     const [bulkDeleteTargets, setBulkDeleteTargets] = useState<StatDefinition[] | null>(null);
     const [deleteSubmitting, setDeleteSubmitting] = useState(false);
-    const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(new Set());
+    const [openGroupIds, setOpenGroupIds] = useState<Set<string>>(() => readOpenStatGroupIds(groupPreferencesKey));
+    const [loadedGroupPreferencesKey, setLoadedGroupPreferencesKey] = useState(groupPreferencesKey);
     const [selectionError, setSelectionError] = useState<string | null>(null);
     const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+    const [dayContextMenu, setDayContextMenu] = useState<{ date: string; top: number; left: number } | null>(null);
     const selectionAnchorRef = useRef<string | null>(null);
     const selectionActionsRef = useRef<HTMLDivElement | null>(null);
+    const pendingStatCreationsRef = useRef(new Map<string, PendingStatCreation>());
+
+    useEffect(() => {
+        if (loadedGroupPreferencesKey === groupPreferencesKey) return;
+        setOpenGroupIds(readOpenStatGroupIds(groupPreferencesKey));
+        setLoadedGroupPreferencesKey(groupPreferencesKey);
+    }, [groupPreferencesKey, loadedGroupPreferencesKey]);
+
+    useEffect(() => {
+        if (loadedGroupPreferencesKey !== groupPreferencesKey) return;
+        writeOpenStatGroupIds(groupPreferencesKey, openGroupIds);
+    }, [groupPreferencesKey, loadedGroupPreferencesKey, openGroupIds]);
 
     const loadDefinitions = useCallback(() => {
         return statService.getDefinitions()
@@ -215,6 +251,10 @@ export function StatsPage() {
         return () => { active = false; };
     }, [loadDefinitions, loadGroups]);
 
+    useEffect(() => subscribeToResourceInvalidation('tasks', () => {
+        setResourceRefreshKey(previous => previous + 1);
+    }), []);
+
     const handleEntryChanged = useCallback((definitionId: string) => {
         setEntryRefreshKeys(previous => ({
             ...previous,
@@ -222,7 +262,62 @@ export function StatsPage() {
         }));
     }, []);
 
-    const handleCreated = (def: StatDefinition) => {
+    const handleCreatedOptimistically = (draft: StatDefinition, operationId: string) => {
+        const groupTarget = createStatGroupTarget;
+        pendingStatCreationsRef.current.set(operationId, {
+            tempId: draft.id,
+            groupId: groupTarget?.groupId ?? null,
+            groupDefinitionIds: groupTarget?.statDefinitionIds ?? [],
+            selectedIdBeforeCreation: selectedId,
+        });
+        setDefinitions(prev => [...prev, draft]);
+        closeCreateStatDialog();
+    };
+
+    const handleCreationFailed = (operationId: string) => {
+        const pending = pendingStatCreationsRef.current.get(operationId);
+        if (!pending) return;
+        pendingStatCreationsRef.current.delete(operationId);
+        setDefinitions(prev => prev.filter(definition => definition.id !== pending.tempId));
+        setSelectedId(current => current === pending.tempId ? null : current);
+        setSelectedStatIds(previous => previous.filter(id => id !== pending.tempId));
+        if (selectionAnchorRef.current === pending.tempId) selectionAnchorRef.current = null;
+    };
+
+    const handleCreated = (def: StatDefinition, operationId?: string) => {
+        if (operationId) {
+            const pending = pendingStatCreationsRef.current.get(operationId);
+            if (!pending) return;
+            pendingStatCreationsRef.current.delete(operationId);
+            setDefinitions(previous => previous.map(definition =>
+                definition.id === pending.tempId ? def : definition,
+            ));
+            setSelectedId(current => current === null && pending.selectedIdBeforeCreation === null
+                ? def.id
+                : current);
+
+            if (pending.groupId) {
+                const nextDefinitionIds = [...new Set([...pending.groupDefinitionIds, def.id])];
+                setGroups(previous => previous.map(group => group.groupId === pending.groupId
+                    ? { ...group, statDefinitionIds: nextDefinitionIds }
+                    : group));
+                setGroupMembershipSaving(true);
+                statGroupService.replaceDefinitions(pending.groupId, nextDefinitionIds)
+                    .then(updatedGroup => {
+                        setGroups(previous => previous.map(group => group.groupId === updatedGroup.groupId
+                            ? updatedGroup
+                            : group));
+                    })
+                    .catch(e => {
+                        console.error('Failed to add new stat to group:', e);
+                        setGroupError('The statistic was created, but could not be added to the group.');
+                        void loadGroups();
+                    })
+                    .finally(() => setGroupMembershipSaving(false));
+            }
+            return;
+        }
+
         const groupTarget = createStatGroupTarget;
         setDefinitions(prev => [...prev, def]);
         setSelectedId(def.id);
@@ -350,7 +445,6 @@ export function StatsPage() {
                 ]);
                 if (groupCreateDefinitionIds.length > 1) {
                     clearSelection();
-                    setCollapsedGroupIds(prev => new Set(prev).add(createdGroup.groupId));
                 }
             }
             closeGroupDialog();
@@ -370,7 +464,7 @@ export function StatsPage() {
         try {
             await statGroupService.deleteGroup(groupToDelete.groupId);
             setGroups(prev => prev.filter(group => group.groupId !== groupToDelete.groupId));
-            setCollapsedGroupIds(prev => {
+            setOpenGroupIds(prev => {
                 const next = new Set(prev);
                 next.delete(groupToDelete.groupId);
                 return next;
@@ -384,7 +478,7 @@ export function StatsPage() {
     };
 
     const toggleGroup = (groupId: string) => {
-        setCollapsedGroupIds(prev => {
+        setOpenGroupIds(prev => {
             const next = new Set(prev);
             if (next.has(groupId)) next.delete(groupId);
             else next.add(groupId);
@@ -406,6 +500,36 @@ export function StatsPage() {
         () => selectedDefinitions.filter(definition => !definition.systemKey),
         [selectedDefinitions],
     );
+    const keyboardSelectedDefinitions = selectedStatIds.length > 0
+        ? selectedDefinitions
+        : selectedDef
+            ? [selectedDef]
+            : [];
+
+    useKeyboardDelete({
+        enabled: keyboardSelectedDefinitions.length > 0
+            && !loading
+            && !showCreateForm
+            && !editTarget
+            && !groupDialogOpen
+            && !deleteTarget
+            && !deleteGroupTarget
+            && !bulkDeleteTargets
+            && !contextMenu
+            && !deleteSubmitting,
+        onDelete: () => {
+            if (keyboardSelectedDefinitions.length > 1) {
+                if (selectedDeletableDefinitions.length === keyboardSelectedDefinitions.length) {
+                    setBulkDeleteTargets(selectedDeletableDefinitions);
+                }
+                return;
+            }
+
+            const definition = keyboardSelectedDefinitions[0];
+            if (definition && !definition.systemKey) setDeleteTarget(definition);
+        },
+    });
+
     const groupedDefinitions = useMemo(() => groups.map(group => ({
         group,
         definitions: visibleDefinitions.filter(definition => group.statDefinitionIds.includes(definition.id)),
@@ -475,12 +599,13 @@ export function StatsPage() {
             window.removeEventListener('scroll', handleViewportChange, true);
             resizeObserver?.disconnect();
         };
-    }, [collapsedGroupIds, definitions, groups, selectedStatIdSet, selectedStatIds.length,
+    }, [openGroupIds, definitions, groups, selectedStatIdSet, selectedStatIds.length,
         updateSelectionActionsPosition]);
 
     const handleDefinitionSelection = (definition: StatDefinition, event: React.MouseEvent<HTMLElement>) => {
         event.stopPropagation();
         const definitionId = definition.id;
+        if (pendingStatCreationsRef.current.has(definitionId)) return;
         const anchorId = selectionAnchorRef.current;
 
         if (event.shiftKey && anchorId) {
@@ -672,7 +797,8 @@ export function StatsPage() {
     const renderDefinitionRow = (def: StatDefinition, isGroupMember = false) => {
         const isPrimarySelected = def.id === selectedId;
         const isSelected = selectedStatIdSet.has(def.id);
-        const rowDraggable = !reorderSaving && !groupOrderSaving && !groupMembershipSaving;
+        const isPending = pendingStatCreationsRef.current.has(def.id);
+        const rowDraggable = !isPending && !reorderSaving && !groupOrderSaving && !groupMembershipSaving;
 
         return (
             <Box
@@ -690,6 +816,7 @@ export function StatsPage() {
                 onContextMenu={event => {
                     event.preventDefault();
                     event.stopPropagation();
+                    if (isPending) return;
                     setContextMenu({ kind: 'stat', definition: def, top: event.clientY, left: event.clientX });
                 }}
                 onClick={event => handleDefinitionSelection(def, event)}
@@ -741,11 +868,13 @@ export function StatsPage() {
                         </Typography>
                     </Box>
                     <Stack direction="row" alignItems="center" spacing={0.5} sx={{ flexShrink: 0 }}>
-                        <StatRecentDots
-                            definition={def}
-                            refreshKey={entryRefreshKeys[def.id] ?? 0}
-                            onEntryChanged={handleEntryChanged}
-                        />
+                        {!isPending && (
+                            <StatRecentDots
+                                definition={def}
+                                refreshKey={resourceRefreshKey + (entryRefreshKeys[def.id] ?? 0)}
+                                onEntryChanged={handleEntryChanged}
+                            />
+                        )}
                     </Stack>
                 </Stack>
             </Box>
@@ -791,6 +920,8 @@ export function StatsPage() {
                     <DialogContent dividers sx={{ p: 1.5 }}>
                         <CreateStatForm
                             onCreated={handleCreated}
+                            onCreatedOptimistically={handleCreatedOptimistically}
+                            onCreationFailed={handleCreationFailed}
                             onCancel={closeCreateStatDialog}
                         />
                     </DialogContent>
@@ -887,7 +1018,9 @@ export function StatsPage() {
                             maxHeight: { xs: 270, md: 'none' },
                         }}>
                             {groupedDefinitions.map(({ group, definitions: groupDefinitions }) => {
-                                const collapsed = collapsedGroupIds.has(group.groupId);
+                                const expanded = loadedGroupPreferencesKey === groupPreferencesKey
+                                    && openGroupIds.has(group.groupId);
+                                const collapsed = !expanded;
                                 const groupDragging = draggedGroupId === group.groupId;
                                 const groupDragTarget = dragTargetGroupId === group.groupId;
                                 const statDropTarget = draggedId !== null && groupDragTarget;
@@ -997,15 +1130,9 @@ export function StatsPage() {
                                                 aria-label={collapsed ? `Expand ${group.name}` : `Collapse ${group.name}`}
                                                 onClick={() => toggleGroup(group.groupId)}
                                             >
-                                                <KeyboardArrowDownRoundedIcon
-                                                    sx={{
-                                                        fontSize: 19,
-                                                        transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
-                                                        transition: theme.transitions.create('transform', {
-                                                            duration: theme.transitions.duration.shortest,
-                                                        }),
-                                                    }}
-                                                />
+                                                {collapsed
+                                                    ? <FolderIcon sx={{ fontSize: 20 }} />
+                                                    : <FolderOpenOutlinedIcon sx={{ fontSize: 21, color: 'primary.main' }} />}
                                             </IconButton>
                                             <Typography variant="body2" fontWeight={650} noWrap sx={{ minWidth: 0 }}>
                                                 {group.name}
@@ -1013,26 +1140,6 @@ export function StatsPage() {
                                             <Typography variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
                                                 {groupDefinitions.length}
                                             </Typography>
-                                            <Box sx={{ ml: 'auto', display: 'flex' }}>
-                                                <Tooltip title="Rename group">
-                                                    <IconButton
-                                                        size="small"
-                                                        aria-label={`Rename ${group.name}`}
-                                                        onClick={() => openRenameGroupDialog(group)}
-                                                    >
-                                                        <EditOutlinedIcon sx={{ fontSize: 16 }} />
-                                                    </IconButton>
-                                                </Tooltip>
-                                                <Tooltip title="Delete group">
-                                                    <IconButton
-                                                        size="small"
-                                                        aria-label={`Delete ${group.name}`}
-                                                        onClick={() => setDeleteGroupTarget(group)}
-                                                    >
-                                                        <DeleteOutlineOutlinedIcon sx={{ fontSize: 17 }} />
-                                                    </IconButton>
-                                                </Tooltip>
-                                            </Box>
                                         </Box>
                                         <Collapse
                                             in={!collapsed}
@@ -1079,8 +1186,13 @@ export function StatsPage() {
                                 <StatCard
                                     definition={selectedDef}
                                     comparisonDefinitions={visibleDefinitions}
-                                    refreshKey={entryRefreshKeys[selectedDef.id] ?? 0}
+                                    refreshKey={resourceRefreshKey + (entryRefreshKeys[selectedDef.id] ?? 0)}
                                     onEntryChanged={handleEntryChanged}
+                                    onDateContextMenu={(date, event) => {
+                                        event.preventDefault();
+                                        event.stopPropagation();
+                                        setDayContextMenu({ date, top: event.clientY, left: event.clientX });
+                                    }}
                                 />
                             ) : (
                                 <Box sx={{
@@ -1207,6 +1319,24 @@ export function StatsPage() {
                         </MenuItem>
                     </>
                 )}
+            </Menu>
+
+            <Menu
+                open={Boolean(dayContextMenu)}
+                onClose={() => setDayContextMenu(null)}
+                anchorReference="anchorPosition"
+                anchorPosition={dayContextMenu
+                    ? { top: dayContextMenu.top, left: dayContextMenu.left }
+                    : undefined}
+                MenuListProps={{ dense: true }}
+            >
+                <MenuItem onClick={() => {
+                    if (dayContextMenu) navigate(`/day/${dayContextMenu.date}`, { state: { returnTo: '/stats' } });
+                    setDayContextMenu(null);
+                }}>
+                    <ListItemIcon><ViewDayIcon fontSize="small" /></ListItemIcon>
+                    <ListItemText>View day</ListItemText>
+                </MenuItem>
             </Menu>
 
             {/* Deleting a group only removes its organization metadata. */}

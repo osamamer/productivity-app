@@ -32,6 +32,7 @@ services:
       KC_HTTP_ENABLED: "true"
       KC_HTTP_PORT: "7070"
       KC_HOSTNAME: "http://localhost:7070"
+      APP_FAVICON_URL: "http://localhost:5173/src/assets/images/eye-care.png"
     volumes:
       - ./keycloak-theme:/opt/keycloak/themes:ro
       - ./keycloak:/opt/keycloak/data/import:ro

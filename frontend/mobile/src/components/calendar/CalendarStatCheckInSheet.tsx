@@ -3,7 +3,9 @@ import { StyleSheet, View } from 'react-native';
 
 import { reportError } from '@/lib/errors';
 import { formatDurationValue, formatTimeValue } from '@/lib/statValues';
+import { readStatInputPreference, saveStatInputPreference } from '@/lib/inputPreferences';
 import { useAppTheme } from '@/providers/ThemeProvider';
+import { useAuth } from '@/providers/AuthProvider';
 import { api } from '@/services/api';
 import type { StatDefinition } from '@/types/models';
 import { AppButton } from '../ui/AppButton';
@@ -77,6 +79,7 @@ export function CalendarStatCheckInSheet({ date, definitions, onClose, onSaved }
   onSaved: () => void;
 }) {
   const { colors } = useAppTheme();
+  const { user } = useAuth();
   const [values, setValues] = useState<Record<string, number | null>>({});
   const [touched, setTouched] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(() => Boolean(date && definitions.length > 0));
@@ -90,11 +93,18 @@ export function CalendarStatCheckInSheet({ date, definitions, onClose, onSaved }
 
     let active = true;
     void api.stats.entriesByDate(date)
-      .then(entries => {
+      .then(async entries => {
         if (!active) return;
         const nextValues: Record<string, number | null> = {};
         const nextTouched = new Set<string>();
-        definitions.forEach(definition => { nextValues[definition.id] = null; });
+        const rememberedValues = await Promise.all(definitions.map(async definition => ({
+          definition,
+          value: definition.type === 'TIME' || definition.type === 'DURATION'
+            ? await readStatInputPreference(user?.id, definition.id, definition.type)
+            : null,
+        })));
+        if (!active) return;
+        rememberedValues.forEach(({ definition, value }) => { nextValues[definition.id] = value; });
         entries.forEach(entry => {
           nextValues[entry.statDefinitionId] = entry.value;
           nextTouched.add(entry.statDefinitionId);
@@ -109,10 +119,14 @@ export function CalendarStatCheckInSheet({ date, definitions, onClose, onSaved }
         if (active) setLoading(false);
       });
     return () => { active = false; };
-  }, [date, definitions]);
+  }, [date, definitions, user?.id]);
 
   function updateValue(id: string, value: number | null) {
     setValues(previous => ({ ...previous, [id]: value }));
+    const definition = definitions.find(item => item.id === id);
+    if (value !== null && (definition?.type === 'TIME' || definition?.type === 'DURATION')) {
+      void saveStatInputPreference(user?.id, id, definition.type, value);
+    }
     setTouched(previous => {
       const next = new Set(previous);
       if (value === null) next.delete(id);

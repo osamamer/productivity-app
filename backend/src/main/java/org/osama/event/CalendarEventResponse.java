@@ -13,6 +13,7 @@ public record CalendarEventResponse(
         Instant startTime,
         Instant endTime,
         String timeZone,
+        CalendarEventStatus status,
         RecurrenceFrequency recurrenceFrequency,
         LocalDate recurrenceEndDate,
         Integer recurrenceInterval,

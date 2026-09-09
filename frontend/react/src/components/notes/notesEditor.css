@@ -50,6 +50,43 @@
     opacity: 0.78;
 }
 
+/* Keep nested list levels compact; Quill's default stylesheet adds 3em per level. */
+.notes-rich-editor .ql-editor li.ql-indent-1:not(.ql-direction-rtl) {
+    padding-left: 3em;
+}
+
+.notes-rich-editor .ql-editor li.ql-indent-2:not(.ql-direction-rtl) {
+    padding-left: 4.5em;
+}
+
+.notes-rich-editor .ql-editor li.ql-indent-3:not(.ql-direction-rtl) {
+    padding-left: 6em;
+}
+
+.notes-rich-editor .ql-editor li.ql-indent-4:not(.ql-direction-rtl) {
+    padding-left: 7.5em;
+}
+
+.notes-rich-editor .ql-editor li.ql-indent-5:not(.ql-direction-rtl) {
+    padding-left: 9em;
+}
+
+.notes-rich-editor .ql-editor li.ql-indent-6:not(.ql-direction-rtl) {
+    padding-left: 10.5em;
+}
+
+.notes-rich-editor .ql-editor li.ql-indent-7:not(.ql-direction-rtl) {
+    padding-left: 12em;
+}
+
+.notes-rich-editor .ql-editor li.ql-indent-8:not(.ql-direction-rtl) {
+    padding-left: 13.5em;
+}
+
+.notes-rich-editor .ql-editor li.ql-indent-9:not(.ql-direction-rtl) {
+    padding-left: 15em;
+}
+
 .notes-rich-editor .ql-editor pre.ql-syntax {
     border-radius: 8px;
     padding: 14px 16px;

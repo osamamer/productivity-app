@@ -1,6 +1,10 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Task } from '../types/Task';
-import { taskService } from '../services/api';
+import { TASK_PAGE_BATCH_SIZE, taskService } from '../services/api';
+import { subscribeToResourceInvalidation } from '../services/cache/resourceInvalidation';
+import { getShowCompletedHomeTasks } from '../services/utils/homePreferences';
+
+export type TaskLoadMode = 'all' | 'taskPage';
 
 type TaskState = {
     allTasks: Task[];
@@ -89,9 +93,11 @@ export function useTaskManager() {
     });
     const [loading, setLoading] = useState(true);
     const [tasksLoaded, setTasksLoaded] = useState(false);
+    const [taskLoadVersion, setTaskLoadVersion] = useState(0);
     const [error, setError] = useState<string | null>(null);
     const allTasksRequestRef = useRef<Promise<void> | null>(null);
     const allTasksFetchedAtRef = useRef(0);
+    const allTasksLoadModeRef = useRef<TaskLoadMode>('all');
 
     const {
         allTasks,
@@ -106,19 +112,42 @@ export function useTaskManager() {
         setTaskState(prev => ({ ...prev, highlightedTask: task }));
     }, []);
 
-    const fetchAllTasks = useCallback(async (force = false) => {
+    const fetchAllTasks = useCallback(async (
+        force = false,
+        loadMode: TaskLoadMode = allTasksLoadModeRef.current,
+    ) => {
         if (allTasksRequestRef.current) {
             return allTasksRequestRef.current;
         }
-        if (!force && Date.now() - allTasksFetchedAtRef.current < TASK_LIST_TTL_MS) {
+        if (!force
+            && allTasksLoadModeRef.current === loadMode
+            && Date.now() - allTasksFetchedAtRef.current < TASK_LIST_TTL_MS) {
             return;
         }
 
         const request = (async () => {
             try {
+                const previousLoadMode = allTasksLoadModeRef.current;
+                allTasksLoadModeRef.current = loadMode;
+                if (previousLoadMode !== loadMode) {
+                    setTaskState(previous => ({
+                        ...previous,
+                        allTasks: [],
+                        todayTasks: [],
+                        futureTasks: [],
+                        pastTasks: [],
+                        undatedTasks: [],
+                        highlightedTask: null,
+                    }));
+                }
                 setLoading(true);
                 setError(null);
-                const tasks = await taskService.getAllMainTasks();
+                const completedFilter = loadMode === 'taskPage' && !getShowCompletedHomeTasks()
+                    ? false
+                    : undefined;
+                const tasks = loadMode === 'taskPage'
+                    ? await taskService.getTaskPageInitialTasks(TASK_PAGE_BATCH_SIZE, completedFilter)
+                    : await taskService.getAllMainTasks();
                 allTasksFetchedAtRef.current = Date.now();
                 setTaskState(prev => {
                     const next = withTaskBuckets(prev, tasks);
@@ -129,6 +158,7 @@ export function useTaskManager() {
                         highlightedTask: prev.highlightedTask ?? tasks[tasks.length - 1] ?? null,
                     };
                 });
+                setTaskLoadVersion(previous => previous + 1);
             } catch (err) {
                 allTasksFetchedAtRef.current = 0;
                 setError(err instanceof Error ? err.message : 'Failed to fetch tasks');
@@ -176,9 +206,20 @@ export function useTaskManager() {
         }
     }, []);
 
-    const refreshTaskBuckets = useCallback(async (force = false) => {
-        await fetchAllTasks(force);
+    const refreshTaskBuckets = useCallback(async (
+        force = false,
+        loadMode: TaskLoadMode = allTasksLoadModeRef.current,
+    ) => {
+        await fetchAllTasks(force, loadMode);
     }, [fetchAllTasks]);
+
+    useEffect(() => subscribeToResourceInvalidation('stats', () => {
+        void refreshTaskBuckets(true, allTasksLoadModeRef.current);
+    }), [refreshTaskBuckets]);
+
+    useEffect(() => subscribeToResourceInvalidation('tasks', () => {
+        void refreshTaskBuckets(true, allTasksLoadModeRef.current);
+    }), [refreshTaskBuckets]);
 
     useEffect(() => {
         let timeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -191,7 +232,7 @@ export function useTaskManager() {
 
             timeoutId = setTimeout(async () => {
                 try {
-                    await refreshTaskBuckets(true);
+                await refreshTaskBuckets(true, allTasksLoadModeRef.current);
                 } finally {
                     scheduleNextRefresh();
                 }
@@ -214,6 +255,17 @@ export function useTaskManager() {
                 ...next,
                 highlightedTask: prev.highlightedTask ?? task,
             };
+        });
+    }, []);
+
+    const appendTasksToState = useCallback((tasks: Task[]) => {
+        if (tasks.length === 0) return;
+
+        setTaskState(prev => {
+            const knownTaskIds = new Set(prev.allTasks.map(task => task.taskId));
+            const additions = tasks.filter(task => !knownTaskIds.has(task.taskId));
+            if (additions.length === 0) return prev;
+            return withTaskBuckets(prev, [...prev.allTasks, ...additions]);
         });
     }, []);
 
@@ -297,6 +349,7 @@ export function useTaskManager() {
         highlightedTask,
         loading,
         tasksLoaded,
+        taskLoadVersion,
         error,
         // Setters
         setHighlightedTask,
@@ -308,6 +361,7 @@ export function useTaskManager() {
         refreshTaskBuckets,
         // State updaters
         addTaskToState,
+        appendTasksToState,
         replaceTaskInState,
         updateTaskInState,
         removeTaskFromState,
@@ -321,6 +375,7 @@ export function useTaskManager() {
         highlightedTask,
         loading,
         tasksLoaded,
+        taskLoadVersion,
         error,
         setHighlightedTask,
         fetchAllTasks,
@@ -329,6 +384,7 @@ export function useTaskManager() {
         fetchPastTasks,
         refreshTaskBuckets,
         addTaskToState,
+        appendTasksToState,
         replaceTaskInState,
         updateTaskInState,
         removeTaskFromState,

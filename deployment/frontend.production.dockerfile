@@ -27,4 +27,6 @@ RUN npm run build -- --mode=production
 FROM caddy:2-alpine
 
 COPY --from=build /app/dist /srv
+# Keep a stable public URL for the Keycloak login theme to reuse the app favicon.
+COPY frontend/react/src/assets/images/eye-care.png /srv/favicon.png
 COPY deployment/Caddyfile /etc/caddy/Caddyfile

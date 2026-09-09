@@ -22,9 +22,12 @@ import type {
   Task,
   TaskGroup,
   TaskInput,
+  TaskRecurrenceFrequency,
+  TaskSeries,
   UserPreferences,
 } from '@/types/models';
 import { resolveAccessToken } from './auth-session';
+import { invalidateResource } from '@/lib/resourceInvalidation';
 
 type RequestOptions = Omit<RequestInit, 'body'> & { body?: unknown };
 
@@ -70,15 +73,51 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 const json = <T>(path: string, method: string, body?: unknown) =>
   apiRequest<T>(path, { method, body });
 
+export const TASK_PAGE_BATCH_SIZE = 30;
+
+function taskPeriodPath(period: 'PAST' | 'FUTURE', limit?: number, offset = 0): string {
+  const params = new URLSearchParams({ period });
+  if (limit !== undefined) {
+    params.set('limit', String(limit));
+    params.set('offset', String(offset));
+  }
+  return `/api/v1/tasks?${params.toString()}`;
+}
+
 export const api = {
   tasks: {
     all: () => apiRequest<Task[]>('/api/v1/tasks/main'),
+    scheduled: () => apiRequest<Task[]>('/api/v1/tasks?scheduled=true'),
     today: () => apiRequest<Task[]>('/api/v1/tasks/today'),
-    past: () => apiRequest<Task[]>('/api/v1/tasks?period=PAST'),
-    future: () => apiRequest<Task[]>('/api/v1/tasks?period=FUTURE'),
-    create: (input: TaskInput) => json<Task>('/api/v1/tasks', 'POST', input),
-    update: (id: string, updates: Partial<Task>) =>
-      json<Task>(`/api/v1/tasks/${id}`, 'PATCH', updates),
+    past: (limit?: number, offset = 0) => apiRequest<Task[]>(taskPeriodPath('PAST', limit, offset)),
+    future: (limit?: number, offset = 0) => apiRequest<Task[]>(taskPeriodPath('FUTURE', limit, offset)),
+    undated: () => apiRequest<Task[]>('/api/v1/tasks/undated'),
+    create: (input: TaskInput) => json<Task>('/api/v1/tasks', 'POST', {
+      ...input,
+      timeZone: input.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC',
+    }),
+    recurrence: (taskId: string) => apiRequest<TaskSeries | undefined>(`/api/v1/tasks/${taskId}/recurrence`),
+    startRecurrence: (taskId: string, recurrence: {
+      recurrenceFrequency: Exclude<TaskRecurrenceFrequency, 'NONE'>;
+      recurrenceEndDate: string | null;
+      recurrenceInterval: number | null;
+      recurrenceUnit: 'DAYS' | 'WEEKS' | 'MONTHS' | null;
+      timeZone: string;
+    }) => json<TaskSeries>(`/api/v1/tasks/${taskId}/recurrence`, 'POST', recurrence),
+    updateRecurrence: (seriesId: string, recurrence: {
+      recurrenceFrequency: Exclude<TaskRecurrenceFrequency, 'NONE'>;
+      recurrenceEndDate: string | null;
+      recurrenceInterval: number | null;
+      recurrenceUnit: 'DAYS' | 'WEEKS' | 'MONTHS' | null;
+      timeZone: string;
+      active?: boolean;
+    }) => json<TaskSeries>(`/api/v1/task-series/${seriesId}`, 'PATCH', recurrence),
+    stopRecurrence: (seriesId: string) => apiRequest<void>(`/api/v1/task-series/${seriesId}`, { method: 'DELETE' }),
+    update: async (id: string, updates: Partial<Task>) => {
+      const updated = await json<Task>(`/api/v1/tasks/${id}`, 'PATCH', updates);
+      if (updates.completed !== undefined) invalidateResource('tasks');
+      return updated;
+    },
     remove: (id: string) => apiRequest<void>(`/api/v1/tasks/${id}`, { method: 'DELETE' }),
     reorder: (taskIds: string[]) => json<Task[]>('/api/v1/tasks/order', 'PUT', { taskIds }),
   },
@@ -104,7 +143,7 @@ export const api = {
       longBreakCooldown: number;
       secondsMode: boolean;
     }) => json<void>('/api/v1/pomodoro/start', 'POST', { taskId, ...input }),
-    end: (taskId: string) => apiRequest<void>(`/api/v1/pomodoro/end/${taskId}`, { method: 'POST' }),
+    end: (taskId: string) => apiRequest<PomodoroStatus>(`/api/v1/pomodoro/end/${taskId}`, { method: 'POST' }),
     startNextPhase: (taskId: string) => apiRequest<void>(`/api/v1/pomodoro/phase/start/${taskId}`, { method: 'POST' }),
     finishBreakEarly: (taskId: string) => apiRequest<void>(`/api/v1/pomodoro/phase/finish-break/${taskId}`, { method: 'POST' }),
     statusForTask: (taskId: string) => apiRequest<PomodoroStatus | undefined>(`/api/v1/pomodoro/status/${taskId}`),
@@ -156,7 +195,7 @@ export const api = {
     categories: () => apiRequest<NoteCategory[]>('/api/v1/note-categories'),
     create: (categoryId: string | null = null) =>
       json<Note>('/api/v1/notes', 'POST', {
-        title: 'Untitled',
+        title: '',
         content: '',
         categoryId,
         pinned: false,
@@ -164,6 +203,10 @@ export const api = {
     update: (id: string, updates: Partial<Pick<Note, 'title' | 'content' | 'categoryId' | 'pinned'>>) =>
       json<Note>(`/api/v1/notes/${id}`, 'PATCH', updates),
     remove: (id: string) => apiRequest<void>(`/api/v1/notes/${id}`, { method: 'DELETE' }),
+    bulkUpdate: (noteIds: string[], updates: Partial<Pick<Note, 'categoryId' | 'pinned'>>) =>
+      json<Note[]>('/api/v1/notes/bulk', 'PATCH', { noteIds, ...updates }),
+    bulkRemove: (noteIds: string[]) =>
+      json<void>('/api/v1/notes/bulk', 'DELETE', { noteIds }),
   },
   stats: {
     definitions: () => apiRequest<StatDefinition[]>('/api/v1/stats/definitions'),
@@ -182,8 +225,11 @@ export const api = {
       return apiRequest<StatEntry[]>(`/api/v1/stats/entries?${params}`);
     },
     entriesByDate: (date: string) => apiRequest<StatEntry[]>(`/api/v1/stats/entries/by-date?date=${encodeURIComponent(date)}`),
-    record: (statDefinitionId: string, value: number, date?: string) =>
-      json<StatEntry>('/api/v1/stats/entries', 'POST', { statDefinitionId, value, date }),
+    record: async (statDefinitionId: string, value: number, date?: string) => {
+      const entry = await json<StatEntry>('/api/v1/stats/entries', 'POST', { statDefinitionId, value, date });
+      invalidateResource('stats');
+      return entry;
+    },
     create: (input: Pick<StatDefinition, 'name' | 'description' | 'type' | 'minValue' | 'maxValue'>) =>
       json<StatDefinition>('/api/v1/stats/definitions', 'POST', input),
     summary: (id: string, from: string, to: string) =>
@@ -201,6 +247,7 @@ export const api = {
     resume: (id: string) => json<MeditationSession>(`/api/v1/meditation/${id}/unpause`, 'PATCH'),
     end: (id: string, moodAfter?: number) =>
       json<MeditationSession>(`/api/v1/meditation/${id}/end`, 'POST', moodAfter === undefined ? undefined : { moodAfter }),
+    discard: (id: string) => apiRequest<void>(`/api/v1/meditation/${id}`, { method: 'DELETE' }),
   },
   preferences: {
     get: () => apiRequest<UserPreferences>('/api/v1/users/me/preferences'),

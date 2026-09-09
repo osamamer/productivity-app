@@ -16,4 +16,6 @@ public interface StatDefinitionRepository extends JpaRepository<StatDefinition, 
     Optional<StatDefinition> findByUserIdAndNameIgnoreCase(String userId, String name);
 
     Optional<StatDefinition> findByUserIdAndSystemKey(String userId, String systemKey);
+
+    Optional<StatDefinition> findByRecurringTaskSeriesIdAndUserId(String recurringTaskSeriesId, String userId);
 }

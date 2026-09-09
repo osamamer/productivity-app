@@ -12,6 +12,8 @@ import { StatLineChart } from './StatLineChart';
 import { BooleanCalendarView } from './BooleanCalendarView';
 import { StatSummaryBar } from './StatSummaryBar';
 import { StatInsightsDialog } from './StatInsightsDialog';
+import { FocusTimeSummaryBar } from './FocusTimeSummaryBar';
+import { TaskFocusTimeChart } from './TaskFocusTimeChart';
 
 const CHART_DATE_RANGES = [
     { label: '7d', value: 7 },
@@ -62,6 +64,7 @@ interface Props {
     comparisonDefinitions: StatDefinition[];
     refreshKey: number;
     onEntryChanged?: (definitionId: string) => void;
+    onDateContextMenu?: (date: string, event: React.MouseEvent<Element>) => void;
 }
 
 export const StatCard = React.memo(function StatCard({
@@ -69,16 +72,30 @@ export const StatCard = React.memo(function StatCard({
     comparisonDefinitions,
     refreshKey,
     onEntryChanged,
+    onDateContextMenu,
 }: Props) {
     const [dateRange, setDateRange] = useState(30);
     const [insightsOpen, setInsightsOpen] = useState(false);
     const [insightsAvailable, setInsightsAvailable] = useState(false);
     const [comparisonId, setComparisonId] = useState('');
-    const availableComparisons = comparisonDefinitions.filter(item => item.id !== definition.id);
-    const comparisonDefinition = availableComparisons.find(item => item.id === comparisonId);
+    const supportsComparison = definition.type !== 'TIME' && definition.type !== 'DURATION';
+    const availableComparisons = supportsComparison
+        ? comparisonDefinitions.filter(item => item.id !== definition.id)
+        : [];
+    const comparisonDefinition = supportsComparison
+        ? availableComparisons.find(item => item.id === comparisonId)
+        : undefined;
+    const supportsFocusTime = Boolean(definition.recurringTaskSeriesId);
+    const [viewMode, setViewMode] = useState<'stat' | 'focusTime'>('stat');
+    const focusTimeView = supportsFocusTime && viewMode === 'focusTime';
     const comparisonIds = comparisonDefinitions.map(item => item.id).join(':');
-    const isBooleanCalendar = definition.type === 'BOOLEAN' && !comparisonDefinition;
+    const isBooleanCalendar = !focusTimeView && definition.type === 'BOOLEAN' && !comparisonDefinition;
     const effectiveDateRange = isBooleanCalendar ? Math.min(dateRange, 30) : dateRange;
+
+    useEffect(() => {
+        if (!supportsFocusTime && viewMode !== 'stat') setViewMode('stat');
+        if (focusTimeView && comparisonId) setComparisonId('');
+    }, [comparisonId, focusTimeView, supportsFocusTime, viewMode]);
 
     useEffect(() => {
         let cancelled = false;
@@ -143,7 +160,15 @@ export const StatCard = React.memo(function StatCard({
                 sx={{ pb: 0, minHeight: 72 }}
             />
             <CardContent>
-                <StatSummaryBar definition={definition} dateRange={effectiveDateRange} refreshKey={refreshKey} />
+                {focusTimeView ? (
+                    <FocusTimeSummaryBar
+                        definitionId={definition.id}
+                        dateRange={effectiveDateRange}
+                        refreshKey={refreshKey}
+                    />
+                ) : (
+                    <StatSummaryBar definition={definition} dateRange={effectiveDateRange} refreshKey={refreshKey} />
+                )}
                 <Stack
                     direction={{ xs: 'column', sm: 'row' }}
                     alignItems={{ xs: 'stretch', sm: 'center' }}
@@ -165,31 +190,59 @@ export const StatCard = React.memo(function StatCard({
                             </ToggleButton>
                         ))}
                     </Stack>
-                    <FormControl size="small" sx={{ minWidth: { sm: 220 } }} disabled={availableComparisons.length === 0}>
-                        <InputLabel id="stat-overlay-label">Overlay stat</InputLabel>
-                        <Select
-                            labelId="stat-overlay-label"
-                            value={comparisonId}
-                            label="Overlay stat"
-                            onChange={event => setComparisonId(event.target.value)}
-                            inputProps={{ 'aria-label': `Overlay another stat on ${definition.name}` }}
-                        >
-                            <MenuItem value="">None</MenuItem>
-                            {availableComparisons.map(item => (
-                                <MenuItem key={item.id} value={item.id}>{item.name}</MenuItem>
-                            ))}
-                        </Select>
-                    </FormControl>
+                    {(supportsFocusTime || supportsComparison) && (
+                        <Stack direction="row" spacing={1} justifyContent="flex-end">
+                            {supportsFocusTime && (
+                                <FormControl size="small" sx={{ minWidth: { sm: 180 } }}>
+                                    <InputLabel id={`stat-view-label-${definition.id}`}>View</InputLabel>
+                                    <Select
+                                        labelId={`stat-view-label-${definition.id}`}
+                                        value={viewMode}
+                                        label="View"
+                                        onChange={event => setViewMode(event.target.value as 'stat' | 'focusTime')}
+                                        inputProps={{ 'aria-label': `View ${definition.name}` }}
+                                    >
+                                        <MenuItem value="stat">Stat value</MenuItem>
+                                        <MenuItem value="focusTime">Focus time</MenuItem>
+                                    </Select>
+                                </FormControl>
+                            )}
+                            {supportsComparison && (
+                                <FormControl size="small" sx={{ minWidth: { sm: 220 } }} disabled={availableComparisons.length === 0 || focusTimeView}>
+                                    <InputLabel id="stat-overlay-label">Overlay stat</InputLabel>
+                                    <Select
+                                        labelId="stat-overlay-label"
+                                        value={comparisonId}
+                                        label="Overlay stat"
+                                        onChange={event => setComparisonId(event.target.value)}
+                                        inputProps={{ 'aria-label': `Overlay another stat on ${definition.name}` }}
+                                    >
+                                        <MenuItem value="">None</MenuItem>
+                                        {availableComparisons.map(item => (
+                                            <MenuItem key={item.id} value={item.id}>{item.name}</MenuItem>
+                                        ))}
+                                    </Select>
+                                </FormControl>
+                            )}
+                        </Stack>
+                    )}
                 </Stack>
                 <StatViewTransition
-                    viewKey={isBooleanCalendar ? 'calendar' : 'chart'}
+                    viewKey={focusTimeView ? 'focus-time' : isBooleanCalendar ? 'calendar' : 'chart'}
                 >
-                    {isBooleanCalendar ? (
+                    {focusTimeView ? (
+                        <TaskFocusTimeChart
+                            definition={definition}
+                            dateRange={effectiveDateRange}
+                            refreshKey={refreshKey}
+                        />
+                    ) : isBooleanCalendar ? (
                         <BooleanCalendarView
                             definition={definition}
                             dateRange={effectiveDateRange}
                             refreshKey={refreshKey}
                             onEntryChanged={onEntryChanged}
+                            onDateContextMenu={onDateContextMenu}
                         />
                     ) : (
                         <StatLineChart
@@ -198,6 +251,7 @@ export const StatCard = React.memo(function StatCard({
                             dateRange={effectiveDateRange}
                             refreshKey={refreshKey}
                             onEntryChanged={onEntryChanged}
+                            onDateContextMenu={onDateContextMenu}
                         />
                     )}
                 </StatViewTransition>

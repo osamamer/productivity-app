@@ -30,8 +30,8 @@ public class PomodoroController {
     }
 
     @PostMapping("/end/{taskId}")
-    public void endPomodoro(@PathVariable String taskId) {
-        pomodoroService.endPomodoro(taskId, currentUserService.getCurrentUserId());
+    public Pomodoro endPomodoro(@PathVariable String taskId) {
+        return pomodoroService.endPomodoro(taskId, currentUserService.getCurrentUserId());
     }
 
     @PostMapping("/phase/start/{taskId}")

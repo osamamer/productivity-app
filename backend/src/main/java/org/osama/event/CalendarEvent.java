@@ -49,6 +49,10 @@ public class CalendarEvent {
     private String timeZone;
 
     @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private CalendarEventStatus status = CalendarEventStatus.CONFIRMED;
+
+    @Enumerated(EnumType.STRING)
     @Column(name = "recurrence_frequency", nullable = false, length = 20)
     private RecurrenceFrequency recurrenceFrequency = RecurrenceFrequency.NONE;
 

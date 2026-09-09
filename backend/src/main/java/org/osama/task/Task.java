@@ -12,7 +12,6 @@ import org.osama.user.User;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.UUID;
 
 @Data
 @Entity
@@ -41,6 +40,9 @@ public class Task {
     @JsonDeserialize(using = LocalDateTimeDeserializer.class)
     private LocalDateTime scheduledPerformDateTime;
 
+    @Column(name = "time_zone", length = 80)
+    private String timeZone = "UTC";
+
 
     @Column
     @JsonSerialize(using = LocalDateTimeSerializer.class)
@@ -66,10 +68,28 @@ public class Task {
     @Column(name = "mental_thread_id")
     private String mentalThreadId;
 
+    @Column(name = "task_series_id")
+    private String taskSeriesId;
+
+    @Column(name = "series_occurrence_at")
+    @JsonSerialize(using = LocalDateTimeSerializer.class)
+    @JsonDeserialize(using = LocalDateTimeDeserializer.class)
+    private LocalDateTime seriesOccurrenceAt;
+
+    @Column(nullable = false)
+    private boolean skipped;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "skip_reason", length = 30)
+    private TaskSkipReason skipReason;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
     @Column(name = "user_id", insertable = false, updatable = false)
     private String userId;
+
+    @Transient
+    private Integer reminderMinutesBefore;
 }

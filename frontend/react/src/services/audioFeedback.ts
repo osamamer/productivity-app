@@ -2,6 +2,8 @@ import {
     AUDIO_FEEDBACK_STORAGE_KEY,
     dayRatingFeedback,
     renderAudioFeedback,
+    renderMeditationCompletionGong,
+    renderMeditationIntervalBell,
     type AudioContextLike,
     type AudioFeedbackKind,
 } from '../../../shared/audioFeedback.ts';
@@ -56,6 +58,14 @@ export function prepareAudioFeedback(): void {
     }
 }
 
+/** Unlock the meditation gong from the start button, even when general UI sounds are disabled. */
+export function prepareMeditationAudio(): void {
+    const context = getAudioContext();
+    if (context?.state === 'suspended') {
+        void context.resume().catch(error => console.warn('Could not unlock meditation audio:', error));
+    }
+}
+
 export function playAudioFeedback(kind: AudioFeedbackKind): void {
     if (!enabled) return;
     const context = getAudioContext();
@@ -65,6 +75,25 @@ export function playAudioFeedback(kind: AudioFeedbackKind): void {
         if (context.state === 'suspended') await context.resume();
         renderAudioFeedback(context, kind);
     })().catch(error => console.warn('Could not play sound effect:', error));
+}
+
+function playMeditationCue(render: (context: AudioContextLike) => void, respectPreference = true): void {
+    if (respectPreference && !enabled) return;
+    const context = getAudioContext();
+    if (!context) return;
+
+    void (async () => {
+        if (context.state === 'suspended') await context.resume();
+        render(context);
+    })().catch(error => console.warn('Could not play meditation cue:', error));
+}
+
+export function playMeditationIntervalBell(): void {
+    playMeditationCue(renderMeditationIntervalBell);
+}
+
+export function playMeditationCompletionGong(): void {
+    playMeditationCue(renderMeditationCompletionGong, false);
 }
 
 export { dayRatingFeedback };

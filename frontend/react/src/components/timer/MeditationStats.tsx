@@ -26,6 +26,7 @@ interface MeditationStatsData {
     meditatedSummary: StatSummary;
     minutesSummary: StatSummary;
     meditatedEntries: StatEntry[];
+    minutesEntries: StatEntry[];
     period: MeditationPeriod;
 }
 
@@ -106,12 +107,13 @@ export function MeditationStats({ refreshKey }: MeditationStatsProps) {
                 const minutes = findSystemDefinition(definitions, MEDITATION_MINUTES_SYSTEM_KEY);
                 if (!meditated || !minutes) return;
 
-                const [meditatedSummary, minutesSummary, meditatedEntries] = await Promise.all([
+                const [meditatedSummary, minutesSummary, meditatedEntries, minutesEntries] = await Promise.all([
                     statService.getSummary(meditated.id, period.from, period.to),
                     statService.getSummary(minutes.id, period.from, period.to),
                     statService.getEntries(meditated.id, period.from, period.to),
+                    statService.getEntries(minutes.id, period.from, period.to),
                 ]);
-                if (!cancelled) setData({ meditatedSummary, minutesSummary, meditatedEntries, period });
+                if (!cancelled) setData({ meditatedSummary, minutesSummary, meditatedEntries, minutesEntries, period });
             })
             .catch(fetchError => {
                 console.error('Failed to load meditation stats:', fetchError);
@@ -163,6 +165,7 @@ export function MeditationStats({ refreshKey }: MeditationStatsProps) {
     const yesDates = new Set(
         data.meditatedEntries.filter(entry => entry.value === 1).map(entry => entry.date),
     );
+    const minutesByDate = new Map(data.minutesEntries.map(entry => [entry.date, entry.value]));
     const monthDays = eachDayOfInterval({ start: data.period.monthStart, end: data.period.monthEnd });
     const leadingEmptyDays = (getDay(data.period.monthStart) + 6) % 7;
     const calendarDays: (Date | null)[] = [
@@ -304,8 +307,9 @@ export function MeditationStats({ refreshKey }: MeditationStatsProps) {
                             const key = format(date, 'yyyy-MM-dd');
                             const future = isAfter(date, today);
                             const practiced = !future && yesDates.has(key);
+                            const minutes = minutesByDate.get(key);
                             return (
-                                <Tooltip key={key} title={future ? format(date, 'MMMM d') : `${format(date, 'MMMM d')}: ${practiced ? 'Meditated' : 'No session'}`}>
+                                <Tooltip key={key} title={future ? format(date, 'MMMM d') : `${format(date, 'MMMM d')}: ${practiced ? `Meditated for ${formatMinutes(minutes ?? 0)}` : 'No session'}`}>
                                     <Box sx={{
                                         height: { xs: 32, sm: 38 },
                                         position: 'relative',

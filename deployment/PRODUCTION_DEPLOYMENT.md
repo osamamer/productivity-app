@@ -74,6 +74,14 @@ auth.example.com  A   SERVER_IP
 Wait until both names resolve before starting Caddy. Caddy will obtain and renew the
 HTTPS certificates automatically.
 
+For Claritard's public deployment, the equivalent values can be `claritard.com` and
+`auth.claritard.com`. `AUTH_DOMAIN` is the browser-facing origin for the identity
+service; the application bundle and backend issuer are both configured from it. The
+OAuth login URL will still temporarily include paths such as
+`/realms/productivity-app/protocol/openid-connect/auth` during the redirect. That is
+the normal OIDC flow and cannot be removed from the browser address bar without
+replacing the flow with a custom authentication application.
+
 ## 3. Install the application
 
 Clone the repository into `/opt`:
@@ -203,8 +211,8 @@ dropping existing data. Do not use `docker compose down -v` in production.
 
 ## 6. Configure Keycloak
 
-Open `https://auth.example.com` and sign in to the administrator console using the
-credentials from `.env`.
+Open `https://${AUTH_DOMAIN}` (for example, `https://auth.claritard.com`) and sign in
+to the administrator console using the credentials from `.env`.
 
 Create realm `productivity-app`, then create a public client:
 
@@ -217,11 +225,12 @@ Create realm `productivity-app`, then create a public client:
 Ensure the client token includes `email`, `given_name`, `family_name`, and
 `preferred_username` claims. In Realm settings → Themes, select `productivity` as
 the Login Theme. The theme is mounted into the Keycloak container from
-`deployment/keycloak-theme`. Create a test user and verify that login, task creation,
-password changes, and logout all work.
+`deployment/keycloak-theme`; its login page reuses the app favicon from the stable
+`https://${APP_DOMAIN}/favicon.png` route. Create a test user and verify that login,
+task creation, password changes, and logout all work.
 
 The backend's issuer URL must remain the public Keycloak URL because it must match the
-issuer in the JWT: `https://auth.example.com/realms/productivity-app`.
+issuer in the JWT: `https://${AUTH_DOMAIN}/realms/productivity-app`.
 
 ## 7. Verify the application
 

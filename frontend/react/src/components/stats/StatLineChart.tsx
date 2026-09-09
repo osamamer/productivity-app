@@ -27,6 +27,7 @@ interface Props {
     dateRange: number;
     refreshKey: number;
     onEntryChanged?: (definitionId: string) => void;
+    onDateContextMenu?: (date: string, event: React.MouseEvent<Element>) => void;
 }
 
 function valueForDate(
@@ -208,6 +209,7 @@ export const StatLineChart = React.memo(function StatLineChart({
     dateRange,
     refreshKey,
     onEntryChanged,
+    onDateContextMenu,
 }: Props) {
     const theme = useTheme();
     const to = new Date();
@@ -506,6 +508,7 @@ export const StatLineChart = React.memo(function StatLineChart({
                 dateRange={dateRange}
                 theme={theme}
                 onPointClick={openSpecialEditor}
+                onDateContextMenu={onDateContextMenu}
             />
         )
         : definition.type === 'DURATION' && comparisonHasSameType
@@ -517,6 +520,7 @@ export const StatLineChart = React.memo(function StatLineChart({
                     dateRange={dateRange}
                     theme={theme}
                     onPointClick={openSpecialEditor}
+                    onDateContextMenu={onDateContextMenu}
                 />
             )
             : null;
@@ -539,6 +543,12 @@ export const StatLineChart = React.memo(function StatLineChart({
                 ref={chartRef}
                 onMouseEnter={handleChartEnter}
                 onMouseLeave={handleChartLeave}
+                onContextMenu={event => {
+                    if (!onDateContextMenu || !hoveredPoint || hoveredPoint.periodEnd) return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onDateContextMenu(hoveredPoint.date, event);
+                }}
                 sx={{ minHeight: definition.type === 'TIME' && dateRange <= 7 ? 220 : 200, opacity: loading ? 0.55 : 1, transition: 'opacity 120ms ease', pb: definition.type === 'DURATION' ? 3 : 0 }}
             >
                 {specialChart ?? <ResponsiveContainer width="100%" height={200}>

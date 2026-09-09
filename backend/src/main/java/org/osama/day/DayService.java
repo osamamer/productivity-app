@@ -36,6 +36,12 @@ public class DayService {
                 .orElse(createNewDay(LocalDate.now(), userId));
     }
 
+    @Transactional
+    public DayEntity getOrCreateDay(LocalDate localDate, String userId) {
+        return dayRepository.findDayEntityByLocalDateAndUserId(localDate, userId)
+                .orElseGet(() -> dayRepository.save(createNewDay(localDate, userId)));
+    }
+
     public void setTodayInfo(double rating, String plan, String summary, String userId) {
         DayEntity today = dayRepository.findDayEntityByLocalDateAndUserId(LocalDate.now(), userId)
                 .orElse(createNewDay(LocalDate.now(), userId));

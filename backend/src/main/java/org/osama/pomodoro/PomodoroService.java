@@ -163,6 +163,9 @@ public class PomodoroService {
         pomodoro.setSecondsPassedInSession(0);
         pomodoro.setSessionActive(false);
         pomodoro.setSessionRunning(false);
+        pomodoro.setCompletedFocusSessions(pomodoro.getCompletedFocusSessions() + 1);
+        pomodoro.setTotalFocusSeconds(pomodoro.getTotalFocusSeconds()
+                + Math.max(0, event.getTotalDuration().toSeconds()));
         if (pomodoro.getCurrentFocusNumber() < pomodoro.getNumFocuses()) {
             pomodoro.setPhase(pomodoro.isAutoStartSessions()
                     ? PomodoroPhase.BREAK
@@ -215,10 +218,29 @@ public class PomodoroService {
     }
 
     @Transactional
-    public void endPomodoro(String taskId, String userId) {
+    public Pomodoro endPomodoro(String taskId, String userId) {
         Task task = taskService.getTaskForUserOrThrow(taskId, userId);
 
         Pomodoro pomodoro = getOwnedActivePomodoro(task.getTaskId(), userId);
+
+        return finishPomodoro(task, pomodoro, userId);
+    }
+
+    /**
+     * Ends a Pomodoro after its final scheduled focus session. The completed
+     * phase is retained in the broadcast so clients can show a resolved end
+     * state instead of immediately reverting to the setup form.
+     */
+    @Transactional
+    public Pomodoro completePomodoro(String taskId) {
+        Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(taskId)
+                .orElseThrow(() -> new IllegalStateException("No active pomodoro found for task."));
+        Task task = taskService.getTaskForUserOrThrow(taskId, pomodoro.getUser().getId());
+
+        return finishPomodoro(task, pomodoro, pomodoro.getUser().getId());
+    }
+
+    private Pomodoro finishPomodoro(Task task, Pomodoro pomodoro, String userId) {
 
         if (taskSessionRepository.existsByAssociatedTaskIdAndActiveIsTrue(task.getTaskId())) {
             taskSessionService.endSession(task.getTaskId());
@@ -227,13 +249,15 @@ public class PomodoroService {
         pomodoro.setActive(false);
         pomodoro.setSessionRunning(false);
         pomodoro.setSessionActive(false);
+        pomodoro.setPhase(PomodoroPhase.COMPLETED);
         pomodoroRepository.save(pomodoro);
 
         scheduleService.deleteTaskJobs(task.getTaskId());
         pausePomodoroUpdates(task.getTaskId());
         sendUpdate(pomodoro);
         log.info("Pomodoro ended: userId={} taskId={} completedFocusCount={}",
-                userId, taskId, pomodoro.getCurrentFocusNumber());
+                userId, task.getTaskId(), pomodoro.getCurrentFocusNumber());
+        return pomodoro;
     }
 
     @Transactional
@@ -321,10 +345,10 @@ public class PomodoroService {
     }
 
     @Transactional
-    public void endPomodoro(String taskId) {
+    public Pomodoro endPomodoro(String taskId) {
         Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(taskId)
                 .orElseThrow(() -> new IllegalStateException("No pomodoro found for task."));
-        endPomodoro(taskId, pomodoro.getUser().getId());
+        return endPomodoro(taskId, pomodoro.getUser().getId());
     }
 
     public Pomodoro createPomodoro(String associatedTaskId, int focusDuration,

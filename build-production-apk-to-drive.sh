@@ -11,7 +11,7 @@ if command -v xdg-user-dir >/dev/null 2>&1; then
 fi
 documents_dir="${documents_dir:-${HOME:?HOME must be set}/Documents}"
 output_dir="${CLARITARD_APK_OUTPUT_DIR:-$documents_dir/productivity-app-apks}"
-apk_name="${CLARITARD_APK_NAME:-claritard-production-$(date -u +%Y%m%d-%H%M%S).apk}"
+apk_name="${CLARITARD_APK_NAME:-claritard-production-$(date +%Y%m%d-%H%M%S).apk}"
 dry_run=0
 
 usage() {

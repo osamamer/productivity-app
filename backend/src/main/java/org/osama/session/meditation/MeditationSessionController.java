@@ -77,4 +77,10 @@ public class MeditationSessionController {
         );
         return ResponseEntity.ok(session);
     }
+
+    @DeleteMapping("/{sessionId}")
+    public ResponseEntity<Void> discardSession(@PathVariable String sessionId) {
+        meditationSessionService.discardSession(sessionId, currentUserService.getCurrentUserId());
+        return ResponseEntity.noContent().build();
+    }
 }

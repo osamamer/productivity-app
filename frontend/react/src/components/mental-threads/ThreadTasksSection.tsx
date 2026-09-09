@@ -224,7 +224,9 @@ export function ThreadTasksSection({
                 {deleteRequest && (
                     <Box>
                         <Typography variant="body2" sx={{ mb: 1.25 }}>
-                            Delete “{deleteRequest.task.name}” and its subtasks?
+                            {deleteRequest.task.taskSeriesId
+                                ? `Delete “${deleteRequest.task.name}” and all occurrences in its series?`
+                                : `Delete “${deleteRequest.task.name}” and its subtasks?`}
                         </Typography>
                         <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 0.75 }}>
                             <Button

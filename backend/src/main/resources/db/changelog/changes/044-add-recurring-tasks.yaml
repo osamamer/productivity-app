@@ -1,0 +1,164 @@
+databaseChangeLog:
+  - changeSet:
+      id: 044-create-task-series
+      author: codex
+      comment: Store recurring task rules separately from concrete task occurrences
+      changes:
+        - createTable:
+            tableName: task_series
+            columns:
+              - column:
+                  name: series_id
+                  type: varchar(255)
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: name
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: text
+              - column:
+                  name: tag
+                  type: varchar(255)
+              - column:
+                  name: importance
+                  type: integer
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: mental_thread_id
+                  type: varchar(255)
+              - column:
+                  name: start_date_time
+                  type: timestamp
+                  constraints:
+                    nullable: false
+              - column:
+                  name: recurrence_frequency
+                  type: varchar(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: recurrence_end_date
+                  type: date
+              - column:
+                  name: recurrence_interval
+                  type: integer
+              - column:
+                  name: recurrence_unit
+                  type: varchar(20)
+              - column:
+                  name: time_zone
+                  type: varchar(80)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: active
+                  type: boolean
+                  defaultValueBoolean: true
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: task_series
+            baseColumnNames: user_id
+            referencedTableName: app_user
+            referencedColumnNames: id
+            constraintName: fk_app_task_series_user
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - createIndex:
+            tableName: task_series
+            indexName: idx_app_task_series_user_active
+            ifNotExists: true
+            columns:
+              - column:
+                  name: user_id
+              - column:
+                  name: active
+      rollback:
+        - dropForeignKeyConstraint:
+            baseTableName: task_series
+            constraintName: fk_app_task_series_user
+        - dropTable:
+            tableName: task_series
+
+  - changeSet:
+      id: 044-add-task-series-occurrence-fields
+      author: codex
+      comment: Associate concrete tasks with recurring series and preserve skipped occurrences
+      changes:
+        - addColumn:
+            tableName: task
+            columns:
+              - column:
+                  name: task_series_id
+                  type: varchar(255)
+              - column:
+                  name: series_occurrence_at
+                  type: timestamp
+              - column:
+                  name: skipped
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: task
+            baseColumnNames: task_series_id
+            referencedTableName: task_series
+            referencedColumnNames: series_id
+            constraintName: fk_app_task_task_series
+            onDelete: SET NULL
+            onUpdate: CASCADE
+        - addUniqueConstraint:
+            tableName: task
+            columnNames: task_series_id, series_occurrence_at
+            constraintName: uq_app_task_series_occurrence
+        - createIndex:
+            tableName: task
+            indexName: idx_app_task_series_occurrence
+            ifNotExists: true
+            columns:
+              - column:
+                  name: task_series_id
+              - column:
+                  name: series_occurrence_at
+      rollback:
+        - dropIndex:
+            tableName: task
+            indexName: idx_app_task_series_occurrence
+        - dropUniqueConstraint:
+            tableName: task
+            constraintName: uq_app_task_series_occurrence
+        - dropForeignKeyConstraint:
+            baseTableName: task
+            constraintName: fk_app_task_task_series
+        - dropColumn:
+            tableName: task
+            columnName: skipped
+        - dropColumn:
+            tableName: task
+            columnName: series_occurrence_at
+        - dropColumn:
+            tableName: task
+            columnName: task_series_id

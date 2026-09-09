@@ -23,39 +23,87 @@ import StopIcon from '@mui/icons-material/Stop';
 import VolumeOffIcon from '@mui/icons-material/VolumeOff';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import { meditationService } from '../../services/api/meditationService.ts';
+import { useUser } from '../../hooks/useUser';
+import {
+    playMeditationCompletionGong,
+    playMeditationIntervalBell,
+    prepareAudioFeedback,
+    prepareMeditationAudio,
+} from '../../services/audioFeedback.ts';
 import { MeditationSession } from '../../types/MeditationSession.ts';
 import {
     MEDITATION_SOUND_OPTIONS,
     MeditationSoundId,
-    playIntervalBell,
     meditationSoundscape,
-    stopIntervalBell,
 } from './meditationSounds.ts';
 import { MeditationNavigationGuard } from './MeditationNavigationGuard.tsx';
 
 const DURATION_OPTIONS = [5, 10, 15, 20, 30];
 const MIN_MOOD = 1;
 const MAX_MOOD = 10;
-const SOUND_STORAGE_KEY = 'meditation-soundscape';
+const MEDITATION_SETTINGS_STORAGE_KEY = 'meditation-settings';
+const LEGACY_SOUND_STORAGE_KEY = 'meditation-soundscape';
 
-function getStoredSound(): MeditationSoundId {
-    if (typeof window === 'undefined') return 'rain';
-    try {
-        const storedSound = window.localStorage.getItem(SOUND_STORAGE_KEY);
-        if (MEDITATION_SOUND_OPTIONS.some(option => option.id === storedSound)) {
-            return storedSound as MeditationSoundId;
-        }
-    } catch {
-        // Local storage can be unavailable in private browsing modes.
-    }
-    return 'rain';
+interface MeditationSettings {
+    durationMinutes: number;
+    numIntervalBells: number;
+    selectedSound: MeditationSoundId;
 }
 
-function storeSound(sound: MeditationSoundId): void {
+const DEFAULT_MEDITATION_SETTINGS: MeditationSettings = {
+    durationMinutes: 10,
+    numIntervalBells: 2,
+    selectedSound: 'rain',
+};
+
+function meditationSettingsStorageKey(userId: string | undefined): string {
+    return `${MEDITATION_SETTINGS_STORAGE_KEY}:${userId || 'anonymous'}`;
+}
+
+function isMeditationSound(value: unknown): value is MeditationSoundId {
+    return typeof value === 'string' && MEDITATION_SOUND_OPTIONS.some(option => option.id === value);
+}
+
+function isValidIntervalBellCount(value: unknown): value is number {
+    return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 10;
+}
+
+function readMeditationSettings(userId: string | undefined): MeditationSettings {
+    if (typeof window === 'undefined') return DEFAULT_MEDITATION_SETTINGS;
+
     try {
-        window.localStorage.setItem(SOUND_STORAGE_KEY, sound);
-    } catch {
-        // Sound selection still works when local storage is unavailable.
+        const stored = window.localStorage.getItem(meditationSettingsStorageKey(userId));
+        if (stored) {
+            const parsed = JSON.parse(stored) as Partial<MeditationSettings>;
+            const storedBellCount = parsed.numIntervalBells;
+            return {
+                durationMinutes: DURATION_OPTIONS.includes(parsed.durationMinutes ?? 0)
+                    ? parsed.durationMinutes as number
+                    : DEFAULT_MEDITATION_SETTINGS.durationMinutes,
+                numIntervalBells: isValidIntervalBellCount(storedBellCount)
+                    ? storedBellCount
+                    : DEFAULT_MEDITATION_SETTINGS.numIntervalBells,
+                selectedSound: isMeditationSound(parsed.selectedSound)
+                    ? parsed.selectedSound
+                    : DEFAULT_MEDITATION_SETTINGS.selectedSound,
+            };
+        }
+
+        const legacySound = window.localStorage.getItem(LEGACY_SOUND_STORAGE_KEY);
+        return isMeditationSound(legacySound)
+            ? { ...DEFAULT_MEDITATION_SETTINGS, selectedSound: legacySound }
+            : DEFAULT_MEDITATION_SETTINGS;
+    } catch (error) {
+        console.warn('Could not read meditation preferences:', error);
+        return DEFAULT_MEDITATION_SETTINGS;
+    }
+}
+
+function storeMeditationSettings(userId: string | undefined, settings: MeditationSettings): void {
+    try {
+        window.localStorage.setItem(meditationSettingsStorageKey(userId), JSON.stringify(settings));
+    } catch (error) {
+        console.warn('Could not save meditation preferences:', error);
     }
 }
 
@@ -112,13 +160,15 @@ interface MeditationTimerProps {
 }
 
 export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
+    const { user } = useUser();
+    const settingsStorageKey = meditationSettingsStorageKey(user?.id);
     const [session, setSession] = useState<MeditationSession | null>(null);
     const [elapsed, setElapsed] = useState(0);
     const [moodBefore, setMoodBefore] = useState(5);
     const [moodAfter, setMoodAfter] = useState(5);
-    const [durationMinutes, setDurationMinutes] = useState(10);
-    const [numIntervalBells, setNumIntervalBells] = useState(2);
-    const [selectedSound, setSelectedSound] = useState<MeditationSoundId>(getStoredSound);
+    const [durationMinutes, setDurationMinutes] = useState(DEFAULT_MEDITATION_SETTINGS.durationMinutes);
+    const [numIntervalBells, setNumIntervalBells] = useState(DEFAULT_MEDITATION_SETTINGS.numIntervalBells);
+    const [selectedSound, setSelectedSound] = useState<MeditationSoundId>(DEFAULT_MEDITATION_SETTINGS.selectedSound);
     const [soundMuted, setSoundMuted] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [actionLoading, setActionLoading] = useState(false);
@@ -127,12 +177,26 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
     const [completedSession, setCompletedSession] = useState<MeditationSession | null>(null);
     const bellSessionRef = useRef<string | null>(null);
     const lastBellRef = useRef(0);
+    const completionGongSessionRef = useRef<string | null>(null);
     const soundStartedByUserRef = useRef(false);
+    const [loadedSettingsKey, setLoadedSettingsKey] = useState<string | null>(null);
+
+    useEffect(() => {
+        const stored = readMeditationSettings(user?.id);
+        setDurationMinutes(stored.durationMinutes);
+        setNumIntervalBells(stored.numIntervalBells);
+        setSelectedSound(stored.selectedSound);
+        setLoadedSettingsKey(settingsStorageKey);
+    }, [settingsStorageKey, user?.id]);
+
+    useEffect(() => {
+        if (loadedSettingsKey !== settingsStorageKey) return;
+        storeMeditationSettings(user?.id, { durationMinutes, numIntervalBells, selectedSound });
+    }, [durationMinutes, loadedSettingsKey, numIntervalBells, selectedSound, settingsStorageKey, user?.id]);
 
     useEffect(() => {
         return () => {
             meditationSoundscape.stop();
-            stopIntervalBell();
         };
     }, []);
 
@@ -189,12 +253,11 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
         if (!session.running || currentBell <= lastBellRef.current) return;
         lastBellRef.current = currentBell;
         if (soundMuted) return;
-        playIntervalBell();
+        playMeditationIntervalBell();
     }, [elapsed, session, soundMuted]);
 
     useEffect(() => {
         if (!session) {
-            meditationSoundscape.stop();
             soundStartedByUserRef.current = false;
             return;
         }
@@ -211,6 +274,18 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
         : 0;
     const sessionComplete = remaining === 0 && (session?.intendedLength ?? 0) > 0;
 
+    useEffect(() => {
+        if (!session) {
+            completionGongSessionRef.current = null;
+            return;
+        }
+        if (!sessionComplete || completionGongSessionRef.current === session.id) return;
+
+        completionGongSessionRef.current = session.id;
+        meditationSoundscape.stop();
+        playMeditationCompletionGong();
+    }, [session, sessionComplete]);
+
     const bellDescription = useMemo(() => {
         if (numIntervalBells === 0) return 'No interval bells';
         return `${numIntervalBells} gentle bell${numIntervalBells === 1 ? '' : 's'} during the session`;
@@ -218,10 +293,11 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
 
     const handleSoundChange = (sound: MeditationSoundId) => {
         setSelectedSound(sound);
-        storeSound(sound);
         if (session && !soundMuted) {
             soundStartedByUserRef.current = true;
             void meditationSoundscape.start(sound);
+        } else if (!session) {
+            void meditationSoundscape.preview(sound);
         }
     };
 
@@ -239,6 +315,8 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
     const startSession = async () => {
         setActionLoading(true);
         setError(null);
+        prepareAudioFeedback();
+        prepareMeditationAudio();
         if (!soundMuted) {
             soundStartedByUserRef.current = true;
             void meditationSoundscape.start(selectedSound);
@@ -297,6 +375,23 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
             onSessionCompleted();
         } catch (finishError) {
             setError(finishError instanceof Error ? finishError.message : 'Could not finish meditation.');
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    const discardSession = async () => {
+        if (!session) return;
+        setActionLoading(true);
+        setError(null);
+        try {
+            await meditationService.discardSession(session.id);
+            setSession(null);
+            meditationSoundscape.stop();
+            soundStartedByUserRef.current = false;
+            setFinishDialogOpen(false);
+        } catch (discardError) {
+            setError(discardError instanceof Error ? discardError.message : 'Could not dismiss meditation.');
         } finally {
             setActionLoading(false);
         }
@@ -404,6 +499,7 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
                     </Box>
                 </DialogContent>
                 <DialogActions sx={{ px: 3, pb: 2 }}>
+                    <Button color="error" onClick={discardSession} disabled={actionLoading}>Dismiss session</Button>
                     <Button onClick={() => setFinishDialogOpen(false)} disabled={actionLoading}>Keep sitting</Button>
                     <Button variant="contained" onClick={finishSession} disabled={actionLoading}>
                         {actionLoading ? <CircularProgress size={18} color="inherit" /> : 'Save session'}
@@ -416,7 +512,6 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
                 onSessionEnded={() => {
                     setSession(null);
                     meditationSoundscape.stop();
-                    stopIntervalBell();
                     soundStartedByUserRef.current = false;
                     onSessionCompleted();
                 }}
