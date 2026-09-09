@@ -1,11 +1,11 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import App from './App.tsx'
 import './index.css'
-import { AppThemeProvider } from "./contexts/ThemeContext";
-import keycloak from './services/keycloak';
-import { AppErrorBoundary, AppErrorPage } from './components/AppErrorBoundary';
-import { warmAppData } from './services/bootstrap/appBootstrap';
+import keycloak, {
+    clearDevAuthSession,
+    persistDevAuthSession,
+    readDevAuthSession,
+} from './services/keycloak';
 import { prepareAudioFeedback } from './services/audioFeedback';
 
 const REDIRECT_KEY = 'post_auth_redirect';
@@ -20,12 +20,19 @@ if (window.location.pathname !== '/') {
     sessionStorage.setItem(REDIRECT_KEY, window.location.pathname);
 }
 
+const devAuthSession = readDevAuthSession();
+
+keycloak.onAuthSuccess = persistDevAuthSession;
+keycloak.onAuthRefreshSuccess = persistDevAuthSession;
+keycloak.onAuthLogout = clearDevAuthSession;
+
 keycloak.init({
     onLoad: 'login-required',
     checkLoginIframe: false,
     pkceMethod: 'S256',
     redirectUri: window.location.origin + '/',
-}).then(() => {
+    ...devAuthSession,
+}).then(async () => {
     // Keycloak always lands back on '/'. Restore the original path so React
     // Router renders the right page without a second navigation.
     const savedPath = sessionStorage.getItem(REDIRECT_KEY);
@@ -36,8 +43,27 @@ keycloak.init({
 
     // Refresh the token before it expires (refresh if < 60s remaining, check every minute)
     setInterval(() => {
-        keycloak.updateToken(60).catch(() => keycloak.logout({ redirectUri: window.location.origin + '/' }));
+        keycloak.updateToken(60)
+            .then(persistDevAuthSession)
+            .catch(() => {
+                clearDevAuthSession();
+                return keycloak.logout({ redirectUri: window.location.origin + '/' });
+            });
     }, 60_000);
+
+    persistDevAuthSession();
+
+    const [
+        { default: App },
+        { AppThemeProvider },
+        { AppErrorBoundary },
+        { warmAppData },
+    ] = await Promise.all([
+        import('./App.tsx'),
+        import('./contexts/ThemeContext'),
+        import('./components/AppErrorBoundary'),
+        import('./services/bootstrap/appBootstrap'),
+    ]);
 
     // Start warming the shared Stats cache while the initial route renders.
     void warmAppData();
@@ -52,6 +78,6 @@ keycloak.init({
         </React.StrictMode>,
     );
 }).catch(err => {
-    console.error('Keycloak initialisation failed', err);
-    ReactDOM.createRoot(document.getElementById('root')!).render(<AppErrorPage />);
+    console.error('App initialisation failed', err);
+    document.getElementById('root')!.textContent = 'The app could not be started. Please refresh and try again.';
 });

@@ -166,6 +166,12 @@ public class TaskController {
         return ResponseEntity.noContent().build();
     }
 
+    @DeleteMapping("/{taskId}/occurrence")
+    public ResponseEntity<Void> deleteTaskOccurrence(@PathVariable String taskId) {
+        taskService.deleteTaskOccurrence(taskId, currentUserService.getCurrentUserId());
+        return ResponseEntity.noContent().build();
+    }
+
     // ============ Subtask Operations ============
 
     @GetMapping("/{taskId}/subtasks")

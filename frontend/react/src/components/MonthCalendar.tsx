@@ -1,7 +1,7 @@
 import {
     Alert, Box, Button, Checkbox, Chip, Collapse, Dialog, DialogActions, DialogContent,
-    DialogTitle, Divider, FormControlLabel, FormGroup, List, ListItem,
-    ListItemButton, ListItemText, Popover,
+    DialogContentText, DialogTitle, Divider, FormControlLabel, FormGroup, List, ListItem,
+    ListItemButton, ListItemText, Popover, Snackbar,
     Fade, Skeleton, Stack, Switch, Tabs, Tab, TextField, ToggleButton, ToggleButtonGroup, Typography, Menu, MenuItem, ListItemIcon,
 } from "@mui/material";
 import { HoverCardBox } from "./box/HoverCardBox.tsx";
@@ -15,7 +15,6 @@ import { useTheme } from "@mui/material";
 import { DayCellMountArg, DatesSetArg, EventClickArg, EventContentArg, EventMountArg } from '@fullcalendar/core';
 import { TaskToCreate } from "../types/TaskToCreate.tsx";
 import { TaskGroup } from "../types/TaskGroup.ts";
-import { SmartTaskInput } from "./input/SmartTaskInput.tsx";
 import { StatDefinition, StatEntry } from "../types/Stats.ts";
 import { formatDurationValue, formatTimeValue } from "../services/utils/statValues.ts";
 import { DateStatCheckIn } from "./stats/DateStatCheckIn.tsx";
@@ -29,18 +28,21 @@ import FilterListIcon from '@mui/icons-material/FilterList';
 import CheckIcon from '@mui/icons-material/Check';
 import SaveAsIcon from '@mui/icons-material/SaveAs';
 import ViewDayIcon from '@mui/icons-material/ViewDay';
-import { CalendarEvent, CalendarEventInput } from "../types/CalendarEvent.ts";
-import { DayTemplate, DayTemplateRequest } from "../types/DayTemplate.ts";
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import ReplayIcon from '@mui/icons-material/Replay';
+import { CalendarEvent, CalendarEventInput, CalendarEventStatus } from "../types/CalendarEvent.ts";
+import { DayTemplate, DayTemplateApplication, DayTemplateRequest } from "../types/DayTemplate.ts";
 import { CalendarEventForm } from "./calendar/CalendarEventForm.tsx";
 import { DayTemplateCreationDialog } from "./calendar/DayTemplateCreationDialog.tsx";
 import { DAY_TEMPLATE_DRAG_TYPE, DayTemplatePanel } from "./calendar/DayTemplatePanel.tsx";
-import { expandCalendarEvent } from "./calendar/recurrence.ts";
+import { CalendarEventOccurrence, expandCalendarEvent } from "./calendar/recurrence.ts";
 import { getBooleanChoiceColor } from "../services/statFeedback.ts";
 import { taskService } from "../services/api";
 import { getShowCompletedHomeTasks } from "../services/utils/homePreferences.ts";
 import { AppDateField } from "./input/AppPickerFields";
 import { TaskRecurrenceCustomOptions, TaskRecurrencePicker } from "./task/TaskRecurrencePicker";
 import { TaskReminderPicker } from "./task/TaskReminderPicker";
+import { CalendarTaskForm } from './calendar/CalendarTaskForm';
 import { defaultTaskRecurrence, TaskRecurrenceDraft } from "../types/TaskRecurrence";
 import { TaskSeries } from "../types/TaskSeries";
 
@@ -48,14 +50,23 @@ type MonthCalenderProps = {
     tasks: Task[],
     groups: TaskGroup[],
     events: CalendarEvent[],
-    onCreateTask: (task: TaskToCreate) => void,
+    onCreateTask: (task: TaskToCreate) => Promise<void>,
+    onDeleteTask: (taskId: string) => Promise<void>,
+    onDeleteTaskOccurrence: (taskId: string) => Promise<void>,
     onUpdateTask: (taskId: string, updates: Partial<Task>) => Promise<void>,
     onCreateEvent: (event: CalendarEventInput) => Promise<void>,
     onUpdateEvent: (eventId: string, event: CalendarEventInput) => Promise<void>,
     onDeleteEvent: (eventId: string) => Promise<void>,
+    onCancelEventOccurrence: (eventId: string, occurrenceKey: string) => Promise<void>,
+    onRestoreEventOccurrence: (eventId: string, occurrenceKey: string) => Promise<void>,
+    onUpdateEventOccurrenceStatus: (eventId: string, occurrenceKey: string, status: CalendarEventStatus) => Promise<void>,
+    onDeleteEventOccurrence: (eventId: string, occurrenceKey: string) => Promise<void>,
     dayTemplates: DayTemplate[],
     onCreateDayTemplate: (request: DayTemplateRequest) => Promise<void>,
-    onApplyDayTemplate: (templateId: string, date: string) => Promise<void>,
+    onUpdateDayTemplate: (templateId: string, request: DayTemplateRequest) => Promise<void>,
+    onDeleteDayTemplate: (templateId: string) => Promise<void>,
+    onApplyDayTemplate: (templateId: string, date: string) => Promise<DayTemplateApplication>,
+    onUndoDayTemplate: (application: DayTemplateApplication) => Promise<void>,
     statDefinitions?: StatDefinition[],
     loading?: boolean,
     onRefreshTasks?: () => Promise<void>,
@@ -124,7 +135,8 @@ function priorityBucket(importance: number): number {
     return 3;
 }
 
-function statEventValue(definition: StatDefinition, value: number): string {
+function statEventValue(definition: StatDefinition, value: number, status?: StatEntry['status']): string {
+    if (status === 'NOT_PLANNED') return 'Not planned';
     if (definition.type === 'BOOLEAN') return value === 1 ? 'Yes' : 'No';
     if (definition.type === 'TIME') return formatTimeValue(value);
     if (definition.type === 'DURATION') return formatDurationValue(value);
@@ -134,6 +146,26 @@ function statEventValue(definition: StatDefinition, value: number): string {
 function calendarEventTimeLabel(start: Date | null): string {
     if (!start) return '';
     return format(start, start.getMinutes() === 0 ? 'h a' : 'h:mm a');
+}
+
+function recurrenceDraftFromSeries(series: TaskSeries | null): TaskRecurrenceDraft {
+    if (!series?.active) return defaultTaskRecurrence();
+
+    return {
+        recurrenceFrequency: series.recurrenceFrequency,
+        recurrenceEndDate: series.recurrenceEndDate,
+        recurrenceInterval: series.recurrenceInterval,
+        recurrenceUnit: series.recurrenceUnit,
+        timeZone: series.timeZone,
+    };
+}
+
+function recurrenceDraftsEqual(first: TaskRecurrenceDraft, second: TaskRecurrenceDraft): boolean {
+    return first.recurrenceFrequency === second.recurrenceFrequency
+        && first.recurrenceEndDate === second.recurrenceEndDate
+        && first.recurrenceInterval === second.recurrenceInterval
+        && first.recurrenceUnit === second.recurrenceUnit
+        && first.timeZone === second.timeZone;
 }
 
 type CreateTab = 'event' | 'task' | 'stats';
@@ -213,30 +245,43 @@ function CalendarLoadingState() {
 }
 
 export function MonthCalendar({
-    tasks, groups, events, onCreateTask, onUpdateTask, onCreateEvent, onUpdateEvent, onDeleteEvent,
-    dayTemplates, onCreateDayTemplate, onApplyDayTemplate, statDefinitions, loading = false, onRefreshTasks, onOpenDay,
+    tasks, groups, events, onCreateTask, onDeleteTask, onDeleteTaskOccurrence, onUpdateTask, onCreateEvent, onUpdateEvent, onDeleteEvent,
+    onCancelEventOccurrence, onRestoreEventOccurrence, onUpdateEventOccurrenceStatus, onDeleteEventOccurrence,
+    dayTemplates, onCreateDayTemplate, onUpdateDayTemplate, onDeleteDayTemplate, onApplyDayTemplate, onUndoDayTemplate,
+    statDefinitions, loading = false, onRefreshTasks, onOpenDay,
 }: MonthCalenderProps) {
     const theme = useTheme();
     const availableStatDefinitions = useMemo(() => statDefinitions ?? [], [statDefinitions]);
     const [initialDisplayPreferences] = useState(readCalendarDisplayPreferences);
     const [editingDate, setEditingDate] = useState<string | null>(null);
     const [editingDialogOpen, setEditingDialogOpen] = useState(false);
+    const [taskCreationError, setTaskCreationError] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<CreateTab>('event');
-    const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+    const [selectedEventSelection, setSelectedEventSelection] = useState<{
+        eventId: string;
+        occurrenceKey: string;
+    } | null>(null);
     const [selectedEventDialogOpen, setSelectedEventDialogOpen] = useState(false);
     const [selectedTaskGroupId, setSelectedTaskGroupId] = useState<string | null>(null);
     const [selectedTaskGroupDialogOpen, setSelectedTaskGroupDialogOpen] = useState(false);
     const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+    const [selectedTaskSnapshot, setSelectedTaskSnapshot] = useState<Task | null>(null);
     const [taskDialogOpen, setTaskDialogOpen] = useState(false);
     const [taskDraft, setTaskDraft] = useState<Partial<Task> | null>(null);
     const [taskSaveError, setTaskSaveError] = useState<string | null>(null);
     const [taskSaving, setTaskSaving] = useState(false);
+    const [taskDeleteConfirmationOpen, setTaskDeleteConfirmationOpen] = useState(false);
+    const [taskDeleteMenuAnchor, setTaskDeleteMenuAnchor] = useState<HTMLElement | null>(null);
+    const [taskDeleteScope, setTaskDeleteScope] = useState<'occurrence' | 'series' | null>(null);
+    const [taskDeleteError, setTaskDeleteError] = useState<string | null>(null);
+    const [taskDeleting, setTaskDeleting] = useState(false);
     const [recurrenceDraft, setRecurrenceDraft] = useState<TaskRecurrenceDraft>(defaultTaskRecurrence);
+    const [recurrenceLoading, setRecurrenceLoading] = useState(false);
     const [recurrenceError, setRecurrenceError] = useState<string | null>(null);
     const recurrenceDraftRef = useRef<TaskRecurrenceDraft>(defaultTaskRecurrence());
+    const recurrenceOriginalDraftRef = useRef<TaskRecurrenceDraft>(defaultTaskRecurrence());
+    const recurrenceDraftDirtyRef = useRef(false);
     const taskSeriesRef = useRef<TaskSeries | null>(null);
-    const recurrenceMutationRef = useRef<Promise<void>>(Promise.resolve());
-    const recurrenceRequestIdRef = useRef(0);
     const [showTasks, setShowTasks] = useState(initialDisplayPreferences.showTasks);
     const [showStats, setShowStats] = useState(initialDisplayPreferences.showStats);
     const [taskStatus, setTaskStatus] = useState<TaskStatusFilter>(initialDisplayPreferences.taskStatus);
@@ -247,10 +292,19 @@ export function MonthCalendar({
     const [filterAnchor, setFilterAnchor] = useState<HTMLElement | null>(null);
     const [showTemplatePanel, setShowTemplatePanel] = useState(false);
     const [templateCreationOpen, setTemplateCreationOpen] = useState(false);
+    const [templateEditTarget, setTemplateEditTarget] = useState<DayTemplate | null>(null);
     const [templateSourceDate, setTemplateSourceDate] = useState(format(new Date(), 'yyyy-MM-dd'));
     const [templateActionError, setTemplateActionError] = useState<string | null>(null);
     const [dayContextMenu, setDayContextMenu] = useState<{ date: string; top: number; left: number } | null>(null);
     const [applyingTemplateId, setApplyingTemplateId] = useState<string | null>(null);
+    const [templateFeedback, setTemplateFeedback] = useState<{
+        id: number;
+        application: DayTemplateApplication | null;
+        message: string;
+        undoing: boolean;
+        severity: 'success' | 'error';
+    } | null>(null);
+    const templateFeedbackIdRef = useRef(0);
     const applyingTemplateRef = useRef<string | null>(null);
     const onApplyDayTemplateRef = useRef(onApplyDayTemplate);
     const dayCellListenersRef = useRef(new Map<HTMLElement, {
@@ -282,13 +336,19 @@ export function MonthCalendar({
         ? isAfter(startOfDay(new Date(editingDate + 'T12:00:00')), startOfDay(new Date()))
         : true;
     const selectedTask = useMemo(
-        () => tasks.find(task => task.taskId === selectedTaskId) ?? null,
-        [selectedTaskId, tasks]
+        () => tasks.find(task => task.taskId === selectedTaskId)
+            ?? (selectedTaskSnapshot?.taskId === selectedTaskId ? selectedTaskSnapshot : null),
+        [selectedTaskId, selectedTaskSnapshot, tasks]
     );
     const selectedCalendarEvent = useMemo(
-        () => events.find(event => event.id === selectedEventId) ?? null,
-        [events, selectedEventId]
+        () => events.find(event => event.id === selectedEventSelection?.eventId) ?? null,
+        [events, selectedEventSelection]
     );
+    const selectedCalendarEventOccurrence = useMemo<CalendarEventOccurrence | null>(() => {
+        if (!selectedCalendarEvent || !selectedEventSelection) return null;
+        return expandCalendarEvent(selectedCalendarEvent, calendarRange.start, calendarRange.end)
+            .find(occurrence => occurrence.occurrenceKey === selectedEventSelection.occurrenceKey) ?? null;
+    }, [calendarRange.end, calendarRange.start, selectedCalendarEvent, selectedEventSelection]);
     const selectedTaskGroup = useMemo(
         () => groups.find(group => group.groupId === selectedTaskGroupId) ?? null,
         [groups, selectedTaskGroupId]
@@ -297,45 +357,73 @@ export function MonthCalendar({
     React.useEffect(() => {
         let cancelled = false;
         setRecurrenceError(null);
-        if (!selectedTask) {
+        if (!selectedTaskId) {
+            setRecurrenceLoading(false);
             taskSeriesRef.current = null;
-            recurrenceDraftRef.current = defaultTaskRecurrence();
-            setRecurrenceDraft(recurrenceDraftRef.current);
+            const emptyDraft = defaultTaskRecurrence();
+            recurrenceDraftRef.current = emptyDraft;
+            recurrenceOriginalDraftRef.current = emptyDraft;
+            recurrenceDraftDirtyRef.current = false;
+            setRecurrenceDraft(emptyDraft);
             return () => {
                 cancelled = true;
             };
         }
 
-        if (!selectedTask.taskSeriesId) {
+        if (selectedTask?.optimisticRecurrence) {
+            const nextDraft = selectedTask.optimisticRecurrence;
+            setRecurrenceLoading(false);
             taskSeriesRef.current = null;
-            recurrenceDraftRef.current = defaultTaskRecurrence();
-            setRecurrenceDraft(recurrenceDraftRef.current);
+            recurrenceDraftRef.current = nextDraft;
+            recurrenceOriginalDraftRef.current = nextDraft;
+            recurrenceDraftDirtyRef.current = false;
+            setRecurrenceDraft(nextDraft);
+            return () => {
+                cancelled = true;
+            };
         }
 
-        taskService.getTaskSeries(selectedTask.taskId)
+        if (!selectedTask?.taskSeriesId) {
+            const emptyDraft = defaultTaskRecurrence();
+            setRecurrenceLoading(false);
+            taskSeriesRef.current = null;
+            recurrenceDraftRef.current = emptyDraft;
+            recurrenceOriginalDraftRef.current = emptyDraft;
+            recurrenceDraftDirtyRef.current = false;
+            setRecurrenceDraft(emptyDraft);
+            return () => {
+                cancelled = true;
+            };
+        }
+
+        setRecurrenceLoading(true);
+        recurrenceDraftDirtyRef.current = false;
+        taskService.getTaskSeries(selectedTaskId, selectedTask.taskSeriesId)
             .then(series => {
                 if (cancelled) return;
-                const nextDraft = series?.active
-                    ? {
-                        recurrenceFrequency: series.recurrenceFrequency,
-                        recurrenceEndDate: series.recurrenceEndDate,
-                        recurrenceInterval: series.recurrenceInterval,
-                        recurrenceUnit: series.recurrenceUnit,
-                        timeZone: series.timeZone,
-                    }
-                    : defaultTaskRecurrence();
+                if (!series) {
+                    setRecurrenceError('Unable to load recurrence.');
+                    return;
+                }
+                const nextDraft = recurrenceDraftFromSeries(series);
                 taskSeriesRef.current = series;
-                recurrenceDraftRef.current = nextDraft;
-                setRecurrenceDraft(nextDraft);
+                recurrenceOriginalDraftRef.current = nextDraft;
+                if (!recurrenceDraftDirtyRef.current) {
+                    recurrenceDraftRef.current = nextDraft;
+                    setRecurrenceDraft(nextDraft);
+                }
             })
             .catch(() => {
                 if (!cancelled) setRecurrenceError('Unable to load recurrence.');
+            })
+            .finally(() => {
+                if (!cancelled) setRecurrenceLoading(false);
             });
 
         return () => {
             cancelled = true;
         };
-    }, [selectedTask]);
+    }, [selectedTask?.optimisticRecurrence, selectedTask?.taskSeriesId, selectedTaskId]);
     const taskGroupByTaskId = useMemo(() => {
         const groupByTaskId = new Map<string, TaskGroup>();
         [...groups]
@@ -417,27 +505,30 @@ export function MonthCalendar({
             start: occurrence.start,
             end: occurrence.end,
             allDay: occurrence.allDay,
-            backgroundColor: event.status === 'CANCELLED'
+            backgroundColor: occurrence.status === 'CANCELLED'
                 ? `${theme.palette.text.disabled}30`
-                : event.status === 'TENTATIVE'
+                : occurrence.status === 'TENTATIVE'
                     ? `${theme.palette.primary.main}70`
                     : theme.palette.primary.main,
-            borderColor: event.status === 'CANCELLED'
+            borderColor: occurrence.status === 'CANCELLED'
                 ? theme.palette.text.disabled
                 : theme.palette.primary.main,
-            textColor: event.status === 'CANCELLED'
+            textColor: occurrence.status === 'CANCELLED'
                 ? theme.palette.text.secondary
                 : theme.palette.primary.contrastText,
-            classNames: [event.status === 'CANCELLED'
+            classNames: [occurrence.status === 'CANCELLED'
                 ? 'calendar-cancelled-event'
-                : event.status === 'TENTATIVE'
+                : occurrence.status === 'TENTATIVE'
                     ? 'calendar-tentative-event'
                     : 'calendar-accent-event'],
             extendedProps: {
                 eventType: 'calendarEvent',
                 calendarEventId: event.id,
-                status: event.status,
-                fullDescription: `${event.description || event.title} · ${event.status.toLowerCase()}`,
+                calendarEventOccurrenceKey: occurrence.occurrenceKey,
+                calendarEventOccurrenceDate: occurrence.occurrenceDate,
+                calendarEventOccurrenceStatus: occurrence.status,
+                status: occurrence.status,
+                fullDescription: `${event.description || event.title} · ${occurrence.status.toLowerCase()}`,
             },
         })));
 
@@ -500,9 +591,9 @@ export function MonthCalendar({
                 if (!selectedStatIdsForDisplay.includes(entry.statDefinitionId)) return [];
                 const definition = definitionById.get(entry.statDefinitionId);
                 if (!definition) return [];
-                const value = statEventValue(definition, entry.value);
+                const value = statEventValue(definition, entry.value, entry.status);
                 const color = definition.type === 'BOOLEAN'
-                    ? theme.palette[getBooleanChoiceColor(definition, entry.value === 1 ? 1 : 0)].main
+                    ? theme.palette[getBooleanChoiceColor(definition, entry.value === 1 ? 1 : 0, entry.status)].main
                     : theme.palette.secondary.main;
                 return [{
                     id: `stat-${entry.statDefinitionId}-${entry.date}`,
@@ -571,11 +662,27 @@ export function MonthCalendar({
     }, []);
 
     const openTemplateCreation = useCallback((sourceDate?: string) => {
+        setTemplateEditTarget(null);
         setTemplateSourceDate(sourceDate ?? (editingDialogOpen ? editingDate : null) ?? format(new Date(), 'yyyy-MM-dd'));
         setTemplateActionError(null);
         setTemplateCreationOpen(true);
         setEditingDialogOpen(false);
     }, [editingDate, editingDialogOpen]);
+
+    const openTemplateEdit = useCallback((template: DayTemplate) => {
+        setTemplateEditTarget(template);
+        setTemplateActionError(null);
+        setTemplateCreationOpen(true);
+        setEditingDialogOpen(false);
+    }, []);
+
+    const handleSaveTemplate = useCallback(async (request: DayTemplateRequest) => {
+        if (templateEditTarget) {
+            await onUpdateDayTemplate(templateEditTarget.id, request);
+            return;
+        }
+        await onCreateDayTemplate(request);
+    }, [onCreateDayTemplate, onUpdateDayTemplate, templateEditTarget]);
 
     const handleTemplateDrop = useCallback(async (templateId: string, date: string) => {
         if (applyingTemplateRef.current !== null) return;
@@ -584,7 +691,15 @@ export function MonthCalendar({
         setApplyingTemplateId(templateId);
         setTemplateActionError(null);
         try {
-            await onApplyDayTemplateRef.current(templateId, date);
+            const application = await onApplyDayTemplateRef.current(templateId, date);
+            templateFeedbackIdRef.current += 1;
+            setTemplateFeedback({
+                id: templateFeedbackIdRef.current,
+                application,
+                message: `Applied “${application.templateName}” to ${format(new Date(`${application.date}T12:00:00`), 'MMM d')}`,
+                undoing: false,
+                severity: 'success',
+            });
         } catch (error) {
             console.error('Failed to apply day template:', error);
             setTemplateActionError('Unable to apply that template. Please try again.');
@@ -593,6 +708,29 @@ export function MonthCalendar({
             setApplyingTemplateId(null);
         }
     }, []);
+
+    const undoTemplateApplication = useCallback(async () => {
+        const feedback = templateFeedback;
+        if (!feedback?.application || feedback.undoing) return;
+
+        setTemplateFeedback(previous => previous
+            ? { ...previous, message: 'Undoing template application…', undoing: true }
+            : previous);
+        try {
+            await onUndoDayTemplate(feedback.application);
+            setTemplateFeedback(null);
+        } catch (error) {
+            console.error('Failed to undo day template application:', error);
+            templateFeedbackIdRef.current += 1;
+            setTemplateFeedback({
+                id: templateFeedbackIdRef.current,
+                application: null,
+                message: 'Could not undo that template application.',
+                undoing: false,
+                severity: 'error',
+            });
+        }
+    }, [onUndoDayTemplate, templateFeedback]);
 
     const handleDayCellDidMount = useCallback((arg: DayCellMountArg) => {
         const contextMenu = (event: MouseEvent) => {
@@ -643,6 +781,18 @@ export function MonthCalendar({
 
     const openTaskEditor = useCallback((task: Task) => {
         setSelectedTaskGroupDialogOpen(false);
+        setSelectedTaskSnapshot(task);
+        setRecurrenceLoading(Boolean(task.taskSeriesId) && !task.optimisticRecurrence);
+        if (task.optimisticRecurrence) {
+            recurrenceDraftRef.current = task.optimisticRecurrence;
+            recurrenceOriginalDraftRef.current = task.optimisticRecurrence;
+            setRecurrenceDraft(task.optimisticRecurrence);
+        } else if (!task.taskSeriesId) {
+            const emptyDraft = defaultTaskRecurrence();
+            recurrenceDraftRef.current = emptyDraft;
+            recurrenceOriginalDraftRef.current = emptyDraft;
+            setRecurrenceDraft(emptyDraft);
+        }
         setTaskDraft({
             name: task.name,
             description: task.description ?? '',
@@ -653,6 +803,7 @@ export function MonthCalendar({
             completed: task.completed,
         });
         setTaskSaveError(null);
+        setTaskDeleteError(null);
         setSelectedTaskId(task.taskId);
         setTaskDialogOpen(true);
     }, []);
@@ -666,7 +817,12 @@ export function MonthCalendar({
         }
         if (arg.event.extendedProps.eventType === 'calendarEvent') {
             const calendarEventId = arg.event.extendedProps.calendarEventId;
-            setSelectedEventId(typeof calendarEventId === 'string' ? calendarEventId : arg.event.id);
+            const occurrenceKey = arg.event.extendedProps.calendarEventOccurrenceKey;
+            if (typeof occurrenceKey !== 'string') return;
+            setSelectedEventSelection({
+                eventId: typeof calendarEventId === 'string' ? calendarEventId : arg.event.id,
+                occurrenceKey,
+            });
             setSelectedEventDialogOpen(true);
             return;
         }
@@ -705,26 +861,55 @@ export function MonthCalendar({
         });
     };
 
-    const handleTaskSubmit = useCallback((taskToCreate: TaskToCreate) => {
-        let finalDateTime = taskToCreate.scheduledPerformDateTime;
-
-        if (!finalDateTime || !finalDateTime.includes('T')) {
-            finalDateTime = `${editingDate}T12:00:00`;
-        }
-
-        const finalTask: TaskToCreate = {
-            ...taskToCreate,
-            scheduledPerformDateTime: finalDateTime
-        };
-
-        onCreateTask(finalTask);
+    const handleTaskSubmit = useCallback(async (taskToCreate: TaskToCreate) => {
         setEditingDialogOpen(false);
-    }, [editingDate, onCreateTask]);
+        setTaskCreationError(null);
+        try {
+            await onCreateTask(taskToCreate);
+        } catch (error) {
+            console.error('Failed to create calendar task:', error);
+            setTaskCreationError('Could not add the task. Please try again.');
+        }
+    }, [onCreateTask]);
 
     const closeTaskDialog = useCallback(() => {
         setTaskDialogOpen(false);
+        setTaskDeleteConfirmationOpen(false);
+        setTaskDeleteMenuAnchor(null);
+        setTaskDeleteScope(null);
+        setSelectedTaskId(null);
+        setSelectedTaskSnapshot(null);
+        setTaskDraft(null);
         setTaskSaving(false);
+        setTaskDeleting(false);
+        setTaskDeleteError(null);
     }, []);
+
+    const openTaskDeleteConfirmation = useCallback((scope: 'occurrence' | 'series') => {
+        setTaskDeleteScope(scope);
+        setTaskDeleteConfirmationOpen(true);
+    }, []);
+
+    const handleTaskDelete = useCallback(async () => {
+        if (!selectedTask || taskDeleting || !taskDeleteScope) return;
+
+        setTaskDeleting(true);
+        setTaskDeleteError(null);
+        try {
+            if (taskDeleteScope === 'occurrence') {
+                await onDeleteTaskOccurrence(selectedTask.taskId);
+            } else {
+                await onDeleteTask(selectedTask.taskId);
+            }
+            setTaskDeleteConfirmationOpen(false);
+            closeTaskDialog();
+        } catch (error) {
+            console.error('Failed to delete task from month calendar:', error);
+            setTaskDeleteError('Failed to delete the task. Please try again.');
+        } finally {
+            setTaskDeleting(false);
+        }
+    }, [closeTaskDialog, onDeleteTask, onDeleteTaskOccurrence, selectedTask, taskDeleteScope, taskDeleting]);
 
     const handleTaskDateChange = useCallback((newDate: Date | null) => {
         if (!newDate) {
@@ -740,50 +925,51 @@ export function MonthCalendar({
 
     const handleTaskRecurrenceChange = (nextDraft: TaskRecurrenceDraft) => {
         if (!selectedTask || selectedTask.parentId) return;
-        const previousDraft = recurrenceDraftRef.current;
-        const requestId = recurrenceRequestIdRef.current + 1;
-        recurrenceRequestIdRef.current = requestId;
+        recurrenceDraftDirtyRef.current = true;
         recurrenceDraftRef.current = nextDraft;
         setRecurrenceDraft(nextDraft);
         setRecurrenceError(null);
-
-        const persist = async () => {
-            if (requestId !== recurrenceRequestIdRef.current) return;
-            const currentSeries = taskSeriesRef.current;
-
-            if (nextDraft.recurrenceFrequency === 'NONE') {
-                if (!currentSeries?.active) return;
-                await taskService.stopTaskSeries(currentSeries.seriesId);
-                taskSeriesRef.current = { ...currentSeries, active: false };
-                if (requestId !== recurrenceRequestIdRef.current) return;
-                void onRefreshTasks?.();
-                return;
-            }
-
-            if (!taskDraft?.scheduledPerformDateTime) return;
-            const savedSeries = currentSeries
-                ? await taskService.updateTaskSeries(currentSeries.seriesId, nextDraft, true)
-                : await taskService.startTaskRecurrence(selectedTask.taskId, nextDraft);
-            taskSeriesRef.current = savedSeries;
-            if (requestId !== recurrenceRequestIdRef.current) return;
-            void onRefreshTasks?.();
-        };
-
-        recurrenceMutationRef.current = recurrenceMutationRef.current
-            .catch(() => undefined)
-            .then(persist)
-            .catch(error => {
-                if (requestId !== recurrenceRequestIdRef.current) return;
-                recurrenceDraftRef.current = previousDraft;
-                setRecurrenceDraft(previousDraft);
-                setRecurrenceError(error instanceof Error
-                    ? error.message
-                    : 'Unable to update recurrence.');
-            });
     };
+
+    const saveTaskRecurrence = useCallback(async (
+        taskId: string,
+        draft: TaskRecurrenceDraft,
+        scheduledPerformDateTime: string,
+    ) => {
+        const currentSeries = taskSeriesRef.current;
+        if (draft.recurrenceFrequency === 'NONE') {
+            if (!currentSeries?.active) return;
+            await taskService.stopTaskSeries(currentSeries.seriesId);
+            taskSeriesRef.current = { ...currentSeries, active: false };
+            recurrenceOriginalDraftRef.current = defaultTaskRecurrence();
+            return;
+        }
+
+        if (!scheduledPerformDateTime) {
+            throw new Error('A recurring task needs a scheduled date and time.');
+        }
+
+        const savedSeries = currentSeries
+            ? await taskService.updateTaskSeries(currentSeries.seriesId, draft, true)
+            : await taskService.startTaskRecurrence(taskId, draft);
+        taskSeriesRef.current = savedSeries;
+        recurrenceOriginalDraftRef.current = draft;
+    }, []);
 
     const handleTaskSave = useCallback(async () => {
         if (!selectedTask || !taskDraft) return;
+
+        const recurrenceToSave = recurrenceDraftRef.current;
+        const recurrenceChanged = !recurrenceDraftsEqual(
+            recurrenceToSave,
+            recurrenceOriginalDraftRef.current,
+        );
+        if (recurrenceChanged
+            && recurrenceToSave.recurrenceFrequency !== 'NONE'
+            && !taskDraft.scheduledPerformDateTime) {
+            setRecurrenceError('A recurring task needs a scheduled date and time.');
+            return;
+        }
 
         setTaskSaving(true);
         setTaskSaveError(null);
@@ -796,14 +982,22 @@ export function MonthCalendar({
                 completed: taskDraft.completed ?? selectedTask.completed,
                 reminderMinutesBefore: taskDraft.reminderMinutesBefore ?? null,
             });
+            if (recurrenceChanged) {
+                await saveTaskRecurrence(
+                    selectedTask.taskId,
+                    recurrenceToSave,
+                    taskDraft.scheduledPerformDateTime ?? '',
+                );
+            }
             closeTaskDialog();
+            await onRefreshTasks?.();
         } catch (error) {
             console.error('Failed to update task from month calendar:', error);
             setTaskSaveError('Failed to save task changes. Please try again.');
         } finally {
             setTaskSaving(false);
         }
-    }, [closeTaskDialog, onUpdateTask, selectedTask, taskDraft]);
+    }, [closeTaskDialog, onRefreshTasks, onUpdateTask, saveTaskRecurrence, selectedTask, taskDraft]);
 
     return (
         <>
@@ -865,6 +1059,8 @@ export function MonthCalendar({
                             applyingTemplateId={applyingTemplateId}
                             error={templateActionError}
                             onCreate={() => openTemplateCreation()}
+                            onEdit={openTemplateEdit}
+                            onDelete={onDeleteDayTemplate}
                             onDragStart={() => setTemplateActionError(null)}
                         />
                     </Collapse>
@@ -1256,18 +1452,16 @@ export function MonthCalendar({
                             </Button>
                         </Stack>
                     )}
-                    {(showTasks || (hasVisibleStats && !isFutureDate)) && (
-                        <Tabs
-                            value={activeTab}
-                            onChange={(_, value: CreateTab) => setActiveTab(value)}
-                            sx={{ px: 2, borderBottom: 1, borderColor: 'divider' }}
-                            variant="fullWidth"
-                        >
-                            <Tab value="event" label="Event" />
-                            {showTasks && <Tab value="task" label="Task" />}
-                            {hasVisibleStats && !isFutureDate && <Tab value="stats" label="Stats" />}
-                        </Tabs>
-                    )}
+                    <Tabs
+                        value={activeTab}
+                        onChange={(_, value: CreateTab) => setActiveTab(value)}
+                        sx={{ px: 2, borderBottom: 1, borderColor: 'divider' }}
+                        variant="fullWidth"
+                    >
+                        <Tab value="event" label="Event" />
+                        <Tab value="task" label="Task" />
+                        {hasVisibleStats && !isFutureDate && <Tab value="stats" label="Stats" />}
+                    </Tabs>
                 </Box>
 
                 <DialogContent dividers sx={{ p: 0 }}>
@@ -1281,14 +1475,15 @@ export function MonthCalendar({
                             onCancel={closeEditingDialog}
                         />
                     )}
-                    {activeTab === 'task' && showTasks && (
-                        <Box sx={{ p: 2 }}>
-                            <SmartTaskInput
-                                onSubmit={handleTaskSubmit}
-                                initialDate={editingDate || undefined}
-                                autoFocus={activeTab === 'task'}
+                    {activeTab === 'task' && (
+                        editingDate && (
+                            <CalendarTaskForm
+                                key={editingDate}
+                                initialDate={editingDate}
+                                onSave={handleTaskSubmit}
+                                onCancel={closeEditingDialog}
                             />
-                        </Box>
+                        )
                     )}
                     {activeTab === 'stats' && hasVisibleStats && editingDate && (
                         <DateStatCheckIn
@@ -1308,8 +1503,12 @@ export function MonthCalendar({
                 initialDate={templateSourceDate}
                 events={events}
                 tasks={tasks}
-                onSave={onCreateDayTemplate}
-                onClose={() => setTemplateCreationOpen(false)}
+                template={templateEditTarget}
+                onSave={handleSaveTemplate}
+                onClose={() => {
+                    setTemplateCreationOpen(false);
+                    setTemplateEditTarget(null);
+                }}
             />
 
             <Dialog
@@ -1320,18 +1519,60 @@ export function MonthCalendar({
                 fullWidth
                 maxWidth="sm"
             >
-                <DialogTitle>{selectedCalendarEvent?.title || 'Event details'}</DialogTitle>
+                <DialogTitle>
+                    {selectedCalendarEvent?.title || 'Event details'}
+                    {selectedCalendarEventOccurrence && ` · ${selectedCalendarEventOccurrence.occurrenceDate}`}
+                </DialogTitle>
                 <DialogContent sx={{ p: 0 }}>
                     {selectedCalendarEvent && (
                         <CalendarEventForm
-                            key={selectedCalendarEvent.id}
+                            key={`${selectedCalendarEvent.id}-${selectedCalendarEventOccurrence?.occurrenceKey ?? 'series'}`}
                             initialDate={selectedCalendarEvent.startDate
                                 ?? format(new Date(selectedCalendarEvent.startTime!), 'yyyy-MM-dd')}
                             event={selectedCalendarEvent}
+                            occurrenceKey={selectedCalendarEventOccurrence?.occurrenceKey}
+                            occurrenceDate={selectedCalendarEventOccurrence?.occurrenceDate}
+                            occurrenceStatus={selectedCalendarEventOccurrence?.status}
                             onSave={async event => {
                                 await onUpdateEvent(selectedCalendarEvent.id, event);
                                 setSelectedEventDialogOpen(false);
                             }}
+                            onCancelOccurrence={selectedEventSelection
+                                ? async () => {
+                                    await onCancelEventOccurrence(
+                                        selectedCalendarEvent.id,
+                                        selectedEventSelection.occurrenceKey,
+                                    );
+                                    setSelectedEventDialogOpen(false);
+                                }
+                                : undefined}
+                            onRestoreOccurrence={selectedEventSelection
+                                ? async () => {
+                                    await onRestoreEventOccurrence(
+                                        selectedCalendarEvent.id,
+                                        selectedEventSelection.occurrenceKey,
+                                    );
+                                    setSelectedEventDialogOpen(false);
+                                }
+                                : undefined}
+                            onUpdateOccurrenceStatus={selectedEventSelection
+                                ? async status => {
+                                    await onUpdateEventOccurrenceStatus(
+                                        selectedCalendarEvent.id,
+                                        selectedEventSelection.occurrenceKey,
+                                        status,
+                                    );
+                                }
+                                : undefined}
+                            onDeleteOccurrence={selectedEventSelection
+                                ? async () => {
+                                    await onDeleteEventOccurrence(
+                                        selectedCalendarEvent.id,
+                                        selectedEventSelection.occurrenceKey,
+                                    );
+                                    setSelectedEventDialogOpen(false);
+                                }
+                                : undefined}
                             onDelete={async () => {
                                 await onDeleteEvent(selectedCalendarEvent.id);
                                 setSelectedEventDialogOpen(false);
@@ -1386,7 +1627,7 @@ export function MonthCalendar({
 
             <Dialog
                 open={taskDialogOpen}
-                onClose={closeTaskDialog}
+                onClose={() => !taskDeleting && closeTaskDialog()}
                 TransitionComponent={Fade}
                 transitionDuration={{ enter: 180, exit: 140 }}
                 fullWidth
@@ -1494,10 +1735,14 @@ export function MonthCalendar({
                                                 />
                                             </Collapse>
                                         </Box>
-                                        {!selectedTask.parentId && (
+                                        {!selectedTask.parentId && recurrenceLoading && (
+                                            <Skeleton variant="rounded" height={40} />
+                                        )}
+                                        {!selectedTask.parentId && !recurrenceLoading && (
                                             <TaskRecurrencePicker
                                                 value={recurrenceDraft}
                                                 onChange={handleTaskRecurrenceChange}
+                                                disabled={Boolean(selectedTask.optimisticRecurrence)}
                                                 showEndDate={false}
                                                 showCustomOptions={false}
                                             />
@@ -1515,10 +1760,11 @@ export function MonthCalendar({
                                                 alignItems: 'start',
                                             }}>
                                                 {recurrenceDraft.recurrenceFrequency === 'CUSTOM' && (
-                                                    <TaskRecurrenceCustomOptions
-                                                        value={recurrenceDraft}
-                                                        onChange={handleTaskRecurrenceChange}
-                                                    />
+                                                        <TaskRecurrenceCustomOptions
+                                                            value={recurrenceDraft}
+                                                            onChange={handleTaskRecurrenceChange}
+                                                            disabled={Boolean(selectedTask.optimisticRecurrence)}
+                                                        />
                                                 )}
                                                 <AppDateField
                                                     label="Repeat until (optional)"
@@ -1527,6 +1773,7 @@ export function MonthCalendar({
                                                         ...recurrenceDraft,
                                                         recurrenceEndDate: recurrenceEndDate || null,
                                                     })}
+                                                    disabled={Boolean(selectedTask.optimisticRecurrence)}
                                                 />
                                             </Box>
                                         </Collapse>
@@ -1568,17 +1815,161 @@ export function MonthCalendar({
                         </Box>
                     )}
                 </DialogContent>
-                <DialogActions>
-                    <Button onClick={closeTaskDialog}>Cancel</Button>
+                <DialogActions sx={{ justifyContent: 'space-between' }}>
                     <Button
-                        variant="contained"
-                        onClick={() => void handleTaskSave()}
-                        disabled={taskSaving || !(taskDraft?.name ?? '').trim()}
+                        color="error"
+                        onClick={event => {
+                            setTaskDeleteError(null);
+                            if (selectedTask?.taskSeriesId) {
+                                setTaskDeleteMenuAnchor(event.currentTarget);
+                            } else {
+                                openTaskDeleteConfirmation('series');
+                            }
+                        }}
+                        disabled={taskSaving || taskDeleting || Boolean(selectedTask?.optimisticRecurrence)}
                     >
-                        {taskSaving ? 'Saving…' : 'Save'}
+                        Delete
+                    </Button>
+                    <Stack direction="row" spacing={1}>
+                        <Button onClick={closeTaskDialog} disabled={taskDeleting}>Cancel</Button>
+                        <Button
+                            variant="contained"
+                            onClick={() => void handleTaskSave()}
+                            disabled={taskSaving || taskDeleting || Boolean(selectedTask?.optimisticRecurrence)
+                                || !(taskDraft?.name ?? '').trim()}
+                        >
+                            {taskSaving ? 'Saving…' : 'Save'}
+                        </Button>
+                    </Stack>
+                </DialogActions>
+            </Dialog>
+
+            <Menu
+                anchorEl={taskDeleteMenuAnchor}
+                open={Boolean(taskDeleteMenuAnchor)}
+                onClose={() => setTaskDeleteMenuAnchor(null)}
+            >
+                <MenuItem
+                    onClick={() => {
+                        setTaskDeleteMenuAnchor(null);
+                        openTaskDeleteConfirmation('occurrence');
+                    }}
+                >
+                    This occurrence
+                </MenuItem>
+                <MenuItem
+                    onClick={() => {
+                        setTaskDeleteMenuAnchor(null);
+                        openTaskDeleteConfirmation('series');
+                    }}
+                >
+                    All occurrences
+                </MenuItem>
+            </Menu>
+
+            <Dialog
+                open={taskDeleteConfirmationOpen}
+                onClose={() => !taskDeleting && setTaskDeleteConfirmationOpen(false)}
+                fullWidth
+                maxWidth="xs"
+            >
+                <DialogTitle>
+                    {taskDeleteScope === 'occurrence'
+                        ? 'Delete this occurrence?'
+                        : selectedTask?.taskSeriesId ? 'Delete task series?' : 'Delete task?'}
+                </DialogTitle>
+                <DialogContent>
+                    <DialogContentText>
+                        {taskDeleteScope === 'occurrence'
+                            ? `Delete “${selectedTask?.name ?? 'this task'}” from this date? This occurrence will be removed from your calendar.`
+                            : selectedTask?.taskSeriesId
+                            ? `Delete “${selectedTask.name}” and all occurrences in its series?`
+                            : `Delete “${selectedTask?.name ?? 'this task'}” and its subtasks?`}
+                    </DialogContentText>
+                    {taskDeleteError && <Alert severity="error" sx={{ mt: 2 }}>{taskDeleteError}</Alert>}
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setTaskDeleteConfirmationOpen(false)} disabled={taskDeleting}>
+                        Keep task
+                    </Button>
+                    <Button color="error" variant="contained" onClick={() => void handleTaskDelete()} disabled={taskDeleting}>
+                        {taskDeleting ? 'Deleting…' : 'Delete'}
                     </Button>
                 </DialogActions>
             </Dialog>
+
+            <Snackbar
+                key={templateFeedback?.id}
+                open={templateFeedback !== null}
+                autoHideDuration={templateFeedback?.application ? 7000 : 4500}
+                onClose={(_, reason) => {
+                    if (reason !== 'clickaway' && !templateFeedback?.undoing) setTemplateFeedback(null);
+                }}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                sx={{
+                    right: { xs: 12, sm: 28 },
+                    bottom: { xs: 12, sm: 28 },
+                }}
+            >
+                {templateFeedback ? (
+                    <Alert
+                        severity={templateFeedback.severity}
+                        variant="outlined"
+                        icon={<InfoOutlinedIcon fontSize="small" />}
+                        action={templateFeedback.application ? (
+                            <Button
+                                size="small"
+                                color="inherit"
+                                startIcon={<ReplayIcon fontSize="small" />}
+                                onClick={() => void undoTemplateApplication()}
+                                disabled={templateFeedback.undoing}
+                                sx={{ whiteSpace: 'nowrap' }}
+                            >
+                                {templateFeedback.undoing ? 'Undoing…' : 'Undo'}
+                            </Button>
+                        ) : undefined}
+                        onClose={() => {
+                            if (!templateFeedback.undoing) setTemplateFeedback(null);
+                        }}
+                        sx={{
+                            minWidth: 260,
+                            maxWidth: 'calc(100vw - 48px)',
+                            alignItems: 'center',
+                            backgroundColor: 'background.paper',
+                            '& .MuiAlert-message': {
+                                minWidth: 0,
+                            },
+                            '& .MuiAlert-action': {
+                                alignSelf: 'center',
+                                m: 0,
+                                ml: 1,
+                            },
+                        }}
+                    >
+                        {templateFeedback.message}
+                    </Alert>
+                ) : undefined}
+            </Snackbar>
+            <Snackbar
+                open={taskCreationError !== null}
+                autoHideDuration={4500}
+                onClose={(_, reason) => {
+                    if (reason !== 'clickaway') setTaskCreationError(null);
+                }}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                sx={{ right: { xs: 12, sm: 28 }, bottom: { xs: 12, sm: 28 } }}
+            >
+                {taskCreationError ? (
+                    <Alert
+                        severity="error"
+                        variant="outlined"
+                        onClose={() => setTaskCreationError(null)}
+                        sx={{ backgroundColor: 'background.paper' }}
+                    >
+                        {taskCreationError}
+                    </Alert>
+                ) : undefined}
+            </Snackbar>
         </>
     );
 }

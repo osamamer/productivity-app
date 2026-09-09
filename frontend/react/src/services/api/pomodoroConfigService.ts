@@ -5,6 +5,8 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
 export type PomodoroDurationUnit = 'minutes' | 'seconds';
 export const POMODORO_DEV_SECONDS_MODE_STORAGE_KEY = 'pomodoroDevSecondsMode';
+const POMODORO_FORM_STORAGE_PREFIX = 'solife.pomodoro-form';
+const POMODORO_FORM_UPDATED_EVENT = 'solife:pomodoro-form-updated';
 
 export interface PomodoroConfig {
     secondsMode: boolean;
@@ -39,11 +41,67 @@ const DEV_POMODORO_CONFIG: PomodoroConfig = {
 };
 
 const DEFAULT_NUM_FOCUSES = 4;
-const DEFAULT_LONG_BREAK_COOLDOWN = 4;
+export const DEFAULT_LONG_BREAK_COOLDOWN = 4;
 
 const POMODORO_CONFIG_TTL_MS = 5 * 60 * 1000;
 const pomodoroConfigCache = new TtlCache<PomodoroConfig>({ ttlMs: POMODORO_CONFIG_TTL_MS, maxEntries: 4 });
 const pomodoroConfigRequests = new Map<string, Promise<PomodoroConfig>>();
+
+function pomodoroFormStorageKey(): string {
+    return `${POMODORO_FORM_STORAGE_PREFIX}.${getAuthCacheScope()}`;
+}
+
+function isPositiveInteger(value: unknown): value is number {
+    return typeof value === 'number' && Number.isInteger(value) && value > 0;
+}
+
+function isPomodoroFormValues(value: unknown): value is PomodoroFormValues {
+    if (!value || typeof value !== 'object') return false;
+
+    const form = value as Partial<PomodoroFormValues>;
+    return isPositiveInteger(form.focusDuration)
+        && isPositiveInteger(form.shortBreakDuration)
+        && isPositiveInteger(form.longBreakDuration)
+        && isPositiveInteger(form.numFocuses)
+        && isPositiveInteger(form.longBreakCooldown);
+}
+
+export function readPomodoroFormPreferences(): PomodoroFormValues | null {
+    if (typeof window === 'undefined') return null;
+
+    try {
+        const stored = window.localStorage.getItem(pomodoroFormStorageKey());
+        if (!stored) return null;
+        const parsed: unknown = JSON.parse(stored);
+        return isPomodoroFormValues(parsed) ? parsed : null;
+    } catch (error) {
+        console.warn('Could not read Pomodoro input preferences:', error);
+        return null;
+    }
+}
+
+export function savePomodoroFormPreferences(form: PomodoroFormValues): void {
+    if (typeof window === 'undefined' || !isPomodoroFormValues(form)) return;
+
+    try {
+        window.localStorage.setItem(pomodoroFormStorageKey(), JSON.stringify(form));
+        window.dispatchEvent(new Event(POMODORO_FORM_UPDATED_EVENT));
+    } catch (error) {
+        console.warn('Could not save Pomodoro input preferences:', error);
+    }
+}
+
+export function subscribeToPomodoroFormPreferences(listener: () => void): () => void {
+    if (typeof window === 'undefined') return () => undefined;
+
+    const handleUpdate = () => listener();
+    window.addEventListener(POMODORO_FORM_UPDATED_EVENT, handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+    return () => {
+        window.removeEventListener(POMODORO_FORM_UPDATED_EVENT, handleUpdate);
+        window.removeEventListener('storage', handleUpdate);
+    };
+}
 
 export function createPomodoroFormDefaults(config: PomodoroConfig): PomodoroFormValues {
     return {

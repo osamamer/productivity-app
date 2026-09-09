@@ -1,5 +1,6 @@
 import {
-    Alert, Box, Button, FormControlLabel, MenuItem, Stack, Switch, TextField, Typography,
+    Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle,
+    FormControlLabel, Menu, MenuItem, Stack, Switch, TextField, Typography,
 } from '@mui/material';
 import { useMemo, useState } from 'react';
 import { CalendarEvent, CalendarEventInput, CalendarEventStatus, RecurrenceFrequency, RecurrenceUnit } from '../../types/CalendarEvent';
@@ -11,10 +12,19 @@ import { useKeyboardDelete } from '../../hooks/useKeyboardDelete';
 type Props = {
     initialDate: string;
     event?: CalendarEvent | null;
+    occurrenceKey?: string;
+    occurrenceDate?: string;
+    occurrenceStatus?: CalendarEventStatus;
     onSave: (event: CalendarEventInput) => Promise<void>;
     onCancel: () => void;
     onDelete?: () => Promise<void>;
+    onDeleteOccurrence?: () => Promise<void>;
+    onCancelOccurrence?: () => Promise<void>;
+    onRestoreOccurrence?: () => Promise<void>;
+    onUpdateOccurrenceStatus?: (status: CalendarEventStatus) => Promise<void>;
 };
+
+type DeleteScope = 'occurrence' | 'all';
 
 const REMINDER_OPTIONS = [
     { value: 5, label: '5 minutes before' },
@@ -74,7 +84,20 @@ function addDay(date: string): string {
     return `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}-${String(nextDate.getDate()).padStart(2, '0')}`;
 }
 
-export function CalendarEventForm({ initialDate, event, onSave, onCancel, onDelete }: Props) {
+export function CalendarEventForm({
+    initialDate,
+    event,
+    occurrenceKey,
+    occurrenceDate,
+    occurrenceStatus,
+    onSave,
+    onCancel,
+    onDelete,
+    onDeleteOccurrence,
+    onCancelOccurrence,
+    onRestoreOccurrence,
+    onUpdateOccurrenceStatus,
+}: Props) {
     const [rememberedTimes] = useState(() => event ? {} : readEventTimePreferences());
     const [title, setTitle] = useState(event?.title ?? '');
     const [description, setDescription] = useState(event?.description ?? '');
@@ -83,7 +106,7 @@ export function CalendarEventForm({ initialDate, event, onSave, onCancel, onDele
     const [endDate, setEndDate] = useState(event?.endDate ?? localDatePart(event?.endTime, initialDate));
     const [startTime, setStartTime] = useState(localTimePart(event?.startTime, rememberedTimes.startTime ?? '17:00'));
     const [endTime, setEndTime] = useState(localTimePart(event?.endTime, rememberedTimes.endTime ?? '18:00'));
-    const [status, setStatus] = useState<CalendarEventStatus>(event?.status ?? 'CONFIRMED');
+    const [status, setStatus] = useState<CalendarEventStatus>(occurrenceStatus ?? event?.status ?? 'CONFIRMED');
     const [recurrenceFrequency, setRecurrenceFrequency] = useState<RecurrenceFrequency>(
         event?.recurrenceFrequency ?? 'NONE'
     );
@@ -94,6 +117,10 @@ export function CalendarEventForm({ initialDate, event, onSave, onCancel, onDele
     const [saving, setSaving] = useState(false);
     const [deleting, setDeleting] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [cancelMenuAnchor, setCancelMenuAnchor] = useState<HTMLElement | null>(null);
+    const [deleteMenuAnchor, setDeleteMenuAnchor] = useState<HTMLElement | null>(null);
+    const [deleteScope, setDeleteScope] = useState<DeleteScope | null>(null);
+    const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
 
     const customReminderOption = useMemo(
         () => REMINDER_OPTIONS.some(option => option.value === reminderMinutes) ? null : reminderMinutes,
@@ -123,15 +150,15 @@ export function CalendarEventForm({ initialDate, event, onSave, onCancel, onDele
         setEndDate(adjustedEnd.crossesMidnight ? addDay(nextStartDate) : nextStartDate);
     };
 
-    const submit = async () => {
+    const buildInput = (): CalendarEventInput | null => {
         if (!title.trim()) {
             setError('Add a title for the event.');
-            return;
+            return null;
         }
         if (recurrenceFrequency === 'CUSTOM'
             && (!Number.isInteger(recurrenceInterval) || recurrenceInterval < 1 || recurrenceInterval > 999)) {
             setError('Custom repeat must be between 1 and 999.');
-            return;
+            return null;
         }
 
         let startInstant: string | null = null;
@@ -141,34 +168,45 @@ export function CalendarEventForm({ initialDate, event, onSave, onCancel, onDele
             const end = new Date(`${endDate}T${endTime}:00`);
             if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
                 setError('Finish must be after the start.');
-                return;
+                return null;
             }
             startInstant = start.toISOString();
             endInstant = end.toISOString();
         } else if (endDate < startDate) {
             setError('Finish date cannot be before the start date.');
-            return;
+            return null;
         }
+
+        return {
+            title: title.trim(),
+            description: description.trim(),
+            allDay,
+            startDate: allDay ? startDate : null,
+            endDate: allDay ? endDate : null,
+            startTime: startInstant,
+            endTime: endInstant,
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+            status: event && occurrenceKey ? event.status : status,
+            recurrenceFrequency,
+            recurrenceEndDate: recurrenceFrequency === 'NONE' || !recurrenceEndDate ? null : recurrenceEndDate,
+            recurrenceInterval: recurrenceFrequency === 'CUSTOM' ? recurrenceInterval : null,
+            recurrenceUnit: recurrenceFrequency === 'CUSTOM' ? recurrenceUnit : null,
+            reminderMinutesBefore: reminderMinutes,
+        };
+    };
+
+    const submit = async (statusOverride?: CalendarEventStatus) => {
+        const input = buildInput();
+        if (!input) return;
 
         setSaving(true);
         setError(null);
         try {
-            await onSave({
-                title: title.trim(),
-                description: description.trim(),
-                allDay,
-                startDate: allDay ? startDate : null,
-                endDate: allDay ? endDate : null,
-                startTime: startInstant,
-                endTime: endInstant,
-                timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
-                status,
-                recurrenceFrequency,
-                recurrenceEndDate: recurrenceFrequency === 'NONE' || !recurrenceEndDate ? null : recurrenceEndDate,
-                recurrenceInterval: recurrenceFrequency === 'CUSTOM' ? recurrenceInterval : null,
-                recurrenceUnit: recurrenceFrequency === 'CUSTOM' ? recurrenceUnit : null,
-                reminderMinutesBefore: reminderMinutes,
-            });
+            if (event && occurrenceKey && statusOverride === undefined
+                && onUpdateOccurrenceStatus && status !== occurrenceStatus) {
+                await onUpdateOccurrenceStatus(status);
+            }
+            await onSave(statusOverride === undefined ? input : { ...input, status: statusOverride });
             if (!allDay) saveEventTimePreferences(startTime, endTime);
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Failed to save the event.');
@@ -177,12 +215,54 @@ export function CalendarEventForm({ initialDate, event, onSave, onCancel, onDele
         }
     };
 
-    const remove = async () => {
-        if (!onDelete) return;
+    const occurrenceCanBeCancelled = Boolean(
+        event
+        && recurrenceFrequency !== 'NONE'
+        && occurrenceKey
+        && event.status !== 'CANCELLED'
+        && onCancelOccurrence
+        && occurrenceStatus !== 'CANCELLED'
+    );
+    const occurrenceCanBeRestored = Boolean(
+        event
+        && recurrenceFrequency !== 'NONE'
+        && occurrenceKey
+        && event.status !== 'CANCELLED'
+        && onRestoreOccurrence
+        && occurrenceStatus === 'CANCELLED'
+    );
+    const canCancelRepeatingEvent = Boolean(
+        event
+        && recurrenceFrequency !== 'NONE'
+        && event.status !== 'CANCELLED'
+        && (onCancelOccurrence || onSave)
+    );
+
+    const runOccurrenceAction = async (action: (() => Promise<void>) | undefined) => {
+        if (!action) return;
         setDeleting(true);
         setError(null);
         try {
-            await onDelete();
+            await action();
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'Failed to update the event occurrence.');
+            setDeleting(false);
+        }
+    };
+
+    const openDeleteConfirmation = (scope: DeleteScope) => {
+        setDeleteScope(scope);
+        setDeleteConfirmationOpen(true);
+    };
+
+    const remove = async () => {
+        if (!deleteScope || (deleteScope === 'occurrence' ? !onDeleteOccurrence : !onDelete)) return;
+        setDeleteConfirmationOpen(false);
+        setDeleting(true);
+        setError(null);
+        try {
+            if (deleteScope === 'occurrence') await onDeleteOccurrence!();
+            else await onDelete!();
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Failed to delete the event.');
             setDeleting(false);
@@ -190,10 +270,20 @@ export function CalendarEventForm({ initialDate, event, onSave, onCancel, onDele
     };
 
     useKeyboardDelete({
-        enabled: Boolean(onDelete) && !saving && !deleting,
+        enabled: Boolean(onDelete) && !saving && !deleting && !deleteConfirmationOpen && !deleteMenuAnchor,
         allowDialog: true,
-        onDelete: () => { void remove(); },
+        onDelete: () => {
+            if (event && recurrenceFrequency !== 'NONE' && occurrenceKey && onDeleteOccurrence) {
+                openDeleteConfirmation('occurrence');
+            } else {
+                openDeleteConfirmation('all');
+            }
+        },
     });
+
+    const canDeleteOccurrence = Boolean(
+        event && recurrenceFrequency !== 'NONE' && occurrenceKey && onDeleteOccurrence,
+    );
 
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, p: 2 }}>
@@ -201,12 +291,18 @@ export function CalendarEventForm({ initialDate, event, onSave, onCancel, onDele
             <TextField label="Description" value={description} onChange={e => setDescription(e.target.value)} autoComplete="off"
                        multiline minRows={2} maxRows={5} fullWidth />
 
-            <TextField select label="Status" value={status} autoComplete="off"
+            <TextField select label={event && recurrenceFrequency !== 'NONE' && !occurrenceKey ? 'Series status' : 'Status'} value={status} autoComplete="off"
                        onChange={e => setStatus(e.target.value as CalendarEventStatus)} fullWidth>
                 {STATUS_OPTIONS.map(option => (
                     <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
                 ))}
             </TextField>
+
+            {event && recurrenceFrequency !== 'NONE' && occurrenceDate && (
+                <Typography variant="caption" color="text.secondary">
+                    Selected occurrence: {occurrenceDate}
+                </Typography>
+            )}
 
             <FormControlLabel
                 control={<Switch checked={allDay} onChange={e => setAllDay(e.target.checked)} />}
@@ -271,8 +367,31 @@ export function CalendarEventForm({ initialDate, event, onSave, onCancel, onDele
             </Box>
 
             {error && <Alert severity="error">{error}</Alert>}
-            <Stack direction="row" justifyContent={onDelete ? 'space-between' : 'flex-end'} spacing={1}>
-                {onDelete && <Button color="error" onClick={() => void remove()} disabled={saving || deleting}>Delete</Button>}
+            <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent={onDelete ? 'space-between' : 'flex-end'} spacing={1}>
+                <Stack direction="row" flexWrap="wrap" spacing={1} useFlexGap>
+                    {occurrenceCanBeRestored && (
+                        <Button color="primary" onClick={() => void runOccurrenceAction(onRestoreOccurrence)} disabled={saving || deleting}>
+                            Restore this occurrence
+                        </Button>
+                    )}
+                    {canCancelRepeatingEvent && (
+                        <Button color="error" onClick={event => setCancelMenuAnchor(event.currentTarget)} disabled={saving || deleting}>
+                            Cancel event
+                        </Button>
+                    )}
+                    {onDelete && (
+                        <Button
+                            color="error"
+                            onClick={buttonEvent => {
+                                if (canDeleteOccurrence) setDeleteMenuAnchor(buttonEvent.currentTarget);
+                                else openDeleteConfirmation('all');
+                            }}
+                            disabled={saving || deleting}
+                        >
+                            {event && recurrenceFrequency !== 'NONE' ? 'Delete' : 'Delete'}
+                        </Button>
+                    )}
+                </Stack>
                 <Stack direction="row" spacing={1}>
                     <Button onClick={onCancel} disabled={saving || deleting}>Cancel</Button>
                     <Button variant="contained" onClick={() => void submit()} disabled={saving || deleting}>
@@ -280,6 +399,77 @@ export function CalendarEventForm({ initialDate, event, onSave, onCancel, onDele
                     </Button>
                 </Stack>
             </Stack>
+            <Menu
+                anchorEl={cancelMenuAnchor}
+                open={Boolean(cancelMenuAnchor)}
+                onClose={() => setCancelMenuAnchor(null)}
+            >
+                <MenuItem
+                    disabled={!occurrenceCanBeCancelled}
+                    onClick={() => {
+                        setCancelMenuAnchor(null);
+                        void runOccurrenceAction(onCancelOccurrence);
+                    }}
+                >
+                    This occurrence
+                </MenuItem>
+                <MenuItem
+                    onClick={() => {
+                        setCancelMenuAnchor(null);
+                        void submit('CANCELLED');
+                    }}
+                >
+                All occurrences
+                </MenuItem>
+            </Menu>
+            <Menu
+                anchorEl={deleteMenuAnchor}
+                open={Boolean(deleteMenuAnchor)}
+                onClose={() => setDeleteMenuAnchor(null)}
+            >
+                <MenuItem
+                    disabled={!canDeleteOccurrence}
+                    onClick={() => {
+                        setDeleteMenuAnchor(null);
+                        openDeleteConfirmation('occurrence');
+                    }}
+                >
+                    This occurrence
+                </MenuItem>
+                <MenuItem
+                    onClick={() => {
+                        setDeleteMenuAnchor(null);
+                        openDeleteConfirmation('all');
+                    }}
+                >
+                    All occurrences
+                </MenuItem>
+            </Menu>
+            <Dialog
+                open={deleteConfirmationOpen}
+                onClose={() => !deleting && setDeleteConfirmationOpen(false)}
+                fullWidth
+                maxWidth="xs"
+            >
+                <DialogTitle>
+                    {deleteScope === 'occurrence' ? 'Delete this occurrence?' : 'Delete event?'}
+                </DialogTitle>
+                <DialogContent>
+                    <DialogContentText>
+                        {deleteScope === 'occurrence'
+                            ? 'This occurrence will be removed from your calendar. This cannot be undone.'
+                            : event && recurrenceFrequency !== 'NONE'
+                                ? 'All occurrences of this event will be removed from your calendar. This cannot be undone.'
+                                : 'This event will be removed from your calendar. This cannot be undone.'}
+                    </DialogContentText>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setDeleteConfirmationOpen(false)} disabled={deleting}>Keep event</Button>
+                    <Button color="error" variant="contained" onClick={() => void remove()} disabled={deleting}>
+                        {deleting ? 'Deleting…' : 'Delete'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </Box>
     );
 }

@@ -2,6 +2,7 @@ package org.osama.reminder;
 
 import lombok.extern.slf4j.Slf4j;
 import org.osama.event.CalendarEvent;
+import org.osama.event.CalendarEventCancellationRepository;
 import org.osama.event.RecurrenceFrequency;
 import org.osama.exceptions.ResourceNotFoundException;
 import org.osama.mentalstate.MentalStateCheckInRepository;
@@ -35,13 +36,16 @@ public class NotificationService {
     public static final String CHECKUP_TARGET_URL = "/mental-state";
 
     private final ReminderRepository reminderRepository;
+    private final CalendarEventCancellationRepository cancellationRepository;
     private final MentalStateCheckInRepository checkInRepository;
     private final SimpMessagingTemplate messagingTemplate;
 
     public NotificationService(ReminderRepository reminderRepository,
+                               CalendarEventCancellationRepository cancellationRepository,
                                MentalStateCheckInRepository checkInRepository,
                                SimpMessagingTemplate messagingTemplate) {
         this.reminderRepository = reminderRepository;
+        this.cancellationRepository = cancellationRepository;
         this.checkInRepository = checkInRepository;
         this.messagingTemplate = messagingTemplate;
     }
@@ -55,6 +59,12 @@ public class NotificationService {
                 now, retryBefore, PageRequest.of(0, PUSH_BATCH_SIZE));
 
         for (Reminder reminder : due) {
+            if (isCancelledEventReminder(reminder)) {
+                if (!scheduleNextRecurringEventReminder(reminder, now)) {
+                    reminder.setAcknowledgedAt(now);
+                }
+                continue;
+            }
             String keycloakId = reminder.getUser().getKeycloakId();
             if (keycloakId == null || keycloakId.isBlank()) {
                 reminder.setDispatchedAt(now);
@@ -122,7 +132,8 @@ public class NotificationService {
     private boolean scheduleNextRecurringEventReminder(Reminder reminder, Instant now) {
         CalendarEvent event = reminder.getEvent();
         if (event == null || event.getRecurrenceFrequency() == null
-                || event.getRecurrenceFrequency() == RecurrenceFrequency.NONE) {
+                || event.getRecurrenceFrequency() == RecurrenceFrequency.NONE
+                || event.getStatus() == org.osama.event.CalendarEventStatus.CANCELLED) {
             return false;
         }
 
@@ -141,7 +152,8 @@ public class NotificationService {
                     && nextOccurrence.toLocalDate().isAfter(event.getRecurrenceEndDate())) {
                 return false;
             }
-        } while (!nextOccurrence.toInstant().isAfter(now));
+        } while (!nextOccurrence.toInstant().isAfter(now)
+                || isCancelledEventOccurrence(event, nextOccurrence.toInstant()));
 
         String userId = reminder.getUser().getId();
         Reminder nextReminder = new Reminder();
@@ -164,6 +176,26 @@ public class NotificationService {
         log.info("Recurring calendar reminder advanced: userId={} eventId={} nextReminderId={} occurrenceStart={}",
                 userId, event.getId(), nextReminder.getReminderId(), nextOccurrence.toInstant());
         return true;
+    }
+
+    private boolean isCancelledEventReminder(Reminder reminder) {
+        CalendarEvent event = reminder.getEvent();
+        return event != null && (event.getStatus() == org.osama.event.CalendarEventStatus.CANCELLED
+                || isCancelledEventOccurrence(event, reminder.getEventOccurrenceStart()));
+    }
+
+    private boolean isCancelledEventOccurrence(CalendarEvent event, Instant occurrenceStart) {
+        if (occurrenceStart == null || event.getRecurrenceFrequency() == null
+                || event.getRecurrenceFrequency() == RecurrenceFrequency.NONE) {
+            return false;
+        }
+        String occurrenceKey = event.isAllDay()
+                ? "date:" + occurrenceStart.atZone(ZoneId.of(event.getTimeZone())).toLocalDate()
+                : "instant:" + occurrenceStart;
+        return cancellationRepository.findByEventIdAndOccurrenceKey(event.getId(), occurrenceKey)
+                .map(override -> override.isDeleted()
+                        || override.getOccurrenceStatus() == org.osama.event.CalendarEventStatus.CANCELLED)
+                .orElse(false);
     }
 
     private ZonedDateTime nextOccurrence(CalendarEvent event, ZonedDateTime current, ZoneId zone) {

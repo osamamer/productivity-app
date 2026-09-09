@@ -29,6 +29,24 @@ export const dayTemplateService = {
         return response.json();
     },
 
+    async updateTemplate(templateId: string, request: DayTemplateRequest): Promise<DayTemplate> {
+        const response = await fetch(`${TEMPLATE_URL}/${templateId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify(request),
+        });
+        await ensureSuccessful(response, 'Unable to update the day template.');
+        return response.json();
+    },
+
+    async deleteTemplate(templateId: string): Promise<void> {
+        const response = await fetch(`${TEMPLATE_URL}/${templateId}`, {
+            method: 'DELETE',
+            headers: getAuthHeaders(),
+        });
+        await ensureSuccessful(response, 'Unable to delete the day template.');
+    },
+
     async applyTemplate(templateId: string, date: string): Promise<DayTemplateApplication> {
         const response = await fetch(`${TEMPLATE_URL}/${templateId}/apply`, {
             method: 'POST',

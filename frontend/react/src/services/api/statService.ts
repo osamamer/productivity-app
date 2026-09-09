@@ -1,4 +1,5 @@
-import { StatBootstrapResponse, StatDefinition, StatEntry, StatSummary, StatInsights, StatFocusTimeEntry, CreateDefinitionRequest, RecordEntryRequest, UpdateDefinitionRequest } from '../../types/Stats';
+import { StatBootstrapResponse, StatDefinition, StatEntry, StatEntryStatus, StatSummary, StatInsights, StatFocusTimeEntry, CreateDefinitionRequest, RecordEntryRequest, UpdateDefinitionRequest, StatRecurringTaskDraft } from '../../types/Stats';
+import { TaskSeries } from '../../types/TaskSeries';
 import { getAuthCacheScope, getAuthHeaders } from '../utils/authHeaders';
 import { CachedResource, TtlCache } from '../cache/ttlCache';
 import { invalidateResource, subscribeToResourceInvalidation } from '../cache/resourceInvalidation';
@@ -32,6 +33,20 @@ const dailyEntriesCache = new CachedResource<StatEntry[]>({
 const definitionsCache = new TtlCache<StatDefinition[]>({ ttlMs: STAT_DEFINITIONS_TTL_MS, maxEntries: 10 });
 const definitionsRequests = new Map<string, Promise<StatDefinition[]>>();
 const lastMonthPrefetchRequests = new Map<string, Promise<void>>();
+type OptimisticEntryOverride = {
+    value: number | null;
+    status: StatEntryStatus;
+    sequence: number;
+};
+
+type OptimisticWrite = {
+    sequence: number;
+    previous: Map<string, OptimisticEntryOverride | undefined>;
+};
+
+const knownEntries = new Map<string, StatEntry>();
+const optimisticEntryOverrides = new Map<string, OptimisticEntryOverride>();
+let optimisticWriteSequence = 0;
 let statCacheGeneration = 0;
 
 function definitionsCacheKey(): string {
@@ -76,6 +91,12 @@ function localDateString(date = new Date()): string {
     ].join('-');
 }
 
+function shiftLocalDate(date: string, days: number): string {
+    const shifted = new Date(`${date}T12:00:00`);
+    shifted.setDate(shifted.getDate() + days);
+    return localDateString(shifted);
+}
+
 export interface StatDateRange {
     from: string;
     to: string;
@@ -92,6 +113,135 @@ export function getLastMonthWindow(today = new Date()): StatDateRange {
 
 function dailyEntriesCacheKey(date: string): string {
     return `${getAuthCacheScope()}:daily:${date}`;
+}
+
+function entryIdentity(definitionId: string, date: string): string {
+    return `${getAuthCacheScope()}:${definitionId}:${date}`;
+}
+
+function rememberEntries(entries: StatEntry[]): void {
+    entries.forEach(entry => knownEntries.set(entryIdentity(entry.statDefinitionId, entry.date), entry));
+}
+
+function cachedDefinition(systemKey: string): StatDefinition | undefined {
+    return definitionsCache.get(definitionsCacheKey())
+        ?.find(definition => definition.systemKey === systemKey);
+}
+
+function effectiveEntry(definitionId: string, date: string): StatEntry | null {
+    const key = entryIdentity(definitionId, date);
+    const override = optimisticEntryOverrides.get(key);
+    if (override) {
+        if (override.value === null) return null;
+        const existing = knownEntries.get(key);
+        return {
+            ...(existing ?? {}),
+            id: existing?.id ?? `optimistic-${definitionId}-${date}`,
+            statDefinitionId: definitionId,
+            statDefinition: existing?.statDefinition
+                ?? definitionsCache.get(definitionsCacheKey())?.find(definition => definition.id === definitionId)
+                ?? ({} as StatDefinition),
+            date,
+            value: override.value,
+            status: override.status,
+            userId: existing?.userId ?? '',
+        };
+    }
+    return knownEntries.get(key) ?? null;
+}
+
+function applyOptimisticOverrides(
+    entries: StatEntry[],
+    from: string,
+    to: string,
+    definitionId?: string,
+): StatEntry[] {
+    rememberEntries(entries);
+    const result = new Map(entries.map(entry => [entryIdentity(entry.statDefinitionId, entry.date), entry]));
+    optimisticEntryOverrides.forEach((override, key) => {
+        const parts = key.split(':');
+        const date = parts.pop();
+        const overrideDefinitionId = parts.pop();
+        if (!date || !overrideDefinitionId || (definitionId && overrideDefinitionId !== definitionId)
+            || date < from || date > to) return;
+
+        if (override.value === null) {
+            result.delete(key);
+            return;
+        }
+        const existing = result.get(key) ?? effectiveEntry(overrideDefinitionId, date);
+        result.set(key, {
+            ...(existing ?? {}),
+            id: existing?.id ?? `optimistic-${overrideDefinitionId}-${date}`,
+            statDefinitionId: overrideDefinitionId,
+            statDefinition: existing?.statDefinition
+                ?? definitionsCache.get(definitionsCacheKey())?.find(item => item.id === overrideDefinitionId)
+                ?? ({} as StatDefinition),
+            date,
+            value: override.value,
+            status: override.status,
+            userId: existing?.userId ?? '',
+        });
+    });
+    return Array.from(result.values());
+}
+
+function setOptimisticOverride(
+    key: string,
+    value: number | null,
+    status: StatEntryStatus,
+    sequence: number,
+    previous: Map<string, OptimisticEntryOverride | undefined>,
+): void {
+    if (!previous.has(key)) previous.set(key, optimisticEntryOverrides.get(key));
+    optimisticEntryOverrides.set(key, { value, status, sequence });
+}
+
+function applyOptimisticRecord(req: RecordEntryRequest): OptimisticWrite {
+    const sequence = ++optimisticWriteSequence;
+    const previous = new Map<string, OptimisticEntryOverride | undefined>();
+    const date = req.date ?? localDateString();
+    const status = req.status ?? 'RECORDED';
+    const value = status === 'NOT_PLANNED' ? 0 : req.value;
+    const changedKey = entryIdentity(req.statDefinitionId, date);
+    setOptimisticOverride(changedKey, value, status, sequence, previous);
+
+    const definition = definitionsCache.get(definitionsCacheKey())
+        ?.find(item => item.id === req.statDefinitionId);
+    const systemKey = definition?.systemKey;
+    if (systemKey === 'sleep_time' || systemKey === 'wake_up_time') {
+        const sleepDate = systemKey === 'sleep_time'
+            ? date
+            : shiftLocalDate(date, -1);
+        const wakeUpDate = shiftLocalDate(sleepDate, 1);
+        const sleepDefinition = cachedDefinition('sleep_time');
+        const wakeUpDefinition = cachedDefinition('wake_up_time');
+        const durationDefinition = cachedDefinition('sleep_hours');
+        if (sleepDefinition && wakeUpDefinition && durationDefinition) {
+            const sleepEntry = effectiveEntry(sleepDefinition.id, sleepDate);
+            const wakeUpEntry = effectiveEntry(wakeUpDefinition.id, wakeUpDate);
+            const durationKey = entryIdentity(durationDefinition.id, wakeUpDate);
+            if (sleepEntry && wakeUpEntry) {
+                let durationMinutes = Math.round(wakeUpEntry.value) - Math.round(sleepEntry.value);
+                if (durationMinutes <= 0) durationMinutes += 24 * 60;
+                setOptimisticOverride(
+                    durationKey, durationMinutes, 'RECORDED', sequence, previous,
+                );
+            }
+        }
+    }
+
+    return { sequence, previous };
+}
+
+function clearOptimisticWrite(write: OptimisticWrite, rollback: boolean): void {
+    write.previous.forEach((oldValue, key) => {
+        const current = optimisticEntryOverrides.get(key);
+        if (!current || current.sequence !== write.sequence) return;
+        if (rollback && oldValue) optimisticEntryOverrides.set(key, oldValue);
+        else if (rollback) optimisticEntryOverrides.delete(key);
+        else optimisticEntryOverrides.delete(key);
+    });
 }
 
 function invalidateEntryCache(definitionId?: string): void {
@@ -185,6 +335,7 @@ export const statService = {
             definitionsCache.set(definitionsCacheKey(), bootstrap.definitions);
             bootstrap.definitions.forEach(definition => {
                 const entries = bootstrap.entries[definition.id] ?? [];
+                rememberEntries(entries);
                 entryCache.set(
                     entryCacheKey(definition.id, range.from, range.to),
                     entries,
@@ -250,13 +401,52 @@ export const statService = {
         return response.json();
     },
 
-    async createRecurringTask(definitionId: string): Promise<StatDefinition> {
+    async createRecurringTask(definitionId: string, recurrence: StatRecurringTaskDraft): Promise<StatDefinition> {
         const response = await fetch(`${STATS_URL}/definitions/${definitionId}/recurring-task`, {
             method: 'POST',
-            body: JSON.stringify({ timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' }),
+            body: JSON.stringify({
+                timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+                recurrenceFrequency: recurrence.recurrenceFrequency,
+                recurrenceDaysOfWeek: recurrence.recurrenceDaysOfWeek,
+            }),
             headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getAuthHeaders() },
         });
         if (!response.ok) throw new Error('Failed to create recurring task');
+        invalidateDefinitionsCache();
+        invalidateResource('stats');
+        return response.json();
+    },
+
+    async getRecurringTask(definitionId: string): Promise<TaskSeries> {
+        const response = await fetch(`${STATS_URL}/definitions/${definitionId}/recurring-task`, {
+            headers: getAuthHeaders(),
+        });
+        if (!response.ok) throw new Error('Failed to fetch recurring task');
+        return response.json();
+    },
+
+    async updateRecurringTask(definitionId: string, recurrence: StatRecurringTaskDraft): Promise<StatDefinition> {
+        const response = await fetch(`${STATS_URL}/definitions/${definitionId}/recurring-task`, {
+            method: 'PUT',
+            body: JSON.stringify({
+                timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+                recurrenceFrequency: recurrence.recurrenceFrequency,
+                recurrenceDaysOfWeek: recurrence.recurrenceDaysOfWeek,
+            }),
+            headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getAuthHeaders() },
+        });
+        if (!response.ok) throw new Error('Failed to update recurring task');
+        invalidateDefinitionsCache();
+        invalidateResource('stats');
+        return response.json();
+    },
+
+    async deleteRecurringTaskSeries(definitionId: string): Promise<StatDefinition> {
+        const response = await fetch(`${STATS_URL}/definitions/${definitionId}/recurring-task/series`, {
+            method: 'DELETE',
+            headers: getAuthHeaders(),
+        });
+        if (!response.ok) throw new Error('Failed to delete recurring task series');
         invalidateDefinitionsCache();
         invalidateResource('stats');
         return response.json();
@@ -286,7 +476,7 @@ export const statService = {
     async getEntries(definitionId: string, from: string, to: string): Promise<StatEntry[]> {
         const key = entryCacheKey(definitionId, from, to);
         const cachedEntries = entryCache.get(key);
-        if (cachedEntries) return cachedEntries;
+        if (cachedEntries) return applyOptimisticOverrides(cachedEntries, from, to, definitionId);
 
         const pendingRequest = entryRequests.get(key);
         if (pendingRequest) return pendingRequest;
@@ -299,6 +489,7 @@ export const statService = {
                 return response.json() as Promise<StatEntry[]>;
             })
             .then(entries => {
+                rememberEntries(entries);
                 if (requestGeneration === statCacheGeneration) {
                     entryCache.set(
                         key,
@@ -306,7 +497,7 @@ export const statService = {
                         isCurrentOrFutureRange(to) ? CURRENT_STAT_DATA_TTL_MS : HISTORICAL_STAT_ENTRIES_TTL_MS,
                     );
                 }
-                return entries;
+                return applyOptimisticOverrides(entries, from, to, definitionId);
             });
 
         entryRequests.set(key, request);
@@ -318,7 +509,8 @@ export const statService = {
     },
 
     getCachedEntries(definitionId: string, from: string, to: string): StatEntry[] | undefined {
-        return entryCache.getStale(entryCacheKey(definitionId, from, to));
+        const entries = entryCache.getStale(entryCacheKey(definitionId, from, to));
+        return entries ? applyOptimisticOverrides(entries, from, to, definitionId) : undefined;
     },
 
     async getFocusTime(definitionId: string, from: string, to: string): Promise<StatFocusTimeEntry[]> {
@@ -363,11 +555,12 @@ export const statService = {
 
     async getTodayEntries(): Promise<StatEntry[]> {
         const date = localDateString();
-        return dailyEntriesCache.get(dailyEntriesCacheKey(date), async () => {
+        const entries = await dailyEntriesCache.get(dailyEntriesCacheKey(date), async () => {
             const response = await fetch(`${STATS_URL}/entries/today`, { headers: getAuthHeaders() });
             if (!response.ok) throw new Error("Failed to fetch today's entries");
             return response.json();
         }, CURRENT_STAT_DATA_TTL_MS);
+        return applyOptimisticOverrides(entries, date, date);
     },
 
     async getSummary(definitionId: string, from: string, to: string): Promise<StatSummary> {
@@ -422,6 +615,8 @@ export const statService = {
         definitionsCache.clear();
         definitionsRequests.clear();
         lastMonthPrefetchRequests.clear();
+        knownEntries.clear();
+        optimisticEntryOverrides.clear();
         clearDataCaches();
     },
 
@@ -462,28 +657,41 @@ export const statService = {
     },
 
     async getEntriesByDate(date: string): Promise<StatEntry[]> {
-        return dailyEntriesCache.get(dailyEntriesCacheKey(date), async () => {
+        const entries = await dailyEntriesCache.get(dailyEntriesCacheKey(date), async () => {
             const response = await fetch(`${STATS_URL}/entries/by-date?date=${date}`, { headers: getAuthHeaders() });
             if (!response.ok) throw new Error(`Failed to fetch entries for ${date}`);
             return response.json();
         }, isCurrentOrFutureRange(date) ? CURRENT_STAT_DATA_TTL_MS : DERIVED_STAT_DATA_TTL_MS);
+        return applyOptimisticOverrides(entries, date, date);
     },
 
-    async recordEntry(req: RecordEntryRequest): Promise<StatEntry> {
-        const response = await fetch(`${STATS_URL}/entries`, {
-            method: 'POST',
-            body: JSON.stringify(req),
-            headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getAuthHeaders() },
-        });
-        if (!response.ok) throw new Error('Failed to record stat entry');
-        const responseEntry = await response.json() as StatEntry;
-        const entry = { ...responseEntry, statDefinitionId: req.statDefinitionId };
-        // Entries, summaries, and insights are all derived from this write.
-        invalidateEntryCache(req.statDefinitionId);
-        if (responseEntry.date) dailyEntriesCache.invalidate(dailyEntriesCacheKey(responseEntry.date));
-        invalidateSummaryCache(req.statDefinitionId);
-        invalidateInsightsCache();
+    async recordEntry(req: RecordEntryRequest): Promise<StatEntry | null> {
+        const optimisticWrite = applyOptimisticRecord(req);
         invalidateResource('stats');
-        return entry;
+        try {
+            const response = await fetch(`${STATS_URL}/entries`, {
+                method: 'POST',
+                body: JSON.stringify(req),
+                headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getAuthHeaders() },
+            });
+            if (!response.ok) throw new Error('Failed to record stat entry');
+            const responseEntry = response.status === 204
+                ? null
+                : await response.json() as StatEntry | null;
+            const entry = responseEntry
+                ? { ...responseEntry, statDefinitionId: req.statDefinitionId }
+                : null;
+            clearOptimisticWrite(optimisticWrite, false);
+            if (entry) knownEntries.set(entryIdentity(entry.statDefinitionId, entry.date), entry);
+            else knownEntries.delete(entryIdentity(req.statDefinitionId, req.date ?? localDateString()));
+            // A write can create a derived sleep-duration entry for a different definition and date.
+            clearDataCaches();
+            invalidateResource('stats');
+            return entry;
+        } catch (error) {
+            clearOptimisticWrite(optimisticWrite, true);
+            invalidateResource('stats');
+            throw error;
+        }
     },
 };

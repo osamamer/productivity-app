@@ -116,8 +116,8 @@ export default function SettingsScreen() {
       void showError('Invalid schedule', 'Choose between 1 and 24 check-ups per day.');
       return;
     }
-    if (firstCheckupMinute === null || firstCheckupMinute + (timesPerDay - 1) * displayedCheckupIntervalMinutes > 23 * 60 + 59) {
-      void showError('Invalid schedule', 'The check-up schedule must fit within the same day.');
+    if (firstCheckupMinute === null || firstCheckupMinute + (timesPerDay - 1) * displayedCheckupIntervalMinutes > 24 * 60) {
+      void showError('Invalid schedule', 'The check-up schedule must fit within the same day or end at midnight.');
       return;
     }
 
@@ -245,7 +245,7 @@ export default function SettingsScreen() {
               maxLength={2}
               editable={!checkupScheduleSaving}
             />
-            <AppText variant="caption" color="muted">Notifications are delivered at the start time and then at each interval, within the same day.</AppText>
+            <AppText variant="caption" color="muted">Notifications are delivered at the start time and then at each interval; midnight can be the final reminder for that day.</AppText>
             <AppButton label="Save check-up schedule" variant="secondary" loading={checkupScheduleSaving} onPress={() => void saveCheckupSchedule()} />
             <AppPopup
               visible={checkupTimePickerOpen}

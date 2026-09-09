@@ -11,6 +11,7 @@ export interface TodaySnapshot {
 
 const SNAPSHOT_TTL_MS = 30_000;
 const snapshotCache = new CachedResource<TodaySnapshot>({ ttlMs: SNAPSHOT_TTL_MS, maxEntries: 4 });
+const snapshotListeners = new Set<(snapshot: TodaySnapshot) => void>();
 
 function getLocalDateKey(date = new Date()): string {
     const year = date.getFullYear();
@@ -63,6 +64,25 @@ export const sideNavSnapshotCache = {
 
     get(): Promise<TodaySnapshot> {
         return snapshotCache.get(cacheKey(), loadSnapshot);
+    },
+
+    updateMentalState(mentalState: string | null): void {
+        const key = cacheKey();
+        const current = snapshotCache.getStale(key) ?? {
+            openTaskCount: null,
+            focusSeconds: null,
+            mentalState: null,
+        };
+        const snapshot = { ...current, mentalState };
+        snapshotCache.set(key, snapshot);
+        snapshotListeners.forEach(listener => listener(snapshot));
+    },
+
+    subscribe(listener: (snapshot: TodaySnapshot) => void): () => void {
+        snapshotListeners.add(listener);
+        return () => {
+            snapshotListeners.delete(listener);
+        };
     },
 
     clear(): void {

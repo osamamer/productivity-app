@@ -1,3 +1,5 @@
+import type { TaskRecurrenceDraft } from './TaskRecurrence';
+
 export interface Task   {
     taskId: string;
     name: string;
@@ -17,4 +19,5 @@ export interface Task   {
     taskSeriesId: string | null;
     seriesOccurrenceAt: string | null;
     skipped: boolean;
+    optimisticRecurrence?: TaskRecurrenceDraft;
 }

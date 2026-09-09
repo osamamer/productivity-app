@@ -16,6 +16,7 @@ import type {
   PomodoroConfig,
   PomodoroStatus,
   StatDefinition,
+  StatEntryStatus,
   StatEntry,
   StatGroup,
   StatSummary,
@@ -119,6 +120,7 @@ export const api = {
       return updated;
     },
     remove: (id: string) => apiRequest<void>(`/api/v1/tasks/${id}`, { method: 'DELETE' }),
+    removeOccurrence: (id: string) => apiRequest<void>(`/api/v1/tasks/${id}/occurrence`, { method: 'DELETE' }),
     reorder: (taskIds: string[]) => json<Task[]>('/api/v1/tasks/order', 'PUT', { taskIds }),
   },
   taskGroups: {
@@ -188,6 +190,14 @@ export const api = {
     update: (id: string, input: CalendarEventInput) =>
       json<CalendarEvent>(`/api/v1/events/${id}`, 'PUT', input),
     remove: (id: string) => apiRequest<void>(`/api/v1/events/${id}`, { method: 'DELETE' }),
+    cancelOccurrence: (id: string, occurrenceKey: string) =>
+      json<CalendarEvent>(`/api/v1/events/${id}/occurrences/cancel`, 'POST', { occurrenceKey }),
+    updateOccurrenceStatus: (id: string, occurrenceKey: string, status: CalendarEvent['status']) =>
+      json<CalendarEvent>(`/api/v1/events/${id}/occurrences/status`, 'POST', { occurrenceKey, status }),
+    deleteOccurrence: (id: string, occurrenceKey: string) =>
+      json<CalendarEvent>(`/api/v1/events/${id}/occurrences`, 'DELETE', { occurrenceKey }),
+    restoreOccurrence: (id: string, occurrenceKey: string) =>
+      apiRequest<CalendarEvent>(`/api/v1/events/${id}/occurrences/cancel?occurrenceKey=${encodeURIComponent(occurrenceKey)}`, { method: 'DELETE' }),
   },
   notes: {
     all: () => apiRequest<Note[]>('/api/v1/notes'),
@@ -225,8 +235,8 @@ export const api = {
       return apiRequest<StatEntry[]>(`/api/v1/stats/entries?${params}`);
     },
     entriesByDate: (date: string) => apiRequest<StatEntry[]>(`/api/v1/stats/entries/by-date?date=${encodeURIComponent(date)}`),
-    record: async (statDefinitionId: string, value: number, date?: string) => {
-      const entry = await json<StatEntry>('/api/v1/stats/entries', 'POST', { statDefinitionId, value, date });
+    record: async (statDefinitionId: string, value: number | null, date?: string, status?: StatEntryStatus) => {
+      const entry = await json<StatEntry | undefined>('/api/v1/stats/entries', 'POST', { statDefinitionId, value, date, status });
       invalidateResource('stats');
       return entry;
     },

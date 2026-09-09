@@ -25,6 +25,8 @@ const CHART_DATE_RANGES = [
 const CALENDAR_DATE_RANGES = [
     { label: '7d', value: 7 },
     { label: '30d', value: 30 },
+    { label: '3m', value: 90 },
+    { label: '1y', value: 365 },
 ];
 
 interface StatViewTransitionProps {
@@ -90,7 +92,6 @@ export const StatCard = React.memo(function StatCard({
     const focusTimeView = supportsFocusTime && viewMode === 'focusTime';
     const comparisonIds = comparisonDefinitions.map(item => item.id).join(':');
     const isBooleanCalendar = !focusTimeView && definition.type === 'BOOLEAN' && !comparisonDefinition;
-    const effectiveDateRange = isBooleanCalendar ? Math.min(dateRange, 30) : dateRange;
 
     useEffect(() => {
         if (!supportsFocusTime && viewMode !== 'stat') setViewMode('stat');
@@ -128,12 +129,6 @@ export const StatCard = React.memo(function StatCard({
         }
     }, [comparisonDefinitions, comparisonId, definition.id]);
 
-    useEffect(() => {
-        if (isBooleanCalendar && dateRange > 30) {
-            setDateRange(30);
-        }
-    }, [dateRange, isBooleanCalendar]);
-
     const dateRanges = isBooleanCalendar
         ? CALENDAR_DATE_RANGES
         : CHART_DATE_RANGES;
@@ -163,11 +158,11 @@ export const StatCard = React.memo(function StatCard({
                 {focusTimeView ? (
                     <FocusTimeSummaryBar
                         definitionId={definition.id}
-                        dateRange={effectiveDateRange}
+                        dateRange={dateRange}
                         refreshKey={refreshKey}
                     />
                 ) : (
-                    <StatSummaryBar definition={definition} dateRange={effectiveDateRange} refreshKey={refreshKey} />
+                    <StatSummaryBar definition={definition} dateRange={dateRange} refreshKey={refreshKey} />
                 )}
                 <Stack
                     direction={{ xs: 'column', sm: 'row' }}
@@ -181,7 +176,7 @@ export const StatCard = React.memo(function StatCard({
                             <ToggleButton
                                 key={r.value}
                                 value={r.value}
-                                selected={effectiveDateRange === r.value}
+                                selected={dateRange === r.value}
                                 onChange={() => setDateRange(r.value)}
                                 size="small"
                                 sx={{ px: 1.5, py: 0.25, fontSize: 12, lineHeight: 1.5 }}
@@ -233,13 +228,13 @@ export const StatCard = React.memo(function StatCard({
                     {focusTimeView ? (
                         <TaskFocusTimeChart
                             definition={definition}
-                            dateRange={effectiveDateRange}
+                            dateRange={dateRange}
                             refreshKey={refreshKey}
                         />
                     ) : isBooleanCalendar ? (
                         <BooleanCalendarView
                             definition={definition}
-                            dateRange={effectiveDateRange}
+                            dateRange={dateRange}
                             refreshKey={refreshKey}
                             onEntryChanged={onEntryChanged}
                             onDateContextMenu={onDateContextMenu}
@@ -248,7 +243,7 @@ export const StatCard = React.memo(function StatCard({
                         <StatLineChart
                             definition={definition}
                             comparisonDefinition={comparisonDefinition}
-                            dateRange={effectiveDateRange}
+                            dateRange={dateRange}
                             refreshKey={refreshKey}
                             onEntryChanged={onEntryChanged}
                             onDateContextMenu={onDateContextMenu}

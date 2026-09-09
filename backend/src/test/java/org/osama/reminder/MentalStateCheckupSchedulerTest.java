@@ -13,6 +13,7 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
@@ -50,6 +51,25 @@ class MentalStateCheckupSchedulerTest {
         verify(notificationService).clearPendingCheckupNotifications(disabled.getId());
         verify(notificationService, never()).createCheckupNotification(
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void treatsMidnightAsTheFinalCheckupForThePreviousDay() {
+        User user = user(true, LocalTime.NOON, 180, 5);
+        ZonedDateTime midnight = ZonedDateTime.of(2026, 9, 6, 0, 0, 0, 0, ZONE);
+        when(userRepository.findAllByActiveTrue()).thenReturn(List.of(user));
+
+        newScheduler(midnight).createDueCheckups();
+
+        verify(notificationService).createCheckupNotification(user, midnight);
+    }
+
+    @Test
+    void doesNotTreatMidnightAsPartOfAScheduleThatContinuesLater() {
+        User user = user(true, LocalTime.of(18, 0), 180, 4);
+        ZonedDateTime midnight = ZonedDateTime.of(2026, 9, 6, 0, 0, 0, 0, ZONE);
+
+        assertFalse(newScheduler(midnight).isScheduledFor(user, midnight));
     }
 
     private MentalStateCheckupScheduler newScheduler(ZonedDateTime now) {

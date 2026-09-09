@@ -1,13 +1,14 @@
 import React, { useRef, useState, useEffect } from 'react';
 import {
     Box, Typography, CircularProgress, Stack, Popover,
-    ToggleButton, ToggleButtonGroup, Button, Alert,
+    ToggleButton, ToggleButtonGroup, Alert, Tooltip,
 } from '@mui/material';
-import { useTheme } from '@mui/material/styles';
+import { alpha, useTheme } from '@mui/material/styles';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import HighlightOffIcon from '@mui/icons-material/HighlightOff';
-import { format, subDays, eachDayOfInterval, getDay } from 'date-fns';
-import { StatDefinition } from '../../types/Stats';
+import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
+import { format, subDays, eachDayOfInterval, getDay, getMonth } from 'date-fns';
+import { StatDefinition, StatEntry, StatEntryStatus } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
 import { getBooleanChoiceColor, showStatFeedback } from '../../services/statFeedback';
 
@@ -19,6 +20,103 @@ interface Props {
     refreshKey: number;
     onEntryChanged?: (definitionId: string) => void;
     onDateContextMenu?: (date: string, event: React.MouseEvent<Element>) => void;
+}
+
+interface BooleanHeatmapBucket {
+    from: Date;
+    to: Date;
+    average: number | null;
+    doneDays: number;
+    eligibleDays: number;
+    recordedDays: number;
+    notPlannedOnly: boolean;
+}
+
+interface HeatmapMonthSegment {
+    key: string;
+    label: string;
+    start: number;
+    span: number;
+}
+
+function entryMaps(entries: StatEntry[]): { values: Map<string, number>; statuses: Map<string, StatEntryStatus> } {
+    return {
+        values: new Map(entries.map(entry => [entry.date, entry.value])),
+        statuses: new Map(entries.map(entry => [entry.date, entry.status ?? 'RECORDED'] as [string, StatEntryStatus])),
+    };
+}
+
+function booleanPeriodAverages(
+    days: Date[],
+    valueMap: Map<string, number>,
+    statusMap: Map<string, StatEntryStatus>,
+    daysPerBucket: number,
+): BooleanHeatmapBucket[] {
+    const buckets: BooleanHeatmapBucket[] = [];
+    for (let index = 0; index < days.length; index += daysPerBucket) {
+        const bucketDays = days.slice(index, index + daysPerBucket);
+        const bucketDates = bucketDays.map(day => format(day, 'yyyy-MM-dd'));
+        const eligibleDates = bucketDates.filter(date => statusMap.get(date) !== 'NOT_PLANNED');
+        const recordedValues = eligibleDates
+            .map(date => valueMap.get(date))
+            .filter((value): value is number => value !== undefined);
+        const doneDays = recordedValues.reduce((total, value) => total + value, 0);
+        buckets.push({
+            from: bucketDays[0],
+            to: bucketDays[bucketDays.length - 1],
+            average: eligibleDates.length > 0
+                ? doneDays / eligibleDates.length
+                : null,
+            doneDays,
+            eligibleDays: eligibleDates.length,
+            recordedDays: recordedValues.length,
+            notPlannedOnly: eligibleDates.length === 0,
+        });
+    }
+    return buckets;
+}
+
+function heatmapBucketLabel(bucket: BooleanHeatmapBucket): string {
+    const dateRange = `${format(bucket.from, 'MMM d')} – ${format(bucket.to, 'MMM d, yyyy')}`;
+    if (bucket.notPlannedOnly) return `${dateRange} · Not planned`;
+
+    const average = Math.round((bucket.average ?? 0) * 100);
+    const logged = bucket.recordedDays === 0
+        ? 'no entries logged'
+        : `${bucket.recordedDays} logged`;
+    return `${dateRange} · ${average}% · ${bucket.doneDays} of ${bucket.eligibleDays} days done · ${logged}`;
+}
+
+function splitHeatmapRows(buckets: BooleanHeatmapBucket[], rowCount: number): BooleanHeatmapBucket[][] {
+    const rows: BooleanHeatmapBucket[][] = [];
+    let offset = 0;
+    for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+        const remainingRows = rowCount - rowIndex;
+        const rowSize = Math.ceil((buckets.length - offset) / remainingRows);
+        rows.push(buckets.slice(offset, offset + rowSize));
+        offset += rowSize;
+    }
+    return rows;
+}
+
+function monthSegments(buckets: BooleanHeatmapBucket[], showYear: boolean): HeatmapMonthSegment[] {
+    const segments: HeatmapMonthSegment[] = [];
+    buckets.forEach((bucket, index) => {
+        const midpoint = new Date((bucket.from.getTime() + bucket.to.getTime()) / 2);
+        const key = format(midpoint, 'yyyy-MM');
+        const previous = segments[segments.length - 1];
+        if (previous?.key === key) {
+            previous.span += 1;
+            return;
+        }
+        segments.push({
+            key,
+            label: format(midpoint, showYear && getMonth(midpoint) === 0 ? 'MMM yyyy' : 'MMM'),
+            start: index,
+            span: 1,
+        });
+    });
+    return segments;
 }
 
 export const BooleanCalendarView = React.memo(function BooleanCalendarView({
@@ -37,21 +135,33 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
     const toStr = format(to, 'yyyy-MM-dd');
     const dataKey = `${definition.id}:${fromStr}:${toStr}`;
     const cachedEntries = statService.getCachedEntries(definition.id, fromStr, toStr);
-    const [valueState, setValueState] = useState<{ key: string; values: Map<string, number> }>(() => ({
+    const cachedMaps = cachedEntries ? entryMaps(cachedEntries) : null;
+    const [valueState, setValueState] = useState<{
+        key: string;
+        values: Map<string, number>;
+        statuses: Map<string, StatEntryStatus>;
+    }>(() => ({
         key: dataKey,
-        values: new Map(cachedEntries?.map(entry => [entry.date, entry.value]) ?? []),
+        values: cachedMaps?.values ?? new Map(),
+        statuses: cachedMaps?.statuses ?? new Map(),
     }));
     const hasRenderedDataRef = useRef(Boolean(cachedEntries));
     const [loadingKey, setLoadingKey] = useState<string | null>(cachedEntries ? null : dataKey);
     const valueMap = valueState.key === dataKey
         ? valueState.values
-        : cachedEntries
-            ? new Map(cachedEntries.map(entry => [entry.date, entry.value]))
+        : cachedMaps
+            ? cachedMaps.values
             : valueState.values;
+    const statusMap = valueState.key === dataKey
+        ? valueState.statuses
+        : cachedMaps
+            ? cachedMaps.statuses
+            : valueState.statuses;
     const loading = loadingKey === dataKey
         || (valueState.key !== dataKey && !cachedEntries && !hasRenderedDataRef.current);
     const [popover, setPopover] = useState<{ anchorEl: HTMLElement; date: string } | null>(null);
     const [editValue, setEditValue] = useState<number | null>(null);
+    const [editStatus, setEditStatus] = useState<StatEntryStatus>('RECORDED');
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
     const feedbackAnchorRef = useRef<HTMLElement | null>(null);
@@ -73,7 +183,7 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
                 if (!cancelled) {
                     setValueState({
                         key: dataKey,
-                        values: new Map(entries.map(entry => [entry.date, entry.value])),
+                        ...entryMaps(entries),
                     });
                     hasRenderedDataRef.current = true;
                 }
@@ -88,6 +198,7 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
     const openEditor = (event: React.MouseEvent<HTMLElement>, date: string) => {
         event.stopPropagation();
         setEditValue(valueMap.get(date) ?? null);
+        setEditStatus(statusMap.get(date) ?? 'RECORDED');
         setSaveError(null);
         feedbackAnchorRef.current = null;
         setPopover({ anchorEl: event.currentTarget, date });
@@ -96,23 +207,41 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
     const closeEditor = () => {
         setPopover(null);
         setEditValue(null);
+        setEditStatus('RECORDED');
         setSaveError(null);
     };
 
-    const saveEntry = async () => {
-        if (!popover || editValue === null) return;
+    const saveEntry = async (
+        nextStatus: StatEntryStatus = editStatus,
+        nextValue: number | null = editValue,
+    ) => {
+        if (!popover) return;
+        const activePopover = popover;
         setSaving(true);
         setSaveError(null);
         try {
             await statService.recordEntry({
                 statDefinitionId: definition.id,
-                date: popover.date,
-                value: editValue,
+                date: activePopover.date,
+                value: nextStatus === 'NOT_PLANNED' ? null : nextValue,
+                status: nextStatus,
             });
-            showStatFeedback(definition, editValue, feedbackAnchorRef.current);
-            setValueState(previous => previous.key === dataKey
-                ? { ...previous, values: new Map(previous.values).set(popover.date, editValue) }
-                : previous);
+            if (nextValue !== null && nextStatus !== 'NOT_PLANNED') {
+                showStatFeedback(definition, nextValue, feedbackAnchorRef.current);
+            }
+            setValueState(previous => {
+                if (previous.key !== dataKey) return previous;
+                const values = new Map(previous.values);
+                const statuses = new Map(previous.statuses);
+                if (nextValue === null && nextStatus !== 'NOT_PLANNED') {
+                    values.delete(activePopover.date);
+                    statuses.delete(activePopover.date);
+                } else {
+                    values.set(activePopover.date, nextValue ?? 0);
+                    statuses.set(activePopover.date, nextStatus);
+                }
+                return { ...previous, values, statuses };
+            });
             onEntryChanged?.(definition.id);
             closeEditor();
         } catch (error) {
@@ -126,6 +255,13 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
     const weeks: (Date | null)[][] = [];
     for (let i = 0; i < days.length; i += 7) weeks.push(days.slice(i, i + 7));
 
+    const isHeatmap = dateRange > 30;
+    const heatmapBucketDays = dateRange <= 90 ? 3 : 7;
+    const heatmapBuckets = isHeatmap
+        ? booleanPeriodAverages(allDays, valueMap, statusMap, heatmapBucketDays)
+        : [];
+    const heatmapRows = splitHeatmapRows(heatmapBuckets, dateRange <= 90 ? 2 : 4);
+    const notPlannedColor = theme.palette.warning.main;
     const gridStyle = {
         display: 'grid',
         gridTemplateColumns: 'repeat(7, 1fr)',
@@ -140,121 +276,220 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
                     sx={{ position: 'absolute', top: 0, right: 0, zIndex: 1, pointerEvents: 'none' }}
                 />
             )}
-            {/* Day-of-week column headers */}
-            <Box sx={{ ...gridStyle, mb: 0.5 }}>
-                {DAY_LABELS.map(label => (
-                    <Box key={label} sx={{ textAlign: 'center' }}>
-                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: 10 }}>
-                            {label}
-                        </Typography>
-                    </Box>
-                ))}
-            </Box>
-
-            {/* Calendar grid — one row per week */}
-            {weeks.map((week, wi) => (
-                <Box key={wi} sx={{ ...gridStyle, mb: '4px' }}>
-                    {week.map((day, di) => {
-                        const dateKey = day ? format(day, 'yyyy-MM-dd') : null;
-                        const hasEntry = dateKey ? valueMap.has(dateKey) : false;
-                        const value = dateKey ? valueMap.get(dateKey) : undefined;
-                        const isYes = hasEntry && value === 1;
-                        const isNo = hasEntry && value !== 1;
-                        const stampColor = isYes ? yesColor : noColor;
-
-                        return (
+            {isHeatmap ? (
+                <Box
+                    sx={{
+                        display: 'grid',
+                        gap: dateRange <= 90 ? '9px' : '7px',
+                        width: '100%',
+                    }}
+                    aria-label={`${definition.name} ${heatmapBucketDays}-day average heatmap`}
+                >
+                    {heatmapRows.map((row, rowIndex) => (
+                        <Box key={`${row[0]?.from.toISOString()}-${rowIndex}`}>
                             <Box
-                                key={di}
-                                title={day ? format(day, 'MMMM d, yyyy') : undefined}
-                                onClick={day ? event => openEditor(event, dateKey!) : undefined}
-                                onContextMenu={day ? event => {
-                                    event.preventDefault();
-                                    event.stopPropagation();
-                                    onDateContextMenu?.(dateKey!, event);
-                                } : undefined}
                                 sx={{
-                                    height: 62,
-                                    minHeight: 52,
-                                    borderRadius: 1,
-                                    bgcolor: theme.palette.mode === 'dark'
-                                        ? theme.palette.background.default
-                                        : theme.palette.action.disabledBackground,
-                                    display: 'flex',
-                                    alignItems: 'flex-end',
-                                    justifyContent: 'flex-start',
-                                    position: 'relative',
-                                    overflow: 'hidden',
-                                    opacity: day ? 1 : 0,
-                                    cursor: day ? 'pointer' : 'default',
-                                    border: '1.5px solid',
-                                    borderColor: isYes || isNo
-                                        ? `${stampColor}66`
-                                        : 'transparent',
+                                    display: 'grid',
+                                    gridTemplateColumns: `repeat(${row.length}, minmax(0, 1fr))`,
+                                    minHeight: 16,
+                                    mb: 0.5,
                                 }}
                             >
-                                {day && (
-                                    <>
-                                        {/* Date number — bottom-left */}
-                                        <Typography
-                                            variant="caption"
-                                            sx={{
-                                                fontSize: 10,
-                                                color: 'text.secondary',
-                                                lineHeight: 1,
-                                                position: 'absolute',
-                                                bottom: 4,
-                                                left: 5,
-                                            }}
-                                        >
-                                            {format(day, 'd')}
-                                        </Typography>
-
-                                        {/* Stamp — top-right */}
-                                        {isYes && (
-                                            <CheckCircleOutlineIcon
-                                                sx={{
-                                                    fontSize: 20,
-                                                    color: stampColor,
-                                                    transform: 'rotate(-12deg)',
-                                                    position: 'absolute',
-                                                    top: 3,
-                                                    right: 3,
-                                                    filter: `drop-shadow(0 0 2px ${stampColor}55)`,
-                                                }}
-                                            />
-                                        )}
-                                        {isNo && (
-                                            <HighlightOffIcon
-                                                sx={{
-                                                    fontSize: 20,
-                                                    color: stampColor,
-                                                    transform: 'rotate(12deg)',
-                                                    position: 'absolute',
-                                                    top: 3,
-                                                    right: 3,
-                                                    filter: `drop-shadow(0 0 2px ${stampColor}55)`,
-                                                }}
-                                            />
-                                        )}
-                                    </>
-                                )}
+                                {monthSegments(row, dateRange > 90).map(segment => (
+                                    <Typography
+                                        key={`${segment.key}-${segment.start}`}
+                                        variant="caption"
+                                        color="text.secondary"
+                                        sx={{
+                                            gridColumn: `${segment.start + 1} / span ${segment.span}`,
+                                            px: 0.5,
+                                            fontSize: 10,
+                                            lineHeight: '16px',
+                                            whiteSpace: 'nowrap',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                        }}
+                                    >
+                                        {segment.label}
+                                    </Typography>
+                                ))}
                             </Box>
-                        );
-                    })}
+                            <Box
+                                sx={{
+                                    display: 'grid',
+                                    gridTemplateColumns: `repeat(${row.length}, minmax(0, 1fr))`,
+                                    gridAutoRows: dateRange <= 90 ? 28 : 22,
+                                    gap: '5px',
+                                }}
+                            >
+                                {row.map((bucket, index) => (
+                                    <Tooltip
+                                        key={`${bucket.from.toISOString()}-${index}`}
+                                        title={heatmapBucketLabel(bucket)}
+                                        placement="top"
+                                        arrow
+                                    >
+                                        <Box
+                                            tabIndex={0}
+                                            aria-label={heatmapBucketLabel(bucket)}
+                                            sx={{
+                                                minWidth: 0,
+                                                borderRadius: 0.75,
+                                                bgcolor: bucket.average == null
+                                                    ? theme.palette.action.hover
+                                                    : alpha(theme.palette.primary.main, 0.14 + bucket.average * 0.86),
+                                                outline: '1px solid',
+                                                outlineColor: bucket.average == null
+                                                    ? theme.palette.action.disabledBackground
+                                                    : alpha(theme.palette.primary.main, 0.2 + bucket.average * 0.45),
+                                                outlineOffset: -1,
+                                                transition: 'transform 100ms ease, outline-color 100ms ease',
+                                                '&:hover, &:focus-visible': {
+                                                    transform: 'translateY(-1px)',
+                                                    outlineColor: theme.palette.primary.main,
+                                                },
+                                            }}
+                                        />
+                                    </Tooltip>
+                                ))}
+                            </Box>
+                        </Box>
+                    ))}
                 </Box>
-            ))}
+            ) : (
+                <>
+                    <Box sx={{ ...gridStyle, mb: 0.5 }}>
+                        {DAY_LABELS.map(label => (
+                            <Box key={label} sx={{ textAlign: 'center' }}>
+                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: 10 }}>
+                                    {label}
+                                </Typography>
+                            </Box>
+                        ))}
+                    </Box>
+                    {weeks.map((week, wi) => (
+                        <Box key={wi} sx={{ ...gridStyle, mb: '4px' }}>
+                            {week.map((day, di) => {
+                                const dateKey = day ? format(day, 'yyyy-MM-dd') : null;
+                                const hasEntry = dateKey ? valueMap.has(dateKey) : false;
+                                const value = dateKey ? valueMap.get(dateKey) : undefined;
+                                const status = dateKey ? statusMap.get(dateKey) : undefined;
+                                const isYes = hasEntry && value === 1;
+                                const isNotPlanned = hasEntry && status === 'NOT_PLANNED';
+                                const isNo = hasEntry && !isNotPlanned && value !== 1;
+                                const stampColor = isNotPlanned ? notPlannedColor : isYes ? yesColor : noColor;
 
-            {/* Legend */}
-            <Stack direction="row" spacing={2} sx={{ mt: 1.5 }}>
-                <Stack direction="row" spacing={0.5} alignItems="center">
-                    <CheckCircleOutlineIcon sx={{ fontSize: 14, color: yesColor, transform: 'rotate(-12deg)' }} />
-                    <Typography variant="caption" color="text.secondary">Yes</Typography>
+                                return (
+                                    <Box
+                                        key={di}
+                                        title={day
+                                            ? `${format(day, 'MMMM d, yyyy')}: ${isNotPlanned ? 'Not planned' : isYes ? 'Yes' : isNo ? 'No' : 'Not recorded'}`
+                                            : undefined}
+                                        onClick={day ? event => openEditor(event, dateKey!) : undefined}
+                                        onContextMenu={day ? event => {
+                                            event.preventDefault();
+                                            event.stopPropagation();
+                                            onDateContextMenu?.(dateKey!, event);
+                                        } : undefined}
+                                        sx={{
+                                            height: 62,
+                                            minHeight: 52,
+                                            borderRadius: 1,
+                                            bgcolor: theme.palette.mode === 'dark'
+                                                ? theme.palette.background.default
+                                                : theme.palette.action.disabledBackground,
+                                            display: 'flex',
+                                            alignItems: 'flex-end',
+                                            justifyContent: 'flex-start',
+                                            position: 'relative',
+                                            overflow: 'hidden',
+                                            opacity: day ? 1 : 0,
+                                            cursor: day ? 'pointer' : 'default',
+                                            border: '1.5px solid',
+                                            borderColor: isYes || isNo || isNotPlanned
+                                                ? `${stampColor}66`
+                                                : 'transparent',
+                                        }}
+                                    >
+                                        {day && (
+                                            <>
+                                                <Typography
+                                                    variant="caption"
+                                                    sx={{
+                                                        fontSize: 10,
+                                                        color: 'text.secondary',
+                                                        lineHeight: 1,
+                                                        position: 'absolute',
+                                                        bottom: 4,
+                                                        left: 5,
+                                                    }}
+                                                >
+                                                    {format(day, 'd')}
+                                                </Typography>
+                                                {isYes && (
+                                                    <CheckCircleOutlineIcon
+                                                        sx={{
+                                                            fontSize: 20,
+                                                            color: stampColor,
+                                                            transform: 'rotate(-12deg)',
+                                                            position: 'absolute',
+                                                            top: 3,
+                                                            right: 3,
+                                                            filter: `drop-shadow(0 0 2px ${stampColor}55)`,
+                                                        }}
+                                                    />
+                                                )}
+                                                {isNo && (
+                                                    <HighlightOffIcon
+                                                        sx={{
+                                                            fontSize: 20,
+                                                            color: stampColor,
+                                                            transform: 'rotate(12deg)',
+                                                            position: 'absolute',
+                                                            top: 3,
+                                                            right: 3,
+                                                            filter: `drop-shadow(0 0 2px ${stampColor}55)`,
+                                                        }}
+                                                    />
+                                                )}
+                                                {isNotPlanned && (
+                                                    <RemoveCircleOutlineIcon
+                                                        sx={{
+                                                            fontSize: 20,
+                                                            color: stampColor,
+                                                            position: 'absolute',
+                                                            top: 3,
+                                                            right: 3,
+                                                            filter: `drop-shadow(0 0 2px ${stampColor}55)`,
+                                                        }}
+                                                    />
+                                                )}
+                                            </>
+                                        )}
+                                    </Box>
+                                );
+                            })}
+                        </Box>
+                    ))}
+                </>
+            )}
+
+            {!isHeatmap && (
+                <Stack direction="row" spacing={2} sx={{ mt: 1.5 }}>
+                    <Stack direction="row" spacing={0.5} alignItems="center">
+                        <CheckCircleOutlineIcon sx={{ fontSize: 14, color: yesColor, transform: 'rotate(-12deg)' }} />
+                        <Typography variant="caption" color="text.secondary">Yes</Typography>
+                    </Stack>
+                    <Stack direction="row" spacing={0.5} alignItems="center">
+                        <HighlightOffIcon sx={{ fontSize: 14, color: noColor, transform: 'rotate(12deg)' }} />
+                        <Typography variant="caption" color="text.secondary">No</Typography>
+                    </Stack>
+                    <Stack direction="row" spacing={0.5} alignItems="center">
+                        <RemoveCircleOutlineIcon sx={{ fontSize: 14, color: notPlannedColor }} />
+                        <Typography variant="caption" color="text.secondary">Not planned</Typography>
+                    </Stack>
                 </Stack>
-                <Stack direction="row" spacing={0.5} alignItems="center">
-                    <HighlightOffIcon sx={{ fontSize: 14, color: noColor, transform: 'rotate(12deg)' }} />
-                    <Typography variant="caption" color="text.secondary">No</Typography>
-                </Stack>
-            </Stack>
+            )}
 
             <Popover
                 open={Boolean(popover) && valueState.key === dataKey}
@@ -263,46 +498,91 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
                 transitionDuration={0}
                 anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
                 transformOrigin={{ vertical: 'top', horizontal: 'center' }}
-                slotProps={{ paper: { sx: { p: 2, minWidth: 210 } } }}
+                slotProps={{
+                    paper: {
+                        sx: {
+                            p: 0.5,
+                            minWidth: 0,
+                            bgcolor: 'background.paper',
+                            boxShadow: 3,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                        },
+                    },
+                }}
             >
                 {popover && (
-                    <Box>
-                        <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1.5 }}>
-                            {definition.name} — {format(new Date(popover.date + 'T12:00:00'), 'EEEE, MMM d')}
-                        </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <ToggleButtonGroup
-                            value={editValue === 1 ? 'yes' : editValue === 0 ? 'no' : null}
+                            value={editStatus === 'NOT_PLANNED'
+                                ? 'not-planned'
+                                : editValue === 1 ? 'yes' : editValue === 0 ? 'no' : null}
                             exclusive
-                            onChange={(_, value) => setEditValue(value === 'yes' ? 1 : value === 'no' ? 0 : null)}
+                            disabled={saving}
+                            onChange={(_, value) => {
+                                const nextStatus = value === 'not-planned' ? 'NOT_PLANNED' : 'RECORDED';
+                                const nextValue = value === null ? null : value === 'yes' ? 1 : 0;
+                                setEditStatus(nextStatus);
+                                setEditValue(nextValue);
+                                void saveEntry(nextStatus, nextValue);
+                            }}
                             size="small"
-                            fullWidth
+                            sx={{
+                                border: 0,
+                                borderRadius: 0,
+                                bgcolor: 'transparent',
+                                '& .MuiToggleButtonGroup-grouped': {
+                                    border: '0 !important',
+                                    borderRadius: 0,
+                                    margin: 0,
+                                },
+                                '& .MuiToggleButtonGroup-grouped:not(:first-of-type)': {
+                                    borderLeft: '0 !important',
+                                    marginLeft: 0,
+                                },
+                                '& .MuiToggleButton-root': {
+                                    minWidth: 32,
+                                    width: 32,
+                                    height: 28,
+                                    p: 0,
+                                    border: 0,
+                                    bgcolor: 'transparent',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    '& .MuiSvgIcon-root': { fontSize: 18 },
+                                },
+                            }}
                         >
-                            <ToggleButton
-                                value="yes"
-                                onClick={event => { feedbackAnchorRef.current = event.currentTarget; }}
-                                sx={{ '&.Mui-selected': { bgcolor: `${getBooleanChoiceColor(definition, 1)}.main`, color: 'white', '&:hover': { bgcolor: `${getBooleanChoiceColor(definition, 1)}.dark` } } }}
-                            >
-                                Yes
-                            </ToggleButton>
                             <ToggleButton
                                 value="no"
+                                aria-label="No"
+                                title="No"
                                 onClick={event => { feedbackAnchorRef.current = event.currentTarget; }}
-                                sx={{ '&.Mui-selected': { bgcolor: `${getBooleanChoiceColor(definition, 0)}.main`, color: 'white', '&:hover': { bgcolor: `${getBooleanChoiceColor(definition, 0)}.dark` } } }}
+                                sx={{ '&.Mui-selected': { bgcolor: 'transparent', color: `${getBooleanChoiceColor(definition, 0)}.main` } }}
                             >
-                                No
+                                <HighlightOffIcon />
+                            </ToggleButton>
+                            <ToggleButton
+                                value="not-planned"
+                                aria-label="Unplanned"
+                                title="Unplanned"
+                                sx={{ '&.Mui-selected': { bgcolor: 'transparent', color: 'warning.main' } }}
+                            >
+                                <RemoveCircleOutlineIcon />
+                            </ToggleButton>
+                            <ToggleButton
+                                value="yes"
+                                aria-label="Yes"
+                                title="Yes"
+                                onClick={event => { feedbackAnchorRef.current = event.currentTarget; }}
+                                sx={{ '&.Mui-selected': { bgcolor: 'transparent', color: `${getBooleanChoiceColor(definition, 1)}.main` } }}
+                            >
+                                <CheckCircleOutlineIcon />
                             </ToggleButton>
                         </ToggleButtonGroup>
-                        {saveError && <Alert severity="error" sx={{ mt: 1.5 }}>{saveError}</Alert>}
-                        <Button
-                            variant="contained"
-                            size="small"
-                            fullWidth
-                            disabled={saving || editValue === null}
-                            onClick={() => { void saveEntry(); }}
-                            sx={{ mt: 1.5 }}
-                        >
-                            {saving ? <CircularProgress size={16} color="inherit" /> : 'Save value'}
-                        </Button>
+                        {saveError && <Alert severity="error" sx={{ mt: 1 }}>{saveError}</Alert>}
                     </Box>
                 )}
             </Popover>

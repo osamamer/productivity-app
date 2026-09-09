@@ -25,7 +25,17 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
 import { SHOW_COMPLETED_HOME_TASKS_STORAGE_KEY } from '../services/utils/homePreferences.ts';
 import { statService } from '../services/api/statService.ts';
-import { getPomodoroConfig, setPomodoroSecondsModePreference } from '../services/api/pomodoroConfigService.ts';
+import {
+    createPomodoroFormDefaults,
+    DEFAULT_LONG_BREAK_COOLDOWN,
+    getPomodoroConfig,
+    NORMAL_POMODORO_CONFIG,
+    PomodoroConfig,
+    readPomodoroFormPreferences,
+    savePomodoroFormPreferences,
+    setPomodoroSecondsModePreference,
+    subscribeToPomodoroFormPreferences,
+} from '../services/api/pomodoroConfigService.ts';
 import { getShowClosedMentalThreads, setShowClosedMentalThreads } from '../services/utils/mentalThreadPreferences.ts';
 import { isAudioFeedbackEnabled, setAudioFeedbackEnabled } from '../services/audioFeedback.ts';
 
@@ -48,6 +58,7 @@ const showCompletedTasksDescription = 'Keep completed tasks visible in today\'s 
 const numericStatsAverageDescription = 'Include days without a logged numeric value as 0 when calculating averages.';
 const pomodoroAutoStartDescription = 'Start each break and focus session automatically, or wait for you to start the next phase.';
 const pomodoroSecondsModeDescription = 'Use 10-second focus and break durations instead of the normal 25/5/15-minute defaults.';
+const pomodoroLongBreakDescription = 'Take a long break after this many completed focus sessions in every Pomodoro.';
 const showClosedMentalThreadsDescription = 'Keep closed threads visible in the mental threads list.';
 const soundEffectsDescription = 'Play short musical cues when you complete, capture, schedule, or rate something.';
 const repeatCheckupNotificationsDescription = 'If you do not check in, remind you again every 30 minutes.';
@@ -238,7 +249,7 @@ const CheckupSchedule = memo(function CheckupSchedule({
                 />
             </Stack>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.25, textAlign: 'left' }}>
-                Notifications are delivered at the start time and then at each interval, within the same day.
+                Notifications are delivered at the start time and then at each interval; midnight can be the final reminder for that day.
             </Typography>
             <Button
                 variant="outlined"
@@ -460,6 +471,10 @@ export function SettingsPage() {
     const [numericStatsPreferenceSaving, setNumericStatsPreferenceSaving] = useState(false);
     const [numericStatsPreferenceError, setNumericStatsPreferenceError] = useState<string | null>(null);
     const [pomodoroSecondsMode, setPomodoroSecondsMode] = useState(false);
+    const [pomodoroConfig, setPomodoroConfig] = useState<PomodoroConfig>(NORMAL_POMODORO_CONFIG);
+    const [longBreakCooldown, setLongBreakCooldown] = useState(() => (
+        readPomodoroFormPreferences()?.longBreakCooldown ?? DEFAULT_LONG_BREAK_COOLDOWN
+    ));
     const [autoStartPomodoroSessions, setAutoStartPomodoroSessions] = useState(true);
     const [pomodoroPreferenceSaving, setPomodoroPreferenceSaving] = useState(false);
     const [pomodoroConfigLoading, setPomodoroConfigLoading] = useState(true);
@@ -498,7 +513,12 @@ export function SettingsPage() {
         let cancelled = false;
         getPomodoroConfig()
             .then(config => {
-                if (!cancelled) setPomodoroSecondsMode(config.secondsMode);
+                if (!cancelled) {
+                    setPomodoroConfig(config);
+                    setPomodoroSecondsMode(config.secondsMode);
+                    const storedForm = readPomodoroFormPreferences();
+                    if (storedForm) setLongBreakCooldown(storedForm.longBreakCooldown);
+                }
             })
             .catch(error => {
                 console.error('Failed to load Pomodoro configuration:', error);
@@ -509,6 +529,11 @@ export function SettingsPage() {
             });
         return () => { cancelled = true; };
     }, []);
+
+    useEffect(() => subscribeToPomodoroFormPreferences(() => {
+        const storedForm = readPomodoroFormPreferences();
+        if (storedForm) setLongBreakCooldown(storedForm.longBreakCooldown);
+    }), []);
 
     const passwordsMatch = newPassword === confirmPassword;
     const canSubmitPasswordChange = currentPassword.trim() !== '' && newPassword.trim() !== '' && confirmPassword.trim() !== '' && passwordsMatch;
@@ -584,6 +609,15 @@ export function SettingsPage() {
         const nextValue = event.target.checked;
         setPomodoroSecondsMode(nextValue);
         setPomodoroSecondsModePreference(nextValue);
+    }
+
+    function handleLongBreakCooldownChange(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) {
+        const nextValue = Number(event.target.value);
+        if (!Number.isInteger(nextValue) || nextValue < 1 || nextValue > 5) return;
+
+        setLongBreakCooldown(nextValue);
+        const currentForm = readPomodoroFormPreferences() ?? createPomodoroFormDefaults(pomodoroConfig);
+        savePomodoroFormPreferences({ ...currentForm, longBreakCooldown: nextValue });
     }
 
     function handleShowClosedMentalThreadsChange(event: ChangeEvent<HTMLInputElement>) {
@@ -804,6 +838,31 @@ export function SettingsPage() {
                                             disabled={userPreferencesLoading || pomodoroPreferenceSaving}
                                             inputProps={{ 'aria-label': 'Automatically start Pomodoro breaks and focus sessions' }}
                                         />
+                                    </Box>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mb: 2 }}>
+                                        <Box sx={{ textAlign: 'left' }}>
+                                            <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                                                Long break frequency
+                                            </Typography>
+                                            <Typography variant="body2" color="text.secondary">
+                                                {pomodoroLongBreakDescription}
+                                            </Typography>
+                                        </Box>
+                                        <TextField
+                                            select
+                                            size="small"
+                                            label="Long break every"
+                                            value={longBreakCooldown}
+                                            onChange={handleLongBreakCooldownChange}
+                                            inputProps={{ 'aria-label': 'Long break frequency in focus sessions' }}
+                                            sx={{ minWidth: 150, flexShrink: 0 }}
+                                        >
+                                            {Array.from({ length: 5 }, (_, index) => index + 1).map(value => (
+                                                <MenuItem key={value} value={value}>
+                                                    {value} {value === 1 ? 'session' : 'sessions'}
+                                                </MenuItem>
+                                            ))}
+                                        </TextField>
                                     </Box>
                                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
                                         <Box sx={{ textAlign: 'left' }}>

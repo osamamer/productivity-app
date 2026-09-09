@@ -5,7 +5,9 @@ import javax.validation.constraints.*;
 import org.osama.task.recurrence.TaskRecurrenceFrequency;
 import org.osama.task.recurrence.TaskRecurrenceUnit;
 
+import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.util.List;
 
 @Data
 public class NewTaskRequest {
@@ -36,6 +38,8 @@ public class NewTaskRequest {
     private Integer recurrenceInterval;
 
     private TaskRecurrenceUnit recurrenceUnit;
+
+    private List<DayOfWeek> recurrenceDaysOfWeek;
 
     private String timeZone;
 

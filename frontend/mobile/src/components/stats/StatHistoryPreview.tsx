@@ -4,7 +4,12 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { formatShortDate, formatWeekday, localDate } from '@/lib/date';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
-import type { StatDefinition, StatEntry } from '@/types/models';
+import {
+  reconcileOptimisticStatEntries,
+  registerStatEntries,
+  subscribeToOptimisticStats,
+} from '@/lib/optimisticStats';
+import type { StatDefinition, StatEntry, StatEntryStatus } from '@/types/models';
 import {
   formatTimeCircleValue,
   formatTimeValue,
@@ -52,6 +57,44 @@ function datesForLastDays(days: number): string[] {
     date.setDate(date.getDate() - (days - 1 - index));
     return localDate(date);
   });
+}
+
+interface BooleanHeatmapBucket {
+  from: string;
+  to: string;
+  average: number | null;
+  notPlannedOnly: boolean;
+}
+
+function weeklyBooleanAverages(
+  dates: string[],
+  entriesByDate: Map<string, number>,
+  statusesByDate: Map<string, StatEntryStatus>,
+): BooleanHeatmapBucket[] {
+  const buckets: BooleanHeatmapBucket[] = [];
+  for (let index = 0; index < dates.length; index += 7) {
+    const bucketDates = dates.slice(index, index + 7);
+    const values = bucketDates
+      .filter(date => statusesByDate.get(date) !== 'NOT_PLANNED')
+      .map(date => entriesByDate.get(date))
+      .filter((value): value is number => value !== undefined);
+    buckets.push({
+      from: bucketDates[0],
+      to: bucketDates[bucketDates.length - 1],
+      average: values.length > 0
+        ? values.reduce((total, value) => total + value, 0) / values.length
+        : null,
+      notPlannedOnly: values.length === 0
+        && bucketDates.some(date => statusesByDate.get(date) === 'NOT_PLANNED'),
+    });
+  }
+  return buckets;
+}
+
+function accentHeatmapColor(accent: string, average: number | null, dark: boolean): string {
+  if (average == null) return dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)';
+  const hex = Math.round((0.12 + average * 0.88) * 255).toString(16).padStart(2, '0');
+  return `${accent}${hex}`;
 }
 
 function chartBuckets(dates: string[], dateRange: number): string[][] {
@@ -180,8 +223,15 @@ function getCircleTextColor(
     : colors.text;
 }
 
-function getCircleColor(definition: StatDefinition, value: number | undefined, colors: ReturnType<typeof useAppTheme>['colors'], dark: boolean): string {
+function getCircleColor(
+  definition: StatDefinition,
+  value: number | undefined,
+  colors: ReturnType<typeof useAppTheme>['colors'],
+  dark: boolean,
+  status: StatEntryStatus = 'RECORDED',
+): string {
   if (value === undefined) return dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)';
+  if (status === 'NOT_PLANNED') return colors.warning;
 
   const thresholdColor = thresholdCircleColor(
     definition,
@@ -518,12 +568,14 @@ function RecentValueDots({
   definition,
   dates,
   entriesByDate,
+  statusesByDate,
   colors,
   dark,
 }: {
   definition: StatDefinition;
   dates: string[];
   entriesByDate: Map<string, number>;
+  statusesByDate: Map<string, StatEntryStatus>;
   colors: ReturnType<typeof useAppTheme>['colors'];
   dark: boolean;
 }) {
@@ -531,6 +583,7 @@ function RecentValueDots({
     <View style={styles.recentDots}>
       {dates.map(date => {
         const value = entriesByDate.get(date);
+        const status = statusesByDate.get(date) ?? 'RECORDED';
         const label = value === undefined ? '—' : formatStatValue(definition, value);
         const isUnboundedNumber = definition.type === 'NUMBER';
         const hasVisibleValue = definition.type === 'NUMBER'
@@ -543,7 +596,7 @@ function RecentValueDots({
             accessibilityLabel={`${date}: ${value === undefined ? 'No entry' : label}`}
             style={[
               styles.dot,
-              { backgroundColor: getCircleColor(definition, value, colors, dark) },
+              { backgroundColor: getCircleColor(definition, value, colors, dark, status) },
               isUnboundedNumber && value === undefined && { borderColor: colors.border, borderStyle: 'dashed', borderWidth: 1 },
             ]}>
             {hasVisibleValue && value !== undefined && (
@@ -714,7 +767,8 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, refreshK
     api.stats.entries(definition.id, dates[0], dates[dates.length - 1])
       .then(nextEntries => {
         if (active) {
-          setEntries(nextEntries);
+          registerStatEntries(nextEntries, definition.id, dates[0], dates[dates.length - 1]);
+          setEntries(reconcileOptimisticStatEntries(nextEntries, dates[0], dates[dates.length - 1], definition.id));
           setErrorRequestKey(null);
           setCompletedRequestKey(requestKey);
         }
@@ -732,11 +786,24 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, refreshK
     return () => { active = false; };
   }, [definition.id, dates, requestKey]);
 
+  useEffect(() => subscribeToOptimisticStats(() => {
+    setEntries(current => reconcileOptimisticStatEntries(current, dates[0], dates[dates.length - 1], definition.id));
+  }), [dates, definition.id]);
+
+  const visibleEntries = useMemo(() => reconcileOptimisticStatEntries(
+    todayEntry ? [...entries.filter(entry => entry.date !== todayEntry.date), todayEntry] : entries,
+    dates[0],
+    dates[dates.length - 1],
+    definition.id,
+  ), [dates, definition.id, entries, todayEntry]);
   const entriesByDate = useMemo(() => {
-    const map = new Map(entries.map(entry => [entry.date, entry.value]));
-    if (todayEntry) map.set(todayEntry.date, todayEntry.value);
+    const map = new Map(visibleEntries.map(entry => [entry.date, entry.value]));
     return map;
-  }, [entries, todayEntry]);
+  }, [visibleEntries]);
+  const statusesByDate = useMemo(() => {
+    const map = new Map(visibleEntries.map(entry => [entry.date, entry.status ?? 'RECORDED'] as [string, StatEntryStatus]));
+    return map;
+  }, [visibleEntries]);
   const recentDates = dates.slice(-RECENT_DAYS);
   const buckets = useMemo(() => chartBuckets(dates, dateRange), [dates, dateRange]);
   const recordedValues = Array.from(entriesByDate.values());
@@ -751,6 +818,7 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, refreshK
     return buckets
       .map((bucket, index) => {
         const values = bucket
+          .filter(date => !(definition.type === 'BOOLEAN' && statusesByDate.get(date) === 'NOT_PLANNED'))
           .map(date => entriesByDate.get(date) ?? (definition.type === 'BOOLEAN' ? 0 : undefined))
           .filter((value): value is number => value !== undefined);
         const value = values.length > 0 ? values.reduce((total, item) => total + item, 0) / values.length : undefined;
@@ -765,7 +833,7 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, refreshK
         };
       })
       .filter((point): point is ChartPoint => point !== undefined);
-  }, [buckets, chartSpan, definition.type, domainMinimum, entriesByDate, hasHistory, plotWidth]);
+  }, [buckets, chartSpan, definition.type, domainMinimum, entriesByDate, hasHistory, plotWidth, statusesByDate]);
   const chartSegments = useMemo(() => curvedSegments(chartPoints), [chartPoints]);
   const calendar = useMemo(() => calendarWeeks(dates), [dates]);
 
@@ -774,7 +842,7 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, refreshK
       <View style={styles.history}>
         <View style={styles.compactHeader}>
           {header && <View style={styles.headerSlot}>{header}</View>}
-          <RecentValueDots definition={definition} dates={recentDates} entriesByDate={entriesByDate} colors={colors} dark={dark} />
+          <RecentValueDots definition={definition} dates={recentDates} entriesByDate={entriesByDate} statusesByDate={statusesByDate} colors={colors} dark={dark} />
           {loading && <ActivityIndicator size="small" color={colors.accent} />}
         </View>
         <TimeOfDayHistory
@@ -795,7 +863,7 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, refreshK
       <View style={styles.history}>
         <View style={styles.compactHeader}>
           {header && <View style={styles.headerSlot}>{header}</View>}
-          <RecentValueDots definition={definition} dates={recentDates} entriesByDate={entriesByDate} colors={colors} dark={dark} />
+          <RecentValueDots definition={definition} dates={recentDates} entriesByDate={entriesByDate} statusesByDate={statusesByDate} colors={colors} dark={dark} />
           {loading && <ActivityIndicator size="small" color={colors.accent} />}
         </View>
         <DurationLineHistory
@@ -813,7 +881,9 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, refreshK
   if (definition.type === 'BOOLEAN') {
     const yesColor = getCircleColor(definition, 1, colors, dark);
     const noColor = getCircleColor(definition, 0, colors, dark);
-    const cellHeight = dateRange <= 30 ? 27 : dateRange <= 90 ? 16 : 9;
+    const isHeatmap = dateRange > 30;
+    const heatmapBuckets = isHeatmap ? weeklyBooleanAverages(dates, entriesByDate, statusesByDate) : [];
+    const notPlannedColor = colors.warning;
 
     return (
       <View style={styles.history}>
@@ -821,45 +891,75 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, refreshK
           {header && <View style={styles.headerSlot}>{header}</View>}
           {loading && <ActivityIndicator size="small" color={colors.accent} />}
         </View>
-        <View style={styles.booleanCalendar} accessibilityLabel={`${definition.name} calendar`}>
-          <View style={styles.calendarWeek}>
-            {WEEKDAY_LABELS.map((label, index) => (
-              <AppText key={`${label}-${index}`} variant="caption" color="muted" style={styles.calendarWeekday}>
-                {label}
-              </AppText>
+        {isHeatmap ? (
+          <View
+            style={[styles.heatmapStrip, { height: dateRange <= 90 ? 32 : 24 }]}
+            accessibilityLabel={`${definition.name} weekly heatmap; darker means more yes entries`}
+            onStartShouldSetResponder={() => true}
+          >
+            {heatmapBuckets.map((bucket, index) => (
+              <View
+                key={`${bucket.from}-${index}`}
+                accessible
+                accessibilityLabel={`${bucket.from} – ${bucket.to}: ${bucket.notPlannedOnly ? 'Not planned' : bucket.average == null ? 'No entries' : `${Math.round(bucket.average * 100)}% yes`}`}
+                style={[styles.heatmapBucket, { backgroundColor: bucket.notPlannedOnly ? `${notPlannedColor}99` : accentHeatmapColor(colors.accent, bucket.average, dark) }]}
+              />
             ))}
           </View>
-          <View style={styles.calendarGrid}>
-            {calendar.map((week, weekIndex) => (
-              <View key={`week-${weekIndex}`} style={styles.calendarWeek}>
-                {week.map((date, dayIndex) => {
-                  const value = date ? entriesByDate.get(date) : undefined;
-                  return (
-                    <View
-                      key={date ?? `empty-${weekIndex}-${dayIndex}`}
-                      accessible={Boolean(date)}
-                      accessibilityLabel={date ? `${date}: ${value === undefined ? 'Not recorded' : value === 1 ? 'Yes' : 'No'}` : undefined}
-                      style={[
-                        styles.calendarCell,
-                        { height: cellHeight },
-                        date && value === undefined && { backgroundColor: `${colors.border}35` },
-                        date && value === 1 && { backgroundColor: yesColor },
-                        date && value === 0 && { backgroundColor: noColor },
-                      ]}
-                    />
-                  );
-                })}
-              </View>
-            ))}
+        ) : (
+          <View style={styles.booleanCalendar} accessibilityLabel={`${definition.name} calendar`}>
+            <View style={styles.calendarWeek}>
+              {WEEKDAY_LABELS.map((label, index) => (
+                <AppText key={`${label}-${index}`} variant="caption" color="muted" style={styles.calendarWeekday}>
+                  {label}
+                </AppText>
+              ))}
+            </View>
+            <View style={styles.calendarGrid}>
+              {calendar.map((week, weekIndex) => (
+                <View key={`week-${weekIndex}`} style={styles.calendarWeek}>
+                  {week.map((date, dayIndex) => {
+                    const value = date ? entriesByDate.get(date) : undefined;
+                    const status = date ? statusesByDate.get(date) ?? 'RECORDED' : 'RECORDED';
+                    return (
+                      <View
+                        key={date ?? `empty-${weekIndex}-${dayIndex}`}
+                        accessible={Boolean(date)}
+                        accessibilityLabel={date ? `${date}: ${value === undefined ? 'Not recorded' : status === 'NOT_PLANNED' ? 'Not planned' : value === 1 ? 'Yes' : 'No'}` : undefined}
+                        style={[
+                          styles.calendarCell,
+                          { height: 27 },
+                          date && value === undefined && { backgroundColor: `${colors.border}35` },
+                          date && value === 1 && { backgroundColor: yesColor },
+                          date && value === 0 && { backgroundColor: noColor },
+                          date && status === 'NOT_PLANNED' && { backgroundColor: notPlannedColor },
+                        ]}
+                      />
+                    );
+                  })}
+                </View>
+              ))}
+            </View>
           </View>
-        </View>
+        )}
         <View style={styles.calendarFooter}>
-          <View style={styles.calendarLegend}>
-            <View style={[styles.legendSwatch, { backgroundColor: yesColor }]} />
-            <AppText variant="caption" color="muted">Yes</AppText>
-            <View style={[styles.legendSwatch, { backgroundColor: noColor }]} />
-            <AppText variant="caption" color="muted">No</AppText>
-          </View>
+          {isHeatmap ? (
+            <View style={styles.calendarLegend}>
+              <View style={[styles.legendSwatch, { backgroundColor: accentHeatmapColor(colors.accent, 0, dark) }]} />
+              <AppText variant="caption" color="muted">Less often</AppText>
+              <View style={[styles.legendSwatch, { backgroundColor: colors.accent }]} />
+              <AppText variant="caption" color="muted">More often</AppText>
+            </View>
+          ) : (
+            <View style={styles.calendarLegend}>
+              <View style={[styles.legendSwatch, { backgroundColor: yesColor }]} />
+              <AppText variant="caption" color="muted">Yes</AppText>
+              <View style={[styles.legendSwatch, { backgroundColor: noColor }]} />
+              <AppText variant="caption" color="muted">No</AppText>
+              <View style={[styles.legendSwatch, { backgroundColor: notPlannedColor }]} />
+              <AppText variant="caption" color="muted">Not planned</AppText>
+            </View>
+          )}
           {error ? (
             <AppText variant="caption" color="danger">History unavailable</AppText>
           ) : (
@@ -876,7 +976,7 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, refreshK
     <View style={styles.history}>
       <View style={styles.compactHeader}>
         {header && <View style={styles.headerSlot}>{header}</View>}
-        <RecentValueDots definition={definition} dates={recentDates} entriesByDate={entriesByDate} colors={colors} dark={dark} />
+        <RecentValueDots definition={definition} dates={recentDates} entriesByDate={entriesByDate} statusesByDate={statusesByDate} colors={colors} dark={dark} />
         {loading && <ActivityIndicator size="small" color={colors.accent} />}
       </View>
 
@@ -973,6 +1073,8 @@ const styles = StyleSheet.create({
   calendarWeek: { flexDirection: 'row', gap: 4 },
   calendarWeekday: { flex: 1, textAlign: 'center', fontSize: 10, lineHeight: 13 },
   calendarCell: { flex: 1, borderRadius: 5 },
+  heatmapStrip: { width: '100%', flexDirection: 'row', overflow: 'hidden', borderRadius: 8 },
+  heatmapBucket: { flex: 1, height: '100%' },
   calendarFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   calendarLegend: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   legendSwatch: { width: 8, height: 8, borderRadius: 3, marginLeft: 4 },

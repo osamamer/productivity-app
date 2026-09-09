@@ -1,17 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-    Box,
-    Button,
-    Divider,
-    Fade,
-    List,
-    ListItem,
-    Paper,
-    Popover,
-    Stack,
-    Typography,
+    Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Divider,
+    Fade, List, ListItem, ListItemIcon, ListItemText, Menu, MenuItem, Paper, Popover,
+    Stack, Typography,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import EventNoteOutlinedIcon from '@mui/icons-material/EventNoteOutlined';
 import TaskAltOutlinedIcon from '@mui/icons-material/TaskAltOutlined';
 import ViewDayIcon from '@mui/icons-material/ViewDay';
@@ -25,6 +20,8 @@ type Props = {
     applyingTemplateId?: string | null;
     error?: string | null;
     onCreate: () => void;
+    onEdit: (template: DayTemplate) => void;
+    onDelete: (templateId: string) => Promise<void>;
     onDragStart: () => void;
 };
 
@@ -33,11 +30,21 @@ export function DayTemplatePanel({
     applyingTemplateId = null,
     error,
     onCreate,
+    onEdit,
+    onDelete,
     onDragStart,
 }: Props) {
     const theme = useTheme();
     const [detailsAnchor, setDetailsAnchor] = useState<HTMLElement | null>(null);
     const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+    const [templateContextMenu, setTemplateContextMenu] = useState<{
+        template: DayTemplate;
+        mouseX: number;
+        mouseY: number;
+    } | null>(null);
+    const [deleteTarget, setDeleteTarget] = useState<DayTemplate | null>(null);
+    const [deleting, setDeleting] = useState(false);
+    const [deleteError, setDeleteError] = useState<string | null>(null);
     const suppressClickRef = useRef(false);
     const resetClickSuppressionTimeoutRef = useRef<number | null>(null);
     const selectedTemplate = templates.find(template => template.id === selectedTemplateId) ?? null;
@@ -50,6 +57,39 @@ export function DayTemplatePanel({
 
     const closeDetails = () => {
         setDetailsAnchor(null);
+    };
+
+    const openTemplateContextMenu = (event: React.MouseEvent<HTMLElement>, template: DayTemplate) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setTemplateContextMenu({ template, mouseX: event.clientX + 2, mouseY: event.clientY + 2 });
+    };
+
+    const closeTemplateContextMenu = () => {
+        setTemplateContextMenu(null);
+    };
+
+    const requestTemplateDelete = () => {
+        if (!templateContextMenu) return;
+        setDeleteTarget(templateContextMenu.template);
+        setDeleteError(null);
+        closeTemplateContextMenu();
+        closeDetails();
+    };
+
+    const confirmTemplateDelete = async () => {
+        if (!deleteTarget) return;
+
+        setDeleting(true);
+        setDeleteError(null);
+        try {
+            await onDelete(deleteTarget.id);
+            setDeleteTarget(null);
+        } catch (error) {
+            setDeleteError(error instanceof Error ? error.message : 'Unable to delete the day template.');
+        } finally {
+            setDeleting(false);
+        }
     };
 
     const handleTemplateClick = (event: React.MouseEvent<HTMLElement>, template: DayTemplate) => {
@@ -112,6 +152,7 @@ export function DayTemplatePanel({
                             aria-expanded={selectedTemplateId === template.id && Boolean(detailsAnchor)}
                             aria-label={`${template.name}. View contents or drag to apply.`}
                             onClick={event => handleTemplateClick(event, template)}
+                            onContextMenu={event => openTemplateContextMenu(event, template)}
                             onKeyDown={event => handleTemplateKeyDown(event, template)}
                             onDragStart={event => handleTemplateDragStart(event, template)}
                             onDragEnd={handleTemplateDragEnd}
@@ -239,6 +280,49 @@ export function DayTemplatePanel({
                     </Stack>
                 )}
             </Popover>
+
+            <Menu
+                open={Boolean(templateContextMenu)}
+                onClose={closeTemplateContextMenu}
+                anchorReference="anchorPosition"
+                anchorPosition={templateContextMenu
+                    ? { top: templateContextMenu.mouseY, left: templateContextMenu.mouseX }
+                    : undefined}
+                MenuListProps={{ dense: true }}
+            >
+                <MenuItem onClick={() => {
+                    if (templateContextMenu) onEdit(templateContextMenu.template);
+                    closeTemplateContextMenu();
+                }}>
+                    <ListItemIcon><EditOutlinedIcon fontSize="small" /></ListItemIcon>
+                    <ListItemText>Edit template</ListItemText>
+                </MenuItem>
+                <MenuItem onClick={requestTemplateDelete} sx={{ color: 'error.main' }}>
+                    <ListItemIcon sx={{ color: 'inherit' }}><DeleteOutlineRoundedIcon fontSize="small" /></ListItemIcon>
+                    <ListItemText>Delete template</ListItemText>
+                </MenuItem>
+            </Menu>
+
+            <Dialog
+                open={Boolean(deleteTarget)}
+                onClose={() => { if (!deleting) setDeleteTarget(null); }}
+                fullWidth
+                maxWidth="xs"
+            >
+                <DialogTitle>Delete “{deleteTarget?.name}”?</DialogTitle>
+                <DialogContent>
+                    <Typography variant="body2" color="text.secondary">
+                        This only removes the reusable template. Events and tasks already created from it will stay on your calendar.
+                    </Typography>
+                    {deleteError && <Alert severity="error" sx={{ mt: 2 }}>{deleteError}</Alert>}
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setDeleteTarget(null)} disabled={deleting}>Cancel</Button>
+                    <Button color="error" onClick={() => void confirmTemplateDelete()} disabled={deleting}>
+                        {deleting ? 'Deleting…' : 'Delete'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </Paper>
     );
 }

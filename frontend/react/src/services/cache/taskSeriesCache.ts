@@ -5,7 +5,7 @@ import { getAuthCacheScope } from '../utils/authHeaders';
 // Recurrence is part of task details and changes only when the user edits the
 // recurrence controls. Keep it warm long enough for the Home page to reuse it
 // while still invalidating it immediately after a recurrence mutation.
-export const TASK_SERIES_TTL_MS = 5 * 60 * 1000;
+export const TASK_SERIES_TTL_MS = 60 * 60 * 1000;
 
 const taskSeriesResource = new CachedResource<TaskSeries | null>({
     ttlMs: TASK_SERIES_TTL_MS,

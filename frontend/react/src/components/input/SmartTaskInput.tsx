@@ -21,6 +21,7 @@ import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import FlagIcon from '@mui/icons-material/Flag';
 import LabelIcon from '@mui/icons-material/Label';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import NotificationsNoneIcon from '@mui/icons-material/NotificationsNone';
 import { TaskToCreate } from '../../types/TaskToCreate';
 
 type SmartTaskInputProps = {
@@ -46,8 +47,17 @@ type SmartTaskInputProps = {
 type TaskMetadata = {
     importance: number;
     scheduledDate: string;
+    reminderMinutesBefore: number | null;
+    reminderDateTime: string | null;
     tag: string;
 };
+
+const MAX_REMINDER_MINUTES = 8 * 7 * 24 * 60;
+
+const removeCommands = (value: string, commands: RegExp) => value
+    .replace(commands, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
 
 export function SmartTaskInput({
     onSubmit,
@@ -72,11 +82,17 @@ export function SmartTaskInput({
     const [metadata, setMetadata] = useState<TaskMetadata>({
         importance: 0,
         scheduledDate: initialDate || '',
+        reminderMinutesBefore: null,
+        reminderDateTime: null,
         tag: '',
     });
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-    const [suggestionType, setSuggestionType] = useState<'priority' | 'date' | 'tag' | null>(null);
+    const [suggestionType, setSuggestionType] = useState<'priority' | 'date' | 'reminder' | 'tag' | null>(null);
     const [showCustomDateTime, setShowCustomDateTime] = useState(false);
+    const [showCustomReminder, setShowCustomReminder] = useState(false);
+    const [customReminderError, setCustomReminderError] = useState<string | null>(null);
+    const [selectedReminderDate, setSelectedReminderDate] = useState<Date>(new Date());
+    const [selectedReminderTime, setSelectedReminderTime] = useState<Date | null>(new Date());
     const [selectedDate, setSelectedDate] = useState<Date>(new Date());
     const [selectedTime, setSelectedTime] = useState<Date | null>(new Date());
     const inputRef = useRef<HTMLInputElement>(null);
@@ -139,28 +155,35 @@ export function SmartTaskInput({
         if (text.includes('!priority') || text.includes('!p')) {
             setSuggestionType('priority');
             setShowCustomDateTime(false);
+            setShowCustomReminder(false);
             setAnchorEl(inputRef.current);
         } else if (text.includes('!date') || text.includes('!d')) {
             setSuggestionType('date');
+            setShowCustomDateTime(false);
+            setShowCustomReminder(false);
+            setAnchorEl(inputRef.current);
+        } else if (text.includes('!reminder') || text.includes('!r')) {
+            setSuggestionType('reminder');
             setShowCustomDateTime(false);
             setAnchorEl(inputRef.current);
         } else if (text.includes('!tag') || text.includes('!t')) {
             setSuggestionType('tag');
             setShowCustomDateTime(false);
+            setShowCustomReminder(false);
             setAnchorEl(inputRef.current);
         } else {
             setAnchorEl(null);
             setSuggestionType(null);
             setShowCustomDateTime(false);
+            setShowCustomReminder(false);
         }
     }, [input]);
 
     const submitCurrentInput = () => {
-        const taskName = input
-            .replace(/!priority|!p/gi, '')
-            .replace(/!date|!d/gi, '')
-            .replace(/!tag|!t/gi, '')
-            .trim();
+        const taskName = removeCommands(
+            input,
+            /!priority\b|!p\b|!l\b|!m\b|!h\b|!date\b|!d\b|!reminder\b|!r\b|!tag\b|!t\b/gi,
+        );
 
         if (taskName === '') return;
 
@@ -169,6 +192,7 @@ export function SmartTaskInput({
             description: '',
             // CRITICAL FIX: Use metadata date OR fall back to initialDate
             scheduledPerformDateTime: metadata.scheduledDate || initialDate || (defaultToToday ? todayDateTime() : ''),
+            reminderMinutesBefore: metadata.reminderMinutesBefore,
             tag: metadata.tag,
             importance: metadata.importance,
         };
@@ -182,6 +206,8 @@ export function SmartTaskInput({
         setMetadata({
             importance: 0,
             scheduledDate: initialDate || '', // Keep the initialDate!
+            reminderMinutesBefore: null,
+            reminderDateTime: null,
             tag: ''
         });
         onImportanceChange?.(0);
@@ -193,28 +219,117 @@ export function SmartTaskInput({
     };
 
     const selectPriority = (value: number) => {
-        setMetadata({ ...metadata, importance: value });
+        setMetadata(previous => ({ ...previous, importance: value }));
         onImportanceChange?.(value);
-        setInput(input.replace(/!priority|!p/gi, '').trim());
+        setInput(removeCommands(input, /!priority\b|!p\b/gi));
         setAnchorEl(null);
     };
 
     const selectDate = (dateValue: string) => {
-        setMetadata({ ...metadata, scheduledDate: dateValue });
-        setInput(input.replace(/!date|!d/gi, '').trim());
+        setMetadata(previous => ({ ...previous, scheduledDate: dateValue }));
+        setInput(removeCommands(input, /!date\b|!d\b/gi));
         setAnchorEl(null);
         setShowCustomDateTime(false);
     };
 
+    const selectReminder = (minutesBefore: number, reminderDateTime: string | null = null) => {
+        setMetadata(previous => ({ ...previous, reminderMinutesBefore: minutesBefore, reminderDateTime }));
+        setInput(removeCommands(input, /!reminder\b|!r\b/gi));
+        setAnchorEl(null);
+        setShowCustomReminder(false);
+        setCustomReminderError(null);
+    };
+
+    const taskScheduledDateTime = () => metadata.scheduledDate || initialDate || (defaultToToday ? todayDateTime() : '');
+
+    const formatLocalDateTime = (date: Date) => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const hour = String(date.getHours()).padStart(2, '0');
+        const minute = String(date.getMinutes()).padStart(2, '0');
+        return `${year}-${month}-${day}T${hour}:${minute}:00`;
+    };
+
+    const openCustomReminder = () => {
+        const scheduledAt = new Date(taskScheduledDateTime());
+        const defaultReminderAt = Number.isNaN(scheduledAt.getTime())
+            ? new Date()
+            : new Date(scheduledAt.getTime() - 60 * 60 * 1000);
+        setSelectedReminderDate(defaultReminderAt);
+        setSelectedReminderTime(defaultReminderAt);
+        setCustomReminderError(null);
+        setShowCustomReminder(true);
+    };
+
+    const confirmCustomReminder = () => {
+        const scheduledAt = new Date(taskScheduledDateTime());
+        if (Number.isNaN(scheduledAt.getTime())) {
+            setCustomReminderError('Schedule the task before choosing a custom reminder.');
+            return;
+        }
+
+        const reminderAt = new Date(selectedReminderDate);
+        const timeToUse = selectedReminderTime || new Date();
+        reminderAt.setHours(timeToUse.getHours(), timeToUse.getMinutes(), 0, 0);
+        const minutesBefore = (scheduledAt.getTime() - reminderAt.getTime()) / (60 * 1000);
+        if (!Number.isInteger(minutesBefore) || minutesBefore < 0) {
+            setCustomReminderError('The reminder must be at or before the task time.');
+            return;
+        }
+        if (minutesBefore > MAX_REMINDER_MINUTES) {
+            setCustomReminderError('The reminder can be at most eight weeks before the task.');
+            return;
+        }
+
+        selectReminder(minutesBefore, formatLocalDateTime(reminderAt));
+    };
+
     const selectTag = (tagValue: string) => {
-        setMetadata({ ...metadata, tag: tagValue });
-        setInput(input.replace(/!tag|!t/gi, '').trim());
+        setMetadata(previous => ({ ...previous, tag: tagValue }));
+        setInput(removeCommands(input, /!tag\b|!t\b/gi));
         setAnchorEl(null);
     };
 
     const clearMetadata = (field: keyof TaskMetadata) => {
-        setMetadata({ ...metadata, [field]: field === 'importance' ? 0 : '' });
-        if (field === 'importance') onImportanceChange?.(0);
+        if (field === 'importance') {
+            setMetadata(previous => ({ ...previous, importance: 0 }));
+            onImportanceChange?.(0);
+            return;
+        }
+        if (field === 'reminderMinutesBefore') {
+            setMetadata(previous => ({ ...previous, reminderMinutesBefore: null, reminderDateTime: null }));
+            return;
+        }
+        if (field === 'reminderDateTime') {
+            setMetadata(previous => ({ ...previous, reminderMinutesBefore: null, reminderDateTime: null }));
+            return;
+        }
+        setMetadata(previous => ({ ...previous, [field]: '' }));
+    };
+
+    const handleInputChange = (value: string) => {
+        const priorityCommand = value.match(/(?:^|[ \t])!([lmh])(?=$|[ \t])/i);
+        if (!priorityCommand) {
+            setInput(value);
+            return;
+        }
+
+        const priority = priorityCommand[1].toLowerCase() === 'l'
+            ? 3
+            : priorityCommand[1].toLowerCase() === 'm'
+                ? 6
+                : 9;
+        setMetadata(previous => ({ ...previous, importance: priority }));
+        onImportanceChange?.(priority);
+        setInput(removeCommands(value, /!l\b|!m\b|!h\b/gi));
+    };
+
+    const formatReminderLabel = (minutesBefore: number, reminderDateTime: string | null) => {
+        if (reminderDateTime) return 'Custom reminder';
+        if (minutesBefore === 60) return '1h before';
+        if (minutesBefore === 1440) return '1 day before';
+        return `${minutesBefore} minutes before`;
     };
 
     const getPriorityColor = (importance: number) => {
@@ -283,7 +398,7 @@ export function SmartTaskInput({
                     autoComplete="off"
                     disabled={disabled}
                     value={input}
-                    onChange={(e) => setInput(e.target.value)}
+                    onChange={(e) => handleInputChange(e.target.value)}
                     onKeyDown={event => {
                         if (event.key === 'Escape') {
                             event.preventDefault();
@@ -310,7 +425,7 @@ export function SmartTaskInput({
                 />
 
                 {/* Metadata chips */}
-                {showMetadataChips && (metadata.importance > 0 || metadata.scheduledDate || metadata.tag) && (
+        {showMetadataChips && (metadata.importance > 0 || metadata.scheduledDate || metadata.reminderMinutesBefore !== null || metadata.reminderDateTime !== null || metadata.tag) && (
                     <Box sx={{ display: 'flex', gap: 0.5, mt: 1, flexWrap: 'wrap' }}>
                         {metadata.importance > 0 && (
                             <Chip
@@ -339,6 +454,15 @@ export function SmartTaskInput({
                                 color="primary"
                             />
                         )}
+                        {metadata.reminderMinutesBefore !== null && (
+                            <Chip
+                                icon={<NotificationsNoneIcon sx={{ fontSize: '0.9rem' }} />}
+                                label={formatReminderLabel(metadata.reminderMinutesBefore, metadata.reminderDateTime)}
+                                size="small"
+                                onDelete={() => clearMetadata('reminderMinutesBefore')}
+                                color="secondary"
+                            />
+                        )}
                         {metadata.tag && (
                             <Chip
                                 icon={<LabelIcon sx={{ fontSize: '0.9rem' }} />}
@@ -359,6 +483,7 @@ export function SmartTaskInput({
                 onClose={() => {
                     setAnchorEl(null);
                     setShowCustomDateTime(false);
+                    setShowCustomReminder(false);
                 }}
                 anchorOrigin={{
                     vertical: 'bottom',
@@ -371,7 +496,7 @@ export function SmartTaskInput({
             >
                 <Paper
                     data-smart-task-suggestions
-                    sx={{ width: showCustomDateTime ? 320 : 200, maxHeight: showCustomDateTime ? 450 : 200, overflow: 'auto' }}
+                    sx={{ width: showCustomDateTime || showCustomReminder ? 320 : 200, maxHeight: showCustomDateTime || showCustomReminder ? 450 : 200, overflow: 'auto' }}
                 >
                     {suggestionType === 'priority' && (
                         <List
@@ -509,6 +634,120 @@ export function SmartTaskInput({
                                         size="small"
                                         variant="contained"
                                         onClick={confirmCustomDateTime}
+                                    >
+                                        Confirm
+                                    </Button>
+                                </Box>
+                            </LocalizationProvider>
+                        </Box>
+                    )}
+
+                    {suggestionType === 'reminder' && !showCustomReminder && (
+                        <List
+                            dense
+                            onKeyDown={(e) => {
+                                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                                    e.preventDefault();
+                                    const buttons = document.querySelectorAll('[data-reminder-option]');
+                                    const currentIndex = Array.from(buttons).findIndex(btn => btn === document.activeElement);
+                                    const nextIndex = e.key === 'ArrowDown'
+                                        ? Math.min(currentIndex + 1, buttons.length - 1)
+                                        : Math.max(currentIndex - 1, 0);
+                                    (buttons[nextIndex] as HTMLElement)?.focus();
+                                }
+                            }}
+                        >
+                            <ListItem sx={{ py: 0.5, minHeight: 'auto' }}>
+                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                                    Select Reminder
+                                </Typography>
+                            </ListItem>
+                            {[
+                                { label: '1h before', value: 60 },
+                                { label: '1 day before', value: 1440 },
+                            ].map((option, index) => (
+                                <ListItemButton
+                                    key={option.value}
+                                    onMouseDown={event => event.preventDefault()}
+                                    onClick={() => selectReminder(option.value)}
+                                    sx={{ py: 0.5, minHeight: 'auto' }}
+                                    autoFocus={index === 0}
+                                    data-reminder-option
+                                >
+                                    <NotificationsNoneIcon sx={{ mr: 1, fontSize: '1rem', color: 'secondary.main' }} />
+                                    <ListItemText
+                                        primary={option.label}
+                                        primaryTypographyProps={{ fontSize: '0.85rem' }}
+                                    />
+                                </ListItemButton>
+                            ))}
+                            <ListItemButton
+                                onMouseDown={event => event.preventDefault()}
+                                onClick={openCustomReminder}
+                                sx={{ py: 0.5, minHeight: 'auto' }}
+                                data-reminder-option
+                            >
+                                <AccessTimeIcon sx={{ mr: 1, fontSize: '1rem', color: 'primary.main' }} />
+                                <ListItemText
+                                    primary="Custom"
+                                    primaryTypographyProps={{ fontSize: '0.85rem', fontWeight: 500 }}
+                                />
+                            </ListItemButton>
+                        </List>
+                    )}
+
+                    {suggestionType === 'reminder' && showCustomReminder && (
+                        <Box sx={{ p: 1 }}>
+                            <LocalizationProvider dateAdapter={AdapterDateFns}>
+                                <DateCalendar
+                                    value={selectedReminderDate}
+                                    onChange={newValue => setSelectedReminderDate(newValue || new Date())}
+                                    sx={{
+                                        width: '100%',
+                                        '& .MuiPickersCalendarHeader-root': {
+                                            paddingLeft: 1,
+                                            paddingRight: 1,
+                                        },
+                                    }}
+                                />
+
+                                <Box sx={{ mb: 1.5 }}>
+                                    <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+                                        Reminder time
+                                    </Typography>
+                                    <TimePicker
+                                        value={selectedReminderTime}
+                                        onChange={newValue => setSelectedReminderTime(newValue)}
+                                        ampm={false}
+                                        slotProps={{
+                                            textField: {
+                                                fullWidth: true,
+                                                size: 'small',
+                                            },
+                                        }}
+                                    />
+                                </Box>
+
+                                {customReminderError && (
+                                    <Typography variant="caption" color="error" sx={{ display: 'block', mb: 1 }}>
+                                        {customReminderError}
+                                    </Typography>
+                                )}
+
+                                <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+                                    <Button
+                                        size="small"
+                                        onClick={() => {
+                                            setShowCustomReminder(false);
+                                            setCustomReminderError(null);
+                                        }}
+                                    >
+                                        Back
+                                    </Button>
+                                    <Button
+                                        size="small"
+                                        variant="contained"
+                                        onClick={confirmCustomReminder}
                                     >
                                         Confirm
                                     </Button>

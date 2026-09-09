@@ -4,8 +4,12 @@ import * as Yup from 'yup';
 import {
     Box, TextField, Button, Select, MenuItem, FormControl,
     InputLabel, Typography, Stack, Collapse, FormHelperText, Checkbox, FormControlLabel,
+    Dialog, DialogActions, DialogContent, DialogTitle,
 } from '@mui/material';
-import { CreateDefinitionRequest, StatDefinition, StatMorality, StatType } from '../../types/Stats';
+import {
+    CreateDefinitionRequest, StatDefinition, StatMorality, StatRecurrenceDay,
+    StatRecurrenceFrequency, StatType,
+} from '../../types/Stats';
 import { statService } from '../../services/api/statService';
 import {
     durationValueToMinutes,
@@ -17,6 +21,8 @@ import { AppTimeField } from '../input/AppPickerFields';
 import { AppNumberField } from '../input/AppNumberField';
 import { DurationInput } from './DurationInput';
 import { useKeyboardDelete } from '../../hooks/useKeyboardDelete';
+import { StatRecurringTaskOptions } from './StatRecurringTaskDialog';
+import { defaultStatRecurringTaskDraft } from './statRecurringTaskUtils';
 
 interface FormValues {
     name: string;
@@ -27,6 +33,8 @@ interface FormValues {
     morality: StatMorality;
     goodThreshold: string;
     createRecurringTask: boolean;
+    recurrenceFrequency: StatRecurrenceFrequency;
+    recurrenceDaysOfWeek: StatRecurrenceDay[];
 }
 
 const validationSchema = Yup.object({
@@ -78,6 +86,8 @@ interface Props {
     onCreatedOptimistically?: (def: StatDefinition, operationId: string) => void;
     onCreationFailed?: (operationId: string) => void;
     onUpdated?: (def: StatDefinition) => void;
+    onCreateRecurringTask?: () => void;
+    onEditRecurringTask?: () => void;
     onDelete?: () => void;
     onCancel: () => void;
     initialDefinition?: StatDefinition;
@@ -88,13 +98,18 @@ export function CreateStatForm({
     onCreatedOptimistically,
     onCreationFailed,
     onUpdated,
+    onCreateRecurringTask,
+    onEditRecurringTask,
     onDelete,
     onCancel,
     initialDefinition,
 }: Props) {
     const isEditing = Boolean(initialDefinition);
+    const hasRecurringTask = Boolean(initialDefinition?.recurringTaskSeriesId);
     const [disconnectError, setDisconnectError] = React.useState<string | null>(null);
     const [disconnecting, setDisconnecting] = React.useState(false);
+    const [deleteRecurringTaskOpen, setDeleteRecurringTaskOpen] = React.useState(false);
+    const [deletingRecurringTask, setDeletingRecurringTask] = React.useState(false);
     useKeyboardDelete({
         enabled: Boolean(onDelete) && isEditing && !initialDefinition?.systemKey,
         allowDialog: true,
@@ -117,6 +132,8 @@ export function CreateStatForm({
                         ? minutesToDurationValue(initialDefinition.goodThreshold)
                         : String(initialDefinition.goodThreshold),
             createRecurringTask: false,
+            recurrenceFrequency: 'DAILY',
+            recurrenceDaysOfWeek: defaultStatRecurringTaskDraft().recurrenceDaysOfWeek,
         },
         validationSchema,
         onSubmit: async (values, { setSubmitting, setFieldError }) => {
@@ -150,7 +167,16 @@ export function CreateStatForm({
                             ? threshold ?? undefined
                             : undefined,
                         createRecurringTask: values.type === 'BOOLEAN' && values.createRecurringTask,
+                        recurrenceFrequency: values.recurrenceFrequency,
+                        recurrenceDaysOfWeek: values.recurrenceDaysOfWeek,
                     };
+
+                    if (request.createRecurringTask
+                        && request.recurrenceFrequency === 'CUSTOM'
+                        && request.recurrenceDaysOfWeek?.length === 0) {
+                        setFieldError('recurrenceDaysOfWeek', 'Choose at least one day.');
+                        return;
+                    }
 
                     if (request.createRecurringTask && onCreatedOptimistically && onCreationFailed) {
                         const operationId = `pending-stat-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -195,12 +221,30 @@ export function CreateStatForm({
         setDisconnectError(null);
         try {
             const definition = await statService.disconnectRecurringTask(initialDefinition.id);
+            setDeleteRecurringTaskOpen(false);
             onUpdated?.(definition);
         } catch (error) {
             console.error('Failed to disconnect recurring task:', error);
             setDisconnectError('Could not disconnect the recurring task. Please try again.');
         } finally {
             setDisconnecting(false);
+        }
+    };
+
+    const deleteRecurringTaskSeries = async () => {
+        if (!initialDefinition?.recurringTaskSeriesId || deletingRecurringTask) return;
+
+        setDeletingRecurringTask(true);
+        setDisconnectError(null);
+        try {
+            const definition = await statService.deleteRecurringTaskSeries(initialDefinition.id);
+            setDeleteRecurringTaskOpen(false);
+            onUpdated?.(definition);
+        } catch (error) {
+            console.error('Failed to delete recurring task series:', error);
+            setDisconnectError('Could not delete the recurring task series. Please try again.');
+        } finally {
+            setDeletingRecurringTask(false);
         }
     };
 
@@ -306,7 +350,10 @@ export function CreateStatForm({
                         />
                     </Stack>
                 </Collapse>
-                <Collapse in={formik.values.type !== 'BOOLEAN' && formik.values.morality !== 'NEUTRAL'}>
+                <Collapse
+                    in={formik.values.type !== 'BOOLEAN' && formik.values.morality !== 'NEUTRAL'}
+                    unmountOnExit
+                >
                     {formik.values.type === 'TIME' ? (
                         <AppTimeField
                             label="Good at or before"
@@ -361,7 +408,7 @@ export function CreateStatForm({
                         />
                     )}
                 </Collapse>
-                <Collapse in={!isEditing && formik.values.type === 'BOOLEAN'}>
+                <Collapse in={!isEditing && formik.values.type === 'BOOLEAN'} unmountOnExit>
                     <FormControlLabel
                         control={(
                             <Checkbox
@@ -370,29 +417,83 @@ export function CreateStatForm({
                                 onChange={formik.handleChange}
                             />
                         )}
-                        label="Create a daily recurring task linked to this statistic"
+                        label="Create a recurring task linked to this statistic"
                     />
                 </Collapse>
-                {isEditing && initialDefinition?.recurringTaskSeriesId && (
-                    <Box sx={{ borderTop: 1, borderColor: 'divider', pt: 1.5 }}>
-                        <Button
-                            type="button"
-                            onClick={() => { void disconnectRecurringTask(); }}
-                            color="error"
-                            size="small"
-                            disabled={disconnecting || formik.isSubmitting}
-                        >
-                            {disconnecting ? 'Disconnecting…' : 'Disconnect recurring task'}
-                        </Button>
-                        <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
-                            This keeps the existing tasks and statistic entries; it only removes their link.
-                        </Typography>
+                <Collapse
+                    in={!isEditing && formik.values.type === 'BOOLEAN' && formik.values.createRecurringTask}
+                    unmountOnExit
+                >
+                    <StatRecurringTaskOptions
+                        value={{
+                            recurrenceFrequency: formik.values.recurrenceFrequency,
+                            recurrenceDaysOfWeek: formik.values.recurrenceDaysOfWeek,
+                        }}
+                        onChange={value => {
+                            void formik.setFieldValue('recurrenceFrequency', value.recurrenceFrequency);
+                            void formik.setFieldValue('recurrenceDaysOfWeek', value.recurrenceDaysOfWeek);
+                        }}
+                        disabled={formik.isSubmitting}
+                    />
+                    {formik.values.recurrenceFrequency === 'CUSTOM'
+                        && formik.values.recurrenceDaysOfWeek.length === 0 && (
+                        <FormHelperText error>Choose at least one day.</FormHelperText>
+                    )}
+                </Collapse>
+                {isEditing && hasRecurringTask && (
+                    <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5, p: 1 }}>
+                        <Typography variant="subtitle2">Recurring tasks</Typography>
+                        <Stack spacing={0.5} alignItems="flex-start">
+                            <Button
+                                type="button"
+                                onClick={() => {
+                                    setDisconnectError(null);
+                                    setDeleteRecurringTaskOpen(true);
+                                }}
+                                color="error"
+                                variant="outlined"
+                                size="small"
+                                disabled={disconnecting || deletingRecurringTask || formik.isSubmitting}
+                            >
+                                Remove recurring tasks
+                            </Button>
+                            <Button
+                                type="button"
+                                onClick={onEditRecurringTask}
+                                variant="outlined"
+                                size="small"
+                                disabled={disconnecting || deletingRecurringTask || formik.isSubmitting || !onEditRecurringTask}
+                            >
+                                Change schedule
+                            </Button>
+                        </Stack>
                         {disconnectError && (
                             <FormHelperText error>{disconnectError}</FormHelperText>
                         )}
                     </Box>
                 )}
-                <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="center">
+                {isEditing && initialDefinition?.type === 'BOOLEAN' && !initialDefinition.recurringTaskSeriesId && (
+                    <Box sx={{ borderTop: 1, borderColor: 'divider', pt: 1.5 }}>
+                        <Button
+                            type="button"
+                            onClick={onCreateRecurringTask}
+                            size="small"
+                            disabled={formik.isSubmitting || !onCreateRecurringTask}
+                        >
+                            Create recurring task
+                        </Button>
+                        <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                            Creates a recurring task linked to this statistic.
+                        </Typography>
+                    </Box>
+                )}
+                <Stack
+                    direction="row"
+                    spacing={1}
+                    justifyContent="space-between"
+                    alignItems="center"
+                    sx={hasRecurringTask ? { borderTop: 1, borderColor: 'divider', pt: 1.5 } : undefined}
+                >
                     {isEditing && !initialDefinition?.systemKey && (
                         <Button type="button" onClick={onDelete} color="error" size="small">
                             Delete statistic
@@ -406,6 +507,39 @@ export function CreateStatForm({
                     </Stack>
                 </Stack>
             </Stack>
+            <Dialog
+                open={deleteRecurringTaskOpen}
+                onClose={() => {
+                    if (!deletingRecurringTask && !disconnecting) setDeleteRecurringTaskOpen(false);
+                }}
+                maxWidth="xs"
+            >
+                <DialogTitle>Remove recurring tasks?</DialogTitle>
+                <DialogContent>
+                    {disconnectError && <FormHelperText error sx={{ mt: 1 }}>{disconnectError}</FormHelperText>}
+                </DialogContent>
+                <DialogActions>
+                    <Button
+                        onClick={() => setDeleteRecurringTaskOpen(false)}
+                        disabled={deletingRecurringTask || disconnecting}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={() => { void disconnectRecurringTask(); }}
+                        disabled={deletingRecurringTask || disconnecting}
+                    >
+                        {disconnecting ? 'Disconnecting…' : 'Disconnect'}
+                    </Button>
+                    <Button
+                        color="error"
+                        onClick={() => { void deleteRecurringTaskSeries(); }}
+                        disabled={deletingRecurringTask || disconnecting}
+                    >
+                        {deletingRecurringTask ? 'Deleting…' : 'Delete series'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </Box>
     );
 }

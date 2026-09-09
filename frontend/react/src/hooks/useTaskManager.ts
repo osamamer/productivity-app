@@ -80,23 +80,31 @@ function withTaskBuckets(previous: TaskState, allTasks: Task[]): TaskState {
     };
 }
 
-const TASK_LIST_TTL_MS = 30 * 1000;
-
-export function useTaskManager() {
-    const [taskState, setTaskState] = useState<TaskState>({
+function createInitialTaskState(): TaskState {
+    const cachedTasks = taskService.getCachedMainTasks() ?? [];
+    const state = {
         allTasks: [],
         todayTasks: [],
         futureTasks: [],
         pastTasks: [],
         undatedTasks: [],
         highlightedTask: null,
-    });
-    const [loading, setLoading] = useState(true);
-    const [tasksLoaded, setTasksLoaded] = useState(false);
+    } satisfies TaskState;
+    const next = withTaskBuckets(state, cachedTasks);
+
+    return {
+        ...next,
+        highlightedTask: cachedTasks[cachedTasks.length - 1] ?? null,
+    };
+}
+
+export function useTaskManager() {
+    const [taskState, setTaskState] = useState<TaskState>(createInitialTaskState);
+    const [loading, setLoading] = useState(() => taskService.getCachedMainTasks() === undefined);
+    const [tasksLoaded, setTasksLoaded] = useState(() => taskService.getCachedMainTasks() !== undefined);
     const [taskLoadVersion, setTaskLoadVersion] = useState(0);
     const [error, setError] = useState<string | null>(null);
     const allTasksRequestRef = useRef<Promise<void> | null>(null);
-    const allTasksFetchedAtRef = useRef(0);
     const allTasksLoadModeRef = useRef<TaskLoadMode>('all');
 
     const {
@@ -118,11 +126,6 @@ export function useTaskManager() {
     ) => {
         if (allTasksRequestRef.current) {
             return allTasksRequestRef.current;
-        }
-        if (!force
-            && allTasksLoadModeRef.current === loadMode
-            && Date.now() - allTasksFetchedAtRef.current < TASK_LIST_TTL_MS) {
-            return;
         }
 
         const request = (async () => {
@@ -146,21 +149,20 @@ export function useTaskManager() {
                     ? false
                     : undefined;
                 const tasks = loadMode === 'taskPage'
-                    ? await taskService.getTaskPageInitialTasks(TASK_PAGE_BATCH_SIZE, completedFilter)
-                    : await taskService.getAllMainTasks();
-                allTasksFetchedAtRef.current = Date.now();
+                    ? await taskService.getTaskPageInitialTasks(TASK_PAGE_BATCH_SIZE, completedFilter, force)
+                    : await taskService.getAllMainTasks(force);
                 setTaskState(prev => {
                     const next = withTaskBuckets(prev, tasks);
                     return {
                         ...next,
                         // Keep the user's current selection across refreshes. On the
                         // first load, select the same fallback task as before.
-                        highlightedTask: prev.highlightedTask ?? tasks[tasks.length - 1] ?? null,
+                        highlightedTask: prev.highlightedTask
+                            ?? (loadMode === 'taskPage' ? null : tasks[tasks.length - 1] ?? null),
                     };
                 });
                 setTaskLoadVersion(previous => previous + 1);
             } catch (err) {
-                allTasksFetchedAtRef.current = 0;
                 setError(err instanceof Error ? err.message : 'Failed to fetch tasks');
                 console.error('Error fetching all tasks:', err);
             } finally {
@@ -214,11 +216,15 @@ export function useTaskManager() {
     }, [fetchAllTasks]);
 
     useEffect(() => subscribeToResourceInvalidation('stats', () => {
-        void refreshTaskBuckets(true, allTasksLoadModeRef.current);
+        void refreshTaskBuckets(false, allTasksLoadModeRef.current);
     }), [refreshTaskBuckets]);
 
     useEffect(() => subscribeToResourceInvalidation('tasks', () => {
-        void refreshTaskBuckets(true, allTasksLoadModeRef.current);
+        // Mutations invalidate the task-service cache before emitting this
+        // signal. Session/stat events may emit the same signal without
+        // changing task rows, so let the shared cache decide whether a GET is
+        // needed instead of forcing one for every event.
+        void refreshTaskBuckets(false, allTasksLoadModeRef.current);
     }), [refreshTaskBuckets]);
 
     useEffect(() => {
@@ -306,20 +312,27 @@ export function useTaskManager() {
         });
     }, []);
 
-    const removeTaskFromState = useCallback((taskId: string) => {
+    const removeTasksFromState = useCallback((taskIds: string[]) => {
+        if (taskIds.length === 0) return;
+        const taskIdSet = new Set(taskIds);
+
         setTaskState(prev => {
-            const updatedTasks = prev.allTasks.filter(task => task.taskId !== taskId);
+            const updatedTasks = prev.allTasks.filter(task => !taskIdSet.has(task.taskId));
             if (updatedTasks.length === prev.allTasks.length) return prev;
 
             const next = withTaskBuckets(prev, updatedTasks);
             return {
                 ...next,
-                highlightedTask: prev.highlightedTask?.taskId === taskId
+                highlightedTask: prev.highlightedTask && taskIdSet.has(prev.highlightedTask.taskId)
                     ? updatedTasks[0] ?? null
                     : prev.highlightedTask,
             };
         });
     }, []);
+
+    const removeTaskFromState = useCallback((taskId: string) => {
+        removeTasksFromState([taskId]);
+    }, [removeTasksFromState]);
 
     const reorderTasksInState = useCallback((orderedTaskIds: string[]) => {
         setTaskState(prev => {
@@ -364,6 +377,7 @@ export function useTaskManager() {
         appendTasksToState,
         replaceTaskInState,
         updateTaskInState,
+        removeTasksFromState,
         removeTaskFromState,
         reorderTasksInState,
     }), [
@@ -387,6 +401,7 @@ export function useTaskManager() {
         appendTasksToState,
         replaceTaskInState,
         updateTaskInState,
+        removeTasksFromState,
         removeTaskFromState,
         reorderTasksInState,
     ]);

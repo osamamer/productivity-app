@@ -15,6 +15,7 @@ import java.time.ZonedDateTime;
 @Service
 @Slf4j
 public class MentalStateCheckupScheduler {
+    private static final int MINUTES_PER_DAY = 24 * 60;
     private static final int DEFAULT_INTERVAL_MINUTES = 180;
     private static final LocalTime DEFAULT_START_TIME = LocalTime.of(9, 0);
     private static final int DEFAULT_TIMES_PER_DAY = 5;
@@ -69,6 +70,14 @@ public class MentalStateCheckupScheduler {
                 ? DEFAULT_TIMES_PER_DAY : user.getCheckupTimesPerDay();
         int currentMinute = scheduledAt.getHour() * 60 + scheduledAt.getMinute();
         int startMinute = startTime.getHour() * 60 + startTime.getMinute();
+        long finalCheckupMinute = startMinute + (long) (timesPerDay - 1) * intervalMinutes;
+
+        // Midnight belongs to the previous schedule when it is that schedule's final reminder.
+        // The scheduler runs on the next calendar date, so it needs this explicit boundary case.
+        if (currentMinute == 0 && finalCheckupMinute == MINUTES_PER_DAY) {
+            return true;
+        }
+
         int elapsedMinutes = currentMinute - startMinute;
 
         return elapsedMinutes >= 0

@@ -2,6 +2,7 @@ package org.osama.event;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 
 public record CalendarEventResponse(
         String id,
@@ -18,6 +19,8 @@ public record CalendarEventResponse(
         LocalDate recurrenceEndDate,
         Integer recurrenceInterval,
         RecurrenceUnit recurrenceUnit,
+        List<String> cancelledOccurrenceKeys,
+        List<CalendarEventOccurrenceResponse> occurrenceOverrides,
         Integer reminderMinutesBefore,
         Instant createdAt,
         Instant updatedAt

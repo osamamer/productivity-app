@@ -3,6 +3,7 @@ package org.osama.day;
 import org.osama.event.CalendarEventResponse;
 import org.osama.mentalstate.MentalStateCheckInResponse;
 import org.osama.note.NoteResponse;
+import org.osama.stat.StatEntryStatus;
 import org.osama.stat.StatType;
 
 import java.time.LocalDate;
@@ -50,7 +51,8 @@ public record DayOverviewResponse(
             String name,
             StatType type,
             String systemKey,
-            double value
+            double value,
+            StatEntryStatus status
     ) {
     }
 

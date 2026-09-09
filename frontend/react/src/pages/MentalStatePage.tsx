@@ -5,6 +5,7 @@ import { MentalStateCard } from '../components/mental-state/MentalStateCard';
 import { MentalStateHistory } from '../components/mental-state/MentalStateHistory';
 import { BackToMentalButton } from '../components/BackToMentalButton';
 import { mentalStateService } from '../services/api/mentalStateService';
+import { sideNavSnapshotCache } from '../services/cache/sideNavSnapshotCache';
 import { MentalStateCheckIn } from '../types/MentalState';
 
 const CURRENT_STATE_WINDOW_MS = 60 * 60 * 1000;
@@ -50,6 +51,7 @@ export function MentalStatePage() {
         setHistory(current => [checkIn, ...current]);
         setSelected(null);
         setError(null);
+        sideNavSnapshotCache.updateMentalState(checkIn.state);
     };
 
     const latestCheckIn = history[0] ?? null;

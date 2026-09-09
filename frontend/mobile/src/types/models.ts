@@ -143,6 +143,7 @@ export interface MentalStateCheckIn {
 
 export type StatType = 'NUMBER' | 'BOOLEAN' | 'RANGE' | 'TIME' | 'DURATION';
 export type StatMorality = 'GOOD' | 'BAD' | 'NEUTRAL';
+export type StatEntryStatus = 'RECORDED' | 'NOT_PLANNED';
 
 export interface StatDefinition {
   id: string;
@@ -171,6 +172,7 @@ export interface StatEntry {
   statDefinition: StatDefinition;
   date: string;
   value: number;
+  status?: StatEntryStatus;
   userId: string;
 }
 
@@ -204,6 +206,12 @@ export type RecurrenceFrequency = 'NONE' | 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'CUS
 export type RecurrenceUnit = 'DAYS' | 'WEEKS' | 'MONTHS';
 export type CalendarEventStatus = 'CONFIRMED' | 'TENTATIVE' | 'CANCELLED';
 
+export interface CalendarEventOccurrenceOverride {
+  occurrenceKey: string;
+  status: CalendarEventStatus;
+  deleted: boolean;
+}
+
 export interface CalendarEvent {
   id: string;
   title: string;
@@ -219,6 +227,8 @@ export interface CalendarEvent {
   recurrenceEndDate: string | null;
   recurrenceInterval: number | null;
   recurrenceUnit: RecurrenceUnit | null;
+  cancelledOccurrenceKeys?: string[];
+  occurrenceOverrides?: CalendarEventOccurrenceOverride[];
   reminderMinutesBefore: number | null;
   createdAt: string;
   updatedAt: string;

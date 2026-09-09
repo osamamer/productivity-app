@@ -49,6 +49,9 @@ import {
     NORMAL_POMODORO_CONFIG,
     PomodoroConfig,
     PomodoroFormValues,
+    readPomodoroFormPreferences,
+    savePomodoroFormPreferences,
+    subscribeToPomodoroFormPreferences,
 } from '../services/api/pomodoroConfigService';
 import { GENERIC_ERROR_MESSAGE } from '../services/utils/userMessages';
 import {
@@ -102,6 +105,7 @@ export type FlatTaskRowProps = {
     expectedPomodoroActive?: boolean;
     readOnly?: boolean;
     onRefreshTasks?: () => Promise<void>;
+    onScheduledDateBlur?: (taskId: string) => void;
 };
 
 // ─── helpers ───────────────────────────────────────────────────────────────
@@ -235,6 +239,8 @@ function isEditableDragOrigin(target: EventTarget | null): boolean {
     const taskNameInput = target.closest('textarea[data-task-name-input="true"]');
     if (taskNameInput) return taskNameInput === document.activeElement;
 
+    if (target.closest('[data-subtask-text="true"]')) return true;
+
     return target.closest(
         'input, textarea, select, button, [role="button"], .MuiButtonBase-root, [contenteditable="true"]',
     ) !== null;
@@ -276,6 +282,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     expectedPomodoroActive = false,
     readOnly = false,
     onRefreshTasks,
+    onScheduledDateBlur,
 }: FlatTaskRowProps) {
     const theme = useTheme();
     const accent = theme.palette.primary.light;
@@ -295,6 +302,8 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     const initialTaskDetails = getStaleTaskDetails(task.taskId);
     const [subtasks, setSubtasks] = useState<Task[]>(() => initialTaskDetails?.subtasks ?? EMPTY_SUBTASKS);
     const [newSubtaskId, setNewSubtaskId] = useState<string | null>(null);
+    const [editingSubtaskId, setEditingSubtaskId] = useState<string | null>(null);
+    const [localSubtaskName, setLocalSubtaskName] = useState('');
     const initialTaskSeries = initialTaskDetails?.taskSeries;
     const [recurrenceDraft, setRecurrenceDraft] = useState<TaskRecurrenceDraft>(() =>
         recurrenceDraftFromSeries(initialTaskSeries),
@@ -310,9 +319,18 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     const [localName, setLocalName] = useState(task.name ?? '');
     const [isEditingName, setIsEditingName] = useState(false);
     const nameInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+    const subtaskNameInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
     const dragAllowedRef = useRef(true);
     const pomodoroFeedbackIdRef = useRef(0);
     const handledEditRequestIdRef = useRef<number | null>(null);
+    const subtaskCommitRef = useRef<string | null>(null);
+    const subtaskPointerDownRef = useRef<{ x: number; y: number } | null>(null);
+    const scheduledDateCommitRef = useRef<Promise<void> | null>(null);
+    const scheduledDateCommitStartedRef = useRef(false);
+    const scheduledDateEditActiveRef = useRef(false);
+    const scheduledDateBlurredRef = useRef(false);
+    const scheduledDateBlurNotifiedRef = useRef(false);
+    const [isScheduledDateEditing, setIsScheduledDateEditing] = useState(false);
 
     useEffect(() => {
         if (editRequestId === null || editRequestId === handledEditRequestIdRef.current) return;
@@ -327,6 +345,14 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         input.focus();
         input.setSelectionRange(input.value.length, input.value.length);
     }, [isEditingName]);
+
+    useEffect(() => {
+        if (!editingSubtaskId || !subtaskNameInputRef.current) return;
+
+        const input = subtaskNameInputRef.current;
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
+    }, [editingSubtaskId]);
 
     const showPomodoroError = useCallback(() => {
         pomodoroFeedbackIdRef.current += 1;
@@ -379,8 +405,14 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     }, [task.scheduledPerformDateTime, task.taskId]);
 
     const [form, setForm] = useState<PomodoroFormValues>(() =>
-        createPomodoroFormDefaults(NORMAL_POMODORO_CONFIG)
+        readPomodoroFormPreferences() ?? createPomodoroFormDefaults(NORMAL_POMODORO_CONFIG)
     );
+
+    const updatePomodoroForm = (updates: Partial<PomodoroFormValues>) => {
+        const next = { ...form, ...updates };
+        setForm(next);
+        savePomodoroFormPreferences(next);
+    };
 
     useEffect(() => {
         if (!pomodoroHydrated) return;
@@ -390,11 +422,10 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
             .then(config => {
                 if (cancelled) return;
                 setPomodoroConfig(config);
-                setForm(previous =>
-                    isPomodoroFormDefaults(previous, NORMAL_POMODORO_CONFIG)
+                setForm(previous => readPomodoroFormPreferences()
+                    ?? (isPomodoroFormDefaults(previous, NORMAL_POMODORO_CONFIG)
                         ? createPomodoroFormDefaults(config)
-                        : previous
-                );
+                        : previous));
             })
             .catch(error => console.error('Failed to load Pomodoro configuration:', error));
 
@@ -402,6 +433,11 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
             cancelled = true;
         };
     }, [pomodoroHydrated]);
+
+    useEffect(() => subscribeToPomodoroFormPreferences(() => {
+        const stored = readPomodoroFormPreferences();
+        if (stored) setForm(stored);
+    }), []);
 
     const stompRef = useRef<Client | null>(null);
     const subscriptionRef = useRef<StompSubscription | null>(null);
@@ -679,6 +715,71 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         }
     };
 
+    const startSubtaskEditing = (subtask: Task) => {
+        if (readOnly) return;
+        subtaskCommitRef.current = null;
+        setEditingSubtaskId(subtask.taskId);
+        setLocalSubtaskName(subtask.name);
+    };
+
+    const commitSubtaskName = async (subtask: Task) => {
+        if (readOnly || subtaskCommitRef.current === subtask.taskId) return;
+
+        subtaskCommitRef.current = subtask.taskId;
+        const trimmed = localSubtaskName.trim();
+        const fallbackName = subtask.name;
+        setEditingSubtaskId(null);
+        setLocalSubtaskName(trimmed || fallbackName);
+
+        if (!trimmed || trimmed === fallbackName) return;
+
+        setSubtasks(previous => {
+            const nextSubtasks = previous.map(item => item.taskId === subtask.taskId
+                ? { ...item, name: trimmed }
+                : item);
+            updateCachedTaskDetails(task.taskId, { subtasks: nextSubtasks }, {
+                task,
+                subtasks: nextSubtasks,
+                taskSeries: taskSeriesRef.current,
+            });
+            return nextSubtasks;
+        });
+
+        try {
+            const updatedSubtask = await taskService.updateTask(subtask.taskId, { name: trimmed });
+            setSubtasks(previous => {
+                const reconciledSubtasks = previous.map(item => item.taskId === updatedSubtask.taskId
+                    ? { ...item, name: updatedSubtask.name }
+                    : item);
+                updateCachedTaskDetails(task.taskId, { subtasks: reconciledSubtasks }, {
+                    task,
+                    subtasks: reconciledSubtasks,
+                    taskSeries: taskSeriesRef.current,
+                });
+                return reconciledSubtasks;
+            });
+        } catch (error) {
+            setSubtasks(previous => {
+                const rolledBackSubtasks = previous.map(item => item.taskId === subtask.taskId
+                    ? { ...item, name: fallbackName }
+                    : item);
+                updateCachedTaskDetails(task.taskId, { subtasks: rolledBackSubtasks }, {
+                    task,
+                    subtasks: rolledBackSubtasks,
+                    taskSeries: taskSeriesRef.current,
+                });
+                return rolledBackSubtasks;
+            });
+            console.error('Error updating Home subtask name:', error);
+        }
+    };
+
+    const cancelSubtaskEditing = (subtask: Task) => {
+        subtaskCommitRef.current = subtask.taskId;
+        setLocalSubtaskName(subtask.name);
+        setEditingSubtaskId(null);
+    };
+
     const handleCreateSubtask = async (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         const input = event.currentTarget.elements.namedItem('home-subtask-name');
@@ -714,26 +815,102 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         }
     };
 
+    const notifyScheduledDateBlur = useCallback(() => {
+        if (!scheduledDateEditActiveRef.current || scheduledDateBlurNotifiedRef.current) return;
+        scheduledDateBlurNotifiedRef.current = true;
+        scheduledDateCommitStartedRef.current = false;
+        scheduledDateEditActiveRef.current = false;
+        setIsScheduledDateEditing(false);
+        onScheduledDateBlur?.(task.taskId);
+    }, [onScheduledDateBlur, task.taskId]);
+
     const commitDateChange = async (newDate: Date | null) => {
         if (readOnly) return;
+        scheduledDateCommitStartedRef.current = true;
+        scheduledDateEditActiveRef.current = true;
+        setIsScheduledDateEditing(true);
         const scheduledPerformDateTime = newDate
             ? (() => {
                 const pad = (n: number) => String(n).padStart(2, '0');
                 return `${newDate.getFullYear()}-${pad(newDate.getMonth() + 1)}-${pad(newDate.getDate())}T${pad(newDate.getHours())}:${pad(newDate.getMinutes())}:00`;
             })()
             : '';
-        await onUpdate(task.taskId, { scheduledPerformDateTime });
-        if (newDate && recurrenceDraftRef.current.recurrenceFrequency !== 'NONE'
-            && !taskSeriesRef.current) {
-            handleRecurrenceChange(recurrenceDraftRef.current, scheduledPerformDateTime);
+
+        const commit = (async () => {
+            await onUpdate(task.taskId, { scheduledPerformDateTime });
+            if (newDate && recurrenceDraftRef.current.recurrenceFrequency !== 'NONE'
+                && !taskSeriesRef.current) {
+                handleRecurrenceChange(recurrenceDraftRef.current, scheduledPerformDateTime);
+            }
+        })();
+        scheduledDateCommitRef.current = commit;
+        try {
+            await commit;
+        } finally {
+            if (scheduledDateCommitRef.current === commit) {
+                scheduledDateCommitRef.current = null;
+                if (scheduledDateBlurredRef.current) notifyScheduledDateBlur();
+            }
         }
+    };
+
+    const handleScheduledDateBlur = (event: React.FocusEvent<HTMLElement>) => {
+        const relatedTarget = event.relatedTarget;
+        if (relatedTarget instanceof Element
+            && relatedTarget.closest('.MuiPickerPopper-root')) {
+            // Moving focus into the picker action bar (for example, to Accept)
+            // is not leaving the scheduled-date editor.
+            return;
+        }
+
+        // The picker can blur its text field before firing onAccept. Keep the
+        // edit active until that accepted save has finished.
+        scheduledDateBlurredRef.current = true;
+        if (scheduledDateCommitStartedRef.current && !scheduledDateCommitRef.current) {
+            notifyScheduledDateBlur();
+        }
+    };
+
+    const handleScheduledDateFocus = () => {
+        scheduledDateBlurredRef.current = false;
     };
 
     const handleDateChange = (newDate: Date | null) => {
         if (readOnly) return;
+        if (!scheduledDateEditActiveRef.current) {
+            scheduledDateBlurNotifiedRef.current = false;
+            scheduledDateCommitStartedRef.current = false;
+        }
+        scheduledDateEditActiveRef.current = true;
+        setIsScheduledDateEditing(true);
         setScheduledDraft(newDate);
         if (!newDate) commitDateChange(null);
     };
+
+    useEffect(() => {
+        if (!isScheduledDateEditing) return undefined;
+
+        const handlePointerDown = (event: PointerEvent) => {
+            const target = event.target;
+            if (!(target instanceof Element)) return;
+
+            const fieldRoot = target.closest('.MuiPickersTextField-root, .MuiFormControl-root');
+            const isScheduledDateField = Boolean(
+                fieldRoot?.querySelector('[data-task-scheduled-date-field="true"]'),
+            );
+            if (isScheduledDateField || target.closest('.MuiPickerPopper-root')) {
+                return;
+            }
+
+            scheduledDateBlurredRef.current = true;
+            if (scheduledDateCommitStartedRef.current && !scheduledDateCommitRef.current) {
+                notifyScheduledDateBlur();
+            }
+        };
+
+        document.addEventListener('pointerdown', handlePointerDown, true);
+        return () => document.removeEventListener('pointerdown', handlePointerDown, true);
+    }, [isScheduledDateEditing, notifyScheduledDateBlur]);
 
     const handleRecurrenceChange = (
         nextDraft: TaskRecurrenceDraft,
@@ -1207,7 +1384,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                         name={key}
                                         label={label}
                                         value={form[key]}
-                                        onChange={value => setForm(prev => ({ ...prev, [key]: value }))}
+                                        onChange={value => updatePomodoroForm({ [key]: value })}
                                         disabled={actionLoading}
                                     />
                                 ))}
@@ -1391,7 +1568,13 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                             slotProps={{
                                                 field: { clearable: false },
                                                 actionBar: { actions: ['cancel', 'accept'] },
-                                                textField: { size: 'small', fullWidth: true },
+                                                textField: {
+                                                    size: 'small',
+                                                    fullWidth: true,
+                                                    inputProps: { 'data-task-scheduled-date-field': 'true' },
+                                                    onFocus: handleScheduledDateFocus,
+                                                    onBlur: handleScheduledDateBlur,
+                                                },
                                             }}
                                         />
                                     </Collapse>
@@ -1406,7 +1589,13 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                             slotProps={{
                                                 field: { clearable: true },
                                                 actionBar: { actions: ['cancel', 'accept'] },
-                                                textField: { size: 'small', fullWidth: true },
+                                                textField: {
+                                                    size: 'small',
+                                                    fullWidth: true,
+                                                    inputProps: { 'data-task-scheduled-date-field': 'true' },
+                                                    onFocus: handleScheduledDateFocus,
+                                                    onBlur: handleScheduledDateBlur,
+                                                },
                                             }}
                                         />
                                     </Collapse>
@@ -1465,38 +1654,128 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                         >
                             Subtasks {subtasks.length > 0 ? `· ${subtasks.filter(subtask => subtask.completed).length}/${subtasks.length}` : ''}
                         </Typography>
-                        {subtasks.map(subtask => (
-                            <Box
-                                key={subtask.taskId}
-                                sx={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    minHeight: 34,
-                                    animation: newSubtaskId === subtask.taskId
-                                        ? `${subtaskReveal} 240ms ease-out`
-                                        : undefined,
-                                }}
-                            >
-                                <Checkbox
-                                    size="small"
-                                    checked={subtask.completed}
-                                    onChange={() => void handleSubtaskToggle(subtask)}
-                                    sx={{ p: 0.5, mr: 0.75 }}
-                                />
-                                <Typography
-                                    variant="body2"
+                        {subtasks.map(subtask => {
+                            const isEditingSubtask = editingSubtaskId === subtask.taskId;
+                            return (
+                                <Box
+                                    key={subtask.taskId}
                                     sx={{
-                                        textAlign: 'left',
-                                        color: subtask.completed ? 'text.disabled' : 'text.primary',
-                                        textDecoration: subtask.completed ? 'line-through' : 'none',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        minHeight: 42,
+                                        py: 0.25,
+                                        animation: newSubtaskId === subtask.taskId
+                                            ? `${subtaskReveal} 240ms ease-out`
+                                            : undefined,
                                     }}
                                 >
-                                    {subtask.name}
-                                </Typography>
-                            </Box>
-                        ))}
+                                    <Checkbox
+                                        size="small"
+                                        checked={subtask.completed}
+                                        onChange={() => void handleSubtaskToggle(subtask)}
+                                        sx={{ p: 0.75, mr: 1 }}
+                                    />
+                                    <Box
+                                        data-subtask-text="true"
+                                        onMouseDown={event => {
+                                            if (event.button === 0) {
+                                                subtaskPointerDownRef.current = { x: event.clientX, y: event.clientY };
+                                            }
+                                        }}
+                                        onClick={event => {
+                                            event.stopPropagation();
+                                            if (isEditingSubtask || readOnly) return;
+
+                                            const pointerDown = subtaskPointerDownRef.current;
+                                            subtaskPointerDownRef.current = null;
+                                            const moved = pointerDown !== null
+                                                && (Math.abs(event.clientX - pointerDown.x) > 4
+                                                    || Math.abs(event.clientY - pointerDown.y) > 4);
+                                            const selection = window.getSelection();
+                                            if (moved || selection && !selection.isCollapsed) return;
+
+                                            startSubtaskEditing(subtask);
+                                        }}
+                                        onContextMenu={event => event.stopPropagation()}
+                                        sx={{
+                                            flex: 1,
+                                            minWidth: 0,
+                                            py: 0.5,
+                                            textAlign: 'left',
+                                            userSelect: 'text',
+                                            overflowWrap: 'anywhere',
+                                            wordBreak: 'break-word',
+                                            cursor: 'text',
+                                        }}
+                                    >
+                                        {isEditingSubtask ? (
+                                            <TextField
+                                                value={localSubtaskName}
+                                                inputRef={subtaskNameInputRef}
+                                                autoComplete="off"
+                                                autoFocus
+                                                fullWidth
+                                                multiline
+                                                minRows={1}
+                                                maxRows={3}
+                                                variant="standard"
+                                                onClick={event => event.stopPropagation()}
+                                                onDoubleClick={event => event.stopPropagation()}
+                                                onChange={event => setLocalSubtaskName(event.target.value)}
+                                                onBlur={() => void commitSubtaskName(subtask)}
+                                                onKeyDown={event => {
+                                                    if (event.key === 'Enter' && !event.shiftKey) {
+                                                        event.preventDefault();
+                                                        void commitSubtaskName(subtask);
+                                                    }
+                                                    if (event.key === 'Escape') {
+                                                        event.preventDefault();
+                                                        cancelSubtaskEditing(subtask);
+                                                    }
+                                                }}
+                                                InputProps={{ disableUnderline: true }}
+                                                inputProps={{
+                                                    draggable: false,
+                                                    'data-subtask-name-input': 'true',
+                                                    'aria-label': `Edit subtask ${subtask.name}`,
+                                                }}
+                                                sx={{
+                                                    '& .MuiInputBase-root': { padding: 0 },
+                                                    '& .MuiInputBase-input': {
+                                                        color: subtask.completed ? 'text.disabled' : 'text.primary',
+                                                        textDecoration: subtask.completed ? 'line-through' : 'none',
+                                                        fontSize: '1rem',
+                                                        lineHeight: 1.45,
+                                                        whiteSpace: 'pre-wrap',
+                                                        overflowWrap: 'anywhere',
+                                                        wordBreak: 'break-word',
+                                                        textAlign: 'left',
+                                                        padding: 0,
+                                                    },
+                                                }}
+                                            />
+                                        ) : (
+                                            <Typography
+                                                component="span"
+                                                sx={{
+                                                    display: 'block',
+                                                    fontSize: '1rem',
+                                                    lineHeight: 1.45,
+                                                    whiteSpace: 'pre-wrap',
+                                                    color: subtask.completed ? 'text.disabled' : 'text.primary',
+                                                    textDecoration: subtask.completed ? 'line-through' : 'none',
+                                                    userSelect: 'text',
+                                                }}
+                                            >
+                                                {subtask.name}
+                                            </Typography>
+                                        )}
+                                    </Box>
+                                </Box>
+                            );
+                        })}
                         <Box component="form" onSubmit={handleCreateSubtask} sx={{ display: 'flex', alignItems: 'center' }}>
-                            <Checkbox size="small" disabled checked={false} sx={{ p: 0.5, mr: 0.75 }} />
+                            <Checkbox size="small" disabled checked={false} sx={{ p: 0.75, mr: 1 }} />
                             <TextField
                                 name="home-subtask-name"
                                 variant="standard"
@@ -1504,7 +1783,8 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                 autoComplete="off"
                                 fullWidth
                                 InputProps={{ disableUnderline: true }}
-                                inputProps={{ draggable: false }}
+                                inputProps={{ draggable: false, 'aria-label': 'Add a subtask' }}
+                                sx={{ '& .MuiInputBase-input': { fontSize: '1rem', py: 0.75 } }}
                             />
                         </Box>
                     </Box>

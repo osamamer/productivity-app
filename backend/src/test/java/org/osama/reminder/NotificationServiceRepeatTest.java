@@ -4,6 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.osama.mentalstate.MentalStateCheckInRepository;
+import org.osama.event.CalendarEventCancellationRepository;
 import org.osama.user.User;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.mockito.ArgumentCaptor;
@@ -28,6 +29,9 @@ class NotificationServiceRepeatTest {
     private ReminderRepository reminderRepository;
 
     @Mock
+    private CalendarEventCancellationRepository cancellationRepository;
+
+    @Mock
     private MentalStateCheckInRepository checkInRepository;
 
     @Mock
@@ -38,7 +42,8 @@ class NotificationServiceRepeatTest {
 
     @BeforeEach
     void setUp() {
-        notificationService = new NotificationService(reminderRepository, checkInRepository, messagingTemplate);
+        notificationService = new NotificationService(
+                reminderRepository, cancellationRepository, checkInRepository, messagingTemplate);
         user = User.builder()
                 .id(USER_ID)
                 .email("repeat@example.com")

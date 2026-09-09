@@ -1,4 +1,4 @@
-import { TaskRecurrenceFrequency, TaskRecurrenceUnit } from './TaskRecurrence';
+import { TaskRecurrenceDay, TaskRecurrenceFrequency, TaskRecurrenceUnit } from './TaskRecurrence';
 
 export type TaskSeries = {
     seriesId: string;
@@ -12,6 +12,7 @@ export type TaskSeries = {
     recurrenceEndDate: string | null;
     recurrenceInterval: number | null;
     recurrenceUnit: TaskRecurrenceUnit | null;
+    recurrenceDaysOfWeek?: TaskRecurrenceDay[] | null;
     timeZone: string;
     active: boolean;
     createdAt: string;

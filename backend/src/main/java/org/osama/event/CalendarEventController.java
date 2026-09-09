@@ -43,4 +43,31 @@ public class CalendarEventController {
         eventService.deleteEvent(eventId, currentUserService.getCurrentUserId());
         return ResponseEntity.noContent().build();
     }
+
+    @PostMapping("/{eventId}/occurrences/cancel")
+    public CalendarEventResponse cancelEventOccurrence(@PathVariable String eventId,
+                                                        @RequestBody CalendarEventOccurrenceRequest request) {
+        return eventService.cancelEventOccurrence(eventId, request, currentUserService.getCurrentUserId());
+    }
+
+    @PostMapping("/{eventId}/occurrences/status")
+    public CalendarEventResponse updateEventOccurrenceStatus(@PathVariable String eventId,
+                                                               @RequestBody CalendarEventOccurrenceRequest request) {
+        return eventService.updateEventOccurrenceStatus(
+                eventId, request, currentUserService.getCurrentUserId());
+    }
+
+    @DeleteMapping("/{eventId}/occurrences")
+    public CalendarEventResponse deleteEventOccurrence(@PathVariable String eventId,
+                                                        @RequestBody CalendarEventOccurrenceRequest request) {
+        return eventService.deleteEventOccurrence(
+                eventId, request, currentUserService.getCurrentUserId());
+    }
+
+    @DeleteMapping("/{eventId}/occurrences/cancel")
+    public CalendarEventResponse restoreEventOccurrence(@PathVariable String eventId,
+                                                        @RequestParam String occurrenceKey) {
+        return eventService.restoreEventOccurrence(
+                eventId, occurrenceKey, currentUserService.getCurrentUserId());
+    }
 }

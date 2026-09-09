@@ -22,6 +22,7 @@ import { useAuth } from '@/providers/AuthProvider';
 import { api } from '@/services/api';
 import { reportError } from '@/lib/errors';
 import { localDate } from '@/lib/date';
+import { registerStatDefinitions } from '@/lib/optimisticStats';
 import type { StatDefinition, StatEntry, StatGroup } from '@/types/models';
 
 interface StatsData { definitions: StatDefinition[]; entries: StatEntry[]; groups: StatGroup[] }
@@ -100,7 +101,25 @@ export default function StatsScreen() {
     void refresh();
   }), [refresh]);
 
-  function saveEntry(entry: StatEntry) {
+  useEffect(() => subscribeToResourceInvalidation('stats', () => {
+    void refresh();
+  }), [refresh]);
+
+  useEffect(() => {
+    registerStatDefinitions(resource.data?.definitions ?? []);
+  }, [resource.data?.definitions]);
+
+  function saveEntry(entry: StatEntry | null, date?: string) {
+    if (!entry) {
+      if (date !== localDate()) {
+        void refresh();
+        return;
+      }
+      resource.setData(current => current
+        ? { ...current, entries: current.entries.filter(item => item.statDefinitionId !== selected?.id) }
+        : current);
+      return;
+    }
     if (entry.date !== localDate()) {
       if (!entry.id.startsWith('optimistic-')) void refresh();
       return;
@@ -175,11 +194,15 @@ export default function StatsScreen() {
     const entry = entriesByDefinition.get(definition.id);
     const icon = !entry
       ? 'add'
+      : definition.type === 'BOOLEAN' && entry.status === 'NOT_PLANNED'
+        ? 'remove-circle-outline'
       : definition.type === 'BOOLEAN' && entry.value !== 1
         ? 'close'
         : 'checkmark';
     const iconColor = !entry
       ? colors.accent
+      : definition.type === 'BOOLEAN' && entry.status === 'NOT_PLANNED'
+        ? colors.warning
       : definition.type === 'BOOLEAN' && entry.value !== 1
         ? colors.danger
         : colors.success;

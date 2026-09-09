@@ -7,6 +7,7 @@ import { usePomodoroAudio } from '@/hooks/usePomodoroAudio';
 import { appConfig } from '@/lib/config';
 import { GENERIC_ERROR_MESSAGE } from '@/lib/errors';
 import { playAudioFeedback } from '@/lib/audioFeedback';
+import { useAuth } from '@/providers/AuthProvider';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { resolveAccessToken } from '@/services/auth-session';
 import { api } from '@/services/api';
@@ -41,6 +42,25 @@ const DEFAULT_FORM: PomodoroFormValues = {
 };
 
 const BROWN_NOISE_STORAGE_KEY = 'solife.pomodoro-brown-noise-enabled';
+const POMODORO_FORM_STORAGE_SUFFIX = 'pomodoro-form';
+
+function pomodoroFormStorageKey(userId: string | undefined): string {
+  return `solife.${userId ?? 'signed-out'}.${POMODORO_FORM_STORAGE_SUFFIX}`;
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0;
+}
+
+function isPomodoroFormValues(value: unknown): value is PomodoroFormValues {
+  if (!value || typeof value !== 'object') return false;
+  const form = value as Partial<PomodoroFormValues>;
+  return isPositiveInteger(form.focusDuration)
+    && isPositiveInteger(form.shortBreakDuration)
+    && isPositiveInteger(form.longBreakDuration)
+    && isPositiveInteger(form.numFocuses)
+    && isPositiveInteger(form.longBreakCooldown);
+}
 
 function websocketUrl(): string {
   return `${appConfig.apiUrl.replace(/^http/, 'ws')}/ws`;
@@ -118,6 +138,7 @@ export function PomodoroPanel({ taskId, initialStatus, onClose, onActiveChange, 
   onStatusChange: (status: PomodoroStatus) => void;
 }) {
   const { colors, dark } = useAppTheme();
+  const { user } = useAuth();
   const pomodoroGreen = dark ? '#9BC5A3' : '#7EA88A';
   const [status, setStatus] = useState<PomodoroStatus | null>(initialStatus ?? null);
   const [config, setConfig] = useState<PomodoroConfig>(DEFAULT_CONFIG);
@@ -187,6 +208,20 @@ export function PomodoroPanel({ taskId, initialStatus, onClose, onActiveChange, 
     });
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    void AsyncStorage.getItem(pomodoroFormStorageKey(user?.id)).then(stored => {
+      if (!active || !stored) return;
+      try {
+        const parsed: unknown = JSON.parse(stored);
+        if (isPomodoroFormValues(parsed)) setForm(parsed);
+      } catch (cause) {
+        console.warn('Could not read mobile Pomodoro input preferences:', cause);
+      }
+    }).catch(cause => console.warn('Could not read mobile Pomodoro input preferences:', cause));
+    return () => { active = false; };
+  }, [user?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -277,7 +312,14 @@ export function PomodoroPanel({ taskId, initialStatus, onClose, onActiveChange, 
     : 0;
 
   const setFormValue = (key: keyof PomodoroFormValues, text: string) => {
-    setForm(previous => ({ ...previous, [key]: Number(text.replace(/[^0-9]/g, '')) || 0 }));
+    const value = Number(text.replace(/[^0-9]/g, '')) || 0;
+    const next = { ...form, [key]: value };
+    setForm(next);
+    if (isPomodoroFormValues(next)) {
+      void AsyncStorage.setItem(pomodoroFormStorageKey(user?.id), JSON.stringify(next)).catch(cause => {
+        console.warn('Could not save mobile Pomodoro input preferences:', cause);
+      });
+    }
   };
 
   const refreshStatus = useCallback(async (preserveActiveWhenMissing = false) => {

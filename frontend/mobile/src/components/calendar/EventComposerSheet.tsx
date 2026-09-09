@@ -149,7 +149,7 @@ function eventTimeInDeviceZone(value: string | null, timeZone: string | undefine
   return hour && minute ? `${hour}:${minute}` : fallback;
 }
 
-function eventDefaults(event: CalendarEvent | null | undefined, initialDate?: string) {
+function eventDefaults(event: CalendarEvent | null | undefined, initialDate?: string, selectedOccurrenceStatus?: CalendarEventStatus) {
   const date = event
     ? event.allDay ? event.startDate ?? localDate() : eventDateInTimeZone(event.startTime, event.timeZone)
     : initialDate && isCalendarDate(initialDate) ? initialDate : localDate();
@@ -169,7 +169,7 @@ function eventDefaults(event: CalendarEvent | null | undefined, initialDate?: st
     recurrenceEndDate: event?.recurrenceEndDate ?? '',
     recurrenceInterval: event?.recurrenceInterval ?? 1,
     recurrenceUnit: event?.recurrenceUnit ?? 'WEEKS' as RecurrenceUnit,
-    status: event?.status ?? 'CONFIRMED' as CalendarEventStatus,
+    status: selectedOccurrenceStatus ?? event?.status ?? 'CONFIRMED' as CalendarEventStatus,
     reminder: event ? event.reminderMinutesBefore === null ? 'none' : String(event.reminderMinutesBefore) : '1440',
   };
 }
@@ -220,16 +220,37 @@ function DateTimeField({ label, value, mode, onChange }: {
   );
 }
 
-export function EventComposerSheet({ visible, onClose, event, initialDate, onSaved, onDelete }: {
+export function EventComposerSheet({
+  visible,
+  onClose,
+  event,
+  initialDate,
+  occurrenceKey,
+  occurrenceDate,
+  occurrenceStatus,
+  onSaved,
+  onDelete,
+  onDeleteOccurrence,
+  onCancelOccurrence,
+  onRestoreOccurrence,
+  onUpdateOccurrenceStatus,
+}: {
   visible: boolean;
   onClose: () => void;
   event?: CalendarEvent | null;
   initialDate?: string;
+  occurrenceKey?: string;
+  occurrenceDate?: string;
+  occurrenceStatus?: CalendarEventStatus;
   onSaved: (event: CalendarEvent) => void;
   onDelete?: () => Promise<boolean>;
+  onDeleteOccurrence?: () => Promise<boolean>;
+  onCancelOccurrence?: () => Promise<void>;
+  onRestoreOccurrence?: () => Promise<void>;
+  onUpdateOccurrenceStatus?: (status: CalendarEventStatus) => Promise<void>;
 }) {
   const { user } = useAuth();
-  const defaults = eventDefaults(event, initialDate);
+  const defaults = eventDefaults(event, initialDate, occurrenceStatus);
   const [title, setTitle] = useState(defaults.title);
   const [description, setDescription] = useState(defaults.description);
   const [date, setDate] = useState(defaults.date);
@@ -245,6 +266,10 @@ export function EventComposerSheet({ visible, onClose, event, initialDate, onSav
   const [reminder, setReminder] = useState<ReminderValue>(defaults.reminder);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [cancelPromptOpen, setCancelPromptOpen] = useState(false);
+  const [deletePromptOpen, setDeletePromptOpen] = useState(false);
+  const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
+  const [deleteScope, setDeleteScope] = useState<'occurrence' | 'all' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const timeFieldsChanged = useRef(false);
 
@@ -274,6 +299,10 @@ export function EventComposerSheet({ visible, onClose, event, initialDate, onSav
     setRecurrenceUnit(next.recurrenceUnit);
     setStatus(next.status);
     setReminder(next.reminder);
+    setCancelPromptOpen(false);
+    setDeletePromptOpen(false);
+    setDeleteConfirmationOpen(false);
+    setDeleteScope(null);
     setError(null);
     timeFieldsChanged.current = false;
   }
@@ -305,7 +334,7 @@ export function EventComposerSheet({ visible, onClose, event, initialDate, onSav
     setEndDate(adjustedEnd.crossesMidnight ? addDay(nextDate) : nextDate);
   }
 
-  async function submit() {
+  async function submit(statusOverride?: CalendarEventStatus) {
     if (!title.trim()) return setError('Give the event a title.');
     if (!isCalendarDate(date)) return setError('Choose a valid start date.');
     if (allDay === 'yes' && (!isCalendarDate(endDate) || endDate < date)) {
@@ -337,7 +366,9 @@ export function EventComposerSheet({ visible, onClose, event, initialDate, onSav
       startTime: startInstant,
       endTime: endInstant,
       timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
-      status,
+      status: event && occurrenceKey && statusOverride === undefined
+        ? event.status
+        : statusOverride ?? status,
       recurrenceFrequency: recurrence,
       recurrenceEndDate: recurrence === 'NONE' ? null : recurrenceEndDate || null,
       recurrenceInterval: recurrence === 'CUSTOM' ? recurrenceInterval : null,
@@ -346,6 +377,10 @@ export function EventComposerSheet({ visible, onClose, event, initialDate, onSav
     };
 
     try {
+      if (event && occurrenceKey && statusOverride === undefined
+        && onUpdateOccurrenceStatus && status !== occurrenceStatus) {
+        await onUpdateOccurrenceStatus(status);
+      }
       const saved = event ? await api.events.update(event.id, input) : await api.events.create(input);
       if (allDay === 'no') void saveEventTimePreferences(user?.id, startTime, endTime);
       onSaved(saved);
@@ -359,16 +394,62 @@ export function EventComposerSheet({ visible, onClose, event, initialDate, onSav
   }
 
   async function remove() {
-    if (!onDelete || deleting) return;
+    if (!deleteScope || deleting) return;
+    const deleteAction = deleteScope === 'occurrence' ? onDeleteOccurrence : onDelete;
+    if (!deleteAction) return;
+    setDeleteConfirmationOpen(false);
     setDeleting(true);
     setError(null);
     try {
-      if (await onDelete()) close();
+      if (await deleteAction()) close();
     } catch (cause) {
       setError(reportError('Could not delete event', cause));
     } finally {
       setDeleting(false);
     }
+  }
+
+  async function runOccurrenceAction(action: (() => Promise<void>) | undefined, message: string) {
+    if (!action || deleting) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await action();
+    } catch (cause) {
+      setError(reportError(message, cause));
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  const occurrenceCanBeCancelled = Boolean(
+    event
+    && recurrence !== 'NONE'
+    && occurrenceKey
+    && event.status !== 'CANCELLED'
+    && onCancelOccurrence
+    && occurrenceStatus !== 'CANCELLED'
+  );
+  const occurrenceCanBeRestored = Boolean(
+    event
+    && recurrence !== 'NONE'
+    && occurrenceKey
+    && event.status !== 'CANCELLED'
+    && onRestoreOccurrence
+    && occurrenceStatus === 'CANCELLED'
+  );
+  const canCancelRepeatingEvent = Boolean(
+    event
+    && recurrence !== 'NONE'
+    && event.status !== 'CANCELLED'
+  );
+  const canDeleteOccurrence = Boolean(
+    event && recurrence !== 'NONE' && occurrenceKey && onDeleteOccurrence,
+  );
+
+  function openDeleteConfirmation(scope: 'occurrence' | 'all') {
+    setDeleteScope(scope);
+    setDeleteConfirmationOpen(true);
   }
 
   const reminderOptions = [
@@ -385,19 +466,35 @@ export function EventComposerSheet({ visible, onClose, event, initialDate, onSav
       onClose={close}
       title={event ? 'Edit event' : 'New event'}
       footer={(
-        <View style={styles.footerActions}>
-          {event && onDelete && <AppButton style={styles.footerAction} label="Delete" icon="trash-outline" variant="danger" disabled={saving} loading={deleting} onPress={() => void remove()} />}
-          <AppButton style={styles.footerAction} label={event ? 'Save event' : 'Add event'} icon="calendar-outline" loading={saving} disabled={deleting} onPress={() => void submit()} />
+        <View style={styles.footerStack}>
+          {(occurrenceCanBeRestored || canCancelRepeatingEvent) && (
+            <View style={styles.footerActions}>
+              {occurrenceCanBeRestored && <AppButton style={styles.footerAction} label="Restore this occurrence" variant="secondary" disabled={saving} loading={deleting} onPress={() => void runOccurrenceAction(onRestoreOccurrence, 'Could not restore event occurrence')} />}
+              {canCancelRepeatingEvent && <AppButton style={styles.footerAction} label="Cancel event" icon="close-circle-outline" variant="danger" disabled={saving || deleting} onPress={() => setCancelPromptOpen(true)} />}
+            </View>
+          )}
+          <View style={styles.footerActions}>
+            {event && onDelete && <AppButton
+              style={styles.footerAction}
+              label="Delete"
+              icon="trash-outline"
+              variant="danger"
+              disabled={saving || deleting}
+              loading={deleting}
+              onPress={() => canDeleteOccurrence ? setDeletePromptOpen(true) : openDeleteConfirmation('all')} />}
+            <AppButton style={styles.footerAction} label={event ? 'Save event' : 'Add event'} icon="calendar-outline" loading={saving} disabled={deleting} onPress={() => void submit()} />
+          </View>
         </View>
       )}>
       <AppInput autoFocus label="Event" value={title} onChangeText={setTitle} error={error ?? undefined} />
       <AppInput label="Details (optional)" multiline value={description} onChangeText={setDescription} />
-      <AppText variant="label">Status</AppText>
+      <AppText variant="label">{event && recurrence !== 'NONE' && !occurrenceKey ? 'Series status' : 'Status'}</AppText>
       <ChoiceChips value={status} onChange={setStatus} options={[
         { value: 'CONFIRMED' as const, label: 'Confirmed' },
         { value: 'TENTATIVE' as const, label: 'Tentative' },
         { value: 'CANCELLED' as const, label: 'Cancelled' },
       ]} />
+      {event && recurrence !== 'NONE' && occurrenceDate && <AppText variant="caption" color="muted">Selected occurrence: {occurrenceDate}</AppText>}
       <AppText variant="label">When</AppText>
       <ChoiceChips value={allDay} onChange={setAllDay} options={[{ value: 'no', label: 'Timed' }, { value: 'yes', label: 'All day' }]} />
       <View style={styles.fieldRow}>
@@ -425,6 +522,68 @@ export function EventComposerSheet({ visible, onClose, event, initialDate, onSav
       {recurrence !== 'NONE' && <DateTimeField label="Repeat until (optional)" value={recurrenceEndDate || date} mode="date" onChange={setRecurrenceEndDate} />}
       <AppText variant="label">Reminder</AppText>
       <ChoiceChips value={reminder} onChange={setReminder} options={reminderOptions} />
+      <AppPopup
+        visible={cancelPromptOpen}
+        title="Cancel repeating event?"
+        onClose={() => setCancelPromptOpen(false)}
+        footer={<AppButton label="Keep event" variant="secondary" onPress={() => setCancelPromptOpen(false)} />}>
+        <AppText color="muted">Choose which events to cancel.</AppText>
+        <View style={styles.cancelChoices}>
+          <AppButton
+            label="This occurrence"
+            variant="danger"
+            disabled={!occurrenceCanBeCancelled}
+            onPress={() => {
+              setCancelPromptOpen(false);
+              void runOccurrenceAction(onCancelOccurrence, 'Could not cancel event occurrence');
+            }} />
+          <AppButton
+            label="All occurrences"
+            variant="danger"
+            onPress={() => {
+              setCancelPromptOpen(false);
+              void submit('CANCELLED');
+            }} />
+        </View>
+      </AppPopup>
+      <AppPopup
+        visible={deletePromptOpen}
+        title="Delete repeating event?"
+        onClose={() => setDeletePromptOpen(false)}
+        footer={<AppButton label="Keep event" variant="secondary" onPress={() => setDeletePromptOpen(false)} />}>
+        <AppText color="muted">Choose which events to delete.</AppText>
+        <View style={styles.cancelChoices}>
+          <AppButton
+            label="This occurrence"
+            variant="danger"
+            disabled={!canDeleteOccurrence}
+            onPress={() => {
+              setDeletePromptOpen(false);
+              openDeleteConfirmation('occurrence');
+            }} />
+          <AppButton
+            label="All occurrences"
+            variant="danger"
+            onPress={() => {
+              setDeletePromptOpen(false);
+              openDeleteConfirmation('all');
+            }} />
+        </View>
+      </AppPopup>
+      <AppPopup
+        visible={deleteConfirmationOpen}
+        title={deleteScope === 'occurrence' ? 'Delete this occurrence?' : 'Delete event?'}
+        message={deleteScope === 'occurrence'
+          ? 'This occurrence will be removed from your calendar. This cannot be undone.'
+          : recurrence !== 'NONE'
+            ? 'All occurrences of this event will be removed from your calendar. This cannot be undone.'
+            : 'This event will be removed from your calendar. This cannot be undone.'}
+        kind="confirm"
+        onClose={() => !deleting && setDeleteConfirmationOpen(false)}
+        footer={<View style={styles.footerActions}>
+          <AppButton style={styles.footerAction} label="Keep event" variant="secondary" disabled={deleting} onPress={() => setDeleteConfirmationOpen(false)} />
+          <AppButton style={styles.footerAction} label={deleting ? 'Deleting…' : 'Delete'} variant="danger" loading={deleting} disabled={deleting} onPress={() => void remove()} />
+        </View>} />
     </ModalSheet>
   );
 }
@@ -442,6 +601,8 @@ const styles = StyleSheet.create({
   popupActions: { flexDirection: 'row', gap: 10 },
   popupAction: { flex: 1 },
   footerActions: { flexDirection: 'row', gap: 10 },
+  footerStack: { gap: 10 },
   footerAction: { flex: 1 },
+  cancelChoices: { gap: 10 },
   pressed: { opacity: 0.72 },
 });

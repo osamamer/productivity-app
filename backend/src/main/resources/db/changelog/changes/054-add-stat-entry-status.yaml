@@ -1,0 +1,19 @@
+databaseChangeLog:
+  - changeSet:
+      id: 054-add-stat-entry-status
+      author: codex
+      comment: Store the neutral not-planned state for boolean statistic entries
+      changes:
+        - addColumn:
+            tableName: stat_entry
+            columns:
+              - column:
+                  name: entry_status
+                  type: varchar(20)
+                  defaultValue: RECORDED
+                  constraints:
+                    nullable: false
+      rollback:
+        - dropColumn:
+            tableName: stat_entry
+            columnName: entry_status

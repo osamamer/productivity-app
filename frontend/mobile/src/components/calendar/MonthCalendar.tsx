@@ -15,7 +15,6 @@ import { formatDurationValue, formatTimeValue } from '@/lib/statValues';
 import { datesCoveredByOccurrence, expandCalendarEvent } from '@/lib/calendarRecurrence';
 import { reportError } from '@/lib/errors';
 import { taskPriorityColor } from '@/lib/taskPriority';
-import { useAppPopup } from '@/providers/PopupProvider';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
 import type { CalendarEvent, StatDefinition, StatEntry, Task, TaskGroup } from '@/types/models';
@@ -68,15 +67,17 @@ function priorityBucket(importance: number): number {
   return 3;
 }
 
-function statValue(definition: StatDefinition, value: number): string {
+function statValue(definition: StatDefinition, value: number, status?: StatEntry['status']): string {
+  if (status === 'NOT_PLANNED') return 'Not planned';
   if (definition.type === 'BOOLEAN') return value === 1 ? 'Yes' : 'No';
   if (definition.type === 'TIME') return formatTimeValue(value);
   if (definition.type === 'DURATION') return formatDurationValue(value);
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
-function statColor(definition: StatDefinition, value: number, colors: ReturnType<typeof useAppTheme>['colors']): string {
+function statColor(definition: StatDefinition, value: number, colors: ReturnType<typeof useAppTheme>['colors'], status?: StatEntry['status']): string {
   if (definition.type !== 'BOOLEAN') return colors.secondary;
+  if (status === 'NOT_PLANNED') return colors.warning;
   const morality = definition.morality ?? 'NEUTRAL';
   if (morality === 'NEUTRAL') return value === 1 ? colors.accent : colors.secondary;
   if (morality === 'GOOD') return value === 1 ? colors.success : colors.danger;
@@ -138,10 +139,15 @@ export function MonthCalendar({
   tasksLoading = false,
   definitionsLoading = false,
   onEventSaved,
+  onEventOccurrenceCancelled,
+  onEventOccurrenceRestored,
+  onEventOccurrenceStatusUpdated,
+  onEventOccurrenceDeleted,
   onEventDeleted,
   onTaskCreated,
   onTaskUpdated,
   onTaskDeleted,
+  onTaskOccurrenceDeleted,
   displayOptionsOpen,
   onDisplayOptionsOpenChange,
 }: {
@@ -153,15 +159,19 @@ export function MonthCalendar({
   tasksLoading?: boolean;
   definitionsLoading?: boolean;
   onEventSaved: (event: CalendarEvent) => void;
+  onEventOccurrenceCancelled: (eventId: string, occurrenceKey: string) => Promise<CalendarEvent>;
+  onEventOccurrenceRestored: (eventId: string, occurrenceKey: string) => Promise<CalendarEvent>;
+  onEventOccurrenceStatusUpdated: (eventId: string, occurrenceKey: string, status: CalendarEvent['status']) => Promise<CalendarEvent>;
+  onEventOccurrenceDeleted: (eventId: string, occurrenceKey: string) => Promise<CalendarEvent>;
   onEventDeleted: (eventId: string) => Promise<void>;
   onTaskCreated: (task: Task) => void;
   onTaskUpdated: (task: Task) => void;
   onTaskDeleted: (taskId: string) => void;
+  onTaskOccurrenceDeleted: (taskId: string) => Promise<void>;
   displayOptionsOpen: boolean;
   onDisplayOptionsOpenChange: (open: boolean) => void;
 }) {
   const { colors } = useAppTheme();
-  const { confirm } = useAppPopup();
   const [month, setMonth] = useState(() => monthStart(new Date()));
   const [preferences, setPreferences] = useState<CalendarDisplayPreferences>(DEFAULT_DISPLAY_PREFERENCES);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
@@ -170,6 +180,11 @@ export function MonthCalendar({
   const [dayInitialTab, setDayInitialTab] = useState<CalendarCreateTab>('event');
   const [createTarget, setCreateTarget] = useState<{ date: string; tab: CalendarCreateTab } | null>(null);
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
+  const [editingOccurrence, setEditingOccurrence] = useState<{
+    occurrenceKey: string;
+    occurrenceDate: string;
+    status: CalendarEvent['status'];
+  } | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<TaskGroup | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [statEntries, setStatEntries] = useState<StatEntry[]>([]);
@@ -257,10 +272,12 @@ export function MonthCalendar({
           date,
           title: event.title,
           kind: 'calendarEvent',
+          occurrenceKey: occurrence.occurrenceKey,
+          occurrenceDate: occurrence.occurrenceDate,
           timeLabel: occurrence.allDay ? undefined : formatCalendarTime(occurrence.start, event.timeZone),
           color: colors.accent,
           textColor: colors.onAccent,
-          eventStatus: event.status,
+          eventStatus: occurrence.status,
         }));
       }));
     }
@@ -303,12 +320,12 @@ export function MonthCalendar({
       statEntries.forEach(entry => {
         const definition = definitionsById.get(entry.statDefinitionId);
         if (!definition) return;
-        const color = statColor(definition, entry.value, colors);
+        const color = statColor(definition, entry.value, colors, entry.status);
         addCalendarItem(items, {
           id: `stat-${entry.statDefinitionId}-${entry.date}`,
           sourceId: entry.statDefinitionId,
           date: entry.date,
-          title: `${definition.name}: ${statValue(definition, entry.value)}`,
+          title: `${definition.name}: ${statValue(definition, entry.value, entry.status)}`,
           kind: 'stat',
           color,
         });
@@ -332,6 +349,11 @@ export function MonthCalendar({
 
   const closeDay = useCallback(() => setDayDate(null), []);
 
+  function closeEditingEvent() {
+    setEditingEvent(null);
+    setEditingOccurrence(null);
+  }
+
   const openCreate = useCallback((tab: CalendarCreateTab) => {
     if (!dayDate) return;
     const date = dayDate;
@@ -342,7 +364,16 @@ export function MonthCalendar({
   const openItem = useCallback((item: CalendarGridItem) => {
     if (item.kind === 'calendarEvent') {
       const event = events.find(candidate => candidate.id === item.sourceId);
-      if (event) setEditingEvent(event);
+      if (event) {
+        setEditingEvent(event);
+        setEditingOccurrence(item.occurrenceKey
+          ? {
+            occurrenceKey: item.occurrenceKey,
+            occurrenceDate: item.occurrenceDate ?? item.date,
+            status: item.eventStatus ?? event.status,
+          }
+          : null);
+      }
     } else if (item.kind === 'taskGroup') {
       const group = groups.find(candidate => candidate.groupId === item.sourceId);
       if (group) setSelectedGroup(group);
@@ -382,7 +413,6 @@ export function MonthCalendar({
   }
 
   async function deleteEvent(eventId: string): Promise<boolean> {
-    if (!await confirm('Delete event?', 'This event will be removed from your calendar.', 'Delete')) return false;
     await onEventDeleted(eventId);
     return true;
   }
@@ -482,11 +512,49 @@ export function MonthCalendar({
         onClose={() => setCreateTarget(null)}
         onSaved={() => setStatRefreshKey(value => value + 1)} />
       <EventComposerSheet
-        key={`edit-event-${editingEvent?.id ?? 'closed'}`}
+        key={`edit-event-${editingEvent?.id ?? 'closed'}-${editingOccurrence?.occurrenceKey ?? 'series'}`}
         visible={Boolean(editingEvent)}
         event={editingEvent}
-        onClose={() => setEditingEvent(null)}
-        onSaved={event => { onEventSaved(event); setEditingEvent(null); }}
+        occurrenceKey={editingOccurrence?.occurrenceKey}
+        occurrenceDate={editingOccurrence?.occurrenceDate}
+        occurrenceStatus={editingOccurrence?.status}
+        onClose={closeEditingEvent}
+        onSaved={event => { onEventSaved(event); closeEditingEvent(); }}
+        onCancelOccurrence={editingEvent && editingOccurrence
+          ? async () => {
+            const updated = await onEventOccurrenceCancelled(editingEvent.id, editingOccurrence.occurrenceKey);
+            onEventSaved(updated);
+            closeEditingEvent();
+          }
+          : undefined}
+        onRestoreOccurrence={editingEvent && editingOccurrence
+          ? async () => {
+            const updated = await onEventOccurrenceRestored(editingEvent.id, editingOccurrence.occurrenceKey);
+            onEventSaved(updated);
+            closeEditingEvent();
+          }
+          : undefined}
+        onUpdateOccurrenceStatus={editingEvent && editingOccurrence
+          ? async status => {
+            const updated = await onEventOccurrenceStatusUpdated(
+              editingEvent.id,
+              editingOccurrence.occurrenceKey,
+              status,
+            );
+            onEventSaved(updated);
+          }
+          : undefined}
+        onDeleteOccurrence={editingEvent && editingOccurrence
+          ? async () => {
+            const updated = await onEventOccurrenceDeleted(
+              editingEvent.id,
+              editingOccurrence.occurrenceKey,
+            );
+            onEventSaved(updated);
+            closeEditingEvent();
+            return true;
+          }
+          : undefined}
         onDelete={editingEvent ? () => deleteEvent(editingEvent.id) : undefined} />
       <CalendarTaskGroupSheet
         group={selectedGroup}
@@ -498,7 +566,11 @@ export function MonthCalendar({
         task={selectedTask}
         onClose={() => setSelectedTask(null)}
         onUpdated={task => { onTaskUpdated(task); setSelectedTask(null); }}
-        onDeleted={taskId => { onTaskDeleted(taskId); setSelectedTask(null); }} />
+        onDeleted={taskId => { onTaskDeleted(taskId); setSelectedTask(null); }}
+        onDeletedOccurrence={async taskId => {
+          await onTaskOccurrenceDeleted(taskId);
+          setSelectedTask(null);
+        }} />
     </>
   );
 }

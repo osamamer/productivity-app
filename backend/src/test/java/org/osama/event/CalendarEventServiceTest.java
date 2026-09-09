@@ -33,6 +33,7 @@ class CalendarEventServiceTest {
     private static final String USER_ID = "calendar-event-user";
 
     @Autowired private CalendarEventService eventService;
+    @Autowired private CalendarEventCancellationRepository cancellationRepository;
     @Autowired private ReminderRepository reminderRepository;
     @Autowired private UserRepository userRepository;
 
@@ -174,6 +175,67 @@ class CalendarEventServiceTest {
         request.setRecurrenceInterval(0);
 
         assertThrows(IllegalArgumentException.class, () -> eventService.createEvent(request, USER_ID));
+    }
+
+    @Test
+    void cancellingOneRecurringOccurrenceLeavesTheSeriesActiveAndCanBeRestored() {
+        CalendarEventRequest request = timedRequest(
+                Instant.parse("2027-01-10T10:00:00Z"), Instant.parse("2027-01-10T11:00:00Z"));
+        request.setRecurrenceFrequency(RecurrenceFrequency.WEEKLY);
+        request.setRecurrenceEndDate(LocalDate.of(2027, 2, 28));
+        CalendarEventResponse event = eventService.createEvent(request, USER_ID);
+
+        CalendarEventOccurrenceRequest occurrence = new CalendarEventOccurrenceRequest();
+        occurrence.setOccurrenceKey("instant:2027-01-17T10:00:00.000Z");
+
+        CalendarEventResponse cancelled = eventService.cancelEventOccurrence(event.id(), occurrence, USER_ID);
+
+        assertEquals(CalendarEventStatus.CONFIRMED, cancelled.status());
+        assertEquals(1, cancelled.cancelledOccurrenceKeys().size());
+        assertEquals("instant:2027-01-17T10:00:00Z", cancelled.cancelledOccurrenceKeys().get(0));
+        assertTrue(cancellationRepository.findByEventIdAndOccurrenceKey(
+                event.id(), "instant:2027-01-17T10:00:00Z").isPresent());
+
+        CalendarEventResponse restored = eventService.restoreEventOccurrence(
+                event.id(), occurrence.getOccurrenceKey(), USER_ID);
+
+        assertTrue(restored.cancelledOccurrenceKeys().isEmpty());
+        assertTrue(cancellationRepository.findByEventIdAndOccurrenceKey(
+                event.id(), "instant:2027-01-17T10:00:00Z").isEmpty());
+    }
+
+    @Test
+    void changingOccurrenceStatusDoesNotChangeTheSeriesStatus() {
+        CalendarEventRequest request = timedRequest(
+                Instant.parse("2027-01-10T10:00:00Z"), Instant.parse("2027-01-10T11:00:00Z"));
+        request.setRecurrenceFrequency(RecurrenceFrequency.WEEKLY);
+        CalendarEventResponse event = eventService.createEvent(request, USER_ID);
+
+        CalendarEventOccurrenceRequest occurrence = new CalendarEventOccurrenceRequest();
+        occurrence.setOccurrenceKey("instant:2027-01-17T10:00:00Z");
+        occurrence.setStatus(CalendarEventStatus.TENTATIVE);
+
+        CalendarEventResponse updated = eventService.updateEventOccurrenceStatus(event.id(), occurrence, USER_ID);
+
+        assertEquals(CalendarEventStatus.CONFIRMED, updated.status());
+        assertEquals(CalendarEventStatus.TENTATIVE, updated.occurrenceOverrides().get(0).status());
+        assertFalse(updated.occurrenceOverrides().get(0).deleted());
+    }
+
+    @Test
+    void deletingOneRecurringOccurrenceHidesOnlyThatOccurrence() {
+        CalendarEventRequest request = timedRequest(
+                Instant.parse("2027-01-10T10:00:00Z"), Instant.parse("2027-01-10T11:00:00Z"));
+        request.setRecurrenceFrequency(RecurrenceFrequency.WEEKLY);
+        CalendarEventResponse event = eventService.createEvent(request, USER_ID);
+
+        CalendarEventOccurrenceRequest occurrence = new CalendarEventOccurrenceRequest();
+        occurrence.setOccurrenceKey("instant:2027-01-17T10:00:00.000Z");
+        CalendarEventResponse deleted = eventService.deleteEventOccurrence(event.id(), occurrence, USER_ID);
+
+        assertEquals(CalendarEventStatus.CONFIRMED, deleted.status());
+        assertTrue(deleted.occurrenceOverrides().get(0).deleted());
+        assertTrue(deleted.cancelledOccurrenceKeys().isEmpty());
     }
 
     @Test

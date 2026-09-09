@@ -126,17 +126,21 @@ export function AppDateField({ label, value, onChange, ...props }: AppDateFieldP
 export function AppTimeField({ label, value, onChange, minutesStep = 1, ...props }: AppTimeFieldProps) {
     const handleKeyDown: KeyboardEventHandler<HTMLDivElement> = event => {
         props.onKeyDown?.(event);
-        if (event.defaultPrevented || event.key !== 'Tab' || event.shiftKey) return;
+        if (event.defaultPrevented || event.key !== 'Tab') return;
 
         const activeSection = event.target as HTMLElement;
-        if (!activeSection.getAttribute('aria-label')?.toLowerCase().includes('hour')) return;
-        const minuteSection = Array.from(
+        const activeLabel = activeSection.getAttribute('aria-label')?.toLowerCase() ?? '';
+        const targetLabel = event.shiftKey ? 'hour' : 'minute';
+        const expectedActiveLabel = event.shiftKey ? 'minute' : 'hour';
+        if (!activeLabel.includes(expectedActiveLabel)) return;
+
+        const targetSection = Array.from(
             event.currentTarget.querySelectorAll<HTMLElement>('[role="spinbutton"]'),
-        ).find(section => section.getAttribute('aria-label')?.toLowerCase().includes('minute'));
-        if (!minuteSection) return;
+        ).find(section => section.getAttribute('aria-label')?.toLowerCase().includes(targetLabel));
+        if (!targetSection) return;
 
         event.preventDefault();
-        minuteSection.focus();
+        targetSection.focus();
     };
 
     return (

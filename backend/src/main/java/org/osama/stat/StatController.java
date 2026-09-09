@@ -2,10 +2,14 @@ package org.osama.stat;
 
 import lombok.Data;
 import org.osama.user.CurrentUserService;
+import org.osama.task.recurrence.TaskSeriesResponse;
+import org.osama.task.recurrence.TaskRecurrenceFrequency;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
+import java.time.DayOfWeek;
 import java.util.List;
 
 @RestController
@@ -36,6 +40,8 @@ public class StatController {
                 request.morality,
                 request.goodThreshold,
                 request.createRecurringTask,
+                request.recurrenceFrequency,
+                request.recurrenceDaysOfWeek,
                 currentUserService.getCurrentUserId()
         );
     }
@@ -76,13 +82,40 @@ public class StatController {
         return statService.createRecurringTask(
                 id,
                 currentUserService.getCurrentUserId(),
-                request == null ? null : request.timeZone
+                request == null ? null : request.timeZone,
+                request == null || request.recurrenceFrequency == null
+                        ? org.osama.task.recurrence.TaskRecurrenceFrequency.DAILY
+                        : request.recurrenceFrequency,
+                request == null ? null : request.recurrenceDaysOfWeek
+        );
+    }
+
+    @GetMapping("/definitions/{id}/recurring-task")
+    public TaskSeriesResponse getRecurringTask(@PathVariable String id) {
+        return statService.getRecurringTask(id, currentUserService.getCurrentUserId());
+    }
+
+    @PutMapping("/definitions/{id}/recurring-task")
+    public StatDefinition updateRecurringTask(@PathVariable String id,
+                                              @RequestBody CreateRecurringTaskRequest request) {
+        return statService.updateRecurringTask(
+                id,
+                currentUserService.getCurrentUserId(),
+                request == null ? null : request.timeZone,
+                request == null || request.recurrenceFrequency == null
+                        ? TaskRecurrenceFrequency.DAILY : request.recurrenceFrequency,
+                request == null ? null : request.recurrenceDaysOfWeek
         );
     }
 
     @DeleteMapping("/definitions/{id}/recurring-task")
     public StatDefinition disconnectRecurringTask(@PathVariable String id) {
         return statService.disconnectRecurringTask(id, currentUserService.getCurrentUserId());
+    }
+
+    @DeleteMapping("/definitions/{id}/recurring-task/series")
+    public StatDefinition deleteRecurringTaskSeries(@PathVariable String id) {
+        return statService.deleteRecurringTaskSeries(id, currentUserService.getCurrentUserId());
     }
 
     @PutMapping("/definitions/order")
@@ -94,14 +127,16 @@ public class StatController {
     // --- Stat Entries ---
 
     @PostMapping("/entries")
-    public StatEntry recordEntry(@RequestBody RecordEntryRequest request) {
+    public ResponseEntity<StatEntry> recordEntry(@RequestBody RecordEntryRequest request) {
         LocalDate date = request.date != null ? request.date : LocalDate.now();
-        return statService.recordEntry(
+        StatEntry entry = statService.recordEntry(
                 request.statDefinitionId,
                 date,
                 request.value,
+                request.status,
                 currentUserService.getCurrentUserId()
         );
+        return entry == null ? ResponseEntity.noContent().build() : ResponseEntity.ok(entry);
     }
 
     @GetMapping("/entries")
@@ -159,6 +194,8 @@ public class StatController {
         StatMorality morality;
         Double goodThreshold;
         boolean createRecurringTask;
+        org.osama.task.recurrence.TaskRecurrenceFrequency recurrenceFrequency;
+        List<DayOfWeek> recurrenceDaysOfWeek;
     }
 
     @Data
@@ -174,7 +211,8 @@ public class StatController {
         String statDefinitionId;
         @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
         LocalDate date;
-        double value;
+        Double value;
+        StatEntryStatus status;
     }
 
     @Data
@@ -185,5 +223,7 @@ public class StatController {
     @Data
     public static class CreateRecurringTaskRequest {
         String timeZone;
+        org.osama.task.recurrence.TaskRecurrenceFrequency recurrenceFrequency;
+        List<DayOfWeek> recurrenceDaysOfWeek;
     }
 }

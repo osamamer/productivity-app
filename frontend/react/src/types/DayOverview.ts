@@ -1,5 +1,5 @@
 import { CalendarEvent } from './CalendarEvent';
-import { StatType } from './Stats';
+import { StatEntryStatus, StatType } from './Stats';
 
 export interface DayOverview {
     date: string;
@@ -40,6 +40,7 @@ export interface DayStat {
     type: StatType;
     systemKey: string | null;
     value: number;
+    status: StatEntryStatus;
 }
 
 export interface DayFocusSession {

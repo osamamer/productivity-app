@@ -56,6 +56,53 @@ export const eventService = {
         eventsCache.invalidate(eventsCacheKey());
     },
 
+    async cancelEventOccurrence(eventId: string, occurrenceKey: string): Promise<CalendarEvent> {
+        const response = await fetch(`${EVENT_URL}/${eventId}/occurrences/cancel`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify({ occurrenceKey }),
+        });
+        if (!response.ok) throw await parseError(response, 'Failed to cancel event occurrence');
+        eventsCache.invalidate(eventsCacheKey());
+        return response.json();
+    },
+
+    async updateEventOccurrenceStatus(
+        eventId: string,
+        occurrenceKey: string,
+        status: CalendarEvent['status'],
+    ): Promise<CalendarEvent> {
+        const response = await fetch(`${EVENT_URL}/${eventId}/occurrences/status`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify({ occurrenceKey, status }),
+        });
+        if (!response.ok) throw await parseError(response, 'Failed to update event occurrence status');
+        eventsCache.invalidate(eventsCacheKey());
+        return response.json();
+    },
+
+    async deleteEventOccurrence(eventId: string, occurrenceKey: string): Promise<CalendarEvent> {
+        const response = await fetch(`${EVENT_URL}/${eventId}/occurrences`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify({ occurrenceKey }),
+        });
+        if (!response.ok) throw await parseError(response, 'Failed to delete event occurrence');
+        eventsCache.invalidate(eventsCacheKey());
+        return response.json();
+    },
+
+    async restoreEventOccurrence(eventId: string, occurrenceKey: string): Promise<CalendarEvent> {
+        const response = await fetch(
+            `${EVENT_URL}/${eventId}/occurrences/cancel?occurrenceKey=${encodeURIComponent(occurrenceKey)}`,
+            { method: 'DELETE', headers: getAuthHeaders() },
+        );
+        if (!response.ok) throw await parseError(response, 'Failed to restore event occurrence');
+        eventsCache.invalidate(eventsCacheKey());
+        return response.json();
+    },
+
     clearCache(): void {
         eventsCache.clear();
     },

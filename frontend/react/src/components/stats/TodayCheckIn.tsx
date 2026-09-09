@@ -4,7 +4,7 @@ import {
     Slider, Button, Alert, CircularProgress, Divider,
 } from '@mui/material';
 import { format } from 'date-fns';
-import { StatDefinition } from '../../types/Stats';
+import { StatDefinition, StatEntryStatus } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
 import { getBooleanChoiceColor, showStatFeedback } from '../../services/statFeedback';
 import { minutesToTimeValue, timeValueToMinutes } from '../../services/utils/statValues';
@@ -20,6 +20,7 @@ interface Props {
 
 export function TodayCheckIn({ definitions, onSaved }: Props) {
     const [values, setValues] = useState<Record<string, number | null>>({});
+    const [statuses, setStatuses] = useState<Record<string, StatEntryStatus>>({});
     // touched tracks which definitions have been explicitly set by the user (or pre-loaded from today's entries)
     const [touched, setTouched] = useState<Set<string>>(new Set());
     const [loading, setLoading] = useState(true);
@@ -34,20 +35,24 @@ export function TodayCheckIn({ definitions, onSaved }: Props) {
             return;
         }
         statService.getTodayEntries()
-            .then(entries => {
-                const initial: Record<string, number | null> = {};
-                const preTouched = new Set<string>();
-                definitions.forEach(d => {
-                    initial[d.id] = d.type === 'TIME' || d.type === 'DURATION'
-                        ? readStatInputPreference(d.id, d.type)
-                        : null;
-                });
-                entries.forEach(e => {
-                    initial[e.statDefinitionId] = e.value;
-                    preTouched.add(e.statDefinitionId);
-                });
-                setValues(initial);
-                setTouched(preTouched);
+        .then(entries => {
+            const initial: Record<string, number | null> = {};
+            const initialStatuses: Record<string, StatEntryStatus> = {};
+            const preTouched = new Set<string>();
+            definitions.forEach(d => {
+                initial[d.id] = d.type === 'TIME' || d.type === 'DURATION'
+                    ? readStatInputPreference(d.id, d.type)
+                    : null;
+                initialStatuses[d.id] = 'RECORDED';
+            });
+            entries.forEach(e => {
+                initial[e.statDefinitionId] = e.value;
+                initialStatuses[e.statDefinitionId] = e.status ?? 'RECORDED';
+                preTouched.add(e.statDefinitionId);
+            });
+            setValues(initial);
+            setStatuses(initialStatuses);
+            setTouched(preTouched);
             })
             .catch(e => {
                 console.error("Failed to load today's check-in entries:", e);
@@ -56,15 +61,16 @@ export function TodayCheckIn({ definitions, onSaved }: Props) {
             .finally(() => setLoading(false));
     }, [definitions]);
 
-    const setValue = (id: string, v: number | null) => {
+    const setValue = (id: string, v: number | null, status: StatEntryStatus = 'RECORDED') => {
         setValues(prev => ({ ...prev, [id]: v }));
+        setStatuses(prev => ({ ...prev, [id]: status }));
         const definition = definitions.find(item => item.id === id);
         if (v !== null && (definition?.type === 'TIME' || definition?.type === 'DURATION')) {
             saveStatInputPreference(id, definition.type, v);
         }
         setTouched(prev => {
             const next = new Set(prev);
-            if (v !== null) next.add(id); else next.delete(id);
+            next.add(id);
             return next;
         });
         setSuccess(false);
@@ -76,14 +82,22 @@ export function TodayCheckIn({ definitions, onSaved }: Props) {
         setSuccess(false);
         const today = format(new Date(), 'yyyy-MM-dd');
         try {
-            const toSave = definitions.filter(d => touched.has(d.id) && values[d.id] !== null);
+            const toSave = definitions.filter(d => touched.has(d.id));
             await Promise.all(
                 toSave.map(d =>
-                    statService.recordEntry({ statDefinitionId: d.id, date: today, value: values[d.id]! })
+                    statService.recordEntry({
+                        statDefinitionId: d.id,
+                        date: today,
+                        value: values[d.id] ?? null,
+                        status: statuses[d.id],
+                    })
                 )
             );
             toSave.forEach(definition => {
-                showStatFeedback(definition, values[definition.id]!, feedbackAnchorRef.current);
+                const value = values[definition.id];
+                if (value !== null && value !== undefined && statuses[definition.id] !== 'NOT_PLANNED') {
+                    showStatFeedback(definition, value, feedbackAnchorRef.current);
+                }
             });
             setSuccess(true);
             onSaved();
@@ -113,19 +127,31 @@ export function TodayCheckIn({ definitions, onSaved }: Props) {
                                 {def.description}
                             </Typography>
                         )}
-                        {def.type === 'BOOLEAN' && (
-                            <ToggleButtonGroup
-                                value={values[def.id] === 1 ? 'yes' : values[def.id] === 0 ? 'no' : null}
-                                exclusive
-                                onChange={(_, v) => setValue(def.id, v === 'yes' ? 1 : v === 'no' ? 0 : null)}
-                                size="small"
-                            >
+                            {def.type === 'BOOLEAN' && (
+                                <ToggleButtonGroup
+                                    value={statuses[def.id] === 'NOT_PLANNED'
+                                        ? 'not-planned'
+                                        : values[def.id] === 1 ? 'yes' : values[def.id] === 0 ? 'no' : null}
+                                    exclusive
+                                    onChange={(_, v) => setValue(
+                                        def.id,
+                                        v === null ? null : v === 'yes' ? 1 : 0,
+                                        v === 'not-planned' ? 'NOT_PLANNED' : 'RECORDED',
+                                    )}
+                                    size="small"
+                                >
                                 <ToggleButton
                                     value="yes"
                                     onClick={event => { feedbackAnchorRef.current = event.currentTarget; }}
                                     sx={{ '&.Mui-selected': { bgcolor: `${getBooleanChoiceColor(def, 1)}.main`, color: 'white', '&:hover': { bgcolor: `${getBooleanChoiceColor(def, 1)}.dark` } } }}
                                 >
                                     Yes
+                                </ToggleButton>
+                                <ToggleButton
+                                    value="not-planned"
+                                    sx={{ '&.Mui-selected': { bgcolor: 'warning.main', color: 'warning.contrastText', '&:hover': { bgcolor: 'warning.dark' } } }}
+                                >
+                                    Not planned
                                 </ToggleButton>
                                 <ToggleButton
                                     value="no"
@@ -188,6 +214,9 @@ export function TodayCheckIn({ definitions, onSaved }: Props) {
                                     <Typography variant="caption" color="text.secondary">{def.minValue}</Typography>
                                     <Typography variant="caption" color="text.secondary">{def.maxValue}</Typography>
                                 </Stack>
+                                <Button size="small" onClick={() => setValue(def.id, null)}>
+                                    Clear
+                                </Button>
                                 {!touched.has(def.id) && (
                                     <Typography variant="caption" color="text.secondary">
                                         Move the slider to record a value

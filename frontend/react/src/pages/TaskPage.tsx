@@ -60,6 +60,7 @@ export function TaskPage() {
     const [deleteSubmitting, setDeleteSubmitting] = useState(false);
     const [editRequest, setEditRequest] = useState<EditRequest | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
+    const [taskSelectionEnabled, setTaskSelectionEnabled] = useState(false);
     const allTasksRef = useRef(allTasks);
     const todayRef = useRef<HTMLDivElement>(null);
     const comingUpRef = useRef<HTMLDivElement>(null);
@@ -72,8 +73,15 @@ export function TaskPage() {
     const [loadingMoreUpcomingTasks, setLoadingMoreUpcomingTasks] = useState(false);
     const [loadingMoreLeftoverTasks, setLoadingMoreLeftoverTasks] = useState(false);
     const initializedTaskLoadVersionRef = useRef<number | null>(null);
+    const completionMutationRef = useRef<Map<string, Promise<void>>>(new Map());
+    const completionRequestIdRef = useRef<Map<string, number>>(new Map());
+    const completionConfirmedStateRef = useRef<Map<string, boolean>>(new Map());
     const showCompletedTasks = getShowCompletedHomeTasks();
     allTasksRef.current = allTasks;
+
+    useEffect(() => {
+        setHighlightedTask(null);
+    }, [setHighlightedTask]);
 
     useEffect(() => {
         let active = true;
@@ -148,19 +156,53 @@ export function TaskPage() {
         }
     }, []);
 
-    const toggleTaskCompletion = useCallback(async (taskId: string) => {
+    const toggleTaskCompletion = useCallback((taskId: string) => {
         const task = allTasksRef.current.find(candidate => candidate.taskId === taskId);
-        if (task) {
-            updateTaskInState(taskId, { completed: !task.completed });
-        }
+        if (!task) return;
 
-        try {
-            const updatedTask = await taskService.toggleTaskCompletion(taskId, task ? !task.completed : undefined);
-            if (!task?.completed && updatedTask.completed) playAudioFeedback('taskCompleted');
-        } catch (error) {
-            console.error('Error toggling task:', error);
-            if (task) updateTaskInState(taskId, { completed: task.completed });
+        const previousCompleted = task.completed;
+        const completed = !previousCompleted;
+        const requestId = (completionRequestIdRef.current.get(taskId) ?? 0) + 1;
+        if (!completionMutationRef.current.has(taskId)) {
+            completionConfirmedStateRef.current.set(taskId, previousCompleted);
         }
+        completionRequestIdRef.current.set(taskId, requestId);
+        allTasksRef.current = allTasksRef.current.map(candidate => (
+            candidate.taskId === taskId ? { ...candidate, completed } : candidate
+        ));
+        updateTaskInState(taskId, { completed });
+
+        const persist = async () => {
+            try {
+                const updatedTask = await taskService.toggleTaskCompletion(taskId, completed);
+                completionConfirmedStateRef.current.set(taskId, updatedTask.completed);
+                if (!previousCompleted && updatedTask.completed) playAudioFeedback('taskCompleted');
+            } catch (error) {
+                console.error('Error toggling task:', error);
+                const isLatestRequest = completionRequestIdRef.current.get(taskId) === requestId;
+                const currentTask = allTasksRef.current.find(candidate => candidate.taskId === taskId);
+                if (isLatestRequest && currentTask?.completed === completed) {
+                    const rollbackCompleted = completionConfirmedStateRef.current.get(taskId)
+                        ?? previousCompleted;
+                    allTasksRef.current = allTasksRef.current.map(candidate => (
+                        candidate.taskId === taskId
+                            ? { ...candidate, completed: rollbackCompleted }
+                            : candidate
+                    ));
+                    updateTaskInState(taskId, { completed: rollbackCompleted });
+                }
+            }
+        };
+
+        const queuedMutation = (completionMutationRef.current.get(taskId) ?? Promise.resolve())
+            .then(persist, persist);
+        completionMutationRef.current.set(taskId, queuedMutation);
+        void queuedMutation.finally(() => {
+            if (completionMutationRef.current.get(taskId) === queuedMutation) {
+                completionMutationRef.current.delete(taskId);
+                completionConfirmedStateRef.current.delete(taskId);
+            }
+        });
     }, [updateTaskInState]);
 
     const updateTask = useCallback(async (taskId: string, updates: Partial<Task>) => {
@@ -212,10 +254,12 @@ export function TaskPage() {
     }, []);
 
     const handleTaskSelect = useCallback((task: Task) => {
+        setTaskSelectionEnabled(true);
         setHighlightedTask(task);
     }, [setHighlightedTask]);
 
     const closeTaskDetails = useCallback(() => {
+        setTaskSelectionEnabled(false);
         setHighlightedTask(null);
     }, [setHighlightedTask]);
 
@@ -278,7 +322,9 @@ export function TaskPage() {
         ].map(task => task.taskId)),
         [visibleFutureTasks, visiblePastTasks, visibleTodayTasks, visibleUndatedTasks],
     );
-    const selectedTask = highlightedTask && visibleTaskIds.has(highlightedTask.taskId)
+    const selectedTask = taskSelectionEnabled
+        && highlightedTask
+        && visibleTaskIds.has(highlightedTask.taskId)
         ? highlightedTask
         : null;
     const selectedEditRequestId = editRequest && editRequest.taskId === selectedTask?.taskId
@@ -418,6 +464,7 @@ export function TaskPage() {
         )) {
             return;
         }
+        setTaskSelectionEnabled(false);
         setHighlightedTask(null);
     };
 
@@ -434,7 +481,7 @@ export function TaskPage() {
                     sx={{
                         flex: 1,
                         width: '100%',
-                        maxWidth: 1180,
+                        maxWidth: 1600,
                         ml: { xs: 'auto', lg: 0 },
                         mr: 'auto',
                         px: { xs: 1, sm: 3 },
@@ -445,8 +492,12 @@ export function TaskPage() {
                 <Box
                     sx={{
                         display: 'grid',
-                        gridTemplateColumns: { xs: 'minmax(0, 1fr)', lg: 'minmax(0, 1fr) minmax(320px, 380px)' },
-                        gap: { xs: 4, lg: 7 },
+                        gridTemplateColumns: {
+                            xs: 'minmax(0, 1fr)',
+                            lg: 'minmax(0, 1fr) minmax(400px, 460px)',
+                            xl: 'minmax(480px, 0.85fr) minmax(600px, 1.15fr)',
+                        },
+                        gap: { xs: 4, lg: 5, xl: 6 },
                         alignItems: 'start',
                     }}
                 >

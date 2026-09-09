@@ -12,12 +12,13 @@ export function useGlobalTasks({ taskPageMode = false }: UseGlobalTasksOptions =
         throw new Error('useGlobalTasks must be used within TaskProvider');
     }
 
-    // Only task-aware pages load the shared task data. Entering one of these pages
-    // is an explicit request for current data, so bypass the manager's short TTL.
+    // The TaskProvider owns the task snapshot for the whole authenticated app.
+    // The service cache decides when it is stale; navigation must not turn a
+    // cached snapshot into a forced network request.
     const {refreshTaskBuckets} = context;
     const loadMode: TaskLoadMode = taskPageMode ? 'taskPage' : 'all';
     useEffect(() => {
-        void refreshTaskBuckets(true, loadMode);
+        void refreshTaskBuckets(false, loadMode);
     }, [loadMode, refreshTaskBuckets]);
 
     return context;

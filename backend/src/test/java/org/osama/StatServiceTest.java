@@ -8,7 +8,9 @@ import org.osama.stat.*;
 import org.osama.requests.UpdateTaskRequest;
 import org.osama.task.Task;
 import org.osama.task.TaskRepository;
+import org.osama.task.TaskSkipReason;
 import org.osama.task.TaskService;
+import org.osama.task.recurrence.TaskSeriesRepository;
 import org.osama.session.task.TaskSession;
 import org.osama.session.task.TaskSessionRepository;
 import org.osama.user.User;
@@ -19,6 +21,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.DayOfWeek;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -41,6 +44,7 @@ public class StatServiceTest {
     @Autowired private TaskRepository taskRepository;
     @Autowired private TaskSessionRepository taskSessionRepository;
     @Autowired private TaskService taskService;
+    @Autowired private TaskSeriesRepository taskSeriesRepository;
 
     @BeforeEach
     void setUp() {
@@ -72,6 +76,29 @@ public class StatServiceTest {
     }
 
     @Test
+    void booleanStat_canBeMarkedNotPlannedWithoutBecomingNo() {
+        StatDefinition statDefinition = createStatDefinition(StatType.BOOLEAN, null, null);
+        LocalDate today = LocalDate.now();
+
+        StatEntry entry = statService.recordEntry(
+                statDefinition.getId(), today, null, StatEntryStatus.NOT_PLANNED, TEST_USER_ID);
+
+        assertEquals(0.0, entry.getValue());
+        assertEquals(StatEntryStatus.NOT_PLANNED, entry.getStatus());
+        assertEquals(0, statService.getSummary(statDefinition.getId(), today, today, TEST_USER_ID)
+                .periodYesCount());
+    }
+
+    @Test
+    void nonBooleanStat_cannotBeMarkedNotPlanned() {
+        StatDefinition statDefinition = createStatDefinition(StatType.NUMBER, null, null);
+
+        assertThrows(IllegalArgumentException.class, () -> statService.recordEntry(
+                statDefinition.getId(), LocalDate.now(), null,
+                StatEntryStatus.NOT_PLANNED, TEST_USER_ID));
+    }
+
+    @Test
     void booleanStat_rejectsNonBinaryValue() {
         // Create definition first, THEN assert throws on the entry call only
         StatDefinition statDefinition = createStatDefinition(StatType.BOOLEAN, null, null);
@@ -79,6 +106,17 @@ public class StatServiceTest {
         // The exception here taints the transaction — wrap in assertThrows cleanly
         assertThrows(IllegalArgumentException.class, () ->
                 statService.recordEntry(statDefinition.getId(), LocalDate.now(), 0.6, TEST_USER_ID));
+    }
+
+    @Test
+    void nullValue_clearsExistingEntry() {
+        StatDefinition statDefinition = createStatDefinition(StatType.NUMBER, null, null);
+        LocalDate today = LocalDate.now();
+        statService.recordEntry(statDefinition.getId(), today, 42.0, TEST_USER_ID);
+
+        assertNull(statService.recordEntry(statDefinition.getId(), today, null, TEST_USER_ID));
+        assertTrue(entryRepository.findByStatDefinitionIdAndUserIdAndDate(
+                statDefinition.getId(), TEST_USER_ID, today).isEmpty());
     }
 
     // --- RANGE ---
@@ -183,6 +221,122 @@ public class StatServiceTest {
         assertEquals(4 * 60.0, summary.periodHighest(), 0.0001);
         assertTrue(StatTimeScale.toLinearValue(sleepTime, 22 * 60.0)
                 < StatTimeScale.toLinearValue(sleepTime, 4 * 60.0));
+    }
+
+    @Test
+    void sleepDurationIsCalculatedOnWakeUpDateWhenBothTimesAreRecorded() {
+        User user = userRepository.findUserById(TEST_USER_ID).orElseThrow();
+        provisioningService.createMissingSystemStatsFor(user);
+        StatDefinition sleepTime = definitionRepository
+                .findByUserIdAndSystemKey(TEST_USER_ID, SystemStatCatalog.SLEEP_TIME_SYSTEM_KEY)
+                .orElseThrow();
+        StatDefinition wakeUpTime = definitionRepository
+                .findByUserIdAndSystemKey(TEST_USER_ID, SystemStatCatalog.WAKE_UP_TIME_SYSTEM_KEY)
+                .orElseThrow();
+        StatDefinition sleepDuration = definitionRepository
+                .findByUserIdAndSystemKey(TEST_USER_ID, SystemStatCatalog.SLEEP_HOURS_SYSTEM_KEY)
+                .orElseThrow();
+        LocalDate wakeUpDate = LocalDate.now();
+
+        statService.recordEntry(sleepTime.getId(), wakeUpDate.minusDays(1), 22 * 60.0, TEST_USER_ID);
+        assertTrue(entryRepository.findByStatDefinitionIdAndUserIdAndDate(
+                sleepDuration.getId(), TEST_USER_ID, wakeUpDate).isEmpty());
+
+        statService.recordEntry(wakeUpTime.getId(), wakeUpDate, 6 * 60.0, TEST_USER_ID);
+
+        assertEquals(8 * 60.0, entryRepository.findByStatDefinitionIdAndUserIdAndDate(
+                sleepDuration.getId(), TEST_USER_ID, wakeUpDate).orElseThrow().getValue());
+    }
+
+    @Test
+    void sleepDurationIsCalculatedWhenWakeUpTimeIsRecordedFirst() {
+        User user = userRepository.findUserById(TEST_USER_ID).orElseThrow();
+        provisioningService.createMissingSystemStatsFor(user);
+        StatDefinition sleepTime = definitionRepository
+                .findByUserIdAndSystemKey(TEST_USER_ID, SystemStatCatalog.SLEEP_TIME_SYSTEM_KEY)
+                .orElseThrow();
+        StatDefinition wakeUpTime = definitionRepository
+                .findByUserIdAndSystemKey(TEST_USER_ID, SystemStatCatalog.WAKE_UP_TIME_SYSTEM_KEY)
+                .orElseThrow();
+        StatDefinition sleepDuration = definitionRepository
+                .findByUserIdAndSystemKey(TEST_USER_ID, SystemStatCatalog.SLEEP_HOURS_SYSTEM_KEY)
+                .orElseThrow();
+        LocalDate wakeUpDate = LocalDate.now();
+
+        statService.recordEntry(wakeUpTime.getId(), wakeUpDate, 7 * 60.0, TEST_USER_ID);
+        statService.recordEntry(sleepTime.getId(), wakeUpDate.minusDays(1), 23 * 60.0, TEST_USER_ID);
+
+        assertEquals(8 * 60.0, entryRepository.findByStatDefinitionIdAndUserIdAndDate(
+                sleepDuration.getId(), TEST_USER_ID, wakeUpDate).orElseThrow().getValue());
+    }
+
+    @Test
+    void sleepDurationIsRecalculatedWhenSleepTimeChanges() {
+        User user = userRepository.findUserById(TEST_USER_ID).orElseThrow();
+        provisioningService.createMissingSystemStatsFor(user);
+        StatDefinition sleepTime = definitionRepository
+                .findByUserIdAndSystemKey(TEST_USER_ID, SystemStatCatalog.SLEEP_TIME_SYSTEM_KEY)
+                .orElseThrow();
+        StatDefinition wakeUpTime = definitionRepository
+                .findByUserIdAndSystemKey(TEST_USER_ID, SystemStatCatalog.WAKE_UP_TIME_SYSTEM_KEY)
+                .orElseThrow();
+        StatDefinition sleepDuration = definitionRepository
+                .findByUserIdAndSystemKey(TEST_USER_ID, SystemStatCatalog.SLEEP_HOURS_SYSTEM_KEY)
+                .orElseThrow();
+        LocalDate wakeUpDate = LocalDate.now();
+
+        statService.recordEntry(sleepTime.getId(), wakeUpDate.minusDays(1), 22 * 60.0, TEST_USER_ID);
+        statService.recordEntry(wakeUpTime.getId(), wakeUpDate, 6 * 60.0, TEST_USER_ID);
+        statService.recordEntry(sleepTime.getId(), wakeUpDate.minusDays(1), 21 * 60.0, TEST_USER_ID);
+
+        assertEquals(9 * 60.0, entryRepository.findByStatDefinitionIdAndUserIdAndDate(
+                sleepDuration.getId(), TEST_USER_ID, wakeUpDate).orElseThrow().getValue());
+    }
+
+    @Test
+    void sleepDurationIsRecalculatedWhenWakeUpTimeChanges() {
+        User user = userRepository.findUserById(TEST_USER_ID).orElseThrow();
+        provisioningService.createMissingSystemStatsFor(user);
+        StatDefinition sleepTime = definitionRepository
+                .findByUserIdAndSystemKey(TEST_USER_ID, SystemStatCatalog.SLEEP_TIME_SYSTEM_KEY)
+                .orElseThrow();
+        StatDefinition wakeUpTime = definitionRepository
+                .findByUserIdAndSystemKey(TEST_USER_ID, SystemStatCatalog.WAKE_UP_TIME_SYSTEM_KEY)
+                .orElseThrow();
+        StatDefinition sleepDuration = definitionRepository
+                .findByUserIdAndSystemKey(TEST_USER_ID, SystemStatCatalog.SLEEP_HOURS_SYSTEM_KEY)
+                .orElseThrow();
+        LocalDate wakeUpDate = LocalDate.now();
+
+        statService.recordEntry(sleepTime.getId(), wakeUpDate.minusDays(1), 22 * 60.0, TEST_USER_ID);
+        statService.recordEntry(wakeUpTime.getId(), wakeUpDate, 6 * 60.0, TEST_USER_ID);
+        statService.recordEntry(wakeUpTime.getId(), wakeUpDate, 7 * 60.0, TEST_USER_ID);
+
+        assertEquals(9 * 60.0, entryRepository.findByStatDefinitionIdAndUserIdAndDate(
+                sleepDuration.getId(), TEST_USER_ID, wakeUpDate).orElseThrow().getValue());
+    }
+
+    @Test
+    void manuallyRecordedSleepDurationIsRecalculatedWhenBoundaryChanges() {
+        User user = userRepository.findUserById(TEST_USER_ID).orElseThrow();
+        provisioningService.createMissingSystemStatsFor(user);
+        StatDefinition sleepTime = definitionRepository
+                .findByUserIdAndSystemKey(TEST_USER_ID, SystemStatCatalog.SLEEP_TIME_SYSTEM_KEY)
+                .orElseThrow();
+        StatDefinition wakeUpTime = definitionRepository
+                .findByUserIdAndSystemKey(TEST_USER_ID, SystemStatCatalog.WAKE_UP_TIME_SYSTEM_KEY)
+                .orElseThrow();
+        StatDefinition sleepDuration = definitionRepository
+                .findByUserIdAndSystemKey(TEST_USER_ID, SystemStatCatalog.SLEEP_HOURS_SYSTEM_KEY)
+                .orElseThrow();
+        LocalDate wakeUpDate = LocalDate.now();
+
+        statService.recordEntry(sleepDuration.getId(), wakeUpDate, 7 * 60.0, TEST_USER_ID);
+        statService.recordEntry(sleepTime.getId(), wakeUpDate.minusDays(1), 22 * 60.0, TEST_USER_ID);
+        statService.recordEntry(wakeUpTime.getId(), wakeUpDate, 6 * 60.0, TEST_USER_ID);
+
+        assertEquals(8 * 60.0, entryRepository.findByStatDefinitionIdAndUserIdAndDate(
+                sleepDuration.getId(), TEST_USER_ID, wakeUpDate).orElseThrow().getValue());
     }
 
     // --- DURATION ---
@@ -543,6 +697,18 @@ public class StatServiceTest {
         statService.recordEntry(definition.getId(), LocalDate.now(), 0.0, TEST_USER_ID);
         assertFalse(taskRepository.findTaskByTaskId(todayTask.getTaskId()).orElseThrow().isCompleted());
 
+        statService.recordEntry(definition.getId(), LocalDate.now(), null, TEST_USER_ID);
+        assertFalse(taskRepository.findTaskByTaskId(todayTask.getTaskId()).orElseThrow().isCompleted());
+        assertTrue(entryRepository.findByStatDefinitionIdAndUserIdAndDate(
+                definition.getId(), TEST_USER_ID, LocalDate.now()).isEmpty());
+
+        statService.recordEntry(definition.getId(), LocalDate.now(), null,
+                StatEntryStatus.NOT_PLANNED, TEST_USER_ID);
+        Task notPlannedTask = taskRepository.findTaskByTaskId(todayTask.getTaskId()).orElseThrow();
+        assertFalse(notPlannedTask.isCompleted());
+        assertTrue(notPlannedTask.isSkipped());
+        assertEquals(TaskSkipReason.USER, notPlannedTask.getSkipReason());
+
         UpdateTaskRequest completeTask = new UpdateTaskRequest();
         completeTask.setCompleted(true);
         taskService.updateTask(todayTask.getTaskId(), completeTask, TEST_USER_ID);
@@ -554,6 +720,45 @@ public class StatServiceTest {
         taskService.updateTask(todayTask.getTaskId(), reopenTask, TEST_USER_ID);
         assertEquals(0.0, entryRepository.findByStatDefinitionIdAndUserIdAndDate(
                 definition.getId(), TEST_USER_ID, LocalDate.now()).orElseThrow().getValue());
+    }
+
+    @Test
+    void booleanStatCanUseSelectedWeekdaysForItsRecurringTask() {
+        StatDefinition definition = createNamedStatDefinition("Workout", StatType.BOOLEAN);
+
+        StatDefinition linked = statService.createRecurringTask(
+                definition.getId(), TEST_USER_ID, "UTC",
+                org.osama.task.recurrence.TaskRecurrenceFrequency.CUSTOM,
+                List.of(DayOfWeek.MONDAY, DayOfWeek.WEDNESDAY));
+
+        List<Task> occurrences = taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(
+                linked.getRecurringTaskSeriesId());
+
+        assertFalse(occurrences.isEmpty());
+        assertTrue(occurrences.stream()
+                .allMatch(task -> task.getSeriesOccurrenceAt().getDayOfWeek() == DayOfWeek.MONDAY
+                        || task.getSeriesOccurrenceAt().getDayOfWeek() == DayOfWeek.WEDNESDAY));
+    }
+
+    @Test
+    void recurringTaskScheduleCanBeChangedAndItsSeriesCanBeDeleted() {
+        StatDefinition definition = createNamedStatDefinition("Scheduled habit", StatType.BOOLEAN);
+        StatDefinition linked = statService.createRecurringTask(definition.getId(), TEST_USER_ID);
+        String seriesId = linked.getRecurringTaskSeriesId();
+
+        statService.updateRecurringTask(
+                definition.getId(), TEST_USER_ID, "UTC",
+                org.osama.task.recurrence.TaskRecurrenceFrequency.CUSTOM,
+                List.of(DayOfWeek.SUNDAY, DayOfWeek.THURSDAY));
+
+        assertEquals("SUNDAY,THURSDAY",
+                taskSeriesRepository.findById(seriesId).orElseThrow().getRecurrenceDaysOfWeek());
+
+        StatDefinition deleted = statService.deleteRecurringTaskSeries(definition.getId(), TEST_USER_ID);
+
+        assertNull(deleted.getRecurringTaskSeriesId());
+        assertTrue(taskSeriesRepository.findById(seriesId).isEmpty());
+        assertTrue(taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(seriesId).isEmpty());
     }
 
     @Test

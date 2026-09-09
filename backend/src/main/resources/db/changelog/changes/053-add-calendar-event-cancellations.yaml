@@ -1,0 +1,52 @@
+databaseChangeLog:
+  - changeSet:
+      id: 053-add-calendar-event-cancellations
+      author: codex
+      comment: Preserve cancellations for individual occurrences of repeating calendar events
+      changes:
+        - createTable:
+            tableName: calendar_event_cancellation
+            columns:
+              - column:
+                  name: cancellation_id
+                  type: varchar(255)
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: event_id
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: occurrence_key
+                  type: varchar(120)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamp with time zone
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: calendar_event_cancellation
+            baseColumnNames: event_id
+            referencedTableName: calendar_event
+            referencedColumnNames: event_id
+            constraintName: fk_app_calendar_event_cancellation_event
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - addUniqueConstraint:
+            tableName: calendar_event_cancellation
+            columnNames: event_id, occurrence_key
+            constraintName: uq_app_calendar_event_cancellation_event_occurrence
+        - createIndex:
+            tableName: calendar_event_cancellation
+            indexName: idx_app_calendar_event_cancellation_event
+            ifNotExists: true
+            columns:
+              - column:
+                  name: event_id
+      rollback:
+        - dropTable:
+            tableName: calendar_event_cancellation

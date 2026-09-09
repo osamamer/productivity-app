@@ -42,6 +42,7 @@ function durationLabel(seconds: number): string {
 }
 
 function statValueLabel(stat: DayStat): string {
+    if (stat.status === 'NOT_PLANNED') return 'Not planned';
     if (stat.type === 'BOOLEAN') return stat.value === 1 ? 'Yes' : 'No';
     if (stat.type === 'TIME') return formatTimeValue(stat.value);
     if (stat.type === 'DURATION') return formatDurationValue(stat.value);
@@ -158,7 +159,7 @@ function buildTimeline(overview: DayOverview): TimelineItem[] {
                     title: event.title,
                     start,
                     end,
-                    detail: occurrence.allDay ? 'All-day event' : event.status.toLowerCase(),
+                    detail: occurrence.allDay ? 'All-day event' : occurrence.status.toLowerCase(),
                 });
             });
     });
@@ -186,7 +187,7 @@ function TimeBoundary({ label, time }: { label: string; time: Date }) {
             </Box>
             <Box>
                 <Typography variant="caption" color="primary.main" fontWeight={700}>{label}</Typography>
-                <Typography variant="body2" fontWeight={650}>{format(time, 'EEE, MMM d · h:mm a')}</Typography>
+                <Typography variant="body2" fontWeight={650}>{format(time, 'h:mm a')}</Typography>
             </Box>
         </Stack>
     );
@@ -250,6 +251,7 @@ export function DayPage() {
     const dateValue = parseISO(`${date}T12:00:00`);
     const windowStart = overview ? parseISO(overview.dayStart) : dateValue;
     const windowEnd = overview ? parseISO(overview.dayEnd) : addDays(dateValue, 1);
+    const hasLoggedSleep = overview?.stats.some(stat => stat.systemKey === 'sleep_time') ?? false;
     const moreTimeline = timeline.filter(item => item.kind === 'state' || item.kind === 'event');
     const hasDetailPanel = Boolean(overview && (
         overview.stats.length > 0
@@ -330,8 +332,8 @@ export function DayPage() {
                                     <Box>
                                         <Typography variant="h6" fontWeight={700}>Time view</Typography>
                                         <Typography variant="caption" color="text.secondary">
-                                            {format(windowStart, 'h:mm a')} – {format(windowEnd, 'h:mm a')}
-                                            {windowEnd.toDateString() !== windowStart.toDateString() ? ' next day' : ''}
+                                            {format(windowStart, 'h:mm a')}
+                                            {hasLoggedSleep && ` – ${format(windowEnd, 'h:mm a')}`}
                                         </Typography>
                                     </Box>
                                 </Stack>
@@ -359,7 +361,7 @@ export function DayPage() {
                                             </Box>
                                         </Stack>
                                     ))}
-                                    <TimeBoundary label="Sleep" time={windowEnd} />
+                                    {hasLoggedSleep && <TimeBoundary label="Sleep" time={windowEnd} />}
                                 </Stack>
                             </Card>
 

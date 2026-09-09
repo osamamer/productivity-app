@@ -1,0 +1,46 @@
+databaseChangeLog:
+  - changeSet:
+      id: 053-backfill-sleep-duration-entries
+      author: codex
+      comment: Calculate missing Sleep duration entries from adjacent sleep and wake-up times
+      changes:
+        - sql:
+            sql: |
+              INSERT INTO stat_entry
+                  (id, stat_definition_id, date, stat_value, user_id)
+              SELECT concat('auto-sleep-duration-', sleep_definition.user_id, '-', wake_entry.date),
+                     duration_definition.id,
+                     wake_entry.date,
+                     CASE
+                         WHEN wake_entry.stat_value > sleep_entry.stat_value
+                             THEN wake_entry.stat_value - sleep_entry.stat_value
+                         ELSE wake_entry.stat_value + 1440 - sleep_entry.stat_value
+                     END,
+                     sleep_definition.user_id
+              FROM stat_definition sleep_definition
+              JOIN stat_entry sleep_entry
+                ON sleep_entry.stat_definition_id = sleep_definition.id
+               AND sleep_entry.user_id = sleep_definition.user_id
+              JOIN stat_definition wake_definition
+                ON wake_definition.user_id = sleep_definition.user_id
+               AND wake_definition.system_key = 'wake_up_time'
+              JOIN stat_entry wake_entry
+                ON wake_entry.stat_definition_id = wake_definition.id
+               AND wake_entry.user_id = sleep_definition.user_id
+               AND wake_entry.date = sleep_entry.date + 1
+              JOIN stat_definition duration_definition
+                ON duration_definition.user_id = sleep_definition.user_id
+               AND duration_definition.system_key = 'sleep_hours'
+              WHERE sleep_definition.system_key = 'sleep_time'
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM stat_entry existing_duration
+                    WHERE existing_duration.stat_definition_id = duration_definition.id
+                      AND existing_duration.user_id = sleep_definition.user_id
+                      AND existing_duration.date = wake_entry.date
+                );
+      rollback:
+        - sql:
+            sql: |
+              DELETE FROM stat_entry
+              WHERE id LIKE 'auto-sleep-duration-%';

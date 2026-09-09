@@ -7,6 +7,7 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.List;
 
 public final class TaskRecurrenceCalculator {
     private TaskRecurrenceCalculator() {
@@ -21,7 +22,9 @@ public final class TaskRecurrenceCalculator {
         LocalDateTime occurrence = series.getStartDateTime();
         int guard = 0;
         while (!occurrence.isAfter(throughInclusive) && guard++ < 20_000) {
-            if (!occurrence.isBefore(fromInclusive) && isAllowedByEndDate(series, occurrence)) {
+            if (!occurrence.isBefore(fromInclusive)
+                    && isAllowedByEndDate(series, occurrence)
+                    && isAllowedByWeekday(series, occurrence)) {
                 occurrences.add(occurrence);
             }
             if (!isAllowedByEndDate(series, occurrence)) {
@@ -33,6 +36,9 @@ public final class TaskRecurrenceCalculator {
     }
 
     public static LocalDateTime nextOccurrence(TaskSeries series, LocalDateTime current) {
+        if (hasCustomWeekdays(series)) {
+            return nextCustomWeekdayOccurrence(series, current);
+        }
         int interval = series.getRecurrenceFrequency() == TaskRecurrenceFrequency.CUSTOM
                 ? requireInterval(series)
                 : 1;
@@ -44,6 +50,16 @@ public final class TaskRecurrenceCalculator {
             case WEEKS -> currentZoned.plusWeeks(interval).toLocalDateTime();
             case MONTHS -> nextMonthOccurrence(series, currentZoned, interval);
         };
+    }
+
+    private static LocalDateTime nextCustomWeekdayOccurrence(TaskSeries series, LocalDateTime current) {
+        List<java.time.DayOfWeek> days = TaskRecurrenceDays.decode(series.getRecurrenceDaysOfWeek());
+        ZonedDateTime currentZoned = current.atZone(zoneFor(series));
+        for (int offset = 1; offset <= 7; offset++) {
+            ZonedDateTime candidate = currentZoned.plusDays(offset);
+            if (days.contains(candidate.getDayOfWeek())) return candidate.toLocalDateTime();
+        }
+        throw new IllegalArgumentException("A custom recurrence needs at least one day of the week.");
     }
 
     private static LocalDateTime nextMonthOccurrence(TaskSeries series, ZonedDateTime current, int interval) {
@@ -74,6 +90,16 @@ public final class TaskRecurrenceCalculator {
     private static boolean isAllowedByEndDate(TaskSeries series, LocalDateTime occurrence) {
         return series.getRecurrenceEndDate() == null
                 || !occurrence.toLocalDate().isAfter(series.getRecurrenceEndDate());
+    }
+
+    private static boolean isAllowedByWeekday(TaskSeries series, LocalDateTime occurrence) {
+        return !hasCustomWeekdays(series)
+                || TaskRecurrenceDays.contains(series.getRecurrenceDaysOfWeek(), occurrence.getDayOfWeek());
+    }
+
+    private static boolean hasCustomWeekdays(TaskSeries series) {
+        return series.getRecurrenceFrequency() == TaskRecurrenceFrequency.CUSTOM
+                && !TaskRecurrenceDays.decode(series.getRecurrenceDaysOfWeek()).isEmpty();
     }
 
     private static ZoneId zoneFor(TaskSeries series) {

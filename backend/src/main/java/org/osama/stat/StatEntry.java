@@ -51,6 +51,13 @@ public class StatEntry {
     @Column(name = "stat_value", nullable = false)
     private double value;
 
+    // NOT_PLANNED is a neutral third state for boolean statistics. Its value is
+    // kept at zero for storage compatibility, but it is not treated as No.
+    @Enumerated(EnumType.STRING)
+    @Column(name = "entry_status", nullable = false, length = 20)
+    @Builder.Default
+    private StatEntryStatus status = StatEntryStatus.RECORDED;
+
     @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)

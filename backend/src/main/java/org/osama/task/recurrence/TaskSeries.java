@@ -66,6 +66,9 @@ public class TaskSeries {
     @Column(name = "recurrence_unit", length = 20)
     private TaskRecurrenceUnit recurrenceUnit;
 
+    @Column(name = "recurrence_days_of_week", length = 64)
+    private String recurrenceDaysOfWeek;
+
     @Column(name = "time_zone", nullable = false, length = 80)
     private String timeZone;
 

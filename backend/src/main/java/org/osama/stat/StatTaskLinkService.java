@@ -39,18 +39,17 @@ public class StatTaskLinkService {
 
     @Transactional
     public void synchronizeStatEntry(StatDefinition definition, LocalDate date,
-                                     double value, String userId) {
+                                     Double value, StatEntryStatus status, String userId) {
         if (!isLinkedBoolean(definition)) return;
 
-        boolean completed = value == 1.0;
         taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(definition.getRecurringTaskSeriesId())
                 .stream()
                 .filter(task -> task.getSeriesOccurrenceAt() != null
                         && date.equals(task.getSeriesOccurrenceAt().toLocalDate()))
-                .forEach(task -> setTaskCompletion(task, completed));
+                .forEach(task -> setTaskState(task, value, status));
 
-        log.info("Linked stat occurrence synchronized to task: userId={} statDefinitionId={} date={} completed={}",
-                userId, definition.getId(), date, completed);
+        log.info("Linked stat occurrence synchronized to task: userId={} statDefinitionId={} date={} value={} status={}",
+                userId, definition.getId(), date, value, status);
     }
 
     @Transactional
@@ -72,6 +71,7 @@ public class StatTaskLinkService {
                                     .user(user)
                                     .build());
                     entry.setValue(task.isCompleted() ? 1.0 : 0.0);
+                    entry.setStatus(StatEntryStatus.RECORDED);
                     entryRepository.save(entry);
                     log.info("Linked task completion synchronized to stat: userId={} taskId={} statDefinitionId={} date={} completed={}",
                             userId, task.getTaskId(), definition.getId(), date, task.isCompleted());
@@ -82,16 +82,18 @@ public class StatTaskLinkService {
     public void synchronizeExistingEntries(StatDefinition definition, String userId) {
         if (!isLinkedBoolean(definition)) return;
 
-        Map<LocalDate, Double> valuesByDate = entryRepository
+        Map<LocalDate, StatEntry> entriesByDate = entryRepository
                 .findAllByStatDefinitionIdAndUserId(definition.getId(), userId)
                 .stream()
-                .collect(Collectors.toMap(StatEntry::getDate, StatEntry::getValue));
+                .collect(Collectors.toMap(StatEntry::getDate, entry -> entry));
         taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(definition.getRecurringTaskSeriesId())
                 .stream()
                 .filter(task -> task.getSeriesOccurrenceAt() != null)
-                .filter(task -> valuesByDate.containsKey(task.getSeriesOccurrenceAt().toLocalDate()))
-                .forEach(task -> setTaskCompletion(task,
-                        valuesByDate.get(task.getSeriesOccurrenceAt().toLocalDate()) == 1.0));
+                .filter(task -> entriesByDate.containsKey(task.getSeriesOccurrenceAt().toLocalDate()))
+                .forEach(task -> {
+                    StatEntry entry = entriesByDate.get(task.getSeriesOccurrenceAt().toLocalDate());
+                    setTaskState(task, entry.getValue(), entry.getStatus());
+                });
     }
 
     private boolean isLinkedBoolean(StatDefinition definition) {
@@ -104,8 +106,12 @@ public class StatTaskLinkService {
         return definition.getType() == StatType.BOOLEAN;
     }
 
-    private void setTaskCompletion(Task task, boolean completed) {
+    private void setTaskState(Task task, Double value, StatEntryStatus status) {
+        boolean notPlanned = status == StatEntryStatus.NOT_PLANNED;
+        boolean completed = !notPlanned && value != null && value == 1.0;
         task.setCompleted(completed);
+        task.setSkipped(notPlanned);
+        task.setSkipReason(notPlanned ? org.osama.task.TaskSkipReason.USER : null);
         task.setCompletionDateTime(completed ? LocalDateTime.now() : null);
         taskRepository.save(task);
     }

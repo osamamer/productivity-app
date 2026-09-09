@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.DayOfWeek;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -56,6 +57,28 @@ class TaskRecurrenceCalculatorTest {
                         series,
                         series.getStartDateTime(),
                         LocalDateTime.of(2025, 2, 10, 0, 0))
+        );
+    }
+
+    @Test
+    void customWeekdayRecurrenceVisitsOnlyTheSelectedDays() {
+        TaskSeries series = series(LocalDateTime.of(2025, 1, 6, 8, 0));
+        series.setRecurrenceFrequency(TaskRecurrenceFrequency.CUSTOM);
+        series.setRecurrenceInterval(1);
+        series.setRecurrenceUnit(TaskRecurrenceUnit.WEEKS);
+        series.setRecurrenceDaysOfWeek("MONDAY,WEDNESDAY");
+
+        assertEquals(
+                List.of(
+                        LocalDateTime.of(2025, 1, 6, 8, 0),
+                        LocalDateTime.of(2025, 1, 8, 8, 0),
+                        LocalDateTime.of(2025, 1, 13, 8, 0),
+                        LocalDateTime.of(2025, 1, 15, 8, 0)
+                ),
+                TaskRecurrenceCalculator.occurrencesBetween(
+                        series,
+                        series.getStartDateTime(),
+                        LocalDateTime.of(2025, 1, 16, 0, 0))
         );
     }
 

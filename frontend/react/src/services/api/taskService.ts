@@ -28,11 +28,63 @@ const TASK_URL = `${API_BASE_URL}/api/v1/tasks`;
 const TASK_SERIES_URL = `${API_BASE_URL}/api/v1/task-series`;
 const SESSION_URL = `${API_BASE_URL}/api/v1/session`;
 const POMODORO_URL = `${API_BASE_URL}/api/v1/pomodoro`;
-const TODAY_TASKS_TTL_MS = 30 * 1000;
+// Task data changes through this service and is explicitly invalidated after
+// mutations, so it can stay warm for the lifetime of a normal work session.
+const TASK_CACHE_TTL_MS = 60 * 60 * 1000;
+const TASK_SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 export const TASK_PAGE_BATCH_SIZE = 30;
-const todayTasksCache = new CachedResource<Task[]>({ ttlMs: TODAY_TASKS_TTL_MS, maxEntries: 4 });
-const taskPageInitialCache = new CachedResource<Task[]>({ ttlMs: TODAY_TASKS_TTL_MS, maxEntries: 4 });
-const taskPageBatchCache = new CachedResource<Task[]>({ ttlMs: TODAY_TASKS_TTL_MS, maxEntries: 12 });
+
+type DeleteTaskOptions = {
+    notifyResource?: boolean;
+};
+const mainTasksCache = new CachedResource<Task[]>({ ttlMs: TASK_CACHE_TTL_MS, maxEntries: 4 });
+const todayTasksCache = new CachedResource<Task[]>({ ttlMs: TASK_CACHE_TTL_MS, maxEntries: 4 });
+const taskPageInitialCache = new CachedResource<Task[]>({ ttlMs: TASK_CACHE_TTL_MS, maxEntries: 4 });
+const taskPageBatchCache = new CachedResource<Task[]>({ ttlMs: TASK_CACHE_TTL_MS, maxEntries: 12 });
+
+function mainTasksCacheKey(): string {
+    return `${getAuthCacheScope()}:main-tasks`;
+}
+
+function mainTasksStorageKey(): string {
+    return `claritard:${mainTasksCacheKey()}`;
+}
+
+function readPersistedMainTasks(): Task[] | undefined {
+    if (typeof window === 'undefined') return undefined;
+
+    try {
+        const raw = window.sessionStorage.getItem(mainTasksStorageKey());
+        if (!raw) return undefined;
+
+        const snapshot = JSON.parse(raw) as { savedAt?: number; tasks?: Task[] };
+        const savedAt = snapshot.savedAt;
+        if (!Array.isArray(snapshot.tasks) || typeof savedAt !== 'number' || !Number.isFinite(savedAt)) {
+            return undefined;
+        }
+        if (Date.now() - savedAt > TASK_SNAPSHOT_MAX_AGE_MS) {
+            window.sessionStorage.removeItem(mainTasksStorageKey());
+            return undefined;
+        }
+        return snapshot.tasks;
+    } catch (error) {
+        console.warn('Could not read the cached task snapshot:', error);
+        return undefined;
+    }
+}
+
+function persistMainTasks(tasks: Task[]): void {
+    if (typeof window === 'undefined') return;
+
+    try {
+        window.sessionStorage.setItem(mainTasksStorageKey(), JSON.stringify({
+            savedAt: Date.now(),
+            tasks,
+        }));
+    } catch (error) {
+        console.warn('Could not persist the cached task snapshot:', error);
+    }
+}
 
 function todayTasksCacheKey(): string {
     return `${getAuthCacheScope()}:today-tasks`;
@@ -40,6 +92,20 @@ function todayTasksCacheKey(): string {
 
 function invalidateTodayTasksCache(): void {
     todayTasksCache.invalidate(todayTasksCacheKey());
+}
+
+function invalidateMainTasksCache(): void {
+    mainTasksCache.invalidate(mainTasksCacheKey());
+}
+
+function invalidateTaskViewCaches(): void {
+    invalidateTodayTasksCache();
+    invalidateTaskPageCache();
+}
+
+function invalidateTaskListCaches(): void {
+    invalidateMainTasksCache();
+    invalidateTaskViewCaches();
 }
 
 function invalidateTaskPageCache(): void {
@@ -53,11 +119,44 @@ function invalidatePomodoroData(taskId: string): void {
 }
 
 function clearTaskDataCaches(): void {
+    mainTasksCache.clear();
+    if (typeof window !== 'undefined') {
+        try {
+            window.sessionStorage.removeItem(mainTasksStorageKey());
+        } catch (error) {
+            console.warn('Could not clear the cached task snapshot:', error);
+        }
+    }
     todayTasksCache.clear();
     invalidateTaskPageCache();
     clearTaskSubtasksCache();
     clearTaskSeriesCache();
     clearTaskDetailsCache();
+}
+
+function getMainTasksSnapshotForMutation(): Task[] | undefined {
+    return mainTasksCache.getStale(mainTasksCacheKey()) ?? readPersistedMainTasks();
+}
+
+function setMainTasksSnapshot(tasks: Task[]): void {
+    mainTasksCache.set(mainTasksCacheKey(), tasks, TASK_CACHE_TTL_MS);
+    persistMainTasks(tasks);
+}
+
+function cacheMainTasks(tasks: Task[]): void {
+    const currentTasks = getMainTasksSnapshotForMutation();
+    if (!currentTasks) return;
+
+    const nextTasks = [...currentTasks];
+    tasks.filter(task => !task.parentId).forEach(task => {
+        const existingIndex = nextTasks.findIndex(candidate => candidate.taskId === task.taskId);
+        if (existingIndex === -1) {
+            nextTasks.unshift(task);
+        } else {
+            nextTasks[existingIndex] = task;
+        }
+    });
+    setMainTasksSnapshot(nextTasks);
 }
 
 subscribeToResourceInvalidation('stats', clearTaskDataCaches);
@@ -106,18 +205,37 @@ export const taskService = {
 
     // ============ Task Queries ============
 
-    async getAllMainTasks(): Promise<Task[]> {
-        const response = await fetch(`${TASK_URL}/main`, {
-            headers: getAuthHeaders(),
+    async getAllMainTasks(forceRefresh = false): Promise<Task[]> {
+        const key = mainTasksCacheKey();
+        if (forceRefresh) mainTasksCache.invalidate(key);
+
+        return mainTasksCache.get(key, async () => {
+            const response = await fetch(`${TASK_URL}/main`, {
+                headers: getAuthHeaders(),
+            });
+            if (!response.ok) {
+                throw new Error('Failed to fetch all tasks');
+            }
+            const tasks = await response.json() as Task[];
+            persistMainTasks(tasks);
+            return tasks;
         });
-        if (!response.ok) {
-            throw new Error('Failed to fetch all tasks');
-        }
-        return response.json();
     },
 
-    async getTodayTasks(): Promise<Task[]> {
-        return todayTasksCache.get(todayTasksCacheKey(), async () => {
+    getCachedMainTasks(): Task[] | undefined {
+        return mainTasksCache.getStale(mainTasksCacheKey()) ?? readPersistedMainTasks();
+    },
+
+    cacheMainTasks(tasks: Task[]): void {
+        cacheMainTasks(tasks);
+        invalidateTaskViewCaches();
+    },
+
+    async getTodayTasks(forceRefresh = false): Promise<Task[]> {
+        const key = todayTasksCacheKey();
+        if (forceRefresh) todayTasksCache.invalidate(key);
+
+        return todayTasksCache.get(key, async () => {
             const response = await fetch(`${TASK_URL}/today`, {
                 headers: getAuthHeaders(),
             });
@@ -128,9 +246,19 @@ export const taskService = {
         });
     },
 
-    async getTaskPageInitialTasks(batchSize = TASK_PAGE_BATCH_SIZE, completed?: boolean): Promise<Task[]> {
+    async getTaskPageInitialTasks(
+        batchSize = TASK_PAGE_BATCH_SIZE,
+        completed?: boolean,
+        forceRefresh = false,
+    ): Promise<Task[]> {
         const completionFilter = completed === undefined ? 'all' : String(completed);
         const cacheKey = `${getAuthCacheScope()}:task-page-initial:${completionFilter}:${batchSize}`;
+        if (forceRefresh) {
+            taskPageInitialCache.invalidate(cacheKey);
+            invalidateTodayTasksCache();
+            taskPageBatchCache.clear();
+        }
+
         return taskPageInitialCache.get(cacheKey, async () => {
             const [today, future, past, undated] = await Promise.all([
                 this.getTodayTasks(),
@@ -158,9 +286,10 @@ export const taskService = {
         if (!response.ok) {
             throw new Error('Failed to reorder tasks');
         }
-        invalidateTodayTasksCache();
-        invalidateTaskPageCache();
-        return response.json();
+        const tasks = await response.json() as Task[];
+        setMainTasksSnapshot(tasks);
+        invalidateTaskViewCaches();
+        return tasks;
     },
 
     async getPastTasks(limit?: number, offset = 0, completed?: boolean): Promise<Task[]> {
@@ -222,24 +351,6 @@ export const taskService = {
         return details;
     },
 
-    /**
-     * Warm the fields that Home renders only after a task row is expanded.
-     * Each task is stored as one complete detail record for Home to consume.
-     */
-    async prefetchTodayTaskDetails(tasks: Task[]): Promise<void> {
-        const results = await Promise.allSettled(
-            tasks
-                .filter(task => !task.parentId)
-                .map(task => this.getTaskDetails(task)),
-        );
-
-        results.forEach(result => {
-            if (result.status === 'rejected') {
-                console.error('Failed to warm Home task details:', result.reason);
-            }
-        });
-    },
-
     async getPomodoroStats(taskId: string, signal?: AbortSignal): Promise<TaskPomodoroStats> {
         const response = await fetch(`${TASK_URL}/${taskId}/pomodoro-stats`, {
             headers: getAuthHeaders(),
@@ -279,6 +390,7 @@ export const taskService = {
                 recurrenceEndDate: task.recurrenceEndDate,
                 recurrenceInterval: task.recurrenceInterval,
                 recurrenceUnit: task.recurrenceUnit,
+                recurrenceDaysOfWeek: task.recurrenceDaysOfWeek,
                 timeZone: task.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
             }),
             headers: {
@@ -294,9 +406,16 @@ export const taskService = {
             invalidateTaskSubtasks(task.parentId);
             invalidateTaskDetails(task.parentId);
         }
-        invalidateTodayTasksCache();
-        invalidateTaskPageCache();
-        return response.json();
+        const createdTask = await response.json() as Task;
+        if (task.recurrenceFrequency) {
+            // A recurring create also materializes future occurrences, so one
+            // response cannot represent the complete main-task snapshot.
+            invalidateTaskListCaches();
+        } else {
+            cacheMainTasks([createdTask]);
+            invalidateTaskViewCaches();
+        }
+        return createdTask;
     },
 
     async updateTask(taskId: string, updates: Partial<Task>): Promise<Task> {
@@ -316,8 +435,8 @@ export const taskService = {
         const cachedDetails = getCachedTaskDetails(taskId);
         if (cachedDetails) setCachedTaskDetails(taskId, { ...cachedDetails, task: updatedTask });
         invalidateTaskPomodoroStats(taskId);
-        invalidateTodayTasksCache();
-        invalidateTaskPageCache();
+        cacheMainTasks([updatedTask]);
+        invalidateTaskViewCaches();
         if (updates.completed !== undefined) invalidateResource('tasks');
         return updatedTask;
     },
@@ -332,9 +451,12 @@ export const taskService = {
         return response.json();
     },
 
-    async getTaskSeries(taskId: string): Promise<TaskSeries | null> {
+    async getTaskSeries(taskId: string, seriesId?: string | null): Promise<TaskSeries | null> {
         return loadTaskSeries(taskId, async () => {
-            const response = await fetch(`${TASK_URL}/${taskId}/recurrence`, {
+            const url = seriesId
+                ? `${TASK_SERIES_URL}/${seriesId}`
+                : `${TASK_URL}/${taskId}/recurrence`;
+            const response = await fetch(url, {
                 headers: getAuthHeaders(),
             });
             if (response.status === 404) return null;
@@ -361,8 +483,7 @@ export const taskService = {
         setCachedTaskSeries(taskId, series);
         const cachedDetails = getCachedTaskDetails(taskId);
         if (cachedDetails) setCachedTaskDetails(taskId, { ...cachedDetails, taskSeries: series });
-        invalidateTodayTasksCache();
-        invalidateTaskPageCache();
+        invalidateTaskListCaches();
         invalidateResource('tasks');
         return series;
     },
@@ -381,8 +502,7 @@ export const taskService = {
         }
         clearTaskSeriesCache();
         clearTaskDetailsCache();
-        invalidateTodayTasksCache();
-        invalidateTaskPageCache();
+        invalidateTaskListCaches();
         invalidateResource('tasks');
         return response.json();
     },
@@ -397,8 +517,7 @@ export const taskService = {
         }
         clearTaskSeriesCache();
         clearTaskDetailsCache();
-        invalidateTodayTasksCache();
-        invalidateTaskPageCache();
+        invalidateTaskListCaches();
         invalidateResource('tasks');
     },
 
@@ -411,7 +530,7 @@ export const taskService = {
         return this.updateTask(taskId, { description });
     },
 
-    async deleteTask(taskId: string): Promise<void> {
+    async deleteTask(taskId: string, { notifyResource = true }: DeleteTaskOptions = {}): Promise<void> {
         const response = await fetch(`${TASK_URL}/${taskId}`, {
             method: 'DELETE',
             headers: getAuthHeaders(),
@@ -420,9 +539,21 @@ export const taskService = {
             throw new Error('Failed to delete task');
         }
         invalidateTaskPomodoroStats(taskId);
-        invalidateTodayTasksCache();
-        invalidateTaskPageCache();
-        invalidateResource('tasks');
+        invalidateTaskListCaches();
+        if (notifyResource) invalidateResource('tasks');
+    },
+
+    async deleteTaskOccurrence(taskId: string, { notifyResource = true }: DeleteTaskOptions = {}): Promise<void> {
+        const response = await fetch(`${TASK_URL}/${taskId}/occurrence`, {
+            method: 'DELETE',
+            headers: getAuthHeaders(),
+        });
+        if (!response.ok) {
+            throw new Error('Failed to delete task occurrence');
+        }
+        invalidateTaskPomodoroStats(taskId);
+        invalidateTaskListCaches();
+        if (notifyResource) invalidateResource('tasks');
     },
 
     clearCache(): void {

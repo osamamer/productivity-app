@@ -15,6 +15,7 @@ export const CHECKUP_NOTIFICATION_TARGET = '/mental-state';
 export const DEFAULT_CHECKUP_INTERVAL_MINUTES = 180;
 export const DEFAULT_CHECKUP_START_TIME = '09:00';
 export const DEFAULT_CHECKUP_TIMES_PER_DAY = 5;
+const MINUTES_PER_DAY = 24 * 60;
 
 const LOCAL_NOTIFICATION_PREFIX = 'calendar-event-reminder-';
 const LOCAL_TASK_NOTIFICATION_PREFIX = 'task-reminder-';
@@ -160,8 +161,15 @@ function checkupTimes(preferences: UserPreferences): { hour: number; minute: num
   const count = preferences.checkupTimesPerDay || DEFAULT_CHECKUP_TIMES_PER_DAY;
   const startMinute = start.hour * 60 + start.minute;
 
+  const seenMinutes = new Set<number>();
   return Array.from({ length: count }, (_, index) => startMinute + index * interval)
-    .filter(totalMinutes => totalMinutes < 24 * 60)
+    .filter(totalMinutes => totalMinutes <= MINUTES_PER_DAY)
+    .map(totalMinutes => totalMinutes === MINUTES_PER_DAY ? 0 : totalMinutes)
+    .filter(totalMinutes => {
+      if (seenMinutes.has(totalMinutes)) return false;
+      seenMinutes.add(totalMinutes);
+      return true;
+    })
     .map(totalMinutes => ({
       hour: Math.floor(totalMinutes / 60),
       minute: totalMinutes % 60,
@@ -296,6 +304,7 @@ function expectedReminders(event: CalendarEvent, now: number): CalendarReminderR
   const records: CalendarReminderRecord[] = [];
 
   eventOccurrences(event, now).forEach(occurrence => {
+    if (occurrence.status === 'CANCELLED') return;
     const start = occurrenceStart(occurrence, event);
     if (Number.isNaN(start.getTime())) return;
     const triggerAt = start.getTime() - event.reminderMinutesBefore! * 60 * 1000;

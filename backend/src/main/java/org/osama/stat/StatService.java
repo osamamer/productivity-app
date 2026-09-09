@@ -6,6 +6,9 @@ import org.osama.requests.NewTaskRequest;
 import org.osama.task.Task;
 import org.osama.task.TaskService;
 import org.osama.task.recurrence.TaskRecurrenceFrequency;
+import org.osama.task.recurrence.TaskRecurrenceUnit;
+import org.osama.task.recurrence.TaskSeriesResponse;
+import org.osama.task.recurrence.TaskSeriesUpdateRequest;
 import org.osama.task.recurrence.TaskSeriesService;
 import org.osama.user.User;
 import org.osama.user.UserRepository;
@@ -13,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -75,13 +79,27 @@ public class StatService {
                                            Double minValue, Double maxValue,
                                            StatMorality morality, Double goodThreshold,
                                            boolean createRecurringTask, String userId) {
+        return createDefinition(name, description, type, minValue, maxValue, morality, goodThreshold,
+                createRecurringTask, TaskRecurrenceFrequency.DAILY, null, userId);
+    }
+
+    @Transactional
+    public StatDefinition createDefinition(String name, String description, StatType type,
+                                           Double minValue, Double maxValue,
+                                           StatMorality morality, Double goodThreshold,
+                                           boolean createRecurringTask,
+                                           TaskRecurrenceFrequency recurrenceFrequency,
+                                           List<DayOfWeek> recurrenceDaysOfWeek,
+                                           String userId) {
         User user = userRepository.findUserById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
 
         validateDefinition(name, type, minValue, maxValue, morality, goodThreshold, userId, null);
         StatDefinition definition = saveDefinition(name, description, type, minValue, maxValue,
                 morality, goodThreshold, null, user);
-        return createRecurringTask ? createRecurringTask(definition.getId(), userId) : definition;
+        return createRecurringTask
+                ? createRecurringTask(definition.getId(), userId, null, recurrenceFrequency, recurrenceDaysOfWeek)
+                : definition;
     }
 
     @Transactional
@@ -110,11 +128,19 @@ public class StatService {
 
     @Transactional
     public StatDefinition createRecurringTask(String definitionId, String userId) {
-        return createRecurringTask(definitionId, userId, null);
+        return createRecurringTask(definitionId, userId, null, TaskRecurrenceFrequency.DAILY, null);
     }
 
     @Transactional
     public StatDefinition createRecurringTask(String definitionId, String userId, String requestedTimeZone) {
+        return createRecurringTask(definitionId, userId, requestedTimeZone,
+                TaskRecurrenceFrequency.DAILY, null);
+    }
+
+    @Transactional
+    public StatDefinition createRecurringTask(String definitionId, String userId, String requestedTimeZone,
+                                              TaskRecurrenceFrequency recurrenceFrequency,
+                                              List<DayOfWeek> recurrenceDaysOfWeek) {
         StatDefinition definition = definitionRepository.findByIdAndUserId(definitionId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("No such stat."));
         if (definition.getType() != StatType.BOOLEAN) {
@@ -133,10 +159,27 @@ public class StatService {
             throw new IllegalArgumentException("The task time zone is invalid.", exception);
         }
         LocalDateTime start = LocalDateTime.now(timeZone).withSecond(0).withNano(0);
+        TaskRecurrenceFrequency frequency = recurrenceFrequency == null
+                ? TaskRecurrenceFrequency.DAILY : recurrenceFrequency;
+        if (frequency == TaskRecurrenceFrequency.CUSTOM
+                && (recurrenceDaysOfWeek == null || recurrenceDaysOfWeek.isEmpty())) {
+            throw new IllegalArgumentException("A custom stat task needs at least one day of the week.");
+        }
+        if (frequency == TaskRecurrenceFrequency.CUSTOM) {
+            while (!recurrenceDaysOfWeek.contains(start.getDayOfWeek())) {
+                start = start.plusDays(1);
+            }
+        }
         NewTaskRequest request = new NewTaskRequest();
         request.setName(definition.getName());
         request.setScheduledPerformDateTime(start.toString());
-        request.setRecurrenceFrequency(TaskRecurrenceFrequency.DAILY);
+        request.setRecurrenceFrequency(frequency);
+        request.setRecurrenceDaysOfWeek(frequency == TaskRecurrenceFrequency.CUSTOM
+                ? recurrenceDaysOfWeek : null);
+        if (frequency == TaskRecurrenceFrequency.CUSTOM) {
+            request.setRecurrenceInterval(1);
+            request.setRecurrenceUnit(TaskRecurrenceUnit.WEEKS);
+        }
         request.setTimeZone(timeZone.getId());
 
         Task firstOccurrence = taskSeriesService.createSeries(request, userId);
@@ -145,6 +188,62 @@ public class StatService {
         statTaskLinkService.synchronizeExistingEntries(savedDefinition, userId);
         log.info("Recurring task linked to boolean stat: userId={} statDefinitionId={} seriesId={}",
                 userId, savedDefinition.getId(), savedDefinition.getRecurringTaskSeriesId());
+        return savedDefinition;
+    }
+
+    @Transactional(readOnly = true)
+    public TaskSeriesResponse getRecurringTask(String definitionId, String userId) {
+        StatDefinition definition = definitionRepository.findByIdAndUserId(definitionId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("No such stat."));
+        if (definition.getRecurringTaskSeriesId() == null) {
+            throw new ResourceNotFoundException("This statistic has no recurring task.");
+        }
+        return taskSeriesService.getSeries(definition.getRecurringTaskSeriesId(), userId);
+    }
+
+    @Transactional
+    public StatDefinition updateRecurringTask(String definitionId, String userId, String requestedTimeZone,
+                                              TaskRecurrenceFrequency recurrenceFrequency,
+                                              List<DayOfWeek> recurrenceDaysOfWeek) {
+        StatDefinition definition = definitionRepository.findByIdAndUserId(definitionId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("No such stat."));
+        if (definition.getType() != StatType.BOOLEAN || definition.getRecurringTaskSeriesId() == null) {
+            throw new IllegalArgumentException("This statistic has no recurring task to update.");
+        }
+
+        TaskRecurrenceFrequency frequency = recurrenceFrequency == null
+                ? TaskRecurrenceFrequency.DAILY : recurrenceFrequency;
+        TaskSeriesUpdateRequest request = new TaskSeriesUpdateRequest();
+        request.setRecurrenceFrequency(frequency);
+        request.setTimeZone(requestedTimeZone);
+        request.setRecurrenceDaysOfWeek(frequency == TaskRecurrenceFrequency.CUSTOM
+                ? recurrenceDaysOfWeek : null);
+        if (frequency == TaskRecurrenceFrequency.CUSTOM) {
+            if (recurrenceDaysOfWeek == null || recurrenceDaysOfWeek.isEmpty()) {
+                throw new IllegalArgumentException("A custom stat task needs at least one day of the week.");
+            }
+            request.setRecurrenceInterval(1);
+            request.setRecurrenceUnit(TaskRecurrenceUnit.WEEKS);
+        }
+        taskSeriesService.updateSeries(definition.getRecurringTaskSeriesId(), request, userId);
+        statTaskLinkService.synchronizeExistingEntries(definition, userId);
+        log.info("Recurring task schedule updated: userId={} statDefinitionId={} seriesId={} frequency={}",
+                userId, definitionId, definition.getRecurringTaskSeriesId(), frequency);
+        return definition;
+    }
+
+    @Transactional
+    public StatDefinition deleteRecurringTaskSeries(String definitionId, String userId) {
+        StatDefinition definition = definitionRepository.findByIdAndUserId(definitionId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("No such stat."));
+        String seriesId = definition.getRecurringTaskSeriesId();
+        if (seriesId == null) return definition;
+
+        taskService.deleteRecurringSeriesCompletely(seriesId, userId);
+        definition.setRecurringTaskSeriesId(null);
+        StatDefinition savedDefinition = definitionRepository.save(definition);
+        log.info("Recurring task series deleted for boolean stat: userId={} statDefinitionId={} seriesId={}",
+                userId, definitionId, seriesId);
         return savedDefinition;
     }
 
@@ -318,15 +417,33 @@ public class StatService {
                 userId, definitionId, statDefinition.getName());
     }
 
+    /** A null value means that the dated stat entry should be cleared. */
     @Transactional
-    public StatEntry recordEntry(String statDefinitionId, LocalDate date, double value, String userId) {
-        return recordEntry(statDefinitionId, date, value, userId, false);
+    public StatEntry recordEntry(String statDefinitionId, LocalDate date, Number value, String userId) {
+        return recordEntry(statDefinitionId, date,
+                value == null ? null : value.doubleValue(), StatEntryStatus.RECORDED, userId, false);
     }
 
-    private StatEntry recordEntry(String statDefinitionId, LocalDate date, double value,
-                                  String userId, boolean automatic) {
+    @Transactional
+    public StatEntry recordEntry(String statDefinitionId, LocalDate date, Number value,
+                                 StatEntryStatus status, String userId) {
+        return recordEntry(statDefinitionId, date,
+                value == null ? null : value.doubleValue(), status, userId, false);
+    }
+
+    private StatEntry recordEntry(String statDefinitionId, LocalDate date, Double requestedValue,
+                                  StatEntryStatus requestedStatus, String userId, boolean automatic) {
         StatDefinition definition = definitionRepository.findByIdAndUserId(statDefinitionId, userId)
                 .orElseThrow(() -> new IllegalArgumentException("Stat definition not found: " + statDefinitionId));
+
+        StatEntryStatus status = requestedStatus == null ? StatEntryStatus.RECORDED : requestedStatus;
+        Double value = requestedValue == null ? null : requestedValue;
+        if (status == StatEntryStatus.NOT_PLANNED) {
+            value = 0.0;
+        }
+        if (status == StatEntryStatus.NOT_PLANNED && definition.getType() != StatType.BOOLEAN) {
+            throw new IllegalArgumentException("Only boolean statistics can be marked as not planned.");
+        }
 
         if (!automatic && SystemStatCatalog.isAutomaticallyLoggedSystemKey(definition.getSystemKey())) {
             throw new IllegalArgumentException("Meditation stats are recorded automatically when a session ends.");
@@ -335,23 +452,78 @@ public class StatService {
             throw new IllegalArgumentException("Mental state ratings must be recorded as a combined check-in.");
         }
 
-        validateValue(definition, value);
-
         User user = userRepository.findUserById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
 
         Optional<StatEntry> existingEntry = entryRepository.findByStatDefinitionIdAndUserIdAndDate(statDefinitionId,
                 userId,
                 date);
+        if (value == null) {
+            existingEntry.ifPresent(entryRepository::delete);
+            if (existingEntry.isPresent()) {
+                statTaskLinkService.synchronizeStatEntry(
+                        definition, date, null, StatEntryStatus.RECORDED, userId);
+                log.info("Stat value cleared: userId={} statDefinitionId={} statName={} date={}",
+                        userId, definition.getId(), definition.getName(), date);
+            }
+            maybeCalculateSleepDuration(definition, date, userId);
+            return null;
+        }
+
+        validateValue(definition, value);
+
         Double previousValue = existingEntry.map(StatEntry::getValue).orElse(null);
         StatEntry statEntry = existingEntry.orElseGet(() -> createEntry(definition, date, user));
         statEntry.setValue(value);
+        statEntry.setStatus(status);
         StatEntry savedEntry = entryRepository.save(statEntry);
-        log.info("Stat value {}: userId={} statDefinitionId={} statName={} date={} value={} previousValue={}",
+        log.info("Stat value {}: userId={} statDefinitionId={} statName={} date={} value={} status={} previousValue={}",
                 previousValue == null ? "recorded" : "updated",
-                userId, definition.getId(), definition.getName(), date, value, previousValue);
-        statTaskLinkService.synchronizeStatEntry(definition, date, value, userId);
+                userId, definition.getId(), definition.getName(), date, value, status, previousValue);
+        statTaskLinkService.synchronizeStatEntry(definition, date, value, status, userId);
+        maybeCalculateSleepDuration(definition, date, userId);
         return savedEntry;
+    }
+
+    private void maybeCalculateSleepDuration(StatDefinition changedDefinition, LocalDate changedDate,
+                                             String userId) {
+        String systemKey = changedDefinition.getSystemKey();
+        if (!SystemStatCatalog.SLEEP_TIME_SYSTEM_KEY.equals(systemKey)
+                && !SystemStatCatalog.WAKE_UP_TIME_SYSTEM_KEY.equals(systemKey)) {
+            return;
+        }
+
+        LocalDate sleepDate = SystemStatCatalog.SLEEP_TIME_SYSTEM_KEY.equals(systemKey)
+                ? changedDate
+                : changedDate.minusDays(1);
+        LocalDate wakeUpDate = sleepDate.plusDays(1);
+
+        Optional<StatDefinition> sleepTimeDefinition = definitionRepository
+                .findByUserIdAndSystemKey(userId, SystemStatCatalog.SLEEP_TIME_SYSTEM_KEY);
+        Optional<StatDefinition> wakeUpTimeDefinition = definitionRepository
+                .findByUserIdAndSystemKey(userId, SystemStatCatalog.WAKE_UP_TIME_SYSTEM_KEY);
+        Optional<StatDefinition> sleepDurationDefinition = definitionRepository
+                .findByUserIdAndSystemKey(userId, SystemStatCatalog.SLEEP_HOURS_SYSTEM_KEY);
+        if (sleepTimeDefinition.isEmpty() || wakeUpTimeDefinition.isEmpty()
+                || sleepDurationDefinition.isEmpty()) {
+            return;
+        }
+
+        Optional<StatEntry> sleepEntry = entryRepository.findByStatDefinitionIdAndUserIdAndDate(
+                sleepTimeDefinition.get().getId(), userId, sleepDate);
+        Optional<StatEntry> wakeUpEntry = entryRepository.findByStatDefinitionIdAndUserIdAndDate(
+                wakeUpTimeDefinition.get().getId(), userId, wakeUpDate);
+        if (sleepEntry.isEmpty() || wakeUpEntry.isEmpty()) return;
+
+        int sleepMinutes = (int) Math.round(sleepEntry.get().getValue());
+        int wakeUpMinutes = (int) Math.round(wakeUpEntry.get().getValue());
+        int durationMinutes = wakeUpMinutes - sleepMinutes;
+        if (durationMinutes <= 0) durationMinutes += StatTimeScale.MINUTES_PER_DAY;
+
+        recordEntry(sleepDurationDefinition.get().getId(), wakeUpDate,
+                (double) durationMinutes, StatEntryStatus.RECORDED, userId, true);
+        log.info("Sleep duration calculated: userId={} sleepDate={} wakeUpDate={} durationMinutes={}",
+                userId, sleepDate, wakeUpDate, durationMinutes);
     }
 
     @Transactional
@@ -365,14 +537,15 @@ public class StatService {
         StatDefinition minutesDefinition = getSystemDefinition(
                 userId, SystemStatCatalog.MEDITATION_MINUTES_SYSTEM_KEY);
 
-        recordEntry(meditatedDefinition.getId(), date, 1.0, userId, true);
+        recordEntry(meditatedDefinition.getId(), date, 1.0, StatEntryStatus.RECORDED, userId, true);
 
         double existingMinutes = entryRepository
                 .findByStatDefinitionIdAndUserIdAndDate(minutesDefinition.getId(), userId, date)
                 .map(StatEntry::getValue)
                 .orElse(0.0);
         double sessionMinutes = duration.toMillis() / 60_000.0;
-        recordEntry(minutesDefinition.getId(), date, existingMinutes + sessionMinutes, userId, true);
+        recordEntry(minutesDefinition.getId(), date, existingMinutes + sessionMinutes,
+                StatEntryStatus.RECORDED, userId, true);
 
         log.info("Meditation stats recorded: userId={} date={} sessionMinutes={} dailyMinutes={}",
                 userId, date, sessionMinutes, existingMinutes + sessionMinutes);
@@ -439,12 +612,19 @@ public class StatService {
 
         if (def.getType() == StatType.BOOLEAN) {
             periodYesCount = (int) entries.stream()
+                    .filter(entry -> entry.getStatus() != StatEntryStatus.NOT_PLANNED)
                     .filter(entry -> entry.getValue() == 1.0)
                     .count();
             booleanStreak = computeStreak(to, from,
-                    date -> valueByDate.containsKey(date) && valueByDate.get(date) == 1.0);
+                    date -> valueByDate.containsKey(date)
+                            && entries.stream().filter(entry -> entry.getDate().equals(date))
+                            .noneMatch(entry -> entry.getStatus() == StatEntryStatus.NOT_PLANNED)
+                            && valueByDate.get(date) == 1.0);
             longestBooleanStreak = computeLongestStreak(from, to,
-                    date -> valueByDate.containsKey(date) && valueByDate.get(date) == 1.0);
+                    date -> valueByDate.containsKey(date)
+                            && entries.stream().filter(entry -> entry.getDate().equals(date))
+                            .noneMatch(entry -> entry.getStatus() == StatEntryStatus.NOT_PLANNED)
+                            && valueByDate.get(date) == 1.0);
         }
 
         if (def.getType() == StatType.NUMBER || def.getType() == StatType.RANGE

@@ -1,11 +1,41 @@
-import type { CalendarEvent, RecurrenceFrequency, RecurrenceUnit } from '@/types/models';
+import type { CalendarEvent, CalendarEventStatus, RecurrenceFrequency, RecurrenceUnit } from '@/types/models';
 
 export interface CalendarEventOccurrence {
   id: string;
   occurrenceDate: string;
+  occurrenceKey: string;
   start: string;
   end: string;
   allDay: boolean;
+  status: CalendarEventStatus;
+}
+
+function occurrenceKey(start: Date, occurrenceDate: string, allDay: boolean): string {
+  return allDay ? `date:${occurrenceDate}` : `instant:${start.toISOString()}`;
+}
+
+function sameOccurrenceKey(first: string, second: string): boolean {
+  if (first === second) return true;
+  if (!first.startsWith('instant:') || !second.startsWith('instant:')) return false;
+  const firstInstant = Date.parse(first.slice('instant:'.length));
+  const secondInstant = Date.parse(second.slice('instant:'.length));
+  return !Number.isNaN(firstInstant) && firstInstant === secondInstant;
+}
+
+function occurrenceOverride(event: CalendarEvent, key: string) {
+  return (event.occurrenceOverrides ?? []).find(override => sameOccurrenceKey(override.occurrenceKey, key));
+}
+
+function occurrenceIsDeleted(event: CalendarEvent, key: string): boolean {
+  return occurrenceOverride(event, key)?.deleted === true;
+}
+
+function occurrenceStatus(event: CalendarEvent, key: string): CalendarEventStatus {
+  if (event.status === 'CANCELLED') return 'CANCELLED';
+  return occurrenceOverride(event, key)?.status
+    ?? ((event.cancelledOccurrenceKeys ?? []).some(cancelledKey => sameOccurrenceKey(cancelledKey, key))
+      ? 'CANCELLED'
+      : event.status);
 }
 
 function dateKey(date: Date): string {
@@ -90,13 +120,16 @@ function allDayOccurrences(event: CalendarEvent, rangeStart: Date, rangeEnd: Dat
     if (start >= rangeEnd) break;
 
     const end = addDays(start, durationDays);
-    if (end > rangeStart) {
+    const key = occurrenceKey(start, occurrenceDate, true);
+    if (end > rangeStart && !occurrenceIsDeleted(event, key)) {
       occurrences.push({
         id: index === 0 ? event.id : `${event.id}-${occurrenceDate}`,
         occurrenceDate,
+        occurrenceKey: key,
         start: occurrenceDate,
         end: dateKey(end),
         allDay: true,
+        status: occurrenceStatus(event, key),
       });
     }
   }
@@ -119,13 +152,16 @@ function timedOccurrences(event: CalendarEvent, rangeStart: Date, rangeEnd: Date
     if (start >= rangeEnd) break;
 
     const occurrenceEnd = new Date(start.getTime() + durationMilliseconds);
-    if (occurrenceEnd > rangeStart) {
+    const key = occurrenceKey(start, occurrenceDate, false);
+    if (occurrenceEnd > rangeStart && !occurrenceIsDeleted(event, key)) {
       occurrences.push({
         id: index === 0 ? event.id : `${event.id}-${occurrenceDate}`,
         occurrenceDate,
+        occurrenceKey: key,
         start: start.toISOString(),
         end: occurrenceEnd.toISOString(),
         allDay: false,
+        status: occurrenceStatus(event, key),
       });
     }
   }
@@ -139,18 +175,22 @@ export function expandCalendarEvent(event: CalendarEvent, rangeStart: Date, rang
       return [{
         id: event.id,
         occurrenceDate: event.startDate,
+        occurrenceKey: occurrenceKey(dateFromKey(event.startDate), event.startDate, true),
         start: event.startDate,
         end: dateKey(addDays(dateFromKey(event.endDate), 1)),
         allDay: true,
+        status: event.status,
       }];
     }
     if (!event.startTime || !event.endTime) return [];
     return [{
       id: event.id,
       occurrenceDate: dateKey(new Date(event.startTime)),
+      occurrenceKey: occurrenceKey(new Date(event.startTime), dateKey(new Date(event.startTime)), false),
       start: event.startTime,
       end: event.endTime,
       allDay: false,
+      status: event.status,
     }];
   }
 

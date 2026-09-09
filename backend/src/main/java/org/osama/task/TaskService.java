@@ -210,15 +210,16 @@ public class TaskService {
 
     @Transactional
     public Task createTask(NewTaskRequest request, String userId) {
-        return createTaskInternal(request, userId, false);
+        return createTaskInternal(request, userId, false, true);
     }
 
     @Transactional
     public Task createTaskFromSeries(NewTaskRequest request, String userId) {
-        return createTaskInternal(request, userId, true);
+        return createTaskInternal(request, userId, true, false);
     }
 
-    private Task createTaskInternal(NewTaskRequest request, String userId, boolean allowClosedMentalThread) {
+    private Task createTaskInternal(NewTaskRequest request, String userId, boolean allowClosedMentalThread,
+                                    boolean prependToTaskOrder) {
         // Validate required field
         if (request.getName() == null || request.getName().isBlank()) {
             throw new IllegalArgumentException("Task name is required");
@@ -270,10 +271,14 @@ public class TaskService {
         task.setTag(request.getTag()); // null is fine
         task.setImportance(request.getImportance()); // primitive int defaults to 0
         if (mentalThread == null) {
-            // Keep regular task entry consistent with the task workspace. A
-            // thread's next actions are chronological, so they are appended.
-            prependTaskOrder(userId, parentId);
-            task.setDisplayOrder(0);
+            if (prependToTaskOrder) {
+                prependTaskOrder(userId, parentId);
+                task.setDisplayOrder(0);
+            } else {
+                // Series expansion may create many rows in one request. Appending
+                // avoids rewriting the full task order for every occurrence.
+                task.setDisplayOrder(nextDisplayOrder(userId, parentId));
+            }
         } else {
             task.setDisplayOrder(nextDisplayOrder(userId, parentId));
         }
@@ -479,6 +484,48 @@ public class TaskService {
                 userId, taskId, subtasks.size());
     }
 
+    @Transactional
+    public void deleteTaskOccurrence(String taskId, String userId) {
+        Task task = taskRepository.findTaskByTaskIdAndUserId(taskId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("Task not found: " + taskId));
+        if (task.getTaskSeriesId() == null) {
+            throw new IllegalArgumentException("Only a recurring task has individual occurrences.");
+        }
+
+        List<Task> subtasks = taskRepository.findAllByUserIdAndParentIdOrderByDisplayOrderAsc(userId, taskId);
+        List<String> deletedTaskIds = new ArrayList<>(subtasks.stream().map(Task::getTaskId).toList());
+        deletedTaskIds.add(taskId);
+        taskGroupService.removeTasksFromGroups(deletedTaskIds, userId);
+        deleteTaskReminders(deletedTaskIds);
+        taskRepository.deleteAll(subtasks);
+
+        task.setSkipped(true);
+        task.setSkipReason(TaskSkipReason.USER);
+        taskRepository.save(task);
+        log.info("Recurring task occurrence deleted: userId={} taskId={} seriesId={} deletedSubtaskCount={}",
+                userId, taskId, task.getTaskSeriesId(), subtasks.size());
+    }
+
+    @Transactional
+    public void deleteRecurringSeriesCompletely(String seriesId, String userId) {
+        taskSeriesRepository.findBySeriesIdAndUserId(seriesId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("Task series not found: " + seriesId));
+        List<Task> occurrences = taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(seriesId);
+        List<String> deletedTaskIds = new ArrayList<>(occurrences.stream().map(Task::getTaskId).toList());
+        List<Task> subtasks = occurrences.stream()
+                .flatMap(task -> taskRepository.findAllByUserIdAndParentIdOrderByDisplayOrderAsc(userId, task.getTaskId()).stream())
+                .toList();
+        deletedTaskIds.addAll(subtasks.stream().map(Task::getTaskId).toList());
+
+        taskGroupService.removeTasksFromGroups(deletedTaskIds, userId);
+        deleteTaskReminders(deletedTaskIds);
+        taskRepository.deleteAll(subtasks);
+        taskRepository.deleteAll(occurrences);
+        taskSeriesRepository.deleteById(seriesId);
+        log.info("Recurring task series permanently deleted: userId={} seriesId={} occurrenceCount={}",
+                userId, seriesId, occurrences.size());
+    }
+
     /**
      * Deletes every task scheduled after today, including completed and skipped tasks.
      * Recurring series are deactivated so their deleted future occurrences cannot return.
@@ -632,6 +679,22 @@ public class TaskService {
         log.info("Tasks reordered: userId={} count={} orderedTaskIds={}", userId, taskIds.size(), taskIds);
         attachReminderMinutes(allMainTasks);
         return allMainTasks;
+    }
+
+    public void prependSeriesOccurrences(List<Task> newOccurrences, String userId) {
+        if (newOccurrences.isEmpty()) return;
+
+        Set<String> newOccurrenceIds = newOccurrences.stream()
+                .map(Task::getTaskId)
+                .collect(Collectors.toSet());
+        List<Task> mainTasks = taskRepository.findAllByUserIdAndParentIdIsNullOrderByDisplayOrderAsc(userId);
+        mainTasks.stream()
+                .filter(task -> !newOccurrenceIds.contains(task.getTaskId()))
+                .forEach(task -> task.setDisplayOrder(task.getDisplayOrder() + newOccurrences.size()));
+        for (int index = 0; index < newOccurrences.size(); index++) {
+            newOccurrences.get(index).setDisplayOrder(newOccurrences.size() - index - 1);
+        }
+        taskRepository.saveAll(mainTasks);
     }
 
     private void prependTaskOrder(String userId, String parentId) {

@@ -8,6 +8,7 @@ import org.osama.pomodoro.PomodoroTransition;
 import org.osama.scheduling.JobType;
 import org.osama.scheduling.ScheduledJob;
 import org.osama.event.CalendarEventRequest;
+import org.osama.event.CalendarEventOccurrenceRequest;
 import org.osama.event.CalendarEventService;
 import org.osama.event.RecurrenceFrequency;
 import org.osama.event.RecurrenceUnit;
@@ -177,6 +178,28 @@ class NotificationServiceTest {
         notificationService.acknowledge(reminder.getReminderId(), USER_ID);
 
         assertEquals(Instant.parse("2027-01-24T10:00:00Z"),
+                reminderRepository.findByEventId(event.id()).orElseThrow().getEventOccurrenceStart());
+    }
+
+    @Test
+    void acknowledgingACancelledRecurringOccurrenceSkipsToTheNextOccurrence() {
+        CalendarEventRequest request = new CalendarEventRequest();
+        request.setTitle("Weekly planning");
+        request.setStartTime(Instant.parse("2027-01-10T10:00:00Z"));
+        request.setEndTime(Instant.parse("2027-01-10T11:00:00Z"));
+        request.setTimeZone("Asia/Amman");
+        request.setRecurrenceFrequency(RecurrenceFrequency.WEEKLY);
+        request.setRecurrenceEndDate(LocalDate.of(2027, 2, 28));
+
+        var event = calendarEventService.createEvent(request, USER_ID);
+        var reminder = reminderRepository.findByEventId(event.id()).orElseThrow();
+        CalendarEventOccurrenceRequest occurrence = new CalendarEventOccurrenceRequest();
+        occurrence.setOccurrenceKey("instant:2027-01-10T10:00:00.000Z");
+        calendarEventService.cancelEventOccurrence(event.id(), occurrence, USER_ID);
+
+        notificationService.acknowledge(reminder.getReminderId(), USER_ID);
+
+        assertEquals(Instant.parse("2027-01-17T10:00:00Z"),
                 reminderRepository.findByEventId(event.id()).orElseThrow().getEventOccurrenceStart());
     }
 

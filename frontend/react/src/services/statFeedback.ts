@@ -1,9 +1,13 @@
-import { StatDefinition, StatFeedback, StatMorality } from '../types/Stats';
+import { StatDefinition, StatEntryStatus, StatFeedback, StatMorality } from '../types/Stats';
 import { celebrateStatLogged, reprimandStatLogged } from './statCelebration';
 import { isTimeAtOrBeforeThreshold } from './utils/statValues';
 
 export function effectiveStatMorality(definition: StatDefinition): StatMorality {
     return definition.morality ?? 'NEUTRAL';
+}
+
+export function isNotPlanned(status?: StatEntryStatus): boolean {
+    return status === 'NOT_PLANNED';
 }
 
 /**
@@ -30,7 +34,9 @@ export function getStatFeedback(definition: StatDefinition, value: number): Stat
 export function getBooleanChoiceColor(
     definition: StatDefinition,
     value: 0 | 1,
-): 'primary' | 'secondary' | 'success' | 'error' {
+    status: StatEntryStatus = 'RECORDED',
+): 'primary' | 'secondary' | 'success' | 'error' | 'warning' {
+    if (status === 'NOT_PLANNED') return 'warning';
     if (effectiveStatMorality(definition) === 'NEUTRAL') {
         return value === 1 ? 'primary' : 'secondary';
     }

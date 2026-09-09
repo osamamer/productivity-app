@@ -45,6 +45,7 @@ import { SmartTaskInput } from '../components/input/SmartTaskInput';
 import { FlatTaskRow } from '../components/FlatTaskRow';
 import { TaskToCreate } from '../types/TaskToCreate';
 import { getShowCompletedHomeTasks } from '../services/utils/homePreferences';
+import { getAuthCacheScope } from '../services/utils/authHeaders';
 import { PomodoroStatus } from '../types/PomodoroStatus';
 import { celebrateStatLogged } from '../services/statCelebration';
 import { playAudioFeedback } from '../services/audioFeedback';
@@ -73,6 +74,11 @@ type PendingUndo = {
     timeoutId: number;
     commit: () => void | Promise<void>;
 };
+type PendingHomeDateEdit = {
+    originalDateTime: string | null;
+    latestDateTime: string | null;
+    originalIndex: number;
+};
 type TaskListItem =
     | { kind: 'task'; task: Task }
     | { kind: 'group'; group: TaskGroup; tasks: Task[] };
@@ -87,6 +93,32 @@ type TodayDropPlacement =
     | { kind: 'task'; targetTaskId: string; edge: DropEdge }
     | { kind: 'group'; targetGroup: TaskGroup; edge: DropEdge }
     | { kind: 'edge'; edge: 'top' | 'bottom' };
+
+const HOME_ACTIVE_EXPANSION_STORAGE_KEY = 'home-active-expansion';
+
+function homeActiveExpansionStorageKey(): string {
+    return `claritard:${getAuthCacheScope()}:${HOME_ACTIVE_EXPANSION_STORAGE_KEY}`;
+}
+
+function readHomeActiveExpansion(): ActiveExpansion {
+    if (typeof window === 'undefined') return null;
+
+    try {
+        const raw = window.sessionStorage.getItem(homeActiveExpansionStorageKey());
+        if (!raw) return null;
+
+        const parsed = JSON.parse(raw) as Partial<NonNullable<ActiveExpansion>>;
+        if (typeof parsed.taskId !== 'string'
+            || parsed.taskId.length === 0
+            || (parsed.panel !== 'pomodoro' && parsed.panel !== 'details')) {
+            return null;
+        }
+        return { taskId: parsed.taskId, panel: parsed.panel };
+    } catch (error) {
+        console.warn('Could not restore the expanded Home task:', error);
+        return null;
+    }
+}
 
 const greetingReveal = keyframes`
     from {
@@ -238,11 +270,12 @@ function groupTaskDropPlacement(
 type AnimatedTaskListProps = {
     items: TaskListItem[];
     renderItem: (item: TaskListItem) => React.ReactNode;
+    onAnimatingChange?: (animating: boolean) => void;
 };
 
-const OLDER_TASK_EXIT_DURATION_MS = 180;
+const TASK_EXIT_DURATION_MS = 180;
 
-function AnimatedTaskList({ items, renderItem }: AnimatedTaskListProps) {
+function AnimatedTaskList({ items, renderItem, onAnimatingChange }: AnimatedTaskListProps) {
     const [displayedItems, setDisplayedItems] = useState(items);
     const [exitingItemIds, setExitingItemIds] = useState<Set<string>>(() => new Set());
     const displayedItemsRef = useRef(items);
@@ -252,9 +285,7 @@ function AnimatedTaskList({ items, renderItem }: AnimatedTaskListProps) {
 
     useEffect(() => {
         const nextItemIds = new Set(items.map(taskListItemId));
-        const nextItemsById = new Map(items.map(item => [taskListItemId(item), item]));
         const previousItems = displayedItemsRef.current;
-        const previousItemIds = new Set(previousItems.map(taskListItemId));
         const removedItems = previousItems.filter(item => !nextItemIds.has(taskListItemId(item)));
         const reappearedItemIds = items
             .map(taskListItemId)
@@ -269,12 +300,19 @@ function AnimatedTaskList({ items, renderItem }: AnimatedTaskListProps) {
         });
         if (reappearedItemIds.length > 0) {
             setExitingItemIds(new Set(exitingItemIdsRef.current));
+            if (exitingItemIdsRef.current.size === 0) onAnimatingChange?.(false);
         }
 
-        const mergedItems = [
-            ...previousItems.map(item => nextItemsById.get(taskListItemId(item)) ?? item),
-            ...items.filter(item => !previousItemIds.has(taskListItemId(item))),
-        ];
+        // Follow the source order so newly created or reordered tasks appear
+        // where the task state puts them. Removed rows are inserted back at
+        // their previous slot only while their exit transition is running.
+        const mergedItems = [...items];
+        removedItems.forEach(item => {
+            const previousIndex = previousItems.findIndex(
+                previousItem => taskListItemId(previousItem) === taskListItemId(item),
+            );
+            mergedItems.splice(Math.min(previousIndex, mergedItems.length), 0, item);
+        });
         displayedItemsRef.current = mergedItems;
         if (mergedItems.length !== previousItems.length
             || mergedItems.some((item, index) => item !== previousItems[index])) {
@@ -297,12 +335,14 @@ function AnimatedTaskList({ items, renderItem }: AnimatedTaskListProps) {
                     );
                     displayedItemsRef.current = remainingItems;
                     setDisplayedItems(remainingItems);
-                }, OLDER_TASK_EXIT_DURATION_MS);
+                    if (exitingItemIdsRef.current.size === 0) onAnimatingChange?.(false);
+                }, TASK_EXIT_DURATION_MS);
                 exitTimersRef.current.set(itemId, timerId);
             });
             setExitingItemIds(new Set(exitingItemIdsRef.current));
+            onAnimatingChange?.(true);
         }
-    }, [items]);
+    }, [items, onAnimatingChange]);
 
     useEffect(() => () => {
         exitTimersRef.current.forEach(timerId => window.clearTimeout(timerId));
@@ -316,7 +356,7 @@ function AnimatedTaskList({ items, renderItem }: AnimatedTaskListProps) {
                     <Collapse
                         key={itemId}
                         in={!exitingItemIds.has(itemId)}
-                        timeout={OLDER_TASK_EXIT_DURATION_MS}
+                        timeout={TASK_EXIT_DURATION_MS}
                         unmountOnExit
                     >
                         <Box>{renderItem(item)}</Box>
@@ -510,6 +550,19 @@ function isSameLocalDay(first: Date, second: Date): boolean {
         && first.getDate() === second.getDate();
 }
 
+function formatTaskDateForFeedback(value: string): string {
+    const date = new Date(value);
+    const now = new Date();
+    if (Number.isNaN(date.getTime())) return 'a new date';
+    if (isSameLocalDay(date, now)) return 'Today';
+    return date.toLocaleDateString('en-US', {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        ...(date.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' }),
+    });
+}
+
 function isScheduledForToday(task: Task): boolean {
     if (!task.scheduledPerformDateTime) return false;
     const scheduledDate = new Date(task.scheduledPerformDateTime);
@@ -529,12 +582,16 @@ function moveTaskDateToToday(task: Task): string {
 export function HomePage() {
     const { user } = useUser();
     const [animateGreeting] = useState(() => !hasAnimatedHomeGreeting);
-    const [activeExpansion, setActiveExpansion] = useState<ActiveExpansion>(null);
-    const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
+    const [activeExpansion, setActiveExpansion] = useState<ActiveExpansion>(readHomeActiveExpansion);
+    const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>(() => (
+        activeExpansion ? [activeExpansion.taskId] : []
+    ));
     const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
     const [editRequest, setEditRequest] = useState<EditRequest | null>(null);
     const [selectionActionsPosition, setSelectionActionsPosition] = useState<{ top: number; left: number } | null>(null);
     const [taskFeedback, setTaskFeedback] = useState<TaskFeedback | null>(null);
+    const [pendingHomeDateTaskIds, setPendingHomeDateTaskIds] = useState<string[]>([]);
+    const [homeTaskListAnimating, setHomeTaskListAnimating] = useState(false);
     const [showOlderTasks, setShowOlderTasks] = useState(false);
     const [bulkActionLoading, setBulkActionLoading] = useState(false);
     const [deleteRequest, setDeleteRequest] = useState<DeleteRequest | null>(null);
@@ -570,7 +627,7 @@ export function HomePage() {
     const [pomodoroTaskMinimized, setPomodoroTaskMinimized] = useState(false);
     const [focusVisibility, setFocusVisibility] = useState<FocusVisibility>('all');
     const [focusTaskOffset, setFocusTaskOffset] = useState(0);
-    const selectionAnchorRef = useRef<string | null>(null);
+    const selectionAnchorRef = useRef<string | null>(activeExpansion?.taskId ?? null);
     const activePomodoroTaskIdRef = useRef<string | null>(null);
     const focusVisibilityRef = useRef<FocusVisibility>('all');
     const focusTaskSourceTopRef = useRef<number | null>(null);
@@ -580,10 +637,24 @@ export function HomePage() {
     const selectionActionsRef = useRef<HTMLDivElement | null>(null);
     const taskFeedbackIdRef = useRef(0);
     const pendingUndoRef = useRef<PendingUndo | null>(null);
+    const pendingHomeDateEditsRef = useRef(new Map<string, PendingHomeDateEdit>());
     const focusTransitionTimerRef = useRef<number | null>(null);
     const temporarilyCollapsedGroupIdRef = useRef<string | null>(null);
     const groupTaskSubmissionRef = useRef(false);
     const activeDragRef = useRef<ActiveDrag | null>(null);
+
+    useEffect(() => {
+        try {
+            const storageKey = homeActiveExpansionStorageKey();
+            if (activeExpansion) {
+                window.sessionStorage.setItem(storageKey, JSON.stringify(activeExpansion));
+            } else {
+                window.sessionStorage.removeItem(storageKey);
+            }
+        } catch (error) {
+            console.warn('Could not persist the expanded Home task:', error);
+        }
+    }, [activeExpansion]);
 
     useEffect(() => {
         if (animateGreeting) hasAnimatedHomeGreeting = true;
@@ -631,6 +702,7 @@ export function HomePage() {
         const timeoutId = window.setTimeout(() => {
             if (pendingUndoRef.current?.timeoutId !== timeoutId) return;
             pendingUndoRef.current = null;
+            setTaskFeedback(previous => previous?.undo === undo ? null : previous);
             void commit();
         }, 5000);
         pendingUndoRef.current = { timeoutId, commit };
@@ -651,14 +723,26 @@ export function HomePage() {
         reorderTasksInState,
     } = useGlobalTasks();
 
-    useEffect(() => {
-        if (!tasksLoaded || todayTasks.length === 0) return;
-        void taskService.prefetchTodayTaskDetails(todayTasks);
-    }, [tasksLoaded, todayTasks]);
-
     const visibleTasks = useMemo(
-        () => todayTasks.filter(task => !task.parentId && (getShowCompletedHomeTasks() || !task.completed)),
-        [todayTasks],
+        () => {
+            const todayTaskIds = new Set(todayTasks.map(task => task.taskId));
+            const pendingDateTasks = pendingHomeDateTaskIds
+                .map(taskId => allTasks.find(task => task.taskId === taskId))
+                .filter((task): task is Task => task !== undefined && !todayTaskIds.has(task.taskId))
+                .sort((first, second) => (
+                    (pendingHomeDateEditsRef.current.get(first.taskId)?.originalIndex ?? Number.MAX_SAFE_INTEGER)
+                    - (pendingHomeDateEditsRef.current.get(second.taskId)?.originalIndex ?? Number.MAX_SAFE_INTEGER)
+                ));
+            const tasksInOriginalOrder = [...todayTasks];
+            pendingDateTasks.forEach(task => {
+                const originalIndex = pendingHomeDateEditsRef.current.get(task.taskId)?.originalIndex
+                    ?? tasksInOriginalOrder.length;
+                tasksInOriginalOrder.splice(Math.min(originalIndex, tasksInOriginalOrder.length), 0, task);
+            });
+            return tasksInOriginalOrder
+                .filter(task => !task.parentId && (getShowCompletedHomeTasks() || !task.completed));
+        },
+        [allTasks, pendingHomeDateTaskIds, todayTasks],
     );
     const olderTasks = useMemo(
         () => pastTasks.filter(task => !task.parentId && !task.completed),
@@ -937,6 +1021,26 @@ export function HomePage() {
 
     const updateTask = useCallback(async (taskId: string, updates: Partial<Task>) => {
         const originalTask = allTasks.find(task => task.taskId === taskId);
+
+        if (Object.prototype.hasOwnProperty.call(updates, 'scheduledPerformDateTime') && originalTask) {
+            const pendingEdit = pendingHomeDateEditsRef.current.get(taskId);
+            const originalDateTime = pendingEdit?.originalDateTime ?? originalTask.scheduledPerformDateTime;
+            const latestDateTime = updates.scheduledPerformDateTime || null;
+            if (pendingEdit || isScheduledForToday(originalTask)) {
+                pendingHomeDateEditsRef.current.set(taskId, {
+                    originalDateTime,
+                    latestDateTime,
+                    originalIndex: pendingEdit?.originalIndex ?? Math.max(
+                        0,
+                        todayTasks.findIndex(task => task.taskId === taskId),
+                    ),
+                });
+                setPendingHomeDateTaskIds(previous => previous.includes(taskId)
+                    ? previous
+                    : [...previous, taskId]);
+            }
+        }
+
         updateTaskInState(taskId, updates);
         try {
             await taskService.updateTask(taskId, updates);
@@ -945,7 +1049,37 @@ export function HomePage() {
             if (originalTask) updateTaskInState(taskId, originalTask);
             await refreshTaskBuckets(true);
         }
-    }, [allTasks, refreshTaskBuckets, updateTaskInState]);
+    }, [allTasks, refreshTaskBuckets, todayTasks, updateTaskInState]);
+
+    const handleScheduledDateBlur = useCallback((taskId: string) => {
+        const pendingEdit = pendingHomeDateEditsRef.current.get(taskId);
+        if (!pendingEdit) return;
+
+        pendingHomeDateEditsRef.current.delete(taskId);
+        setPendingHomeDateTaskIds(previous => previous.filter(id => id !== taskId));
+
+        if (pendingEdit.originalDateTime === pendingEdit.latestDateTime) return;
+
+        const isTopLevelTask = taskListItems.some(item => (
+            item.kind === 'task' && item.task.taskId === taskId
+        ));
+        if (isTopLevelTask) setHomeTaskListAnimating(true);
+
+        const message = pendingEdit.latestDateTime
+            ? `Task moved to ${formatTaskDateForFeedback(pendingEdit.latestDateTime)}`
+            : 'Task removed from Today';
+        showUndoFeedback(message, async () => {
+            try {
+                const restoredTask = await taskService.updateTask(taskId, {
+                    scheduledPerformDateTime: pendingEdit.originalDateTime ?? '',
+                });
+                updateTaskInState(taskId, restoredTask);
+            } catch (error) {
+                console.error('Error undoing Home task date change:', error);
+                await refreshTaskBuckets(true);
+            }
+        });
+    }, [refreshTaskBuckets, showUndoFeedback, taskListItems, updateTaskInState]);
 
     const toggleTaskCompletion = useCallback(async (taskId: string, anchorEl?: HTMLElement) => {
         const task = allTasks.find(existingTask => existingTask.taskId === taskId);
@@ -2347,6 +2481,7 @@ export function HomePage() {
                 deferPomodoroHydration={task.taskId !== activePomodoroTaskId}
                 initialPomodoroStatus={task.taskId === activePomodoroTaskId ? initialPomodoroStatus : null}
                 expectedPomodoroActive={task.taskId === activePomodoroTaskId}
+                onScheduledDateBlur={handleScheduledDateBlur}
             />
         );
     }
@@ -2828,7 +2963,7 @@ export function HomePage() {
 
                     <Box ref={taskListTopRef} sx={{ height: 0 }} />
 
-                    {homeContentReady && visibleTasks.length > 0 ? (
+                    {homeContentReady && (visibleTasks.length > 0 || homeTaskListAnimating) ? (
                         <>
                             {/* Keep the live Pomodoro row mounted while the surrounding task list animates. */}
                             {focusedPomodoroTask && (
@@ -2912,7 +3047,11 @@ export function HomePage() {
                                             } : undefined,
                                         }}
                                     />
-                                    {renderTaskList(taskListItems)}
+                                    <AnimatedTaskList
+                                        items={taskListItems}
+                                        renderItem={item => renderTaskList([item])}
+                                        onAnimatingChange={setHomeTaskListAnimating}
+                                    />
                                     {(
                                         <Box
                                             aria-hidden="true"

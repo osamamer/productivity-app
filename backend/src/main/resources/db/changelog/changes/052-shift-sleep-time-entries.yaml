@@ -1,0 +1,43 @@
+databaseChangeLog:
+  - changeSet:
+      id: 052-shift-sleep-time-entries
+      author: codex
+      comment: Associate each built-in sleep time entry with the previous calendar day
+      changes:
+        - sql:
+            sql: |
+              UPDATE stat_entry
+              SET date = date + 100000
+              WHERE stat_definition_id IN (
+                  SELECT id
+                  FROM stat_definition
+                  WHERE system_key = 'sleep_time'
+              );
+        - sql:
+            sql: |
+              UPDATE stat_entry
+              SET date = date - 100001
+              WHERE stat_definition_id IN (
+                  SELECT id
+                  FROM stat_definition
+                  WHERE system_key = 'sleep_time'
+              );
+      rollback:
+        - sql:
+            sql: |
+              UPDATE stat_entry
+              SET date = date + 100000
+              WHERE stat_definition_id IN (
+                  SELECT id
+                  FROM stat_definition
+                  WHERE system_key = 'sleep_time'
+              );
+        - sql:
+            sql: |
+              UPDATE stat_entry
+              SET date = date - 99999
+              WHERE stat_definition_id IN (
+                  SELECT id
+                  FROM stat_definition
+                  WHERE system_key = 'sleep_time'
+              );

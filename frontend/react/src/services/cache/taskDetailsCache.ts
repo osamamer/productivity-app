@@ -12,7 +12,7 @@ export type TaskDetailsCacheEntry = {
 // Home opens details inline, so keep the complete detail view together per
 // task. This avoids rendering one field from a different cache generation
 // than the other fields.
-export const TASK_DETAILS_TTL_MS = 5 * 60 * 1000;
+export const TASK_DETAILS_TTL_MS = 60 * 60 * 1000;
 
 const taskDetailsResource = new CachedResource<TaskDetailsCacheEntry>({
     ttlMs: TASK_DETAILS_TTL_MS,

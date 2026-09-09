@@ -252,8 +252,8 @@ public class UserService {
         }
         long finalCheckupMinute = startTime.toSecondOfDay() / 60L
                 + (long) (timesPerDay - 1) * intervalMinutes;
-        if (finalCheckupMinute > 23 * 60 + 59) {
-            throw new IllegalArgumentException("The check-up schedule must fit within the same day.");
+        if (finalCheckupMinute > 24 * 60) {
+            throw new IllegalArgumentException("The check-up schedule must fit within the same day or end at midnight.");
         }
     }
 

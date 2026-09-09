@@ -186,3 +186,27 @@ databaseChangeLog:
   # Store confirmed, tentative, or cancelled calendar event status
   - include:
       file: db/changelog/changes/051-add-calendar-event-status.yaml
+
+  # Associate each built-in sleep time entry with the previous calendar day
+  - include:
+      file: db/changelog/changes/052-shift-sleep-time-entries.yaml
+
+  # Calculate missing Sleep duration entries from adjacent sleep and wake-up times
+  - include:
+      file: db/changelog/changes/053-backfill-sleep-duration-entries.yaml
+
+  # Preserve cancellations for individual repeating calendar event occurrences
+  - include:
+      file: db/changelog/changes/053-add-calendar-event-cancellations.yaml
+
+  # Preserve the neutral not-planned outcome for boolean statistic entries
+  - include:
+      file: db/changelog/changes/054-add-stat-entry-status.yaml
+
+  # Store status and deletion overrides for individual repeating event occurrences
+  - include:
+      file: db/changelog/changes/055-add-calendar-event-occurrence-overrides.yaml
+
+  # Store selected weekdays for custom recurring task schedules
+  - include:
+      file: db/changelog/changes/056-add-task-recurrence-days.yaml

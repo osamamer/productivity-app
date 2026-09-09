@@ -7,8 +7,9 @@ import {
 import { useTheme, Theme } from '@mui/material/styles';
 import CheckIcon from '@mui/icons-material/Check';
 import CloseIcon from '@mui/icons-material/Close';
+import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
 import { format, subDays } from 'date-fns';
-import { StatDefinition, StatEntry } from '../../types/Stats';
+import { StatDefinition, StatEntry, StatEntryStatus } from '../../types/Stats';
 import { getLastMonthWindow, statService } from '../../services/api/statService';
 import { KeyboardEvent } from 'react';
 import { effectiveStatMorality, getBooleanChoiceColor, getStatFeedback, showStatFeedback } from '../../services/statFeedback';
@@ -91,10 +92,15 @@ function getCircleTextColor(def: StatDefinition, value: number, theme: Theme): s
         : theme.palette.text.primary;
 }
 
-function getCircleBg(def: StatDefinition, value: number | undefined, theme: Theme): string {
+function getCircleBg(
+    def: StatDefinition,
+    value: number | undefined,
+    theme: Theme,
+    status: StatEntryStatus = 'RECORDED',
+): string {
     if (value === undefined) return theme.palette.action.disabledBackground;
     if (def.type === 'BOOLEAN') {
-        return theme.palette[getBooleanChoiceColor(def, value === 1 ? 1 : 0)].main;
+        return theme.palette[getBooleanChoiceColor(def, value === 1 ? 1 : 0, status)].main;
     }
 
     const thresholdCircleBg = getThresholdCircleBg(def, value, theme);
@@ -147,6 +153,10 @@ function formatDurationCircleValue(value: number): string {
     return `${Number((rounded / 60).toFixed(2))}h`;
 }
 
+function formatSleepDurationCircleValue(value: number): string {
+    return `${(Math.max(0, value) / 60).toFixed(1)}h`;
+}
+
 interface PopoverState {
     anchorEl: HTMLElement;
     date: string;
@@ -166,6 +176,14 @@ function recentValueMap(entries: StatEntry[] | undefined, recentStart: string, t
     );
 }
 
+function recentStatusMap(entries: StatEntry[] | undefined, recentStart: string, to: string): Map<string, StatEntryStatus> {
+    return new Map<string, StatEntryStatus>(
+        (entries ?? [])
+            .filter(entry => entry.date >= recentStart && entry.date <= to)
+            .map(entry => [entry.date, entry.status ?? 'RECORDED'] as [string, StatEntryStatus]),
+    );
+}
+
 export const StatRecentDots = React.memo(function StatRecentDots({ definition, refreshKey, onEntryChanged }: Props) {
     const theme = useTheme();
     const { from, to } = getLastMonthWindow();
@@ -175,11 +193,13 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
     );
     const cachedEntries = statService.getCachedEntries(definition.id, from, to);
     const [valueMap, setValueMap] = useState<Map<string, number>>(() => recentValueMap(cachedEntries, recentStart, to));
+    const [statusMap, setStatusMap] = useState<Map<string, StatEntryStatus>>(() => recentStatusMap(cachedEntries, recentStart, to));
     const [loading, setLoading] = useState(() => !cachedEntries);
 
     // Popover state
     const [popover, setPopover] = useState<PopoverState | null>(null);
     const [editValue, setEditValue] = useState<number | null>(null);
+    const [editStatus, setEditStatus] = useState<StatEntryStatus>('RECORDED');
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
     const feedbackAnchorRef = useRef<HTMLElement | null>(null);
@@ -191,12 +211,16 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
         const cached = statService.getCachedEntries(definition.id, from, to);
         if (cached) {
             setValueMap(recentValueMap(cached, recentStart, to));
+            setStatusMap(recentStatusMap(cached, recentStart, to));
             setLoading(false);
         }
 
         statService.getEntries(definition.id, from, to)
             .then(entries => {
-                if (!cancelled) setValueMap(recentValueMap(entries, recentStart, to));
+                if (!cancelled) {
+                    setValueMap(recentValueMap(entries, recentStart, to));
+                    setStatusMap(recentStatusMap(entries, recentStart, to));
+                }
             })
             .catch(e => console.error('Failed to load recent dots:', e))
             .finally(() => {
@@ -209,6 +233,7 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
     const openPopover = (e: React.MouseEvent<HTMLElement>, date: string) => {
         e.stopPropagation(); // don't select the stat in the left panel
         const existing = valueMap.get(date);
+        setEditStatus(statusMap.get(date) ?? 'RECORDED');
         setEditValue(existing ?? (
             definition.type === 'TIME' || definition.type === 'DURATION'
                 ? readStatInputPreference(definition.id, definition.type)
@@ -222,24 +247,39 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
     const closePopover = () => {
         setPopover(null);
         setEditValue(null);
+        setEditStatus('RECORDED');
         setSaveError(null);
     };
 
     const handleSave = async () => {
-        if (!popover || editValue === null) return;
+        if (!popover) return;
         setSaving(true);
         setSaveError(null);
         try {
             await statService.recordEntry({
                 statDefinitionId: definition.id,
                 date: popover.date,
-                value: editValue,
+                value: editStatus === 'NOT_PLANNED' ? null : editValue,
+                status: editStatus,
             });
-            if (definition.type === 'TIME' || definition.type === 'DURATION') {
+            if (editValue !== null && (definition.type === 'TIME' || definition.type === 'DURATION')) {
                 saveStatInputPreference(definition.id, definition.type, editValue);
             }
-            showStatFeedback(definition, editValue, feedbackAnchorRef.current);
-            setValueMap(prev => new Map(prev).set(popover.date, editValue));
+            if (editValue !== null && editStatus !== 'NOT_PLANNED') {
+                showStatFeedback(definition, editValue, feedbackAnchorRef.current);
+            }
+            setValueMap(prev => {
+                const next = new Map(prev);
+                if (editValue === null && editStatus !== 'NOT_PLANNED') next.delete(popover.date);
+                else next.set(popover.date, editValue ?? 0);
+                return next;
+            });
+            setStatusMap(prev => {
+                const next = new Map(prev);
+                if (editValue === null && editStatus !== 'NOT_PLANNED') next.delete(popover.date);
+                else next.set(popover.date, editStatus);
+                return next;
+            });
             onEntryChanged?.(definition.id);
             closePopover();
         } catch (err) {
@@ -251,7 +291,7 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
     };
 
     const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-        if (event.key !== 'Enter' || saving || editValue === null) return;
+        if (event.key !== 'Enter' || saving) return;
 
         // Let multiline or composition-heavy inputs keep their default behavior.
         const target = event.target as HTMLElement;
@@ -277,25 +317,30 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                 {last5Days.map(date => {
                     const value = valueMap.get(date);
                     const hasEntry = value !== undefined;
-                    const bg = getCircleBg(definition, value, theme);
+                    const status = statusMap.get(date) ?? 'RECORDED';
+                    const bg = getCircleBg(definition, value, theme, status);
                     const hasVisibleValue = definition.type === 'NUMBER'
                         || definition.type === 'TIME'
                         || definition.type === 'DURATION';
                     const label = hasEntry && hasVisibleValue
-                        ? definition.type === 'NUMBER'
+                            ? definition.type === 'NUMBER'
                             ? formatCircleValue(value!)
                             : definition.type === 'DURATION'
-                                ? formatDurationCircleValue(value!)
+                                ? definition.systemKey === 'sleep_hours'
+                                    ? formatSleepDurationCircleValue(value!)
+                                    : formatDurationCircleValue(value!)
                                 : statValueLabel(definition, value!)
                         : null;
                     const booleanIcon = hasEntry && definition.type === 'BOOLEAN'
-                        ? value === 1
+                        ? status === 'NOT_PLANNED'
+                            ? <RemoveCircleOutlineIcon sx={{ fontSize: 18, color: alpha(theme.palette.common.white, 0.78) }} />
+                            : value === 1
                             ? <CheckIcon sx={{ fontSize: 18, color: alpha(theme.palette.common.white, 0.78), fontWeight: 700 }} />
                             : <CloseIcon sx={{ fontSize: 18, color: alpha(theme.palette.common.white, 0.78), fontWeight: 700 }} />
                         : null;
                     const tooltipText = hasEntry
                         ? definition.type === 'BOOLEAN'
-                            ? value === 1 ? 'Yes' : 'No'
+                            ? status === 'NOT_PLANNED' ? 'Not planned' : value === 1 ? 'Yes' : 'No'
                             : definition.type === 'TIME'
                                 ? formatTimeValue(value)
                                 : definition.type === 'DURATION'
@@ -371,16 +416,29 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                 }}
             >
                 {popover && (
-                    <Box ref={popoverContentRef} onKeyDown={handleKeyDown}>
+                    <Box
+                        ref={popoverContentRef}
+                        onClick={event => {
+                            if (!(event.target instanceof Node) || !saveButtonRef.current?.contains(event.target)) {
+                                event.stopPropagation();
+                            }
+                        }}
+                        onKeyDown={handleKeyDown}
+                    >
                         <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1.5 }}>
                             {definition.name} — {format(new Date(popover.date + 'T12:00:00'), 'EEEE, MMM d')}
                         </Typography>
 
                         {definition.type === 'BOOLEAN' && (
                             <ToggleButtonGroup
-                                value={editValue === 1 ? 'yes' : editValue === 0 ? 'no' : null}
+                                value={editStatus === 'NOT_PLANNED'
+                                    ? 'not-planned'
+                                    : editValue === 1 ? 'yes' : editValue === 0 ? 'no' : null}
                                 exclusive
-                                onChange={(_, v) => setEditValue(v === 'yes' ? 1 : v === 'no' ? 0 : null)}
+                                onChange={(_, v) => {
+                                    setEditStatus(v === 'not-planned' ? 'NOT_PLANNED' : 'RECORDED');
+                                    setEditValue(v === null ? null : v === 'yes' ? 1 : 0);
+                                }}
                                 size="small"
                             >
                                 <ToggleButton
@@ -389,6 +447,12 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                                     sx={{ '&.Mui-selected': { bgcolor: `${getBooleanChoiceColor(definition, 1)}.main`, color: 'white', '&:hover': { bgcolor: `${getBooleanChoiceColor(definition, 1)}.dark` } } }}
                                 >
                                     Yes
+                                </ToggleButton>
+                                <ToggleButton
+                                    value="not-planned"
+                                    sx={{ '&.Mui-selected': { bgcolor: 'warning.main', color: 'warning.contrastText', '&:hover': { bgcolor: 'warning.dark' } } }}
+                                >
+                                    Not planned
                                 </ToggleButton>
                                 <ToggleButton
                                     value="no"
@@ -425,7 +489,7 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                                 autoFocus
                                 minutesStep={1}
                                 inputProps={{ 'aria-label': `${definition.name} time` }}
-                                sx={{ width: 140 }}
+                                sx={{ width: '100%' }}
                             />
                         )}
 
@@ -463,6 +527,9 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                                     <Typography variant="caption" color="text.secondary">{definition.minValue}</Typography>
                                     <Typography variant="caption" color="text.secondary">{definition.maxValue}</Typography>
                                 </Stack>
+                                <Button size="small" onClick={() => setEditValue(null)}>
+                                    Clear
+                                </Button>
                             </Box>
                         )}
 
@@ -471,13 +538,22 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                         )}
 
                         <Stack direction="row" justifyContent="flex-end" sx={{ mt: 2 }}>
-                            <Button size="small" onClick={closePopover} sx={{ mr: 1 }}>Cancel</Button>
+                            <Button
+                                size="small"
+                                onClick={event => {
+                                    event.stopPropagation();
+                                    closePopover();
+                                }}
+                                sx={{ mr: 1 }}
+                            >
+                                Cancel
+                            </Button>
                             <Button
                                 ref={saveButtonRef}
                                 size="small"
                                 variant="contained"
                                 onClick={handleSave}
-                                disabled={saving || editValue === null}
+                                disabled={saving}
                             >
                                 {saving ? <CircularProgress size={14} color="inherit" /> : 'Save'}
                             </Button>

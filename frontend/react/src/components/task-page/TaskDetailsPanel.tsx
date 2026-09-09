@@ -215,7 +215,7 @@ const SubtaskComposer = React.memo(function SubtaskComposer({
                 variant="standard"
                 fullWidth
                 InputProps={{ disableUnderline: true }}
-                sx={{ '& .MuiInputBase-input': { py: 1.25 } }}
+                sx={{ '& .MuiInputBase-input': { py: 1.25, fontSize: '0.875rem' } }}
             />
         </Box>
     );
@@ -427,6 +427,9 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
     }, [task.taskId, task.scheduledPerformDateTime]);
     const displayedSubtasks = visibleSubtaskState.items;
     const displayedPomodoroStats = visiblePomodoroStatsState.stats;
+    const taskCheckboxColor = PRIORITY_OPTIONS.find(
+        option => option.label === getPriorityLabel(task.importance),
+    )?.color ?? PRIORITY_OPTIONS[0].color;
 
     const handleDescriptionBlur = () => {
         if (visibleDescription !== taskDescription) {
@@ -561,10 +564,11 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
             data-task-details="true"
             sx={{
                 minHeight: { lg: 620 },
-                p: { xs: 2, sm: 3 },
+                p: { xs: 2, sm: 3, xl: 3.5 },
                 borderRadius: 3,
                 backgroundColor: 'background.paper',
                 boxShadow: '0 2px 16px rgba(0,0,0,0.06)',
+                containerType: 'inline-size',
             }}
         >
             <Box sx={{ display: 'flex', alignItems: 'center', mb: 2.5 }}>
@@ -596,7 +600,11 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
                     size="small"
                     checked={task.completed}
                     onChange={() => onToggleCompletion(task.taskId)}
-                    sx={{ mt: -0.25 }}
+                    sx={{
+                        mt: -0.25,
+                        color: taskCheckboxColor,
+                        '&.Mui-checked': { color: taskCheckboxColor },
+                    }}
                 />
                 <Typography
                     variant="h5"
@@ -622,199 +630,231 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
                 </Typography>
             </Box>
 
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-                <Box>
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>
-                        Priority
-                    </Typography>
-                    <Box sx={{ display: 'flex', gap: 0.75 }}>
-                        {PRIORITY_OPTIONS.map(option => {
-                            const selected = getPriorityLabel(task.importance) === option.label;
-                            return (
-                                <Chip
-                                    key={option.label}
-                                    data-task-details-first-focus={option === PRIORITY_OPTIONS[0] ? 'true' : undefined}
-                                    label={option.label}
-                                    size="small"
-                                    onClick={() => void onUpdate(task.taskId, { importance: option.value })}
-                                    sx={{
-                                        border: `1px solid ${option.color}`,
-                                        color: selected ? '#fff' : option.color,
-                                        backgroundColor: selected ? option.color : 'transparent',
-                                        fontWeight: selected ? 600 : 400,
-                                        cursor: 'pointer',
-                                    }}
-                                />
-                            );
-                        })}
-                    </Box>
-                </Box>
-
-                <LocalizationProvider dateAdapter={AdapterDateFns}>
+            <Box
+                sx={{
+                    display: 'grid',
+                    gridTemplateColumns: 'minmax(0, 1fr)',
+                    gap: 2.5,
+                    alignItems: 'start',
+                    '@container (min-width: 680px)': {
+                        gridTemplateColumns: 'minmax(0, 1.08fr) minmax(280px, 0.92fr)',
+                        gap: 4,
+                    },
+                }}
+            >
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, minWidth: 0 }}>
                     <Box>
-                        <Box
-                            sx={{
-                                display: 'grid',
-                                gridTemplateColumns: task.parentId
-                                    ? 'minmax(0, 1fr)'
-                                    : { xs: 'minmax(0, 1fr)', sm: 'minmax(0, 3fr) minmax(0, 1fr)' },
-                                gap: 1.25,
-                                alignItems: 'start',
-                            }}
-                        >
-                            <Box sx={{ minWidth: 0 }}>
-                                <Collapse in={showTimeOnlySchedule} timeout={180} unmountOnExit>
-                                    <TimePicker
-                                        label="Scheduled"
-                                        value={scheduledDraft}
-                                        onChange={handleDateChange}
-                                        onAccept={commitDateChange}
-                                        ampm={false}
-                                        slotProps={{
-                                            field: { clearable: false },
-                                            actionBar: { actions: ['cancel', 'accept'] },
-                                            textField: { size: 'small', fullWidth: true },
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>
+                            Priority
+                        </Typography>
+                        <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.75 }}>
+                            {PRIORITY_OPTIONS.map(option => {
+                                const selected = getPriorityLabel(task.importance) === option.label;
+                                return (
+                                    <Chip
+                                        key={option.label}
+                                        data-task-details-first-focus={option === PRIORITY_OPTIONS[0] ? 'true' : undefined}
+                                        label={option.label}
+                                        size="small"
+                                        onClick={() => void onUpdate(task.taskId, { importance: option.value })}
+                                        sx={{
+                                            border: `1px solid ${option.color}`,
+                                            color: selected ? '#fff' : option.color,
+                                            backgroundColor: selected ? option.color : 'transparent',
+                                            fontWeight: selected ? 600 : 400,
+                                            cursor: 'pointer',
                                         }}
                                     />
-                                </Collapse>
-                                <Collapse in={!showTimeOnlySchedule} timeout={180} unmountOnExit>
-                                    <DateTimePicker
-                                        label="Scheduled"
-                                        value={scheduledDraft}
-                                        onChange={handleDateChange}
-                                        onAccept={commitDateChange}
-                                        closeOnSelect={false}
-                                        ampm={false}
-                                        slotProps={{
-                                            field: { clearable: true },
-                                            actionBar: { actions: ['cancel', 'accept'] },
-                                            textField: { size: 'small', fullWidth: true },
-                                        }}
-                                    />
-                                </Collapse>
-                            </Box>
-
-                            {!task.parentId && (
-                                <TaskRecurrencePicker
-                                    value={recurrenceDraft}
-                                    onChange={handleRecurrenceChange}
-                                    showEndDate={false}
-                                    showCustomOptions={false}
-                                />
-                            )}
+                                );
+                            })}
                         </Box>
-                        {!task.parentId && (
-                            <Collapse in={recurrenceDraft.recurrenceFrequency !== 'NONE'} timeout={180} unmountOnExit>
-                                <Box sx={{
-                                    mt: 1.25,
+                    </Box>
+
+                    <LocalizationProvider dateAdapter={AdapterDateFns}>
+                        <Box onClick={event => event.stopPropagation()}>
+                            <Box
+                                sx={{
                                     display: 'grid',
-                                    gridTemplateColumns: recurrenceDraft.recurrenceFrequency === 'CUSTOM'
-                                        ? { xs: 'minmax(0, 1fr)', sm: 'minmax(0, 1fr) minmax(0, 1fr)' }
-                                        : 'minmax(0, 1fr)',
+                                    gridTemplateColumns: task.parentId
+                                        ? 'minmax(0, 1fr)'
+                                        : { xs: 'minmax(0, 1fr)', sm: 'minmax(0, 3fr) minmax(0, 1fr)' },
                                     gap: 1.25,
                                     alignItems: 'start',
-                                }}>
-                                    {recurrenceDraft.recurrenceFrequency === 'CUSTOM' && (
-                                        <TaskRecurrenceCustomOptions
-                                            value={recurrenceDraft}
-                                            onChange={handleRecurrenceChange}
+                                }}
+                            >
+                                <Box sx={{ minWidth: 0 }}>
+                                    <Collapse in={showTimeOnlySchedule} timeout={180} unmountOnExit>
+                                        <TimePicker
+                                            label="Scheduled"
+                                            value={scheduledDraft}
+                                            onChange={handleDateChange}
+                                            onAccept={commitDateChange}
+                                            ampm={false}
+                                            slotProps={{
+                                                field: { clearable: false },
+                                                actionBar: { actions: ['cancel', 'accept'] },
+                                                textField: { size: 'small', fullWidth: true },
+                                            }}
                                         />
-                                    )}
-                                    <AppDateField
-                                        label="Repeat until (optional)"
-                                        value={recurrenceDraft.recurrenceEndDate ?? ''}
-                                        onChange={recurrenceEndDate => handleRecurrenceChange({
-                                            ...recurrenceDraft,
-                                            recurrenceEndDate: recurrenceEndDate || null,
-                                        })}
-                                    />
+                                    </Collapse>
+                                    <Collapse in={!showTimeOnlySchedule} timeout={180} unmountOnExit>
+                                        <DateTimePicker
+                                            label="Scheduled"
+                                            value={scheduledDraft}
+                                            onChange={handleDateChange}
+                                            onAccept={commitDateChange}
+                                            closeOnSelect={false}
+                                            ampm={false}
+                                            slotProps={{
+                                                field: { clearable: true },
+                                                actionBar: { actions: ['cancel', 'accept'] },
+                                                textField: { size: 'small', fullWidth: true },
+                                            }}
+                                        />
+                                    </Collapse>
                                 </Box>
-                            </Collapse>
-                        )}
-                        {recurrenceError && (
-                            <Typography variant="caption" color="error" sx={{ display: 'block', mt: 1 }}>
-                                {recurrenceError}
+
+                                {!task.parentId && (
+                                    <TaskRecurrencePicker
+                                        value={recurrenceDraft}
+                                        onChange={handleRecurrenceChange}
+                                        showEndDate={false}
+                                        showCustomOptions={false}
+                                    />
+                                )}
+                            </Box>
+                            {!task.parentId && (
+                                <Collapse in={recurrenceDraft.recurrenceFrequency !== 'NONE'} timeout={180} unmountOnExit>
+                                    <Box sx={{
+                                        mt: 1.25,
+                                        display: 'grid',
+                                        gridTemplateColumns: recurrenceDraft.recurrenceFrequency === 'CUSTOM'
+                                            ? { xs: 'minmax(0, 1fr)', sm: 'minmax(0, 1fr) minmax(0, 1fr)' }
+                                            : 'minmax(0, 1fr)',
+                                        gap: 1.25,
+                                        alignItems: 'start',
+                                    }}>
+                                        {recurrenceDraft.recurrenceFrequency === 'CUSTOM' && (
+                                            <TaskRecurrenceCustomOptions
+                                                value={recurrenceDraft}
+                                                onChange={handleRecurrenceChange}
+                                            />
+                                        )}
+                                        <AppDateField
+                                            label="Repeat until (optional)"
+                                            value={recurrenceDraft.recurrenceEndDate ?? ''}
+                                            onChange={recurrenceEndDate => handleRecurrenceChange({
+                                                ...recurrenceDraft,
+                                                recurrenceEndDate: recurrenceEndDate || null,
+                                            })}
+                                        />
+                                    </Box>
+                                </Collapse>
+                            )}
+                            {recurrenceError && (
+                                <Typography variant="caption" color="error" sx={{ display: 'block', mt: 1 }}>
+                                    {recurrenceError}
+                                </Typography>
+                            )}
+                            <TaskReminderPicker
+                                value={task.reminderMinutesBefore}
+                                disabled={!scheduledPerformDateTime}
+                                onChange={reminderMinutesBefore => void onUpdate(task.taskId, { reminderMinutesBefore })}
+                            />
+                        </Box>
+                    </LocalizationProvider>
+
+                    <TextField
+                        label="Description"
+                        autoComplete="off"
+                        value={visibleDescription}
+                        onChange={event => setDescriptionDraft({
+                            taskId: task.taskId,
+                            source: taskDescription,
+                            value: event.target.value,
+                        })}
+                        onBlur={handleDescriptionBlur}
+                        multiline
+                        minRows={2}
+                        maxRows={5}
+                        size="small"
+                        fullWidth
+                        placeholder="Add a note"
+                    />
+
+                    {task.tag && (
+                        <Box>
+                            <Typography variant="caption" color="text.secondary">
+                                Tag
                             </Typography>
+                            <Typography variant="body2" sx={{ mt: 0.5, textAlign: 'left' }}>
+                                {task.tag}
+                            </Typography>
+                        </Box>
+                    )}
+
+                    <Box sx={{ pt: 2.5, borderTop: '1px solid', borderColor: 'divider' }}>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                            Subtasks {displayedSubtasks.length > 0 ? `· ${displayedSubtasks.filter(subtask => subtask.completed).length}/${displayedSubtasks.length}` : ''}
+                        </Typography>
+                        <SubtaskList items={displayedSubtasks} onToggle={handleToggleSubtask} />
+                        {!visibleSubtaskState.loading && (
+                            <SubtaskComposer taskId={task.taskId} onSubmit={handleCreateSubtask} />
                         )}
-                        <TaskReminderPicker
-                            value={task.reminderMinutesBefore}
-                            disabled={!scheduledPerformDateTime}
-                            onChange={reminderMinutesBefore => void onUpdate(task.taskId, { reminderMinutesBefore })}
-                        />
                     </Box>
-                </LocalizationProvider>
-
-                <TextField
-                    label="Description"
-                    autoComplete="off"
-                    value={visibleDescription}
-                    onChange={event => setDescriptionDraft({
-                        taskId: task.taskId,
-                        source: taskDescription,
-                        value: event.target.value,
-                    })}
-                    onBlur={handleDescriptionBlur}
-                    multiline
-                    minRows={2}
-                    maxRows={5}
-                    size="small"
-                    fullWidth
-                    placeholder="Add a note"
-                />
-
-                {task.tag && (
-                    <Box>
-                        <Typography variant="caption" color="text.secondary">
-                            Tag
-                        </Typography>
-                        <Typography variant="body2" sx={{ mt: 0.5, textAlign: 'left' }}>
-                            {task.tag}
-                        </Typography>
-                    </Box>
-                )}
-
-                <Box sx={{ pt: 2.5, minHeight: 178, borderTop: '1px solid', borderColor: 'divider' }}>
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-                        Focus history
-                    </Typography>
-                    <Box
-                        aria-busy={visiblePomodoroStatsState.loading && !displayedPomodoroStats}
-                        sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 1 }}
-                    >
-                        <FocusStat
-                            label="Focus time"
-                            value={displayedPomodoroStats ? formatFocusTime(displayedPomodoroStats.totalFocusSeconds) : '—'}
-                        />
-                        <FocusStat label="Days worked" value={displayedPomodoroStats?.totalDaysWorked ?? '—'} />
-                        <FocusStat
-                            label="Current streak"
-                            value={displayedPomodoroStats ? `${displayedPomodoroStats.currentStreakDays}d` : '—'}
-                        />
-                        <FocusStat
-                            label="Best streak"
-                            value={displayedPomodoroStats ? `${displayedPomodoroStats.longestStreakDays}d` : '—'}
-                        />
-                        <FocusStat label="Focus sessions" value={displayedPomodoroStats?.totalFocusSessions ?? '—'} />
-                    </Box>
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-                        {visiblePomodoroStatsState.error && !displayedPomodoroStats
-                            ? 'Focus history is unavailable right now.'
-                            : displayedPomodoroStats?.lastWorkedOnDate
-                                ? `Last worked ${formatWorkedDate(displayedPomodoroStats.lastWorkedOnDate)}`
-                                : !displayedPomodoroStats
-                                    ? 'Loading focus history…'
-                                    : null}
-                    </Typography>
                 </Box>
 
-                <Box>
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-                        Subtasks {displayedSubtasks.length > 0 ? `· ${displayedSubtasks.filter(subtask => subtask.completed).length}/${displayedSubtasks.length}` : ''}
-                    </Typography>
-                    <SubtaskList items={displayedSubtasks} onToggle={handleToggleSubtask} />
-                    {!visibleSubtaskState.loading && (
-                        <SubtaskComposer taskId={task.taskId} onSubmit={handleCreateSubtask} />
-                    )}
+                <Box
+                    sx={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 3,
+                        minWidth: 0,
+                        pt: 2.5,
+                        borderTop: '1px solid',
+                        borderColor: 'divider',
+                        '@container (min-width: 680px)': {
+                            pt: 0,
+                            pl: 4,
+                            borderTop: 0,
+                            borderLeft: '1px solid',
+                            borderColor: 'divider',
+                        },
+                    }}
+                >
+                    <Box sx={{ minHeight: 178 }}>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                            Focus history
+                        </Typography>
+                        <Box
+                            aria-busy={visiblePomodoroStatsState.loading && !displayedPomodoroStats}
+                            sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 1 }}
+                        >
+                            <FocusStat
+                                label="Focus time"
+                                value={displayedPomodoroStats ? formatFocusTime(displayedPomodoroStats.totalFocusSeconds) : '—'}
+                            />
+                            <FocusStat label="Days worked" value={displayedPomodoroStats?.totalDaysWorked ?? '—'} />
+                            <FocusStat
+                                label="Current streak"
+                                value={displayedPomodoroStats ? `${displayedPomodoroStats.currentStreakDays}d` : '—'}
+                            />
+                            <FocusStat
+                                label="Best streak"
+                                value={displayedPomodoroStats ? `${displayedPomodoroStats.longestStreakDays}d` : '—'}
+                            />
+                        </Box>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+                            {visiblePomodoroStatsState.error && !displayedPomodoroStats
+                                ? 'Focus history is unavailable right now.'
+                                : displayedPomodoroStats?.lastWorkedOnDate
+                                    ? `Last worked ${formatWorkedDate(displayedPomodoroStats.lastWorkedOnDate)}`
+                                    : !displayedPomodoroStats
+                                        ? 'Loading focus history…'
+                                        : null}
+                        </Typography>
+                    </Box>
+
                 </Box>
             </Box>
         </Box>

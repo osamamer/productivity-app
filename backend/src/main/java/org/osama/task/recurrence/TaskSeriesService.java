@@ -12,10 +12,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.DateTimeException;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -42,7 +44,7 @@ public class TaskSeriesService {
     public Task createSeries(NewTaskRequest request, String userId) {
         validateRule(request.getRecurrenceFrequency(), request.getRecurrenceEndDate(),
                 request.getRecurrenceInterval(), request.getRecurrenceUnit(), request.getTimeZone(),
-                request.getScheduledPerformDateTime());
+                request.getRecurrenceDaysOfWeek(), request.getScheduledPerformDateTime());
 
         if (request.getParentId() != null && !request.getParentId().isBlank()) {
             throw new IllegalArgumentException("Recurring subtasks are not supported yet.");
@@ -51,7 +53,7 @@ public class TaskSeriesService {
         Task firstOccurrence = taskService.createTask(request, userId);
         TaskSeries series = createSeriesForTask(firstOccurrence, request.getRecurrenceFrequency(),
                 request.getRecurrenceEndDate(), request.getRecurrenceInterval(), request.getRecurrenceUnit(),
-                request.getTimeZone());
+                request.getRecurrenceDaysOfWeek(), request.getTimeZone());
         attachOccurrence(firstOccurrence, series, firstOccurrence.getScheduledPerformDateTime());
         materializeOccurrences(series, userId);
         log.info("Task series created: userId={} seriesId={} firstTaskId={} frequency={}",
@@ -74,9 +76,10 @@ public class TaskSeriesService {
 
         validateRule(request.getRecurrenceFrequency(), request.getRecurrenceEndDate(),
                 request.getRecurrenceInterval(), request.getRecurrenceUnit(), request.getTimeZone(),
-                task.getScheduledPerformDateTime().toString());
+                request.getRecurrenceDaysOfWeek(), task.getScheduledPerformDateTime().toString());
         TaskSeries series = createSeriesForTask(task, request.getRecurrenceFrequency(), request.getRecurrenceEndDate(),
-                request.getRecurrenceInterval(), request.getRecurrenceUnit(), request.getTimeZone());
+                request.getRecurrenceInterval(), request.getRecurrenceUnit(), request.getRecurrenceDaysOfWeek(),
+                request.getTimeZone());
         attachOccurrence(task, series, task.getScheduledPerformDateTime());
         materializeOccurrences(series, userId);
         log.info("Task converted to recurring series: userId={} taskId={} seriesId={}",
@@ -105,8 +108,13 @@ public class TaskSeriesService {
         TaskRecurrenceFrequency frequency = request.getRecurrenceFrequency() == null
                 ? series.getRecurrenceFrequency() : request.getRecurrenceFrequency();
         String timeZone = request.getTimeZone() == null ? series.getTimeZone() : request.getTimeZone();
+        List<DayOfWeek> recurrenceDaysOfWeek = request.getRecurrenceDaysOfWeek() == null
+                ? frequency == TaskRecurrenceFrequency.CUSTOM
+                    ? TaskRecurrenceDays.decode(series.getRecurrenceDaysOfWeek())
+                    : List.of()
+                : request.getRecurrenceDaysOfWeek();
         validateRule(frequency, request.getRecurrenceEndDate(), request.getRecurrenceInterval(),
-                request.getRecurrenceUnit(), timeZone, series.getStartDateTime().toString());
+                request.getRecurrenceUnit(), timeZone, recurrenceDaysOfWeek, series.getStartDateTime().toString());
 
         skipFutureOccurrences(series.getSeriesId(), TaskSkipReason.SERIES_CHANGED);
         series.setRecurrenceFrequency(frequency);
@@ -115,6 +123,8 @@ public class TaskSeriesService {
                 ? request.getRecurrenceInterval() : null);
         series.setRecurrenceUnit(frequency == TaskRecurrenceFrequency.CUSTOM
                 ? request.getRecurrenceUnit() : null);
+        series.setRecurrenceDaysOfWeek(frequency == TaskRecurrenceFrequency.CUSTOM
+                ? TaskRecurrenceDays.encode(recurrenceDaysOfWeek) : null);
         series.setTimeZone(timeZone);
         if (request.getActive() != null) {
             series.setActive(request.getActive());
@@ -164,6 +174,7 @@ public class TaskSeriesService {
                                            LocalDate endDate,
                                            Integer interval,
                                            TaskRecurrenceUnit unit,
+                                           List<DayOfWeek> daysOfWeek,
                                            String timeZone) {
         TaskSeries series = new TaskSeries();
         series.setSeriesId(UUID.randomUUID().toString());
@@ -178,6 +189,8 @@ public class TaskSeriesService {
         series.setRecurrenceEndDate(endDate);
         series.setRecurrenceInterval(frequency == TaskRecurrenceFrequency.CUSTOM ? interval : null);
         series.setRecurrenceUnit(frequency == TaskRecurrenceFrequency.CUSTOM ? unit : null);
+        series.setRecurrenceDaysOfWeek(frequency == TaskRecurrenceFrequency.CUSTOM
+                ? TaskRecurrenceDays.encode(daysOfWeek) : null);
         series.setTimeZone(normalizeTimeZone(timeZone));
         series.setReminderMinutesBefore(task.getReminderMinutesBefore());
         series.setActive(true);
@@ -192,6 +205,7 @@ public class TaskSeriesService {
         }
         LocalDateTime through = now.plusDays(OCCURRENCE_HORIZON_DAYS);
         List<LocalDateTime> occurrenceDates = TaskRecurrenceCalculator.occurrencesBetween(series, from, through);
+        List<Task> newOccurrences = new ArrayList<>();
 
         for (LocalDateTime occurrenceDate : occurrenceDates) {
             Optional<Task> existingOccurrence = taskRepository.findByTaskSeriesIdAndSeriesOccurrenceAt(
@@ -217,7 +231,11 @@ public class TaskSeriesService {
 
             Task occurrence = taskService.createTaskFromSeries(occurrenceRequest, userId);
             attachOccurrence(occurrence, series, occurrenceDate);
+            newOccurrences.add(occurrence);
         }
+        // Preserve newest-first ordering with one rewrite instead of rewriting
+        // every existing task once for every generated occurrence.
+        taskService.prependSeriesOccurrences(newOccurrences, userId);
     }
 
     private void attachOccurrence(Task task, TaskSeries series, LocalDateTime occurrenceDate) {
@@ -246,6 +264,7 @@ public class TaskSeriesService {
                               Integer interval,
                               TaskRecurrenceUnit unit,
                               String timeZone,
+                              List<DayOfWeek> daysOfWeek,
                               String startDateTime) {
         if (frequency == null) {
             throw new IllegalArgumentException("A recurrence frequency is required.");
@@ -264,6 +283,16 @@ public class TaskSeriesService {
                 && (interval == null || interval < 1 || interval > 999 || unit == null)) {
             throw new IllegalArgumentException("A custom recurrence needs an interval between 1 and 999 and a unit.");
         }
+        if (daysOfWeek != null && !daysOfWeek.isEmpty()) {
+            if (frequency != TaskRecurrenceFrequency.CUSTOM
+                    || interval == null || interval != 1 || unit != TaskRecurrenceUnit.WEEKS) {
+                throw new IllegalArgumentException("Selected weekdays require a weekly custom recurrence.");
+            }
+            if (daysOfWeek.stream().anyMatch(day -> day == null)
+                    || daysOfWeek.stream().distinct().count() != daysOfWeek.size()) {
+                throw new IllegalArgumentException("Custom recurrence weekdays must be unique and valid.");
+            }
+        }
         try {
             ZoneId.of(normalizeTimeZone(timeZone));
         } catch (DateTimeException exception) {
@@ -280,7 +309,8 @@ public class TaskSeriesService {
                 series.getSeriesId(), series.getName(), series.getDescription(), series.getTag(),
                 series.getImportance(), series.getMentalThreadId(), series.getStartDateTime(),
                 series.getRecurrenceFrequency(), series.getRecurrenceEndDate(), series.getRecurrenceInterval(),
-                series.getRecurrenceUnit(), series.getTimeZone(), series.getReminderMinutesBefore(), series.isActive(),
+                series.getRecurrenceUnit(), TaskRecurrenceDays.decode(series.getRecurrenceDaysOfWeek()),
+                series.getTimeZone(), series.getReminderMinutesBefore(), series.isActive(),
                 series.getCreatedAt(), series.getUpdatedAt());
     }
 }

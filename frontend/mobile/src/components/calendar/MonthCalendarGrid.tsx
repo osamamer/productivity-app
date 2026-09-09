@@ -17,6 +17,8 @@ export interface CalendarGridItem {
   date: string;
   title: string;
   kind: CalendarItemKind;
+  occurrenceKey?: string;
+  occurrenceDate?: string;
   completed?: boolean;
   timeLabel?: string;
   color?: string;

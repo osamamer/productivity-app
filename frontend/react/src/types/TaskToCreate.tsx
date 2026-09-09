@@ -1,3 +1,5 @@
+import { TaskRecurrenceDay } from './TaskRecurrence';
+
 export interface TaskToCreate   {
     name: string;
     description: string;
@@ -11,5 +13,6 @@ export interface TaskToCreate   {
     recurrenceEndDate?: string | null;
     recurrenceInterval?: number | null;
     recurrenceUnit?: 'DAYS' | 'WEEKS' | 'MONTHS' | null;
+    recurrenceDaysOfWeek?: TaskRecurrenceDay[] | null;
     timeZone?: string;
 }

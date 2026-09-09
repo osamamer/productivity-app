@@ -36,6 +36,7 @@ public class StatInsightService {
         List<StatEntry> entries = entryRepository.findAllByUserIdAndDateBetween(userId, from, to);
         Map<String, Map<LocalDate, Double>> valuesByDefinition = entries.stream()
                 .filter(entry -> entry.getStatDefinition() != null)
+                .filter(entry -> entry.getStatus() != StatEntryStatus.NOT_PLANNED)
                 .collect(Collectors.groupingBy(
                         entry -> entry.getStatDefinition().getId(),
                         Collectors.toMap(StatEntry::getDate, StatEntry::getValue)));

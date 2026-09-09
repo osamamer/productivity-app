@@ -3,12 +3,12 @@ import {
     AreaChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip,
     ResponsiveContainer, ReferenceLine, type MouseHandlerDataParam,
 } from 'recharts';
-import { Box, CircularProgress, TextField, Typography } from '@mui/material';
+import { Box, CircularProgress, TextField, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { format, parseISO, subDays, eachDayOfInterval } from 'date-fns';
-import { StatDefinition, StatEntry } from '../../types/Stats';
+import { StatDefinition, StatEntry, StatEntryStatus } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
-import { showStatFeedback } from '../../services/statFeedback';
+import { getBooleanChoiceColor, showStatFeedback } from '../../services/statFeedback';
 import {
     durationValueToMinutes, formatDurationValue, formatTimeValue,
     minutesToDurationValue, minutesToTimeValue, timeValueToMinutes,
@@ -38,6 +38,14 @@ function valueForDate(
     return entriesByDate.get(date) ?? (definition?.type === 'BOOLEAN' ? 0 : undefined);
 }
 
+function recordedEntries(entries: StatEntry[]): StatEntry[] {
+    return entries.filter(entry => entry.status !== 'NOT_PLANNED');
+}
+
+function statusByDate(entries: StatEntry[]): Map<string, StatEntryStatus> {
+    return new Map(entries.map(entry => [entry.date, entry.status ?? 'RECORDED'] as [string, StatEntryStatus]));
+}
+
 function buildChartPoints(
     from: Date,
     to: Date,
@@ -46,8 +54,10 @@ function buildChartPoints(
     comparisonEntries: StatEntry[],
     comparisonDefinition?: StatDefinition,
 ): ChartPoint[] {
-    const entryMap = new Map(entries.map(entry => [entry.date, entry.value]));
-    const comparisonEntryMap = new Map(comparisonEntries.map(entry => [entry.date, entry.value]));
+    const entryMap = new Map(recordedEntries(entries).map(entry => [entry.date, entry.value]));
+    const comparisonEntryMap = new Map(recordedEntries(comparisonEntries).map(entry => [entry.date, entry.value]));
+    const entryStatuses = statusByDate(entries);
+    const comparisonStatuses = statusByDate(comparisonEntries);
     return eachDayOfInterval({ start: from, end: to }).map(day => {
         const date = format(day, 'yyyy-MM-dd');
         return {
@@ -55,6 +65,8 @@ function buildChartPoints(
             value: valueForDate(entryMap, date, definition),
             comparisonValue: valueForDate(comparisonEntryMap, date, comparisonDefinition),
             hoverTarget: 0,
+            status: entryStatuses.get(date),
+            comparisonStatus: comparisonStatuses.get(date),
         };
     });
 }
@@ -74,16 +86,20 @@ function buildWeeklyChartPoints(
     comparisonDefinition?: StatDefinition,
 ): ChartPoint[] {
     const days = eachDayOfInterval({ start: from, end: to });
-    const entriesByDate = new Map(entries.map(entry => [entry.date, entry.value]));
-    const comparisonEntriesByDate = new Map(comparisonEntries.map(entry => [entry.date, entry.value]));
+    const entriesByDate = new Map(recordedEntries(entries).map(entry => [entry.date, entry.value]));
+    const comparisonEntriesByDate = new Map(recordedEntries(comparisonEntries).map(entry => [entry.date, entry.value]));
+    const entryStatuses = statusByDate(entries);
+    const comparisonStatuses = statusByDate(comparisonEntries);
     const points: ChartPoint[] = [];
 
     for (let index = 0; index < days.length; index += 7) {
         const week = days.slice(index, index + 7);
         const values = week
+            .filter(day => entryStatuses.get(format(day, 'yyyy-MM-dd')) !== 'NOT_PLANNED')
             .map(day => valueForDate(entriesByDate, format(day, 'yyyy-MM-dd'), definition))
             .filter((value): value is number => value !== undefined);
         const comparisonValues = week
+            .filter(day => comparisonStatuses.get(format(day, 'yyyy-MM-dd')) !== 'NOT_PLANNED')
             .map(day => valueForDate(
                 comparisonEntriesByDate,
                 format(day, 'yyyy-MM-dd'),
@@ -97,6 +113,12 @@ function buildWeeklyChartPoints(
             value: average(values),
             comparisonValue: average(comparisonValues),
             hoverTarget: 0,
+            status: values.length === 0 && week.some(day => entryStatuses.get(format(day, 'yyyy-MM-dd')) === 'NOT_PLANNED')
+                ? 'NOT_PLANNED'
+                : undefined,
+            comparisonStatus: comparisonValues.length === 0 && week.some(day => comparisonStatuses.get(format(day, 'yyyy-MM-dd')) === 'NOT_PLANNED')
+                ? 'NOT_PLANNED'
+                : undefined,
         });
     }
 
@@ -107,9 +129,18 @@ function formatChartValue(value: number): string {
     return Number.isInteger(value) ? String(value) : Number(value.toFixed(2)).toString();
 }
 
-function formatPointValue(value: number | undefined, definition: StatDefinition, averaged: boolean): string {
+function formatPointValue(
+    value: number | undefined,
+    definition: StatDefinition,
+    averaged: boolean,
+    status?: StatEntryStatus,
+): string {
     if (value === undefined) return 'No data';
-    if (definition.type === 'BOOLEAN') return averaged ? `${Math.round(value * 100)}% yes` : value === 1 ? 'Yes' : 'No';
+    if (definition.type === 'BOOLEAN') {
+        return status === 'NOT_PLANNED'
+            ? 'Not planned'
+            : averaged ? `${Math.round(value * 100)}% yes` : value === 1 ? 'Yes' : 'No';
+    }
     if (definition.type === 'TIME') return formatTimeValue(value);
     if (definition.type === 'DURATION') {
         return averaged ? `Average ${formatDurationValue(value)}` : formatDurationValue(value);
@@ -256,11 +287,12 @@ export const StatLineChart = React.memo(function StatLineChart({
     const [hoveredThreshold, setHoveredThreshold] = useState<'primary' | 'comparison' | null>(null);
     const [editorPosition, setEditorPosition] = useState<{ left: number; top: number } | null>(null);
     const [editValue, setEditValue] = useState('');
+    const [editStatus, setEditStatus] = useState<StatEntryStatus>('RECORDED');
     const [saveError, setSaveError] = useState<string | null>(null);
     const chartRef = useRef<HTMLDivElement>(null);
     const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const pendingSaveRef = useRef<{ date: string; value: string } | null>(null);
+    const pendingSaveRef = useRef<{ date: string; value: string; status: StatEntryStatus } | null>(null);
     const chartHoveredRef = useRef(false);
     const editorHoveredRef = useRef(false);
 
@@ -324,8 +356,9 @@ export const StatLineChart = React.memo(function StatLineChart({
                 : definition.type === 'DURATION'
                     ? minutesToDurationValue(hoveredPoint.value)
                 : String(hoveredPoint.value));
+        setEditStatus(hoveredPoint?.status ?? 'RECORDED');
         setSaveError(null);
-    }, [definition.type, hoveredPoint?.date, hoveredPoint?.value]);
+    }, [definition.type, hoveredPoint?.date, hoveredPoint?.status, hoveredPoint?.value]);
 
     useEffect(() => () => {
         if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
@@ -351,11 +384,12 @@ export const StatLineChart = React.memo(function StatLineChart({
     const primaryColor = theme.palette.primary.main;
     const comparisonColor = theme.palette.secondary.main;
 
-    const handleSaved = (date: string, value: number) => {
+    const handleSaved = (date: string, value: number | null, status: StatEntryStatus = 'RECORDED') => {
+        const nextValue = value ?? undefined;
         setDataState(previous => previous.key === dataKey
-            ? { ...previous, points: previous.points.map(point => point.date === date ? { ...point, value } : point) }
+            ? { ...previous, points: previous.points.map(point => point.date === date ? { ...point, value: nextValue, status } : point) }
             : previous);
-        setHoveredPoint(previous => previous?.date === date ? { ...previous, value } : previous);
+        setHoveredPoint(previous => previous?.date === date ? { ...previous, value: nextValue, status } : previous);
     };
 
     const clearCloseTimer = () => {
@@ -402,14 +436,46 @@ export const StatLineChart = React.memo(function StatLineChart({
         scheduleEditorClose();
     };
 
-    const saveEntry = async (date: string, rawValue: string) => {
-        if (rawValue.trim() === '') return;
+    const saveEntry = async (date: string, rawValue: string, status: StatEntryStatus = 'RECORDED') => {
         const value = definition.type === 'TIME'
-            ? timeValueToMinutes(rawValue)
+            ? rawValue.trim() === '' ? null : timeValueToMinutes(rawValue)
             : definition.type === 'DURATION'
-                ? durationValueToMinutes(rawValue)
-                : Number(rawValue);
-        if (value === null || !Number.isFinite(value)) {
+                ? rawValue.trim() === '' ? null : durationValueToMinutes(rawValue)
+                : rawValue.trim() === '' ? null : Number(rawValue);
+        if (status === 'NOT_PLANNED') {
+            setSaveError(null);
+            try {
+                await statService.recordEntry({
+                    statDefinitionId: definition.id,
+                    date,
+                    value: null,
+                    status,
+                });
+                handleSaved(date, 0, status);
+                onEntryChanged?.(definition.id);
+            } catch (error) {
+                console.error('Failed to mark chart stat entry as not planned:', error);
+                setSaveError('Failed to save this value.');
+            }
+            return;
+        }
+        if (value === null) {
+            setSaveError(null);
+            try {
+                await statService.recordEntry({
+                    statDefinitionId: definition.id,
+                    date,
+                    value: null,
+                });
+                handleSaved(date, null, 'RECORDED');
+                onEntryChanged?.(definition.id);
+            } catch (error) {
+                console.error('Failed to clear chart stat entry:', error);
+                setSaveError('Failed to clear this value.');
+            }
+            return;
+        }
+        if (!Number.isFinite(value)) {
             setSaveError(definition.type === 'TIME'
                 ? 'Choose a valid time.'
                 : definition.type === 'DURATION'
@@ -429,9 +495,10 @@ export const StatLineChart = React.memo(function StatLineChart({
                 statDefinitionId: definition.id,
                 date,
                 value,
+                status,
             });
             showStatFeedback(definition, value, chartRef.current);
-            handleSaved(date, value);
+            handleSaved(date, value, status);
             onEntryChanged?.(definition.id);
         } catch (error) {
             console.error('Failed to save chart stat entry:', error);
@@ -439,16 +506,15 @@ export const StatLineChart = React.memo(function StatLineChart({
         }
     };
 
-    const queueEntrySave = (date: string, value: string) => {
+    const queueEntrySave = (date: string, value: string, status: StatEntryStatus = 'RECORDED') => {
         if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-        pendingSaveRef.current = value.trim() === '' ? null : { date, value };
-        if (!pendingSaveRef.current) return;
+        pendingSaveRef.current = { date, value, status };
 
         saveTimerRef.current = setTimeout(() => {
             const pendingSave = pendingSaveRef.current;
             pendingSaveRef.current = null;
             saveTimerRef.current = null;
-            if (pendingSave) void saveEntry(pendingSave.date, pendingSave.value);
+            if (pendingSave) void saveEntry(pendingSave.date, pendingSave.value, pendingSave.status);
         }, 400);
     };
 
@@ -457,7 +523,7 @@ export const StatLineChart = React.memo(function StatLineChart({
         saveTimerRef.current = null;
         const pendingSave = pendingSaveRef.current;
         pendingSaveRef.current = null;
-        if (pendingSave) void saveEntry(pendingSave.date, pendingSave.value);
+        if (pendingSave) void saveEntry(pendingSave.date, pendingSave.value, pendingSave.status);
     };
 
     const handleChartMouseMove = (state: MouseHandlerDataParam) => {
@@ -702,7 +768,7 @@ export const StatLineChart = React.memo(function StatLineChart({
                 />
             )}
 
-            {hoveredThreshold === null && hoveredPoint && editorPosition && dataState.key === dataKey && !isYearView && definition.type !== 'BOOLEAN' && (
+            {hoveredThreshold === null && hoveredPoint && editorPosition && dataState.key === dataKey && !isYearView && (
                 <Box
                     onMouseEnter={handleEditorEnter}
                     onMouseLeave={handleEditorLeave}
@@ -726,11 +792,50 @@ export const StatLineChart = React.memo(function StatLineChart({
                                 {format(parseISO(hoveredPoint.date), 'MMM d, yyyy')}
                             </Typography>
                             <Typography variant="caption" sx={{ color: comparisonColor }} display="block" noWrap>
-                                {comparisonDefinition.name}: {formatPointValue(hoveredPoint.comparisonValue, comparisonDefinition, false)}
+                                {comparisonDefinition.name}: {formatPointValue(
+                                    hoveredPoint.comparisonValue,
+                                    comparisonDefinition,
+                                    false,
+                                    hoveredPoint.comparisonStatus,
+                                )}
                             </Typography>
                         </Box>
                     )}
-                    {definition.type === 'TIME' ? (
+                    {definition.type === 'BOOLEAN' ? (
+                        <ToggleButtonGroup
+                            value={editStatus === 'NOT_PLANNED'
+                                ? 'not-planned'
+                                : editValue === '1' ? 'yes' : editValue === '0' ? 'no' : null}
+                            exclusive
+                            onChange={(_, value) => {
+                                const nextStatus: StatEntryStatus = value === 'not-planned' ? 'NOT_PLANNED' : 'RECORDED';
+                                const nextValue = value === null ? '' : value === 'yes' ? '1' : value === 'no' ? '0' : '';
+                                setEditStatus(nextStatus);
+                                setEditValue(nextValue);
+                                queueEntrySave(hoveredPoint.date, nextValue, nextStatus);
+                            }}
+                            size="small"
+                        >
+                            <ToggleButton
+                                value="yes"
+                                sx={{ '&.Mui-selected': { bgcolor: `${getBooleanChoiceColor(definition, 1)}.main`, color: 'white', '&:hover': { bgcolor: `${getBooleanChoiceColor(definition, 1)}.dark` } } }}
+                                        >
+                                            Yes
+                                        </ToggleButton>
+                                        <ToggleButton
+                                            value="not-planned"
+                                            sx={{ '&.Mui-selected': { bgcolor: 'warning.main', color: 'warning.contrastText', '&:hover': { bgcolor: 'warning.dark' } } }}
+                                        >
+                                            Not planned
+                                        </ToggleButton>
+                                        <ToggleButton
+                                            value="no"
+                                sx={{ '&.Mui-selected': { bgcolor: `${getBooleanChoiceColor(definition, 0)}.main`, color: 'white', '&:hover': { bgcolor: `${getBooleanChoiceColor(definition, 0)}.dark` } } }}
+                                        >
+                                            No
+                                        </ToggleButton>
+                        </ToggleButtonGroup>
+                    ) : definition.type === 'TIME' ? (
                         <AppTimeField
                             label="Time"
                             value={editValue}
@@ -809,7 +914,7 @@ export const StatLineChart = React.memo(function StatLineChart({
                 </Box>
             )}
 
-            {hoveredThreshold === null && hoveredPoint && editorPosition && dataState.key === dataKey && (isYearView || definition.type === 'BOOLEAN') && (
+            {hoveredThreshold === null && hoveredPoint && editorPosition && dataState.key === dataKey && isYearView && (
                 <Box
                     sx={{
                         position: 'absolute',
@@ -837,7 +942,7 @@ export const StatLineChart = React.memo(function StatLineChart({
                     </Typography>
                     <Typography variant="body2" fontWeight={600} sx={{ color: comparisonDefinition ? primaryColor : 'text.primary' }}>
                         {comparisonDefinition && `${definition.name}: `}
-                        {formatPointValue(hoveredPoint.value, definition, isYearView)}
+                        {formatPointValue(hoveredPoint.value, definition, isYearView, hoveredPoint.status)}
                     </Typography>
                     {comparisonDefinition && (
                         <Typography variant="body2" fontWeight={600} sx={{ color: comparisonColor }}>
@@ -845,6 +950,7 @@ export const StatLineChart = React.memo(function StatLineChart({
                                 hoveredPoint.comparisonValue,
                                 comparisonDefinition,
                                 isYearView,
+                                hoveredPoint.comparisonStatus,
                             )}
                         </Typography>
                     )}

@@ -1,0 +1,28 @@
+databaseChangeLog:
+  - changeSet:
+      id: 055-add-calendar-event-occurrence-overrides
+      author: codex
+      comment: Store status and deletion overrides for individual repeating calendar event occurrences
+      changes:
+        - addColumn:
+            tableName: calendar_event_cancellation
+            columns:
+              - column:
+                  name: occurrence_status
+                  type: varchar(20)
+                  defaultValue: CANCELLED
+                  constraints:
+                    nullable: false
+              - column:
+                  name: deleted
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+      rollback:
+        - dropColumn:
+            tableName: calendar_event_cancellation
+            columnName: occurrence_status
+        - dropColumn:
+            tableName: calendar_event_cancellation
+            columnName: deleted

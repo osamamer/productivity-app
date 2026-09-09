@@ -24,13 +24,16 @@ public class CalendarEventService {
     private static final int MAX_REMINDER_MINUTES = 8 * 7 * 24 * 60;
 
     private final CalendarEventRepository eventRepository;
+    private final CalendarEventCancellationRepository cancellationRepository;
     private final ReminderRepository reminderRepository;
     private final UserRepository userRepository;
 
     public CalendarEventService(CalendarEventRepository eventRepository,
+                                CalendarEventCancellationRepository cancellationRepository,
                                 ReminderRepository reminderRepository,
                                 UserRepository userRepository) {
         this.eventRepository = eventRepository;
+        this.cancellationRepository = cancellationRepository;
         this.reminderRepository = reminderRepository;
         this.userRepository = userRepository;
     }
@@ -75,8 +78,97 @@ public class CalendarEventService {
     public void deleteEvent(String eventId, String userId) {
         CalendarEvent event = eventRepository.findByIdAndUserId(eventId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Calendar event not found: " + eventId));
+        cancellationRepository.deleteAllByEventId(eventId);
+        cancellationRepository.flush();
         eventRepository.delete(event);
         log.info("Calendar event deleted: userId={} eventId={}", userId, eventId);
+    }
+
+    @Transactional
+    public CalendarEventResponse cancelEventOccurrence(String eventId, CalendarEventOccurrenceRequest request,
+                                                        String userId) {
+        CalendarEvent event = findEvent(eventId, userId);
+        ensureRepeatingEvent(event);
+
+        String occurrenceKey = normalizeOccurrenceKey(request);
+        saveOccurrenceOverride(event, occurrenceKey, CalendarEventStatus.CANCELLED, false);
+        log.info("Calendar event occurrence cancelled: userId={} eventId={} occurrenceKey={}",
+                userId, eventId, occurrenceKey);
+        return toResponse(event);
+    }
+
+    @Transactional
+    public CalendarEventResponse updateEventOccurrenceStatus(String eventId, CalendarEventOccurrenceRequest request,
+                                                               String userId) {
+        CalendarEvent event = findEvent(eventId, userId);
+        ensureRepeatingEvent(event);
+        if (request == null || request.getStatus() == null) {
+            throw new IllegalArgumentException("An event occurrence status is required.");
+        }
+
+        String occurrenceKey = normalizeOccurrenceKey(request);
+        if (request.getStatus() == event.getStatus()) {
+            cancellationRepository.findByEventIdAndOccurrenceKey(eventId, occurrenceKey)
+                    .ifPresent(cancellationRepository::delete);
+        } else {
+            saveOccurrenceOverride(event, occurrenceKey, request.getStatus(), false);
+        }
+        log.info("Calendar event occurrence status updated: userId={} eventId={} occurrenceKey={} status={}",
+                userId, eventId, occurrenceKey, request.getStatus());
+        return toResponse(event);
+    }
+
+    @Transactional
+    public CalendarEventResponse deleteEventOccurrence(String eventId, CalendarEventOccurrenceRequest request,
+                                                        String userId) {
+        CalendarEvent event = findEvent(eventId, userId);
+        ensureRepeatingEvent(event);
+
+        String occurrenceKey = normalizeOccurrenceKey(request);
+        saveOccurrenceOverride(event, occurrenceKey, CalendarEventStatus.CANCELLED, true);
+        log.info("Calendar event occurrence deleted: userId={} eventId={} occurrenceKey={}",
+                userId, eventId, occurrenceKey);
+        return toResponse(event);
+    }
+
+    @Transactional
+    public CalendarEventResponse restoreEventOccurrence(String eventId, String requestedOccurrenceKey, String userId) {
+        CalendarEvent event = findEvent(eventId, userId);
+        ensureRepeatingEvent(event);
+
+        String occurrenceKey = normalizeOccurrenceKey(requestedOccurrenceKey);
+        cancellationRepository.findByEventIdAndOccurrenceKey(eventId, occurrenceKey)
+                .ifPresent(cancellationRepository::delete);
+        log.info("Calendar event occurrence restored: userId={} eventId={} occurrenceKey={}",
+                userId, eventId, occurrenceKey);
+        return toResponse(event);
+    }
+
+    private CalendarEvent findEvent(String eventId, String userId) {
+        return eventRepository.findByIdAndUserId(eventId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("Calendar event not found: " + eventId));
+    }
+
+    private void ensureRepeatingEvent(CalendarEvent event) {
+        if (event.getRecurrenceFrequency() == RecurrenceFrequency.NONE) {
+            throw new IllegalArgumentException("Only a repeating event has individual occurrences.");
+        }
+    }
+
+    private void saveOccurrenceOverride(CalendarEvent event, String occurrenceKey,
+                                        CalendarEventStatus status, boolean deleted) {
+        CalendarEventCancellation override = cancellationRepository
+                .findByEventIdAndOccurrenceKey(event.getId(), occurrenceKey)
+                .orElseGet(() -> {
+                    CalendarEventCancellation created = new CalendarEventCancellation();
+                    created.setId(UUID.randomUUID().toString());
+                    created.setEvent(event);
+                    created.setOccurrenceKey(occurrenceKey);
+                    return created;
+                });
+        override.setOccurrenceStatus(status);
+        override.setDeleted(deleted);
+        cancellationRepository.save(override);
     }
 
     private void applyRequest(CalendarEvent event, CalendarEventRequest request) {
@@ -141,6 +233,31 @@ public class CalendarEventService {
                 : null);
     }
 
+    private String normalizeOccurrenceKey(CalendarEventOccurrenceRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("An event occurrence is required.");
+        }
+        return normalizeOccurrenceKey(request.getOccurrenceKey());
+    }
+
+    private String normalizeOccurrenceKey(String value) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException("An event occurrence is required.");
+        }
+        String occurrenceKey = value.trim();
+        try {
+            if (occurrenceKey.startsWith("date:")) {
+                return "date:" + LocalDate.parse(occurrenceKey.substring("date:".length()));
+            }
+            if (occurrenceKey.startsWith("instant:")) {
+                return "instant:" + Instant.parse(occurrenceKey.substring("instant:".length()));
+            }
+        } catch (DateTimeException exception) {
+            throw new IllegalArgumentException("Event occurrence is invalid.", exception);
+        }
+        throw new IllegalArgumentException("Event occurrence is invalid.");
+    }
+
     private Integer requestedReminderMinutes(CalendarEventRequest request) {
         Integer minutes = request.getReminderMinutesBefore();
         if (!request.isReminderMinutesBeforePresent()) {
@@ -189,10 +306,22 @@ public class CalendarEventService {
         Integer reminderMinutes = reminderRepository.findByEventId(event.getId())
                 .map(Reminder::getMinutesBefore)
                 .orElse(null);
+        List<CalendarEventCancellation> occurrenceOverrides = cancellationRepository
+                .findAllByEventIdOrderByOccurrenceKeyAsc(event.getId());
         return new CalendarEventResponse(event.getId(), event.getTitle(), event.getDescription(),
                 event.isAllDay(), event.getStartDate(), event.getEndDate(), event.getStartTime(),
                 event.getEndTime(), event.getTimeZone(), event.getStatus(), event.getRecurrenceFrequency(),
-                event.getRecurrenceEndDate(), event.getRecurrenceInterval(), event.getRecurrenceUnit(), reminderMinutes,
+                event.getRecurrenceEndDate(), event.getRecurrenceInterval(), event.getRecurrenceUnit(),
+                occurrenceOverrides.stream()
+                        .filter(override -> !override.isDeleted()
+                                && override.getOccurrenceStatus() == CalendarEventStatus.CANCELLED)
+                        .map(CalendarEventCancellation::getOccurrenceKey)
+                        .toList(),
+                occurrenceOverrides.stream()
+                        .map(override -> new CalendarEventOccurrenceResponse(
+                                override.getOccurrenceKey(), override.getOccurrenceStatus(), override.isDeleted()))
+                        .toList(),
+                reminderMinutes,
                 event.getCreatedAt(), event.getUpdatedAt());
     }
 }

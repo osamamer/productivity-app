@@ -1,5 +1,5 @@
 import React, { createContext, useState, useEffect, useMemo, useCallback, ReactNode } from 'react';
-import keycloak from '../services/keycloak';
+import keycloak, { clearDevAuthSession } from '../services/keycloak';
 import { statService } from '../services/api/statService';
 import { dayService } from '../services/api/dayService';
 import { eventService } from '../services/api/eventService';
@@ -58,6 +58,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
     const login = useCallback((..._args: unknown[]) => keycloak.login(), []);
 
     const logout = useCallback(() => {
+        clearDevAuthSession();
         clearAppBootstrap();
         statService.clearCache();
         dayService.clearCache();

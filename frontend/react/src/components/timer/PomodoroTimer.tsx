@@ -34,6 +34,9 @@ import {
     NORMAL_POMODORO_CONFIG,
     PomodoroConfig,
     PomodoroFormValues,
+    readPomodoroFormPreferences,
+    savePomodoroFormPreferences,
+    subscribeToPomodoroFormPreferences,
 } from '../../services/api/pomodoroConfigService';
 import { GENERIC_ERROR_MESSAGE } from '../../services/utils/userMessages';
 import { PomodoroNumberField } from './PomodoroNumberField';
@@ -114,8 +117,14 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
     }, [status?.active, status?.phase, status?.sessionActive, status?.sessionRunning, whiteNoiseEnabled]);
 
     const [formData, setFormData] = useState<PomodoroFormValues>(() =>
-        createPomodoroFormDefaults(NORMAL_POMODORO_CONFIG)
+        readPomodoroFormPreferences() ?? createPomodoroFormDefaults(NORMAL_POMODORO_CONFIG)
     );
+
+    const updatePomodoroForm = (updates: Partial<PomodoroFormValues>) => {
+        const next = { ...formData, ...updates };
+        setFormData(next);
+        savePomodoroFormPreferences(next);
+    };
 
     const waitingForPhase = status?.phase === 'WAITING_FOR_BREAK' || status?.phase === 'WAITING_FOR_FOCUS';
     const isBreakPhase = status?.phase
@@ -128,11 +137,10 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
             .then(config => {
                 if (cancelled) return;
                 setPomodoroConfig(config);
-                setFormData(previous =>
-                    isPomodoroFormDefaults(previous, NORMAL_POMODORO_CONFIG)
+                setFormData(previous => readPomodoroFormPreferences()
+                    ?? (isPomodoroFormDefaults(previous, NORMAL_POMODORO_CONFIG)
                         ? createPomodoroFormDefaults(config)
-                        : previous
-                );
+                        : previous));
             })
             .catch(error => console.error('Failed to load Pomodoro configuration:', error));
 
@@ -140,6 +148,11 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
             cancelled = true;
         };
     }, []);
+
+    useEffect(() => subscribeToPomodoroFormPreferences(() => {
+        const stored = readPomodoroFormPreferences();
+        if (stored) setFormData(stored);
+    }), []);
 
     const handleTogglePlayPause = async () => {
         if (!task) return;
@@ -371,28 +384,28 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
                                 name="focusDuration"
                                 label={`Focus (${durationUnitLabel})`}
                                 value={formData.focusDuration}
-                                onChange={value => setFormData(prev => ({ ...prev, focusDuration: value }))}
+                                onChange={value => updatePomodoroForm({ focusDuration: value })}
                                 disabled={isLoading}
                             />
                             <PomodoroNumberField
                                 name="shortBreakDuration"
                                 label={`Short Break (${durationUnitLabel})`}
                                 value={formData.shortBreakDuration}
-                                onChange={value => setFormData(prev => ({ ...prev, shortBreakDuration: value }))}
+                                onChange={value => updatePomodoroForm({ shortBreakDuration: value })}
                                 disabled={isLoading}
                             />
                             <PomodoroNumberField
                                 name="longBreakDuration"
                                 label={`Long Break (${durationUnitLabel})`}
                                 value={formData.longBreakDuration}
-                                onChange={value => setFormData(prev => ({ ...prev, longBreakDuration: value }))}
+                                onChange={value => updatePomodoroForm({ longBreakDuration: value })}
                                 disabled={isLoading}
                             />
                             <PomodoroNumberField
                                 name="numFocuses"
                                 label="Focus Sessions"
                                 value={formData.numFocuses}
-                                onChange={value => setFormData(prev => ({ ...prev, numFocuses: value }))}
+                                onChange={value => updatePomodoroForm({ numFocuses: value })}
                                 min={1}
                                 max={10}
                                 disabled={isLoading}

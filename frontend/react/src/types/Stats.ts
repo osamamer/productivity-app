@@ -1,6 +1,15 @@
 export type StatType = 'NUMBER' | 'BOOLEAN' | 'RANGE' | 'TIME' | 'DURATION';
 export type StatMorality = 'GOOD' | 'BAD' | 'NEUTRAL';
+export type StatEntryStatus = 'RECORDED' | 'NOT_PLANNED';
 export type StatFeedback = 'CELEBRATE' | 'SAD' | 'NONE';
+export type StatRecurrenceFrequency = 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'CUSTOM';
+export type StatRecurrenceDay =
+    'MONDAY' | 'TUESDAY' | 'WEDNESDAY' | 'THURSDAY' | 'FRIDAY' | 'SATURDAY' | 'SUNDAY';
+
+export type StatRecurringTaskDraft = {
+    recurrenceFrequency: StatRecurrenceFrequency;
+    recurrenceDaysOfWeek: StatRecurrenceDay[];
+};
 
 export interface StatDefinition {
     id: string;
@@ -23,6 +32,7 @@ export interface StatEntry {
     statDefinition: StatDefinition;
     date: string; // 'YYYY-MM-DD'
     value: number;
+    status?: StatEntryStatus;
     userId: string;
 }
 
@@ -40,6 +50,8 @@ export interface CreateDefinitionRequest {
     morality?: StatMorality;
     goodThreshold?: number;
     createRecurringTask?: boolean;
+    recurrenceFrequency?: StatRecurrenceFrequency;
+    recurrenceDaysOfWeek?: StatRecurrenceDay[];
 }
 
 export interface UpdateDefinitionRequest {
@@ -52,7 +64,8 @@ export interface UpdateDefinitionRequest {
 export interface RecordEntryRequest {
     statDefinitionId: string;
     date?: string;
-    value: number;
+    value: number | null;
+    status?: StatEntryStatus;
 }
 
 export interface StatSummary {

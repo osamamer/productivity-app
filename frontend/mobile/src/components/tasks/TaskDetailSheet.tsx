@@ -10,6 +10,7 @@ import { api } from '@/services/api';
 import type { Task, TaskRecurrenceFrequency, TaskSeries } from '@/types/models';
 import { AppButton } from '../ui/AppButton';
 import { AppInput } from '../ui/AppInput';
+import { AppPopup } from '../ui/AppPopup';
 import { AppText } from '../ui/AppText';
 import { ChoiceChips } from '../ui/ChoiceChips';
 import { ModalSheet } from '../ui/ModalSheet';
@@ -26,12 +27,13 @@ const REMINDER_OPTIONS = [
   { value: 10080, label: '1 week before' },
 ];
 
-export function TaskDetailSheet({ task, onClose, onUpdated, onStartFocus, onDeleted }: {
+export function TaskDetailSheet({ task, onClose, onUpdated, onStartFocus, onDeleted, onDeletedOccurrence }: {
   task: Task | null;
   onClose: () => void;
   onUpdated: (task: Task) => void;
   onStartFocus?: (task: Task) => void;
   onDeleted: (taskId: string) => void;
+  onDeletedOccurrence?: (taskId: string) => Promise<void>;
 }) {
   const { confirm } = useAppPopup();
   const { colors } = useAppTheme();
@@ -42,7 +44,9 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onStartFocus, onDele
   const [importance, setImportance] = useState(taskPriorityValue(task?.importance ?? 0));
   const [completed, setCompleted] = useState(task?.completed ?? false);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deletePromptOpen, setDeletePromptOpen] = useState(false);
   const [repeat, setRepeat] = useState<TaskRecurrenceFrequency>('NONE');
   const seriesRef = useRef<TaskSeries | null>(null);
   const repeatRef = useRef<TaskRecurrenceFrequency>('NONE');
@@ -89,16 +93,39 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onStartFocus, onDele
     }
   }
 
-  async function confirmDelete() {
+  async function confirmDelete(scope: 'occurrence' | 'series') {
     if (!task) return;
-    if (!await confirm('Delete task?', task.name, 'Delete')) return;
+    setDeletePromptOpen(false);
+    const deletingOccurrence = scope === 'occurrence';
+    const title = deletingOccurrence ? 'Delete this occurrence?' : task.taskSeriesId ? 'Delete task series?' : 'Delete task?';
+    const message = deletingOccurrence
+      ? `${task.name} will be removed from this date.`
+      : task.taskSeriesId
+        ? `${task.name} and all occurrences in its series will be removed.`
+        : task.name;
+    if (!await confirm(title, message, 'Delete')) return;
+    setDeleting(true);
     try {
-      await api.tasks.remove(task.taskId);
-      onDeleted(task.taskId);
+      if (deletingOccurrence) {
+        await onDeletedOccurrence!(task.taskId);
+      } else {
+        await api.tasks.remove(task.taskId);
+        onDeleted(task.taskId);
+      }
       onClose();
     } catch (cause) {
       setError(reportError('Could not delete task', cause));
+    } finally {
+      setDeleting(false);
     }
+  }
+
+  function requestDelete() {
+    if (task?.taskSeriesId && onDeletedOccurrence) {
+      setDeletePromptOpen(true);
+      return;
+    }
+    void confirmDelete('series');
   }
 
   function changeRepeat(nextRepeat: TaskRecurrenceFrequency, scheduleOverride = scheduledPerformDateTime) {
@@ -202,8 +229,31 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onStartFocus, onDele
       {error && <AppText color="danger">{error}</AppText>}
       <View style={styles.actions}>
         {onStartFocus && task && <AppButton label="Focus options" icon="timer-outline" variant="secondary" onPress={() => { onClose(); onStartFocus(task); }} style={styles.grow} />}
-        <AppButton label="Delete" icon="trash-outline" variant="danger" onPress={confirmDelete} style={styles.grow} />
+        <AppButton label="Delete" icon="trash-outline" variant="danger" onPress={requestDelete} disabled={deleting} style={styles.grow} />
       </View>
+      <AppPopup
+        visible={deletePromptOpen}
+        showIcon={false}
+        title="Delete recurring task?"
+        message="Choose whether to remove just this occurrence or the whole series."
+        onClose={() => setDeletePromptOpen(false)}
+        dismissOnBackdrop={false}
+        footer={(
+          <View style={styles.deleteChoices}>
+            <AppButton
+              style={styles.deleteChoice}
+              label="This occurrence"
+              variant="secondary"
+              disabled={deleting}
+              onPress={() => void confirmDelete('occurrence')} />
+            <AppButton
+              style={styles.deleteChoice}
+              label="All occurrences"
+              variant="danger"
+              disabled={deleting}
+              onPress={() => void confirmDelete('series')} />
+          </View>
+        )} />
     </ModalSheet>
   );
 }
@@ -214,6 +264,8 @@ const styles = StyleSheet.create({
   repeatCell: { flex: 1, minWidth: 0, paddingTop: 31 },
   actions: { flexDirection: 'row', gap: 10 },
   grow: { flex: 1 },
+  deleteChoices: { gap: 10 },
+  deleteChoice: { width: '100%' },
   completeToggle: { minHeight: 48, borderWidth: 1, borderRadius: 14, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 10 },
   pressed: { opacity: 0.72 },
 });

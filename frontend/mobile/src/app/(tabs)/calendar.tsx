@@ -45,6 +45,35 @@ export default function CalendarScreen() {
     void syncCalendarReminders(next);
   }
 
+  async function cancelEventOccurrence(eventId: string, occurrenceKey: string) {
+    const updated = await api.events.cancelOccurrence(eventId, occurrenceKey);
+    saveEvent(updated);
+    return updated;
+  }
+
+  async function restoreEventOccurrence(eventId: string, occurrenceKey: string) {
+    const updated = await api.events.restoreOccurrence(eventId, occurrenceKey);
+    saveEvent(updated);
+    return updated;
+  }
+
+  async function updateEventOccurrenceStatus(eventId: string, occurrenceKey: string, status: CalendarEvent['status']) {
+    const updated = await api.events.updateOccurrenceStatus(eventId, occurrenceKey, status);
+    saveEvent(updated);
+    return updated;
+  }
+
+  async function deleteEventOccurrence(eventId: string, occurrenceKey: string) {
+    const updated = await api.events.deleteOccurrence(eventId, occurrenceKey);
+    saveEvent(updated);
+    return updated;
+  }
+
+  async function deleteTaskOccurrence(taskId: string) {
+    await api.tasks.removeOccurrence(taskId);
+    removeTask(taskId);
+  }
+
   function saveTask(task: Task) {
     addTask(task);
   }
@@ -71,10 +100,18 @@ export default function CalendarScreen() {
         tasksLoading={tasksLoading}
         definitionsLoading={definitionsResource.loading}
         onEventSaved={saveEvent}
+        onEventOccurrenceCancelled={cancelEventOccurrence}
+        onEventOccurrenceRestored={restoreEventOccurrence}
+        onEventOccurrenceStatusUpdated={updateEventOccurrenceStatus}
+        onEventOccurrenceDeleted={deleteEventOccurrence}
         onEventDeleted={deleteEvent}
         onTaskCreated={saveTask}
         onTaskUpdated={updateTask}
-        onTaskDeleted={removeTask}
+        onTaskDeleted={taskId => {
+          removeTask(taskId);
+          void refreshTasks();
+        }}
+        onTaskOccurrenceDeleted={deleteTaskOccurrence}
         displayOptionsOpen={displayOptionsOpen}
         onDisplayOptionsOpenChange={setDisplayOptionsOpen} />
     </Screen>

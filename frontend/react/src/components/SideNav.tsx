@@ -264,12 +264,12 @@ function TodaySnapshotCard({ snapshot, onNavigate }: { snapshot: TodaySnapshot |
             <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0.75 }}>
                 <SnapshotMetric
                     value={openTaskLabel}
-                    label="open tasks"
+                    label="Open tasks"
                     tone={getOpenTaskTone(snapshot?.openTaskCount ?? null)}
                 />
                 <SnapshotMetric
                     value={focusLabel}
-                    label="hours focused"
+                    label="Hours focused"
                     tone={getFocusTone(snapshot?.focusSeconds ?? null)}
                 />
                 <Box sx={{ gridColumn: '1 / -1', minHeight: 52 }}>
@@ -280,7 +280,7 @@ function TodaySnapshotCard({ snapshot, onNavigate }: { snapshot: TodaySnapshot |
                     ) : (
                         <Box>
                             <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                                mental state
+                                Mental state
                             </Typography>
                             <Button
                                 size="small"
@@ -349,8 +349,6 @@ export function SideNav() {
     }, [open]);
 
     useEffect(() => {
-        if (!open) return;
-
         let cancelled = false;
 
         const loadTodaySnapshot = async () => {
@@ -358,7 +356,7 @@ export function SideNav() {
             if (cachedSnapshot) setTodaySnapshot(cachedSnapshot);
 
             const snapshot = await sideNavSnapshotCache.get();
-            if (!cancelled) setTodaySnapshot(snapshot);
+            if (!cancelled) setTodaySnapshot(sideNavSnapshotCache.getCached() ?? snapshot);
         };
 
         void loadTodaySnapshot();
@@ -370,7 +368,9 @@ export function SideNav() {
             cancelled = true;
             window.clearInterval(refreshInterval);
         };
-    }, [open]);
+    }, []);
+
+    useEffect(() => sideNavSnapshotCache.subscribe(setTodaySnapshot), []);
 
     const closeDrawer = useCallback(() => {
         setOpen(false);
@@ -520,7 +520,7 @@ export function SideNav() {
                             <DrawerExpandable open={open}>
                                 <Box
                                     sx={{
-                                    ml: 7.5,
+                                    ml: 3.5,
                                     mr: 1.5,
                                     mb: 1,
                                     pl: 1,

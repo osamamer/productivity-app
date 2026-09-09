@@ -1,0 +1,12 @@
+databaseChangeLog:
+  - changeSet:
+      id: 056-add-task-recurrence-days
+      author: codex
+      comment: Store selected weekdays for custom recurring task schedules
+      changes:
+        - addColumn:
+            tableName: task_series
+            columns:
+              - column:
+                  name: recurrence_days_of_week
+                  type: varchar(64)

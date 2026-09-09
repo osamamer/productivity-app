@@ -7,7 +7,7 @@ import { readStatInputPreference, saveStatInputPreference } from '@/lib/inputPre
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { useAuth } from '@/providers/AuthProvider';
 import { api } from '@/services/api';
-import type { StatDefinition } from '@/types/models';
+import type { StatDefinition, StatEntryStatus } from '@/types/models';
 import { AppButton } from '../ui/AppButton';
 import { AppInput } from '../ui/AppInput';
 import { AppSlider } from '../ui/AppSlider';
@@ -81,6 +81,7 @@ export function CalendarStatCheckInSheet({ date, definitions, onClose, onSaved }
   const { colors } = useAppTheme();
   const { user } = useAuth();
   const [values, setValues] = useState<Record<string, number | null>>({});
+  const [statuses, setStatuses] = useState<Record<string, StatEntryStatus>>({});
   const [touched, setTouched] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(() => Boolean(date && definitions.length > 0));
   const [saving, setSaving] = useState(false);
@@ -96,6 +97,7 @@ export function CalendarStatCheckInSheet({ date, definitions, onClose, onSaved }
       .then(async entries => {
         if (!active) return;
         const nextValues: Record<string, number | null> = {};
+        const nextStatuses: Record<string, StatEntryStatus> = {};
         const nextTouched = new Set<string>();
         const rememberedValues = await Promise.all(definitions.map(async definition => ({
           definition,
@@ -105,11 +107,14 @@ export function CalendarStatCheckInSheet({ date, definitions, onClose, onSaved }
         })));
         if (!active) return;
         rememberedValues.forEach(({ definition, value }) => { nextValues[definition.id] = value; });
+        definitions.forEach(definition => { nextStatuses[definition.id] = 'RECORDED'; });
         entries.forEach(entry => {
           nextValues[entry.statDefinitionId] = entry.value;
+          nextStatuses[entry.statDefinitionId] = entry.status ?? 'RECORDED';
           nextTouched.add(entry.statDefinitionId);
         });
         setValues(nextValues);
+        setStatuses(nextStatuses);
         setTouched(nextTouched);
       })
       .catch(cause => {
@@ -121,16 +126,16 @@ export function CalendarStatCheckInSheet({ date, definitions, onClose, onSaved }
     return () => { active = false; };
   }, [date, definitions, user?.id]);
 
-  function updateValue(id: string, value: number | null) {
+  function updateValue(id: string, value: number | null, status: StatEntryStatus = 'RECORDED') {
     setValues(previous => ({ ...previous, [id]: value }));
+    setStatuses(previous => ({ ...previous, [id]: status }));
     const definition = definitions.find(item => item.id === id);
     if (value !== null && (definition?.type === 'TIME' || definition?.type === 'DURATION')) {
       void saveStatInputPreference(user?.id, id, definition.type, value);
     }
     setTouched(previous => {
       const next = new Set(previous);
-      if (value === null) next.delete(id);
-      else next.add(id);
+      next.add(id);
       return next;
     });
   }
@@ -141,8 +146,13 @@ export function CalendarStatCheckInSheet({ date, definitions, onClose, onSaved }
     setError(null);
     try {
       await Promise.all(definitions
-        .filter(definition => touched.has(definition.id) && values[definition.id] !== null)
-        .map(definition => api.stats.record(definition.id, values[definition.id]!, date)));
+        .filter(definition => touched.has(definition.id))
+        .map(definition => api.stats.record(
+          definition.id,
+          statuses[definition.id] === 'NOT_PLANNED' ? 0 : values[definition.id] ?? null,
+          date,
+          statuses[definition.id],
+        )));
       onSaved();
       onClose();
     } catch (cause) {
@@ -173,10 +183,15 @@ export function CalendarStatCheckInSheet({ date, definitions, onClose, onSaved }
             {definition.description && <AppText variant="caption" color="muted">{definition.description}</AppText>}
             {definition.type === 'BOOLEAN' && (
               <ChoiceChips
-                value={value ?? -1}
-                onChange={next => updateValue(definition.id, next)}
+                value={statuses[definition.id] === 'NOT_PLANNED' ? -2 : value ?? -1}
+                onChange={next => updateValue(
+                  definition.id,
+                  next === -2 ? 0 : next,
+                  next === -2 ? 'NOT_PLANNED' : 'RECORDED',
+                )}
                 options={[
                   { value: 1, label: 'Yes', color: booleanColor(definition, 1, colors) },
+                  { value: -2, label: 'Not planned', color: colors.warning },
                   { value: 0, label: 'No', color: booleanColor(definition, 0, colors) },
                 ]} />
             )}
@@ -204,6 +219,12 @@ export function CalendarStatCheckInSheet({ date, definitions, onClose, onSaved }
             {definition.type === 'DURATION' && (
               <DurationInput value={value ?? null} onChange={next => updateValue(definition.id, next)} />
             )}
+            <AppButton
+              label="Clear"
+              variant="secondary"
+              disabled={saving}
+              onPress={() => updateValue(definition.id, null)}
+            />
           </View>
         );
       })}

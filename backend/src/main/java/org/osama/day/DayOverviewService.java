@@ -180,7 +180,8 @@ public class DayOverviewService {
                 entry.getStatDefinition().getName(),
                 entry.getStatDefinition().getType(),
                 entry.getStatDefinition().getSystemKey(),
-                entry.getValue()
+                entry.getValue(),
+                entry.getStatus()
         );
     }
 

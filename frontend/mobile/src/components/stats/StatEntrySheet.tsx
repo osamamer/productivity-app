@@ -5,10 +5,18 @@ import { formatShortDate, localDate } from '@/lib/date';
 import { readStatInputPreference, saveStatInputPreference } from '@/lib/inputPreferences';
 import { reportError } from '@/lib/errors';
 import { formatTimeValue } from '@/lib/statValues';
+import {
+  applyOptimisticStatEntry,
+  removeKnownStatEntry,
+  registerStatEntries,
+  rollbackOptimisticStatWrite,
+  settleOptimisticStatWrite,
+  type OptimisticStatWrite,
+} from '@/lib/optimisticStats';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { useAuth } from '@/providers/AuthProvider';
 import { api } from '@/services/api';
-import type { StatDefinition, StatEntry } from '@/types/models';
+import type { StatDefinition, StatEntry, StatEntryStatus } from '@/types/models';
 import { AppButton } from '../ui/AppButton';
 import { AppInput } from '../ui/AppInput';
 import { AppText } from '../ui/AppText';
@@ -46,13 +54,14 @@ export function StatEntrySheet({ definition, existing, onClose, onSaved, onRever
   definition: StatDefinition | null;
   existing?: StatEntry;
   onClose: () => void;
-  onSaved: (entry: StatEntry) => void;
+  onSaved: (entry: StatEntry | null, date?: string) => void;
   onReverted: (entry?: StatEntry, date?: string) => void;
 }) {
   const { colors } = useAppTheme();
   const { user } = useAuth();
   const initialDate = existing?.date ?? localDate();
   const [entryForDate, setEntryForDate] = useState<StatEntry | undefined>(existing);
+  const [entryStatus, setEntryStatus] = useState<StatEntryStatus>(existing?.status ?? 'RECORDED');
   const [value, setValue] = useState(existing?.value == null ? '' : String(existing.value));
   const [rangeValue, setRangeValue] = useState(existing?.value ?? definition?.minValue ?? 1);
   const [durationValue, setDurationValue] = useState<number | null>(definition?.type === 'DURATION' ? existing?.value ?? null : null);
@@ -81,6 +90,7 @@ export function StatEntrySheet({ definition, existing, onClose, onSaved, onRever
       const matchingEntry = entries.find(entry => entry.statDefinitionId === definition.id);
       const nextValue = matchingEntry?.value ?? defaultValue(definition, rememberedValue);
       setEntryForDate(matchingEntry);
+      setEntryStatus(matchingEntry?.status ?? 'RECORDED');
       setValue(nextValue == null ? '' : String(nextValue));
       setRangeValue(nextValue ?? definition.minValue ?? 1);
       setDurationValue(definition.type === 'DURATION' ? nextValue : null);
@@ -99,6 +109,7 @@ export function StatEntrySheet({ definition, existing, onClose, onSaved, onRever
     setEntryDate(nextDate);
     setEntryLoading(true);
     setEntryForDate(undefined);
+    setEntryStatus('RECORDED');
     setValue('');
     setRangeValue(definition?.minValue ?? 1);
     setDurationValue(null);
@@ -111,37 +122,55 @@ export function StatEntrySheet({ definition, existing, onClose, onSaved, onRever
     void saveStatInputPreference(user?.id, definition.id, definition.type, nextValue);
   }
 
-  async function save(nextValue?: number) {
+  async function save(nextValue?: number | null, nextStatus: StatEntryStatus = 'RECORDED') {
     if (!definition || saving || entryLoading) return;
-    const numeric = nextValue ?? (definition.type === 'RANGE'
+    const numeric = nextValue !== undefined ? nextValue : (definition.type === 'RANGE'
       ? rangeValue
       : definition.type === 'DURATION'
         ? durationValue
         : definition.type === 'TIME'
           ? timeValue.getHours() * 60 + timeValue.getMinutes()
-          : Number(value));
-    if (numeric === null || !Number.isFinite(numeric)) {
+          : value.trim() === '' ? null : Number(value));
+    if (numeric !== null && !Number.isFinite(numeric)) {
       setError(definition.type === 'DURATION' ? 'Enter a duration.' : definition.type === 'TIME' ? 'Choose a time.' : 'Enter a number.');
       return;
     }
-    rememberValue(numeric);
-    const optimistic: StatEntry = {
-      id: entryForDate?.id ?? `optimistic-${definition.id}`,
-      statDefinitionId: definition.id,
-      statDefinition: definition,
-      date: entryDate,
-      value: numeric,
-      userId: entryForDate?.userId ?? definition.userId,
-    };
-    onSaved(optimistic);
+    const isNotPlanned = nextStatus === 'NOT_PLANNED';
+    const persistedValue = isNotPlanned ? 0 : numeric;
+    const optimisticWrite: OptimisticStatWrite = applyOptimisticStatEntry(
+      definition,
+      entryDate,
+      persistedValue,
+      nextStatus,
+    );
+    if (persistedValue === null) {
+      onSaved(null, entryDate);
+    } else {
+      rememberValue(persistedValue);
+      const optimistic: StatEntry = {
+        id: entryForDate?.id ?? `optimistic-${definition.id}`,
+        statDefinitionId: definition.id,
+        statDefinition: definition,
+        date: entryDate,
+        value: persistedValue,
+        status: nextStatus,
+        userId: entryForDate?.userId ?? definition.userId,
+      };
+      onSaved(optimistic);
+    }
     setSaving(true);
     setError(null);
     try {
-      const recorded = await api.stats.record(definition.id, numeric, entryDate);
+      const recorded = await api.stats.record(definition.id, persistedValue, entryDate, nextStatus);
+      if (recorded) registerStatEntries([recorded]);
+      else removeKnownStatEntry(definition.id, entryDate);
+      settleOptimisticStatWrite(optimisticWrite);
       setEntryForDate(recorded);
-      onSaved(recorded);
+      setEntryStatus(nextStatus);
+      if (recorded) onSaved(recorded);
       onClose();
     } catch (cause) {
+      rollbackOptimisticStatWrite(optimisticWrite);
       onReverted(entryForDate, entryDate);
       setError(reportError('Could not record stat', cause));
     } finally {
@@ -182,14 +211,15 @@ export function StatEntrySheet({ definition, existing, onClose, onSaved, onRever
       {entryLoading && <AppText color="muted">Loading this date…</AppText>}
       {definition?.type === 'BOOLEAN' ? (
         <ChoiceChips
-          value={value === '' ? -1 : Number(value)}
+          value={entryStatus === 'NOT_PLANNED' ? -2 : value === '' ? -1 : Number(value)}
           onChange={next => {
             if (entryLoading) return;
             setValue(String(next));
-            void save(next);
+            void save(next === -2 ? null : next, next === -2 ? 'NOT_PLANNED' : 'RECORDED');
           }}
           options={[
             { value: 1, label: 'Yes', color: booleanChoiceColor(definition, 1, colors) },
+            { value: -2, label: 'Not planned', color: colors.warning },
             { value: 0, label: 'No', color: booleanChoiceColor(definition, 0, colors) },
           ]}
         />
@@ -231,6 +261,13 @@ export function StatEntrySheet({ definition, existing, onClose, onSaved, onRever
           <AppButton label="Record" loading={saving} disabled={entryLoading} onPress={() => void save()} />
         </>
       )}
+      <AppButton
+        label="Clear"
+        variant="secondary"
+        loading={saving}
+        disabled={entryLoading || !entryForDate}
+        onPress={() => void save(null)}
+      />
       {error && <AppText color="danger">{error}</AppText>}
     </ModalSheet>
   );

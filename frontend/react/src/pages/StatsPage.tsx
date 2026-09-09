@@ -4,11 +4,12 @@ import {
     Box, Button, Typography, Alert, Stack, Skeleton,
     IconButton, Dialog, DialogTitle, DialogContent,
     DialogContentText, DialogActions, TextField, Collapse,
-    ListItemIcon, ListItemText, Menu, MenuItem,
+    ListItemIcon, ListItemText, Menu, MenuItem, Snackbar,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { keyframes } from '@mui/system';
 import AddIcon from '@mui/icons-material/Add';
+import AddTaskOutlinedIcon from '@mui/icons-material/AddTaskOutlined';
 import CreateNewFolderOutlinedIcon from '@mui/icons-material/CreateNewFolderOutlined';
 import DeleteOutlineOutlinedIcon from '@mui/icons-material/DeleteOutlineOutlined';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
@@ -21,7 +22,9 @@ import { PageWrapper } from '../components/PageWrapper';
 import { CreateStatForm } from '../components/stats/CreateStatForm';
 import { StatRecentDots } from '../components/stats/StatRecentDots';
 import { StatCard } from '../components/stats/StatCard';
-import { StatDefinition } from '../types/Stats';
+import { StatRecurringTaskDialog } from '../components/stats/StatRecurringTaskDialog';
+import { defaultStatRecurringTaskDraft } from '../components/stats/statRecurringTaskUtils';
+import { StatDefinition, StatRecurringTaskDraft } from '../types/Stats';
 import { StatGroup } from '../types/StatGroup';
 import { useUser } from '../hooks/useUser';
 import { useKeyboardDelete } from '../hooks/useKeyboardDelete';
@@ -52,6 +55,10 @@ const EDITABLE_SYSTEM_KEYS = new Set(['sleep_hours', 'sleep_time', 'wake_up_time
 
 function isEditableSystemStat(definition: StatDefinition): boolean {
     return definition.systemKey !== undefined && EDITABLE_SYSTEM_KEYS.has(definition.systemKey);
+}
+
+function canCreateRecurringTask(definition: StatDefinition): boolean {
+    return definition.type === 'BOOLEAN' && !definition.recurringTaskSeriesId;
 }
 
 const SELECTION_ACTIONS_EDGE_PADDING = 12;
@@ -196,6 +203,12 @@ export function StatsPage() {
     const [selectionError, setSelectionError] = useState<string | null>(null);
     const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
     const [dayContextMenu, setDayContextMenu] = useState<{ date: string; top: number; left: number } | null>(null);
+    const [recurringTaskSavingId, setRecurringTaskSavingId] = useState<string | null>(null);
+    const [recurringTaskError, setRecurringTaskError] = useState<string | null>(null);
+    const [recurringTaskTarget, setRecurringTaskTarget] = useState<StatDefinition | null>(null);
+    const [recurringTaskFeedback, setRecurringTaskFeedback] = useState<string | null>(null);
+    const [recurringTaskMode, setRecurringTaskMode] = useState<'create' | 'update'>('create');
+    const [recurringTaskInitialDraft, setRecurringTaskInitialDraft] = useState<StatRecurringTaskDraft | null>(null);
     const selectionAnchorRef = useRef<string | null>(null);
     const selectionActionsRef = useRef<HTMLDivElement | null>(null);
     const pendingStatCreationsRef = useRef(new Map<string, PendingStatCreation>());
@@ -255,6 +268,10 @@ export function StatsPage() {
         setResourceRefreshKey(previous => previous + 1);
     }), []);
 
+    useEffect(() => subscribeToResourceInvalidation('stats', () => {
+        setResourceRefreshKey(previous => previous + 1);
+    }), []);
+
     const handleEntryChanged = useCallback((definitionId: string) => {
         setEntryRefreshKeys(previous => ({
             ...previous,
@@ -295,6 +312,7 @@ export function StatsPage() {
             setSelectedId(current => current === null && pending.selectedIdBeforeCreation === null
                 ? def.id
                 : current);
+            if (def.recurringTaskSeriesId) setRecurringTaskFeedback('Recurring task created.');
 
             if (pending.groupId) {
                 const nextDefinitionIds = [...new Set([...pending.groupDefinitionIds, def.id])];
@@ -325,6 +343,7 @@ export function StatsPage() {
         selectionAnchorRef.current = def.id;
         setShowCreateForm(false);
         setCreateStatGroupTarget(null);
+        if (def.recurringTaskSeriesId) setRecurringTaskFeedback('Recurring task created.');
 
         if (groupTarget) {
             const nextDefinitionIds = [...new Set([...groupTarget.statDefinitionIds, def.id])];
@@ -364,6 +383,51 @@ export function StatsPage() {
             definition.id === updated.id ? updated : definition,
         ));
         setEditTarget(null);
+    };
+
+    const handleSaveRecurringTask = async (definition: StatDefinition, recurrence: StatRecurringTaskDraft) => {
+        if ((recurringTaskMode === 'create' && !canCreateRecurringTask(definition))
+            || (recurringTaskMode === 'update' && !definition.recurringTaskSeriesId)
+            || recurringTaskSavingId !== null) return;
+
+        setRecurringTaskSavingId(definition.id);
+        setRecurringTaskError(null);
+        try {
+            const updated = recurringTaskMode === 'update'
+                ? await statService.updateRecurringTask(definition.id, recurrence)
+                : await statService.createRecurringTask(definition.id, recurrence);
+            handleUpdated(updated);
+            setRecurringTaskTarget(null);
+            setRecurringTaskInitialDraft(null);
+            setRecurringTaskFeedback(recurringTaskMode === 'update'
+                ? 'Recurring task schedule updated.'
+                : 'Recurring task created.');
+        } catch (e) {
+            console.error('Failed to create recurring task for stat:', e);
+            setRecurringTaskError('Could not create the recurring task. Please try again.');
+        } finally {
+            setRecurringTaskSavingId(null);
+        }
+    };
+
+    const openRecurringTaskEditor = (definition: StatDefinition) => {
+        setRecurringTaskError(null);
+        void statService.getRecurringTask(definition.id)
+            .then(series => {
+                const recurrenceDaysOfWeek = series.recurrenceDaysOfWeek?.length
+                    ? series.recurrenceDaysOfWeek
+                    : defaultStatRecurringTaskDraft().recurrenceDaysOfWeek;
+                setRecurringTaskInitialDraft({
+                    recurrenceFrequency: series.recurrenceFrequency,
+                    recurrenceDaysOfWeek,
+                });
+                setRecurringTaskMode('update');
+                setRecurringTaskTarget(definition);
+            })
+            .catch(error => {
+                console.error('Failed to load recurring task schedule:', error);
+                setRecurringTaskError('Could not load the recurring task schedule. Please try again.');
+            });
     };
 
     const handleDeleteConfirm = async () => {
@@ -939,12 +1003,39 @@ export function StatsPage() {
                             <CreateStatForm
                                 initialDefinition={editTarget}
                                 onUpdated={handleUpdated}
+                                onCreateRecurringTask={() => {
+                                    setRecurringTaskError(null);
+                                    setRecurringTaskMode('create');
+                                    setRecurringTaskInitialDraft(null);
+                                    setRecurringTaskTarget(editTarget);
+                                }}
+                                onEditRecurringTask={() => openRecurringTaskEditor(editTarget)}
                                 onDelete={() => setDeleteTarget(editTarget)}
                                 onCancel={() => setEditTarget(null)}
                             />
                         )}
                     </DialogContent>
                 </Dialog>
+
+                <StatRecurringTaskDialog
+                    open={Boolean(recurringTaskTarget)}
+                    definition={recurringTaskTarget}
+                    saving={Boolean(recurringTaskTarget && recurringTaskSavingId === recurringTaskTarget.id)}
+                    error={recurringTaskError}
+                    initialDraft={recurringTaskInitialDraft}
+                    title={recurringTaskMode === 'update' ? 'Change recurring task schedule' : 'Create recurring task'}
+                    confirmLabel={recurringTaskMode === 'update' ? 'Save schedule' : 'Create task'}
+                    onClose={() => {
+                        if (recurringTaskSavingId === null) {
+                            setRecurringTaskTarget(null);
+                            setRecurringTaskError(null);
+                            setRecurringTaskInitialDraft(null);
+                        }
+                    }}
+                    onConfirm={draft => {
+                        if (recurringTaskTarget) void handleSaveRecurringTask(recurringTaskTarget, draft);
+                    }}
+                />
 
                 <Dialog
                     open={groupDialogOpen}
@@ -985,6 +1076,7 @@ export function StatsPage() {
                 {groupOrderError && <Alert severity="error" sx={{ mb: 1.5 }}>{groupOrderError}</Alert>}
                 {groupError && <Alert severity="error" sx={{ mb: 1.5 }}>{groupError}</Alert>}
                 {selectionError && <Alert severity="error" sx={{ mb: 1.5 }}>{selectionError}</Alert>}
+                {recurringTaskError && <Alert severity="error" sx={{ mb: 1.5 }}>{recurringTaskError}</Alert>}
 
                 {!loading && !error && visibleDefinitions.length === 0 && groups.length === 0 && (
                     <Box sx={{ textAlign: 'center', py: 10 }}>
@@ -1033,6 +1125,16 @@ export function StatsPage() {
                                     >
                                         <Box
                                             data-stat-group-header="true"
+                                            role="button"
+                                            tabIndex={0}
+                                            aria-expanded={!collapsed}
+                                            onClick={() => toggleGroup(group.groupId)}
+                                            onKeyDown={event => {
+                                                if (event.target !== event.currentTarget) return;
+                                                if (event.key !== 'Enter' && event.key !== ' ') return;
+                                                event.preventDefault();
+                                                toggleGroup(group.groupId);
+                                            }}
                                             draggable={groupDraggable}
                                             onMouseDownCapture={event => {
                                                 const target = event.target;
@@ -1111,6 +1213,7 @@ export function StatsPage() {
                                                 opacity: groupDragging ? 0.45 : 1,
                                                 transform: groupDragging ? 'scale(0.98)' : 'scale(1)',
                                                 transition: 'opacity 0.16s, transform 0.16s, background-color 0.18s',
+                                                cursor: 'pointer',
                                                 '&:hover': { bgcolor: theme.palette.action.selected },
                                                 '&::before': groupDragTarget && dragTargetGroupPosition ? {
                                                     content: '""',
@@ -1128,7 +1231,10 @@ export function StatsPage() {
                                             <IconButton
                                                 size="small"
                                                 aria-label={collapsed ? `Expand ${group.name}` : `Collapse ${group.name}`}
-                                                onClick={() => toggleGroup(group.groupId)}
+                                                onClick={event => {
+                                                    event.stopPropagation();
+                                                    toggleGroup(group.groupId);
+                                                }}
                                             >
                                                 {collapsed
                                                     ? <FolderIcon sx={{ fontSize: 20 }} />
@@ -1289,6 +1395,26 @@ export function StatsPage() {
                         </MenuItem>
                     </>
                 )}
+                {contextMenu?.kind === 'stat' && canCreateRecurringTask(contextMenu.definition) && (
+                    <MenuItem
+                        onClick={() => {
+                            const definition = contextMenu.definition;
+                            closeContextMenu();
+                            setRecurringTaskError(null);
+                            setRecurringTaskMode('create');
+                            setRecurringTaskInitialDraft(null);
+                            setRecurringTaskTarget(definition);
+                        }}
+                        disabled={recurringTaskSavingId === contextMenu.definition.id}
+                    >
+                        <ListItemIcon><AddTaskOutlinedIcon fontSize="small" /></ListItemIcon>
+                        <ListItemText>
+                            {recurringTaskSavingId === contextMenu.definition.id
+                                ? 'Creating recurring task…'
+                                : 'Create recurring task'}
+                        </ListItemText>
+                    </MenuItem>
+                )}
                 {contextMenu?.kind === 'stat'
                     && contextMenu.definition.systemKey
                     && !isEditableSystemStat(contextMenu.definition) && (
@@ -1384,6 +1510,13 @@ export function StatsPage() {
                     <Button color="error" onClick={handleDeleteConfirm}>Delete</Button>
                 </DialogActions>
             </Dialog>
+
+            <Snackbar
+                open={Boolean(recurringTaskFeedback)}
+                autoHideDuration={4000}
+                onClose={() => setRecurringTaskFeedback(null)}
+                message={recurringTaskFeedback ?? ''}
+            />
         </PageWrapper>
     );
 }
