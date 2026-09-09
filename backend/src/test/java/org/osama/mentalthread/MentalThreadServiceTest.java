@@ -8,6 +8,7 @@ import org.osama.exceptions.ResourceNotFoundException;
 import org.osama.user.User;
 import org.osama.user.UserRepository;
 import org.osama.requests.NewTaskRequest;
+import org.osama.stat.StatTaskLinkService;
 import org.osama.task.Task;
 import org.osama.task.TaskService;
 import org.osama.taskgroup.TaskGroupResponse;
@@ -30,7 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @DataJpaTest
 @ActiveProfiles("test")
-@Import({MentalThreadService.class, TaskService.class, TaskGroupService.class})
+@Import({MentalThreadService.class, TaskService.class, TaskGroupService.class, StatTaskLinkService.class})
 @Execution(ExecutionMode.SAME_THREAD)
 @TestExecutionListeners(
         listeners = {
