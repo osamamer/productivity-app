@@ -30,6 +30,37 @@ const PLOT_HORIZONTAL_INSET = 7;
 const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const DURATION_TICK_STEPS = [15, 30, 60, 120, 180, 240, 360, 480, 720, 960, 1440];
 const THRESHOLD_COLOR_TRANSITION = 0.75;
+const SLEEP_GREEN_BAND_MINUTES = 60;
+const SLEEP_BAD_COLOR_RANGE_MINUTES = 3 * 60;
+
+function isSleepStat(definition: StatDefinition): boolean {
+  return definition.systemKey === 'sleep_hours'
+    || definition.systemKey === 'sleep_time'
+    || definition.systemKey === 'wake_up_time';
+}
+
+function sleepGoodDirectionImprovement(definition: StatDefinition, value: number): number {
+  return definition.type === 'TIME'
+    ? timeValueToScale(definition, definition.goodThreshold!) - timeValueToScale(definition, value)
+    : value - definition.goodThreshold!;
+}
+
+function sleepColorHue(definition: StatDefinition, value: number): number {
+  const improvement = sleepGoodDirectionImprovement(definition, value);
+  if (improvement >= -SLEEP_GREEN_BAND_MINUTES) {
+    const greenProgress = Math.min(
+      1,
+      (improvement + SLEEP_GREEN_BAND_MINUTES) / (2 * SLEEP_GREEN_BAND_MINUTES),
+    );
+    return 90 + greenProgress * 30;
+  }
+
+  const redProgress = Math.min(
+    1,
+    (-improvement - SLEEP_GREEN_BAND_MINUTES) / SLEEP_BAD_COLOR_RANGE_MINUTES,
+  );
+  return 90 * (1 - redProgress);
+}
 
 type NumericDomain = [number, number];
 interface ChartPoint { x: number; y: number; value: number; date?: string; }
@@ -145,7 +176,10 @@ function durationAxis(maximum: number): { maximum: number; ticks: number[] } {
 
 function formatDurationAxisValue(value: number): string {
   const rounded = Math.round(value);
-  return rounded % 60 === 0 ? `${rounded / 60}h` : formatDurationValue(rounded);
+  const hours = Math.floor(rounded / 60);
+  const minutes = rounded % 60;
+  if (hours === 0) return `${minutes}m`;
+  return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
 }
 
 function effectiveMorality(definition: StatDefinition): 'GOOD' | 'BAD' | 'NEUTRAL' {
@@ -199,6 +233,8 @@ function thresholdCircleColor(
   dangerDark: string,
   thresholdColor: string,
 ): string | null {
+  if (isSleepStat(definition)) return `hsl(${Math.round(sleepColorHue(definition, value))}, 65%, 42%)`;
+
   const goodnessRatio = thresholdGoodnessRatio(definition, value);
   if (goodnessRatio == null) return null;
 
@@ -216,6 +252,8 @@ function getCircleTextColor(
   value: number,
   colors: ReturnType<typeof useAppTheme>['colors'],
 ): string {
+  if (isSleepStat(definition)) return sleepColorHue(definition, value) >= 90 ? '#FFFFFF' : '#111827';
+
   const progress = thresholdColorProgress(definition, value);
   if (progress != null) return progress < 0.72 ? '#111827' : '#FFFFFF';
   return definition.type === 'TIME' || definition.type === 'DURATION'
@@ -233,6 +271,16 @@ function getCircleColor(
   if (value === undefined) return dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)';
   if (status === 'NOT_PLANNED') return colors.warning;
 
+  // Boolean values use the same semantic colors as the entry controls. In
+  // particular, a BAD stat such as cigarettes should make Yes red and No
+  // green instead of flowing through the numeric threshold palette.
+  if (definition.type === 'BOOLEAN') {
+    const morality = effectiveMorality(definition);
+    if (morality === 'NEUTRAL') return value === 1 ? colors.accent : colors.secondary;
+    if (morality === 'GOOD') return value === 1 ? colors.success : colors.danger;
+    return value === 1 ? colors.danger : colors.success;
+  }
+
   const thresholdColor = thresholdCircleColor(
     definition,
     value,
@@ -245,9 +293,7 @@ function getCircleColor(
   const morality = effectiveMorality(definition);
   const feedback = morality === 'NEUTRAL'
     ? 'NONE'
-    : definition.type === 'BOOLEAN'
-      ? morality === 'GOOD' ? value === 1 ? 'CELEBRATE' : 'NONE' : value === 1 ? 'SAD' : 'CELEBRATE'
-      : definition.goodThreshold == null
+    : definition.goodThreshold == null
         ? 'NONE'
         : definition.type === 'TIME'
           ? isTimeAtOrBeforeThreshold(definition, value, definition.goodThreshold) ? 'CELEBRATE' : 'SAD'
@@ -259,7 +305,6 @@ function getCircleColor(
   if (feedback === 'SAD') return colors.danger;
 
   if (morality === 'NEUTRAL') {
-    if (definition.type === 'BOOLEAN') return value === 1 ? colors.accent : colors.secondary;
     if (definition.type === 'RANGE') {
       const minimum = definition.minValue ?? 0;
       const maximum = definition.maxValue ?? 1;
@@ -268,7 +313,6 @@ function getCircleColor(
     }
   }
 
-  if (definition.type === 'BOOLEAN') return value === 1 ? colors.success : colors.danger;
   if (definition.type === 'RANGE') {
     const minimum = definition.minValue ?? 0;
     const maximum = definition.maxValue ?? 1;
@@ -1062,7 +1106,7 @@ const styles = StyleSheet.create({
   durationBarArea: { position: 'absolute', top: 0, left: 0, right: 0, height: PLOT_HEIGHT, overflow: 'hidden', borderRadius: 8 },
   durationBars: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, flexDirection: 'row', alignItems: 'flex-end', gap: 3, paddingHorizontal: 2 },
   durationBarColumn: { flex: 1, height: '100%', alignItems: 'center', justifyContent: 'flex-end' },
-  durationBar: { width: '72%', minHeight: 3, borderRadius: 5 },
+  durationBar: { width: '32%', minHeight: 3, borderRadius: 5 },
   durationBarLabels: { position: 'absolute', left: 0, right: 0, top: PLOT_HEIGHT + 2, flexDirection: 'row', gap: 3, paddingHorizontal: 2 },
   durationBarLabel: { flex: 1, textAlign: 'center', fontSize: 9 },
   durationTrendSegment: { position: 'absolute', height: 2, borderRadius: 1 },

@@ -23,6 +23,7 @@ type Props = {
     onEdit: (template: DayTemplate) => void;
     onDelete: (templateId: string) => Promise<void>;
     onDragStart: () => void;
+    onPreview: (anchorEl: HTMLElement, template: DayTemplate) => void;
 };
 
 export function DayTemplatePanel({
@@ -33,10 +34,9 @@ export function DayTemplatePanel({
     onEdit,
     onDelete,
     onDragStart,
+    onPreview,
 }: Props) {
     const theme = useTheme();
-    const [detailsAnchor, setDetailsAnchor] = useState<HTMLElement | null>(null);
-    const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
     const [templateContextMenu, setTemplateContextMenu] = useState<{
         template: DayTemplate;
         mouseX: number;
@@ -47,17 +47,11 @@ export function DayTemplatePanel({
     const [deleteError, setDeleteError] = useState<string | null>(null);
     const suppressClickRef = useRef(false);
     const resetClickSuppressionTimeoutRef = useRef<number | null>(null);
-    const selectedTemplate = templates.find(template => template.id === selectedTemplateId) ?? null;
-
     useEffect(() => () => {
         if (resetClickSuppressionTimeoutRef.current !== null) {
             window.clearTimeout(resetClickSuppressionTimeoutRef.current);
         }
     }, []);
-
-    const closeDetails = () => {
-        setDetailsAnchor(null);
-    };
 
     const openTemplateContextMenu = (event: React.MouseEvent<HTMLElement>, template: DayTemplate) => {
         event.preventDefault();
@@ -74,7 +68,6 @@ export function DayTemplatePanel({
         setDeleteTarget(templateContextMenu.template);
         setDeleteError(null);
         closeTemplateContextMenu();
-        closeDetails();
     };
 
     const confirmTemplateDelete = async () => {
@@ -97,8 +90,7 @@ export function DayTemplatePanel({
             suppressClickRef.current = false;
             return;
         }
-        setSelectedTemplateId(template.id);
-        setDetailsAnchor(event.currentTarget);
+        onPreview(event.currentTarget, template);
     };
 
     const handleTemplateDragStart = (event: React.DragEvent<HTMLElement>, template: DayTemplate) => {
@@ -121,8 +113,7 @@ export function DayTemplatePanel({
     const handleTemplateKeyDown = (event: React.KeyboardEvent<HTMLElement>, template: DayTemplate) => {
         if (event.key !== 'Enter' && event.key !== ' ') return;
         event.preventDefault();
-        setSelectedTemplateId(template.id);
-        setDetailsAnchor(event.currentTarget);
+        onPreview(event.currentTarget, template);
     };
 
     return (
@@ -149,7 +140,6 @@ export function DayTemplatePanel({
                             role="button"
                             tabIndex={0}
                             aria-haspopup="dialog"
-                            aria-expanded={selectedTemplateId === template.id && Boolean(detailsAnchor)}
                             aria-label={`${template.name}. View contents or drag to apply.`}
                             onClick={event => handleTemplateClick(event, template)}
                             onContextMenu={event => openTemplateContextMenu(event, template)}
@@ -211,76 +201,6 @@ export function DayTemplatePanel({
                 </Typography>
             )}
 
-            <Popover
-                open={Boolean(detailsAnchor && selectedTemplate)}
-                anchorEl={detailsAnchor}
-                onClose={closeDetails}
-                TransitionComponent={Fade}
-                transitionDuration={{ enter: 180, exit: 140 }}
-                aria-labelledby="day-template-details-title"
-                anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
-                transformOrigin={{ vertical: 'top', horizontal: 'left' }}
-                slotProps={{
-                    paper: {
-                        sx: {
-                            p: 2,
-                            width: { xs: 'calc(100vw - 32px)', sm: 320 },
-                            maxWidth: 320,
-                            maxHeight: 'min(70vh, 420px)',
-                            overflowY: 'auto',
-                            borderRadius: 2.5,
-                        },
-                    },
-                }}
-            >
-                {selectedTemplate && (
-                    <Stack spacing={1.25}>
-                        <Box>
-                            <Typography id="day-template-details-title" variant="subtitle1" fontWeight={600}>
-                                {selectedTemplate.name}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                                {selectedTemplate.events.length} event{selectedTemplate.events.length === 1 ? '' : 's'} · {selectedTemplate.tasks.length} task{selectedTemplate.tasks.length === 1 ? '' : 's'}
-                            </Typography>
-                        </Box>
-
-                        {selectedTemplate.events.length > 0 && (
-                            <TemplateContentSection icon={<EventNoteOutlinedIcon fontSize="small" />} title="Events">
-                                {selectedTemplate.events.map(event => (
-                                    <ListItem key={event.id} disableGutters sx={{ display: 'block', py: 0.35 }}>
-                                        <Typography variant="body2" noWrap>{event.title}</Typography>
-                                        <Typography variant="caption" color="text.secondary">
-                                            {event.allDay ? 'All day' : formatTemplateTimeRange(event.startTime, event.endTime)}
-                                        </Typography>
-                                    </ListItem>
-                                ))}
-                            </TemplateContentSection>
-                        )}
-
-                        {selectedTemplate.tasks.length > 0 && (
-                            <TemplateContentSection icon={<TaskAltOutlinedIcon fontSize="small" />} title="Tasks">
-                                {selectedTemplate.tasks.map(task => (
-                                    <ListItem key={task.id} disableGutters sx={{ display: 'block', py: 0.35 }}>
-                                        <Typography variant="body2" noWrap>{task.name}</Typography>
-                                        {task.scheduledTime && (
-                                            <Typography variant="caption" color="text.secondary">
-                                                {formatTemplateTime(task.scheduledTime)}
-                                            </Typography>
-                                        )}
-                                    </ListItem>
-                                ))}
-                            </TemplateContentSection>
-                        )}
-
-                        {selectedTemplate.events.length === 0 && selectedTemplate.tasks.length === 0 && (
-                            <Typography variant="body2" color="text.secondary">
-                                This template is empty.
-                            </Typography>
-                        )}
-                    </Stack>
-                )}
-            </Popover>
-
             <Menu
                 open={Boolean(templateContextMenu)}
                 onClose={closeTemplateContextMenu}
@@ -324,6 +244,88 @@ export function DayTemplatePanel({
                 </DialogActions>
             </Dialog>
         </Paper>
+    );
+}
+
+export function DayTemplatePreviewPopover({
+    template,
+    anchorEl,
+    onClose,
+}: {
+    template: DayTemplate | null;
+    anchorEl: HTMLElement | null;
+    onClose: () => void;
+}) {
+    return (
+        <Popover
+            open={Boolean(anchorEl && template)}
+            anchorEl={anchorEl}
+            onClose={onClose}
+            TransitionComponent={Fade}
+            transitionDuration={{ enter: 180, exit: 140 }}
+            aria-labelledby="day-template-details-title"
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+            transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+            slotProps={{
+                paper: {
+                    sx: {
+                        p: 2,
+                        width: { xs: 'calc(100vw - 32px)', sm: 320 },
+                        maxWidth: 320,
+                        maxHeight: 'min(70vh, 420px)',
+                        overflowY: 'auto',
+                        borderRadius: 2.5,
+                    },
+                },
+            }}
+        >
+            {template && (
+                <Stack spacing={0.75}>
+                    <Box>
+                        <Typography id="day-template-details-title" variant="subtitle1" fontWeight={600}>
+                            {template.name}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                            {template.events.length} event{template.events.length === 1 ? '' : 's'} · {template.tasks.length} task{template.tasks.length === 1 ? '' : 's'}
+                        </Typography>
+                    </Box>
+
+                    {template.events.length > 0 && (
+                        <TemplateContentSection icon={<EventNoteOutlinedIcon fontSize="small" />} title="Events">
+                            {template.events.map(event => (
+                                <ListItem key={event.id} disableGutters sx={{ display: 'block', py: 0.35 }}>
+                                    <Typography variant="body2" noWrap>{event.title}</Typography>
+                                    <Typography variant="caption" color="text.secondary">
+                                        {event.allDay ? 'All day' : formatTemplateTimeRange(event.startTime, event.endTime)}
+                                    </Typography>
+                                </ListItem>
+                            ))}
+                        </TemplateContentSection>
+                    )}
+
+                    {template.tasks.length > 0 && (
+                        <TemplateContentSection icon={<TaskAltOutlinedIcon fontSize="small" />} title="Tasks">
+                            {template.tasks.map(task => (
+                                <ListItem key={task.id} disableGutters sx={{ display: 'block', py: 0.35 }}>
+                                    <Typography variant="body2" noWrap>{task.name}</Typography>
+                                    {task.scheduledTime && (
+                                        <Typography variant="caption" color="text.secondary">
+                                            {formatTemplateTime(task.scheduledTime)}
+                                        </Typography>
+                                    )}
+                                </ListItem>
+                            ))}
+                        </TemplateContentSection>
+                    )}
+
+                    {template.events.length === 0 && template.tasks.length === 0 && (
+                        <Typography variant="body2" color="text.secondary">
+                            This template is empty.
+                        </Typography>
+                    )}
+                </Stack>
+            )}
+        </Popover>
     );
 }
 

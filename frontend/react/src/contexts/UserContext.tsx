@@ -1,5 +1,5 @@
 import React, { createContext, useState, useEffect, useMemo, useCallback, ReactNode } from 'react';
-import keycloak, { clearDevAuthSession } from '../services/keycloak';
+import keycloak, { endCurrentSession } from '../services/keycloak';
 import { statService } from '../services/api/statService';
 import { dayService } from '../services/api/dayService';
 import { eventService } from '../services/api/eventService';
@@ -9,6 +9,8 @@ import { taskService } from '../services/api/taskService';
 import { userService } from '../services/api/userService';
 import { clearMentalThreadHistoryCache } from '../services/cache/mentalThreadHistoryCache';
 import { clearPomodoroConfigCache } from '../services/api/pomodoroConfigService';
+import { clearPomodoroSoundCache } from '../services/api/pomodoroSoundService';
+import { resetWhiteNoiseSource } from '../services/whiteNoise';
 import { clearAppBootstrap } from '../services/bootstrap/appBootstrap';
 import { sideNavSnapshotCache } from '../services/cache/sideNavSnapshotCache';
 
@@ -25,9 +27,7 @@ interface UserInfo {
 interface UserContextType {
     user: UserInfo | null;
     loading: boolean;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    login: (...args: any[]) => void;
-    logout: () => void;
+    logout: () => Promise<void>;
     isAuthenticated: boolean;
 }
 
@@ -35,7 +35,9 @@ export const UserContext = createContext<UserContextType | undefined>(undefined)
 
 export function UserProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<UserInfo | null>(null);
-    const [loading, setLoading] = useState(true);
+    // main.tsx renders the React tree only after Keycloak initialization succeeds.
+    // There is no second user-loading phase for the protected app to display.
+    const loading = false;
 
     useEffect(() => {
         const parsed = keycloak.tokenParsed;
@@ -50,15 +52,9 @@ export function UserProvider({ children }: { children: ReactNode }) {
                 createdAt: '',
             });
         }
-        setLoading(false);
     }, []);
 
-    // Delegates to Keycloak; accepts legacy call signature (email, password) from LoginPage
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const login = useCallback((..._args: unknown[]) => keycloak.login(), []);
-
-    const logout = useCallback(() => {
-        clearDevAuthSession();
+    const logout = useCallback(async () => {
         clearAppBootstrap();
         statService.clearCache();
         dayService.clearCache();
@@ -69,17 +65,19 @@ export function UserProvider({ children }: { children: ReactNode }) {
         userService.clearPreferencesCache();
         clearMentalThreadHistoryCache();
         clearPomodoroConfigCache();
+        clearPomodoroSoundCache();
+        resetWhiteNoiseSource();
         sideNavSnapshotCache.clear();
-        return keycloak.logout({ redirectUri: window.location.origin + '/' });
+        await endCurrentSession();
+        window.location.replace('/sign-in');
     }, []);
 
     const contextValue = useMemo(() => ({
         user,
         loading,
-        login,
         logout,
         isAuthenticated: keycloak.authenticated ?? false,
-    }), [user, loading, login, logout]);
+    }), [user, loading, logout]);
 
     return (
         <UserContext.Provider value={contextValue}>

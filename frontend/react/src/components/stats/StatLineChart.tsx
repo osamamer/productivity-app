@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import { Box, CircularProgress, TextField, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import { format, parseISO, subDays, eachDayOfInterval } from 'date-fns';
+import { format, parseISO, eachDayOfInterval } from 'date-fns';
 import { StatDefinition, StatEntry, StatEntryStatus } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
 import { getBooleanChoiceColor, showStatFeedback } from '../../services/statFeedback';
@@ -18,6 +18,7 @@ import { TimeStatChart } from './TimeStatChart';
 import { StatChartPoint, StatChartPointClickEvent } from './statChartTypes';
 import { AppTimeField } from '../input/AppPickerFields';
 import { AppNumberField } from '../input/AppNumberField';
+import { formatStatBucketRange, getStatPeriodWindow, StatPeriodMode, StatPeriodOffset } from './statPeriod';
 
 type ChartPoint = StatChartPoint;
 
@@ -25,6 +26,8 @@ interface Props {
     definition: StatDefinition;
     comparisonDefinition?: StatDefinition;
     dateRange: number;
+    periodMode: StatPeriodMode;
+    periodOffset: StatPeriodOffset;
     refreshKey: number;
     onEntryChanged?: (definitionId: string) => void;
     onDateContextMenu?: (date: string, event: React.MouseEvent<Element>) => void;
@@ -109,6 +112,7 @@ function buildWeeklyChartPoints(
 
         points.push({
             date: format(week[0], 'yyyy-MM-dd'),
+            bucketLabel: formatStatBucketRange(week[0], week[week.length - 1]),
             periodEnd: format(week[week.length - 1], 'yyyy-MM-dd'),
             value: average(values),
             comparisonValue: average(comparisonValues),
@@ -238,15 +242,18 @@ export const StatLineChart = React.memo(function StatLineChart({
     definition,
     comparisonDefinition,
     dateRange,
+    periodMode,
+    periodOffset,
     refreshKey,
     onEntryChanged,
     onDateContextMenu,
 }: Props) {
     const theme = useTheme();
-    const to = new Date();
-    const from = subDays(to, dateRange - 1);
-    const fromStr = format(from, 'yyyy-MM-dd');
-    const toStr = format(to, 'yyyy-MM-dd');
+    const period = getStatPeriodWindow(dateRange, periodMode, periodOffset);
+    const fromStr = period.from;
+    const toStr = period.to;
+    const from = parseISO(fromStr);
+    const to = parseISO(toStr);
     const isYearView = dateRange >= 365;
     const aggregateWeekly = isYearView && definition.type !== 'TIME';
     const comparisonId = comparisonDefinition?.id;
@@ -932,13 +939,9 @@ export const StatLineChart = React.memo(function StatLineChart({
                     }}
                 >
                     <Typography variant="caption" color="text.secondary" display="block" noWrap>
-                        {isYearView ? (
-                            <>
-                                {format(parseISO(hoveredPoint.date), 'MMM d')}
-                                {' – '}
-                                {format(parseISO(hoveredPoint.periodEnd ?? hoveredPoint.date), 'MMM d')}
-                            </>
-                        ) : format(parseISO(hoveredPoint.date), 'MMM d, yyyy')}
+                        {isYearView
+                            ? hoveredPoint.bucketLabel
+                            : format(parseISO(hoveredPoint.date), 'MMM d, yyyy')}
                     </Typography>
                     <Typography variant="body2" fontWeight={600} sx={{ color: comparisonDefinition ? primaryColor : 'text.primary' }}>
                         {comparisonDefinition && `${definition.name}: `}

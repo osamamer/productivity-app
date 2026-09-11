@@ -8,10 +8,12 @@ interface MentalStateCardProps {
     loading: boolean;
     checkIn: MentalStateCheckIn | null;
     isCurrent: boolean;
+    isMostRecent: boolean;
     onSaved: (checkIn: MentalStateCheckIn) => void;
+    onGoToMostRecent: () => void;
 }
 
-export function MentalStateCard({ loading, checkIn, isCurrent, onSaved }: MentalStateCardProps) {
+export function MentalStateCard({ loading, checkIn, isCurrent, isMostRecent, onSaved, onGoToMostRecent }: MentalStateCardProps) {
     const [recheckingCheckInId, setRecheckingCheckInId] = useState<string | null>(null);
     const isCheckingIn = checkIn !== null && recheckingCheckInId === checkIn.id;
 
@@ -33,7 +35,9 @@ export function MentalStateCard({ loading, checkIn, isCurrent, onSaved }: Mental
                 <MentalStateResult
                     checkIn={checkIn}
                     isCurrent={isCurrent}
+                    isMostRecent={isMostRecent}
                     onRecheck={() => setRecheckingCheckInId(checkIn.id)}
+                    onGoToMostRecent={onGoToMostRecent}
                     embedded
                 />
             ) : (

@@ -10,7 +10,7 @@
       "env": {
         "EXPO_PUBLIC_APP_ENV": "preview",
         "EXPO_PUBLIC_API_URL": "https://claritard.com",
-        "EXPO_PUBLIC_KEYCLOAK_URL": "https://auth.claritard.com",
+        "EXPO_PUBLIC_KEYCLOAK_URL": "https://claritard.com/auth",
         "EXPO_PUBLIC_KEYCLOAK_REALM": "productivity-app",
         "EXPO_PUBLIC_KEYCLOAK_CLIENT_ID": "productivity-app-frontend"
       },
@@ -21,7 +21,7 @@
       "env": {
         "EXPO_PUBLIC_APP_ENV": "production",
         "EXPO_PUBLIC_API_URL": "https://claritard.com",
-        "EXPO_PUBLIC_KEYCLOAK_URL": "https://auth.claritard.com",
+        "EXPO_PUBLIC_KEYCLOAK_URL": "https://claritard.com/auth",
         "EXPO_PUBLIC_KEYCLOAK_REALM": "productivity-app",
         "EXPO_PUBLIC_KEYCLOAK_CLIENT_ID": "productivity-app-frontend"
       },

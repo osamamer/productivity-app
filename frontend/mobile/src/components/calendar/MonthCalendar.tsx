@@ -8,6 +8,7 @@ import { CalendarStatCheckInSheet } from '@/components/calendar/CalendarStatChec
 import { CalendarTaskGroupSheet } from '@/components/calendar/CalendarTaskGroupSheet';
 import { EventComposerSheet } from '@/components/calendar/EventComposerSheet';
 import { MonthCalendarGrid, type CalendarGridItem } from '@/components/calendar/MonthCalendarGrid';
+import { WeekCalendarGrid } from '@/components/calendar/WeekCalendarGrid';
 import { TaskComposerSheet } from '@/components/tasks/TaskComposerSheet';
 import { TaskDetailSheet } from '@/components/tasks/TaskDetailSheet';
 import { formatCalendarTime, localDate } from '@/lib/date';
@@ -27,12 +28,15 @@ import { SilentPressable } from '../ui/SilentPressable';
 type TaskStatusFilter = 'all' | 'open' | 'completed';
 
 interface CalendarDisplayPreferences {
+  viewMode: CalendarViewMode;
   showTasks: boolean;
   showStats: boolean;
   taskStatus: TaskStatusFilter;
   priorityFilters: number[];
   selectedStatIds: string[] | null;
 }
+
+type CalendarViewMode = 'month' | 'week';
 
 const DISPLAY_PREFERENCES_KEY = 'mobile.calendar-display-preferences';
 const PRIORITY_OPTIONS = [
@@ -41,6 +45,7 @@ const PRIORITY_OPTIONS = [
   { label: 'High', value: 9, color: '#ef4444' },
 ] as const;
 const DEFAULT_DISPLAY_PREFERENCES: CalendarDisplayPreferences = {
+  viewMode: 'month',
   showTasks: true,
   showStats: true,
   taskStatus: 'all',
@@ -89,6 +94,7 @@ function readPreferences(value: string | null): CalendarDisplayPreferences {
   try {
     const parsed = JSON.parse(value) as Partial<CalendarDisplayPreferences>;
     return {
+      viewMode: parsed.viewMode === 'week' ? 'week' : DEFAULT_DISPLAY_PREFERENCES.viewMode,
       showTasks: typeof parsed.showTasks === 'boolean' ? parsed.showTasks : DEFAULT_DISPLAY_PREFERENCES.showTasks,
       showStats: typeof parsed.showStats === 'boolean' ? parsed.showStats : DEFAULT_DISPLAY_PREFERENCES.showStats,
       taskStatus: parsed.taskStatus === 'open' || parsed.taskStatus === 'completed' ? parsed.taskStatus : DEFAULT_DISPLAY_PREFERENCES.taskStatus,
@@ -102,6 +108,20 @@ function readPreferences(value: string | null): CalendarDisplayPreferences {
   } catch {
     return DEFAULT_DISPLAY_PREFERENCES;
   }
+}
+
+function startOfWeek(date: Date): Date {
+  const start = new Date(date);
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - start.getDay());
+  return start;
+}
+
+function weekRange(date: Date): { start: Date; end: Date } {
+  const start = startOfWeek(date);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 7);
+  return { start, end };
 }
 
 function addCalendarItem(items: Map<string, CalendarGridItem[]>, item: CalendarGridItem) {
@@ -172,7 +192,7 @@ export function MonthCalendar({
   onDisplayOptionsOpenChange: (open: boolean) => void;
 }) {
   const { colors } = useAppTheme();
-  const [month, setMonth] = useState(() => monthStart(new Date()));
+  const [calendarDate, setCalendarDate] = useState(() => new Date());
   const [preferences, setPreferences] = useState<CalendarDisplayPreferences>(DEFAULT_DISPLAY_PREFERENCES);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [dayDate, setDayDate] = useState<string | null>(null);
@@ -190,7 +210,11 @@ export function MonthCalendar({
   const [statEntries, setStatEntries] = useState<StatEntry[]>([]);
   const [statsError, setStatsError] = useState<string | null>(null);
   const [statRefreshKey, setStatRefreshKey] = useState(0);
-  const range = useMemo(() => calendarRange(month), [month]);
+  const month = useMemo(() => monthStart(calendarDate), [calendarDate]);
+  const range = useMemo(
+    () => preferences.viewMode === 'week' ? weekRange(calendarDate) : calendarRange(month),
+    [calendarDate, month, preferences.viewMode],
+  );
 
   useEffect(() => {
     let active = true;
@@ -417,21 +441,59 @@ export function MonthCalendar({
     return true;
   }
 
+  function changeCalendarPeriod(offset: number) {
+    setCalendarDate(current => {
+      if (preferences.viewMode === 'week') {
+        const next = new Date(current);
+        next.setDate(next.getDate() + offset * 7);
+        return next;
+      }
+
+      const day = current.getDate();
+      const next = new Date(current.getFullYear(), current.getMonth() + offset, 1);
+      const lastDay = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+      next.setDate(Math.min(day, lastDay));
+      return next;
+    });
+  }
+
+  function goToToday() {
+    setCalendarDate(new Date());
+  }
+
   return (
     <>
       {statsError && hasVisibleStats && <AppText variant="caption" color="danger">{statsError}</AppText>}
-      <MonthCalendarGrid
-        month={month}
-        itemsByDate={itemsByDate}
-        loading={eventsLoading || tasksLoading || definitionsLoading}
-        onMonthChange={offset => setMonth(current => new Date(current.getFullYear(), current.getMonth() + offset, 1))}
-        onToday={() => setMonth(monthStart(new Date()))}
-        onDayPress={openDay}
-        onItemPress={openItem} />
+      <View style={styles.viewToggle}>
+        <AppText variant="caption" color="muted">Calendar view</AppText>
+        <ChoiceChips
+          value={preferences.viewMode}
+          onChange={value => setPreferences(previous => ({ ...previous, viewMode: value }))}
+          options={[{ value: 'week' as const, label: 'Week' }, { value: 'month' as const, label: 'Month' }]} />
+      </View>
+      {preferences.viewMode === 'week' ? (
+        <WeekCalendarGrid
+          weekStart={range.start}
+          itemsByDate={itemsByDate}
+          loading={eventsLoading || tasksLoading || definitionsLoading}
+          onWeekChange={changeCalendarPeriod}
+          onToday={goToToday}
+          onDayPress={openDay}
+          onItemPress={openItem} />
+      ) : (
+        <MonthCalendarGrid
+          month={month}
+          itemsByDate={itemsByDate}
+          loading={eventsLoading || tasksLoading || definitionsLoading}
+          onMonthChange={changeCalendarPeriod}
+          onToday={goToToday}
+          onDayPress={openDay}
+          onItemPress={openItem} />
+      )}
 
       <AppPopup visible={displayOptionsOpen} showIcon={false} title="Calendar display" onClose={() => onDisplayOptionsOpenChange(false)} footer={<AppButton label="Done" onPress={() => onDisplayOptionsOpenChange(false)} />}>
         <ScrollView style={styles.filterScroll} contentContainerStyle={styles.filterContent} showsVerticalScrollIndicator={false}>
-          <AppText color="muted">Choose what appears in the month view.</AppText>
+          <AppText color="muted">Choose what appears in the calendar.</AppText>
           <View style={styles.switchRow}>
             <AppText variant="label">Show tasks</AppText>
             <Switch value={preferences.showTasks} onValueChange={value => setPreferences(previous => ({ ...previous, showTasks: value }))} trackColor={{ false: colors.border, true: colors.accentSoft }} thumbColor={preferences.showTasks ? colors.accent : colors.textMuted} />
@@ -577,6 +639,7 @@ export function MonthCalendar({
 
 const styles = StyleSheet.create({
   floatingDisplayButton: { position: 'absolute', right: 18, bottom: 24, minHeight: 48, borderRadius: 24, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 7, shadowOffset: { width: 0, height: 5 }, shadowRadius: 12, shadowOpacity: 0.28, elevation: 6 },
+  viewToggle: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   filterScroll: { maxHeight: 460 },
   filterContent: { gap: 14, paddingBottom: 2 },
   switchRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },

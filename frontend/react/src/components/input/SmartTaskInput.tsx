@@ -59,6 +59,22 @@ const removeCommands = (value: string, commands: RegExp) => value
     .replace(/[ \t]{2,}/g, ' ')
     .trim();
 
+function formatLocalDateTime(date: Date): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hour = String(date.getHours()).padStart(2, '0');
+    const minute = String(date.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day}T${hour}:${minute}:00`;
+}
+
+function dateAtCurrentTime(date: Date): string {
+    const currentTime = new Date();
+    const value = new Date(date);
+    value.setHours(currentTime.getHours(), currentTime.getMinutes(), 0, 0);
+    return formatLocalDateTime(value);
+}
+
 export function SmartTaskInput({
     onSubmit,
     initialDate,
@@ -98,11 +114,7 @@ export function SmartTaskInput({
     const inputRef = useRef<HTMLInputElement>(null);
 
     const todayDateTime = () => {
-        const today = new Date();
-        const year = today.getFullYear();
-        const month = String(today.getMonth() + 1).padStart(2, '0');
-        const day = String(today.getDate()).padStart(2, '0');
-        return `${year}-${month}-${day}T12:00:00`;
+        return dateAtCurrentTime(new Date());
     };
 
     useEffect(() => {
@@ -120,23 +132,14 @@ export function SmartTaskInput({
     const dateOptions = [
         {
             label: 'Today',
-            getValue: () => {
-                const today = new Date();
-                const year = today.getFullYear();
-                const month = String(today.getMonth() + 1).padStart(2, '0');
-                const day = String(today.getDate()).padStart(2, '0');
-                return `${year}-${month}-${day}T12:00:00`;
-            }
+            getValue: () => dateAtCurrentTime(new Date()),
         },
         {
             label: 'Tomorrow',
             getValue: () => {
                 const tomorrow = new Date();
                 tomorrow.setDate(tomorrow.getDate() + 1);
-                const year = tomorrow.getFullYear();
-                const month = String(tomorrow.getMonth() + 1).padStart(2, '0');
-                const day = String(tomorrow.getDate()).padStart(2, '0');
-                return `${year}-${month}-${day}T12:00:00`;
+                return dateAtCurrentTime(tomorrow);
             }
         },
     ];
@@ -241,15 +244,6 @@ export function SmartTaskInput({
     };
 
     const taskScheduledDateTime = () => metadata.scheduledDate || initialDate || (defaultToToday ? todayDateTime() : '');
-
-    const formatLocalDateTime = (date: Date) => {
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        const hour = String(date.getHours()).padStart(2, '0');
-        const minute = String(date.getMinutes()).padStart(2, '0');
-        return `${year}-${month}-${day}T${hour}:${minute}:00`;
-    };
 
     const openCustomReminder = () => {
         const scheduledAt = new Date(taskScheduledDateTime());

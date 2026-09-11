@@ -10,6 +10,7 @@ import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.Map;
+import java.util.List;
 import java.util.Objects;
 
 @Service
@@ -46,6 +47,46 @@ public class KeycloakAccountService {
 
         String adminAccessToken = fetchAdminAccessToken();
         resetPassword(keycloakUserId, newPassword, adminAccessToken);
+    }
+
+    public void registerUser(String email, String firstName, String lastName, String username, String password) {
+        String url = String.format("%s/admin/realms/%s/users", keycloakBaseUrl, keycloakRealm);
+        String adminAccessToken = fetchAdminAccessToken();
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(adminAccessToken);
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        Map<String, Object> requestBody = Map.of(
+                "username", username,
+                "email", email,
+                "firstName", firstName,
+                "lastName", lastName,
+                "enabled", true,
+                "credentials", List.of(Map.of(
+                        "type", "password",
+                        "temporary", false,
+                        "value", password
+                ))
+        );
+
+        try {
+            restTemplate.exchange(url, HttpMethod.POST, new HttpEntity<>(requestBody, headers), Void.class);
+            log.info("Created identity account for username={}", username);
+        } catch (HttpStatusCodeException e) {
+            if (e.getStatusCode() == HttpStatus.CONFLICT) {
+                log.warn("Identity registration rejected because the username or email already exists: username={}", username, e);
+                throw new IllegalArgumentException("That email or username is already registered.");
+            }
+
+            if (e.getStatusCode() == HttpStatus.BAD_REQUEST) {
+                log.warn("Identity registration rejected due to invalid account details: username={}", username, e);
+                throw new IllegalArgumentException("Please check the account details and password.");
+            }
+
+            log.error("Identity registration failed for username={}: status={}", username, e.getStatusCode(), e);
+            throw new PasswordUpdateFailedException("Account creation is temporarily unavailable.", e);
+        }
     }
 
     private boolean isCurrentPasswordValid(String username, String currentPassword) {

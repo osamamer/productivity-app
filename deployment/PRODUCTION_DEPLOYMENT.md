@@ -75,12 +75,13 @@ Wait until both names resolve before starting Caddy. Caddy will obtain and renew
 HTTPS certificates automatically.
 
 For Claritard's public deployment, the equivalent values can be `claritard.com` and
-`auth.claritard.com`. `AUTH_DOMAIN` is the browser-facing origin for the identity
-service; the application bundle and backend issuer are both configured from it. The
-OAuth login URL will still temporarily include paths such as
-`/realms/productivity-app/protocol/openid-connect/auth` during the redirect. That is
-the normal OIDC flow and cannot be removed from the browser address bar without
-replacing the flow with a custom authentication application.
+`auth.claritard.com`. The application origin proxies Keycloak under `/auth`, so new
+web builds use `https://claritard.com/auth` and no Keycloak port or separate auth
+hostname appears in the login flow. `AUTH_DOMAIN` remains a compatibility alias for
+already-installed mobile builds. The OAuth login URL will still include endpoint
+paths such as `/auth/realms/productivity-app/protocol/openid-connect/auth`; those
+paths are required by the standard OIDC flow and cannot be removed from the browser
+address bar without replacing the flow with a custom authentication application.
 
 ## 3. Install the application
 
@@ -152,6 +153,7 @@ PRODUCTION_USER=deploy
 PRODUCTION_PATH=/opt/productivity-app
 PRODUCTION_SSH_KEY=<private key whose public key is authorized for deploy>
 PRODUCTION_KNOWN_HOSTS=<verified output of ssh-keyscan -H your-server-hostname>
+EXPO_PUSH_ACCESS_TOKEN=<optional Expo Push Service access token>
 ```
 
 Store the complete private key, including its `BEGIN` and `END` lines. Verify the
@@ -211,8 +213,8 @@ dropping existing data. Do not use `docker compose down -v` in production.
 
 ## 6. Configure Keycloak
 
-Open `https://${AUTH_DOMAIN}` (for example, `https://auth.claritard.com`) and sign in
-to the administrator console using the credentials from `.env`.
+Open `https://${APP_DOMAIN}/auth` (for example, `https://claritard.com/auth`) and
+sign in to the administrator console using the credentials from `.env`.
 
 Create realm `productivity-app`, then create a public client:
 
@@ -229,8 +231,8 @@ the Login Theme. The theme is mounted into the Keycloak container from
 `https://${APP_DOMAIN}/favicon.png` route. Create a test user and verify that login,
 task creation, password changes, and logout all work.
 
-The backend's issuer URL must remain the public Keycloak URL because it must match the
-issuer in the JWT: `https://${AUTH_DOMAIN}/realms/productivity-app`.
+The backend's issuer URL must remain the public proxied URL because it must match the
+issuer in the JWT: `https://${APP_DOMAIN}/auth/realms/productivity-app`.
 
 ## 7. Verify the application
 

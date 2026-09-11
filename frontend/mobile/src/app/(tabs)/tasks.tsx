@@ -124,6 +124,7 @@ export default function TasksScreen() {
   const [expandedSections, setExpandedSections] = useState<TaskSectionExpansionState>(DEFAULT_TASK_SECTION_EXPANSION);
   const [composerOpen, setComposerOpen] = useState(false);
   const [groupComposerOpen, setGroupComposerOpen] = useState(false);
+  const [editingGroup, setEditingGroup] = useState<TaskGroup | null>(null);
   const [selected, setSelected] = useState<Task | null>(null);
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
@@ -403,6 +404,21 @@ export default function TasksScreen() {
     });
   }
 
+  function openCreateGroup() {
+    setEditingGroup(null);
+    setGroupComposerOpen(true);
+  }
+
+  function openEditGroup(group: TaskGroup) {
+    setEditingGroup(group);
+    setGroupComposerOpen(true);
+  }
+
+  function closeGroupComposer() {
+    setGroupComposerOpen(false);
+    setEditingGroup(null);
+  }
+
   async function moveSelected(direction: 'up' | 'down') {
     if (selectedTaskIds.length !== 1 || selectedGroupIds.length > 0 || bulkActionLoading) return;
     setBulkActionLoading(true);
@@ -433,6 +449,14 @@ export default function TasksScreen() {
             <AppText variant="label" style={styles.groupTitle}>{item.group.name}</AppText>
             <AppText variant="caption" color="muted">{item.tasks.length}</AppText>
           </View>
+          <SilentPressable
+            accessibilityRole="button"
+            accessibilityLabel={`Edit ${item.group.name}`}
+            hitSlop={8}
+            onPress={event => { event.stopPropagation(); openEditGroup(item.group); }}
+            style={({ pressed }) => [styles.groupSelect, pressed && styles.pressed]}>
+            <Ionicons name="create-outline" size={20} color={colors.textMuted} />
+          </SilentPressable>
           <SilentPressable
             accessibilityRole="button"
             accessibilityLabel={`${selectedGroupIdSet.has(item.group.groupId) ? 'Deselect' : 'Select'} ${item.group.name}`}
@@ -496,7 +520,7 @@ export default function TasksScreen() {
           onMoveToDate={() => setBulkDateOpen(true)}
           onMoveUp={() => void moveSelected('up')}
           onMoveDown={() => void moveSelected('down')}
-          onGroup={() => setGroupComposerOpen(true)}
+          onGroup={openCreateGroup}
           onDelete={() => void confirmBulkDelete()}
           onDismiss={clearSelection}
         />
@@ -551,10 +575,13 @@ export default function TasksScreen() {
         onCreated={addTask}
       />
       <TaskGroupComposerSheet
+        key={`${editingGroup?.groupId ?? 'new'}-${groupComposerOpen ? 'open' : 'closed'}`}
         visible={groupComposerOpen}
-        taskIds={selectedTasks.map(task => task.taskId)}
-        onClose={() => setGroupComposerOpen(false)}
-        onCreated={clearSelection}
+        taskIds={editingGroup?.taskIds ?? selectedTasks.map(task => task.taskId)}
+        group={editingGroup}
+        availableTasks={editingGroup ? allTasks.filter(task => !task.parentId) : undefined}
+        onClose={closeGroupComposer}
+        onCreated={() => { clearSelection(); closeGroupComposer(); }}
       />
       <TaskBulkDateSheet
         key={`${bulkDateOpen}-${selectedTasks[0]?.scheduledPerformDateTime ?? ''}`}
@@ -570,6 +597,7 @@ export default function TasksScreen() {
         task={selected}
         onClose={() => setSelected(null)}
         onUpdated={replace}
+        onSubtaskCreated={addTask}
         onStartFocus={task => { setSelected(null); openPomodoro(task.taskId); }}
         onDeleted={id => { removeWorkspaceTask(id); setSelected(null); }}
       />

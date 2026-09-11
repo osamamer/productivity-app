@@ -180,7 +180,6 @@ export function CalendarStatCheckInSheet({ date, definitions, onClose, onSaved }
               <AppText variant="label">{definition.name}</AppText>
               {value !== null && value !== undefined && <AppText variant="caption" color="muted">{formatValue(definition, value)}</AppText>}
             </View>
-            {definition.description && <AppText variant="caption" color="muted">{definition.description}</AppText>}
             {definition.type === 'BOOLEAN' && (
               <ChoiceChips
                 value={statuses[definition.id] === 'NOT_PLANNED' ? -2 : value ?? -1}

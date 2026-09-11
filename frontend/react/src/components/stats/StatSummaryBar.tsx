@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Stack, Typography, Skeleton } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import { differenceInCalendarDays, format, parseISO, subDays } from 'date-fns';
+import { differenceInCalendarDays, parseISO } from 'date-fns';
 import { StatDefinition, StatEntry, StatSummary } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
+import { getStatPeriodWindow, StatPeriodMode, StatPeriodOffset } from './statPeriod';
 import {
     averageTimeValues,
     formatDurationValue,
@@ -43,6 +44,8 @@ function SummaryTile({ label, value }: TileProps) {
 interface Props {
     definition: StatDefinition;
     dateRange: number;
+    periodMode: StatPeriodMode;
+    periodOffset: StatPeriodOffset;
     refreshKey: number;
 }
 
@@ -74,18 +77,8 @@ function computeLongestBooleanStreak(entries: StatEntry[]): number {
     return longest;
 }
 
-function getPeriodWindow(dateRange: number): { from: string; to: string; key: string } {
-    const to = new Date();
-    const from = subDays(to, dateRange - 1);
-    return {
-        from: format(from, 'yyyy-MM-dd'),
-        to: format(to, 'yyyy-MM-dd'),
-        key: `${format(from, 'yyyy-MM-dd')}:${format(to, 'yyyy-MM-dd')}`,
-    };
-}
-
-export const StatSummaryBar = React.memo(function StatSummaryBar({ definition, dateRange, refreshKey }: Props) {
-    const period = getPeriodWindow(dateRange);
+export const StatSummaryBar = React.memo(function StatSummaryBar({ definition, dateRange, periodMode, periodOffset, refreshKey }: Props) {
+    const period = getStatPeriodWindow(dateRange, periodMode, periodOffset);
     const periodKey = `${definition.id}:${period.key}`;
     const [summaryState, setSummaryState] = useState<{ key: string; summary: StatSummary } | null>(() => {
         const summary = statService.getCachedSummary(definition.id, period.from, period.to);

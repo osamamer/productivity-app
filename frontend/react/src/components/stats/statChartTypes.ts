@@ -5,6 +5,7 @@ export interface StatChartPoint {
     value: number | undefined;
     comparisonValue: number | undefined;
     hoverTarget: number;
+    bucketLabel?: string;
     periodEnd?: string;
     status?: StatEntryStatus;
     comparisonStatus?: StatEntryStatus;

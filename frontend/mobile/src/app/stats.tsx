@@ -54,6 +54,7 @@ export default function StatsScreen() {
   });
   const [selected, setSelected] = useState<StatDefinition | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
+  const [editingDefinition, setEditingDefinition] = useState<StatDefinition | null>(null);
   const [groupComposerOpen, setGroupComposerOpen] = useState(false);
   const [editingGroup, setEditingGroup] = useState<StatGroup | null>(null);
   const [openGroupIds, setOpenGroupIds] = useState<Set<string>>(new Set());
@@ -134,6 +135,27 @@ export default function StatsScreen() {
   function openCreateGroup() {
     setEditingGroup(null);
     setGroupComposerOpen(true);
+  }
+
+  function openCreateStat() {
+    setEditingDefinition(null);
+    setComposerOpen(true);
+  }
+
+  function openEditStat(definition: StatDefinition) {
+    setEditingDefinition(definition);
+    setComposerOpen(true);
+  }
+
+  function closeStatComposer() {
+    setComposerOpen(false);
+    setEditingDefinition(null);
+  }
+
+  function saveDefinition(updatedDefinition: StatDefinition) {
+    resource.setData(current => current
+      ? { ...current, definitions: current.definitions.map(definition => definition.id === updatedDefinition.id ? updatedDefinition : definition) }
+      : current);
   }
 
   function openEditGroup(group: StatGroup) {
@@ -221,6 +243,14 @@ export default function StatsScreen() {
                   <Ionicons name={icon} size={22} color={iconColor} />
                 </View>
                 <View style={styles.grow}><AppText variant="heading" numberOfLines={1}>{definition.name}</AppText></View>
+                <SilentPressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Edit ${definition.name}`}
+                  hitSlop={8}
+                  onPress={event => { event.stopPropagation(); openEditStat(definition); }}
+                  style={({ pressed }) => [styles.iconAction, pressed && styles.pressed]}>
+                  <Ionicons name="create-outline" size={18} color={colors.textMuted} />
+                </SilentPressable>
               </View>
             )}
           />
@@ -238,7 +268,7 @@ export default function StatsScreen() {
         <ChoiceChips value={dateRange} options={TIME_RANGES} onChange={setDateRange} />
         <View style={styles.headerActions}>
           <AppButton compact variant="secondary" label="Group" icon="folder-open-outline" onPress={openCreateGroup} style={styles.compactAction} />
-          <AppButton compact label="Stat" icon="add" onPress={() => setComposerOpen(true)} style={styles.compactAction} />
+          <AppButton compact label="Stat" icon="add" onPress={openCreateStat} style={styles.compactAction} />
         </View>
       </View>
       {resource.loading && <LoadingView label="Loading statistics…" />}
@@ -312,9 +342,16 @@ export default function StatsScreen() {
           return { ...current, entries: entry ? [...rest, entry] : rest };
         })}
       />
-      <StatComposerSheet visible={composerOpen} onClose={() => setComposerOpen(false)} onCreated={definition => resource.setData(current => current ? { ...current, definitions: [...current.definitions, definition] } : current)} />
+      <StatComposerSheet
+        key={`stat-${editingDefinition?.id ?? 'new'}-${composerOpen ? 'open' : 'closed'}`}
+        visible={composerOpen}
+        definition={editingDefinition}
+        onClose={closeStatComposer}
+        onCreated={definition => resource.setData(current => current ? { ...current, definitions: [...current.definitions, definition] } : current)}
+        onUpdated={definition => { saveDefinition(definition); closeStatComposer(); }}
+      />
       <StatGroupComposerSheet
-        key={`${editingGroup?.groupId ?? 'new'}-${groupComposerOpen ? 'open' : 'closed'}`}
+        key={`stat-group-${editingGroup?.groupId ?? 'new'}-${groupComposerOpen ? 'open' : 'closed'}`}
         visible={groupComposerOpen}
         group={editingGroup}
         definitions={resource.data?.definitions ?? []}
@@ -326,9 +363,9 @@ export default function StatsScreen() {
 }
 
 const styles = StyleSheet.create({
-  controls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
-  headerActions: { flexDirection: 'row', gap: 6, flexShrink: 1 },
-  compactAction: { paddingHorizontal: 8, gap: 4 },
+  controls: { gap: 10 },
+  headerActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 6, flexWrap: 'wrap' },
+  compactAction: { paddingHorizontal: 8, gap: 4, flexShrink: 1 },
   list: { gap: 16 },
   group: { gap: 8 },
   groupHeader: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 3 },

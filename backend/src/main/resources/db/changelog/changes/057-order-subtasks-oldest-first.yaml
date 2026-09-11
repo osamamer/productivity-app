@@ -1,0 +1,35 @@
+databaseChangeLog:
+  - changeSet:
+      id: 057-order-subtasks-oldest-first
+      author: osama
+      comment: Persist subtasks from oldest to newest within each parent task
+      changes:
+        - sql:
+            sql: |
+              UPDATE task
+              SET display_order = ordered.display_order
+              FROM (
+                  SELECT task_id,
+                         ROW_NUMBER() OVER (
+                             PARTITION BY user_id, parent_id
+                             ORDER BY creation_date_time ASC, task_id ASC
+                         ) - 1 AS display_order
+                  FROM task
+                  WHERE parent_id IS NOT NULL
+              ) ordered
+              WHERE task.task_id = ordered.task_id;
+      rollback:
+        - sql:
+            sql: |
+              UPDATE task
+              SET display_order = ordered.display_order
+              FROM (
+                  SELECT task_id,
+                         ROW_NUMBER() OVER (
+                             PARTITION BY user_id, parent_id
+                             ORDER BY creation_date_time DESC, task_id ASC
+                         ) - 1 AS display_order
+                  FROM task
+                  WHERE parent_id IS NOT NULL
+              ) ordered
+              WHERE task.task_id = ordered.task_id;

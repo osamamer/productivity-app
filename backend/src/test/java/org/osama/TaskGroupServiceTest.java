@@ -208,6 +208,20 @@ class TaskGroupServiceTest {
     }
 
     @Test
+    void subtasksAreReturnedAndPersistedOldestFirst() {
+        Task parent = createTask(TEST_USER_ID, "Parent");
+        Task oldest = createSubtask(parent, "Oldest");
+        Task newest = createSubtask(parent, "Newest");
+
+        assertEquals(List.of(oldest.getTaskId(), newest.getTaskId()),
+                taskService.getSubtasks(parent.getTaskId(), TEST_USER_ID).stream()
+                        .map(Task::getTaskId)
+                        .toList());
+        assertEquals(0, oldest.getDisplayOrder());
+        assertEquals(1, newest.getDisplayOrder());
+    }
+
+    @Test
     void deletingATaskAlsoRemovesItFromItsTaskGroup() {
         Task first = createTask(TEST_USER_ID, "First");
         Task second = createTask(TEST_USER_ID, "Second");
@@ -257,6 +271,13 @@ class TaskGroupServiceTest {
         request.setName(name);
         request.setScheduledPerformDateTime(scheduledDateTime == null ? null : scheduledDateTime.toString());
         return taskService.createTask(request, userId);
+    }
+
+    private Task createSubtask(Task parent, String name) {
+        NewTaskRequest request = new NewTaskRequest();
+        request.setName(name);
+        request.setParentId(parent.getTaskId());
+        return taskService.createTask(request, TEST_USER_ID);
     }
 
     private UpdateTaskRequest updateDate(java.time.LocalDateTime dateTime) {

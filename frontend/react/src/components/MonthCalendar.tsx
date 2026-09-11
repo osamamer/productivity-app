@@ -1,10 +1,9 @@
 import {
     Alert, Box, Button, Checkbox, Chip, Collapse, Dialog, DialogActions, DialogContent,
     DialogContentText, DialogTitle, Divider, FormControlLabel, FormGroup, List, ListItem,
-    ListItemButton, ListItemText, Popover, Snackbar,
+    ListItemButton, ListItemText, Popover, Snackbar, IconButton,
     Fade, Skeleton, Stack, Switch, Tabs, Tab, TextField, ToggleButton, ToggleButtonGroup, Typography, Menu, MenuItem, ListItemIcon,
 } from "@mui/material";
-import { HoverCardBox } from "./box/HoverCardBox.tsx";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin, { DateClickArg } from "@fullcalendar/interaction";
 import FullCalendar from "@fullcalendar/react";
@@ -12,7 +11,7 @@ import React, { useMemo, useState, useCallback, useRef } from "react";
 import { keyframes } from '@mui/system';
 import { Task } from "../types/Task.tsx";
 import { useTheme } from "@mui/material";
-import { DayCellMountArg, DatesSetArg, EventClickArg, EventContentArg, EventMountArg } from '@fullcalendar/core';
+import { DayCellContentArg, DayCellMountArg, DatesSetArg, EventClickArg, EventContentArg, EventMountArg } from '@fullcalendar/core';
 import { TaskToCreate } from "../types/TaskToCreate.tsx";
 import { TaskGroup } from "../types/TaskGroup.ts";
 import { StatDefinition, StatEntry } from "../types/Stats.ts";
@@ -34,10 +33,10 @@ import { CalendarEvent, CalendarEventInput, CalendarEventStatus } from "../types
 import { DayTemplate, DayTemplateApplication, DayTemplateRequest } from "../types/DayTemplate.ts";
 import { CalendarEventForm } from "./calendar/CalendarEventForm.tsx";
 import { DayTemplateCreationDialog } from "./calendar/DayTemplateCreationDialog.tsx";
-import { DAY_TEMPLATE_DRAG_TYPE, DayTemplatePanel } from "./calendar/DayTemplatePanel.tsx";
+import { DAY_TEMPLATE_DRAG_TYPE, DayTemplatePanel, DayTemplatePreviewPopover } from "./calendar/DayTemplatePanel.tsx";
 import { CalendarEventOccurrence, expandCalendarEvent } from "./calendar/recurrence.ts";
 import { getBooleanChoiceColor } from "../services/statFeedback.ts";
-import { taskService } from "../services/api";
+import { dayService, taskService } from "../services/api";
 import { getShowCompletedHomeTasks } from "../services/utils/homePreferences.ts";
 import { AppDateField } from "./input/AppPickerFields";
 import { TaskRecurrenceCustomOptions, TaskRecurrencePicker } from "./task/TaskRecurrencePicker";
@@ -45,6 +44,8 @@ import { TaskReminderPicker } from "./task/TaskReminderPicker";
 import { CalendarTaskForm } from './calendar/CalendarTaskForm';
 import { defaultTaskRecurrence, TaskRecurrenceDraft } from "../types/TaskRecurrence";
 import { TaskSeries } from "../types/TaskSeries";
+import { DayCalendarEntry } from "../types/DayEntity";
+import { taskDateKey } from "../services/utils/taskDate";
 
 type MonthCalenderProps = {
     tasks: Task[],
@@ -293,6 +294,8 @@ export function MonthCalendar({
     const [showTemplatePanel, setShowTemplatePanel] = useState(false);
     const [templateCreationOpen, setTemplateCreationOpen] = useState(false);
     const [templateEditTarget, setTemplateEditTarget] = useState<DayTemplate | null>(null);
+    const [templatePreviewAnchor, setTemplatePreviewAnchor] = useState<HTMLElement | null>(null);
+    const [templatePreview, setTemplatePreview] = useState<DayTemplate | null>(null);
     const [templateSourceDate, setTemplateSourceDate] = useState(format(new Date(), 'yyyy-MM-dd'));
     const [templateActionError, setTemplateActionError] = useState<string | null>(null);
     const [dayContextMenu, setDayContextMenu] = useState<{ date: string; top: number; left: number } | null>(null);
@@ -321,6 +324,7 @@ export function MonthCalendar({
         start: startOfMonth(new Date()),
         end: addMonths(startOfMonth(new Date()), 1),
     });
+    const [dayCalendarEntries, setDayCalendarEntries] = useState<DayCalendarEntry[]>([]);
     const [statEntries, setStatEntries] = useState<StatEntry[]>([]);
     const [statRefreshKey, setStatRefreshKey] = useState(0);
     const selectedStatIdsForDisplay = useMemo(
@@ -472,6 +476,21 @@ export function MonthCalendar({
         return () => { cancelled = true; };
     }, [calendarRange.end, calendarRange.start, hasVisibleStats, selectedStatDefinitions, statRefreshKey]);
 
+    React.useEffect(() => {
+        const controller = new AbortController();
+        const from = format(calendarRange.start, 'yyyy-MM-dd');
+        const to = format(subDays(calendarRange.end, 1), 'yyyy-MM-dd');
+        dayService.getCalendarDays(from, to, controller.signal)
+            .then(entries => setDayCalendarEntries(entries))
+            .catch(error => {
+                if (error?.name !== 'AbortError') {
+                    console.error('Failed to load calendar day markers:', error);
+                }
+            });
+
+        return () => controller.abort();
+    }, [calendarRange.end, calendarRange.start]);
+
     const calendarTasks = useMemo(() => tasks.filter(task => {
         if (!task.scheduledPerformDateTime) return false;
         if (!showCompletedTasks && task.completed) return false;
@@ -488,10 +507,6 @@ export function MonthCalendar({
             .map(taskId => taskById.get(taskId))
             .filter((task): task is Task => Boolean(task));
     }, [calendarTasks, selectedTaskGroup]);
-
-    const neutralCalendarColor = theme.palette.mode === 'dark'
-        ? 'rgba(255, 255, 255, 0.14)'
-        : 'rgba(26, 26, 46, 0.10)';
 
     const calendarEvents = useMemo(() => {
         const taskById = new Map(tasks.map(task => [task.taskId, task]));
@@ -523,6 +538,7 @@ export function MonthCalendar({
                     : 'calendar-accent-event'],
             extendedProps: {
                 eventType: 'calendarEvent',
+                eventTypeOrder: 0,
                 calendarEventId: event.id,
                 calendarEventOccurrenceKey: occurrence.occurrenceKey,
                 calendarEventOccurrenceDate: occurrence.occurrenceDate,
@@ -540,7 +556,7 @@ export function MonthCalendar({
                     .flatMap(group => {
                         const groupTaskDates = calendarTasks
                             .filter(task => taskGroupByTaskId.get(task.taskId)?.groupId === group.groupId)
-                            .map(task => new Date(task.scheduledPerformDateTime!).toISOString().split('T')[0]);
+                            .map(task => taskDateKey(task.scheduledPerformDateTime!));
                         return groupTaskDates.map(date => [`${group.groupId}-${date}`, { group, date }] as const);
                     })
             ).values()).map(({ group, date }) => ({
@@ -548,12 +564,13 @@ export function MonthCalendar({
                 title: group.name,
                 date,
                 groupId: group.groupId,
-                backgroundColor: neutralCalendarColor,
-                borderColor: 'transparent',
+                backgroundColor: 'transparent',
+                borderColor: theme.palette.divider,
                 textColor: theme.palette.text.primary,
                 classNames: ['calendar-neutral-event'],
                 extendedProps: {
                     eventType: 'taskGroup',
+                    eventTypeOrder: 1,
                     groupId: group.groupId,
                     groupOrder: group.displayOrder,
                     fullDescription: group.name,
@@ -571,13 +588,15 @@ export function MonthCalendar({
                     return {
                         id: task.taskId,
                         title: taskName,
-                        date: new Date(task.scheduledPerformDateTime!).toISOString().split('T')[0],
-                        backgroundColor: neutralCalendarColor,
-                        borderColor: 'transparent',
+                        start: task.scheduledPerformDateTime!,
+                        allDay: false,
+                        backgroundColor: 'transparent',
+                        borderColor: theme.palette.divider,
                         textColor: theme.palette.text.primary,
                         classNames: ['calendar-neutral-event'],
                         extendedProps: {
                             eventType: 'task',
+                            eventTypeOrder: 1,
                             fullDescription: taskName,
                             completed: task.completed,
                         },
@@ -604,6 +623,7 @@ export function MonthCalendar({
                     textColor: theme.palette.text.primary,
                     extendedProps: {
                         eventType: 'stat',
+                        eventTypeOrder: 2,
                         date: entry.date,
                         fullDescription: `${definition.name}: ${value}`,
                     },
@@ -612,14 +632,23 @@ export function MonthCalendar({
             : [];
 
         return [...eventEntries, ...groupEvents, ...taskEvents, ...statEvents];
-    }, [availableStatDefinitions, calendarRange.end, calendarRange.start, calendarTasks, events, hasVisibleStats, neutralCalendarColor, selectedStatIdsForDisplay, showTasks, statEntries, tasks, taskGroupByTaskId, theme.palette]);
+    }, [availableStatDefinitions, calendarRange.end, calendarRange.start, calendarTasks, events, hasVisibleStats, selectedStatIdsForDisplay, showTasks, statEntries, tasks, taskGroupByTaskId, theme.palette]);
+
+    const dayTemplateByDate = useMemo(
+        () => new Map(
+            dayCalendarEntries
+                .filter(entry => Boolean(entry.appliedTemplateId))
+                .map(entry => [entry.date, entry] as const)
+        ),
+        [dayCalendarEntries]
+    );
 
     const renderEventContent = useCallback((arg: EventContentArg) => {
         const eventType = arg.event.extendedProps.eventType;
         const isTaskEntity = eventType === 'task' || eventType === 'taskGroup';
         const isCalendarEvent = eventType === 'calendarEvent';
+        const isTimedEntry = isCalendarEvent || eventType === 'task';
         const completed = arg.event.extendedProps.completed === true;
-
         return (
             <Box className="calendar-event-content">
                 {isTaskEntity && completed && (
@@ -635,7 +664,7 @@ export function MonthCalendar({
                 <Box component="span" className="calendar-event-title">
                     {arg.event.title || 'Untitled'}
                 </Box>
-                {isCalendarEvent && !arg.event.allDay && arg.event.start && (
+                {isTimedEntry && !arg.event.allDay && arg.event.start && (
                     <Box component="span" className="calendar-event-time">
                         {calendarEventTimeLabel(arg.event.start)}
                     </Box>
@@ -651,6 +680,10 @@ export function MonthCalendar({
     }, []);
 
     const handleDateClick = useCallback((arg: DateClickArg) => {
+        if (arg.jsEvent.target instanceof Element
+            && arg.jsEvent.target.closest('.calendar-template-day-button')) {
+            return;
+        }
         setEditingDate(arg.dateStr);
         setActiveTab('event');
         setEditingDialogOpen(true);
@@ -670,11 +703,52 @@ export function MonthCalendar({
     }, [editingDate, editingDialogOpen]);
 
     const openTemplateEdit = useCallback((template: DayTemplate) => {
+        setTemplatePreviewAnchor(null);
+        setTemplatePreview(null);
         setTemplateEditTarget(template);
         setTemplateActionError(null);
         setTemplateCreationOpen(true);
         setEditingDialogOpen(false);
     }, []);
+
+    const openTemplatePreview = useCallback((anchorEl: HTMLElement, template: DayTemplate) => {
+        setTemplateCreationOpen(false);
+        setTemplateEditTarget(null);
+        setTemplatePreview(template);
+        setTemplatePreviewAnchor(anchorEl);
+    }, []);
+
+    const handleDayTemplateClick = useCallback((event: React.MouseEvent, entry: DayCalendarEntry) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const template = dayTemplates.find(item => item.id === entry.appliedTemplateId);
+        if (template) {
+            openTemplatePreview(event.currentTarget as HTMLElement, template);
+            return;
+        }
+        setTemplateActionError(`${entry.appliedTemplateName ?? 'That template'} is no longer available.`);
+        setShowTemplatePanel(true);
+    }, [dayTemplates, openTemplatePreview]);
+
+    const renderDayCellContent = useCallback((arg: DayCellContentArg) => {
+        const entry = dayTemplateByDate.get(format(arg.date, 'yyyy-MM-dd'));
+        return (
+            <Box className="calendar-day-cell-header">
+                {entry ? (
+                    <IconButton
+                        className="calendar-template-day-button"
+                        size="small"
+                        aria-label={`View ${entry.appliedTemplateName ?? 'applied'} template`}
+                        title={entry.appliedTemplateName ?? 'View applied template'}
+                        onClick={event => handleDayTemplateClick(event, entry)}
+                    >
+                        <ViewDayIcon fontSize="inherit" />
+                    </IconButton>
+                ) : <Box className="calendar-template-day-button-placeholder" />}
+                <Box component="span" className="calendar-day-number">{arg.dayNumberText}</Box>
+            </Box>
+        );
+    }, [dayTemplateByDate, handleDayTemplateClick]);
 
     const handleSaveTemplate = useCallback(async (request: DayTemplateRequest) => {
         if (templateEditTarget) {
@@ -692,6 +766,14 @@ export function MonthCalendar({
         setTemplateActionError(null);
         try {
             const application = await onApplyDayTemplateRef.current(templateId, date);
+            setDayCalendarEntries(current => [
+                ...current.filter(entry => entry.date !== application.date),
+                {
+                    date: application.date,
+                    appliedTemplateId: application.templateId,
+                    appliedTemplateName: application.templateName,
+                },
+            ]);
             templateFeedbackIdRef.current += 1;
             setTemplateFeedback({
                 id: templateFeedbackIdRef.current,
@@ -718,6 +800,7 @@ export function MonthCalendar({
             : previous);
         try {
             await onUndoDayTemplate(feedback.application);
+            setDayCalendarEntries(current => current.filter(entry => entry.date !== feedback.application?.date));
             setTemplateFeedback(null);
         } catch (error) {
             console.error('Failed to undo day template application:', error);
@@ -1001,7 +1084,6 @@ export function MonthCalendar({
 
     return (
         <>
-            <HoverCardBox height="100%" hover={false}>
                 <Box
                     sx={{
                         width: '100%',
@@ -1062,6 +1144,7 @@ export function MonthCalendar({
                             onEdit={openTemplateEdit}
                             onDelete={onDeleteDayTemplate}
                             onDragStart={() => setTemplateActionError(null)}
+                            onPreview={openTemplatePreview}
                         />
                     </Collapse>
 
@@ -1214,13 +1297,12 @@ export function MonthCalendar({
                                 : 'rgba(0, 0, 0, 0.02)',
                             margin: '1px',
                             borderRadius: '0px',
-                            transition: 'all 0.2s ease',
+                            transition: 'background-color 160ms ease',
                             cursor: 'pointer',
                             '&:hover': {
                                 background: theme.palette.mode === 'dark'
                                     ? 'rgba(255, 255, 255, 0.08)'
                                     : 'rgba(0, 0, 0, 0.05)',
-                                transform: 'scale(1.01)',
                             },
                         },
                         '& .fc-daygrid-day.calendar-template-drop-target': {
@@ -1232,6 +1314,54 @@ export function MonthCalendar({
                             minHeight: '80px',
                             display: 'flex',
                             flexDirection: 'column',
+                            padding: '4px',
+                        },
+                        '& .fc-dayGridWeek-view .fc-daygrid-day-frame': {
+                            minHeight: '128px',
+                        },
+                        '& .fc-dayGridWeek-view': {
+                            maxWidth: '960px',
+                            margin: '0 auto',
+                        },
+                        '& .fc-daygrid-day-top': {
+                            flexDirection: 'row',
+                            justifyContent: 'flex-start',
+                        },
+                        '& .fc-daygrid-day-top > .fc-daygrid-day-number': {
+                            alignItems: 'center',
+                            display: 'flex',
+                            flex: '1 1 auto',
+                            minWidth: 0,
+                            padding: 0,
+                        },
+                        '& .calendar-day-cell-header': {
+                            alignItems: 'center',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            minHeight: '28px',
+                            padding: '0 2px 0 4px',
+                            width: '100%',
+                        },
+                        '& .calendar-template-day-button, & .calendar-template-day-button-placeholder': {
+                            flex: '0 0 24px',
+                            height: '24px',
+                            width: '24px',
+                        },
+                        '& .calendar-template-day-button': {
+                            borderRadius: '4px',
+                            color: `${theme.palette.primary.main} !important`,
+                            fontSize: '1rem',
+                            padding: 0,
+                            '&:hover': {
+                                backgroundColor: theme.palette.action.hover,
+                            },
+                        },
+                        '& .calendar-day-number': {
+                            alignItems: 'center',
+                            display: 'inline-flex',
+                            height: '24px',
+                            lineHeight: 1,
+                            padding: '0 4px',
                         },
                         '& .fc-day-today': {
                             background: `${theme.palette.primary.main}20 !important`,
@@ -1263,13 +1393,12 @@ export function MonthCalendar({
                             borderRadius: '6px',
                             padding: '4px 8px',
                             margin: '2px',
-                            boxShadow: theme.shadows[2],
+                            boxShadow: 'none',
                             whiteSpace: 'nowrap',
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
-                            '&:hover': {
-                                boxShadow: theme.shadows[4],
-                                transform: 'translateY(-1px)',
+                            '&:hover:not(.calendar-neutral-event)': {
+                                filter: theme.palette.mode === 'dark' ? 'brightness(1.12)' : 'brightness(0.96)',
                             },
                         },
                         '& .fc-daygrid-event-dot': {
@@ -1304,8 +1433,8 @@ export function MonthCalendar({
                             textDecoration: 'line-through',
                         },
                         '& .fc .calendar-neutral-event': {
-                            backgroundColor: `${neutralCalendarColor} !important`,
-                            borderColor: `${neutralCalendarColor} !important`,
+                            backgroundColor: 'transparent !important',
+                            borderColor: `${theme.palette.divider} !important`,
                             color: `${theme.palette.text.primary} !important`,
                         },
                         '& .fc-daygrid-event .fc-event-main': {
@@ -1368,7 +1497,7 @@ export function MonthCalendar({
                             backgroundColor: `${theme.palette.background.default} !important`,
                             color: theme.palette.text.primary,
                             boxShadow: theme.shadows[8],
-                            borderRadius: '14px',
+                            borderRadius: '8px',
                             overflow: 'hidden',
                         },
                         '& .fc-popover-header': {
@@ -1377,14 +1506,17 @@ export function MonthCalendar({
                                 : 'rgba(0, 0, 0, 0.03)',
                             color: theme.palette.text.primary,
                             borderBottom: `1px solid ${theme.palette.divider}`,
-                            padding: '10px 12px',
+                            padding: '7px 10px',
                         },
                         '& .fc-popover-body': {
                             backgroundColor: `${theme.palette.background.default} !important`,
-                            padding: '6px',
+                            padding: '3px 4px',
                         },
                         '& .fc-more-popover .fc-daygrid-event-harness': {
-                            marginBottom: '4px',
+                            marginBottom: '2px',
+                        },
+                        '& .fc-more-popover-misc': {
+                            display: 'none',
                         },
                         '& .fc-popover-close': {
                             color: `${theme.palette.text.secondary} !important`,
@@ -1396,8 +1528,9 @@ export function MonthCalendar({
                             initialView="dayGridMonth"
                             height="100%"
                             events={calendarEvents}
+                            dayCellContent={renderDayCellContent}
                             eventContent={renderEventContent}
-                            eventOrder="groupOrder,start,title"
+                            eventOrder="eventTypeOrder,start,title"
                             eventDidMount={handleEventDidMount}
                             eventClick={handleEventClick}
                             dateClick={handleDateClick}
@@ -1408,17 +1541,18 @@ export function MonthCalendar({
                             headerToolbar={{
                                 left: 'prev,next today',
                                 center: 'title',
-                                right: ''
+                                right: 'dayGridWeek,dayGridMonth'
                             }}
                             buttonText={{
                                 today: 'Today',
+                                month: 'Month',
+                                week: 'Week',
                             }}
                         />
                     </Box>
                         </Box>
                     )}
-                </Box>
-            </HoverCardBox>
+            </Box>
 
             <Dialog
                 open={editingDialogOpen}
@@ -1508,6 +1642,15 @@ export function MonthCalendar({
                 onClose={() => {
                     setTemplateCreationOpen(false);
                     setTemplateEditTarget(null);
+                }}
+            />
+
+            <DayTemplatePreviewPopover
+                template={templatePreview}
+                anchorEl={templatePreviewAnchor}
+                onClose={() => {
+                    setTemplatePreviewAnchor(null);
+                    setTemplatePreview(null);
                 }}
             />
 

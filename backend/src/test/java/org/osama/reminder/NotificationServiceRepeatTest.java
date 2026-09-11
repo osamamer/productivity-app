@@ -37,13 +37,17 @@ class NotificationServiceRepeatTest {
     @Mock
     private SimpMessagingTemplate messagingTemplate;
 
+    @Mock
+    private ExpoPushNotificationService expoPushNotificationService;
+
     private NotificationService notificationService;
     private User user;
 
     @BeforeEach
     void setUp() {
         notificationService = new NotificationService(
-                reminderRepository, cancellationRepository, checkInRepository, messagingTemplate);
+                reminderRepository, cancellationRepository, checkInRepository, messagingTemplate,
+                expoPushNotificationService);
         user = User.builder()
                 .id(USER_ID)
                 .email("repeat@example.com")

@@ -1,0 +1,73 @@
+databaseChangeLog:
+  - changeSet:
+      id: 059-add-pomodoro-sound-preferences
+      author: osama
+      comment: Store each user's selected Pomodoro sound
+      changes:
+        - addColumn:
+            tableName: app_user
+            columns:
+              - column:
+                  name: pomodoro_sound_id
+                  type: varchar(255)
+
+  - changeSet:
+      id: 059-create-pomodoro-sounds
+      author: osama
+      comment: Store private user-uploaded Pomodoro MP3 files
+      changes:
+        - createTable:
+            tableName: pomodoro_sound
+            columns:
+              - column:
+                  name: id
+                  type: varchar(255)
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: name
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: content_type
+                  type: varchar(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: file_size
+                  type: bigint
+                  constraints:
+                    nullable: false
+              - column:
+                  name: audio_data
+                  type: bytea
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: pomodoro_sound
+            baseColumnNames: user_id
+            referencedTableName: app_user
+            referencedColumnNames: id
+            constraintName: fk_app_pomodoro_sound_user
+        - createIndex:
+            tableName: pomodoro_sound
+            indexName: idx_app_pomodoro_sound_user
+            ifNotExists: true
+            columns:
+              - column:
+                  name: user_id
+      rollback:
+        - dropTable:
+            tableName: pomodoro_sound

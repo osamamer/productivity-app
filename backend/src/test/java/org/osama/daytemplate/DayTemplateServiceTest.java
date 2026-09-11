@@ -55,7 +55,10 @@ class DayTemplateServiceTest {
         assertEquals(LocalDate.of(2027, 1, 15), applied.date());
         assertEquals(1, applied.events().size());
         assertEquals(2, applied.tasks().size());
-        assertNotNull(dayRepository.findDayEntityByLocalDateAndUserId(applied.date(), USER_ID).orElse(null));
+        var day = dayRepository.findDayEntityByLocalDateAndUserId(applied.date(), USER_ID).orElse(null);
+        assertNotNull(day);
+        assertEquals(template.id(), day.getAppliedTemplateId());
+        assertEquals(template.name(), day.getAppliedTemplateName());
 
         var event = eventRepository.findById(applied.events().get(0).id()).orElseThrow();
         assertEquals(LocalDate.of(2027, 1, 15), event.getStartTime().atZone(java.time.ZoneOffset.UTC).toLocalDate());

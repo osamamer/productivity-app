@@ -26,7 +26,6 @@ import java.time.ZoneId;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -71,12 +70,9 @@ public class DayOverviewService {
                 .filter(session -> isWithin(session.getStartTime(), window))
                 .sorted(Comparator.comparing(TaskSession::getStartTime, Comparator.nullsLast(Comparator.naturalOrder())))
                 .toList();
-        Set<String> sessionTaskIds = daySessions.stream()
-                .map(TaskSession::getAssociatedTaskId)
-                .collect(Collectors.toSet());
-
         List<DayOverviewResponse.TaskSummary> tasks = userTasks.stream()
-                .filter(task -> isTaskPartOfDay(task, window) || sessionTaskIds.contains(task.getTaskId()))
+                .filter(task -> !task.isSkipped())
+                .filter(task -> isTaskPartOfDay(task, date, window))
                 .sorted(Comparator.comparing(this::taskTime, Comparator.nullsLast(Comparator.naturalOrder()))
                         .thenComparing(Task::getName, String.CASE_INSENSITIVE_ORDER))
                 .map(this::toTaskSummary)
@@ -153,15 +149,18 @@ public class DayOverviewService {
                 .orElse(null);
     }
 
-    private boolean isTaskPartOfDay(Task task, DayWindow window) {
-        return isWithin(task.getScheduledPerformDateTime(), window)
-                || isWithin(task.getCompletionDateTime(), window)
-                || isWithin(task.getCreationDateTime(), window);
+    private boolean isTaskPartOfDay(Task task, LocalDate date, DayWindow window) {
+        LocalDateTime activityTime = task.getCompletionDateTime() != null
+                ? task.getCompletionDateTime()
+                : task.getScheduledPerformDateTime();
+        return activityTime != null
+                && date.equals(activityTime.toLocalDate())
+                && isWithin(activityTime, window);
     }
 
     private LocalDateTime taskTime(Task task) {
-        if (task.getScheduledPerformDateTime() != null) return task.getScheduledPerformDateTime();
         if (task.getCompletionDateTime() != null) return task.getCompletionDateTime();
+        if (task.getScheduledPerformDateTime() != null) return task.getScheduledPerformDateTime();
         return task.getCreationDateTime();
     }
 

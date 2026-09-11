@@ -100,6 +100,7 @@ public class DayTemplateService {
 
         DayTemplate template = findTemplate(templateId, userId);
         dayService.getOrCreateDay(date, userId);
+        dayService.markTemplateApplied(date, template.getId(), template.getName(), userId);
 
         List<CalendarEventResponse> events = new ArrayList<>();
         for (DayTemplateEvent templateEvent : template.getEvents()) {

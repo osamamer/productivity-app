@@ -3,7 +3,7 @@ import {PageWrapper} from "../components/PageWrapper.tsx";
 import {MonthCalendar} from "../components/MonthCalendar.tsx";
 import {useGlobalTasks} from "../hooks/useGlobalTasks";
 import {useEffect, useState} from "react";
-import {dayTemplateService, eventService, taskGroupService, taskService} from "../services/api";
+import {dayService, dayTemplateService, eventService, taskGroupService, taskService} from "../services/api";
 import {TaskToCreate} from "../types/TaskToCreate.tsx";
 import {StatDefinition} from "../types/Stats.ts";
 import {statService} from "../services/api/statService.ts";
@@ -230,8 +230,9 @@ export function CalendarPage() {
         try {
             await Promise.all([
                 ...application.events.map(event => eventService.deleteEvent(event.id)),
-                ...application.tasks.map(task => taskService.deleteTask(task.taskId, { notifyResource: false })),
+                ...application.tasks.map(task => taskService.deleteTaskInstance(task, { notifyResource: false })),
             ]);
+            await dayService.clearAppliedTemplate(application.date);
         } catch (error) {
             console.error('Failed to undo day template application:', error);
             try {

@@ -1,5 +1,5 @@
 // src/services/api/dayService.ts
-import { DayEntity } from '../../types/DayEntity';
+import { DayCalendarEntry, DayEntity } from '../../types/DayEntity';
 import { DayOverview } from '../../types/DayOverview';
 import { getAuthCacheScope, getAuthHeaders } from '../utils/authHeaders';
 import { CachedResource } from '../cache/ttlCache';
@@ -36,6 +36,28 @@ export const dayService = {
             }
             return response.json();
         });
+    },
+
+    async getCalendarDays(from: string, to: string, signal?: AbortSignal): Promise<DayCalendarEntry[]> {
+        const params = new URLSearchParams({ from, to });
+        const response = await fetch(`${DAY_URL}/calendar-days?${params.toString()}`, {
+            headers: getAuthHeaders(),
+            signal,
+        });
+        if (!response.ok) {
+            throw new Error('Failed to fetch calendar days');
+        }
+        return response.json();
+    },
+
+    async clearAppliedTemplate(date: string): Promise<void> {
+        const response = await fetch(`${DAY_URL}/clear-applied-template/${encodeURIComponent(date)}`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+        });
+        if (!response.ok) {
+            throw new Error('Failed to clear applied day template');
+        }
     },
 
     async setTodayInfo(rating: number, plan: string, summary: string): Promise<void> {

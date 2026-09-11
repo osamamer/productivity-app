@@ -47,7 +47,7 @@ export const appConfig = {
   keycloakUrl: resolveOrigin(
     'EXPO_PUBLIC_KEYCLOAK_URL',
     process.env.EXPO_PUBLIC_KEYCLOAK_URL,
-    'http://localhost:7070',
+    'http://localhost:7070/auth',
   ),
   keycloakRealm: process.env.EXPO_PUBLIC_KEYCLOAK_REALM ?? 'productivity-app',
   keycloakClientId:

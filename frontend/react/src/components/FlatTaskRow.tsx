@@ -8,6 +8,7 @@ import {
     Chip,
     CircularProgress,
     Collapse,
+    Fade,
     IconButton,
     LinearProgress,
     Slide,
@@ -97,7 +98,7 @@ export type FlatTaskRowProps = {
     isDragTarget?: boolean;
     dragTargetEdge?: 'before' | 'after';
     isGroupDropTarget?: boolean;
-    onPomodoroActiveChange?: (taskId: string, active: boolean) => void;
+    onPomodoroActiveChange?: (taskId: string, active: boolean, options?: { animate?: boolean }) => void;
     onPomodoroStatusChange?: (taskId: string, status: PomodoroStatus) => void;
     onPomodoroFocusStart?: (taskId: string) => void;
     deferPomodoroHydration?: boolean;
@@ -131,14 +132,27 @@ const subtaskReveal = keyframes`
     }
 `;
 
+function sortSubtasks(items: Task[]): Task[] {
+    return [...items].sort((first, second) => {
+        const firstCreated = Date.parse(first.creationDateTime);
+        const secondCreated = Date.parse(second.creationDateTime);
+        if (Number.isFinite(firstCreated) && Number.isFinite(secondCreated)
+            && firstCreated !== secondCreated) {
+            return firstCreated - secondCreated;
+        }
+        if (first.displayOrder !== second.displayOrder) {
+            return first.displayOrder - second.displayOrder;
+        }
+        return first.taskId.localeCompare(second.taskId);
+    });
+}
+
 const pomodoroPanelReveal = keyframes`
     from {
         opacity: 0;
-        transform: translateY(-5px);
     }
     to {
         opacity: 1;
-        transform: translateY(0);
     }
 `;
 
@@ -294,13 +308,14 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     const [wsConnected, setWsConnected] = useState(false);
     const [actionLoading, setActionLoading] = useState(false);
     const [pomodoroFeedback, setPomodoroFeedback] = useState<PomodoroFeedback | null>(null);
+    const [pomodoroStatusRefreshing, setPomodoroStatusRefreshing] = useState(false);
     const [pomodoroHydrated, setPomodoroHydrated] = useState(!deferPomodoroHydration);
     const [detailsLoading, setDetailsLoading] = useState(false);
     const [whiteNoiseEnabled, setWhiteNoiseEnabledState] = useState(isWhiteNoiseEnabled);
     const taskRef = useRef(task);
     taskRef.current = task;
     const initialTaskDetails = getStaleTaskDetails(task.taskId);
-    const [subtasks, setSubtasks] = useState<Task[]>(() => initialTaskDetails?.subtasks ?? EMPTY_SUBTASKS);
+    const [subtasks, setSubtasks] = useState<Task[]>(() => sortSubtasks(initialTaskDetails?.subtasks ?? EMPTY_SUBTASKS));
     const [newSubtaskId, setNewSubtaskId] = useState<string | null>(null);
     const [editingSubtaskId, setEditingSubtaskId] = useState<string | null>(null);
     const [localSubtaskName, setLocalSubtaskName] = useState('');
@@ -364,7 +379,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     useEffect(() => { setLocalName(task.name ?? ''); }, [task.name]);
 
     const applyTaskDetails = useCallback((details: TaskDetailsCacheEntry) => {
-        setSubtasks(details.subtasks);
+        setSubtasks(sortSubtasks(details.subtasks));
         const nextDraft = recurrenceDraftFromSeries(details.taskSeries);
         taskSeriesRef.current = details.taskSeries;
         recurrenceDraftRef.current = nextDraft;
@@ -388,7 +403,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
             })
             .catch(error => {
                 if (cancelled) return;
-                setSubtasks(previous => cached?.subtasks ?? previous);
+                setSubtasks(previous => cached ? sortSubtasks(cached.subtasks) : previous);
                 setRecurrenceError('Unable to load recurrence.');
                 console.error('Error fetching Home subtasks:', error);
             });
@@ -445,6 +460,8 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     const activePomodoroIdRef = useRef<string | null>(initialPomodoroStatus?.pomodoroId ?? null);
     const endedPomodoroIdRef = useRef<string | null>(null);
     const lastPomodoroStatusRef = useRef<PomodoroStatus | null>(initialPomodoroStatus);
+    const pomodoroStatusRequestIdRef = useRef(0);
+    const clearCompletedPomodoroAfterExitRef = useRef(false);
     const onPomodoroActiveChangeRef = useRef(onPomodoroActiveChange);
     const onPomodoroStatusChangeRef = useRef(onPomodoroStatusChange);
 
@@ -508,6 +525,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                 onPomodoroActiveChangeRef.current?.(task.taskId, false);
                             }
                         } else if (endedPomodoroIdRef.current !== nextStatus.pomodoroId) {
+                            const pomodoroBecameActive = activePomodoroIdRef.current !== nextStatus.pomodoroId;
                             if (previousStatus?.active) {
                                 const wasBreak = isBreakPhase(previousStatus);
                                 const isBreak = isBreakPhase(nextStatus);
@@ -516,6 +534,9 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             }
                             activePomodoroIdRef.current = nextStatus.pomodoroId;
                             lastPomodoroStatusRef.current = nextStatus;
+                            if (pomodoroBecameActive) {
+                                onPomodoroActiveChangeRef.current?.(task.taskId, true);
+                            }
                             setPomodoroStatus(nextStatus);
                             onPomodoroStatusChangeRef.current?.(task.taskId, nextStatus);
                         }
@@ -554,6 +575,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                 if (status?.active && status.associatedTaskId === task.taskId) {
                     activePomodoroIdRef.current = status.pomodoroId;
                     lastPomodoroStatusRef.current = status;
+                    onPomodoroActiveChangeRef.current?.(task.taskId, true);
                     setPomodoroStatus(status);
                     onPomodoroStatusChangeRef.current?.(task.taskId, status);
                     onAutoExpand(task.taskId, 'pomodoro');
@@ -566,6 +588,30 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
             .catch(e => console.error('Error checking pomodoro status:', e));
     }, [expectedPomodoroActive, initialPomodoroStatus, onAutoExpand, pomodoroHydrated, pomodoroStatus?.phase, task.taskId]);
 
+    const refreshPomodoroStatus = useCallback(async () => {
+        const requestId = ++pomodoroStatusRequestIdRef.current;
+        const hideCurrentStatus = Boolean(pomodoroStatus?.active);
+        if (hideCurrentStatus) setPomodoroStatusRefreshing(true);
+
+        try {
+            const status = await taskService.getActivePomodoro();
+            if (requestId !== pomodoroStatusRequestIdRef.current) return;
+
+            if (status?.active && status.associatedTaskId === task.taskId) {
+                activePomodoroIdRef.current = status.pomodoroId;
+                lastPomodoroStatusRef.current = status;
+                setPomodoroStatus(status);
+                onPomodoroStatusChangeRef.current?.(task.taskId, status);
+            }
+        } catch (error) {
+            console.error('Error refreshing pomodoro status:', error);
+        } finally {
+            if (requestId === pomodoroStatusRequestIdRef.current) {
+                setPomodoroStatusRefreshing(false);
+            }
+        }
+    }, [pomodoroStatus?.active, task.taskId]);
+
     const prefetchTaskDetails = useCallback(() => {
         void taskService.getTaskDetails(task).catch(error => {
             console.error('Error prefetching Home task details:', error);
@@ -576,6 +622,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         if (readOnly) return;
         if (panel === 'pomodoro') {
             setPomodoroHydrated(true);
+            if (expandedPanel !== 'pomodoro') void refreshPomodoroStatus();
             onTogglePanel(task.taskId, panel);
             return;
         }
@@ -584,25 +631,27 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
             onTogglePanel(task.taskId, panel);
             return;
         }
-        if (detailsRequestRef.current) return;
 
+        // Show the panel immediately. The request is already deduplicated by
+        // the task-details cache, so waiting here only makes a cold open feel
+        // blocked while the panel has nothing useful to render yet.
+        onTogglePanel(task.taskId, panel);
+        if (detailsRequestRef.current) return;
         setDetailsLoading(true);
         const request = taskService.getTaskDetails(task)
             .then(details => {
                 applyTaskDetails(details);
-                onTogglePanel(task.taskId, panel);
             })
             .catch(error => {
                 setRecurrenceError('Unable to load task details.');
                 console.error('Error loading Home task details:', error);
-                onTogglePanel(task.taskId, panel);
             })
             .finally(() => {
                 if (detailsRequestRef.current === request) detailsRequestRef.current = null;
                 setDetailsLoading(false);
             });
         detailsRequestRef.current = request;
-    }, [applyTaskDetails, expandedPanel, onTogglePanel, readOnly, task]);
+    }, [applyTaskDetails, expandedPanel, onTogglePanel, readOnly, refreshPomodoroStatus, task]);
 
     const handleStart = async () => {
         // Starting before the live timer channel is ready is harmless; the next click can try again.
@@ -715,6 +764,34 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         }
     };
 
+    const handleSubtaskDelete = async (subtask: Task) => {
+        setSubtasks(previous => {
+            const nextSubtasks = previous.filter(item => item.taskId !== subtask.taskId);
+            updateCachedTaskDetails(task.taskId, { subtasks: nextSubtasks }, {
+                task,
+                subtasks: nextSubtasks,
+                taskSeries: taskSeriesRef.current,
+            });
+            return nextSubtasks;
+        });
+
+        try {
+            await taskService.deleteTaskInstance(subtask);
+        } catch (error) {
+            setSubtasks(previous => {
+                if (previous.some(item => item.taskId === subtask.taskId)) return previous;
+                const nextSubtasks = sortSubtasks([...previous, subtask]);
+                updateCachedTaskDetails(task.taskId, { subtasks: nextSubtasks }, {
+                    task,
+                    subtasks: nextSubtasks,
+                    taskSeries: taskSeriesRef.current,
+                });
+                return nextSubtasks;
+            });
+            console.error('Error deleting Home subtask:', error);
+        }
+    };
+
     const startSubtaskEditing = (subtask: Task) => {
         if (readOnly) return;
         subtaskCommitRef.current = null;
@@ -797,7 +874,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                 parentId: task.taskId,
             });
             setSubtasks(previous => {
-                const nextSubtasks = [...previous, createdSubtask];
+                const nextSubtasks = sortSubtasks([...previous, createdSubtask]);
                 updateCachedTaskDetails(task.taskId, { subtasks: nextSubtasks }, {
                     task,
                     subtasks: nextSubtasks,
@@ -1022,6 +1099,9 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     // Break: pomodoro started but not in a focus session
     const waitingForPhase = isWaitingForPhase(pomodoroStatus);
     const isBreak   = isActive && isBreakPhase(pomodoroStatus!);
+    const playPauseLabel = waitingForPhase
+        ? pomodoroStatus?.phase === 'WAITING_FOR_BREAK' ? 'Start break' : 'Start focus session'
+        : pomodoroStatus?.sessionRunning ? 'Pause focus session' : 'Resume focus session';
     // Paused: in a focus session but timer is not ticking
     const isPaused  = isActive && pomodoroStatus!.sessionActive && !pomodoroStatus!.sessionRunning;
     // Both states share the green "at rest" colour on the progress bar
@@ -1293,7 +1373,6 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                     onMouseEnter={prefetchTaskDetails}
                                     onFocus={prefetchTaskDetails}
                                     onPointerDown={prefetchTaskDetails}
-                                    disabled={detailsLoading}
                                     onClick={(e) => {
                                         e.stopPropagation();
                                         handleRowSelection(e);
@@ -1336,17 +1415,28 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                 }}
                 mountOnEnter
                 unmountOnExit
+                onExited={() => {
+                    // Do not render the setup form while the completed panel is closing.
+                    if (!clearCompletedPomodoroAfterExitRef.current) return;
+                    clearCompletedPomodoroAfterExitRef.current = false;
+                    setPomodoroStatus(null);
+                    lastPomodoroStatusRef.current = null;
+                }}
                 sx={{ willChange: 'height', '& .MuiCollapse-wrapper': { willChange: 'height' } }}
             >
-                <Box
-                    sx={{
-                        px: 2,
-                        pb: 2,
-                        pt: 0.5,
-                        animation: `${pomodoroPanelReveal} 220ms cubic-bezier(0.22, 1, 0.36, 1)`,
-                        willChange: 'opacity, transform',
-                    }}
+                <Fade
+                    in={expandedPanel === 'pomodoro' && !pomodoroStatusRefreshing}
+                    timeout={{ enter: 220, exit: 120 }}
                 >
+                    <Box
+                        sx={{
+                            px: 2,
+                            pb: 2,
+                            pt: 0.5,
+                            animation: `${pomodoroPanelReveal} 220ms ease-out`,
+                            willChange: 'opacity',
+                        }}
+                    >
                     {pomodoroCompleted ? (
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minHeight: 52 }}>
                             <CheckCircleOutlineIcon color="success" />
@@ -1359,10 +1449,10 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             <Button
                                 size="small"
                                 variant="outlined"
-                                onClick={() => {
-                                    setPomodoroStatus(null);
-                                    lastPomodoroStatusRef.current = null;
-                                    onPomodoroActiveChange?.(task.taskId, false);
+                                onClick={event => {
+                                    event.stopPropagation();
+                                    clearCompletedPomodoroAfterExitRef.current = true;
+                                    onPomodoroActiveChange?.(task.taskId, false, { animate: true });
                                 }}
                             >
                                 Dismiss
@@ -1455,27 +1545,34 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             </Box>
 
                             <Box sx={{ display: 'flex', gap: 0.5, ml: 'auto' }}>
-                                <Tooltip title={whiteNoiseEnabled ? 'Mute brown noise' : 'Play brown noise'}>
-                                    <IconButton
-                                        size="small"
-                                        onClick={handleWhiteNoiseToggle}
-                                        disabled={actionLoading}
-                                        color={whiteNoiseEnabled ? 'primary' : 'default'}
-                                        aria-label={whiteNoiseEnabled ? 'Mute brown noise' : 'Play brown noise'}
-                                    >
-                                        {whiteNoiseEnabled ? <VolumeUpIcon /> : <VolumeOffIcon />}
-                                    </IconButton>
+                                <Tooltip title={whiteNoiseEnabled ? 'Mute focus audio' : 'Play focus audio'}>
+                                    <span>
+                                        <IconButton
+                                            size="small"
+                                            onClick={handleWhiteNoiseToggle}
+                                            disabled={actionLoading}
+                                            color={whiteNoiseEnabled ? 'primary' : 'default'}
+                                            aria-label={whiteNoiseEnabled ? 'Mute focus audio' : 'Play focus audio'}
+                                        >
+                                            {whiteNoiseEnabled ? <VolumeUpIcon /> : <VolumeOffIcon />}
+                                        </IconButton>
+                                    </span>
                                 </Tooltip>
                                 {(waitingForPhase || !isBreak) && (
-                                    <IconButton
-                                        size="small"
-                                        onClick={handlePlayPause}
-                                        disabled={actionLoading}
-                                        color={pomodoroStatus!.phase === 'WAITING_FOR_BREAK' ? 'inherit' : 'primary'}
-                                        sx={pomodoroStatus!.phase === 'WAITING_FOR_BREAK' ? { color: pomodoroGreen } : undefined}
-                                    >
-                                        {!waitingForPhase && pomodoroStatus!.sessionRunning ? <PauseIcon /> : <PlayArrowIcon />}
-                                    </IconButton>
+                                    <Tooltip title={playPauseLabel}>
+                                        <span>
+                                            <IconButton
+                                                size="small"
+                                                onClick={handlePlayPause}
+                                                disabled={actionLoading}
+                                                color={pomodoroStatus!.phase === 'WAITING_FOR_BREAK' ? 'inherit' : 'primary'}
+                                                aria-label={playPauseLabel}
+                                                sx={pomodoroStatus!.phase === 'WAITING_FOR_BREAK' ? { color: pomodoroGreen } : undefined}
+                                            >
+                                                {!waitingForPhase && pomodoroStatus!.sessionRunning ? <PauseIcon /> : <PlayArrowIcon />}
+                                            </IconButton>
+                                        </span>
+                                    </Tooltip>
                                 )}
                                 {pomodoroStatus!.phase === 'BREAK' && (
                                     <Tooltip title="End break and start the next focus session">
@@ -1485,19 +1582,31 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                                 onClick={handleFinishBreak}
                                                 disabled={actionLoading}
                                                 color="primary"
+                                                aria-label="End break and start the next focus session"
                                             >
                                                 <SkipNextIcon />
                                             </IconButton>
                                         </span>
                                     </Tooltip>
                                 )}
-                                <IconButton size="small" onClick={handleStop} disabled={actionLoading} color="error">
-                                    <StopIcon />
-                                </IconButton>
+                                <Tooltip title="End Pomodoro session">
+                                    <span>
+                                        <IconButton
+                                            size="small"
+                                            onClick={handleStop}
+                                            disabled={actionLoading}
+                                            color="error"
+                                            aria-label="End Pomodoro session"
+                                        >
+                                            <StopIcon />
+                                        </IconButton>
+                                    </span>
+                                </Tooltip>
                             </Box>
                         </Box>
                     )}
-                </Box>
+                    </Box>
+                </Fade>
             </Collapse>
 
             {/* ── Details panel ── */}
@@ -1771,6 +1880,21 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                             </Typography>
                                         )}
                                     </Box>
+                                    {!readOnly && (
+                                        <IconButton
+                                            size="small"
+                                            color="error"
+                                            onClick={event => {
+                                                event.stopPropagation();
+                                                void handleSubtaskDelete(subtask);
+                                            }}
+                                            aria-label={`Delete subtask ${subtask.name}`}
+                                            title="Delete subtask"
+                                            sx={{ ml: 0.5 }}
+                                        >
+                                            <DeleteOutlineIcon fontSize="small" />
+                                        </IconButton>
+                                    )}
                                 </Box>
                             );
                         })}

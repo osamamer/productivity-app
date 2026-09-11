@@ -3,6 +3,9 @@
   "enabled": true,
   "registrationAllowed": true,
   "loginTheme": "productivity",
+  "attributes": {
+    "frontendUrl": "http://localhost:5173/auth"
+  },
   "clients": [
     {
       "clientId": "productivity-app-frontend",

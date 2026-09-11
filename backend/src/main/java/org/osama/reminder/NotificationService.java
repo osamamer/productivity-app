@@ -31,6 +31,7 @@ public class NotificationService {
     private static final long PUSH_RETRY_SECONDS = 30;
     private static final long CHECKUP_REPEAT_MINUTES = 30;
     private static final String USER_DESTINATION = "/queue/notifications";
+    public static final String DEFAULT_CHANNEL_ID = "default";
     public static final String CHECKUP_TITLE = "Check-Up";
     public static final String CHECKUP_BODY = "Time to check what your state is.";
     public static final String CHECKUP_TARGET_URL = "/mental-state";
@@ -39,15 +40,18 @@ public class NotificationService {
     private final CalendarEventCancellationRepository cancellationRepository;
     private final MentalStateCheckInRepository checkInRepository;
     private final SimpMessagingTemplate messagingTemplate;
+    private final ExpoPushNotificationService expoPushNotificationService;
 
     public NotificationService(ReminderRepository reminderRepository,
                                CalendarEventCancellationRepository cancellationRepository,
                                MentalStateCheckInRepository checkInRepository,
-                               SimpMessagingTemplate messagingTemplate) {
+                               SimpMessagingTemplate messagingTemplate,
+                               ExpoPushNotificationService expoPushNotificationService) {
         this.reminderRepository = reminderRepository;
         this.cancellationRepository = cancellationRepository;
         this.checkInRepository = checkInRepository;
         this.messagingTemplate = messagingTemplate;
+        this.expoPushNotificationService = expoPushNotificationService;
     }
 
     @Scheduled(fixedDelayString = "${app.notifications.dispatch-delay-ms:5000}")
@@ -74,9 +78,13 @@ public class NotificationService {
             }
             messagingTemplate.convertAndSendToUser(
                     keycloakId, USER_DESTINATION, NotificationMessage.from(reminder));
+            boolean remotePushAccepted = expoPushNotificationService.send(reminder);
+            // Record the attempt even if Expo is temporarily unavailable. The
+            // existing retry window will try again without hot-looping every five seconds;
+            // the unacknowledged reminder remains available through the durable inbox.
             reminder.setDispatchedAt(now);
-            log.debug("Notification push attempted: userId={} notificationId={} type={}",
-                    reminder.getUserId(), reminder.getReminderId(), reminder.getNotificationType());
+            log.debug("Notification push attempted: userId={} notificationId={} type={} remotePushAccepted={}",
+                    reminder.getUserId(), reminder.getReminderId(), reminder.getNotificationType(), remotePushAccepted);
         }
     }
 

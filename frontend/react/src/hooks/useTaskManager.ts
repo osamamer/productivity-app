@@ -1,8 +1,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Task } from '../types/Task';
-import { TASK_PAGE_BATCH_SIZE, taskService } from '../services/api';
+import { taskService } from '../services/api';
 import { subscribeToResourceInvalidation } from '../services/cache/resourceInvalidation';
-import { getShowCompletedHomeTasks } from '../services/utils/homePreferences';
 
 export type TaskLoadMode = 'all' | 'taskPage';
 
@@ -81,7 +80,9 @@ function withTaskBuckets(previous: TaskState, allTasks: Task[]): TaskState {
 }
 
 function createInitialTaskState(): TaskState {
-    const cachedTasks = taskService.getCachedMainTasks() ?? [];
+    const cachedTasks = taskService.getCachedMainTasks()
+        ?? taskService.getCachedTodayTasks()
+        ?? [];
     const state = {
         allTasks: [],
         todayTasks: [],
@@ -102,10 +103,15 @@ export function useTaskManager() {
     const [taskState, setTaskState] = useState<TaskState>(createInitialTaskState);
     const [loading, setLoading] = useState(() => taskService.getCachedMainTasks() === undefined);
     const [tasksLoaded, setTasksLoaded] = useState(() => taskService.getCachedMainTasks() !== undefined);
+    const [todayTasksLoaded, setTodayTasksLoaded] = useState(
+        () => taskService.getCachedMainTasks() !== undefined || taskService.getCachedTodayTasks() !== undefined,
+    );
     const [taskLoadVersion, setTaskLoadVersion] = useState(0);
     const [error, setError] = useState<string | null>(null);
     const allTasksRequestRef = useRef<Promise<void> | null>(null);
     const allTasksLoadModeRef = useRef<TaskLoadMode>('all');
+    const tasksLoadedRef = useRef(tasksLoaded);
+    const loadedTaskSnapshotRef = useRef(taskState.allTasks);
 
     const {
         allTasks,
@@ -125,48 +131,38 @@ export function useTaskManager() {
         loadMode: TaskLoadMode = allTasksLoadModeRef.current,
     ) => {
         if (allTasksRequestRef.current) {
+            allTasksLoadModeRef.current = loadMode;
             return allTasksRequestRef.current;
         }
 
         const request = (async () => {
+            const showLoading = !tasksLoadedRef.current;
             try {
-                const previousLoadMode = allTasksLoadModeRef.current;
                 allTasksLoadModeRef.current = loadMode;
-                if (previousLoadMode !== loadMode) {
-                    setTaskState(previous => ({
-                        ...previous,
-                        allTasks: [],
-                        todayTasks: [],
-                        futureTasks: [],
-                        pastTasks: [],
-                        undatedTasks: [],
-                        highlightedTask: null,
-                    }));
-                }
-                setLoading(true);
+                if (showLoading) setLoading(true);
                 setError(null);
-                const completedFilter = loadMode === 'taskPage' && !getShowCompletedHomeTasks()
-                    ? false
-                    : undefined;
-                const tasks = loadMode === 'taskPage'
-                    ? await taskService.getTaskPageInitialTasks(TASK_PAGE_BATCH_SIZE, completedFilter, force)
-                    : await taskService.getAllMainTasks(force);
-                setTaskState(prev => {
-                    const next = withTaskBuckets(prev, tasks);
-                    return {
-                        ...next,
-                        // Keep the user's current selection across refreshes. On the
-                        // first load, select the same fallback task as before.
-                        highlightedTask: prev.highlightedTask
-                            ?? (loadMode === 'taskPage' ? null : tasks[tasks.length - 1] ?? null),
-                    };
-                });
-                setTaskLoadVersion(previous => previous + 1);
+                const tasks = await taskService.getAllMainTasks(force);
+                const snapshotChanged = loadedTaskSnapshotRef.current !== tasks;
+                loadedTaskSnapshotRef.current = tasks;
+                if (snapshotChanged) {
+                    setTaskState(prev => {
+                        const next = withTaskBuckets(prev, tasks);
+                        return {
+                            ...next,
+                            // Keep the user's current selection across refreshes. On the
+                            // first load, select the same fallback task as before.
+                            highlightedTask: prev.highlightedTask
+                                ?? (loadMode === 'taskPage' ? null : tasks[tasks.length - 1] ?? null),
+                        };
+                    });
+                    setTaskLoadVersion(previous => previous + 1);
+                }
             } catch (err) {
                 setError(err instanceof Error ? err.message : 'Failed to fetch tasks');
                 console.error('Error fetching all tasks:', err);
             } finally {
-                setLoading(false);
+                if (showLoading) setLoading(false);
+                tasksLoadedRef.current = true;
                 setTasksLoaded(true);
             }
         })();
@@ -184,7 +180,15 @@ export function useTaskManager() {
     const fetchTodayTasks = useCallback(async () => {
         try {
             const tasks = await taskService.getTodayTasks();
-            setTaskState(prev => ({ ...prev, todayTasks: tasks }));
+            setTaskState(prev => {
+                // Home can render this smaller snapshot while the complete
+                // task list is still being reconciled in the background.
+                if (prev.allTasks.length === 0) {
+                    return withTaskBuckets(prev, tasks);
+                }
+                return { ...prev, todayTasks: reuseTaskList(prev.todayTasks, tasks) };
+            });
+            setTodayTasksLoaded(true);
         } catch (err) {
             console.error('Error fetching today tasks:', err);
         }
@@ -362,6 +366,7 @@ export function useTaskManager() {
         highlightedTask,
         loading,
         tasksLoaded,
+        todayTasksLoaded,
         taskLoadVersion,
         error,
         // Setters
@@ -389,6 +394,7 @@ export function useTaskManager() {
         highlightedTask,
         loading,
         tasksLoaded,
+        todayTasksLoaded,
         taskLoadVersion,
         error,
         setHighlightedTask,

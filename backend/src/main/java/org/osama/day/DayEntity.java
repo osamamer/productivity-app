@@ -22,6 +22,10 @@ public class DayEntity {
     private String plan;
     @Column
     private String summary;
+    @Column(name = "applied_template_id", length = 36)
+    private String appliedTemplateId;
+    @Column(name = "applied_template_name", length = 120)
+    private String appliedTemplateName;
     @Column
     @JsonSerialize(using = LocalDateSerializer.class)
     @JsonDeserialize(using = LocalDateDeserializer.class)

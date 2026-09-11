@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import {
     Box,
     Button,
-    Checkbox,
     CircularProgress,
     Collapse,
     Alert,
@@ -36,15 +35,20 @@ import ReplayIcon from '@mui/icons-material/Replay';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import NotificationsNoneIcon from '@mui/icons-material/NotificationsNone';
 import { taskGroupService, taskService } from '../services/api';
+import { invalidateResource } from '../services/cache/resourceInvalidation';
 import { Task } from '../types/Task';
 import { TaskGroup } from '../types/TaskGroup';
 import { PageWrapper } from '../components/PageWrapper';
 import { useGlobalTasks } from '../hooks/useGlobalTasks';
 import { useUser } from '../hooks/useUser';
 import { SmartTaskInput } from '../components/input/SmartTaskInput';
+import { GroupTaskInputRow } from '../components/task/GroupTaskInputRow';
 import { FlatTaskRow } from '../components/FlatTaskRow';
 import { TaskToCreate } from '../types/TaskToCreate';
-import { getShowCompletedHomeTasks } from '../services/utils/homePreferences';
+import {
+    getExcludeTodayCompletedHomeTasks,
+    getShowCompletedHomeTasks,
+} from '../services/utils/homePreferences';
 import { getAuthCacheScope } from '../services/utils/authHeaders';
 import { PomodoroStatus } from '../types/PomodoroStatus';
 import { celebrateStatLogged } from '../services/statCelebration';
@@ -54,7 +58,7 @@ import { findKeyboardDeleteAnchor, useKeyboardDelete } from '../hooks/useKeyboar
 import { TaskReminderPicker } from '../components/task/TaskReminderPicker';
 
 type ActiveExpansion = { taskId: string; panel: 'pomodoro' | 'details' } | null;
-type FocusVisibility = 'all' | 'fading' | 'sliding' | 'hidden' | 'revealing';
+type FocusVisibility = 'all' | 'fading' | 'sliding' | 'hidden' | 'revealing' | 'returning';
 type DropEdge = 'before' | 'after';
 type GroupDropIntent = DropEdge | 'inside';
 type GroupTaskDropPlacement = { targetTaskId: string; edge: DropEdge };
@@ -62,6 +66,7 @@ type BulkAction = 'complete' | 'reopen' | 'move-to-today' | 'move-to-date' | 'cl
 type DeleteRequest =
     | { kind: 'single' | 'bulk'; tasks: Task[]; anchorEl: HTMLElement }
     | { kind: 'group'; group: TaskGroup; tasks: Task[]; anchorEl: HTMLElement };
+type DeleteScope = 'occurrence' | 'series';
 type TaskContextMenuState = { task: Task; top: number; left: number; anchorEl: HTMLElement };
 type TaskReminderEditorState = { taskId: string; top: number; left: number };
 type TaskFeedback = {
@@ -79,6 +84,7 @@ type PendingHomeDateEdit = {
     latestDateTime: string | null;
     originalIndex: number;
 };
+
 type TaskListItem =
     | { kind: 'task'; task: Task }
     | { kind: 'group'; group: TaskGroup; tasks: Task[] };
@@ -93,6 +99,45 @@ type TodayDropPlacement =
     | { kind: 'task'; targetTaskId: string; edge: DropEdge }
     | { kind: 'group'; targetGroup: TaskGroup; edge: DropEdge }
     | { kind: 'edge'; edge: 'top' | 'bottom' };
+
+function requestHasRecurringTasks(request: DeleteRequest): boolean {
+    return request.tasks.some(task => Boolean(task.taskSeriesId));
+}
+
+function tasksForDeleteScope(request: DeleteRequest, scope: DeleteScope, allTasks: Task[]): Task[] {
+    if (scope === 'occurrence') return request.tasks;
+
+    const selectedTaskIds = new Set(request.tasks.map(task => task.taskId));
+    const selectedSeriesIds = new Set(
+        request.tasks
+            .map(task => task.taskSeriesId)
+            .filter((seriesId): seriesId is string => Boolean(seriesId)),
+    );
+    const affectedTasks = new Map(request.tasks.map(task => [task.taskId, task]));
+    allTasks.forEach(task => {
+        if (selectedSeriesIds.has(task.taskSeriesId ?? '')) affectedTasks.set(task.taskId, task);
+    });
+
+    return [...affectedTasks.values()].filter(task => (
+        selectedTaskIds.has(task.taskId) || selectedSeriesIds.has(task.taskSeriesId ?? '')
+    ));
+}
+
+async function deleteTasksForScope(tasks: Task[], scope: DeleteScope): Promise<void> {
+    const deletedSeriesIds = new Set<string>();
+    const options = { notifyResource: false };
+    await Promise.all(tasks.flatMap(task => {
+        if (scope === 'series' && task.taskSeriesId) {
+            if (deletedSeriesIds.has(task.taskSeriesId)) return [];
+            deletedSeriesIds.add(task.taskSeriesId);
+            return [taskService.deleteTask(task.taskId, options)];
+        }
+
+        return [scope === 'occurrence'
+            ? taskService.deleteTaskInstance(task, options)
+            : taskService.deleteTask(task.taskId, options)];
+    }));
+}
 
 const HOME_ACTIVE_EXPANSION_STORAGE_KEY = 'home-active-expansion';
 
@@ -133,10 +178,23 @@ const greetingReveal = keyframes`
 
 const focusTaskSlide = keyframes`
     from {
+        opacity: 0;
         transform: translateY(var(--focus-task-offset, 0px));
     }
     to {
+        opacity: 1;
         transform: translateY(0);
+    }
+`;
+
+const focusTaskReturn = keyframes`
+    from {
+        opacity: 1;
+        transform: translateY(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateY(var(--focus-task-offset, 0px));
     }
 `;
 
@@ -165,19 +223,8 @@ const buttonFadeIn = keyframes`
     to { opacity: 1; }
 `;
 
-const groupTaskInputReveal = keyframes`
-    from {
-        opacity: 0;
-        transform: translateY(-6px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-`;
-
-const TASKS_FADE_DURATION_MS = 140;
-const FOCUS_TASK_SLIDE_DURATION_MS = 650;
+const TASKS_FADE_DURATION_MS = 220;
+const FOCUS_TASK_SLIDE_DURATION_MS = 520;
 const SELECTION_ACTIONS_EDGE_PADDING = 12;
 const SELECTION_ACTIONS_GAP = 4;
 const SELECTION_ACTIONS_FALLBACK_WIDTH = 136;
@@ -192,6 +239,7 @@ let hasAnimatedHomeGreeting = false;
 function buildTaskListItems(tasks: Task[], groups: TaskGroup[]): TaskListItem[] {
     const visibleTaskIds = new Set(tasks.map(task => task.taskId));
     const groupByTaskId = new Map<string, TaskGroup>();
+    const tasksByGroupId = new Map<string, Task[]>();
 
     [...groups]
         .sort((first, second) => first.displayOrder - second.displayOrder)
@@ -202,6 +250,14 @@ function buildTaskListItems(tasks: Task[], groups: TaskGroup[]): TaskListItem[] 
                 }
             });
         });
+
+    tasks.forEach(task => {
+        const groupId = groupByTaskId.get(task.taskId)?.groupId;
+        if (!groupId) return;
+        const groupTasks = tasksByGroupId.get(groupId);
+        if (groupTasks) groupTasks.push(task);
+        else tasksByGroupId.set(groupId, [task]);
+    });
 
     const emittedGroupIds = new Set<string>();
     const items: TaskListItem[] = [];
@@ -218,7 +274,7 @@ function buildTaskListItems(tasks: Task[], groups: TaskGroup[]): TaskListItem[] 
         items.push({
             kind: 'group',
             group,
-            tasks: tasks.filter(candidate => groupByTaskId.get(candidate.taskId)?.groupId === group.groupId),
+            tasks: tasksByGroupId.get(group.groupId) ?? [],
         });
     });
 
@@ -271,11 +327,17 @@ type AnimatedTaskListProps = {
     items: TaskListItem[];
     renderItem: (item: TaskListItem) => React.ReactNode;
     onAnimatingChange?: (animating: boolean) => void;
+    animateRemovals?: boolean;
 };
 
 const TASK_EXIT_DURATION_MS = 180;
 
-function AnimatedTaskList({ items, renderItem, onAnimatingChange }: AnimatedTaskListProps) {
+function AnimatedTaskList({
+    items,
+    renderItem,
+    onAnimatingChange,
+    animateRemovals = true,
+}: AnimatedTaskListProps) {
     const [displayedItems, setDisplayedItems] = useState(items);
     const [exitingItemIds, setExitingItemIds] = useState<Set<string>>(() => new Set());
     const displayedItemsRef = useRef(items);
@@ -284,6 +346,18 @@ function AnimatedTaskList({ items, renderItem, onAnimatingChange }: AnimatedTask
     const exitTimersRef = useRef(new Map<string, number>());
 
     useEffect(() => {
+        if (!animateRemovals) {
+            exitTimersRef.current.forEach(timerId => window.clearTimeout(timerId));
+            exitTimersRef.current.clear();
+            exitingItemIdsRef.current.clear();
+            currentItemIdsRef.current = new Set(items.map(taskListItemId));
+            displayedItemsRef.current = items;
+            setDisplayedItems(items);
+            setExitingItemIds(new Set());
+            onAnimatingChange?.(false);
+            return;
+        }
+
         const nextItemIds = new Set(items.map(taskListItemId));
         const previousItems = displayedItemsRef.current;
         const removedItems = previousItems.filter(item => !nextItemIds.has(taskListItemId(item)));
@@ -342,20 +416,22 @@ function AnimatedTaskList({ items, renderItem, onAnimatingChange }: AnimatedTask
             setExitingItemIds(new Set(exitingItemIdsRef.current));
             onAnimatingChange?.(true);
         }
-    }, [items, onAnimatingChange]);
+    }, [animateRemovals, items, onAnimatingChange]);
 
     useEffect(() => () => {
         exitTimersRef.current.forEach(timerId => window.clearTimeout(timerId));
     }, []);
 
+    const renderedItems = animateRemovals ? displayedItems : items;
+
     return (
         <>
-            {displayedItems.map(item => {
+            {renderedItems.map(item => {
                 const itemId = taskListItemId(item);
                 return (
                     <Collapse
                         key={itemId}
-                        in={!exitingItemIds.has(itemId)}
+                        in={animateRemovals ? !exitingItemIds.has(itemId) : true}
                         timeout={TASK_EXIT_DURATION_MS}
                         unmountOnExit
                     >
@@ -366,110 +442,6 @@ function AnimatedTaskList({ items, renderItem, onAnimatingChange }: AnimatedTask
         </>
     );
 }
-
-type GroupTaskInputRowProps = {
-    groupName: string;
-    onSubmit: (task: TaskToCreate) => void;
-    onEscape: () => void;
-    onBlur: () => void;
-    animate?: boolean;
-};
-
-const GroupTaskInputRow = React.forwardRef<HTMLDivElement, GroupTaskInputRowProps>(function GroupTaskInputRow({
-    groupName,
-    onSubmit,
-    onEscape,
-    onBlur,
-    animate = false,
-}, ref) {
-    const [importance, setImportance] = useState(0);
-    const checkboxColor = importance > 7
-        ? '#ef4444'
-        : importance > 4
-            ? '#eab308'
-            : importance > 0
-                ? '#1976d2'
-                : 'text.disabled';
-
-    return (
-        <Box
-            ref={ref}
-            onClick={event => event.stopPropagation()}
-            sx={{
-                position: 'relative',
-                borderRadius: 1.5,
-                border: '1.5px solid transparent',
-                backgroundColor: 'transparent',
-                overflow: 'hidden',
-                mb: 0.25,
-                transition: 'background-color 0.2s',
-                animation: animate ? `${groupTaskInputReveal} 180ms ease-out` : 'none',
-                '&:hover': { backgroundColor: 'action.hover' },
-            }}
-        >
-            <Box sx={{ display: 'flex', alignItems: 'center', py: 0.75, px: 0.5 }}>
-                <Checkbox
-                    size="small"
-                    checked={false}
-                    disabled
-                    sx={{
-                        color: checkboxColor,
-                        '&.Mui-disabled': { color: checkboxColor },
-                        mr: 0.5,
-                    }}
-                />
-                <Box sx={{ flex: 1, minWidth: 0, position: 'relative' }}>
-                    <SmartTaskInput
-                        defaultToToday
-                        autoFocus
-                        placeholder="Add to group"
-                        submitOnBlur
-                        onSubmit={onSubmit}
-                        onEscape={onEscape}
-                        onBlur={onBlur}
-                        onImportanceChange={setImportance}
-                        showMetadataChips={false}
-                        multiline
-                        minRows={1}
-                        maxRows={4}
-                        inputProps={{
-                            draggable: false,
-                            'aria-label': `New task in ${groupName}`,
-                        }}
-                        textFieldSx={{
-                            '& .MuiInput-underline:before, & .MuiInput-underline:after, & .MuiInput-underline:hover:not(.Mui-disabled):before': {
-                                borderBottom: 'none',
-                            },
-                            '& .MuiInputBase-root': {
-                                height: '100%',
-                                padding: 0,
-                            },
-                            '& .MuiInputBase-input': {
-                                color: 'text.primary',
-                                fontSize: '1.05rem',
-                                lineHeight: 1.5,
-                                whiteSpace: 'pre-wrap',
-                                maxHeight: '100%',
-                                overflowY: 'auto',
-                                overflowX: 'hidden',
-                                overflowWrap: 'anywhere',
-                                wordBreak: 'break-word',
-                                hyphens: 'auto',
-                                textAlign: 'left',
-                                padding: 0,
-                            },
-                            '& input::placeholder, & textarea::placeholder': {
-                                color: 'text.disabled',
-                                opacity: 1,
-                            },
-                        }}
-                    />
-                </Box>
-            </Box>
-        </Box>
-    );
-});
-GroupTaskInputRow.displayName = 'GroupTaskInputRow';
 
 function sameTaskGroup(first: TaskGroup, second: TaskGroup): boolean {
     return first.groupId === second.groupId
@@ -612,6 +584,7 @@ export function HomePage() {
     const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(
         () => new Set((cachedGroups ?? []).map(group => group.groupId)),
     );
+    const [mountedGroupIds, setMountedGroupIds] = useState<Set<string>>(new Set());
     const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
     const groupNameInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
     const [draggedTaskIds, setDraggedTaskIds] = useState<string[]>([]);
@@ -623,7 +596,6 @@ export function HomePage() {
     const [dragTargetBottom, setDragTargetBottom] = useState(false);
     const [activePomodoroTaskId, setActivePomodoroTaskId] = useState<string | null>(null);
     const [initialPomodoroStatus, setInitialPomodoroStatus] = useState<PomodoroStatus | null>(null);
-    const [pomodoroStatusResolved, setPomodoroStatusResolved] = useState(false);
     const [pomodoroTaskMinimized, setPomodoroTaskMinimized] = useState(false);
     const [focusVisibility, setFocusVisibility] = useState<FocusVisibility>('all');
     const [focusTaskOffset, setFocusTaskOffset] = useState(0);
@@ -715,16 +687,18 @@ export function HomePage() {
         todayTasks,
         pastTasks,
         tasksLoaded,
+        todayTasksLoaded,
         refreshTaskBuckets,
         addTaskToState,
         replaceTaskInState,
         updateTaskInState,
         removeTaskFromState,
         reorderTasksInState,
-    } = useGlobalTasks();
+    } = useGlobalTasks({ prioritizeToday: true });
 
     const visibleTasks = useMemo(
         () => {
+            const showCompletedToday = getShowCompletedHomeTasks() || !getExcludeTodayCompletedHomeTasks();
             const todayTaskIds = new Set(todayTasks.map(task => task.taskId));
             const pendingDateTasks = pendingHomeDateTaskIds
                 .map(taskId => allTasks.find(task => task.taskId === taskId))
@@ -740,7 +714,7 @@ export function HomePage() {
                 tasksInOriginalOrder.splice(Math.min(originalIndex, tasksInOriginalOrder.length), 0, task);
             });
             return tasksInOriginalOrder
-                .filter(task => !task.parentId && (getShowCompletedHomeTasks() || !task.completed));
+                .filter(task => !task.parentId && (showCompletedToday || !task.completed));
         },
         [allTasks, pendingHomeDateTaskIds, todayTasks],
     );
@@ -847,7 +821,7 @@ export function HomePage() {
         return entities;
     }, [focusedPomodoroTask, collapsedGroupIds, olderTaskListItems, showOlderTasks, taskListItems]);
 
-    const homeContentReady = tasksLoaded && pomodoroStatusResolved && groups !== null;
+    const homeContentReady = (tasksLoaded || todayTasksLoaded) && groups !== null;
 
     const updateSelectionActionsPosition = useCallback(() => {
         if (!selectionActionsVisible) {
@@ -1141,10 +1115,11 @@ export function HomePage() {
         if (!deleteSubmitting) setDeleteRequest(null);
     }
 
-    function confirmDelete() {
+    function confirmDelete(scope: DeleteScope = 'occurrence') {
         if (!deleteRequest || deleteSubmitting) return;
 
         const request = deleteRequest;
+        const tasksToDelete = tasksForDeleteScope(request, scope, allTasks);
         const previousGroups = groups ?? [];
         const previousCollapsedGroupIds = new Set(collapsedGroupIds);
         const previousTaskOrder = allTasks.map(task => task.taskId);
@@ -1152,7 +1127,7 @@ export function HomePage() {
         setDeleteSubmitting(false);
 
         if (request.kind === 'group') {
-            request.tasks.forEach(task => removeTaskFromState(task.taskId));
+            tasksToDelete.forEach(task => removeTaskFromState(task.taskId));
             setGroups(previous => (previous ?? []).filter(group => group.groupId !== request.group.groupId));
             setCollapsedGroupIds(previous => {
                 const next = new Set(previous);
@@ -1160,14 +1135,14 @@ export function HomePage() {
                 return next;
             });
         } else {
-            request.tasks.forEach(task => removeTaskFromState(task.taskId));
-            removeTasksFromGroups(request.tasks.map(task => task.taskId));
+            tasksToDelete.forEach(task => removeTaskFromState(task.taskId));
+            removeTasksFromGroups(tasksToDelete.map(task => task.taskId));
         }
         clearSelection();
 
         const restoreDeletedTasks = () => {
-            request.tasks.forEach(task => addTaskToState(task));
-            reorderTasksInState([...previousTaskOrder, ...request.tasks.map(task => task.taskId)]);
+            tasksToDelete.forEach(task => addTaskToState(task));
+            reorderTasksInState([...previousTaskOrder, ...tasksToDelete.map(task => task.taskId)]);
             setGroups(previousGroups);
             setCollapsedGroupIds(previousCollapsedGroupIds);
         };
@@ -1176,7 +1151,8 @@ export function HomePage() {
                 if (request.kind === 'group') {
                     await taskGroupService.deleteGroup(request.group.groupId);
                 }
-                await Promise.all(request.tasks.map(task => taskService.deleteTask(task.taskId)));
+                await deleteTasksForScope(tasksToDelete, scope);
+                invalidateResource('tasks');
             } catch (err) {
                 console.error(`Error deleting ${request.kind === 'group' ? 'group' : request.kind === 'bulk' ? 'selected tasks' : 'task'}:`, err);
                 await Promise.all([refreshTaskBuckets(true), refreshGroups()]);
@@ -1188,7 +1164,7 @@ export function HomePage() {
                 ? 'Group deleted'
                 : request.kind === 'bulk'
                     ? `${request.tasks.length} tasks deleted`
-                    : 'Task deleted',
+                    : scope === 'series' ? 'Task series deleted' : 'Task deleted',
             restoreDeletedTasks,
             commitDelete,
             'error',
@@ -1283,6 +1259,18 @@ export function HomePage() {
         );
     }, []);
 
+    useEffect(() => {
+        if (!activeExpansion) return undefined;
+
+        const timeoutId = window.setTimeout(() => {
+            const taskRow = Array.from(document.querySelectorAll<HTMLElement>('[data-task-id]'))
+                .find(row => row.dataset.taskId === activeExpansion.taskId);
+            taskRow?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 320);
+
+        return () => window.clearTimeout(timeoutId);
+    }, [activeExpansion]);
+
     const handleAutoExpand = useCallback((taskId: string, panel: 'pomodoro') => {
         setActiveExpansion(previous => (
             previous?.taskId === taskId && previous.panel === panel
@@ -1294,7 +1282,9 @@ export function HomePage() {
     const handleTaskSelection = useCallback((task: Task, event: React.MouseEvent<HTMLElement>) => {
         event.stopPropagation();
         const taskId = task.taskId;
-        if (activeExpansion?.taskId && activeExpansion.taskId !== taskId) {
+        const keepActivePomodoroOpen = activeExpansion?.panel === 'pomodoro'
+            && activeExpansion.taskId === activePomodoroTaskIdRef.current;
+        if (activeExpansion?.taskId && activeExpansion.taskId !== taskId && !keepActivePomodoroOpen) {
             setActiveExpansion(null);
         }
         const anchorId = selectionAnchorRef.current;
@@ -1489,12 +1479,25 @@ export function HomePage() {
         }
 
         clearFocusTransitionTimer();
-        setFocusVisibility('all');
         setActiveExpansion(previous =>
             previous?.taskId === taskId && previous.panel === 'pomodoro' ? null : previous,
         );
 
         if (activePomodoroTaskIdRef.current !== taskId) return;
+
+        if (options?.animate === true && !pomodoroTaskMinimized) {
+            setFocusVisibility('returning');
+            focusTransitionTimerRef.current = window.setTimeout(() => {
+                activePomodoroTaskIdRef.current = null;
+                latestPomodoroStatusRef.current = null;
+                setActivePomodoroTaskId(null);
+                setInitialPomodoroStatus(null);
+                setPomodoroTaskMinimized(false);
+                setFocusVisibility('all');
+                focusTransitionTimerRef.current = null;
+            }, FOCUS_TASK_SLIDE_DURATION_MS);
+            return;
+        }
 
         activePomodoroTaskIdRef.current = null;
         latestPomodoroStatusRef.current = null;
@@ -1502,7 +1505,7 @@ export function HomePage() {
         setInitialPomodoroStatus(null);
         setPomodoroTaskMinimized(false);
         setFocusVisibility('all');
-    }, [clearFocusTransitionTimer, finishFocusTransition, rememberFocusTaskPosition]);
+    }, [clearFocusTransitionTimer, finishFocusTransition, pomodoroTaskMinimized, rememberFocusTaskPosition]);
 
     useEffect(() => {
         let cancelled = false;
@@ -1513,10 +1516,7 @@ export function HomePage() {
                 setInitialPomodoroStatus(status);
                 handlePomodoroActiveChange(status.associatedTaskId, true, { animate: false });
             })
-            .catch(error => console.error('Error checking active pomodoro:', error))
-            .finally(() => {
-                if (!cancelled) setPomodoroStatusResolved(true);
-            });
+            .catch(error => console.error('Error checking active pomodoro:', error));
 
         return () => {
             cancelled = true;
@@ -1546,6 +1546,10 @@ export function HomePage() {
         const activeTaskId = activePomodoroTaskIdRef.current;
         if (activeTaskId === null || activeTaskId === taskId) {
             latestPomodoroStatusRef.current = status;
+            if (status.phase === 'COMPLETED') {
+                // Keep a remounted focus row from hydrating the stale active snapshot.
+                setInitialPomodoroStatus(status);
+            }
         }
     }, []);
 
@@ -2151,7 +2155,9 @@ export function HomePage() {
     function clearSelection() {
         setSelectedTaskIds([]);
         setSelectedGroupIds([]);
-        setActiveExpansion(null);
+        const keepActivePomodoroOpen = activeExpansion?.panel === 'pomodoro'
+            && activeExpansion.taskId === activePomodoroTaskIdRef.current;
+        if (!keepActivePomodoroOpen) setActiveExpansion(null);
         setBulkDateAnchorEl(null);
         setGroupAnchorEl(null);
         setGroupName('');
@@ -2246,13 +2252,14 @@ export function HomePage() {
 
         // Put the new task in the same position as the server-created task before
         // either network request completes. The temporary ID is reconciled below.
-        addTaskToState(optimisticTask);
-        reorderTasksInState(taskOrder);
         setGroups(previous => (previous ?? []).map(existingGroup =>
             existingGroup.groupId === group.groupId
                 ? { ...existingGroup, taskIds: optimisticTaskIds }
                 : existingGroup,
         ));
+        addTaskToState(optimisticTask);
+        reorderTasksInState(taskOrder);
+        setMountedGroupIds(previous => new Set(previous).add(group.groupId));
         setCollapsedGroupIds(previous => {
             if (!previous.has(group.groupId)) return previous;
 
@@ -2265,21 +2272,21 @@ export function HomePage() {
         try {
             const createdTask = await taskService.createTask(taskToCreate);
             createdTaskId = createdTask.taskId;
-            replaceTaskInState(optimisticTaskId, createdTask);
             const nextTaskIds = optimisticTaskIds.map(taskId =>
                 taskId === optimisticTaskId ? createdTask.taskId : taskId,
             );
             const nextTaskOrder = taskOrder.map(taskId =>
                 taskId === optimisticTaskId ? createdTask.taskId : taskId,
             );
-            reorderTasksInState(nextTaskOrder);
-            await taskService.reorderTasks(nextTaskOrder);
             setGroups(previous => replaceTaskIdInGroup(
                 previous,
                 group.groupId,
                 optimisticTaskId,
                 createdTask.taskId,
             ));
+            replaceTaskInState(optimisticTaskId, createdTask);
+            reorderTasksInState(nextTaskOrder);
+            await taskService.reorderTasks(nextTaskOrder);
 
             const updatedGroup = await taskGroupService.replaceTasks(group.groupId, nextTaskIds);
             setGroups(previous => replaceTaskGroupIfChanged(previous, updatedGroup));
@@ -2299,6 +2306,7 @@ export function HomePage() {
     function startTaskInGroup(groupId: string) {
         if (groupTaskSubmissionRef.current) return;
         setGroupAddingTaskId(groupId);
+        setMountedGroupIds(previous => new Set(previous).add(groupId));
         setCollapsedGroupIds(previous => {
             if (!previous.has(groupId)) return previous;
 
@@ -2333,6 +2341,9 @@ export function HomePage() {
     }
 
     function toggleGroup(groupId: string) {
+        setMountedGroupIds(previous => (
+            previous.has(groupId) ? previous : new Set(previous).add(groupId)
+        ));
         setCollapsedGroupIds(previous => {
             const next = new Set(previous);
             if (next.has(groupId)) next.delete(groupId);
@@ -2450,39 +2461,40 @@ export function HomePage() {
     ) {
         const reorderable = options.reorderable ?? true;
         return (
-            <FlatTaskRow
-                key={task.taskId}
-                task={task}
-                onToggle={toggleTaskCompletion}
-                onUpdate={updateTask}
-                expandedPanel={activeExpansion?.taskId === task.taskId ? activeExpansion.panel : null}
-                onTogglePanel={handleTogglePanel}
-                onAutoExpand={handleAutoExpand}
-                onDelete={deleteTask}
-                selected={selectedTaskIdSet.has(task.taskId) || selectedGroupTaskIdSet.has(task.taskId)}
-                editRequestId={editRequest?.taskId === task.taskId ? editRequest.requestId : null}
-                onSelectionClick={handleTaskSelection}
-                onContextMenu={handleTaskContextMenu}
-                showScheduledDate={options.showScheduledDate}
-                reorderable={reorderable}
-                draggable={options.draggable ?? reorderable}
-                onDragStart={handleTaskDragStart}
-                onDragOver={handleTaskDragOver}
-                onDrop={handleTaskDrop}
-                onDragEnd={finishDragging}
-                isDragging={draggedTaskIds.includes(task.taskId) || draggedTaskId === task.taskId}
-                isDragTarget={dragTargetTaskId === task.taskId}
-                dragTargetEdge={dragTargetPosition === 'after' ? 'after' : 'before'}
-                isGroupDropTarget={dragTargetTaskId === task.taskId && dragTargetPosition === 'inside'}
-                onPomodoroActiveChange={handlePomodoroActiveChange}
-                onPomodoroStatusChange={handlePomodoroStatusChange}
-                onPomodoroFocusStart={handlePomodoroFocusStart}
-                onRefreshTasks={() => refreshTaskBuckets(true)}
-                deferPomodoroHydration={task.taskId !== activePomodoroTaskId}
-                initialPomodoroStatus={task.taskId === activePomodoroTaskId ? initialPomodoroStatus : null}
-                expectedPomodoroActive={task.taskId === activePomodoroTaskId}
-                onScheduledDateBlur={handleScheduledDateBlur}
-            />
+            <Box key={task.taskId} sx={{ contentVisibility: 'auto', containIntrinsicSize: '52px' }}>
+                <FlatTaskRow
+                    task={task}
+                    onToggle={toggleTaskCompletion}
+                    onUpdate={updateTask}
+                    expandedPanel={activeExpansion?.taskId === task.taskId ? activeExpansion.panel : null}
+                    onTogglePanel={handleTogglePanel}
+                    onAutoExpand={handleAutoExpand}
+                    onDelete={deleteTask}
+                    selected={selectedTaskIdSet.has(task.taskId) || selectedGroupTaskIdSet.has(task.taskId)}
+                    editRequestId={editRequest?.taskId === task.taskId ? editRequest.requestId : null}
+                    onSelectionClick={handleTaskSelection}
+                    onContextMenu={handleTaskContextMenu}
+                    showScheduledDate={options.showScheduledDate}
+                    reorderable={reorderable}
+                    draggable={options.draggable ?? reorderable}
+                    onDragStart={handleTaskDragStart}
+                    onDragOver={handleTaskDragOver}
+                    onDrop={handleTaskDrop}
+                    onDragEnd={finishDragging}
+                    isDragging={draggedTaskIds.includes(task.taskId) || draggedTaskId === task.taskId}
+                    isDragTarget={dragTargetTaskId === task.taskId}
+                    dragTargetEdge={dragTargetPosition === 'after' ? 'after' : 'before'}
+                    isGroupDropTarget={dragTargetTaskId === task.taskId && dragTargetPosition === 'inside'}
+                    onPomodoroActiveChange={handlePomodoroActiveChange}
+                    onPomodoroStatusChange={handlePomodoroStatusChange}
+                    onPomodoroFocusStart={handlePomodoroFocusStart}
+                    onRefreshTasks={() => refreshTaskBuckets(true)}
+                    deferPomodoroHydration={task.taskId !== activePomodoroTaskId}
+                    initialPomodoroStatus={task.taskId === activePomodoroTaskId ? initialPomodoroStatus : null}
+                    expectedPomodoroActive={task.taskId === activePomodoroTaskId}
+                    onScheduledDateBlur={handleScheduledDateBlur}
+                />
+            </Box>
         );
     }
 
@@ -2737,15 +2749,8 @@ export function HomePage() {
                             <DeleteOutlineIcon sx={{ fontSize: '1.1rem' }} />
                         </IconButton>
                     </Box>
-                    <Collapse
-                        in={!collapsed}
-                        timeout={210}
-                        unmountOnExit
-                        sx={{
-                            willChange: 'height',
-                            '& .MuiCollapse-wrapper': { willChange: 'height' },
-                        }}
-                    >
+                    {mountedGroupIds.has(item.group.groupId) && (
+                    <Collapse in={!collapsed} timeout={210} appear>
                         <Box
                             data-task-group-content={item.group.groupId}
                             onDragOver={reorderable ? (event) => {
@@ -2824,6 +2829,7 @@ export function HomePage() {
                             {item.tasks.map(task => renderTaskRow(task, options))}
                         </Box>
                     </Collapse>
+                    )}
                 </Box>
             );
         });
@@ -2836,7 +2842,8 @@ export function HomePage() {
     const showTasksBelowFocus = !focusedPomodoroTask
         || focusVisibility === 'all'
         || focusVisibility === 'fading'
-        || focusVisibility === 'revealing';
+        || focusVisibility === 'revealing'
+        || focusVisibility === 'returning';
 
     return (
         <PageWrapper>
@@ -2972,11 +2979,14 @@ export function HomePage() {
                                         '--focus-task-offset': `${focusTaskOffset}px`,
                                         opacity: focusVisibility === 'fading' ? 0 : 1,
                                         pointerEvents: focusVisibility === 'fading' ? 'none' : 'auto',
-                                        transition: 'opacity 180ms ease-out',
-                                        willChange: focusVisibility === 'sliding' ? 'transform, opacity' : 'opacity',
-                                        animation: focusVisibility === 'sliding' && focusTaskOffset !== 0
+                                        willChange: focusVisibility === 'sliding' || focusVisibility === 'returning'
+                                            ? 'transform, opacity'
+                                            : 'auto',
+                                        animation: focusVisibility === 'sliding'
                                             ? `${focusTaskSlide} ${FOCUS_TASK_SLIDE_DURATION_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`
-                                            : 'none',
+                                            : focusVisibility === 'returning'
+                                                ? `${focusTaskReturn} ${FOCUS_TASK_SLIDE_DURATION_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`
+                                                : 'none',
                                     }}
                                 >
                                     {renderTaskRow(focusedPomodoroTask)}
@@ -2987,7 +2997,10 @@ export function HomePage() {
                                 <Button
                                     size="small"
                                     startIcon={<VisibilityIcon />}
-                                    onClick={showAllTasks}
+                                    onClick={event => {
+                                        event.stopPropagation();
+                                        showAllTasks();
+                                    }}
                                     sx={{
                                         mt: 1,
                                         mb: 0.75,
@@ -3001,17 +3014,16 @@ export function HomePage() {
                             {showTasksBelowFocus && (
                                 <Box
                                     sx={{
-                                        animation: focusVisibility === 'revealing'
-                                            ? `${tasksFadeBack} 260ms ease-out`
-                                            : 'none',
-                                        willChange: focusVisibility === 'fading' || focusVisibility === 'revealing'
+                                        animation: focusVisibility === 'fading'
+                                            ? `${tasksFadeAway} ${TASKS_FADE_DURATION_MS}ms ease-out forwards`
+                                            : focusVisibility === 'revealing' || focusVisibility === 'returning'
+                                                ? `${tasksFadeBack} 260ms ease-out`
+                                                : 'none',
+                                        willChange: focusVisibility === 'fading'
+                                            || focusVisibility === 'revealing'
+                                            || focusVisibility === 'returning'
                                             ? 'opacity, transform'
                                             : 'auto',
-                                        '& [data-task-id]:not([data-pomodoro-focus-task="true"]), & [data-task-group-header="true"]': {
-                                            animation: focusVisibility === 'fading'
-                                                ? `${tasksFadeAway} ${TASKS_FADE_DURATION_MS}ms ease-out forwards`
-                                                : 'none',
-                                        },
                                         pointerEvents: focusVisibility === 'fading' ? 'none' : 'auto',
                                     }}
                                 >
@@ -3051,6 +3063,7 @@ export function HomePage() {
                                         items={taskListItems}
                                         renderItem={item => renderTaskList([item])}
                                         onAnimatingChange={setHomeTaskListAnimating}
+                                        animateRemovals={focusVisibility !== 'fading'}
                                     />
                                     {(
                                         <Box
@@ -3301,14 +3314,14 @@ export function HomePage() {
                         <Box>
                             <Typography variant="body2" sx={{ mb: 1.25 }}>
                                 {deleteRequest.kind === 'group'
-                                    ? `Delete “${deleteRequest.group.name}” and its ${deleteRequest.tasks.length} tasks${deleteRequest.tasks.some(task => task.taskSeriesId) ? ' and their recurring series' : ''}?`
+                                    ? `Delete “${deleteRequest.group.name}” and its ${deleteRequest.tasks.length} task${deleteRequest.tasks.length === 1 ? '' : 's'}?`
                                     : deleteRequest.kind === 'bulk'
-                                    ? `Delete ${deleteRequest.tasks.length} selected task${deleteRequest.tasks.length > 1 ? 's' : ''}${deleteRequest.tasks.some(task => task.taskSeriesId) ? ' and their recurring series' : ' and their subtasks'}?`
+                                    ? `Delete ${deleteRequest.tasks.length} selected task${deleteRequest.tasks.length > 1 ? 's' : ''}?`
                                     : deleteRequest.tasks[0].taskSeriesId
-                                    ? `Delete “${deleteRequest.tasks[0].name}” and all occurrences in its series?`
+                                    ? `Delete instance of “${deleteRequest.tasks[0].name}”?`
                                     : `Delete “${deleteRequest.tasks[0].name}” and its subtasks?`}
                             </Typography>
-                            <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 0.75 }}>
+                            <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 0.5 }}>
                                 <Button size="small" onClick={closeDeleteRequest} disabled={deleteSubmitting}>Cancel</Button>
                                 {deleteRequest.kind === 'group' && (
                                     <Button
@@ -3319,15 +3332,36 @@ export function HomePage() {
                                         Ungroup
                                     </Button>
                                 )}
-                                <Button
-                                    size="small"
-                                    color="error"
-                                    variant="contained"
-                                    onClick={() => void confirmDelete()}
-                                    disabled={deleteSubmitting}
-                                >
-                                    {deleteSubmitting ? <CircularProgress size={16} color="inherit" /> : 'Delete'}
-                                </Button>
+                                {requestHasRecurringTasks(deleteRequest) ? (
+                                    <>
+                                        <Button
+                                            size="small"
+                                            onClick={() => void confirmDelete('occurrence')}
+                                            disabled={deleteSubmitting}
+                                        >
+                                            Delete instance(s)
+                                        </Button>
+                                        <Button
+                                            size="small"
+                                            color="error"
+                                            variant="contained"
+                                            onClick={() => void confirmDelete('series')}
+                                            disabled={deleteSubmitting}
+                                        >
+                                            {deleteSubmitting ? 'Deleting…' : 'Delete series'}
+                                        </Button>
+                                    </>
+                                ) : (
+                                    <Button
+                                        size="small"
+                                        color="error"
+                                        variant="contained"
+                                        onClick={() => void confirmDelete()}
+                                        disabled={deleteSubmitting}
+                                    >
+                                        {deleteSubmitting ? <CircularProgress size={16} color="inherit" /> : 'Delete'}
+                                    </Button>
+                                )}
                             </Box>
                         </Box>
                     )}

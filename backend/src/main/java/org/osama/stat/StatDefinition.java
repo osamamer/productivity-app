@@ -48,6 +48,10 @@ public class StatDefinition {
     @Column(name = "recurring_task_series_id", unique = true)
     private String recurringTaskSeriesId;
 
+    // Optional exact task-name filter used to include historical Pomodoro time.
+    @Column(name = "focus_task_name")
+    private String focusTaskName;
+
     @Column(name = "display_order", nullable = false)
     private Integer displayOrder;
 

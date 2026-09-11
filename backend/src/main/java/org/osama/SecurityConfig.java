@@ -35,6 +35,7 @@ public class SecurityConfig {
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(new AntPathRequestMatcher("/actuator/health")).permitAll()
+                .requestMatchers(new AntPathRequestMatcher("/api/v1/auth/register", "POST")).permitAll()
                 // WebSocket upgrade is an HTTP request but the JWT cannot be sent as a
                 // standard Bearer header by the browser WebSocket API; token auth is handled
                 // via STOMP connectHeaders instead.

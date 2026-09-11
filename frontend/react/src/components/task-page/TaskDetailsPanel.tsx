@@ -30,7 +30,9 @@ import {
     subscribeToTaskPomodoroStatsInvalidation,
 } from '../../services/cache/taskPomodoroStatsCache';
 import {
+    getCachedTaskDetails,
     getStaleTaskDetails,
+    setCachedTaskDetails,
     updateCachedTaskDetails,
 } from '../../services/cache/taskDetailsCache';
 
@@ -66,6 +68,7 @@ type PomodoroStatsState = {
 type SubtaskListProps = {
     items: Task[];
     onToggle: (subtask: Task) => Promise<void>;
+    onDelete: (subtask: Task) => void;
 };
 
 const PRIORITY_OPTIONS = [
@@ -77,6 +80,21 @@ const PRIORITY_OPTIONS = [
 const EMPTY_SUBTASKS: Task[] = [];
 const TASK_NAME_SCALE_START = 48;
 const TASK_NAME_SCALE_END = 240;
+
+function sortSubtasks(items: Task[]): Task[] {
+    return [...items].sort((first, second) => {
+        const firstCreated = Date.parse(first.creationDateTime);
+        const secondCreated = Date.parse(second.creationDateTime);
+        if (Number.isFinite(firstCreated) && Number.isFinite(secondCreated)
+            && firstCreated !== secondCreated) {
+            return firstCreated - secondCreated;
+        }
+        if (first.displayOrder !== second.displayOrder) {
+            return first.displayOrder - second.displayOrder;
+        }
+        return first.taskId.localeCompare(second.taskId);
+    });
+}
 
 function areSubtasksEqual(previous: Task[], next: Task[]): boolean {
     if (previous.length !== next.length) return false;
@@ -221,7 +239,7 @@ const SubtaskComposer = React.memo(function SubtaskComposer({
     );
 });
 
-const SubtaskList = React.memo(function SubtaskList({ items, onToggle }: SubtaskListProps) {
+const SubtaskList = React.memo(function SubtaskList({ items, onToggle, onDelete }: SubtaskListProps) {
     return (
         <>
             {items.map(subtask => (
@@ -242,6 +260,16 @@ const SubtaskList = React.memo(function SubtaskList({ items, onToggle }: Subtask
                     >
                         {subtask.name}
                     </Typography>
+                    <IconButton
+                        size="small"
+                        color="error"
+                        onClick={() => onDelete(subtask)}
+                        aria-label={`Delete subtask ${subtask.name}`}
+                        title="Delete subtask"
+                        sx={{ ml: 'auto' }}
+                    >
+                        <DeleteOutlineRoundedIcon fontSize="small" />
+                    </IconButton>
                 </Box>
             ))}
         </>
@@ -268,6 +296,7 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
         recurrenceDraftFromSeries(initialTaskDetails?.taskSeries),
     );
     const [recurrenceError, setRecurrenceError] = useState<string | null>(null);
+    const [subtaskError, setSubtaskError] = useState<string | null>(null);
     const recurrenceDraftRef = useRef<TaskRecurrenceDraft>(
         recurrenceDraftFromSeries(initialTaskDetails?.taskSeries),
     );
@@ -280,7 +309,7 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
         : taskDescription;
     const [subtaskState, setSubtaskState] = useState<SubtaskState>({
         taskId: task.taskId,
-        items: initialTaskDetails?.subtasks ?? EMPTY_SUBTASKS,
+        items: sortSubtasks(initialTaskDetails?.subtasks ?? EMPTY_SUBTASKS),
         loading: !initialTaskDetails,
     });
     const cachedTaskDetails = getStaleTaskDetails(task.taskId);
@@ -288,7 +317,7 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
         ? subtaskState
         : {
             taskId: task.taskId,
-            items: cachedTaskDetails?.subtasks ?? EMPTY_SUBTASKS,
+            items: sortSubtasks(cachedTaskDetails?.subtasks ?? EMPTY_SUBTASKS),
             loading: !cachedTaskDetails,
         };
     const initialPomodoroStats = getStaleTaskPomodoroStats(task.taskId) ?? null;
@@ -311,14 +340,30 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
     useEffect(() => {
         let cancelled = false;
         const taskId = task.taskId;
+        const fresh = getCachedTaskDetails(taskId);
         const cached = getStaleTaskDetails(taskId);
+        let loadedSubtasks = sortSubtasks(fresh?.subtasks ?? cached?.subtasks ?? EMPTY_SUBTASKS);
+        let loadedSeries = fresh?.taskSeries ?? cached?.taskSeries ?? null;
+        let subtasksLoaded = Boolean(fresh);
+        let seriesLoaded = Boolean(fresh) || !task.taskSeriesId;
+
+        const cacheCompleteDetails = () => {
+            if (!subtasksLoaded || !seriesLoaded) return;
+            setCachedTaskDetails(taskId, {
+                task,
+                subtasks: loadedSubtasks,
+                taskSeries: loadedSeries,
+            });
+        };
+
         setRecurrenceError(null);
+        setSubtaskError(null);
         if (cached) {
             const nextDraft = recurrenceDraftFromSeries(cached.taskSeries);
             taskSeriesRef.current = cached.taskSeries;
             recurrenceDraftRef.current = nextDraft;
             setRecurrenceDraft(nextDraft);
-            setSubtaskState({ taskId, items: cached.subtasks, loading: false });
+            setSubtaskState({ taskId, items: sortSubtasks(cached.subtasks), loading: !fresh });
         } else {
             taskSeriesRef.current = null;
             recurrenceDraftRef.current = defaultTaskRecurrence();
@@ -326,20 +371,25 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
             setSubtaskState({ taskId, items: EMPTY_SUBTASKS, loading: true });
         }
 
-        taskService.getTaskDetails(task)
-            .then(details => {
+        if (fresh) {
+            return () => {
+                cancelled = true;
+            };
+        }
+
+        void taskService.getSubtasks(taskId)
+            .then(subtasks => {
                 if (cancelled) return;
-                const nextDraft = recurrenceDraftFromSeries(details.taskSeries);
-                taskSeriesRef.current = details.taskSeries;
-                recurrenceDraftRef.current = nextDraft;
-                setRecurrenceDraft(nextDraft);
+                loadedSubtasks = sortSubtasks(subtasks);
+                subtasksLoaded = true;
                 setSubtaskState(previous => {
                     const items = previous.taskId === taskId
-                        && areSubtasksEqual(previous.items, details.subtasks)
+                        && areSubtasksEqual(previous.items, loadedSubtasks)
                         ? previous.items
-                        : details.subtasks;
+                        : loadedSubtasks;
                     return { taskId, items, loading: false };
                 });
+                cacheCompleteDetails();
             })
             .catch(error => {
                 if (cancelled) return;
@@ -348,8 +398,28 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
                     items: previous.taskId === taskId ? previous.items : cached?.subtasks ?? EMPTY_SUBTASKS,
                     loading: false,
                 }));
-                setRecurrenceError('Unable to load task details.');
-                console.error('Error fetching task details:', error);
+                setSubtaskError('Unable to load subtasks.');
+                console.error('Error fetching task subtasks:', error);
+            });
+
+        const taskSeriesPromise = task.taskSeriesId
+            ? taskService.getTaskSeries(taskId, task.taskSeriesId)
+            : Promise.resolve(null);
+        void taskSeriesPromise
+            .then(series => {
+                if (cancelled) return;
+                loadedSeries = series;
+                seriesLoaded = true;
+                const nextDraft = recurrenceDraftFromSeries(series);
+                taskSeriesRef.current = series;
+                recurrenceDraftRef.current = nextDraft;
+                setRecurrenceDraft(nextDraft);
+                cacheCompleteDetails();
+            })
+            .catch(error => {
+                if (cancelled) return;
+                setRecurrenceError('Unable to load recurrence.');
+                console.error('Error fetching task recurrence:', error);
             });
 
         return () => {
@@ -515,7 +585,7 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
         });
         setSubtaskState(previous => {
             if (previous.taskId !== task.taskId) return previous;
-            const items = [...previous.items, createdSubtask];
+            const items = sortSubtasks([...previous.items, createdSubtask]);
             updateCachedTaskDetails(task.taskId, { subtasks: items }, {
                 task,
                 subtasks: items,
@@ -524,6 +594,38 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
             return { ...previous, items };
         });
     }, [onCreateSubtask, task]);
+
+    const handleDeleteSubtask = useCallback(async (subtask: Task) => {
+        setSubtaskState(previous => {
+            if (previous.taskId !== task.taskId) return previous;
+            const items = previous.items.filter(item => item.taskId !== subtask.taskId);
+            updateCachedTaskDetails(task.taskId, { subtasks: items }, {
+                task,
+                subtasks: items,
+                taskSeries: taskSeriesRef.current,
+            });
+            return { ...previous, items };
+        });
+
+        try {
+            await taskService.deleteTaskInstance(subtask);
+        } catch (error) {
+            setSubtaskState(previous => {
+                if (previous.taskId !== task.taskId
+                    || previous.items.some(item => item.taskId === subtask.taskId)) {
+                    return previous;
+                }
+                const items = sortSubtasks([...previous.items, subtask]);
+                updateCachedTaskDetails(task.taskId, { subtasks: items }, {
+                    task,
+                    subtasks: items,
+                    taskSeries: taskSeriesRef.current,
+                });
+                return { ...previous, items };
+            });
+            console.error('Error deleting subtask:', error);
+        }
+    }, [task]);
 
     const handleToggleSubtask = useCallback(async (subtask: Task) => {
         const completed = !subtask.completed;
@@ -797,7 +899,16 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
                         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
                             Subtasks {displayedSubtasks.length > 0 ? `· ${displayedSubtasks.filter(subtask => subtask.completed).length}/${displayedSubtasks.length}` : ''}
                         </Typography>
-                        <SubtaskList items={displayedSubtasks} onToggle={handleToggleSubtask} />
+                        <SubtaskList
+                            items={displayedSubtasks}
+                            onToggle={handleToggleSubtask}
+                            onDelete={subtask => void handleDeleteSubtask(subtask)}
+                        />
+                        {subtaskError && (
+                            <Typography variant="caption" color="error" sx={{ display: 'block', mt: 0.75 }}>
+                                {subtaskError}
+                            </Typography>
+                        )}
                         {!visibleSubtaskState.loading && (
                             <SubtaskComposer taskId={task.taskId} onSubmit={handleCreateSubtask} />
                         )}

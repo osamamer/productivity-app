@@ -28,6 +28,37 @@ import { AppNumberField } from '../input/AppNumberField';
 
 const CIRCLE_SIZE = 24;
 const THRESHOLD_COLOR_TRANSITION = 0.75;
+const SLEEP_GREEN_BAND_MINUTES = 60;
+const SLEEP_BAD_COLOR_RANGE_MINUTES = 3 * 60;
+
+function isSleepStat(def: StatDefinition): boolean {
+    return def.systemKey === 'sleep_hours'
+        || def.systemKey === 'sleep_time'
+        || def.systemKey === 'wake_up_time';
+}
+
+function sleepGoodDirectionImprovement(def: StatDefinition, value: number): number {
+    return def.type === 'TIME'
+        ? timeValueToScale(def, def.goodThreshold!) - timeValueToScale(def, value)
+        : value - def.goodThreshold!;
+}
+
+function sleepColorHue(def: StatDefinition, value: number): number {
+    const improvement = sleepGoodDirectionImprovement(def, value);
+    if (improvement >= -SLEEP_GREEN_BAND_MINUTES) {
+        const greenProgress = Math.min(
+            1,
+            (improvement + SLEEP_GREEN_BAND_MINUTES) / (2 * SLEEP_GREEN_BAND_MINUTES),
+        );
+        return 90 + greenProgress * 30;
+    }
+
+    const redProgress = Math.min(
+        1,
+        (-improvement - SLEEP_GREEN_BAND_MINUTES) / SLEEP_BAD_COLOR_RANGE_MINUTES,
+    );
+    return 90 * (1 - redProgress);
+}
 
 function getThresholdGoodnessRatio(
     value: number,
@@ -70,6 +101,8 @@ function thresholdColorProgress(def: StatDefinition, value: number): number | nu
 }
 
 function getThresholdCircleBg(def: StatDefinition, value: number, theme: Theme): string | null {
+    if (isSleepStat(def)) return `hsl(${Math.round(sleepColorHue(def, value))}, 65%, 42%)`;
+
     const goodnessRatio = thresholdGoodnessRatio(def, value);
     if (goodnessRatio == null) return null;
 
@@ -85,6 +118,10 @@ function getThresholdCircleBg(def: StatDefinition, value: number, theme: Theme):
 }
 
 function getCircleTextColor(def: StatDefinition, value: number, theme: Theme): string {
+    if (isSleepStat(def)) {
+        return sleepColorHue(def, value) >= 90 ? theme.palette.common.white : '#111827';
+    }
+
     const progress = thresholdColorProgress(def, value);
     if (progress != null && progress < 0.72) return '#111827';
     return def.type === 'TIME' || def.type === 'DURATION'

@@ -121,6 +121,11 @@ export function CalendarEventForm({
     const [deleteMenuAnchor, setDeleteMenuAnchor] = useState<HTMLElement | null>(null);
     const [deleteScope, setDeleteScope] = useState<DeleteScope | null>(null);
     const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
+    const isRepeatingOccurrence = Boolean(
+        event
+        && (event.recurrenceFrequency ?? 'NONE') !== 'NONE'
+        && occurrenceKey
+    );
 
     const customReminderOption = useMemo(
         () => REMINDER_OPTIONS.some(option => option.value === reminderMinutes) ? null : reminderMinutes,
@@ -186,7 +191,7 @@ export function CalendarEventForm({
             startTime: startInstant,
             endTime: endInstant,
             timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
-            status: event && occurrenceKey ? event.status : status,
+            status: isRepeatingOccurrence ? event!.status : status,
             recurrenceFrequency,
             recurrenceEndDate: recurrenceFrequency === 'NONE' || !recurrenceEndDate ? null : recurrenceEndDate,
             recurrenceInterval: recurrenceFrequency === 'CUSTOM' ? recurrenceInterval : null,
@@ -202,7 +207,7 @@ export function CalendarEventForm({
         setSaving(true);
         setError(null);
         try {
-            if (event && occurrenceKey && statusOverride === undefined
+            if (isRepeatingOccurrence && statusOverride === undefined
                 && onUpdateOccurrenceStatus && status !== occurrenceStatus) {
                 await onUpdateOccurrenceStatus(status);
             }

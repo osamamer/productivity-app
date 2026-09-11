@@ -155,10 +155,12 @@ configure_mobile_sign_in() {
   echo "Applying the mobile sign-in configuration..."
   for attempt in {1..10}; do
     if "${compose[@]}" exec -T keycloak /opt/keycloak/bin/kcadm.sh config credentials \
-      --server http://localhost:8080 \
+      --server http://localhost:8080/auth \
       --realm "${admin_realm}" \
       --user "${KEYCLOAK_ADMIN_USER}" \
       --password "${KEYCLOAK_ADMIN_PASSWORD}" >/dev/null 2>&1 \
+      && "${compose[@]}" exec -T keycloak /opt/keycloak/bin/kcadm.sh update "realms/${realm}" \
+        -s attributes.frontendUrl="https://${APP_DOMAIN}/auth" >/dev/null 2>&1 \
       && client_id=$("${compose[@]}" exec -T keycloak /opt/keycloak/bin/kcadm.sh get clients \
         -r "${realm}" \
         -q "clientId=${client_name}" \

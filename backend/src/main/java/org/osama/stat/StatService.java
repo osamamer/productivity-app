@@ -19,6 +19,7 @@ import java.time.Duration;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
@@ -26,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -91,14 +93,29 @@ public class StatService {
                                            TaskRecurrenceFrequency recurrenceFrequency,
                                            List<DayOfWeek> recurrenceDaysOfWeek,
                                            String userId) {
+        return createDefinition(name, description, type, minValue, maxValue, morality, goodThreshold,
+                createRecurringTask, recurrenceFrequency, recurrenceDaysOfWeek, null, userId);
+    }
+
+    @Transactional
+    public StatDefinition createDefinition(String name, String description, StatType type,
+                                           Double minValue, Double maxValue,
+                                           StatMorality morality, Double goodThreshold,
+                                           boolean createRecurringTask,
+                                           TaskRecurrenceFrequency recurrenceFrequency,
+                                           List<DayOfWeek> recurrenceDaysOfWeek,
+                                           String requestedTimeOfDay,
+                                           String userId) {
         User user = userRepository.findUserById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
 
-        validateDefinition(name, type, minValue, maxValue, morality, goodThreshold, userId, null);
-        StatDefinition definition = saveDefinition(name, description, type, minValue, maxValue,
+        String normalizedName = normalizeName(name);
+        validateDefinition(normalizedName, type, minValue, maxValue, morality, goodThreshold, userId, null);
+        StatDefinition definition = saveDefinition(normalizedName, description, type, minValue, maxValue,
                 morality, goodThreshold, null, user);
         return createRecurringTask
-                ? createRecurringTask(definition.getId(), userId, null, recurrenceFrequency, recurrenceDaysOfWeek)
+                ? createRecurringTask(definition.getId(), userId, null, recurrenceFrequency,
+                recurrenceDaysOfWeek, requestedTimeOfDay)
                 : definition;
     }
 
@@ -113,9 +130,10 @@ public class StatService {
             throw new IllegalArgumentException("Cannot edit a system stat.");
         }
 
-        validateDefinition(name, definition.getType(), definition.getMinValue(),
+        String normalizedName = normalizeName(name);
+        validateDefinition(normalizedName, definition.getType(), definition.getMinValue(),
                 definition.getMaxValue(), morality, goodThreshold, userId, definitionId);
-        definition.setName(name);
+        definition.setName(normalizedName);
         definition.setDescription(description);
         definition.setMorality(morality);
         definition.setGoodThreshold(goodThreshold);
@@ -141,6 +159,15 @@ public class StatService {
     public StatDefinition createRecurringTask(String definitionId, String userId, String requestedTimeZone,
                                               TaskRecurrenceFrequency recurrenceFrequency,
                                               List<DayOfWeek> recurrenceDaysOfWeek) {
+        return createRecurringTask(definitionId, userId, requestedTimeZone, recurrenceFrequency,
+                recurrenceDaysOfWeek, null);
+    }
+
+    @Transactional
+    public StatDefinition createRecurringTask(String definitionId, String userId, String requestedTimeZone,
+                                              TaskRecurrenceFrequency recurrenceFrequency,
+                                              List<DayOfWeek> recurrenceDaysOfWeek,
+                                              String requestedTimeOfDay) {
         StatDefinition definition = definitionRepository.findByIdAndUserId(definitionId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("No such stat."));
         if (definition.getType() != StatType.BOOLEAN) {
@@ -158,9 +185,11 @@ public class StatService {
         } catch (java.time.DateTimeException exception) {
             throw new IllegalArgumentException("The task time zone is invalid.", exception);
         }
-        LocalDateTime start = LocalDateTime.now(timeZone).withSecond(0).withNano(0);
+        LocalDateTime now = LocalDateTime.now(timeZone).withSecond(0).withNano(0);
         TaskRecurrenceFrequency frequency = recurrenceFrequency == null
                 ? TaskRecurrenceFrequency.DAILY : recurrenceFrequency;
+        LocalTime timeOfDay = resolveTimeOfDay(requestedTimeOfDay, now.toLocalTime());
+        LocalDateTime start = now.toLocalDate().atTime(timeOfDay);
         if (frequency == TaskRecurrenceFrequency.CUSTOM
                 && (recurrenceDaysOfWeek == null || recurrenceDaysOfWeek.isEmpty())) {
             throw new IllegalArgumentException("A custom stat task needs at least one day of the week.");
@@ -205,6 +234,15 @@ public class StatService {
     public StatDefinition updateRecurringTask(String definitionId, String userId, String requestedTimeZone,
                                               TaskRecurrenceFrequency recurrenceFrequency,
                                               List<DayOfWeek> recurrenceDaysOfWeek) {
+        return updateRecurringTask(definitionId, userId, requestedTimeZone, recurrenceFrequency,
+                recurrenceDaysOfWeek, null);
+    }
+
+    @Transactional
+    public StatDefinition updateRecurringTask(String definitionId, String userId, String requestedTimeZone,
+                                              TaskRecurrenceFrequency recurrenceFrequency,
+                                              List<DayOfWeek> recurrenceDaysOfWeek,
+                                              String requestedTimeOfDay) {
         StatDefinition definition = definitionRepository.findByIdAndUserId(definitionId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("No such stat."));
         if (definition.getType() != StatType.BOOLEAN || definition.getRecurringTaskSeriesId() == null) {
@@ -213,9 +251,13 @@ public class StatService {
 
         TaskRecurrenceFrequency frequency = recurrenceFrequency == null
                 ? TaskRecurrenceFrequency.DAILY : recurrenceFrequency;
+        TaskSeriesResponse currentSeries = taskSeriesService.getSeries(definition.getRecurringTaskSeriesId(), userId);
+        LocalDateTime currentStart = currentSeries.startDateTime();
+        LocalTime timeOfDay = resolveTimeOfDay(requestedTimeOfDay, currentStart.toLocalTime());
         TaskSeriesUpdateRequest request = new TaskSeriesUpdateRequest();
         request.setRecurrenceFrequency(frequency);
         request.setTimeZone(requestedTimeZone);
+        request.setStartDateTime(currentStart.toLocalDate().atTime(timeOfDay));
         request.setRecurrenceDaysOfWeek(frequency == TaskRecurrenceFrequency.CUSTOM
                 ? recurrenceDaysOfWeek : null);
         if (frequency == TaskRecurrenceFrequency.CUSTOM) {
@@ -261,14 +303,67 @@ public class StatService {
         return savedDefinition;
     }
 
+    @Transactional
+    public StatDefinition linkFocusTask(String definitionId, String taskName, String userId) {
+        StatDefinition definition = definitionRepository.findByIdAndUserId(definitionId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("No such stat."));
+        ensureUserStat(definition);
+
+        String normalizedTaskName = normalizeName(taskName);
+        if (normalizedTaskName == null || normalizedTaskName.isBlank()) {
+            throw new IllegalArgumentException("A task name is required.");
+        }
+        if (normalizedTaskName.length() > 255) {
+            throw new IllegalArgumentException("The task name must be 255 characters or fewer.");
+        }
+
+        definition.setFocusTaskName(normalizedTaskName);
+        StatDefinition savedDefinition = definitionRepository.save(definition);
+        log.info("Focus task linked to statistic: userId={} statDefinitionId={} taskName={}",
+                userId, savedDefinition.getId(), savedDefinition.getFocusTaskName());
+        return savedDefinition;
+    }
+
+    @Transactional
+    public StatDefinition unlinkFocusTask(String definitionId, String userId) {
+        StatDefinition definition = definitionRepository.findByIdAndUserId(definitionId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("No such stat."));
+        ensureUserStat(definition);
+
+        definition.setFocusTaskName(null);
+        StatDefinition savedDefinition = definitionRepository.save(definition);
+        log.info("Focus task unlinked from statistic: userId={} statDefinitionId={}",
+                userId, savedDefinition.getId());
+        return savedDefinition;
+    }
+
     StatDefinition createSystemDefinition(SystemStatDefinition systemStat, User user) {
-        validateDefinition(systemStat.name(), systemStat.type(), systemStat.minValue(),
+        String normalizedName = normalizeName(systemStat.name());
+        validateDefinition(normalizedName, systemStat.type(), systemStat.minValue(),
                 systemStat.maxValue(), systemStat.morality(), systemStat.goodThreshold(),
                 user.getId(), null);
-        return saveDefinition(systemStat.name(), systemStat.description(), systemStat.type(),
+        return saveDefinition(normalizedName, systemStat.description(), systemStat.type(),
                 systemStat.minValue(), systemStat.maxValue(), systemStat.morality(),
                 systemStat.goodThreshold(),
                 systemStat.systemKey(), user);
+    }
+
+    private String normalizeName(String name) {
+        return name == null ? null : name.trim();
+    }
+
+    private LocalTime resolveTimeOfDay(String requestedTimeOfDay, LocalTime fallback) {
+        if (requestedTimeOfDay == null || requestedTimeOfDay.isBlank()) return fallback;
+        String value = requestedTimeOfDay.trim();
+        if (!value.matches("\\d{2}:\\d{2}")) {
+            throw new IllegalArgumentException("The recurring task time must use HH:mm format.");
+        }
+        try {
+            return LocalTime.of(Integer.parseInt(value.substring(0, 2)),
+                    Integer.parseInt(value.substring(3, 5)));
+        } catch (java.time.DateTimeException exception) {
+            throw new IllegalArgumentException("The recurring task time is invalid.", exception);
+        }
     }
 
     private void validateDefinition(String name, StatType type, Double minValue,
@@ -565,11 +660,19 @@ public class StatService {
         StatDefinition definition = definitionRepository.findByIdAndUserId(definitionId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("No such stat exists."));
         validatePeriod(from, to);
-        if (definition.getRecurringTaskSeriesId() == null) return List.of();
+        Map<LocalDate, Long> focusByDate = new TreeMap<>();
+        String seriesId = definition.getRecurringTaskSeriesId();
+        if (seriesId != null) {
+            taskService.getPomodoroFocusTimeForSeries(seriesId, from, to, userId)
+                    .forEach((date, seconds) -> focusByDate.merge(date, seconds, Long::sum));
+        }
+        if (definition.getFocusTaskName() != null) {
+            taskService.getPomodoroFocusTimeForTaskName(
+                            definition.getFocusTaskName(), from, to, userId, seriesId)
+                    .forEach((date, seconds) -> focusByDate.merge(date, seconds, Long::sum));
+        }
 
-        return taskService.getPomodoroFocusTimeForSeries(
-                        definition.getRecurringTaskSeriesId(), from, to, userId)
-                .entrySet().stream()
+        return focusByDate.entrySet().stream()
                 .map(entry -> new StatFocusTimeEntryResponse(entry.getKey(), entry.getValue()))
                 .toList();
     }
@@ -731,6 +834,12 @@ public class StatService {
 
     private boolean isDailyStatDefinition(StatDefinition definition) {
         return !SystemStatCatalog.isMentalStateSystemKey(definition.getSystemKey());
+    }
+
+    private void ensureUserStat(StatDefinition definition) {
+        if (definition.getSystemKey() != null) {
+            throw new IllegalArgumentException("Only user statistics can link task focus time.");
+        }
     }
 
     private void validateValue(StatDefinition statDefinition, Double value) {

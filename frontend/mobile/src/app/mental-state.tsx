@@ -26,14 +26,26 @@ const signals: { key: keyof MentalStateRequest; label: string; low: string; high
 ];
 
 const RECENT_CHECK_IN_LIMIT = 5;
+const CURRENT_STATE_WINDOW_MS = 60 * 60 * 1000;
+
+function isRecentCheckIn(checkIn: MentalStateCheckIn | null, now: number): boolean {
+  if (!checkIn) return false;
+
+  const recordedAt = Date.parse(checkIn.recordedAt);
+  return Number.isFinite(recordedAt) && now - recordedAt <= CURRENT_STATE_WINDOW_MS;
+}
 
 interface MentalStateResultCardProps {
   checkIn: MentalStateCheckIn;
   selected: boolean;
+  isCurrent: boolean;
+  isMostRecent: boolean;
+  highlighted: boolean;
   onCheckInAgain: () => void;
+  onGoToMostRecent: () => void;
 }
 
-function MentalStateResultCard({ checkIn, selected, onCheckInAgain }: MentalStateResultCardProps) {
+function MentalStateResultCard({ checkIn, selected, isCurrent, isMostRecent, highlighted, onCheckInAgain, onGoToMostRecent }: MentalStateResultCardProps) {
   const [animations] = useState(() => ({
     opacity: new Animated.Value(0),
     translateY: new Animated.Value(12),
@@ -41,6 +53,7 @@ function MentalStateResultCard({ checkIn, selected, onCheckInAgain }: MentalStat
     recommendationTranslateY: new Animated.Value(8),
   }));
   const { opacity, translateY, recommendationOpacity, recommendationTranslateY } = animations;
+  const { colors } = useAppTheme();
   const readyForHome = checkIn.state === 'Ready' || checkIn.state === 'Almost Ready';
 
   useEffect(() => {
@@ -68,22 +81,28 @@ function MentalStateResultCard({ checkIn, selected, onCheckInAgain }: MentalStat
 
   return (
     <Animated.View style={{ opacity, transform: [{ translateY }] }}>
-      <Card style={styles.result}>
+      <Card style={[styles.result, highlighted && { backgroundColor: colors.accentSoft, borderColor: colors.accent }]}>
         <AppText variant="caption" color="accent">{selected ? 'SELECTED CHECK-IN' : 'YOUR STATE'}</AppText>
         <AppText variant="title">{checkIn.state}</AppText>
         <Animated.View style={{ opacity: recommendationOpacity, transform: [{ translateY: recommendationTranslateY }] }}>
-          <AppText variant="caption" color="accent">WHAT MAY HELP NOW</AppText>
+          <AppText variant="caption" color="accent">{isCurrent ? 'WHAT MAY HELP NOW' : 'RECOMMENDATION FOR THIS CHECK-IN'}</AppText>
           <View style={styles.recommendations}>
             {checkIn.suggestedActions.map(action => <AppText key={action}>{action}</AppText>)}
           </View>
         </Animated.View>
-        <AppButton
-          label={readyForHome ? 'Go to home' : 'Go to meditation'}
-          icon={readyForHome ? 'home-outline' : 'leaf-outline'}
-          variant={readyForHome ? 'primary' : 'secondary'}
-          onPress={() => router.push(readyForHome ? '/(tabs)' : '/meditation')}
-        />
-        <AppButton label="Check in again" icon="refresh-outline" variant="secondary" onPress={onCheckInAgain} />
+        {isMostRecent ? (
+          <>
+            <AppButton
+              label={readyForHome ? 'Go to home' : 'Go to meditation'}
+              icon={readyForHome ? 'home-outline' : 'leaf-outline'}
+              variant={readyForHome ? 'primary' : 'secondary'}
+              onPress={() => router.push(readyForHome ? '/(tabs)' : '/meditation')}
+            />
+            <AppButton label="Check in again" icon="refresh-outline" variant="secondary" onPress={onCheckInAgain} />
+          </>
+        ) : (
+          <AppButton label="Go to most recent" icon="list-outline" variant="secondary" onPress={onGoToMostRecent} />
+        )}
       </Card>
     </Animated.View>
   );
@@ -95,14 +114,37 @@ export default function MentalStateScreen() {
   const [values, setValues] = useState<MentalStateRequest>({ energy: 5, activation: 5, stimulationHunger: 5, clarity: 5, valence: 5, emotionalLoad: 5 });
   const [result, setResult] = useState<MentalStateCheckIn | null>(null);
   const [selectedHistoryItem, setSelectedHistoryItem] = useState<MentalStateCheckIn | null>(null);
+  const [isCheckingIn, setIsCheckingIn] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const displayedCheckIn = selectedHistoryItem ?? result;
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const recentResult = isRecentCheckIn(result, now) ? result : null;
+  const latestCheckIn = result ?? resource.data?.[0] ?? null;
+  const recentCheckIn = recentResult ?? (isRecentCheckIn(latestCheckIn, now) ? latestCheckIn : null);
+  const displayedCheckIn = selectedHistoryItem ?? (isCheckingIn ? null : recentCheckIn);
+  const displayedIsCurrent = isRecentCheckIn(displayedCheckIn, now);
+  const displayedIsMostRecent = displayedCheckIn !== null && displayedCheckIn.id === latestCheckIn?.id;
+  const displayedIsNewResult = displayedCheckIn !== null
+    && selectedHistoryItem === null
+    && recentResult?.id === displayedCheckIn.id;
 
   function startAnotherCheckIn() {
     setResult(null);
     setSelectedHistoryItem(null);
+    setIsCheckingIn(true);
     setError(null);
+  }
+
+  function goToMostRecent() {
+    if (!latestCheckIn) return;
+    setSelectedHistoryItem(latestCheckIn);
+    setResult(null);
   }
 
   async function submit() {
@@ -111,6 +153,7 @@ export default function MentalStateScreen() {
       const checkIn = await api.mentalState.checkIn(values);
       setResult(checkIn);
       setSelectedHistoryItem(null);
+      setIsCheckingIn(false);
       resource.setData(current => current ? [checkIn, ...current] : [checkIn]);
     } catch (cause) { setError(reportError('Could not save mental state check-in', cause)); }
     finally { setSaving(false); }
@@ -118,11 +161,17 @@ export default function MentalStateScreen() {
 
   return (
     <Screen safeAreaTop={false} contentStyle={styles.content} refreshing={resource.refreshing} onRefresh={() => void resource.reload()}>
-      {displayedCheckIn ? (
+      {resource.loading && !resource.data ? (
+        <LoadingView />
+      ) : displayedCheckIn ? (
         <MentalStateResultCard
           checkIn={displayedCheckIn}
           selected={selectedHistoryItem !== null}
+          isCurrent={displayedIsCurrent}
+          isMostRecent={displayedIsMostRecent}
+          highlighted={displayedIsNewResult}
           onCheckInAgain={startAnotherCheckIn}
+          onGoToMostRecent={goToMostRecent}
         />
       ) : (
         <Card style={styles.form}>
@@ -143,7 +192,6 @@ export default function MentalStateScreen() {
         </Card>
       )}
       <AppText variant="heading">Recent check-ins</AppText>
-      {resource.loading && <LoadingView />}
       {resource.error && !resource.data && <ErrorView message={resource.error} retry={() => void resource.reload()} />}
       <View style={styles.history}>
         {(resource.data ?? []).slice(0, RECENT_CHECK_IN_LIMIT).map(item => (

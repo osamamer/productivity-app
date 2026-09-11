@@ -5,6 +5,7 @@ import org.osama.user.CurrentUserService;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/day")
@@ -28,6 +29,16 @@ public class DayController {
     @GetMapping("/get-today")
     public DayEntity getToday() {
         return dayService.getToday(currentUserService.getCurrentUserId());
+    }
+
+    @GetMapping("/calendar-days")
+    public List<DayCalendarResponse> getCalendarDays(@RequestParam LocalDate from, @RequestParam LocalDate to) {
+        return dayService.getCalendarDays(from, to, currentUserService.getCurrentUserId());
+    }
+
+    @PostMapping("/clear-applied-template/{date}")
+    public void clearAppliedTemplate(@PathVariable LocalDate date) {
+        dayService.clearAppliedTemplate(date, currentUserService.getCurrentUserId());
     }
 
     @PostMapping("/set-today-info")

@@ -79,7 +79,10 @@ function durationAxis(maximum: number): { maximum: number; ticks: number[] } {
 
 function formatDurationAxisValue(value: number): string {
     const rounded = Math.round(value);
-    return rounded % 60 === 0 ? `${rounded / 60}h` : formatDurationValue(rounded);
+    const hours = Math.floor(rounded / 60);
+    const minutes = rounded % 60;
+    if (hours === 0) return `${minutes}m`;
+    return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
 }
 
 function chartMaximum(definition: StatDefinition, points: StatChartPoint[]): number {
@@ -157,7 +160,7 @@ function SevenDayDurationBars({ definition, comparisonDefinition, points, theme,
                                                     onDateContextMenu(point.date, event);
                                                 } : undefined}
                                                 sx={{
-                                                    width: comparisonDefinition ? 'clamp(4px, 20%, 8px)' : 'clamp(5px, 28%, 11px)',
+                                                    width: comparisonDefinition ? 'clamp(3px, 12%, 5px)' : 'clamp(3px, 14%, 6px)',
                                                     height: `${primaryHeight}%`,
                                                     minHeight: 3,
                                                     borderRadius: '6px 6px 1px 1px',
@@ -176,7 +179,7 @@ function SevenDayDurationBars({ definition, comparisonDefinition, points, theme,
                                             slotProps={tooltipSlotProps}
                                         >
                                             <Box sx={{
-                                                width: 'clamp(4px, 20%, 8px)',
+                                                width: 'clamp(3px, 12%, 5px)',
                                                 height: `${comparisonHeight}%`,
                                                 minHeight: 3,
                                                 borderRadius: '6px 6px 1px 1px',
@@ -239,7 +242,7 @@ function DurationTrend({ definition, comparisonDefinition, points, theme }: Omit
                         axisLine={false}
                     />
                     <Tooltip
-                        labelFormatter={value => format(parseISO(String(value)), 'EEEE, MMM d')}
+                        labelFormatter={(value, payload) => payload[0]?.payload?.bucketLabel ?? format(parseISO(String(value)), 'EEEE, MMM d')}
                         content={tooltipProps => (
                             <StatChartTooltip
                                 {...tooltipProps}

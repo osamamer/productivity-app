@@ -1,6 +1,7 @@
 import { Alert, Box, Button, Chip, Paper, Stack, Typography } from '@mui/material';
 import TipsAndUpdatesOutlinedIcon from '@mui/icons-material/TipsAndUpdatesOutlined';
 import HomeOutlinedIcon from '@mui/icons-material/HomeOutlined';
+import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import SelfImprovementOutlinedIcon from '@mui/icons-material/SelfImprovementOutlined';
 import { useNavigate } from 'react-router-dom';
 import { MentalStateCheckIn } from '../../types/MentalState';
@@ -8,11 +9,20 @@ import { MentalStateCheckIn } from '../../types/MentalState';
 interface MentalStateResultProps {
     checkIn: MentalStateCheckIn | null;
     isCurrent?: boolean;
+    isMostRecent: boolean;
     embedded?: boolean;
     onRecheck?: () => void;
+    onGoToMostRecent: () => void;
 }
 
-export function MentalStateResult({ checkIn, isCurrent = true, embedded = false, onRecheck }: MentalStateResultProps) {
+export function MentalStateResult({
+    checkIn,
+    isCurrent = true,
+    isMostRecent,
+    embedded = false,
+    onRecheck,
+    onGoToMostRecent,
+}: MentalStateResultProps) {
     const navigate = useNavigate();
 
     if (!checkIn) {
@@ -64,16 +74,24 @@ export function MentalStateResult({ checkIn, isCurrent = true, embedded = false,
                 spacing={1}
                 sx={{ mt: 2 }}
             >
-                <Button
-                    variant={readyForHome ? 'contained' : 'outlined'}
-                    startIcon={readyForHome ? <HomeOutlinedIcon /> : <SelfImprovementOutlinedIcon />}
-                    onClick={() => navigate(readyForHome ? '/' : '/meditation')}
-                >
-                    {readyForHome ? 'Go to home' : 'Go to meditation'}
-                </Button>
-                {onRecheck && (
-                    <Button variant="outlined" onClick={onRecheck}>
-                        Recheck my state
+                {isMostRecent ? (
+                    <>
+                        <Button
+                            variant={readyForHome ? 'contained' : 'outlined'}
+                            startIcon={readyForHome ? <HomeOutlinedIcon /> : <SelfImprovementOutlinedIcon />}
+                            onClick={() => navigate(readyForHome ? '/' : '/meditation')}
+                        >
+                            {readyForHome ? 'Go to home' : 'Go to meditation'}
+                        </Button>
+                        {onRecheck && (
+                            <Button variant="outlined" onClick={onRecheck}>
+                                Recheck my state
+                            </Button>
+                        )}
+                    </>
+                ) : (
+                    <Button variant="outlined" startIcon={<HistoryRoundedIcon />} onClick={onGoToMostRecent}>
+                        Go to most recent
                     </Button>
                 )}
             </Stack>

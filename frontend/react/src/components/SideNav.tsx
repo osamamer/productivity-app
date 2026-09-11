@@ -16,7 +16,7 @@ import {
     useTheme,
 } from '@mui/material';
 import { type Theme } from '@mui/material/styles';
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import type { SvgIconComponent } from '@mui/icons-material';
 import DashboardRoundedIcon from '@mui/icons-material/DashboardRounded';
@@ -200,7 +200,8 @@ function getOpenTaskTone(count: number | null): MetricTone {
 
 function getFocusTone(seconds: number | null): MetricTone {
     if (seconds === null) return 'neutral';
-    const hours = seconds / 3600;
+    // Match the displayed one-decimal value so 1.9h rounded to 2.0h is not shown as caution.
+    const hours = Number((seconds / 3600).toFixed(1));
     if (hours < 1) return 'bad';
     if (hours < 2) return 'caution';
     return 'good';
@@ -274,9 +275,9 @@ function TodaySnapshotCard({ snapshot, onNavigate }: { snapshot: TodaySnapshot |
                 />
                 <Box sx={{ gridColumn: '1 / -1', minHeight: 52 }}>
                     {snapshot === null ? (
-                        <SnapshotMetric value="Checking" label="mental state" tone="neutral" />
+                        <SnapshotMetric value="Checking" label="Mental state" tone="neutral" />
                     ) : snapshot.mentalState ? (
-                        <SnapshotMetric value={snapshot.mentalState} label="mental state" tone={mentalStateTone} />
+                        <SnapshotMetric value={snapshot.mentalState} label="Mental state" tone={mentalStateTone} />
                     ) : (
                         <Box>
                             <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
@@ -338,7 +339,6 @@ export function SideNav() {
     const [todaySnapshot, setTodaySnapshot] = useState<TodaySnapshot | null>(
         () => sideNavSnapshotCache.getCached() ?? null,
     );
-    const pendingNavigationRef = useRef<number | null>(null);
 
     useEffect(() => {
         try {
@@ -377,30 +377,9 @@ export function SideNav() {
     }, []);
 
     const navigateFromDrawer = useCallback((targetPage: string) => {
-        if (pendingNavigationRef.current !== null) {
-            window.clearTimeout(pendingNavigationRef.current);
-            pendingNavigationRef.current = null;
-        }
-
         closeDrawer();
-
-        if (!open || location.pathname === targetPage) {
-            if (location.pathname !== targetPage) navigate(targetPage);
-            return;
-        }
-
-        // Let the close state paint before a page with expensive initial rendering runs.
-        pendingNavigationRef.current = window.setTimeout(() => {
-            pendingNavigationRef.current = null;
-            navigate(targetPage);
-        }, DRAWER_TRANSITION_MS);
-    }, [closeDrawer, location.pathname, navigate, open]);
-
-    useEffect(() => () => {
-        if (pendingNavigationRef.current !== null) {
-            window.clearTimeout(pendingNavigationRef.current);
-        }
-    }, []);
+        if (location.pathname !== targetPage) navigate(targetPage);
+    }, [closeDrawer, location.pathname, navigate]);
 
     const drawerWidth = isMobile ? EXPANDED_WIDTH : (open ? EXPANDED_WIDTH : COLLAPSED_WIDTH);
     const drawerTransition = theme.transitions.create('width', {
@@ -478,7 +457,15 @@ export function SideNav() {
                         </Typography>
                     </Box>
 
-                    <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+                    <Box
+                        sx={{
+                            flex: 1,
+                            minHeight: 0,
+                            overflowY: 'auto',
+                            scrollbarWidth: 'none',
+                            '&::-webkit-scrollbar': { display: 'none' },
+                        }}
+                    >
                         <List sx={{ width: '100%', py: 0 }}>
                             <SideMenuButton
                                 Icon={DashboardRoundedIcon}

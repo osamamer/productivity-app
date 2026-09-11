@@ -57,6 +57,7 @@ export function MentalStatePage() {
     const latestCheckIn = history[0] ?? null;
     const currentCheckIn = isCurrentCheckIn(latestCheckIn, now) ? latestCheckIn : null;
     const displayedCheckIn = selected ?? currentCheckIn;
+    const displayedIsMostRecent = displayedCheckIn !== null && displayedCheckIn.id === latestCheckIn?.id;
 
     return (
         <PageWrapper>
@@ -78,7 +79,11 @@ export function MentalStatePage() {
                                 loading={loading}
                                 checkIn={displayedCheckIn}
                                 isCurrent={displayedCheckIn !== null && displayedCheckIn.id === currentCheckIn?.id}
+                                isMostRecent={displayedIsMostRecent}
                                 onSaved={handleSaved}
+                                onGoToMostRecent={() => {
+                                    if (latestCheckIn) setSelected(latestCheckIn);
+                                }}
                             />
                         </Stack>
                         <MentalStateHistory

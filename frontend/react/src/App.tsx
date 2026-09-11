@@ -3,29 +3,34 @@ import '@fontsource/roboto/300.css';
 import '@fontsource/roboto/400.css';
 import '@fontsource/roboto/500.css';
 import '@fontsource/roboto/700.css';
-import {useEffect, type ReactNode} from "react";
+import {lazy, Suspense, useEffect, type ReactNode} from "react";
 import {createBrowserRouter, Navigate, Outlet, RouterProvider} from "react-router-dom";
-import {HomePage} from "./pages/HomePage.jsx";
-import {CalendarPage} from "./pages/CalendarPage.jsx";
-import {TaskPage} from "./pages/TaskPage.jsx";
-import {MeditationPage} from "./pages/MeditationPage.tsx";
-import {LoginPage} from "./pages/LoginPage";
 import {ProtectedRoute} from "./components/ProtectedRoute";
 
 import {TaskProvider} from "./contexts/TaskContext.tsx";
 import {UserProvider} from "./contexts/UserContext";
-import {StatsPage} from "./pages/StatsPage.tsx";
-import {SettingsPage} from "./pages/SettingsPage.tsx";
-import {NotesPage} from "./pages/NotesPage.tsx";
-import {MentalThreadsPage} from "./pages/MentalThreadsPage.tsx";
-import {MentalStatePage} from "./pages/MentalStatePage.tsx";
-import {MentalPage} from "./pages/MentalPage.tsx";
 import {NotificationCenter} from "./components/notifications/NotificationCenter.tsx";
 import {AppErrorBoundary, AppErrorPage} from "./components/AppErrorBoundary.tsx";
 import {useAppContextMenuGuard} from "./components/AppContextMenuGuard.tsx";
 import {rememberMentalDestination, type MentalDestinationPath} from "./services/utils/mentalNavigation";
 import {AppShell} from "./components/AppShell.tsx";
-import {DayPage} from "./pages/DayPage.tsx";
+
+const HomePage = lazy(() => import('./pages/HomePage').then(module => ({ default: module.HomePage })));
+const CalendarPage = lazy(() => import('./pages/CalendarPage').then(module => ({ default: module.CalendarPage })));
+const TaskPage = lazy(() => import('./pages/TaskPage').then(module => ({ default: module.TaskPage })));
+const MeditationPage = lazy(() => import('./pages/MeditationPage').then(module => ({ default: module.MeditationPage })));
+const LoginPage = lazy(() => import('./pages/LoginPage').then(module => ({ default: module.LoginPage })));
+const StatsPage = lazy(() => import('./pages/StatsPage').then(module => ({ default: module.StatsPage })));
+const SettingsPage = lazy(() => import('./pages/SettingsPage').then(module => ({ default: module.SettingsPage })));
+const NotesPage = lazy(() => import('./pages/NotesPage').then(module => ({ default: module.NotesPage })));
+const MentalThreadsPage = lazy(() => import('./pages/MentalThreadsPage').then(module => ({ default: module.MentalThreadsPage })));
+const MentalStatePage = lazy(() => import('./pages/MentalStatePage').then(module => ({ default: module.MentalStatePage })));
+const MentalPage = lazy(() => import('./pages/MentalPage').then(module => ({ default: module.MentalPage })));
+const DayPage = lazy(() => import('./pages/DayPage').then(module => ({ default: module.DayPage })));
+
+function RouteSuspense({ children }: { children: ReactNode }) {
+    return <Suspense fallback={null}>{children}</Suspense>;
+}
 
 
 function MentalDestinationTracker({destination, children}: { destination: MentalDestinationPath; children: ReactNode }) {
@@ -37,50 +42,55 @@ function MentalDestinationTracker({destination, children}: { destination: Mental
 }
 
 
-function AppProviders() {
+function UserRoutes() {
     return (
         <UserProvider>
+            <Outlet/>
+        </UserProvider>
+    );
+}
+
+function ProtectedApp() {
+    return (
+        <ProtectedRoute>
             <TaskProvider>
                 <NotificationCenter/>
-                <Outlet/>
+                <AppShell/>
             </TaskProvider>
-        </UserProvider>
+        </ProtectedRoute>
     );
 }
 
 const routes = [
     {
-        element: <AppProviders/>,
+        element: <UserRoutes/>,
         errorElement: <AppErrorPage/>,
         children: [
-            { path: "/login", element: <LoginPage/> },
+            { path: "/sign-in", element: <RouteSuspense><LoginPage/></RouteSuspense> },
+            { path: "/login", element: <Navigate to="/sign-in" replace /> },
             {
-                element: (
-                    <ProtectedRoute>
-                        <AppShell/>
-                    </ProtectedRoute>
-                ),
+                element: <ProtectedApp/>,
                 children: [
-                    { path: "/", element: <HomePage/> },
-                    { path: "/calendar", element: <CalendarPage/> },
+                    { path: "/", element: <RouteSuspense><HomePage/></RouteSuspense> },
+                    { path: "/calendar", element: <RouteSuspense><CalendarPage/></RouteSuspense> },
                     {
                         path: "/meditation",
                         element: (
                             <MentalDestinationTracker destination="/meditation">
-                                <MeditationPage/>
+                                <RouteSuspense><MeditationPage/></RouteSuspense>
                             </MentalDestinationTracker>
                         ),
                     },
-                    { path: "/tasks", element: <TaskPage/> },
-                    { path: "/stats", element: <StatsPage/> },
-                    { path: "/day/:date", element: <DayPage/> },
-                    { path: "/notes", element: <NotesPage/> },
-                    { path: "/mental", element: <MentalPage/> },
+                    { path: "/tasks", element: <RouteSuspense><TaskPage/></RouteSuspense> },
+                    { path: "/stats", element: <RouteSuspense><StatsPage/></RouteSuspense> },
+                    { path: "/day/:date", element: <RouteSuspense><DayPage/></RouteSuspense> },
+                    { path: "/notes", element: <RouteSuspense><NotesPage/></RouteSuspense> },
+                    { path: "/mental", element: <RouteSuspense><MentalPage/></RouteSuspense> },
                     {
                         path: "/mental-threads",
                         element: (
                             <MentalDestinationTracker destination="/mental-threads">
-                                <MentalThreadsPage/>
+                                <RouteSuspense><MentalThreadsPage/></RouteSuspense>
                             </MentalDestinationTracker>
                         ),
                     },
@@ -88,11 +98,11 @@ const routes = [
                         path: "/mental-state",
                         element: (
                             <MentalDestinationTracker destination="/mental-state">
-                                <MentalStatePage/>
+                                <RouteSuspense><MentalStatePage/></RouteSuspense>
                             </MentalDestinationTracker>
                         ),
                     },
-                    { path: "/settings", element: <SettingsPage/> },
+                    { path: "/settings", element: <RouteSuspense><SettingsPage/></RouteSuspense> },
                     { path: "*", element: <Navigate to="/" replace /> },
                 ],
             },
@@ -100,9 +110,10 @@ const routes = [
     },
 ];
 
+const appRouter = createBrowserRouter(routes);
+
 function App() {
     useAppContextMenuGuard();
-    const appRouter = createBrowserRouter(routes);
     return (
         <AppErrorBoundary>
             <RouterProvider router={appRouter}/>

@@ -10,16 +10,17 @@ import { SilentPressable } from '@/components/ui/SilentPressable';
 import { reportError } from '@/lib/errors';
 import { useTaskWorkspace } from '@/providers/TaskWorkspaceProvider';
 import { useAppTheme } from '@/providers/ThemeProvider';
-import type { Task } from '@/types/models';
+import type { Task, TaskGroup } from '@/types/models';
 
-export function TaskGroupComposerSheet({ visible, taskIds, availableTasks, onClose, onCreated }: {
+export function TaskGroupComposerSheet({ visible, taskIds, availableTasks, group, onClose, onCreated }: {
   visible: boolean;
   taskIds: string[];
   availableTasks?: Task[];
+  group?: TaskGroup | null;
   onClose: () => void;
   onCreated: () => void;
 }) {
-  const { createGroup } = useTaskWorkspace();
+  const { createGroup, renameGroup, replaceGroupTasks } = useTaskWorkspace();
   const { colors } = useAppTheme();
   const nameInputRef = useRef<TextInput>(null);
   const [name, setName] = useState('');
@@ -31,15 +32,16 @@ export function TaskGroupComposerSheet({ visible, taskIds, availableTasks, onClo
     if (!visible) return undefined;
 
     const focusTimer = setTimeout(() => {
-      setSelectedTaskIds(taskIds);
+      setName(group?.name ?? '');
+      setSelectedTaskIds(group?.taskIds ?? taskIds);
       nameInputRef.current?.focus();
     }, 220);
     return () => clearTimeout(focusTimer);
-  }, [taskIds, visible]);
+  }, [group, taskIds, visible]);
 
   function close() {
     setName('');
-    setSelectedTaskIds(taskIds);
+    setSelectedTaskIds(group?.taskIds ?? taskIds);
     setError(null);
     onClose();
   }
@@ -56,7 +58,15 @@ export function TaskGroupComposerSheet({ visible, taskIds, availableTasks, onClo
     setSaving(true);
     setError(null);
     try {
-      await createGroup(name.trim(), selectedTaskIds);
+      if (group) {
+        await renameGroup(group.groupId, name.trim());
+        if (selectedTaskIds.length !== group.taskIds.length
+          || selectedTaskIds.some((taskId, index) => taskId !== group.taskIds[index])) {
+          await replaceGroupTasks(group.groupId, selectedTaskIds);
+        }
+      } else {
+        await createGroup(name.trim(), selectedTaskIds);
+      }
       onCreated();
       close();
     } catch (cause) {
@@ -70,8 +80,8 @@ export function TaskGroupComposerSheet({ visible, taskIds, availableTasks, onClo
     <ModalSheet
       visible={visible}
       onClose={close}
-      title="Group tasks"
-      footer={<AppButton label="Create group" icon="folder-open-outline" loading={saving} onPress={() => void submit()} />}>
+      title={group ? 'Edit group' : 'Group tasks'}
+      footer={<AppButton label={group ? 'Save group' : 'Create group'} icon="folder-open-outline" loading={saving} onPress={() => void submit()} />}>
       <AppText color="muted">
         {availableTasks ? 'Choose at least two tasks to keep together.' : `Keep these ${selectedTaskIds.length} tasks together in your workspace.`}
       </AppText>

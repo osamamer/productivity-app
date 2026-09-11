@@ -8,6 +8,7 @@ import {
     StatDefinition, StatRecurrenceDay, StatRecurrenceFrequency, StatRecurringTaskDraft,
 } from '../../types/Stats';
 import { defaultStatRecurringTaskDraft, STAT_RECURRENCE_DAYS } from './statRecurringTaskUtils';
+import { AppTimeField } from '../input/AppPickerFields';
 
 const FREQUENCIES: { value: StatRecurrenceFrequency; label: string }[] = [
     { value: 'DAILY', label: 'Daily' },
@@ -20,9 +21,15 @@ type OptionsProps = {
     value: StatRecurringTaskDraft;
     onChange: (value: StatRecurringTaskDraft) => void;
     disabled?: boolean;
+    timeError?: string;
 };
 
-export function StatRecurringTaskOptions({ value, onChange, disabled = false }: OptionsProps) {
+export function StatRecurringTaskOptions({
+    value,
+    onChange,
+    disabled = false,
+    timeError,
+}: OptionsProps) {
     const updateFrequency = (recurrenceFrequency: StatRecurrenceFrequency) => {
         onChange({ ...value, recurrenceFrequency });
     };
@@ -33,6 +40,14 @@ export function StatRecurringTaskOptions({ value, onChange, disabled = false }: 
 
     return (
         <Stack spacing={1.5}>
+            <AppTimeField
+                label="Task time"
+                value={value.timeOfDay}
+                onChange={timeOfDay => onChange({ ...value, timeOfDay })}
+                disabled={disabled}
+                error={Boolean(timeError)}
+                helperText={timeError}
+            />
             <TextField
                 select
                 fullWidth
@@ -105,14 +120,33 @@ export function StatRecurringTaskDialog({
 
     const customDaysMissing = draft.recurrenceFrequency === 'CUSTOM'
         && draft.recurrenceDaysOfWeek.length === 0;
+    const timeMissing = !/^\d{2}:\d{2}$/.test(draft.timeOfDay);
 
     return (
-        <Dialog open={open} onClose={saving ? undefined : onClose} fullWidth maxWidth="xs">
+        <Dialog
+            open={open}
+            onClose={saving ? undefined : onClose}
+            fullWidth
+            maxWidth="xs"
+            slotProps={{
+                container: {
+                    sx: {
+                        direction: 'ltr',
+                        justifyContent: 'flex-end !important',
+                    },
+                },
+            }}
+        >
             <DialogTitle>
                 {title}{definition ? ` for ${definition.name}` : ''}
             </DialogTitle>
             <DialogContent dividers>
-                <StatRecurringTaskOptions value={draft} onChange={setDraft} disabled={saving} />
+                <StatRecurringTaskOptions
+                    value={draft}
+                    onChange={setDraft}
+                    disabled={saving}
+                    timeError={timeMissing ? 'Choose a task time.' : undefined}
+                />
                 {error && <Alert severity="error" sx={{ mt: 1.5 }}>{error}</Alert>}
             </DialogContent>
             <DialogActions>
@@ -120,7 +154,7 @@ export function StatRecurringTaskDialog({
                 <Button
                     variant="contained"
                     onClick={() => onConfirm(draft)}
-                    disabled={saving || customDaysMissing || !definition}
+                    disabled={saving || customDaysMissing || timeMissing || !definition}
                 >
                     {saving ? 'Saving…' : confirmLabel}
                 </Button>

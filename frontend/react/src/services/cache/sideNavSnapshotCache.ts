@@ -10,6 +10,7 @@ export interface TodaySnapshot {
 }
 
 const SNAPSHOT_TTL_MS = 30_000;
+const MENTAL_STATE_FRESHNESS_WINDOW_MS = 60 * 60 * 1000;
 const snapshotCache = new CachedResource<TodaySnapshot>({ ttlMs: SNAPSHOT_TTL_MS, maxEntries: 4 });
 const snapshotListeners = new Set<(snapshot: TodaySnapshot) => void>();
 
@@ -22,6 +23,14 @@ function getLocalDateKey(date = new Date()): string {
 
 function cacheKey(): string {
     return `${getAuthCacheScope()}:side-nav:${getLocalDateKey()}`;
+}
+
+function isFreshMentalState(recordedAt: string, now = Date.now()): boolean {
+    const recordedAtMs = Date.parse(recordedAt);
+    const ageMs = now - recordedAtMs;
+    return Number.isFinite(recordedAtMs)
+        && ageMs >= 0
+        && ageMs <= MENTAL_STATE_FRESHNESS_WINDOW_MS;
 }
 
 async function loadSnapshot(): Promise<TodaySnapshot> {
@@ -41,7 +50,6 @@ async function loadSnapshot(): Promise<TodaySnapshot> {
         console.error('Failed to load the drawer mental-state summary:', mentalStateResult.reason);
     }
 
-    const today = new Date().toDateString();
     const tasks = tasksResult.status === 'fulfilled' ? tasksResult.value : null;
     const focusSummary = pomodoroResult.status === 'fulfilled' ? pomodoroResult.value : null;
     const mentalCheckIns = mentalStateResult.status === 'fulfilled' ? mentalStateResult.value : null;
@@ -51,7 +59,7 @@ async function loadSnapshot(): Promise<TodaySnapshot> {
         openTaskCount: tasks?.filter(task => !task.completed && !task.skipped).length ?? null,
         focusSeconds: focusSummary?.totalFocusSeconds ?? null,
         mentalState: latestMentalCheckIn
-            && new Date(latestMentalCheckIn.recordedAt).toDateString() === today
+            && isFreshMentalState(latestMentalCheckIn.recordedAt)
             ? latestMentalCheckIn.state
             : null,
     };

@@ -106,7 +106,8 @@ public class UserController {
                 request.repeatCheckupNotificationsEnabled(),
                 request.checkupIntervalMinutes(),
                 request.checkupStartTime(),
-                request.checkupTimesPerDay()
+                request.checkupTimesPerDay(),
+                request.pomodoroSoundId()
         );
         return UserPreferencesResponse.from(updatedUser);
     }
@@ -180,12 +181,14 @@ public class UserController {
             Integer checkupIntervalMinutes,
             @JsonFormat(pattern = "HH:mm")
             LocalTime checkupStartTime,
-            Integer checkupTimesPerDay
+            Integer checkupTimesPerDay,
+            String pomodoroSoundId
     ) {}
 
     public record UserPreferencesResponse(
             boolean includeUnloggedNumericDaysAsZero,
             boolean autoStartPomodoroSessions,
+            String pomodoroSoundId,
             boolean checkupNotificationsEnabled,
             boolean repeatCheckupNotificationsEnabled,
             int checkupIntervalMinutes,
@@ -197,6 +200,7 @@ public class UserController {
             return new UserPreferencesResponse(
                     Boolean.TRUE.equals(user.getIncludeUnloggedNumericDaysAsZero()),
                     !Boolean.FALSE.equals(user.getAutoStartPomodoroSessions()),
+                    user.getPomodoroSoundId(),
                     !Boolean.FALSE.equals(user.getCheckupNotificationsEnabled()),
                     !Boolean.FALSE.equals(user.getRepeatCheckupNotificationsEnabled()),
                     user.getCheckupIntervalMinutes(),

@@ -16,6 +16,7 @@ import type {
   PomodoroConfig,
   PomodoroStatus,
   StatDefinition,
+  StatMorality,
   StatEntryStatus,
   StatEntry,
   StatGroup,
@@ -119,6 +120,12 @@ export const api = {
       if (updates.completed !== undefined) invalidateResource('tasks');
       return updated;
     },
+    subtasks: (taskId: string) => apiRequest<Task[]>(`/api/v1/tasks/${taskId}/subtasks`),
+    createSubtask: (taskId: string, input: Omit<TaskInput, 'parentId'>) =>
+      json<Task>(`/api/v1/tasks/${taskId}/subtasks`, 'POST', {
+        ...input,
+        timeZone: input.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC',
+      }),
     remove: (id: string) => apiRequest<void>(`/api/v1/tasks/${id}`, { method: 'DELETE' }),
     removeOccurrence: (id: string) => apiRequest<void>(`/api/v1/tasks/${id}/occurrence`, { method: 'DELETE' }),
     reorder: (taskIds: string[]) => json<Task[]>('/api/v1/tasks/order', 'PUT', { taskIds }),
@@ -127,6 +134,8 @@ export const api = {
     all: () => apiRequest<TaskGroup[]>('/api/v1/task-groups'),
     create: (name: string, taskIds: string[]) =>
       json<TaskGroup>('/api/v1/task-groups', 'POST', { name, taskIds }),
+    rename: (groupId: string, name: string) =>
+      json<TaskGroup>(`/api/v1/task-groups/${groupId}`, 'PATCH', { name }),
     replaceTasks: (groupId: string, taskIds: string[]) =>
       json<TaskGroup>(`/api/v1/task-groups/${groupId}/tasks`, 'PUT', { taskIds }),
     remove: (groupId: string) => apiRequest<void>(`/api/v1/task-groups/${groupId}`, { method: 'DELETE' }),
@@ -240,8 +249,10 @@ export const api = {
       invalidateResource('stats');
       return entry;
     },
-    create: (input: Pick<StatDefinition, 'name' | 'description' | 'type' | 'minValue' | 'maxValue'>) =>
+    create: (input: Pick<StatDefinition, 'name' | 'description' | 'type' | 'minValue' | 'maxValue'> & { morality?: StatMorality | null; goodThreshold?: number | null }) =>
       json<StatDefinition>('/api/v1/stats/definitions', 'POST', input),
+    update: (id: string, input: Pick<StatDefinition, 'name' | 'description' | 'morality' | 'goodThreshold'>) =>
+      json<StatDefinition>(`/api/v1/stats/definitions/${id}`, 'PUT', input),
     summary: (id: string, from: string, to: string) =>
       apiRequest<StatSummary>(`/api/v1/stats/definitions/${id}/summary?from=${from}&to=${to}`),
   },
@@ -272,5 +283,9 @@ export const api = {
     due: () => apiRequest<ApplicationNotification[]>('/api/v1/notifications/due'),
     acknowledge: (id: string) =>
       json<void>(`/api/v1/notifications/${id}/acknowledge`, 'POST'),
+    registerPushToken: (token: string) =>
+      json<void>('/api/v1/notifications/push-token', 'POST', { token }),
+    removePushTokens: () =>
+      apiRequest<void>('/api/v1/notifications/push-token', { method: 'DELETE' }),
   },
 };

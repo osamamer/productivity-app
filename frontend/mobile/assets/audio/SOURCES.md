@@ -8,4 +8,5 @@ the clients can repeat it without an obvious restart.
 - `ocean.mp3`: `mindmist-sounds-of-waves-313367.mp3`
 - `forest.mp3`: `audiopapkin-forest-ambience-296528.mp3`
 - `bowls.mp3`: `45693695-singing-bowl-248823.mp3`
+- `meditation_bell.wav`: five-second notification clip trimmed from `bowls.mp3` for locked-screen completion alerts
 - `brown-noise.mp3`: `cosmic-scapes-relaxing-smoothed-brown-noise-294838.mp3` (Pomodoro)

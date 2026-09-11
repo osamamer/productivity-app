@@ -27,7 +27,7 @@ The local stack uses these ports:
 | Web app | <http://localhost:5173> |
 | Mobile Metro | <http://localhost:8081> |
 | Backend health check | <http://localhost:8080/actuator/health> |
-| Keycloak | <http://localhost:7070> |
+| Sign-in | <http://localhost:5173/sign-in> |
 | PostgreSQL | `localhost:5432` |
 
 ### First run
@@ -143,7 +143,7 @@ backend or Keycloak instance, create `frontend/react/.env.local` with any of:
 ```dotenv
 VITE_API_URL=http://localhost:8080
 VITE_WS_URL=ws://localhost:8080/ws
-VITE_KEYCLOAK_URL=http://localhost:7070
+VITE_KEYCLOAK_URL=/auth
 VITE_KEYCLOAK_REALM=productivity-app
 VITE_KEYCLOAK_CLIENT_ID=productivity-app-frontend
 ```

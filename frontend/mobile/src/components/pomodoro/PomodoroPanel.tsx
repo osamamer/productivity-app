@@ -411,7 +411,7 @@ export function PomodoroPanel({ taskId, initialStatus, onClose, onActiveChange, 
         compact
         variant="secondary"
         icon={brownNoiseEnabled ? 'volume-high-outline' : 'volume-mute-outline'}
-        label={brownNoiseEnabled ? 'Mute brown noise' : 'Play brown noise'}
+        label={brownNoiseEnabled ? 'Mute focus audio' : 'Play focus audio'}
         loading={actionLoading}
         onPress={toggleBrownNoise}
       />
@@ -430,8 +430,6 @@ export function PomodoroPanel({ taskId, initialStatus, onClose, onActiveChange, 
             {status.completedFocusSessions ?? status.currentFocusNumber} of {status.numFocuses} sessions completed
           </AppText>
           <AppButton label="Dismiss" variant="secondary" onPress={() => {
-            setStatus(null);
-            lastStatusRef.current = null;
             onActiveChangeRef.current(false);
           }} />
         </View>

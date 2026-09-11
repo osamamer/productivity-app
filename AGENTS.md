@@ -53,7 +53,7 @@ Feature packages follow a consistent pattern — each has an entity, repository,
 - `day/` — Daily rating/plan/summary (`DayEntity`, one per user per date)
 - `pomodoro/` — Pomodoro timer settings, persisted phase state, and automatic/manual phase transitions
 - `reminder/` — Durable, typed notification inbox shared by calendar reminders and Pomodoro transitions; notifications remain due until the client acknowledges presentation, while authenticated WebSocket pushes are only a low-latency delivery signal
-- `stat/` — Daily user-defined tracking plus built-in meditation activity and sleep stats provisioned from `SystemStatCatalog`; built-ins use a stable `systemKey`, cannot be deleted, and expose server-side personal correlation insights
+- `stat/` — Daily user-defined tracking plus built-in meditation activity and sleep stats provisioned from `SystemStatCatalog`; built-ins use a stable `systemKey`, cannot be deleted, and expose server-side personal correlation insights. User statistics can also link focus time from historical Pomodoro tasks by an exact case-insensitive task name, including completed tasks.
 - `mentalstate/` — Timestamped, multiple-per-day check-ins that capture energy, activation, stimulation hunger, clarity, valence, and emotional load together and generate deterministic state guidance
 - `session/task/` and `session/meditation/` — Session tracking with start/pause/unpause/end lifecycle, published as Spring events via `ApplicationEventPublisher`
 - `scheduling/` — Automated job scheduling for pomodoro cycles (`TimedExecutorService`, `ScheduledJob`)
@@ -73,21 +73,23 @@ Reminder delivery is database-first. `ScheduledJobExecutor` locks and runs each 
 
 ### Auth / User Identity
 
-Keycloak (port 7070) is the identity provider. The backend validates JWTs as an OAuth2 resource server; all API endpoints (except `/actuator/health`) require a valid Bearer token.
+Keycloak is the identity provider. The web browser reaches it through the app-owned `/auth` path (`/auth` is proxied by Vite locally and Caddy in production); the local container listener remains on port 7070 for native development and server-side administration. The backend validates JWTs as an OAuth2 resource server; all API endpoints (except `/actuator/health`) require a valid Bearer token.
 
 **Flow:**
-1. `main.tsx` initializes `keycloak-js` with `onLoad: 'login-required'` — the app never renders unless authenticated.
+1. `main.tsx` restores any per-tab token session into `keycloak-js`; unauthenticated users remain in the React app and are routed to the app-owned `/sign-in` page.
 2. Every API call sends `Authorization: Bearer <token>` via `getAuthHeaders()` (`frontend/react/src/services/utils/authHeaders.ts`) for fetch-based calls, or via the axios interceptor in `axiosConfig.ts`.
 3. The backend validates the JWT against the Keycloak JWKS (`SecurityConfig.java`).
 4. `CurrentUserService.getCurrentUser()` extracts the `Jwt` from the `SecurityContext` and calls `UserService.getOrCreateFromJwt()`, which finds or auto-creates a `User` entity keyed on the Keycloak `sub` claim. Controllers inject `CurrentUserService` instead of reading a header.
 
-`keycloak.ts` (`frontend/react/src/services/keycloak.ts`) configures the Keycloak instance. The realm/client can be overridden via env vars `VITE_KEYCLOAK_URL`, `VITE_KEYCLOAK_REALM`, `VITE_KEYCLOAK_CLIENT_ID` (defaults: `http://localhost:7070`, `productivity-app`, `productivity-app-frontend`). The launcher uses dedicated process groups for Maven/Vite and targeted port-owner cleanup; it never kills listeners owned by another account or unidentified root/system processes.
+`keycloak.ts` (`frontend/react/src/services/keycloak.ts`) configures the Keycloak instance. The realm/client can be overridden via env vars `VITE_KEYCLOAK_URL`, `VITE_KEYCLOAK_REALM`, `VITE_KEYCLOAK_CLIENT_ID` (defaults: `/auth`, `productivity-app`, `productivity-app-frontend`). The launcher uses dedicated process groups for Maven/Vite and targeted port-owner cleanup; it never kills listeners owned by another account or unidentified root/system processes.
 
-**Required Keycloak setup (one-time, via admin console at http://localhost:7070):**
+**Required Keycloak setup (one-time, via the proxied admin console at http://localhost:5173/auth):**
 1. Create realm `productivity-app`.
-2. Create client `productivity-app-frontend`: type = Public, valid redirect URIs = `http://localhost:5173/*`, web origins = `http://localhost:5173`.
+2. Create client `productivity-app-frontend`: type = Public, enable Direct access grants, valid redirect URIs = `http://localhost:5173/*`, web origins = `http://localhost:5173`.
 3. In that client's settings, ensure the token includes `email`, `given_name`, `family_name`, `preferred_username` claims (add mappers under Client scopes if needed). The backend falls back gracefully if claims are absent, but user display will be degraded.
-4. Local `run-app.sh` applies the `productivity` Login Theme and enables self-registration for the app realm automatically. For production, select `productivity` in Realm settings → Themes and enable User registration under Realm settings → Login. The theme is mounted from `deployment/keycloak-theme` by both Docker Compose files and keeps Keycloak's secure OIDC form flow while matching the app's visual language.
+4. Local `run-app.sh` applies the `productivity` Login Theme and enables self-registration for hosted flows used by native clients. The web app uses its own `/sign-in` form and Keycloak's direct-access grant so the browser does not navigate to the OIDC authorization URL. This web flow stores tokens in per-tab session storage and does not support redirect-based identity features such as social login or most MFA flows; moving tokens to HttpOnly cookies requires a backend-for-frontend session design.
+
+Web registration uses the unauthenticated `POST /api/v1/auth/register` endpoint. The backend validates the submitted profile, creates the identity through the Keycloak admin API, and leaves application-user provisioning to the first authenticated API call. Keep every other user-management endpoint authenticated.
 
 All user-scoped entities (Task, DayEntity, MeditationSession, TaskSession, Pomodoro, MentalThread, MentalCapacityCheckIn) have a mandatory `user` foreign key. Users are auto-provisioned on first API call — no manual user creation is needed.
 

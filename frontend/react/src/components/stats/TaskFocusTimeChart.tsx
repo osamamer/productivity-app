@@ -1,15 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Box, CircularProgress } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import { eachDayOfInterval, format, parseISO, subDays } from 'date-fns';
+import { eachDayOfInterval, format, parseISO } from 'date-fns';
 import { StatDefinition, StatFocusTimeEntry } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
 import { DurationStatChart } from './DurationStatChart';
 import { StatChartPoint } from './statChartTypes';
+import { formatStatBucketRange, getStatPeriodWindow, StatPeriodMode, StatPeriodOffset } from './statPeriod';
 
 interface Props {
     definition: StatDefinition;
     dateRange: number;
+    periodMode: StatPeriodMode;
+    periodOffset: StatPeriodOffset;
     refreshKey: number;
 }
 
@@ -44,6 +47,7 @@ function buildPoints(
             .filter((value): value is number => value !== undefined);
         points.push({
             date: format(week[0], 'yyyy-MM-dd'),
+            bucketLabel: formatStatBucketRange(week[0], week[week.length - 1]),
             periodEnd: format(week[week.length - 1], 'yyyy-MM-dd'),
             value: average(values),
             comparisonValue: undefined,
@@ -56,13 +60,16 @@ function buildPoints(
 export const TaskFocusTimeChart = React.memo(function TaskFocusTimeChart({
     definition,
     dateRange,
+    periodMode,
+    periodOffset,
     refreshKey,
 }: Props) {
     const theme = useTheme();
-    const to = new Date();
-    const from = subDays(to, dateRange - 1);
-    const fromStr = format(from, 'yyyy-MM-dd');
-    const toStr = format(to, 'yyyy-MM-dd');
+    const period = getStatPeriodWindow(dateRange, periodMode, periodOffset);
+    const from = parseISO(period.from);
+    const to = parseISO(period.to);
+    const fromStr = period.from;
+    const toStr = period.to;
     const aggregateWeekly = dateRange >= 365;
     const dataKey = `${definition.id}:${fromStr}:${toStr}`;
     const cachedEntries = statService.getCachedFocusTime(definition.id, fromStr, toStr);

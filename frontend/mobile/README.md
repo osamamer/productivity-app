@@ -9,6 +9,7 @@ React Native client for the productivity app, built with Expo SDK 57 and Expo Ro
 - Task, calendar event, mental thread, mental-state, meditation, note, and stat workflows
 - Shared Raleway typography, web palette, four accent colors, light/dark/system themes, soft cards, and task-priority colors
 - Durable notification recovery from the backend, presented through native notifications when permission is available
+- Android remote push delivery for Pomodoro transitions and unanswered repeated check-ups when the app is closed
 
 ## First-time setup
 
@@ -20,6 +21,20 @@ npm install
 ```
 
 In Keycloak, add `solife://auth` to the `productivity-app-frontend` client's valid redirect URIs and enable Direct Access Grants for the public client. The native form uses the realm's password grant; no client secret belongs in the app.
+
+Android remote pushes require Firebase Cloud Messaging credentials in the Expo
+project. Configure them once with `npx eas-cli@latest credentials` and select
+the Android app's FCM V1 service-account key. Then build and reinstall the
+native Android app; an OTA JavaScript update cannot add the native push
+configuration. The backend sends through Expo Push Service, so production
+servers must also be able to make outbound HTTPS requests to Expo. Set
+`EXPO_PUSH_ACCESS_TOKEN` in `deployment/.env` if Expo's push access-token
+security is enabled for the project.
+
+Android 12 and newer can require the user to allow exact alarms in system
+settings. The app requests `SCHEDULE_EXACT_ALARM` so scheduled calendar and
+task reminders can fire at their requested time; Android may still apply its
+own power-saving policy, and remote pushes are used for server-created events.
 
 The mobile app has explicit environment guards. A local native build uses the
 `EXPO_PUBLIC_*` values from `.env.local`; the `preview` and `production` EAS
@@ -84,6 +99,7 @@ startup manual. If the emulator is started after `run-app.sh`, apply the
 mappings manually:
 
 ```bash
+adb reverse tcp:5173 tcp:5173
 adb reverse tcp:7070 tcp:7070
 adb reverse tcp:8080 tcp:8080
 adb reverse tcp:8081 tcp:8081

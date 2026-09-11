@@ -17,13 +17,18 @@ import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
 import FolderIcon from '@mui/icons-material/Folder';
 import GroupWorkIcon from '@mui/icons-material/GroupWork';
+import LinkOutlinedIcon from '@mui/icons-material/LinkOutlined';
 import ViewDayIcon from '@mui/icons-material/ViewDay';
 import { PageWrapper } from '../components/PageWrapper';
 import { CreateStatForm } from '../components/stats/CreateStatForm';
 import { StatRecentDots } from '../components/stats/StatRecentDots';
 import { StatCard } from '../components/stats/StatCard';
 import { StatRecurringTaskDialog } from '../components/stats/StatRecurringTaskDialog';
-import { defaultStatRecurringTaskDraft } from '../components/stats/statRecurringTaskUtils';
+import { StatFocusTaskDialog } from '../components/stats/StatFocusTaskDialog';
+import {
+    defaultStatRecurringTaskDraft,
+    timeOfDayFromDateTime,
+} from '../components/stats/statRecurringTaskUtils';
 import { StatDefinition, StatRecurringTaskDraft } from '../types/Stats';
 import { StatGroup } from '../types/StatGroup';
 import { useUser } from '../hooks/useUser';
@@ -199,6 +204,10 @@ export function StatsPage() {
     const [bulkDeleteTargets, setBulkDeleteTargets] = useState<StatDefinition[] | null>(null);
     const [deleteSubmitting, setDeleteSubmitting] = useState(false);
     const [openGroupIds, setOpenGroupIds] = useState<Set<string>>(() => readOpenStatGroupIds(groupPreferencesKey));
+    // Preserve each opened group's row state so collapsing it does not restart dot loading.
+    const [mountedGroupIds, setMountedGroupIds] = useState<Set<string>>(() => (
+        new Set(readOpenStatGroupIds(groupPreferencesKey))
+    ));
     const [loadedGroupPreferencesKey, setLoadedGroupPreferencesKey] = useState(groupPreferencesKey);
     const [selectionError, setSelectionError] = useState<string | null>(null);
     const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
@@ -209,13 +218,19 @@ export function StatsPage() {
     const [recurringTaskFeedback, setRecurringTaskFeedback] = useState<string | null>(null);
     const [recurringTaskMode, setRecurringTaskMode] = useState<'create' | 'update'>('create');
     const [recurringTaskInitialDraft, setRecurringTaskInitialDraft] = useState<StatRecurringTaskDraft | null>(null);
+    const [focusTaskSavingId, setFocusTaskSavingId] = useState<string | null>(null);
+    const [focusTaskError, setFocusTaskError] = useState<string | null>(null);
+    const [focusTaskTarget, setFocusTaskTarget] = useState<StatDefinition | null>(null);
+    const [focusTaskFeedback, setFocusTaskFeedback] = useState<string | null>(null);
     const selectionAnchorRef = useRef<string | null>(null);
     const selectionActionsRef = useRef<HTMLDivElement | null>(null);
     const pendingStatCreationsRef = useRef(new Map<string, PendingStatCreation>());
 
     useEffect(() => {
         if (loadedGroupPreferencesKey === groupPreferencesKey) return;
-        setOpenGroupIds(readOpenStatGroupIds(groupPreferencesKey));
+        const nextOpenGroupIds = readOpenStatGroupIds(groupPreferencesKey);
+        setOpenGroupIds(nextOpenGroupIds);
+        setMountedGroupIds(new Set(nextOpenGroupIds));
         setLoadedGroupPreferencesKey(groupPreferencesKey);
     }, [groupPreferencesKey, loadedGroupPreferencesKey]);
 
@@ -270,7 +285,8 @@ export function StatsPage() {
 
     useEffect(() => subscribeToResourceInvalidation('stats', () => {
         setResourceRefreshKey(previous => previous + 1);
-    }), []);
+        void loadDefinitions();
+    }), [loadDefinitions]);
 
     const handleEntryChanged = useCallback((definitionId: string) => {
         setEntryRefreshKeys(previous => ({
@@ -385,29 +401,83 @@ export function StatsPage() {
         setEditTarget(null);
     };
 
-    const handleSaveRecurringTask = async (definition: StatDefinition, recurrence: StatRecurringTaskDraft) => {
-        if ((recurringTaskMode === 'create' && !canCreateRecurringTask(definition))
-            || (recurringTaskMode === 'update' && !definition.recurringTaskSeriesId)
+    const handleSaveFocusTask = (definition: StatDefinition, taskName: string) => {
+        if (focusTaskSavingId !== null || !taskName.trim()) return;
+
+        setFocusTaskSavingId(definition.id);
+        setFocusTaskError(null);
+        void statService.linkFocusTask(definition.id, taskName.trim())
+            .then(updated => {
+                handleUpdated(updated);
+                setFocusTaskTarget(null);
+                setFocusTaskFeedback(`Focus time linked to “${updated.focusTaskName}”.`);
+            })
+            .catch(error => {
+                console.error('Failed to link task focus time:', error);
+                setFocusTaskError('Could not link those tasks. Please try again.');
+            })
+            .finally(() => setFocusTaskSavingId(null));
+    };
+
+    const handleUnlinkFocusTask = (definition: StatDefinition) => {
+        if (focusTaskSavingId !== null) return;
+
+        setFocusTaskSavingId(definition.id);
+        setFocusTaskError(null);
+        void statService.unlinkFocusTask(definition.id)
+            .then(updated => {
+                handleUpdated(updated);
+                setFocusTaskTarget(null);
+                setFocusTaskFeedback('Linked task focus removed.');
+            })
+            .catch(error => {
+                console.error('Failed to unlink task focus time:', error);
+                setFocusTaskError('Could not remove the linked tasks. Please try again.');
+            })
+            .finally(() => setFocusTaskSavingId(null));
+    };
+
+    const handleSaveRecurringTask = (definition: StatDefinition, recurrence: StatRecurringTaskDraft) => {
+        const mode = recurringTaskMode;
+        if ((mode === 'create' && !canCreateRecurringTask(definition))
+            || (mode === 'update' && !definition.recurringTaskSeriesId)
             || recurringTaskSavingId !== null) return;
 
         setRecurringTaskSavingId(definition.id);
         setRecurringTaskError(null);
-        try {
-            const updated = recurringTaskMode === 'update'
-                ? await statService.updateRecurringTask(definition.id, recurrence)
-                : await statService.createRecurringTask(definition.id, recurrence);
-            handleUpdated(updated);
+
+        if (mode === 'create') {
             setRecurringTaskTarget(null);
             setRecurringTaskInitialDraft(null);
-            setRecurringTaskFeedback(recurringTaskMode === 'update'
-                ? 'Recurring task schedule updated.'
-                : 'Recurring task created.');
-        } catch (e) {
-            console.error('Failed to create recurring task for stat:', e);
-            setRecurringTaskError('Could not create the recurring task. Please try again.');
-        } finally {
-            setRecurringTaskSavingId(null);
+            setEditTarget(null);
+
+            void statService.createRecurringTask(definition.id, recurrence)
+                .then(updated => {
+                    handleUpdated(updated);
+                    setRecurringTaskFeedback('Recurring task created.');
+                })
+                .catch(error => {
+                    console.error('Failed to create recurring task for stat:', error);
+                    setRecurringTaskError('Could not create the recurring task. Please try again.');
+                })
+                .finally(() => setRecurringTaskSavingId(null));
+            return;
         }
+
+        void (async () => {
+            try {
+                const updated = await statService.updateRecurringTask(definition.id, recurrence);
+                handleUpdated(updated);
+                setRecurringTaskTarget(null);
+                setRecurringTaskInitialDraft(null);
+                setRecurringTaskFeedback('Recurring task schedule updated.');
+            } catch (error) {
+                console.error('Failed to update recurring task schedule for stat:', error);
+                setRecurringTaskError('Could not update the recurring task schedule. Please try again.');
+            } finally {
+                setRecurringTaskSavingId(null);
+            }
+        })();
     };
 
     const openRecurringTaskEditor = (definition: StatDefinition) => {
@@ -420,6 +490,7 @@ export function StatsPage() {
                 setRecurringTaskInitialDraft({
                     recurrenceFrequency: series.recurrenceFrequency,
                     recurrenceDaysOfWeek,
+                    timeOfDay: timeOfDayFromDateTime(series.startDateTime),
                 });
                 setRecurringTaskMode('update');
                 setRecurringTaskTarget(definition);
@@ -548,6 +619,12 @@ export function StatsPage() {
             else next.add(groupId);
             return next;
         });
+        setMountedGroupIds(prev => {
+            if (prev.has(groupId)) return prev;
+            const next = new Set(prev);
+            next.add(groupId);
+            return next;
+        });
     };
 
     const visibleDefinitions = useMemo(
@@ -580,6 +657,8 @@ export function StatsPage() {
             && !deleteGroupTarget
             && !bulkDeleteTargets
             && !contextMenu
+            && !focusTaskTarget
+            && focusTaskSavingId === null
             && !deleteSubmitting,
         onDelete: () => {
             if (keyboardSelectedDefinitions.length > 1) {
@@ -986,6 +1065,7 @@ export function StatsPage() {
                             onCreated={handleCreated}
                             onCreatedOptimistically={handleCreatedOptimistically}
                             onCreationFailed={handleCreationFailed}
+                            existingDefinitions={definitions}
                             onCancel={closeCreateStatDialog}
                         />
                     </DialogContent>
@@ -1002,14 +1082,19 @@ export function StatsPage() {
                         {editTarget && (
                             <CreateStatForm
                                 initialDefinition={editTarget}
+                                existingDefinitions={definitions}
                                 onUpdated={handleUpdated}
                                 onCreateRecurringTask={() => {
+                                    setEditTarget(null);
                                     setRecurringTaskError(null);
                                     setRecurringTaskMode('create');
                                     setRecurringTaskInitialDraft(null);
                                     setRecurringTaskTarget(editTarget);
                                 }}
-                                onEditRecurringTask={() => openRecurringTaskEditor(editTarget)}
+                                onEditRecurringTask={() => {
+                                    setEditTarget(null);
+                                    openRecurringTaskEditor(editTarget);
+                                }}
                                 onDelete={() => setDeleteTarget(editTarget)}
                                 onCancel={() => setEditTarget(null)}
                             />
@@ -1033,7 +1118,26 @@ export function StatsPage() {
                         }
                     }}
                     onConfirm={draft => {
-                        if (recurringTaskTarget) void handleSaveRecurringTask(recurringTaskTarget, draft);
+                        if (recurringTaskTarget) handleSaveRecurringTask(recurringTaskTarget, draft);
+                    }}
+                />
+
+                <StatFocusTaskDialog
+                    open={Boolean(focusTaskTarget)}
+                    definition={focusTaskTarget}
+                    saving={Boolean(focusTaskTarget && focusTaskSavingId === focusTaskTarget.id)}
+                    error={focusTaskError}
+                    onClose={() => {
+                        if (focusTaskSavingId === null) {
+                            setFocusTaskTarget(null);
+                            setFocusTaskError(null);
+                        }
+                    }}
+                    onConfirm={taskName => {
+                        if (focusTaskTarget) handleSaveFocusTask(focusTaskTarget, taskName);
+                    }}
+                    onClear={() => {
+                        if (focusTaskTarget) handleUnlinkFocusTask(focusTaskTarget);
                     }}
                 />
 
@@ -1113,6 +1217,7 @@ export function StatsPage() {
                                 const expanded = loadedGroupPreferencesKey === groupPreferencesKey
                                     && openGroupIds.has(group.groupId);
                                 const collapsed = !expanded;
+                                const mounted = mountedGroupIds.has(group.groupId);
                                 const groupDragging = draggedGroupId === group.groupId;
                                 const groupDragTarget = dragTargetGroupId === group.groupId;
                                 const statDropTarget = draggedId !== null && groupDragTarget;
@@ -1250,7 +1355,6 @@ export function StatsPage() {
                                         <Collapse
                                             in={!collapsed}
                                             timeout={{ enter: 220, exit: 180 }}
-                                            unmountOnExit
                                             sx={{
                                                 display: 'block',
                                                 width: '100%',
@@ -1266,19 +1370,21 @@ export function StatsPage() {
                                                 },
                                             }}
                                         >
-                                            <Box>
-                                                {groupDefinitions.length > 0
-                                                    ? groupDefinitions.map(definition => renderDefinitionRow(definition, true))
-                                                    : (
-                                                        <Typography
-                                                            variant="caption"
-                                                            color="text.secondary"
-                                                            sx={{ display: 'block', px: 6.5, py: 1.25, borderBottom: `1px solid ${theme.palette.divider}` }}
-                                                        >
-                                                            No stats in this group yet
-                                                        </Typography>
-                                                    )}
-                                            </Box>
+                                            {mounted && (
+                                                <Box>
+                                                    {groupDefinitions.length > 0
+                                                        ? groupDefinitions.map(definition => renderDefinitionRow(definition, true))
+                                                        : (
+                                                            <Typography
+                                                                variant="caption"
+                                                                color="text.secondary"
+                                                                sx={{ display: 'block', px: 6.5, py: 1.25, borderBottom: `1px solid ${theme.palette.divider}` }}
+                                                            >
+                                                                No stats in this group yet
+                                                            </Typography>
+                                                        )}
+                                                </Box>
+                                            )}
                                         </Collapse>
                                     </Box>
                                 );
@@ -1405,13 +1511,31 @@ export function StatsPage() {
                             setRecurringTaskInitialDraft(null);
                             setRecurringTaskTarget(definition);
                         }}
-                        disabled={recurringTaskSavingId === contextMenu.definition.id}
+                        disabled={recurringTaskSavingId !== null}
                     >
                         <ListItemIcon><AddTaskOutlinedIcon fontSize="small" /></ListItemIcon>
                         <ListItemText>
                             {recurringTaskSavingId === contextMenu.definition.id
                                 ? 'Creating recurring task…'
                                 : 'Create recurring task'}
+                        </ListItemText>
+                    </MenuItem>
+                )}
+                {contextMenu?.kind === 'stat' && !contextMenu.definition.systemKey && (
+                    <MenuItem
+                        onClick={() => {
+                            const definition = contextMenu.definition;
+                            closeContextMenu();
+                            setFocusTaskError(null);
+                            setFocusTaskTarget(definition);
+                        }}
+                        disabled={focusTaskSavingId !== null}
+                    >
+                        <ListItemIcon><LinkOutlinedIcon fontSize="small" /></ListItemIcon>
+                        <ListItemText>
+                            {contextMenu.definition.focusTaskName
+                                ? 'Change linked task name'
+                                : 'Link existing task focus'}
                         </ListItemText>
                     </MenuItem>
                 )}
@@ -1516,6 +1640,12 @@ export function StatsPage() {
                 autoHideDuration={4000}
                 onClose={() => setRecurringTaskFeedback(null)}
                 message={recurringTaskFeedback ?? ''}
+            />
+            <Snackbar
+                open={Boolean(focusTaskFeedback)}
+                autoHideDuration={4000}
+                onClose={() => setFocusTaskFeedback(null)}
+                message={focusTaskFeedback ?? ''}
             />
         </PageWrapper>
     );

@@ -28,6 +28,7 @@ type TimelineItem = {
     id: string;
     kind: TimelineKind;
     title: string;
+    titleSuffix?: string;
     start: Date;
     end: Date | null;
     detail?: string;
@@ -62,7 +63,7 @@ function isWithinWindow(value: string | null | undefined, start: Date, end: Date
 }
 
 function taskStart(task: DayTask, start: Date, end: Date): Date {
-    const candidates = [task.scheduledAt, task.completedAt, task.createdAt];
+    const candidates = [task.completedAt, task.scheduledAt];
     const activityTime = candidates.find(value => isWithinWindow(value, start, end));
     return activityTime ? parseISO(activityTime) : start;
 }
@@ -70,17 +71,15 @@ function taskStart(task: DayTask, start: Date, end: Date): Date {
 function buildTimeline(overview: DayOverview): TimelineItem[] {
     const dayStart = parseISO(overview.dayStart);
     const dayEnd = parseISO(overview.dayEnd);
+    const calendarDayStart = parseISO(`${overview.date}T00:00:00`);
+    const calendarDayEnd = addDays(calendarDayStart, 1);
     const items: TimelineItem[] = overview.tasks.map(task => ({
         id: `task-${task.id}`,
         kind: 'task',
         title: task.name || 'Untitled task',
         start: taskStart(task, dayStart, dayEnd),
         end: null,
-        detail: task.completed
-            ? task.completedAt && isWithinWindow(task.completedAt, dayStart, dayEnd)
-                ? `Completed at ${format(parseISO(task.completedAt), 'h:mm a')}`
-                : 'Completed'
-            : task.skipped ? 'Skipped' : 'Scheduled task',
+        detail: undefined,
         completed: task.completed,
     }));
 
@@ -141,26 +140,51 @@ function buildTimeline(overview: DayOverview): TimelineItem[] {
                 if (occurrence.allDay) {
                     const start = parseISO(`${occurrence.start}T00:00:00`);
                     const end = parseISO(`${occurrence.end}T00:00:00`);
-                    return start < dayEnd && end > dayStart;
+                    return start < dayEnd && end > dayStart
+                        && start < calendarDayEnd && end > calendarDayStart;
                 }
                 const start = parseISO(occurrence.start);
                 const end = parseISO(occurrence.end);
-                return start < dayEnd && end > dayStart;
+                return start < dayEnd && end > dayStart
+                    && start < calendarDayEnd && end > calendarDayStart;
             })
             .forEach(occurrence => {
                 const rawStart = occurrence.allDay ? dayStart : parseISO(occurrence.start);
                 const start = rawStart < dayStart ? dayStart : rawStart;
-                const end = occurrence.allDay
-                    ? null
-                    : parseISO(occurrence.end);
-                items.push({
-                    id: `event-${occurrence.id}`,
-                    kind: 'event',
-                    title: event.title,
-                    start,
-                    end,
-                    detail: occurrence.allDay ? 'All-day event' : occurrence.status.toLowerCase(),
-                });
+                if (occurrence.allDay || occurrence.status === 'CANCELLED') {
+                    items.push({
+                        id: `event-${occurrence.id}`,
+                        kind: 'event',
+                        title: event.title,
+                        titleSuffix: occurrence.status === 'CANCELLED' ? 'canceled' : undefined,
+                        start,
+                        end: null,
+                        detail: undefined,
+                    });
+                    return;
+                }
+
+                const end = parseISO(occurrence.end);
+                items.push(
+                    {
+                        id: `event-${occurrence.id}-start`,
+                        kind: 'event',
+                        title: event.title,
+                        titleSuffix: 'started',
+                        start,
+                        end: null,
+                        detail: undefined,
+                    },
+                    {
+                        id: `event-${occurrence.id}-end`,
+                        kind: 'event',
+                        title: event.title,
+                        titleSuffix: 'finished',
+                        start: end,
+                        end: null,
+                        detail: undefined,
+                    },
+                );
             });
     });
 
@@ -179,15 +203,22 @@ function TimelineIcon({ kind }: { kind: TimelineKind }) {
     return <EventNoteOutlinedIcon {...iconProps} />;
 }
 
-function TimeBoundary({ label, time }: { label: string; time: Date }) {
+function timelineTimeLabel(item: TimelineItem): string {
+    return format(item.start, 'h:mm a');
+}
+
+function TimeBoundary({ label, time, detail }: { label: string; time: Date; detail?: string }) {
     return (
         <Stack direction="row" spacing={1.5} alignItems="center" sx={{ position: 'relative', py: 1 }}>
             <Box sx={{ width: 34, flexShrink: 0, display: 'flex', justifyContent: 'center', zIndex: 1 }}>
                 <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: 'background.paper', border: 2, borderColor: 'primary.main' }} />
             </Box>
-            <Box>
+            <Box sx={{ textAlign: 'left' }}>
                 <Typography variant="caption" color="primary.main" fontWeight={700}>{label}</Typography>
-                <Typography variant="body2" fontWeight={650}>{format(time, 'h:mm a')}</Typography>
+                <Stack direction="row" spacing={0.75} alignItems="baseline">
+                    <Typography variant="body2" fontWeight={650}>{format(time, 'h:mm a')}</Typography>
+                    {detail && <Typography variant="caption" color="text.secondary">· {detail}</Typography>}
+                </Stack>
             </Box>
         </Stack>
     );
@@ -252,6 +283,10 @@ export function DayPage() {
     const windowStart = overview ? parseISO(overview.dayStart) : dateValue;
     const windowEnd = overview ? parseISO(overview.dayEnd) : addDays(dateValue, 1);
     const hasLoggedSleep = overview?.stats.some(stat => stat.systemKey === 'sleep_time') ?? false;
+    const sleepDuration = overview?.stats.find(stat =>
+        stat.systemKey === 'sleep_hours' && stat.status !== 'NOT_PLANNED'
+    );
+    const sleepDurationLabel = sleepDuration ? formatDurationValue(sleepDuration.value) : undefined;
     const moreTimeline = timeline.filter(item => item.kind === 'state' || item.kind === 'event');
     const hasDetailPanel = Boolean(overview && (
         overview.stats.length > 0
@@ -338,7 +373,7 @@ export function DayPage() {
                                     </Box>
                                 </Stack>
                                 <Stack spacing={0} sx={{ position: 'relative', '&:before': { content: '""', position: 'absolute', left: 16, top: 14, bottom: 14, width: 2, bgcolor: 'divider' } }}>
-                                    <TimeBoundary label="Wake up" time={windowStart} />
+                                    <TimeBoundary label="Wake up" time={windowStart} detail={sleepDurationLabel ? `Slept ${sleepDurationLabel}` : undefined} />
                                     {timeline.length === 0 ? (
                                         <Typography color="text.secondary" sx={{ py: 4, pl: 5 }}>Nothing recorded during this window yet.</Typography>
                                     ) : timeline.map(item => (
@@ -350,8 +385,15 @@ export function DayPage() {
                                             </Box>
                                             <Box sx={{ minWidth: 0, flex: 1, pb: 1, borderBottom: 1, borderColor: 'divider' }}>
                                                 <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" spacing={0.5}>
-                                                    <Typography variant="body2" fontWeight={650} sx={{ textDecoration: item.kind === 'task' && item.completed ? 'line-through' : 'none' }}>{item.title}</Typography>
-                                                    <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>{format(item.start, 'h:mm a')}</Typography>
+                                                    <Typography variant="body2" fontWeight={item.kind === 'event' ? 400 : 650} sx={{ textDecoration: item.kind === 'task' && item.completed ? 'line-through' : 'none' }}>
+                                                        {item.kind === 'event' ? (
+                                                            <>
+                                                                <Box component="span" fontWeight={700}>{item.title}</Box>
+                                                                {item.titleSuffix && ` ${item.titleSuffix}`}
+                                                            </>
+                                                        ) : item.title}
+                                                    </Typography>
+                                                    <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>{timelineTimeLabel(item)}</Typography>
                                                 </Stack>
                                                 <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
                                                     {item.detail && <Typography variant="caption" color="text.secondary">{item.detail}</Typography>}
@@ -470,7 +512,13 @@ function DayDetailsPanel({
                                 <Stack divider={<Divider flexItem />}>
                                     {eventItems.map(item => (
                                         <Stack key={item.id} direction="row" justifyContent="space-between" spacing={1} sx={{ py: 1 }}>
-                                            <Typography variant="body2">{item.title}</Typography>
+                                            <Box>
+                                                <Typography variant="body2">
+                                                    <Box component="span" fontWeight={700}>{item.title}</Box>
+                                                    {item.titleSuffix && ` ${item.titleSuffix}`}
+                                                </Typography>
+                                                {item.detail && <Typography variant="caption" color="text.secondary">{item.detail}</Typography>}
+                                            </Box>
                                             <Typography variant="caption" color="text.secondary">{format(item.start, 'h:mm a')}</Typography>
                                         </Stack>
                                     ))}
@@ -515,6 +563,10 @@ function EmptySection({ text }: { text: string }) {
 }
 
 function TaskSummaryRow({ task }: { task: DayTask }) {
+    const completionTime = task.completedAt && isValid(parseISO(task.completedAt))
+        ? format(parseISO(task.completedAt), 'h:mm a')
+        : null;
+
     return (
         <Stack direction="row" alignItems="center" justifyContent="flex-start" spacing={1} sx={{ py: 1, textAlign: 'left' }}>
             <Box sx={{ color: task.completed ? 'success.main' : 'text.disabled', display: 'flex' }}>
@@ -523,7 +575,9 @@ function TaskSummaryRow({ task }: { task: DayTask }) {
             <Typography variant="body2" sx={{ flex: 1, minWidth: 0, textDecoration: task.completed ? 'line-through' : 'none' }} noWrap>
                 {task.name || 'Untitled task'}
             </Typography>
-            <Typography variant="caption" color="text.secondary">{task.completed ? 'Done' : task.skipped ? 'Skipped' : 'Open'}</Typography>
+            <Typography variant="caption" color="text.secondary">
+                {completionTime ?? 'Open'}
+            </Typography>
         </Stack>
     );
 }

@@ -161,9 +161,5 @@ export function minutesToDurationValue(value: number | null | undefined): string
 export function formatDurationValue(value: number | null | undefined): string {
     if (value == null || !Number.isFinite(value) || value < 0) return '—';
 
-    const rounded = Math.round(value);
-    const hours = Math.floor(rounded / 60);
-    const minutes = rounded % 60;
-    if (hours === 0) return `${minutes}m`;
-    return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
+    return `${(Math.round(value) / 60).toFixed(1)}H`;
 }

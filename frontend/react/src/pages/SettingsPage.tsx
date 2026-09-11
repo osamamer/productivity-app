@@ -13,6 +13,9 @@ import AccessTimeOutlinedIcon from '@mui/icons-material/AccessTimeOutlined';
 import CheckIcon from '@mui/icons-material/Check';
 import PsychologyOutlinedIcon from '@mui/icons-material/PsychologyOutlined';
 import VolumeUpOutlinedIcon from '@mui/icons-material/VolumeUpOutlined';
+import MusicNoteOutlinedIcon from '@mui/icons-material/MusicNoteOutlined';
+import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import { PageWrapper } from '../components/PageWrapper.tsx';
 import { useUser } from '../hooks/useUser';
 import { accentColorOptions } from '../contexts/themeOptions';
@@ -23,7 +26,10 @@ import axios from 'axios';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
-import { SHOW_COMPLETED_HOME_TASKS_STORAGE_KEY } from '../services/utils/homePreferences.ts';
+import {
+    EXCLUDE_TODAY_COMPLETED_HOME_TASKS_STORAGE_KEY,
+    SHOW_COMPLETED_HOME_TASKS_STORAGE_KEY,
+} from '../services/utils/homePreferences.ts';
 import { statService } from '../services/api/statService.ts';
 import {
     createPomodoroFormDefaults,
@@ -38,6 +44,16 @@ import {
 } from '../services/api/pomodoroConfigService.ts';
 import { getShowClosedMentalThreads, setShowClosedMentalThreads } from '../services/utils/mentalThreadPreferences.ts';
 import { isAudioFeedbackEnabled, setAudioFeedbackEnabled } from '../services/audioFeedback.ts';
+import {
+    BUILT_IN_POMODORO_SOUND,
+    BUILT_IN_POMODORO_SOUND_ID,
+    deletePomodoroSound,
+    getPomodoroSoundAudioUrl,
+    getPomodoroSounds,
+    PomodoroSound,
+    uploadPomodoroSound,
+} from '../services/api/pomodoroSoundService.ts';
+import { setWhiteNoiseSource } from '../services/whiteNoise.ts';
 
 const sectionCardSx = {
     backgroundColor: 'background.paper',
@@ -54,11 +70,13 @@ const sectionHeadingSx = {
     mb: 1.5,
 };
 
-const showCompletedTasksDescription = 'Keep completed tasks visible in today\'s Home, Tasks, and Calendar views.';
+const hideCompletedTasksDescription = 'Hide completed tasks from the Tasks and Calendar pages.';
+const excludeTodayCompletedTasksDescription = 'Also hide completed tasks scheduled for today from the Home page.';
 const numericStatsAverageDescription = 'Include days without a logged numeric value as 0 when calculating averages.';
 const pomodoroAutoStartDescription = 'Start each break and focus session automatically, or wait for you to start the next phase.';
 const pomodoroSecondsModeDescription = 'Use 10-second focus and break durations instead of the normal 25/5/15-minute defaults.';
 const pomodoroLongBreakDescription = 'Take a long break after this many completed focus sessions in every Pomodoro.';
+const pomodoroSoundDescription = 'Use brown noise or one of your uploaded MP3 files during focus sessions.';
 const showClosedMentalThreadsDescription = 'Keep closed threads visible in the mental threads list.';
 const soundEffectsDescription = 'Play short musical cues when you complete, capture, schedule, or rate something.';
 const repeatCheckupNotificationsDescription = 'If you do not check in, remind you again every 30 minutes.';
@@ -461,8 +479,11 @@ export function SettingsPage() {
     const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
     const [passwordSaving, setPasswordSaving] = useState(false);
     const [changePasswordOpen, setChangePasswordOpen] = useState(false);
-    const [showCompletedHomeTasks, setShowCompletedHomeTasks] = useState(() => (
-        localStorage.getItem(SHOW_COMPLETED_HOME_TASKS_STORAGE_KEY) !== 'false'
+    const [hideCompletedTasks, setHideCompletedTasks] = useState(() => (
+        localStorage.getItem(SHOW_COMPLETED_HOME_TASKS_STORAGE_KEY) === 'false'
+    ));
+    const [excludeTodayCompletedTasks, setExcludeTodayCompletedTasks] = useState(() => (
+        localStorage.getItem(EXCLUDE_TODAY_COMPLETED_HOME_TASKS_STORAGE_KEY) === 'true'
     ));
     const [showClosedMentalThreads, setShowClosedMentalThreadsState] = useState(getShowClosedMentalThreads);
     const [soundEffectsEnabled, setSoundEffectsEnabledState] = useState(isAudioFeedbackEnabled);
@@ -479,14 +500,23 @@ export function SettingsPage() {
     const [pomodoroPreferenceSaving, setPomodoroPreferenceSaving] = useState(false);
     const [pomodoroConfigLoading, setPomodoroConfigLoading] = useState(true);
     const [pomodoroConfigError, setPomodoroConfigError] = useState<string | null>(null);
+    const [pomodoroSounds, setPomodoroSounds] = useState<PomodoroSound[]>([]);
+    const [selectedPomodoroSoundId, setSelectedPomodoroSoundId] = useState(BUILT_IN_POMODORO_SOUND_ID);
+    const [pomodoroSoundsLoading, setPomodoroSoundsLoading] = useState(true);
+    const [pomodoroSoundSaving, setPomodoroSoundSaving] = useState(false);
+    const [pomodoroSoundError, setPomodoroSoundError] = useState<string | null>(null);
 
     useEffect(() => {
         setActiveTab(initialTab);
     }, [initialTab]);
 
     useEffect(() => {
-        localStorage.setItem(SHOW_COMPLETED_HOME_TASKS_STORAGE_KEY, String(showCompletedHomeTasks));
-    }, [showCompletedHomeTasks]);
+        localStorage.setItem(SHOW_COMPLETED_HOME_TASKS_STORAGE_KEY, String(!hideCompletedTasks));
+    }, [hideCompletedTasks]);
+
+    useEffect(() => {
+        localStorage.setItem(EXCLUDE_TODAY_COMPLETED_HOME_TASKS_STORAGE_KEY, String(excludeTodayCompletedTasks));
+    }, [excludeTodayCompletedTasks]);
 
     useEffect(() => {
         let cancelled = false;
@@ -495,6 +525,7 @@ export function SettingsPage() {
                 if (!cancelled) {
                     setIncludeUnloggedNumericDaysAsZero(preferences.includeUnloggedNumericDaysAsZero);
                     setAutoStartPomodoroSessions(preferences.autoStartPomodoroSessions !== false);
+                    setSelectedPomodoroSoundId(preferences.pomodoroSoundId || BUILT_IN_POMODORO_SOUND_ID);
                 }
             })
             .catch(error => {
@@ -505,6 +536,22 @@ export function SettingsPage() {
             })
             .finally(() => {
                 if (!cancelled) setUserPreferencesLoading(false);
+            });
+        return () => { cancelled = true; };
+    }, []);
+
+    useEffect(() => {
+        let cancelled = false;
+        getPomodoroSounds()
+            .then(sounds => {
+                if (!cancelled) setPomodoroSounds(sounds);
+            })
+            .catch(error => {
+                console.error('Failed to load Pomodoro sounds:', error);
+                if (!cancelled) setPomodoroSoundError('Could not load Pomodoro sounds right now.');
+            })
+            .finally(() => {
+                if (!cancelled) setPomodoroSoundsLoading(false);
             });
         return () => { cancelled = true; };
     }, []);
@@ -566,6 +613,7 @@ export function SettingsPage() {
             setCurrentPassword('');
             setNewPassword('');
             setConfirmPassword('');
+            setChangePasswordOpen(false);
         } catch (error) {
             if (axios.isAxiosError(error) && typeof error.response?.data === 'string') {
                 setPasswordError(error.response.data);
@@ -650,6 +698,76 @@ export function SettingsPage() {
         }
     }
 
+    async function applyPomodoroSound(sound: PomodoroSound) {
+        const url = await getPomodoroSoundAudioUrl(sound);
+        setWhiteNoiseSource({ id: sound.id, url });
+    }
+
+    async function handlePomodoroSoundChange(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) {
+        const nextValue = event.target.value;
+        const previousValue = selectedPomodoroSoundId;
+        const sound = nextValue === BUILT_IN_POMODORO_SOUND_ID
+            ? BUILT_IN_POMODORO_SOUND
+            : pomodoroSounds.find(candidate => candidate.id === nextValue);
+        if (!sound) return;
+
+        setSelectedPomodoroSoundId(nextValue);
+        setPomodoroSoundSaving(true);
+        setPomodoroSoundError(null);
+        try {
+            await userService.updatePreferences({ pomodoroSoundId: nextValue });
+            await applyPomodoroSound(sound);
+        } catch (error) {
+            console.error('Failed to update Pomodoro sound:', error);
+            setSelectedPomodoroSoundId(previousValue);
+            setPomodoroSoundError('Could not save this Pomodoro sound right now.');
+        } finally {
+            setPomodoroSoundSaving(false);
+        }
+    }
+
+    async function handlePomodoroSoundUpload(event: ChangeEvent<HTMLInputElement>) {
+        const file = event.target.files?.[0];
+        event.target.value = '';
+        if (!file) return;
+
+        setPomodoroSoundSaving(true);
+        setPomodoroSoundError(null);
+        try {
+            const uploadedSound = await uploadPomodoroSound(file);
+            setPomodoroSounds(previous => [...previous, uploadedSound]);
+            await userService.updatePreferences({ pomodoroSoundId: uploadedSound.id });
+            setSelectedPomodoroSoundId(uploadedSound.id);
+            await applyPomodoroSound(uploadedSound);
+        } catch (error) {
+            console.error('Failed to upload Pomodoro sound:', error);
+            setPomodoroSoundError('Could not upload that MP3 right now.');
+        } finally {
+            setPomodoroSoundSaving(false);
+        }
+    }
+
+    async function handlePomodoroSoundDelete(sound: PomodoroSound) {
+        if (!window.confirm(`Delete ${sound.name}?`)) return;
+
+        setPomodoroSoundSaving(true);
+        setPomodoroSoundError(null);
+        try {
+            await deletePomodoroSound(sound.id);
+            setPomodoroSounds(previous => previous.filter(candidate => candidate.id !== sound.id));
+            if (selectedPomodoroSoundId === sound.id) {
+                await userService.updatePreferences({ pomodoroSoundId: BUILT_IN_POMODORO_SOUND_ID });
+                setSelectedPomodoroSoundId(BUILT_IN_POMODORO_SOUND_ID);
+                await applyPomodoroSound(BUILT_IN_POMODORO_SOUND);
+            }
+        } catch (error) {
+            console.error('Failed to delete Pomodoro sound:', error);
+            setPomodoroSoundError('Could not delete that Pomodoro sound right now.');
+        } finally {
+            setPomodoroSoundSaving(false);
+        }
+    }
+
     const displayName = user ? `${user.firstName} ${user.lastName}`.trim() || user.username : 'Unknown user';
     const userInitials = user
         ? `${user.firstName?.[0] ?? ''}${user.lastName?.[0] ?? ''}`.toUpperCase() || user.username?.[0]?.toUpperCase() || '?'
@@ -713,18 +831,39 @@ export function SettingsPage() {
                                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
                                         <Box sx={{ textAlign: 'left' }}>
                                             <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                                                Show completed tasks
+                                                Hide completed tasks
                                             </Typography>
                                             <Typography variant="body2" color="text.secondary">
-                                                {showCompletedTasksDescription}
+                                                {hideCompletedTasksDescription}
                                             </Typography>
                                         </Box>
                                         <Switch
-                                            checked={showCompletedHomeTasks}
-                                            onChange={(event) => setShowCompletedHomeTasks(event.target.checked)}
-                                            inputProps={{ 'aria-label': 'Show completed tasks on the Home and Tasks pages' }}
+                                            checked={hideCompletedTasks}
+                                            onChange={(event) => setHideCompletedTasks(event.target.checked)}
+                                            inputProps={{ 'aria-label': 'Hide completed tasks' }}
                                         />
                                     </Box>
+
+                                    {hideCompletedTasks && (
+                                        <Box sx={{ ml: { xs: 0, sm: 4 }, mt: 2, pl: { xs: 0, sm: 2 }, borderLeft: { sm: theme => `2px solid ${theme.palette.divider}` } }}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
+                                                <Box sx={{ textAlign: 'left' }}>
+                                                    <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                                                        Hide today&apos;s completed tasks in Home page
+                                                    </Typography>
+                                                    <Typography variant="body2" color="text.secondary">
+                                                        {excludeTodayCompletedTasksDescription}
+                                                    </Typography>
+
+                                                </Box>
+                                                <Switch
+                                                    checked={excludeTodayCompletedTasks}
+                                                    onChange={(event) => setExcludeTodayCompletedTasks(event.target.checked)}
+                                                    inputProps={{ 'aria-label': "Exclude today's completed tasks in Home page" }}
+                                                />
+                                            </Box>
+                                        </Box>
+                                    )}
                                 </Box>
 
                                 <Box sx={sectionCardSx}>
@@ -880,6 +1019,89 @@ export function SettingsPage() {
                                             inputProps={{ 'aria-label': 'Use short Pomodoro durations in seconds' }}
                                         />
                                     </Box>
+
+                                    <Box sx={{ mt: 2, pt: 2, borderTop: theme => `1px solid ${theme.palette.divider}` }}>
+                                        <Box sx={sectionHeadingSx}>
+                                            <MusicNoteOutlinedIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
+                                            <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                                                Focus sound
+                                            </Typography>
+                                        </Box>
+                                        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5, textAlign: 'left' }}>
+                                            {pomodoroSoundDescription}
+                                        </Typography>
+                                        {pomodoroSoundError && (
+                                            <Alert severity="warning" sx={{ mb: 1.5 }}>
+                                                {pomodoroSoundError}
+                                            </Alert>
+                                        )}
+                                        <TextField
+                                            select
+                                            fullWidth
+                                            size="small"
+                                            label="Sound used during focus"
+                                            value={selectedPomodoroSoundId}
+                                            onChange={handlePomodoroSoundChange}
+                                            disabled={pomodoroSoundsLoading || pomodoroSoundSaving}
+                                        >
+                                            <MenuItem value={BUILT_IN_POMODORO_SOUND_ID}>
+                                                {BUILT_IN_POMODORO_SOUND.name}
+                                            </MenuItem>
+                                            {pomodoroSounds.map(sound => (
+                                                <MenuItem key={sound.id} value={sound.id}>
+                                                    {sound.name}
+                                                </MenuItem>
+                                            ))}
+                                        </TextField>
+                                        {pomodoroSounds.length > 0 && (
+                                            <Stack spacing={0.5} sx={{ mt: 1 }}>
+                                                {pomodoroSounds.map(sound => (
+                                                    <Box
+                                                        key={sound.id}
+                                                        sx={{
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'space-between',
+                                                            gap: 1,
+                                                            pl: 1.5,
+                                                            borderRadius: 1.5,
+                                                            '&:hover': { backgroundColor: 'action.hover' },
+                                                        }}
+                                                    >
+                                                        <Typography variant="body2" noWrap sx={{ minWidth: 0 }}>
+                                                            {sound.name}
+                                                        </Typography>
+                                                        <Button
+                                                            size="small"
+                                                            color="inherit"
+                                                            onClick={() => void handlePomodoroSoundDelete(sound)}
+                                                            disabled={pomodoroSoundSaving}
+                                                            startIcon={<DeleteOutlineIcon />}
+                                                            sx={{ flexShrink: 0, textTransform: 'none' }}
+                                                        >
+                                                            Delete
+                                                        </Button>
+                                                    </Box>
+                                                ))}
+                                            </Stack>
+                                        )}
+                                        <Button
+                                            component="label"
+                                            variant="outlined"
+                                            size="small"
+                                            startIcon={<CloudUploadOutlinedIcon />}
+                                            disabled={pomodoroSoundSaving}
+                                            sx={{ mt: 1.5, textTransform: 'none' }}
+                                        >
+                                            Upload MP3
+                                            <input
+                                                hidden
+                                                type="file"
+                                                accept=".mp3,audio/mpeg"
+                                                onChange={handlePomodoroSoundUpload}
+                                            />
+                                        </Button>
+                                    </Box>
                                 </Box>
                             </>
                         )}
@@ -943,7 +1165,10 @@ export function SettingsPage() {
                                         aria-expanded={changePasswordOpen}
                                         onClick={() => {
                                             if (changePasswordOpen) closePasswordChange();
-                                            else setChangePasswordOpen(true);
+                                            else {
+                                                setPasswordSuccess(null);
+                                                setChangePasswordOpen(true);
+                                            }
                                         }}
                                         sx={{ justifyContent: 'flex-start', borderRadius: 2, py: 1.1, textTransform: 'none' }}
                                     >

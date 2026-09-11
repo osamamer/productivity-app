@@ -226,6 +226,10 @@ export const taskService = {
         return mainTasksCache.getStale(mainTasksCacheKey()) ?? readPersistedMainTasks();
     },
 
+    getCachedTodayTasks(): Task[] | undefined {
+        return todayTasksCache.getStale(todayTasksCacheKey());
+    },
+
     cacheMainTasks(tasks: Task[]): void {
         cacheMainTasks(tasks);
         invalidateTaskViewCaches();
@@ -336,10 +340,15 @@ export const taskService = {
         }
 
         const details = await loadTaskDetails(task.taskId, async () => {
-            const [subtasks, taskSeries] = await Promise.all([
-                this.getSubtasks(task.taskId),
-                this.getTaskSeries(task.taskId),
-            ]);
+            // The task list already tells us whether this task belongs to a
+            // series. Avoid asking the task endpoint to rediscover that fact
+            // for ordinary tasks, and use the series endpoint directly when
+            // recurrence does exist.
+            const subtasksPromise = this.getSubtasks(task.taskId);
+            const taskSeriesPromise = task.taskSeriesId
+                ? this.getTaskSeries(task.taskId, task.taskSeriesId)
+                : Promise.resolve(null);
+            const [subtasks, taskSeries] = await Promise.all([subtasksPromise, taskSeriesPromise]);
             return { task, subtasks, taskSeries };
         });
 
@@ -554,6 +563,17 @@ export const taskService = {
         invalidateTaskPomodoroStats(taskId);
         invalidateTaskListCaches();
         if (notifyResource) invalidateResource('tasks');
+    },
+
+    async deleteTaskInstance(
+        task: Pick<Task, 'taskId' | 'taskSeriesId'>,
+        options: DeleteTaskOptions = {},
+    ): Promise<void> {
+        if (task.taskSeriesId) {
+            await this.deleteTaskOccurrence(task.taskId, options);
+            return;
+        }
+        await this.deleteTask(task.taskId, options);
     },
 
     clearCache(): void {

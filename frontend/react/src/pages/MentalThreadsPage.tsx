@@ -345,7 +345,7 @@ export function MentalThreadsPage() {
     };
 
     const handleDeleteTask = async (task: Task) => {
-        await taskService.deleteTask(task.taskId);
+        await taskService.deleteTaskInstance(task);
         removeTaskFromState(task.taskId);
     };
 

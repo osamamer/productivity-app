@@ -49,6 +49,9 @@ public class User {
     @Column(name = "auto_start_pomodoro_sessions", nullable = false)
     private Boolean autoStartPomodoroSessions = true;
 
+    @Column(name = "pomodoro_sound_id")
+    private String pomodoroSoundId;
+
     @Builder.Default
     @Column(name = "checkup_notifications_enabled", nullable = false)
     private Boolean checkupNotificationsEnabled = true;

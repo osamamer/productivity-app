@@ -42,6 +42,7 @@ public class StatController {
                 request.createRecurringTask,
                 request.recurrenceFrequency,
                 request.recurrenceDaysOfWeek,
+                request.timeOfDay,
                 currentUserService.getCurrentUserId()
         );
     }
@@ -86,7 +87,8 @@ public class StatController {
                 request == null || request.recurrenceFrequency == null
                         ? org.osama.task.recurrence.TaskRecurrenceFrequency.DAILY
                         : request.recurrenceFrequency,
-                request == null ? null : request.recurrenceDaysOfWeek
+                request == null ? null : request.recurrenceDaysOfWeek,
+                request == null ? null : request.timeOfDay
         );
     }
 
@@ -104,13 +106,26 @@ public class StatController {
                 request == null ? null : request.timeZone,
                 request == null || request.recurrenceFrequency == null
                         ? TaskRecurrenceFrequency.DAILY : request.recurrenceFrequency,
-                request == null ? null : request.recurrenceDaysOfWeek
+                request == null ? null : request.recurrenceDaysOfWeek,
+                request == null ? null : request.timeOfDay
         );
     }
 
     @DeleteMapping("/definitions/{id}/recurring-task")
     public StatDefinition disconnectRecurringTask(@PathVariable String id) {
         return statService.disconnectRecurringTask(id, currentUserService.getCurrentUserId());
+    }
+
+    @PutMapping("/definitions/{id}/focus-task")
+    public StatDefinition linkFocusTask(@PathVariable String id,
+                                        @RequestBody LinkFocusTaskRequest request) {
+        return statService.linkFocusTask(id, request == null ? null : request.taskName,
+                currentUserService.getCurrentUserId());
+    }
+
+    @DeleteMapping("/definitions/{id}/focus-task")
+    public StatDefinition unlinkFocusTask(@PathVariable String id) {
+        return statService.unlinkFocusTask(id, currentUserService.getCurrentUserId());
     }
 
     @DeleteMapping("/definitions/{id}/recurring-task/series")
@@ -196,6 +211,7 @@ public class StatController {
         boolean createRecurringTask;
         org.osama.task.recurrence.TaskRecurrenceFrequency recurrenceFrequency;
         List<DayOfWeek> recurrenceDaysOfWeek;
+        String timeOfDay;
     }
 
     @Data
@@ -225,5 +241,11 @@ public class StatController {
         String timeZone;
         org.osama.task.recurrence.TaskRecurrenceFrequency recurrenceFrequency;
         List<DayOfWeek> recurrenceDaysOfWeek;
+        String timeOfDay;
+    }
+
+    @Data
+    public static class LinkFocusTaskRequest {
+        String taskName;
     }
 }

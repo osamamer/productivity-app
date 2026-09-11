@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { StyleSheet, TextInput, View } from 'react-native';
 
 import { AppButton } from '@/components/ui/AppButton';
 import { AppInput } from '@/components/ui/AppInput';
@@ -13,18 +13,9 @@ import { TASK_PRIORITY_OPTIONS } from '@/lib/taskPriority';
 import { api } from '@/services/api';
 import type { Task } from '@/types/models';
 import { dateFromScheduleValue, TaskDateTimePicker } from './TaskScheduleField';
+import { TaskReminderField } from './TaskReminderField';
 
 type Schedule = 'today' | 'tomorrow' | 'custom';
-
-const REMINDER_OPTIONS = [
-  { value: -1, label: 'No reminder' },
-  { value: 5, label: '5 min before' },
-  { value: 15, label: '15 min before' },
-  { value: 30, label: '30 min before' },
-  { value: 60, label: '1 hour before' },
-  { value: 1440, label: '1 day before' },
-  { value: 10080, label: '1 week before' },
-];
 
 function scheduledDate(choice: Exclude<Schedule, 'custom'>): string {
   const date = new Date();
@@ -46,20 +37,25 @@ export function TaskComposerSheet({ visible, onClose, onCreated, initialDate }: 
   initialDate?: string;
 }) {
   const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
   const [importance, setImportance] = useState<number>(TASK_PRIORITY_OPTIONS[0].value);
   const [schedule, setSchedule] = useState<Schedule>(initialDate ? 'custom' : 'today');
   const [customSchedule, setCustomSchedule] = useState(() => customDateTime(initialDate));
   const [customScheduleOpen, setCustomScheduleOpen] = useState(false);
   const [reminderMinutesBefore, setReminderMinutesBefore] = useState<number | null>(null);
   const [customScheduleDraft, setCustomScheduleDraft] = useState(() => dateFromScheduleValue(null));
+  const nameInputRef = useRef<TextInput>(null);
   const previousSchedule = useRef<Exclude<Schedule, 'custom'>>('today');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!visible) return undefined;
+    const focusTimer = setTimeout(() => nameInputRef.current?.focus(), 220);
+    return () => clearTimeout(focusTimer);
+  }, [visible]);
+
   function reset() {
     setName('');
-    setDescription('');
     setImportance(TASK_PRIORITY_OPTIONS[0].value);
     setSchedule(initialDate ? 'custom' : 'today');
     setCustomSchedule(customDateTime(initialDate));
@@ -105,7 +101,7 @@ export function TaskComposerSheet({ visible, onClose, onCreated, initialDate }: 
     try {
       const task = await api.tasks.create({
         name: name.trim(),
-        description: description.trim(),
+        description: '',
         scheduledPerformDateTime: schedule === 'custom' ? customSchedule : scheduledDate(schedule),
         tag: '',
         importance,
@@ -126,8 +122,7 @@ export function TaskComposerSheet({ visible, onClose, onCreated, initialDate }: 
       onClose={close}
       title="New task"
       footer={<AppButton label="Add task" icon="add" loading={saving} onPress={() => void submit()} />}>
-      <AppInput autoFocus label="What needs doing?" value={name} onChangeText={setName} error={error ?? undefined} />
-      <AppInput label="Details (optional)" value={description} onChangeText={setDescription} multiline />
+      <AppInput ref={nameInputRef} autoFocus label="What needs doing?" value={name} onChangeText={setName} error={error ?? undefined} />
       <AppText variant="label">When</AppText>
       <ChoiceChips value={schedule} onChange={chooseSchedule} options={[
         { value: 'today', label: 'Today' },
@@ -141,11 +136,9 @@ export function TaskComposerSheet({ visible, onClose, onCreated, initialDate }: 
       )}
       <AppText variant="label">Priority</AppText>
       <ChoiceChips value={importance} onChange={setImportance} options={[...TASK_PRIORITY_OPTIONS]} />
-      <AppText variant="label">Remind me</AppText>
-      <ChoiceChips
-        value={reminderMinutesBefore ?? -1}
-        onChange={value => setReminderMinutesBefore(value === -1 ? null : value)}
-        options={REMINDER_OPTIONS}
+      <TaskReminderField
+        value={reminderMinutesBefore}
+        onChange={setReminderMinutesBefore}
       />
       <AppPopup
         visible={customScheduleOpen}

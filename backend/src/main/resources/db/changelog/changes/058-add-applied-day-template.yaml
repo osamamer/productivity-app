@@ -1,0 +1,15 @@
+databaseChangeLog:
+  - changeSet:
+      id: 058-add-applied-day-template
+      author: osama
+      comment: Record the template applied to newly filled days
+      changes:
+        - addColumn:
+            tableName: day_entity
+            columns:
+              - column:
+                  name: applied_template_id
+                  type: varchar(36)
+              - column:
+                  name: applied_template_name
+                  type: varchar(120)

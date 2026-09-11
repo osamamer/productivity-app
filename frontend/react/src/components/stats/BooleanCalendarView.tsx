@@ -7,16 +7,19 @@ import { alpha, useTheme } from '@mui/material/styles';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import HighlightOffIcon from '@mui/icons-material/HighlightOff';
 import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
-import { format, subDays, eachDayOfInterval, getDay, getMonth } from 'date-fns';
+import { format, eachDayOfInterval, getDay, getMonth, parseISO } from 'date-fns';
 import { StatDefinition, StatEntry, StatEntryStatus } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
 import { getBooleanChoiceColor, showStatFeedback } from '../../services/statFeedback';
+import { formatStatBucketRange, getStatPeriodWindow, StatPeriodMode, StatPeriodOffset } from './statPeriod';
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 interface Props {
     definition: StatDefinition;
     dateRange: number;
+    periodMode: StatPeriodMode;
+    periodOffset: StatPeriodOffset;
     refreshKey: number;
     onEntryChanged?: (definitionId: string) => void;
     onDateContextMenu?: (date: string, event: React.MouseEvent<Element>) => void;
@@ -25,6 +28,7 @@ interface Props {
 interface BooleanHeatmapBucket {
     from: Date;
     to: Date;
+    bucketLabel?: string;
     average: number | null;
     doneDays: number;
     eligibleDays: number;
@@ -64,6 +68,9 @@ function booleanPeriodAverages(
         buckets.push({
             from: bucketDays[0],
             to: bucketDays[bucketDays.length - 1],
+            bucketLabel: daysPerBucket === 7
+                ? formatStatBucketRange(bucketDays[0], bucketDays[bucketDays.length - 1])
+                : undefined,
             average: eligibleDates.length > 0
                 ? doneDays / eligibleDates.length
                 : null,
@@ -77,14 +84,14 @@ function booleanPeriodAverages(
 }
 
 function heatmapBucketLabel(bucket: BooleanHeatmapBucket): string {
-    const dateRange = `${format(bucket.from, 'MMM d')} – ${format(bucket.to, 'MMM d, yyyy')}`;
-    if (bucket.notPlannedOnly) return `${dateRange} · Not planned`;
+    const label = bucket.bucketLabel ?? `${format(bucket.from, 'MMM d')} – ${format(bucket.to, 'MMM d, yyyy')}`;
+    if (bucket.notPlannedOnly) return `${label} · Not planned`;
 
     const average = Math.round((bucket.average ?? 0) * 100);
     const logged = bucket.recordedDays === 0
         ? 'no entries logged'
         : `${bucket.recordedDays} logged`;
-    return `${dateRange} · ${average}% · ${bucket.doneDays} of ${bucket.eligibleDays} days done · ${logged}`;
+    return `${label} · ${average}% · ${bucket.doneDays} of ${bucket.eligibleDays} days done · ${logged}`;
 }
 
 function splitHeatmapRows(buckets: BooleanHeatmapBucket[], rowCount: number): BooleanHeatmapBucket[][] {
@@ -122,6 +129,8 @@ function monthSegments(buckets: BooleanHeatmapBucket[], showYear: boolean): Heat
 export const BooleanCalendarView = React.memo(function BooleanCalendarView({
     definition,
     dateRange,
+    periodMode,
+    periodOffset,
     refreshKey,
     onEntryChanged,
     onDateContextMenu,
@@ -129,10 +138,11 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
     const theme = useTheme();
     const yesColor = theme.palette[getBooleanChoiceColor(definition, 1)].main;
     const noColor = theme.palette[getBooleanChoiceColor(definition, 0)].main;
-    const to = new Date();
-    const from = subDays(to, dateRange - 1);
-    const fromStr = format(from, 'yyyy-MM-dd');
-    const toStr = format(to, 'yyyy-MM-dd');
+    const period = getStatPeriodWindow(dateRange, periodMode, periodOffset);
+    const from = parseISO(period.from);
+    const to = parseISO(period.to);
+    const fromStr = period.from;
+    const toStr = period.to;
     const dataKey = `${definition.id}:${fromStr}:${toStr}`;
     const cachedEntries = statService.getCachedEntries(definition.id, fromStr, toStr);
     const cachedMaps = cachedEntries ? entryMaps(cachedEntries) : null;
@@ -405,9 +415,9 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
                                             overflow: 'hidden',
                                             opacity: day ? 1 : 0,
                                             cursor: day ? 'pointer' : 'default',
-                                            border: '1.5px solid',
+                                            border: '1.75px solid',
                                             borderColor: isYes || isNo || isNotPlanned
-                                                ? `${stampColor}66`
+                                                ? alpha(stampColor, theme.palette.mode === 'light' ? 0.8 : 0.4)
                                                 : 'transparent',
                                         }}
                                     >

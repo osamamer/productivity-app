@@ -6,7 +6,7 @@ import { useUser } from '../hooks/useUser';
 const pageEnter = keyframes`
     from {
         opacity: 0;
-        transform: translate3d(0, 12px, 0);
+        transform: translate3d(0, 8px, 0);
     }
     to {
         opacity: 1;
@@ -26,7 +26,7 @@ export function PageTransition() {
                 minHeight: '100vh',
                 display: 'flex',
                 flexDirection: 'column',
-                animation: `${pageEnter} 360ms cubic-bezier(0.22, 1, 0.36, 1) both`,
+                animation: `${pageEnter} 220ms cubic-bezier(0.22, 1, 0.36, 1) both`,
                 '@media (prefers-reduced-motion: reduce)': {
                     animation: 'none',
                 },

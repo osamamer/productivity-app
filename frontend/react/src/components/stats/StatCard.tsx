@@ -2,9 +2,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
     Box, Card, CardContent, CardHeader, IconButton,
     FormControl, InputLabel, MenuItem, Select, Stack,
-    ToggleButton, Tooltip,
+    ToggleButton, Tooltip, Typography,
 } from '@mui/material';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { format, subDays } from 'date-fns';
 import { StatDefinition } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
@@ -14,6 +16,7 @@ import { StatSummaryBar } from './StatSummaryBar';
 import { StatInsightsDialog } from './StatInsightsDialog';
 import { FocusTimeSummaryBar } from './FocusTimeSummaryBar';
 import { TaskFocusTimeChart } from './TaskFocusTimeChart';
+import { getStatPeriodWindow, StatPeriodMode, StatPeriodOffset } from './statPeriod';
 
 const CHART_DATE_RANGES = [
     { label: '7d', value: 7 },
@@ -77,6 +80,8 @@ export const StatCard = React.memo(function StatCard({
     onDateContextMenu,
 }: Props) {
     const [dateRange, setDateRange] = useState(30);
+    const [periodMode, setPeriodMode] = useState<StatPeriodMode>('last');
+    const [periodOffset, setPeriodOffset] = useState<StatPeriodOffset>(0);
     const [insightsOpen, setInsightsOpen] = useState(false);
     const [insightsAvailable, setInsightsAvailable] = useState(false);
     const [comparisonId, setComparisonId] = useState('');
@@ -87,7 +92,7 @@ export const StatCard = React.memo(function StatCard({
     const comparisonDefinition = supportsComparison
         ? availableComparisons.find(item => item.id === comparisonId)
         : undefined;
-    const supportsFocusTime = Boolean(definition.recurringTaskSeriesId);
+    const supportsFocusTime = Boolean(definition.recurringTaskSeriesId || definition.focusTaskName);
     const [viewMode, setViewMode] = useState<'stat' | 'focusTime'>('stat');
     const focusTimeView = supportsFocusTime && viewMode === 'focusTime';
     const comparisonIds = comparisonDefinitions.map(item => item.id).join(':');
@@ -132,6 +137,33 @@ export const StatCard = React.memo(function StatCard({
     const dateRanges = isBooleanCalendar
         ? CALENDAR_DATE_RANGES
         : CHART_DATE_RANGES;
+    const supportsPeriodNavigation = dateRange !== 90;
+    const periodName = dateRange === 7 ? 'week' : dateRange === 30 ? 'month' : 'year';
+    const periodWindow = getStatPeriodWindow(dateRange, periodMode, periodOffset);
+
+    const handleDateRangeChange = (nextDateRange: number) => {
+        setDateRange(nextDateRange);
+        if (nextDateRange === 90) {
+            setPeriodMode('last');
+            setPeriodOffset(0);
+        }
+    };
+
+    const handlePreviousPeriod = () => {
+        if (!supportsPeriodNavigation) return;
+        setPeriodMode('current');
+        setPeriodOffset(current => current - 1);
+    };
+
+    const handleNextPeriod = () => {
+        if (!supportsPeriodNavigation || periodMode !== 'current' || periodOffset >= 0) return;
+        setPeriodOffset(current => Math.min(0, current + 1));
+    };
+
+    const showCurrentPeriod = () => {
+        setPeriodMode(current => current === 'current' && periodOffset === 0 ? 'last' : 'current');
+        setPeriodOffset(0);
+    };
 
     return (
         <Card variant="outlined">
@@ -159,34 +191,100 @@ export const StatCard = React.memo(function StatCard({
                     <FocusTimeSummaryBar
                         definitionId={definition.id}
                         dateRange={dateRange}
+                        periodMode={periodMode}
+                        periodOffset={periodOffset}
                         refreshKey={refreshKey}
                     />
                 ) : (
-                    <StatSummaryBar definition={definition} dateRange={dateRange} refreshKey={refreshKey} />
+                    <StatSummaryBar
+                        definition={definition}
+                        dateRange={dateRange}
+                        periodMode={periodMode}
+                        periodOffset={periodOffset}
+                        refreshKey={refreshKey}
+                    />
                 )}
-                <Stack
-                    direction={{ xs: 'column', sm: 'row' }}
-                    alignItems={{ xs: 'stretch', sm: 'center' }}
-                    justifyContent="space-between"
-                    spacing={1.5}
-                    sx={{ mb: 2 }}
+                <Box
+                    sx={{
+                        display: 'grid',
+                        gridTemplateColumns: { xs: '1fr', sm: 'minmax(0, 1fr) auto minmax(0, 1fr)' },
+                        alignItems: 'center',
+                        gap: 1.5,
+                        mb: 2,
+                    }}
                 >
-                    <Stack direction="row" spacing={0.5}>
+                    <Stack
+                        direction="row"
+                        spacing={0.5}
+                        sx={{ justifySelf: { sm: 'start' }, minWidth: 0 }}
+                    >
                         {dateRanges.map(r => (
                             <ToggleButton
                                 key={r.value}
                                 value={r.value}
                                 selected={dateRange === r.value}
-                                onChange={() => setDateRange(r.value)}
+                                onChange={() => handleDateRangeChange(r.value)}
                                 size="small"
                                 sx={{ px: 1.5, py: 0.25, fontSize: 12, lineHeight: 1.5 }}
                             >
                                 {r.label}
                             </ToggleButton>
                         ))}
+                        {supportsPeriodNavigation && (
+                            <>
+                                <Tooltip title={`Previous ${periodName}`}>
+                                    <IconButton
+                                        aria-label={`Previous ${periodName}`}
+                                        onClick={handlePreviousPeriod}
+                                        size="small"
+                                    >
+                                        <ChevronLeftIcon fontSize="small" />
+                                    </IconButton>
+                                </Tooltip>
+                                <Tooltip title={`Next ${periodName}`}>
+                                    <span>
+                                        <IconButton
+                                            aria-label={`Next ${periodName}`}
+                                            onClick={handleNextPeriod}
+                                            disabled={periodMode !== 'current' || periodOffset >= 0}
+                                            size="small"
+                                        >
+                                            <ChevronRightIcon fontSize="small" />
+                                        </IconButton>
+                                    </span>
+                                </Tooltip>
+                                <ToggleButton
+                                    value="current"
+                                    selected={periodMode === 'current' && periodOffset === 0}
+                                    onChange={showCurrentPeriod}
+                                    size="small"
+                                    sx={{ px: 1.5, py: 0.25, fontSize: 12, lineHeight: 1.5 }}
+                                >
+                                    Current
+                                </ToggleButton>
+                            </>
+                        )}
                     </Stack>
+                    <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{
+                            gridColumn: { xs: 1, sm: 2 },
+                            gridRow: { xs: 2, sm: 1 },
+                            justifySelf: 'center',
+                            textAlign: 'center',
+                            whiteSpace: 'nowrap',
+                        }}
+                    >
+                        {periodWindow.label}
+                    </Typography>
                     {(supportsFocusTime || supportsComparison) && (
-                        <Stack direction="row" spacing={1} justifyContent="flex-end">
+                        <Stack
+                            direction="row"
+                            spacing={1}
+                            justifyContent="flex-end"
+                            sx={{ gridColumn: { xs: 1, sm: 3 }, gridRow: { xs: 3, sm: 1 }, justifySelf: { sm: 'end' } }}
+                        >
                             {supportsFocusTime && (
                                 <FormControl size="small" sx={{ minWidth: { sm: 180 } }}>
                                     <InputLabel id={`stat-view-label-${definition.id}`}>View</InputLabel>
@@ -221,7 +319,7 @@ export const StatCard = React.memo(function StatCard({
                             )}
                         </Stack>
                     )}
-                </Stack>
+                </Box>
                 <StatViewTransition
                     viewKey={focusTimeView ? 'focus-time' : isBooleanCalendar ? 'calendar' : 'chart'}
                 >
@@ -229,12 +327,16 @@ export const StatCard = React.memo(function StatCard({
                         <TaskFocusTimeChart
                             definition={definition}
                             dateRange={dateRange}
+                            periodMode={periodMode}
+                            periodOffset={periodOffset}
                             refreshKey={refreshKey}
                         />
                     ) : isBooleanCalendar ? (
                         <BooleanCalendarView
                             definition={definition}
                             dateRange={dateRange}
+                            periodMode={periodMode}
+                            periodOffset={periodOffset}
                             refreshKey={refreshKey}
                             onEntryChanged={onEntryChanged}
                             onDateContextMenu={onDateContextMenu}
@@ -244,6 +346,8 @@ export const StatCard = React.memo(function StatCard({
                             definition={definition}
                             comparisonDefinition={comparisonDefinition}
                             dateRange={dateRange}
+                            periodMode={periodMode}
+                            periodOffset={periodOffset}
                             refreshKey={refreshKey}
                             onEntryChanged={onEntryChanged}
                             onDateContextMenu={onDateContextMenu}

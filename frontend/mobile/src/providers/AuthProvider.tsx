@@ -21,6 +21,7 @@ import {
   signInResponseMessage,
 } from '@/lib/errors';
 import { registerTokenResolver } from '@/services/auth-session';
+import { api } from '@/services/api';
 import type { UserInfo } from '@/types/models';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -251,6 +252,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
   const logout = useCallback(async () => {
     const idToken = tokenRef.current?.idToken;
+    try {
+      await api.notifications.removePushTokens();
+    } catch (cause) {
+      console.error('Could not unregister mobile push tokens during logout:', cause);
+    }
     await clearSession();
     if (!discovery?.endSessionEndpoint) return;
     const params = new URLSearchParams({

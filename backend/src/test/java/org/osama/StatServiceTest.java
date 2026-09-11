@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.osama.stat.*;
+import org.osama.requests.NewTaskRequest;
 import org.osama.requests.UpdateTaskRequest;
 import org.osama.task.Task;
 import org.osama.task.TaskRepository;
@@ -21,8 +22,12 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.DayOfWeek;
 import java.time.Duration;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 
@@ -474,6 +479,15 @@ public class StatServiceTest {
                 StatMorality.BAD, null, TEST_USER_ID));
     }
 
+    @Test
+    void definitionCreationRejectsDuplicateStatNameIgnoringCaseAndWhitespace() {
+        createNamedStatDefinition("Already used", StatType.BOOLEAN);
+
+        assertThrows(IllegalArgumentException.class, () -> statService.createDefinition(
+                "  ALREADY USED  ", null, StatType.BOOLEAN, null, null,
+                StatMorality.NEUTRAL, null, TEST_USER_ID));
+    }
+
     // --- Upsert behaviour ---
 
     @Test
@@ -729,15 +743,37 @@ public class StatServiceTest {
         StatDefinition linked = statService.createRecurringTask(
                 definition.getId(), TEST_USER_ID, "UTC",
                 org.osama.task.recurrence.TaskRecurrenceFrequency.CUSTOM,
-                List.of(DayOfWeek.MONDAY, DayOfWeek.WEDNESDAY));
+                List.of(DayOfWeek.MONDAY, DayOfWeek.WEDNESDAY), "08:30");
 
         List<Task> occurrences = taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(
                 linked.getRecurringTaskSeriesId());
 
         assertFalse(occurrences.isEmpty());
+        assertEquals(LocalTime.of(8, 30), occurrences.get(0).getScheduledPerformDateTime().toLocalTime());
         assertTrue(occurrences.stream()
                 .allMatch(task -> task.getSeriesOccurrenceAt().getDayOfWeek() == DayOfWeek.MONDAY
                         || task.getSeriesOccurrenceAt().getDayOfWeek() == DayOfWeek.WEDNESDAY));
+    }
+
+    @Test
+    void booleanStatKeepsAnEligibleCurrentDayWhenTheSelectedTimeHasPassed() {
+        ZoneId timeZone = ZoneId.of("UTC");
+        LocalDate today = LocalDate.now(timeZone);
+        LocalTime timeEarlierToday = LocalTime.now(timeZone).minusMinutes(2);
+        String requestedTime = timeEarlierToday.format(DateTimeFormatter.ofPattern("HH:mm"));
+        StatDefinition definition = createNamedStatDefinition("Read", StatType.BOOLEAN);
+
+        StatDefinition linked = statService.createRecurringTask(
+                definition.getId(), TEST_USER_ID, timeZone.getId(),
+                org.osama.task.recurrence.TaskRecurrenceFrequency.CUSTOM,
+                List.of(today.getDayOfWeek(), today.plusDays(1).getDayOfWeek()), requestedTime);
+
+        Task firstOccurrence = taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(
+                        linked.getRecurringTaskSeriesId()).get(0);
+
+        assertEquals(today, firstOccurrence.getSeriesOccurrenceAt().toLocalDate());
+        assertEquals(today.atTime(timeEarlierToday.withSecond(0).withNano(0)),
+                firstOccurrence.getScheduledPerformDateTime());
     }
 
     @Test
@@ -749,10 +785,12 @@ public class StatServiceTest {
         statService.updateRecurringTask(
                 definition.getId(), TEST_USER_ID, "UTC",
                 org.osama.task.recurrence.TaskRecurrenceFrequency.CUSTOM,
-                List.of(DayOfWeek.SUNDAY, DayOfWeek.THURSDAY));
+                List.of(DayOfWeek.SUNDAY, DayOfWeek.THURSDAY), "07:15");
 
         assertEquals("SUNDAY,THURSDAY",
                 taskSeriesRepository.findById(seriesId).orElseThrow().getRecurrenceDaysOfWeek());
+        assertEquals(LocalTime.of(7, 15),
+                taskSeriesRepository.findById(seriesId).orElseThrow().getStartDateTime().toLocalTime());
 
         StatDefinition deleted = statService.deleteRecurringTaskSeries(definition.getId(), TEST_USER_ID);
 
@@ -793,6 +831,45 @@ public class StatServiceTest {
     }
 
     @Test
+    void focusTaskLinkIncludesCompletedTasksByNameAndIgnoresNonPomodoroSessions() {
+        StatDefinition definition = createNamedStatDefinition("Writing", StatType.BOOLEAN);
+        LocalDate today = LocalDate.now();
+        Task completedWrite = createTask("Write");
+        Task currentWrite = createTask("write");
+        Task unrelatedTask = createTask("Read");
+
+        UpdateTaskRequest completeTask = new UpdateTaskRequest();
+        completeTask.setCompleted(true);
+        taskService.updateTask(completedWrite.getTaskId(), completeTask, TEST_USER_ID);
+
+        taskSessionRepository.save(session("completed-write-session", completedWrite.getTaskId(),
+                true, today.minusDays(1), 25));
+        taskSessionRepository.save(session("current-write-session", currentWrite.getTaskId(),
+                true, today, 15));
+        taskSessionRepository.save(session("unrelated-session", unrelatedTask.getTaskId(),
+                true, today, 40));
+        taskSessionRepository.save(session("regular-write-session", currentWrite.getTaskId(),
+                false, today, 90));
+
+        StatDefinition linked = statService.linkFocusTask(definition.getId(), "  WRITE  ", TEST_USER_ID);
+
+        Map<LocalDate, Long> focusByDate = statService.getFocusTime(
+                        linked.getId(), today.minusDays(1), today, TEST_USER_ID).stream()
+                .collect(java.util.stream.Collectors.toMap(StatFocusTimeEntryResponse::date,
+                        StatFocusTimeEntryResponse::totalFocusSeconds));
+
+        assertEquals("WRITE", linked.getFocusTaskName());
+        assertEquals(Map.of(
+                today.minusDays(1), Duration.ofMinutes(25).toSeconds(),
+                today, Duration.ofMinutes(15).toSeconds()), focusByDate);
+
+        StatDefinition unlinked = statService.unlinkFocusTask(linked.getId(), TEST_USER_ID);
+
+        assertNull(unlinked.getFocusTaskName());
+        assertTrue(statService.getFocusTime(unlinked.getId(), today.minusDays(1), today, TEST_USER_ID).isEmpty());
+    }
+
+    @Test
     void booleanStatCanCreateAndDisconnectRecurringTaskWithoutDeletingData() {
         StatDefinition definition = statService.createDefinition(
                 "Daily reading", "description", StatType.BOOLEAN, null, null,
@@ -824,5 +901,28 @@ public class StatServiceTest {
     private StatDefinition createNamedStatDefinition(String name, StatType type,
                                                      Double minValue, Double maxValue) {
         return statService.createDefinition(name, "description", type, minValue, maxValue, TEST_USER_ID);
+    }
+
+    private Task createTask(String name) {
+        NewTaskRequest request = new NewTaskRequest();
+        request.setName(name);
+        request.setDescription("");
+        request.setScheduledPerformDateTime("");
+        return taskService.createTask(request, TEST_USER_ID);
+    }
+
+    private TaskSession session(String sessionId, String taskId, boolean pomodoro,
+                                LocalDate date, long minutes) {
+        TaskSession session = new TaskSession();
+        session.setSessionId(sessionId);
+        session.setAssociatedTaskId(taskId);
+        session.setPomodoro(pomodoro);
+        session.setActive(false);
+        session.setRunning(false);
+        session.setTotalSessionTime(Duration.ofMinutes(minutes));
+        LocalDateTime start = date.atTime(9, 0);
+        session.setStartTime(start);
+        session.setEndTime(start.plusMinutes(minutes));
+        return session;
     }
 }

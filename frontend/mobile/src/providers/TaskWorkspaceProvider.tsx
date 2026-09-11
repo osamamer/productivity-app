@@ -7,6 +7,7 @@ import { subscribeToResourceInvalidation } from '@/lib/resourceInvalidation';
 import { api, TASK_PAGE_BATCH_SIZE } from '@/services/api';
 import type { Task, TaskGroup } from '@/types/models';
 import { useAuth } from './AuthProvider';
+import { useNotifications } from './NotificationProvider';
 
 type TaskWorkspaceValue = {
   allTasks: Task[];
@@ -31,6 +32,7 @@ type TaskWorkspaceValue = {
   moveTasksToToday: (taskIds: string[]) => Promise<void>;
   moveTasksToDate: (taskIds: string[], scheduledPerformDateTime: string) => Promise<void>;
   createGroup: (name: string, taskIds: string[]) => Promise<TaskGroup>;
+  renameGroup: (groupId: string, name: string) => Promise<TaskGroup>;
   replaceGroupTasks: (groupId: string, taskIds: string[]) => Promise<TaskGroup>;
   deleteGroup: (groupId: string) => Promise<void>;
 };
@@ -85,6 +87,7 @@ function orderWithTasksAtEndOfToday(tasks: Task[], movedTaskIds: string[]): stri
 
 export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
   const { isAuthenticated } = useAuth();
+  const { syncTaskReminders } = useNotifications();
   const [allTasks, setAllTasks] = useState<Task[]>([]);
   const [groups, setGroups] = useState<TaskGroup[]>([]);
   const [loading, setLoading] = useState(true);
@@ -210,19 +213,22 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
     setAllTasks(previous => previous.some(item => item.taskId === task.taskId)
       ? replaceTask(previous, task)
       : [task, ...previous]);
-  }, []);
+    void syncTaskReminders();
+  }, [syncTaskReminders]);
 
   const updateTask = useCallback((task: Task) => {
     animateLayout();
     setAllTasks(previous => replaceTask(previous, task));
-  }, []);
+    void syncTaskReminders();
+  }, [syncTaskReminders]);
 
   const removeTask = useCallback((taskId: string) => {
     animateLayout();
     setAllTasks(previous => previous.filter(task => task.taskId !== taskId));
     setGroups(previous => usableGroups(previous
       .map(group => ({ ...group, taskIds: group.taskIds.filter(id => id !== taskId) }))));
-  }, []);
+    void syncTaskReminders();
+  }, [syncTaskReminders]);
 
   const moveTask = useCallback(async (taskId: string, direction: 'up' | 'down') => {
     const current = allTasks.filter(task => !task.parentId);
@@ -302,12 +308,13 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
         const reorderedById = new Map(reordered.map(task => [task.taskId, task]));
         setAllTasks(previous => previous.map(task => reorderedById.get(task.taskId) ?? task));
       }
+      await syncTaskReminders();
     } catch (cause) {
       console.error('Could not move mobile tasks to a new date:', cause);
       await load(true);
       throw cause;
     }
-  }, [allTasks, load]);
+  }, [allTasks, load, syncTaskReminders]);
 
   const moveTasksToToday = useCallback(async (taskIds: string[]) => {
     const now = new Date();
@@ -352,6 +359,12 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
       created,
     ]));
     return created;
+  }, []);
+
+  const renameGroup = useCallback(async (groupId: string, name: string) => {
+    const updated = await api.taskGroups.rename(groupId, name);
+    setGroups(previous => previous.map(group => group.groupId === groupId ? updated : group));
+    return updated;
   }, []);
 
   const replaceGroupTasks = useCallback(async (groupId: string, taskIds: string[]) => {
@@ -400,10 +413,11 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
       moveTasksToToday,
       moveTasksToDate,
       createGroup,
+      renameGroup,
       replaceGroupTasks,
       deleteGroup,
     };
-  }, [addTask, allTasks, createGroup, deleteGroup, error, groups, hasMoreFutureTasks, hasMorePastTasks, load, loadMoreFutureTasks, loadMorePastTasks, loading, moveTask, moveTasksToDate, moveTasksToToday, ready, removeTask, reorderTasks, replaceGroupTasks, updateTask]);
+  }, [addTask, allTasks, createGroup, deleteGroup, error, groups, hasMoreFutureTasks, hasMorePastTasks, load, loadMoreFutureTasks, loadMorePastTasks, loading, moveTask, moveTasksToDate, moveTasksToToday, ready, removeTask, renameGroup, reorderTasks, replaceGroupTasks, updateTask]);
 
   return <TaskWorkspaceContext.Provider value={value}>{children}</TaskWorkspaceContext.Provider>;
 }

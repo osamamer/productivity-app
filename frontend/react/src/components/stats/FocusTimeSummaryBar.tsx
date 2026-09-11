@@ -1,14 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Skeleton, Stack, Typography } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import { format, subDays } from 'date-fns';
 import { StatFocusTimeEntry } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
 import { formatDurationValue } from '../../services/utils/statValues';
+import { getStatPeriodWindow, StatPeriodMode, StatPeriodOffset } from './statPeriod';
 
 interface Props {
     definitionId: string;
     dateRange: number;
+    periodMode: StatPeriodMode;
+    periodOffset: StatPeriodOffset;
     refreshKey: number;
 }
 
@@ -37,14 +39,6 @@ function SummaryTile({ label, value }: TileProps) {
     );
 }
 
-function getPeriodWindow(dateRange: number): { from: string; to: string; key: string } {
-    const to = new Date();
-    const from = subDays(to, dateRange - 1);
-    const fromString = format(from, 'yyyy-MM-dd');
-    const toString = format(to, 'yyyy-MM-dd');
-    return { from: fromString, to: toString, key: `${fromString}:${toString}` };
-}
-
 function minutesFrom(entries: StatFocusTimeEntry[]): number[] {
     return entries.map(entry => entry.totalFocusSeconds / 60);
 }
@@ -52,9 +46,11 @@ function minutesFrom(entries: StatFocusTimeEntry[]): number[] {
 export const FocusTimeSummaryBar = React.memo(function FocusTimeSummaryBar({
     definitionId,
     dateRange,
+    periodMode,
+    periodOffset,
     refreshKey,
 }: Props) {
-    const period = getPeriodWindow(dateRange);
+    const period = getStatPeriodWindow(dateRange, periodMode, periodOffset);
     const periodKey = `${definitionId}:${period.key}`;
     const [state, setState] = useState<{ key: string; entries: StatFocusTimeEntry[] } | null>(() => {
         const entries = statService.getCachedFocusTime(definitionId, period.from, period.to);

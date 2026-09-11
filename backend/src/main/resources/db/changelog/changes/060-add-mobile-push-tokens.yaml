@@ -1,0 +1,45 @@
+databaseChangeLog:
+  - changeSet:
+      id: 060-add-mobile-push-tokens
+      author: codex
+      comment: Store Expo mobile push tokens for closed-app notification delivery
+      changes:
+        - createTable:
+            tableName: mobile_push_token
+            columns:
+              - column:
+                  name: token
+                  type: varchar(512)
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+              - column:
+                  name: modified_at
+                  type: timestamp
+        - addForeignKeyConstraint:
+            baseTableName: mobile_push_token
+            baseColumnNames: user_id
+            referencedTableName: app_user
+            referencedColumnNames: id
+            constraintName: fk_app_mobile_push_token_user
+            onDelete: CASCADE
+        - createIndex:
+            tableName: mobile_push_token
+            indexName: idx_app_mobile_push_token_user
+            ifNotExists: true
+            columns:
+              - column:
+                  name: user_id
+      rollback:
+        - dropTable:
+            tableName: mobile_push_token

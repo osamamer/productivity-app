@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -40,6 +41,30 @@ public class DayService {
     public DayEntity getOrCreateDay(LocalDate localDate, String userId) {
         return dayRepository.findDayEntityByLocalDateAndUserId(localDate, userId)
                 .orElseGet(() -> dayRepository.save(createNewDay(localDate, userId)));
+    }
+
+    public List<DayCalendarResponse> getCalendarDays(LocalDate from, LocalDate to, String userId) {
+        if (from == null || to == null || to.isBefore(from)) {
+            throw new IllegalArgumentException("A valid calendar date range is required.");
+        }
+        return dayRepository.findAllByUserIdAndLocalDateBetweenOrderByLocalDateAsc(userId, from, to).stream()
+                .map(day -> new DayCalendarResponse(
+                        day.getLocalDate(), day.getAppliedTemplateId(), day.getAppliedTemplateName()))
+                .toList();
+    }
+
+    public void markTemplateApplied(LocalDate localDate, String templateId, String templateName, String userId) {
+        DayEntity day = getOrCreateDay(localDate, userId);
+        day.setAppliedTemplateId(templateId);
+        day.setAppliedTemplateName(templateName);
+    }
+
+    public void clearAppliedTemplate(LocalDate localDate, String userId) {
+        DayEntity day = dayRepository.findDayEntityByLocalDateAndUserId(localDate, userId).orElse(null);
+        if (day == null) return;
+        day.setAppliedTemplateId(null);
+        day.setAppliedTemplateName(null);
+        dayRepository.save(day);
     }
 
     public void setTodayInfo(double rating, String plan, String summary, String userId) {

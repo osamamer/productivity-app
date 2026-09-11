@@ -11,6 +11,11 @@
         Strict-Transport-Security "max-age=31536000; includeSubDomains"
     }
 
+    @auth path /auth /auth/*
+    handle @auth {
+        reverse_proxy keycloak:8080
+    }
+
     @api path /api/*
     handle @api {
         reverse_proxy backend:8080
@@ -41,5 +46,7 @@
 
 {$AUTH_DOMAIN} {
     encode zstd gzip
+    # Keep the previous auth hostname working for already-installed mobile builds.
+    rewrite * /auth{uri}
     reverse_proxy keycloak:8080
 }

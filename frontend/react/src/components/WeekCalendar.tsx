@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { Box, Chip, Paper, Tooltip, Typography } from '@mui/material';
 import { HoverCardBox } from './box/HoverCardBox';
 import { Task } from '../types/Task';
+import { dateKey, taskDateKey } from '../services/utils/taskDate';
 
 type TaskCalendarProps = {
     tasks: Task[];
@@ -28,13 +29,12 @@ export function WeekCalendar({ tasks }: TaskCalendarProps) {
 
         tasks.forEach(task => {
             if (task.scheduledPerformDateTime) {
-                const taskDate = new Date(task.scheduledPerformDateTime);
-                const dateKey = taskDate.toISOString().split('T')[0];
+                const taskDate = taskDateKey(task.scheduledPerformDateTime);
 
-                if (!grouped[dateKey]) {
-                    grouped[dateKey] = [];
+                if (!grouped[taskDate]) {
+                    grouped[taskDate] = [];
                 }
-                grouped[dateKey].push(task);
+                grouped[taskDate].push(task);
             }
         });
 
@@ -55,8 +55,7 @@ export function WeekCalendar({ tasks }: TaskCalendarProps) {
     };
 
     const getTasksForDate = (date: Date): Task[] => {
-        const dateKey = date.toISOString().split('T')[0];
-        return tasksByDate[dateKey] || [];
+        return tasksByDate[dateKey(date)] || [];
     };
 
     return (

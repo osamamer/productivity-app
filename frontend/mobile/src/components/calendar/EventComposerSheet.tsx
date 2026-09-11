@@ -272,6 +272,11 @@ export function EventComposerSheet({
   const [deleteScope, setDeleteScope] = useState<'occurrence' | 'all' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const timeFieldsChanged = useRef(false);
+  const isRepeatingOccurrence = Boolean(
+    event
+    && (event.recurrenceFrequency ?? 'NONE') !== 'NONE'
+    && occurrenceKey
+  );
 
   useEffect(() => {
     if (!visible || event) return;
@@ -366,8 +371,8 @@ export function EventComposerSheet({
       startTime: startInstant,
       endTime: endInstant,
       timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
-      status: event && occurrenceKey && statusOverride === undefined
-        ? event.status
+      status: isRepeatingOccurrence && statusOverride === undefined
+        ? event!.status
         : statusOverride ?? status,
       recurrenceFrequency: recurrence,
       recurrenceEndDate: recurrence === 'NONE' ? null : recurrenceEndDate || null,
@@ -377,7 +382,7 @@ export function EventComposerSheet({
     };
 
     try {
-      if (event && occurrenceKey && statusOverride === undefined
+      if (isRepeatingOccurrence && statusOverride === undefined
         && onUpdateOccurrenceStatus && status !== occurrenceStatus) {
         await onUpdateOccurrenceStatus(status);
       }

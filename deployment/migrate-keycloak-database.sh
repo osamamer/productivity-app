@@ -44,6 +44,7 @@ app_tables=(
   note
   note_category
   pomodoro
+  pomodoro_sound
   project
   reminder
   scheduled_job
@@ -54,6 +55,7 @@ app_tables=(
   task_group
   task_group_task
   task_session
+  mobile_push_token
 )
 
 echo "Ensuring PostgreSQL is running..."

@@ -113,6 +113,9 @@ export function CustomTimer({ task }: Props) {
     const isBreakPhase = status?.phase
         ? status.phase === 'BREAK' || status.phase === 'WAITING_FOR_BREAK'
         : Boolean(status && !status.sessionActive);
+    const playPauseLabel = waitingForPhase
+        ? status?.phase === 'WAITING_FOR_BREAK' ? 'Start break' : 'Start focus session'
+        : status?.sessionRunning ? 'Pause focus session' : 'Resume focus session';
 
     useEffect(() => {
         const focusRunning = Boolean(status?.active && status.sessionActive && status.sessionRunning && !isBreakPhase);
@@ -536,39 +539,47 @@ export function CustomTimer({ task }: Props) {
                             {/* Controls */}
                             {(status.sessionActive || waitingForPhase || status.phase === 'BREAK') && (
                                 <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
-                                    <Tooltip title={whiteNoiseEnabled ? 'Mute brown noise' : 'Play brown noise'}>
-                                        <IconButton
-                                            onClick={handleWhiteNoiseToggle}
-                                            aria-label={whiteNoiseEnabled ? 'Mute brown noise' : 'Play brown noise'}
-                                            color={whiteNoiseEnabled ? 'primary' : 'inherit'}
-                                            size="large"
-                                            disabled={isLoading}
-                                        >
-                                            {whiteNoiseEnabled ? <VolumeUpIcon /> : <VolumeOffIcon />}
-                                        </IconButton>
+                                    <Tooltip title={whiteNoiseEnabled ? 'Mute focus sound' : 'Play focus sound'}>
+                                        <span>
+                                            <IconButton
+                                                onClick={handleWhiteNoiseToggle}
+                                                aria-label={whiteNoiseEnabled ? 'Mute focus sound' : 'Play focus sound'}
+                                                color={whiteNoiseEnabled ? 'primary' : 'inherit'}
+                                                size="large"
+                                                disabled={isLoading}
+                                            >
+                                                {whiteNoiseEnabled ? <VolumeUpIcon /> : <VolumeOffIcon />}
+                                            </IconButton>
+                                        </span>
                                     </Tooltip>
                                     {(status.sessionActive || waitingForPhase) && (
-                                        <IconButton
-                                            onClick={handleTogglePlayPause}
-                                                color={waitingForPhase && status.phase === 'WAITING_FOR_BREAK' ? 'inherit' : 'primary'}
-                                            size="large"
-                                            disabled={isLoading}
-                                            sx={{
-                                                color: waitingForPhase && status.phase === 'WAITING_FOR_BREAK' ? pomodoroGreen : undefined,
-                                                backgroundColor: 'action.hover',
-                                                '&:hover': {
-                                                    backgroundColor: 'action.selected',
-                                                },
-                                            }}
-                                        >
-                                            {!waitingForPhase && status.sessionRunning ? <PauseIcon /> : <PlayArrowIcon />}
-                                        </IconButton>
+                                        <Tooltip title={playPauseLabel}>
+                                            <span>
+                                                <IconButton
+                                                    onClick={handleTogglePlayPause}
+                                                    aria-label={playPauseLabel}
+                                                    color={waitingForPhase && status.phase === 'WAITING_FOR_BREAK' ? 'inherit' : 'primary'}
+                                                    size="large"
+                                                    disabled={isLoading}
+                                                    sx={{
+                                                        color: waitingForPhase && status.phase === 'WAITING_FOR_BREAK' ? pomodoroGreen : undefined,
+                                                        backgroundColor: 'action.hover',
+                                                        '&:hover': {
+                                                            backgroundColor: 'action.selected',
+                                                        },
+                                                    }}
+                                                >
+                                                    {!waitingForPhase && status.sessionRunning ? <PauseIcon /> : <PlayArrowIcon />}
+                                                </IconButton>
+                                            </span>
+                                        </Tooltip>
                                     )}
                                     {status.phase === 'BREAK' && (
                                         <Tooltip title="End break and start the next focus session">
                                             <span>
                                                 <IconButton
                                                     onClick={handleFinishBreak}
+                                                    aria-label="End break and start the next focus session"
                                                     color="primary"
                                                     size="large"
                                                     disabled={isLoading}
@@ -582,21 +593,26 @@ export function CustomTimer({ task }: Props) {
                                             </span>
                                         </Tooltip>
                                     )}
-                                    <IconButton
-                                        onClick={handleEndSession}
-                                        color="error"
-                                        size="large"
-                                        disabled={isLoading}
-                                        sx={{
-                                            backgroundColor: 'action.hover',
-                                            '&:hover': {
-                                                backgroundColor: 'error.light',
-                                                color: 'error.contrastText',
-                                            },
-                                        }}
-                                    >
-                                        <StopIcon />
-                                    </IconButton>
+                                    <Tooltip title="End Pomodoro session">
+                                        <span>
+                                            <IconButton
+                                                onClick={handleEndSession}
+                                                aria-label="End Pomodoro session"
+                                                color="error"
+                                                size="large"
+                                                disabled={isLoading}
+                                                sx={{
+                                                    backgroundColor: 'action.hover',
+                                                    '&:hover': {
+                                                        backgroundColor: 'error.light',
+                                                        color: 'error.contrastText',
+                                                    },
+                                                }}
+                                            >
+                                                <StopIcon />
+                                            </IconButton>
+                                        </span>
+                                    </Tooltip>
                                 </Box>
                             )}
                         </Box>

@@ -22,7 +22,12 @@ public interface TaskRepository extends JpaRepository<Task, String>,
 
     List<Task> findAllByUserIdAndParentIdOrderByDisplayOrderAsc(String userId, String parentId);
 
+    List<Task> findAllByUserIdAndParentIdOrderByDisplayOrderAscCreationDateTimeAscTaskIdAsc(
+            String userId, String parentId);
+
     List<Task> findAllByUserId(String userId);
+
+    List<Task> findAllByUserIdAndNameIgnoreCase(String userId, String name);
 
     List<Task> findAllByUserIdAndScheduledPerformDateTimeGreaterThanEqualOrderByScheduledPerformDateTimeAsc(
             String userId, LocalDateTime scheduledPerformDateTime);

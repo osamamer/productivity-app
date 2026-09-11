@@ -2,6 +2,8 @@ package org.osama.user;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.osama.pomodoro.PomodoroSoundIds;
+import org.osama.pomodoro.PomodoroSoundRepository;
 import org.osama.reminder.NotificationService;
 import org.osama.stat.SystemStatProvisioningService;
 import org.springframework.stereotype.Service;
@@ -26,6 +28,7 @@ public class UserService {
     private final KeycloakAccountService keycloakAccountService;
     private final SystemStatProvisioningService systemStatProvisioningService;
     private final NotificationService notificationService;
+    private final PomodoroSoundRepository pomodoroSoundRepository;
 
     /**
      * Looks up the app User by Keycloak subject, creating one on first login.
@@ -147,14 +150,14 @@ public class UserService {
     @Transactional
     public User updatePreferences(String userId, Boolean includeUnloggedNumericDaysAsZero) {
         return updatePreferences(userId, includeUnloggedNumericDaysAsZero, null,
-                null, null, null, null, null);
+                null, null, null, null, null, null);
     }
 
     @Transactional
     public User updatePreferences(String userId, Boolean includeUnloggedNumericDaysAsZero,
                                   Boolean autoStartPomodoroSessions) {
         return updatePreferences(userId, includeUnloggedNumericDaysAsZero, autoStartPomodoroSessions,
-                null, null, null, null, null);
+                null, null, null, null, null, null);
     }
 
     @Transactional
@@ -163,18 +166,19 @@ public class UserService {
                                   Integer checkupIntervalMinutes, LocalTime checkupStartTime,
                                   Integer checkupTimesPerDay) {
         return updatePreferences(userId, includeUnloggedNumericDaysAsZero, autoStartPomodoroSessions,
-                checkupNotificationsEnabled, null, checkupIntervalMinutes, checkupStartTime, checkupTimesPerDay);
+                checkupNotificationsEnabled, null, checkupIntervalMinutes, checkupStartTime, checkupTimesPerDay, null);
     }
 
     @Transactional
     public User updatePreferences(String userId, Boolean includeUnloggedNumericDaysAsZero,
                                   Boolean autoStartPomodoroSessions, Boolean checkupNotificationsEnabled,
                                   Boolean repeatCheckupNotificationsEnabled, Integer checkupIntervalMinutes,
-                                  LocalTime checkupStartTime, Integer checkupTimesPerDay) {
+                                  LocalTime checkupStartTime, Integer checkupTimesPerDay,
+                                  String pomodoroSoundId) {
         if (includeUnloggedNumericDaysAsZero == null && autoStartPomodoroSessions == null
                 && checkupNotificationsEnabled == null && repeatCheckupNotificationsEnabled == null
                 && checkupIntervalMinutes == null
-                && checkupStartTime == null && checkupTimesPerDay == null) {
+                && checkupStartTime == null && checkupTimesPerDay == null && pomodoroSoundId == null) {
             throw new IllegalArgumentException("At least one user preference is required.");
         }
 
@@ -184,6 +188,8 @@ public class UserService {
                 && !Objects.equals(user.getIncludeUnloggedNumericDaysAsZero(), includeUnloggedNumericDaysAsZero);
         boolean pomodoroPreferenceChanged = autoStartPomodoroSessions != null
                 && !Objects.equals(user.getAutoStartPomodoroSessions(), autoStartPomodoroSessions);
+        boolean pomodoroSoundPreferenceChanged = pomodoroSoundId != null
+                && !Objects.equals(user.getPomodoroSoundId(), pomodoroSoundId);
         boolean checkupPreferenceChanged = checkupNotificationsEnabled != null
                 && !Objects.equals(user.getCheckupNotificationsEnabled(), checkupNotificationsEnabled);
         boolean repeatCheckupPreferenceChanged = repeatCheckupNotificationsEnabled != null
@@ -208,6 +214,10 @@ public class UserService {
         if (autoStartPomodoroSessions != null) {
             user.setAutoStartPomodoroSessions(autoStartPomodoroSessions);
         }
+        if (pomodoroSoundId != null) {
+            validatePomodoroSoundSelection(pomodoroSoundId, userId);
+            user.setPomodoroSoundId(pomodoroSoundId);
+        }
         if (checkupNotificationsEnabled != null) {
             user.setCheckupNotificationsEnabled(checkupNotificationsEnabled);
         }
@@ -225,19 +235,27 @@ public class UserService {
         }
         User savedUser = userRepository.save(user);
         log.info("User preferences updated: userId={} includeUnloggedNumericDaysAsZero={} autoStartPomodoroSessions={} "
-                        + "checkupNotificationsEnabled={} repeatCheckupNotificationsEnabled={} checkupIntervalMinutes={} "
+                        + "pomodoroSoundId={} checkupNotificationsEnabled={} repeatCheckupNotificationsEnabled={} checkupIntervalMinutes={} "
                         + "checkupStartTime={} checkupTimesPerDay={} changed={}",
                 userId, savedUser.getIncludeUnloggedNumericDaysAsZero(), savedUser.getAutoStartPomodoroSessions(),
+                savedUser.getPomodoroSoundId(),
                 savedUser.getCheckupNotificationsEnabled(), savedUser.getRepeatCheckupNotificationsEnabled(),
                 savedUser.getCheckupIntervalMinutes(),
                 savedUser.getCheckupStartTime(), savedUser.getCheckupTimesPerDay(),
-                numericPreferenceChanged || pomodoroPreferenceChanged || checkupPreferenceChanged
+                numericPreferenceChanged || pomodoroPreferenceChanged || pomodoroSoundPreferenceChanged || checkupPreferenceChanged
                         || repeatCheckupPreferenceChanged || checkupScheduleChanged);
         if (Boolean.FALSE.equals(savedUser.getCheckupNotificationsEnabled())
                 || Boolean.FALSE.equals(savedUser.getRepeatCheckupNotificationsEnabled())) {
             notificationService.clearPendingCheckupNotifications(userId);
         }
         return savedUser;
+    }
+
+    private void validatePomodoroSoundSelection(String pomodoroSoundId, String userId) {
+        if (PomodoroSoundIds.BROWN_NOISE.equals(pomodoroSoundId)) return;
+        if (!pomodoroSoundRepository.existsByIdAndUserId(pomodoroSoundId, userId)) {
+            throw new IllegalArgumentException("That Pomodoro sound is not available.");
+        }
     }
 
     private void validateCheckupSchedule(int intervalMinutes, LocalTime startTime, int timesPerDay) {

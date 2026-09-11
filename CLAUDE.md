@@ -57,7 +57,7 @@ WebSocket (STOMP) is configured in `WebSocketConfig.java`. The frontend connects
 
 ### Auth / User Identity
 
-Keycloak (port 7070) is the identity provider. The backend validates JWTs as an OAuth2 resource server; all API endpoints (except `/actuator/health`) require a valid Bearer token.
+Keycloak is the identity provider. The web browser reaches it through the app-owned `/auth` path (`/auth` is proxied by Vite locally and Caddy in production); the local container listener remains on port 7070 for native development and server-side administration. The backend validates JWTs as an OAuth2 resource server; all API endpoints (except `/actuator/health`) require a valid Bearer token.
 
 **Flow:**
 1. `main.tsx` initializes `keycloak-js` with `onLoad: 'login-required'` — the app never renders unless authenticated.
@@ -65,9 +65,9 @@ Keycloak (port 7070) is the identity provider. The backend validates JWTs as an 
 3. The backend validates the JWT against the Keycloak JWKS (`SecurityConfig.java`).
 4. `CurrentUserService.getCurrentUser()` extracts the `Jwt` from the `SecurityContext` and calls `UserService.getOrCreateFromJwt()`, which finds or auto-creates a `User` entity keyed on the Keycloak `sub` claim. Controllers inject `CurrentUserService` instead of reading a header.
 
-`keycloak.ts` (`frontend/react/src/services/keycloak.ts`) configures the Keycloak instance. The realm/client can be overridden via env vars `VITE_KEYCLOAK_URL`, `VITE_KEYCLOAK_REALM`, `VITE_KEYCLOAK_CLIENT_ID` (defaults: `http://localhost:7070`, `productivity-app`, `productivity-app-frontend`).
+`keycloak.ts` (`frontend/react/src/services/keycloak.ts`) configures the Keycloak instance. The realm/client can be overridden via env vars `VITE_KEYCLOAK_URL`, `VITE_KEYCLOAK_REALM`, `VITE_KEYCLOAK_CLIENT_ID` (defaults: `/auth`, `productivity-app`, `productivity-app-frontend`).
 
-**Required Keycloak setup (one-time, via admin console at http://localhost:7070):**
+**Required Keycloak setup (one-time, via the proxied admin console at http://localhost:5173/auth):**
 1. Create realm `productivity-app`.
 2. Create client `productivity-app-frontend`: type = Public, valid redirect URIs = `http://localhost:5173/*`, web origins = `http://localhost:5173`.
 3. In that client's settings, ensure the token includes `email`, `given_name`, `family_name`, `preferred_username` claims (add mappers under Client scopes if needed). The backend falls back gracefully if claims are absent, but user display will be degraded.

@@ -4,9 +4,10 @@ import type {TaskLoadMode} from './useTaskManager';
 
 type UseGlobalTasksOptions = {
     taskPageMode?: boolean;
+    prioritizeToday?: boolean;
 };
 
-export function useGlobalTasks({ taskPageMode = false }: UseGlobalTasksOptions = {}) {
+export function useGlobalTasks({ taskPageMode = false, prioritizeToday = false }: UseGlobalTasksOptions = {}) {
     const context = useContext(TaskContext);
     if (!context) {
         throw new Error('useGlobalTasks must be used within TaskProvider');
@@ -15,11 +16,12 @@ export function useGlobalTasks({ taskPageMode = false }: UseGlobalTasksOptions =
     // The TaskProvider owns the task snapshot for the whole authenticated app.
     // The service cache decides when it is stale; navigation must not turn a
     // cached snapshot into a forced network request.
-    const {refreshTaskBuckets} = context;
+    const {fetchTodayTasks, refreshTaskBuckets} = context;
     const loadMode: TaskLoadMode = taskPageMode ? 'taskPage' : 'all';
     useEffect(() => {
+        if (prioritizeToday) void fetchTodayTasks();
         void refreshTaskBuckets(false, loadMode);
-    }, [loadMode, refreshTaskBuckets]);
+    }, [fetchTodayTasks, loadMode, prioritizeToday, refreshTaskBuckets]);
 
     return context;
 }

@@ -49,6 +49,11 @@ const optimisticEntryOverrides = new Map<string, OptimisticEntryOverride>();
 let optimisticWriteSequence = 0;
 let statCacheGeneration = 0;
 
+function invalidateRecurringTaskResources(): void {
+    invalidateResource('stats');
+    invalidateResource('tasks');
+}
+
 function definitionsCacheKey(): string {
     return `${getAuthCacheScope()}:definitions`;
 }
@@ -371,7 +376,7 @@ export const statService = {
         if (!response.ok) throw new Error('Failed to create stat definition');
         const definition = await response.json() as StatDefinition;
         invalidateDefinitionsCache();
-        if (req.createRecurringTask) invalidateResource('stats');
+        if (req.createRecurringTask) invalidateRecurringTaskResources();
         return definition;
     },
 
@@ -408,12 +413,13 @@ export const statService = {
                 timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
                 recurrenceFrequency: recurrence.recurrenceFrequency,
                 recurrenceDaysOfWeek: recurrence.recurrenceDaysOfWeek,
+                timeOfDay: recurrence.timeOfDay,
             }),
             headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getAuthHeaders() },
         });
         if (!response.ok) throw new Error('Failed to create recurring task');
         invalidateDefinitionsCache();
-        invalidateResource('stats');
+        invalidateRecurringTaskResources();
         return response.json();
     },
 
@@ -432,12 +438,13 @@ export const statService = {
                 timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
                 recurrenceFrequency: recurrence.recurrenceFrequency,
                 recurrenceDaysOfWeek: recurrence.recurrenceDaysOfWeek,
+                timeOfDay: recurrence.timeOfDay,
             }),
             headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getAuthHeaders() },
         });
         if (!response.ok) throw new Error('Failed to update recurring task');
         invalidateDefinitionsCache();
-        invalidateResource('stats');
+        invalidateRecurringTaskResources();
         return response.json();
     },
 
@@ -448,7 +455,7 @@ export const statService = {
         });
         if (!response.ok) throw new Error('Failed to delete recurring task series');
         invalidateDefinitionsCache();
-        invalidateResource('stats');
+        invalidateRecurringTaskResources();
         return response.json();
     },
 
@@ -459,6 +466,30 @@ export const statService = {
         });
         if (!response.ok) throw new Error('Failed to disconnect recurring task');
         invalidateDefinitionsCache();
+        invalidateResource('stats');
+        return response.json();
+    },
+
+    async linkFocusTask(definitionId: string, taskName: string): Promise<StatDefinition> {
+        const response = await fetch(`${STATS_URL}/definitions/${definitionId}/focus-task`, {
+            method: 'PUT',
+            body: JSON.stringify({ taskName }),
+            headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getAuthHeaders() },
+        });
+        if (!response.ok) throw new Error('Failed to link task focus time');
+        invalidateDefinitionsCache();
+        invalidateResource('stats');
+        return response.json();
+    },
+
+    async unlinkFocusTask(definitionId: string): Promise<StatDefinition> {
+        const response = await fetch(`${STATS_URL}/definitions/${definitionId}/focus-task`, {
+            method: 'DELETE',
+            headers: getAuthHeaders(),
+        });
+        if (!response.ok) throw new Error('Failed to unlink task focus time');
+        invalidateDefinitionsCache();
+        invalidateResource('stats');
         return response.json();
     },
 

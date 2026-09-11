@@ -30,11 +30,17 @@ function formatLocalDateTime(date: Date | null): string {
         + `T${pad(date.getHours())}:${pad(date.getMinutes())}:00`;
 }
 
+function defaultScheduledDateTime(date: string): string {
+    const now = new Date();
+    const pad = (value: number) => String(value).padStart(2, '0');
+    return `${date}T${pad(now.getHours())}:${pad(now.getMinutes())}:00`;
+}
+
 export function CalendarTaskForm({ initialDate, onSave, onCancel }: Props) {
     const [name, setName] = useState('');
     const [description, setDescription] = useState('');
     const [importance, setImportance] = useState(0);
-    const [scheduledPerformDateTime, setScheduledPerformDateTime] = useState(`${initialDate}T12:00:00`);
+    const [scheduledPerformDateTime, setScheduledPerformDateTime] = useState(defaultScheduledDateTime(initialDate));
     const [reminderMinutesBefore, setReminderMinutesBefore] = useState<number | null>(null);
     const [recurrenceDraft, setRecurrenceDraft] = useState<TaskRecurrenceDraft>(defaultTaskRecurrence);
     const [saving, setSaving] = useState(false);

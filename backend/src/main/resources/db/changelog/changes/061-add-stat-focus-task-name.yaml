@@ -1,0 +1,28 @@
+databaseChangeLog:
+  - changeSet:
+      id: 061-add-stat-focus-task-name
+      author: codex
+      comment: Store an optional task-name filter for historical statistic focus time
+      changes:
+        - addColumn:
+            tableName: stat_definition
+            columns:
+              - column:
+                  name: focus_task_name
+                  type: varchar(255)
+        - createIndex:
+            tableName: task
+            indexName: idx_app_task_user_name
+            ifNotExists: true
+            columns:
+              - column:
+                  name: user_id
+              - column:
+                  name: name
+      rollback:
+        - dropIndex:
+            tableName: task
+            indexName: idx_app_task_user_name
+        - dropColumn:
+            tableName: stat_definition
+            columnName: focus_task_name

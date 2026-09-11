@@ -3,6 +3,7 @@ import { CalendarEvent } from '../../types/CalendarEvent';
 import { DayTemplateRequest } from '../../types/DayTemplate';
 import { Task } from '../../types/Task';
 import { expandCalendarEvent } from './recurrence';
+import { taskDateKey } from '../../services/utils/taskDate';
 
 function timeInZone(value: string, timeZone: string): string {
     try {
@@ -27,8 +28,7 @@ function taskTime(value: string): string {
 }
 
 function taskDate(value: string): string {
-    // Keep this aligned with the month calendar's task event date calculation.
-    return new Date(value).toISOString().slice(0, 10);
+    return taskDateKey(value);
 }
 
 function eventsForDate(events: CalendarEvent[], sourceDate: string) {

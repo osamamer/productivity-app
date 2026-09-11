@@ -113,8 +113,10 @@ public class TaskSeriesService {
                     ? TaskRecurrenceDays.decode(series.getRecurrenceDaysOfWeek())
                     : List.of()
                 : request.getRecurrenceDaysOfWeek();
+        LocalDateTime startDateTime = request.getStartDateTime() == null
+                ? series.getStartDateTime() : request.getStartDateTime();
         validateRule(frequency, request.getRecurrenceEndDate(), request.getRecurrenceInterval(),
-                request.getRecurrenceUnit(), timeZone, recurrenceDaysOfWeek, series.getStartDateTime().toString());
+                request.getRecurrenceUnit(), timeZone, recurrenceDaysOfWeek, startDateTime.toString());
 
         skipFutureOccurrences(series.getSeriesId(), TaskSkipReason.SERIES_CHANGED);
         series.setRecurrenceFrequency(frequency);
@@ -125,6 +127,7 @@ public class TaskSeriesService {
                 ? request.getRecurrenceUnit() : null);
         series.setRecurrenceDaysOfWeek(frequency == TaskRecurrenceFrequency.CUSTOM
                 ? TaskRecurrenceDays.encode(recurrenceDaysOfWeek) : null);
+        series.setStartDateTime(startDateTime);
         series.setTimeZone(timeZone);
         if (request.getActive() != null) {
             series.setActive(request.getActive());

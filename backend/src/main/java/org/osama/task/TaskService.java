@@ -128,11 +128,10 @@ public class TaskService {
     }
 
     public List<Task> getSubtasks(String parentTaskId, String userId) {
-        TaskQuery query = TaskQuery.builder()
-                .parentId(parentTaskId)
-                .userId(userId)
-                .build();
-        return findTasks(query);
+        List<Task> subtasks = taskRepository
+                .findAllByUserIdAndParentIdOrderByDisplayOrderAscCreationDateTimeAscTaskIdAsc(userId, parentTaskId);
+        attachReminderMinutes(subtasks);
+        return subtasks;
     }
 
     @Transactional(readOnly = true)
@@ -176,6 +175,34 @@ public class TaskService {
                     }
                 });
 
+        return focusByDate;
+    }
+
+    @Transactional(readOnly = true)
+    public Map<LocalDate, Long> getPomodoroFocusTimeForTaskName(String taskName,
+                                                                 LocalDate from,
+                                                                 LocalDate to,
+                                                                 String userId,
+                                                                 String excludedSeriesId) {
+        if (taskName == null || taskName.isBlank()) return Map.of();
+
+        List<String> taskIds = taskRepository.findAllByUserIdAndNameIgnoreCase(userId, taskName.trim()).stream()
+                .filter(task -> excludedSeriesId == null || !excludedSeriesId.equals(task.getTaskSeriesId()))
+                .map(Task::getTaskId)
+                .toList();
+        if (taskIds.isEmpty()) return Map.of();
+
+        Map<LocalDate, Long> focusByDate = new TreeMap<>();
+        LocalDateTime now = LocalDateTime.now();
+        taskSessionRepository.findAllByAssociatedTaskIdIn(taskIds).stream()
+                .filter(TaskSession::isPomodoro)
+                .filter(session -> session.getStartTime() != null)
+                .filter(session -> !session.getStartTime().toLocalDate().isBefore(from)
+                        && !session.getStartTime().toLocalDate().isAfter(to))
+                .forEach(session -> focusByDate.merge(
+                        session.getStartTime().toLocalDate(),
+                        TaskPomodoroStatsCalculator.focusSeconds(session, now),
+                        Long::sum));
         return focusByDate;
     }
 
@@ -271,8 +298,8 @@ public class TaskService {
         task.setTag(request.getTag()); // null is fine
         task.setImportance(request.getImportance()); // primitive int defaults to 0
         if (mentalThread == null) {
-            if (prependToTaskOrder) {
-                prependTaskOrder(userId, parentId);
+            if (prependToTaskOrder && parentId == null) {
+                prependTaskOrder(userId, null);
                 task.setDisplayOrder(0);
             } else {
                 // Series expansion may create many rows in one request. Appending

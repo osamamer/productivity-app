@@ -402,7 +402,8 @@ setup_android_dev_bridge() {
 
   if [[ -z "$android_device_serials" ]]; then
     echo "⚠️  No Android device is connected; adb forwarding will be skipped."
-    echo "   Start the emulator, then run: adb reverse tcp:7070 tcp:7070"
+    echo "   Start the emulator, then run: adb reverse tcp:5173 tcp:5173"
+    echo "                              adb reverse tcp:7070 tcp:7070"
     echo "                              adb reverse tcp:8080 tcp:8080"
     echo "                              adb reverse tcp:8081 tcp:8081"
     return 0
@@ -410,7 +411,8 @@ setup_android_dev_bridge() {
 
   while IFS= read -r serial; do
     [[ -z "$serial" ]] && continue
-    if ! "$adb_bin" -s "$serial" reverse tcp:7070 tcp:7070 >/dev/null \
+    if ! "$adb_bin" -s "$serial" reverse tcp:5173 tcp:5173 >/dev/null \
+      || ! "$adb_bin" -s "$serial" reverse tcp:7070 tcp:7070 >/dev/null \
       || ! "$adb_bin" -s "$serial" reverse tcp:8080 tcp:8080 >/dev/null \
       || ! "$adb_bin" -s "$serial" reverse tcp:8081 tcp:8081 >/dev/null; then
       echo "⚠️  Could not configure all required adb forwards for Android device $serial; it will not be launched." >&2
@@ -689,13 +691,14 @@ apply_keycloak_login_theme() {
   echo "🎨 Applying the Claritard login configuration..."
   for attempt in {1..10}; do
     if "${compose[@]}" exec -T keycloak /opt/keycloak/bin/kcadm.sh config credentials \
-      --server http://localhost:7070 \
+      --server http://localhost:7070/auth \
       --realm "$admin_realm" \
       --user "$KEYCLOAK_ADMIN_USER" \
       --password "$KEYCLOAK_ADMIN_PASSWORD" >/dev/null 2>&1 \
       && "${compose[@]}" exec -T keycloak /opt/keycloak/bin/kcadm.sh update "realms/$realm" \
         -s loginTheme=productivity \
-        -s registrationAllowed=true >/dev/null 2>&1 \
+        -s registrationAllowed=true \
+        -s attributes.frontendUrl=http://localhost:5173/auth >/dev/null 2>&1 \
       && client_id=$("${compose[@]}" exec -T keycloak /opt/keycloak/bin/kcadm.sh get clients \
         -r "$realm" \
         -q "clientId=$client_name" \
@@ -803,27 +806,12 @@ main() {
   fi
 
   echo "⏳ Waiting for Keycloak..."
-  if ! wait_for_endpoint "Keycloak" "http://localhost:7070/" 45; then
+  if ! wait_for_endpoint "Keycloak" "http://localhost:7070/auth/" 45; then
     echo "Recent container logs:" >&2
     "${compose[@]}" logs --tail=80 keycloak postgres >&2 || true
     exit 1
   fi
   apply_keycloak_login_theme
-
-  if endpoint_is_ready "http://localhost:8080/actuator/health"; then
-    echo "♻️  Backend is already healthy on port 8080; reusing it."
-  elif port_is_listening 8080; then
-    echo "Port 8080 is in use, but its service is not a healthy productivity-app backend."
-    free_conflicting_port 8080
-
-    if port_is_listening 8080; then
-      echo "Port 8080 is still occupied after cleanup." >&2
-      exit 1
-    fi
-    start_backend
-  else
-    start_backend
-  fi
 
   if endpoint_is_ready "http://localhost:5173/"; then
     echo "♻️  Frontend is already available on port 5173; reusing it."
@@ -840,6 +828,23 @@ main() {
     start_frontend
   fi
 
+  # The development issuer is served through Vite, so it must be ready before
+  # Spring creates the backend's JWT decoder.
+  if endpoint_is_ready "http://localhost:8080/actuator/health"; then
+    echo "♻️  Backend is already healthy on port 8080; reusing it."
+  elif port_is_listening 8080; then
+    echo "Port 8080 is in use, but its service is not a healthy productivity-app backend."
+    free_conflicting_port 8080
+
+    if port_is_listening 8080; then
+      echo "Port 8080 is still occupied after cleanup." >&2
+      exit 1
+    fi
+    start_backend
+  else
+    start_backend
+  fi
+
   start_mobile_metro
   start_android_emulator_if_needed
   setup_android_dev_bridge
@@ -849,7 +854,7 @@ main() {
   echo "   App:      http://localhost:5173"
   echo "   Mobile:   http://localhost:8081"
   echo "   Backend:  http://localhost:8080"
-  echo "   Keycloak: http://localhost:7070"
+  echo "   Sign-in:  http://localhost:5173/sign-in"
 
   if [[ -z "$backend_pid" && -z "$frontend_pid" && -z "$mobile_pid" && -z "$android_emulator_pid" ]]; then
     if (( mobile_android_started == 0 )); then

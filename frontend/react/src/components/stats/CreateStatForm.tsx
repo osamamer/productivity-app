@@ -35,51 +35,75 @@ interface FormValues {
     createRecurringTask: boolean;
     recurrenceFrequency: StatRecurrenceFrequency;
     recurrenceDaysOfWeek: StatRecurrenceDay[];
+    timeOfDay: string;
 }
 
-const validationSchema = Yup.object({
-    name: Yup.string().required('Name is required'),
-    type: Yup.string().oneOf(['NUMBER', 'BOOLEAN', 'RANGE', 'TIME', 'DURATION']).required(),
-    minValue: Yup.string().when('type', {
-        is: 'RANGE',
-        then: schema => schema.required('Min value is required'),
-        otherwise: schema => schema.optional(),
-    }),
-    maxValue: Yup.string().when('type', {
-        is: 'RANGE',
-        then: schema => schema
-            .required('Max value is required')
-            .test('gt-min', 'Max must be greater than min', function (maxStr) {
-                const minStr = this.parent.minValue;
-                if (!minStr || !maxStr) return true;
-                return Number(maxStr) > Number(minStr);
+function normalizedStatName(name: string): string {
+    return name.trim().toLowerCase();
+}
+
+function createValidationSchema(existingDefinitions: StatDefinition[], currentDefinitionId?: string) {
+    return Yup.object({
+        name: Yup.string()
+            .trim()
+            .required('Name is required')
+            .test('unique-name', 'A stat with that name already exists.', value => {
+                if (!value?.trim()) return true;
+                const normalizedName = normalizedStatName(value);
+                return !existingDefinitions.some(definition =>
+                    definition.id !== currentDefinitionId
+                    && normalizedStatName(definition.name) === normalizedName,
+                );
             }),
-        otherwise: schema => schema.optional(),
-    }),
-    morality: Yup.mixed<StatMorality>().oneOf(['GOOD', 'BAD', 'NEUTRAL']).required(),
-    goodThreshold: Yup.string().test(
-        'threshold',
-        'A threshold is required for a non-neutral numeric stat',
-        function (threshold) {
-            const { type, morality, minValue, maxValue } = this.parent as FormValues;
-            if (type === 'BOOLEAN' || morality === 'NEUTRAL') return true;
-            const numericThreshold = type === 'TIME'
-                ? timeValueToMinutes(threshold ?? '')
-                : type === 'DURATION'
-                    ? durationValueToMinutes(threshold ?? '')
-                    : Number(threshold);
-            if (!threshold || numericThreshold == null || !Number.isFinite(numericThreshold)) {
-                return this.createError({ message: 'A threshold is required for a non-neutral stat' });
-            }
-            if (type === 'RANGE') {
-                if (numericThreshold < Number(minValue) || numericThreshold > Number(maxValue)) {
-                    return this.createError({ message: 'Threshold must be inside the stat range' });
+        type: Yup.string().oneOf(['NUMBER', 'BOOLEAN', 'RANGE', 'TIME', 'DURATION']).required(),
+        minValue: Yup.string().when('type', {
+            is: 'RANGE',
+            then: schema => schema.required('Min value is required'),
+            otherwise: schema => schema.optional(),
+        }),
+        maxValue: Yup.string().when('type', {
+            is: 'RANGE',
+            then: schema => schema
+                .required('Max value is required')
+                .test('gt-min', 'Max must be greater than min', function (maxStr) {
+                    const minStr = this.parent.minValue;
+                    if (!minStr || !maxStr) return true;
+                    return Number(maxStr) > Number(minStr);
+                }),
+            otherwise: schema => schema.optional(),
+        }),
+        morality: Yup.mixed<StatMorality>().oneOf(['GOOD', 'BAD', 'NEUTRAL']).required(),
+        goodThreshold: Yup.string().test(
+            'threshold',
+            'A threshold is required for a non-neutral numeric stat',
+            function (threshold) {
+                const { type, morality, minValue, maxValue } = this.parent as FormValues;
+                if (type === 'BOOLEAN' || morality === 'NEUTRAL') return true;
+                const numericThreshold = type === 'TIME'
+                    ? timeValueToMinutes(threshold ?? '')
+                    : type === 'DURATION'
+                        ? durationValueToMinutes(threshold ?? '')
+                        : Number(threshold);
+                if (!threshold || numericThreshold == null || !Number.isFinite(numericThreshold)) {
+                    return this.createError({ message: 'A threshold is required for a non-neutral stat' });
                 }
-            }
-            return true;
-        },
-    ),
-});
+                if (type === 'RANGE') {
+                    if (numericThreshold < Number(minValue) || numericThreshold > Number(maxValue)) {
+                        return this.createError({ message: 'Threshold must be inside the stat range' });
+                    }
+                }
+                return true;
+            },
+        ),
+        timeOfDay: Yup.string().when('createRecurringTask', {
+            is: true,
+            then: schema => schema
+                .required('Choose a task time.')
+                .matches(/^\d{2}:\d{2}$/, 'Choose a task time.'),
+            otherwise: schema => schema.optional(),
+        }),
+    });
+}
 
 interface Props {
     onCreated?: (def: StatDefinition, operationId?: string) => void;
@@ -91,6 +115,7 @@ interface Props {
     onDelete?: () => void;
     onCancel: () => void;
     initialDefinition?: StatDefinition;
+    existingDefinitions?: StatDefinition[];
 }
 
 export function CreateStatForm({
@@ -103,9 +128,14 @@ export function CreateStatForm({
     onDelete,
     onCancel,
     initialDefinition,
+    existingDefinitions = [],
 }: Props) {
     const isEditing = Boolean(initialDefinition);
     const hasRecurringTask = Boolean(initialDefinition?.recurringTaskSeriesId);
+    const validationSchema = React.useMemo(
+        () => createValidationSchema(existingDefinitions, initialDefinition?.id),
+        [existingDefinitions, initialDefinition?.id],
+    );
     const [disconnectError, setDisconnectError] = React.useState<string | null>(null);
     const [disconnecting, setDisconnecting] = React.useState(false);
     const [deleteRecurringTaskOpen, setDeleteRecurringTaskOpen] = React.useState(false);
@@ -134,6 +164,7 @@ export function CreateStatForm({
             createRecurringTask: false,
             recurrenceFrequency: 'DAILY',
             recurrenceDaysOfWeek: defaultStatRecurringTaskDraft().recurrenceDaysOfWeek,
+            timeOfDay: defaultStatRecurringTaskDraft().timeOfDay,
         },
         validationSchema,
         onSubmit: async (values, { setSubmitting, setFieldError }) => {
@@ -147,7 +178,7 @@ export function CreateStatForm({
                             : undefined;
                 if (initialDefinition) {
                     const def = await statService.updateDefinition(initialDefinition.id, {
-                        name: values.name,
+                        name: values.name.trim(),
                         description: values.description || undefined,
                         morality: values.morality,
                         goodThreshold: values.type !== 'BOOLEAN' && values.morality !== 'NEUTRAL'
@@ -157,7 +188,7 @@ export function CreateStatForm({
                     onUpdated?.(def);
                 } else {
                     const request: CreateDefinitionRequest = {
-                        name: values.name,
+                        name: values.name.trim(),
                         description: values.description || undefined,
                         type: values.type,
                         minValue: values.type === 'RANGE' ? Number(values.minValue) : undefined,
@@ -169,6 +200,7 @@ export function CreateStatForm({
                         createRecurringTask: values.type === 'BOOLEAN' && values.createRecurringTask,
                         recurrenceFrequency: values.recurrenceFrequency,
                         recurrenceDaysOfWeek: values.recurrenceDaysOfWeek,
+                        timeOfDay: values.timeOfDay,
                     };
 
                     if (request.createRecurringTask
@@ -262,8 +294,8 @@ export function CreateStatForm({
                     label="Name"
                     value={formik.values.name}
                     onChange={formik.handleChange}
-                    error={formik.touched.name && Boolean(formik.errors.name)}
-                    helperText={formik.touched.name && formik.errors.name}
+                    error={Boolean(formik.errors.name)}
+                    helperText={formik.errors.name}
                     size="small"
                     required
                 />
@@ -428,11 +460,14 @@ export function CreateStatForm({
                         value={{
                             recurrenceFrequency: formik.values.recurrenceFrequency,
                             recurrenceDaysOfWeek: formik.values.recurrenceDaysOfWeek,
+                            timeOfDay: formik.values.timeOfDay,
                         }}
                         onChange={value => {
                             void formik.setFieldValue('recurrenceFrequency', value.recurrenceFrequency);
                             void formik.setFieldValue('recurrenceDaysOfWeek', value.recurrenceDaysOfWeek);
+                            void formik.setFieldValue('timeOfDay', value.timeOfDay);
                         }}
+                        timeError={formik.touched.timeOfDay ? formik.errors.timeOfDay : undefined}
                         disabled={formik.isSubmitting}
                     />
                     {formik.values.recurrenceFrequency === 'CUSTOM'

@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { StyleSheet, unstable_batchedUpdates, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { router, useFocusEffect } from 'expo-router';
 
 import { TaskComposerSheet } from '@/components/tasks/TaskComposerSheet';
 import { TaskDetailSheet } from '@/components/tasks/TaskDetailSheet';
@@ -16,7 +17,8 @@ import { Card } from '@/components/ui/Card';
 import { ErrorView, LoadingView } from '@/components/ui/StateView';
 import { Screen } from '@/components/ui/Screen';
 import { SilentPressable } from '@/components/ui/SilentPressable';
-import { formatLongDate, greeting } from '@/lib/date';
+import { formatCalendarTime, formatLongDate, greeting, localDate, startOfToday } from '@/lib/date';
+import { datesCoveredByOccurrence, expandCalendarEvent, type CalendarEventOccurrence } from '@/lib/calendarRecurrence';
 import { playAudioFeedback } from '@/lib/audioFeedback';
 import { reportError } from '@/lib/errors';
 import { animateLayout } from '@/lib/motion';
@@ -27,9 +29,14 @@ import { usePreferences } from '@/providers/PreferencesProvider';
 import { useTaskWorkspace } from '@/providers/TaskWorkspaceProvider';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
-import type { Day, Task, TaskGroup } from '@/types/models';
+import type { CalendarEvent, Day, Task, TaskGroup } from '@/types/models';
 
 interface TodayData { day: Day }
+
+interface TodayEventItem {
+  event: CalendarEvent;
+  occurrence: CalendarEventOccurrence;
+}
 
 type TaskListItem =
   | { kind: 'task'; task: Task }
@@ -154,6 +161,9 @@ export default function TodayScreen() {
   const { colors } = useAppTheme();
   const { confirm, showError } = useAppPopup();
   const resource = useAsyncData<TodayData>(async () => ({ day: await api.day.today() }));
+  const eventsResource = useAsyncData<CalendarEvent[]>(() => api.events.all());
+  const { reload: reloadEvents } = eventsResource;
+  const eventFocusLoadedRef = useRef(false);
   const {
     allTasks,
     todayTasks,
@@ -174,6 +184,7 @@ export default function TodayScreen() {
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
   const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(new Set());
   const [groupComposerOpen, setGroupComposerOpen] = useState(false);
+  const [editingGroup, setEditingGroup] = useState<TaskGroup | null>(null);
   const [groupTaskComposer, setGroupTaskComposer] = useState<TaskGroup | null>(null);
   const [bulkDateOpen, setBulkDateOpen] = useState(false);
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
@@ -189,6 +200,11 @@ export default function TodayScreen() {
   const dragSourceRef = useRef<DragSource | null>(null);
   const groupRefs = useRef(new Map<string, View>());
   const dragTargetRef = useRef<DragTarget>({ itemKey: null, edge: null, groupId: null });
+
+  useFocusEffect(useCallback(() => {
+    if (eventFocusLoadedRef.current) void reloadEvents();
+    else eventFocusLoadedRef.current = true;
+  }, [reloadEvents]));
 
   function updateTask(updated: Task) {
     updateTaskInWorkspace(updated);
@@ -206,6 +222,21 @@ export default function TodayScreen() {
       else next.add(groupId);
       return next;
     });
+  }
+
+  function openCreateGroup() {
+    setEditingGroup(null);
+    setGroupComposerOpen(true);
+  }
+
+  function openEditGroup(group: TaskGroup) {
+    setEditingGroup(group);
+    setGroupComposerOpen(true);
+  }
+
+  function closeGroupComposer() {
+    setGroupComposerOpen(false);
+    setEditingGroup(null);
   }
 
   const selectedTaskIdSet = useMemo(() => new Set(selectedTaskIds), [selectedTaskIds]);
@@ -497,7 +528,7 @@ export default function TodayScreen() {
 
   const name = user?.firstName || user?.username;
   const listItems = buildTaskListItems(
-    todayTasks.filter(task => showCompletedTasks || !task.completed),
+    todayTasks.filter(task => !task.parentId && (showCompletedTasks || !task.completed)),
     groups,
   );
   const groupableTodayTasks = todayTasks.filter(
@@ -528,17 +559,33 @@ export default function TodayScreen() {
       dragSource.height + TASK_LIST_GAP,
     );
   })();
-  const completed = todayTasks.filter(task => task.completed).length;
-  const remaining = todayTasks.length - completed;
-  const progress = todayTasks.length ? completed / todayTasks.length : 0;
+  const rootTodayTasks = todayTasks.filter(task => !task.parentId);
+  const completed = rootTodayTasks.filter(task => task.completed).length;
+  const remaining = rootTodayTasks.length - completed;
+  const progress = rootTodayTasks.length ? completed / rootTodayTasks.length : 0;
+  const todayEvents = useMemo<TodayEventItem[]>(() => {
+    const start = startOfToday();
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    const today = localDate(start);
+    return (eventsResource.data ?? [])
+      .flatMap(event => expandCalendarEvent(event, start, end)
+        .filter(occurrence => datesCoveredByOccurrence(occurrence).includes(today))
+        .map(occurrence => ({ event, occurrence })))
+      .sort((first, second) => {
+        if (first.occurrence.allDay !== second.occurrence.allDay) return first.occurrence.allDay ? -1 : 1;
+        return (first.occurrence.start || '').localeCompare(second.occurrence.start || '')
+          || first.event.title.localeCompare(second.event.title);
+      });
+  }, [eventsResource.data]);
 
   async function refreshToday() {
-    await Promise.all([resource.reload(), refreshTasks()]);
+    await Promise.all([resource.reload(), eventsResource.reload(), refreshTasks()]);
   }
 
   return (
     <Screen
-      refreshing={resource.refreshing || tasksLoading}
+      refreshing={resource.refreshing || eventsResource.refreshing || tasksLoading}
       refreshEnabled={dragSource === null}
       onRefresh={() => void refreshToday()}
       overlay={(
@@ -549,7 +596,7 @@ export default function TodayScreen() {
           canGroup={canGroupSelectedTasks}
           onComplete={() => void performBulkCompletion(true)}
           onMoveToDate={() => setBulkDateOpen(true)}
-          onGroup={() => setGroupComposerOpen(true)}
+          onGroup={openCreateGroup}
           onDelete={() => void confirmBulkDelete()}
           onDismiss={clearSelection}
         />
@@ -567,7 +614,7 @@ export default function TodayScreen() {
             <View style={styles.spaceBetween}>
               <View>
                 <AppText variant="heading">Today</AppText>
-                <AppText color="muted">{remaining ? `${remaining} left · ${completed} done` : todayTasks.length ? 'Everything is done' : 'A clear day'}</AppText>
+                <AppText color="muted">{remaining ? `${remaining} left · ${completed} done` : rootTodayTasks.length ? 'Everything is done' : 'A clear day'}</AppText>
               </View>
               <View style={[styles.progressCircle, { borderColor: colors.accentSoft }]}>
                 <AppText variant="label" color="accent">{Math.round(progress * 100)}%</AppText>
@@ -576,6 +623,41 @@ export default function TodayScreen() {
             <View style={[styles.track, { backgroundColor: colors.accentSoft }]}>
               <View style={[styles.fill, { width: `${progress * 100}%`, backgroundColor: colors.accent }]} />
             </View>
+          </Card>
+
+          <Card style={styles.eventsCard}>
+            <View style={styles.spaceBetween}>
+              <AppText variant="heading">Today’s events</AppText>
+              <AppButton compact variant="ghost" label="Calendar" icon="calendar-outline" onPress={() => router.push('/calendar')} />
+            </View>
+            {eventsResource.loading && !eventsResource.data ? (
+              <AppText color="muted">Loading events…</AppText>
+            ) : eventsResource.error && !eventsResource.data ? (
+              <AppText color="danger">Events are unavailable right now.</AppText>
+            ) : todayEvents.length === 0 ? (
+              <AppText color="muted">No events scheduled for today.</AppText>
+            ) : (
+              <View style={styles.eventsList}>
+                {todayEvents.map(({ event, occurrence }) => (
+                  <SilentPressable
+                    key={`${event.id}-${occurrence.occurrenceKey}`}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${event.title}, ${occurrence.allDay ? 'all day' : formatCalendarTime(occurrence.start, event.timeZone)}`}
+                    onPress={() => router.push('/calendar')}
+                    style={({ pressed }) => [styles.eventRow, pressed && styles.pressed]}>
+                    <View style={[styles.eventDot, { backgroundColor: colors.accent }]} />
+                    <View style={styles.eventCopy}>
+                      <AppText variant="label" numberOfLines={2} style={occurrence.status === 'CANCELLED' && styles.cancelled}>{event.title}</AppText>
+                      <AppText variant="caption" color="muted">
+                        {occurrence.allDay ? 'All day' : formatCalendarTime(occurrence.start, event.timeZone)}
+                        {occurrence.status === 'CANCELLED' ? ' · Cancelled' : ''}
+                      </AppText>
+                    </View>
+                    <Ionicons name="chevron-forward" size={17} color={colors.textMuted} />
+                  </SilentPressable>
+                ))}
+              </View>
+            )}
           </Card>
 
           <View style={styles.spaceBetween}>
@@ -587,7 +669,7 @@ export default function TodayScreen() {
                 icon="folder-open-outline"
                 variant="secondary"
                 disabled={groupableTodayTasks.length < 2}
-                onPress={() => setGroupComposerOpen(true)}
+                onPress={openCreateGroup}
               />
               <AppButton compact label="Add" icon="add" onPress={() => setComposerOpen(true)} />
             </View>
@@ -674,6 +756,14 @@ export default function TodayScreen() {
                     </SilentPressable>
                     <SilentPressable
                       accessibilityRole="button"
+                      accessibilityLabel={`Edit ${item.group.name}`}
+                      hitSlop={8}
+                      onPress={event => { event.stopPropagation(); openEditGroup(item.group); }}
+                      style={({ pressed }) => [styles.groupSelect, pressed && styles.pressed]}>
+                      <Ionicons name="create-outline" size={20} color={colors.textMuted} />
+                    </SilentPressable>
+                    <SilentPressable
+                      accessibilityRole="button"
                       accessibilityLabel={`${selectedGroupIdSet.has(item.group.groupId) ? 'Deselect' : 'Select'} ${item.group.name}`}
                       accessibilityState={{ selected: selectedGroupIdSet.has(item.group.groupId) }}
                       hitSlop={8}
@@ -754,11 +844,13 @@ export default function TodayScreen() {
         onCreated={task => addTaskToGroup(task)}
       />
       <TaskGroupComposerSheet
+        key={`${editingGroup?.groupId ?? 'new'}-${groupComposerOpen ? 'open' : 'closed'}`}
         visible={groupComposerOpen}
-        taskIds={selectedTaskActionIds}
-        availableTasks={groupableTodayTasks}
-        onClose={() => setGroupComposerOpen(false)}
-        onCreated={clearSelection}
+        taskIds={editingGroup?.taskIds ?? selectedTaskActionIds}
+        group={editingGroup}
+        availableTasks={editingGroup ? allTasks.filter(task => !task.parentId) : groupableTodayTasks}
+        onClose={closeGroupComposer}
+        onCreated={() => { clearSelection(); closeGroupComposer(); }}
       />
       <TaskBulkDateSheet
         key={`${bulkDateOpen}-${selectedTasks[0]?.scheduledPerformDateTime ?? ''}`}
@@ -774,6 +866,7 @@ export default function TodayScreen() {
         task={selected}
         onClose={() => setSelected(null)}
         onUpdated={updateTask}
+        onSubtaskCreated={addTask}
         onDeleted={removeTask}
       />
     </Screen>
@@ -783,6 +876,12 @@ export default function TodayScreen() {
 const styles = StyleSheet.create({
   heroCopy: { gap: 5, paddingTop: 4 },
   overview: { gap: 18 },
+  eventsCard: { gap: 12 },
+  eventsList: { gap: 4 },
+  eventRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 },
+  eventDot: { width: 8, height: 8, borderRadius: 4 },
+  eventCopy: { flex: 1, gap: 2 },
+  cancelled: { textDecorationLine: 'line-through', opacity: 0.62 },
   spaceBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 14 },
   taskActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   progressCircle: { width: 54, height: 54, borderRadius: 27, borderWidth: 6, alignItems: 'center', justifyContent: 'center' },

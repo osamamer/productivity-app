@@ -14,9 +14,19 @@ function todayDay(): StatRecurrenceDay {
     return STAT_RECURRENCE_DAYS[new Date().getDay()].value;
 }
 
+function currentTimeOfDay(): string {
+    const now = new Date();
+    return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+}
+
+export function timeOfDayFromDateTime(value: string): string {
+    return /T(\d{2}:\d{2})/.exec(value)?.[1] ?? currentTimeOfDay();
+}
+
 export function defaultStatRecurringTaskDraft(): StatRecurringTaskDraft {
     return {
         recurrenceFrequency: 'DAILY',
         recurrenceDaysOfWeek: [todayDay()],
+        timeOfDay: currentTimeOfDay(),
     };
 }

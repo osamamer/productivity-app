@@ -9,6 +9,8 @@ export const REMINDER_CHANNEL_ID = 'default';
 export const LOCAL_CALENDAR_REMINDER_KIND = 'calendar-event-reminder';
 export const LOCAL_TASK_REMINDER_KIND = 'task-reminder';
 export const LOCAL_CHECKUP_KIND = 'mental-state-checkup';
+export const MEDITATION_COMPLETION_NOTIFICATION_KIND = 'meditation-completion';
+export const MEDITATION_COMPLETION_CHANNEL_ID = 'meditation-completion';
 export const CHECKUP_NOTIFICATION_TITLE = 'Check-Up';
 export const CHECKUP_NOTIFICATION_BODY = 'Time to check what your state is.';
 export const CHECKUP_NOTIFICATION_TARGET = '/mental-state';
@@ -20,8 +22,11 @@ const MINUTES_PER_DAY = 24 * 60;
 const LOCAL_NOTIFICATION_PREFIX = 'calendar-event-reminder-';
 const LOCAL_TASK_NOTIFICATION_PREFIX = 'task-reminder-';
 const LOCAL_CHECKUP_PREFIX = 'mental-state-checkup-';
+const MEDITATION_COMPLETION_NOTIFICATION_PREFIX = 'meditation-completion-';
+const MEDITATION_COMPLETION_SOUND = 'meditation_bell.wav';
 const REMINDER_LEDGER_KEY = 'solife.calendar-local-reminder-ledger';
 const TASK_REMINDER_LEDGER_KEY = 'solife.task-local-reminder-ledger';
+const MEDITATION_COMPLETION_LEDGER_PREFIX = 'solife.meditation-completion-';
 const REMINDER_HORIZON_MS = 90 * 24 * 60 * 60 * 1000;
 const MAX_REMINDER_MINUTES = 8 * 7 * 24 * 60;
 const RECENT_REMINDER_WINDOW_MS = 48 * 60 * 60 * 1000;
@@ -74,6 +79,7 @@ interface LocalCheckupData {
 }
 
 let permissionRequestAttempted = false;
+let permissionRequestInFlight: Promise<boolean> | null = null;
 let syncQueue: Promise<unknown> = Promise.resolve();
 
 function logNotificationError(context: string, cause: unknown): void {
@@ -94,6 +100,14 @@ function taskNotificationId(taskId: string, scheduledAt: string): string {
 
 function taskRecordKey(record: Pick<TaskReminderRecord, 'taskId' | 'scheduledAt'>): string {
   return `${record.taskId}\u0000${record.scheduledAt}`;
+}
+
+function meditationCompletionNotificationId(sessionId: string): string {
+  return `${MEDITATION_COMPLETION_NOTIFICATION_PREFIX}${encodeURIComponent(sessionId)}`;
+}
+
+function meditationCompletionLedgerKey(sessionId: string): string {
+  return `${MEDITATION_COMPLETION_LEDGER_PREFIX}${sessionId}`;
 }
 
 function isLocalReminderData(value: unknown): value is LocalReminderData {
@@ -342,18 +356,120 @@ async function configureAndroidChannel(): Promise<void> {
   });
 }
 
+async function configureMeditationCompletionChannel(): Promise<void> {
+  await Notifications.setNotificationChannelAsync(MEDITATION_COMPLETION_CHANNEL_ID, {
+    name: 'Meditation completion',
+    importance: Notifications.AndroidImportance.HIGH,
+    sound: MEDITATION_COMPLETION_SOUND,
+    audioAttributes: {
+      usage: Notifications.AndroidAudioUsage.NOTIFICATION_EVENT,
+      contentType: Notifications.AndroidAudioContentType.SONIFICATION,
+    },
+    vibrationPattern: [0, 250, 250, 250],
+  });
+}
+
 export async function ensureNotificationPermission(): Promise<boolean> {
   if (Platform.OS === 'web') return false;
+  if (permissionRequestInFlight) return permissionRequestInFlight;
+
+  const request = (async () => {
+    try {
+      if (Platform.OS === 'android') await configureAndroidChannel();
+      const current = await Notifications.getPermissionsAsync();
+      if (current.granted) return true;
+      if (permissionRequestAttempted) return false;
+      permissionRequestAttempted = true;
+      return (await Notifications.requestPermissionsAsync()).granted;
+    } catch (cause) {
+      logNotificationError('Could not prepare mobile notifications', cause);
+      return false;
+    }
+  })();
+  permissionRequestInFlight = request;
   try {
-    if (Platform.OS === 'android') await configureAndroidChannel();
-    const current = await Notifications.getPermissionsAsync();
-    if (current.granted) return true;
-    if (permissionRequestAttempted) return false;
-    permissionRequestAttempted = true;
-    return (await Notifications.requestPermissionsAsync()).granted;
-  } catch (cause) {
-    logNotificationError('Could not prepare mobile notifications', cause);
+    return await request;
+  } finally {
+    if (permissionRequestInFlight === request) permissionRequestInFlight = null;
+  }
+}
+
+export async function scheduleMeditationCompletionNotification(sessionId: string, triggerAt: number): Promise<boolean> {
+  return queued(async () => {
+    if (Platform.OS === 'web' || !Number.isFinite(triggerAt) || triggerAt <= Date.now()) return false;
+    if (!await ensureNotificationPermission()) return false;
+
+    try {
+      if (Platform.OS === 'android') await configureMeditationCompletionChannel();
+      if (await AsyncStorage.getItem(meditationCompletionLedgerKey(sessionId))) {
+        try {
+          await Notifications.cancelScheduledNotificationAsync(meditationCompletionNotificationId(sessionId));
+        } catch (cause) {
+          // Reusing the stable identifier still lets the native scheduler replace
+          // any previous session alarm if its ledger entry is stale.
+          logNotificationError(`Could not replace previous meditation completion bell for session ${sessionId}`, cause);
+        }
+      }
+      await Notifications.scheduleNotificationAsync({
+        identifier: meditationCompletionNotificationId(sessionId),
+        content: {
+          title: 'Meditation complete',
+          body: 'Your meditation is complete.',
+          sound: MEDITATION_COMPLETION_SOUND,
+          data: {
+            kind: MEDITATION_COMPLETION_NOTIFICATION_KIND,
+            targetUrl: '/meditation',
+            sessionId,
+          },
+        },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.DATE,
+          date: new Date(triggerAt),
+          channelId: MEDITATION_COMPLETION_CHANNEL_ID,
+        },
+      });
+      try {
+        await AsyncStorage.setItem(meditationCompletionLedgerKey(sessionId), JSON.stringify({ triggerAt }));
+      } catch (cause) {
+        // The native alarm is already scheduled; a ledger failure should not
+        // make the foreground path play a second fallback bell.
+        logNotificationError(`Could not persist meditation completion bell for session ${sessionId}`, cause);
+      }
+      return true;
+    } catch (cause) {
+      logNotificationError(`Could not schedule meditation completion bell for session ${sessionId}`, cause);
+      return false;
+    }
+  }).catch(cause => {
+    logNotificationError(`Could not prepare meditation completion bell for session ${sessionId}`, cause);
     return false;
+  });
+}
+
+export async function cancelMeditationCompletionNotification(sessionId: string): Promise<void> {
+  await queued(async () => {
+    if (Platform.OS === 'web') return;
+    try {
+      await Notifications.cancelScheduledNotificationAsync(meditationCompletionNotificationId(sessionId));
+      await AsyncStorage.removeItem(meditationCompletionLedgerKey(sessionId));
+    } catch (cause) {
+      logNotificationError(`Could not cancel meditation completion bell for session ${sessionId}`, cause);
+    }
+  });
+}
+
+export async function getMeditationCompletionNotification(sessionId: string): Promise<{ triggerAt: number } | null> {
+  if (Platform.OS === 'web') return null;
+  try {
+    const stored = await AsyncStorage.getItem(meditationCompletionLedgerKey(sessionId));
+    if (!stored) return null;
+    const value = JSON.parse(stored) as { triggerAt?: unknown };
+    return typeof value.triggerAt === 'number' && Number.isFinite(value.triggerAt)
+      ? { triggerAt: value.triggerAt }
+      : null;
+  } catch (cause) {
+    logNotificationError(`Could not read meditation completion bell for session ${sessionId}`, cause);
+    return null;
   }
 }
 
