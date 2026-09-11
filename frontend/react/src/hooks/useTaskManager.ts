@@ -1,7 +1,8 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Task } from '../types/Task';
-import { taskService } from '../services/api';
+import { TASK_PAGE_BATCH_SIZE, taskService } from '../services/api';
 import { subscribeToResourceInvalidation } from '../services/cache/resourceInvalidation';
+import { getShowCompletedHomeTasks } from '../services/utils/homePreferences';
 
 export type TaskLoadMode = 'all' | 'taskPage';
 
@@ -107,9 +108,13 @@ export function useTaskManager() {
         () => taskService.getCachedMainTasks() !== undefined || taskService.getCachedTodayTasks() !== undefined,
     );
     const [taskLoadVersion, setTaskLoadVersion] = useState(0);
+    const [taskPageHasMoreFutureTasks, setTaskPageHasMoreFutureTasks] = useState(false);
+    const [taskPageHasMorePastTasks, setTaskPageHasMorePastTasks] = useState(false);
+    const [activeTaskLoadMode, setActiveTaskLoadMode] = useState<TaskLoadMode>('all');
     const [error, setError] = useState<string | null>(null);
-    const allTasksRequestRef = useRef<Promise<void> | null>(null);
+    const taskRequestsRef = useRef(new Map<TaskLoadMode, Promise<void>>());
     const allTasksLoadModeRef = useRef<TaskLoadMode>('all');
+    const loadedTaskModeRef = useRef<TaskLoadMode>('all');
     const tasksLoadedRef = useRef(tasksLoaded);
     const loadedTaskSnapshotRef = useRef(taskState.allTasks);
 
@@ -130,20 +135,38 @@ export function useTaskManager() {
         force = false,
         loadMode: TaskLoadMode = allTasksLoadModeRef.current,
     ) => {
-        if (allTasksRequestRef.current) {
-            allTasksLoadModeRef.current = loadMode;
-            return allTasksRequestRef.current;
-        }
+        allTasksLoadModeRef.current = loadMode;
+        const pendingRequest = taskRequestsRef.current.get(loadMode);
+        if (pendingRequest) return pendingRequest;
 
         const request = (async () => {
             const showLoading = !tasksLoadedRef.current;
             try {
-                allTasksLoadModeRef.current = loadMode;
                 if (showLoading) setLoading(true);
                 setError(null);
-                const tasks = await taskService.getAllMainTasks(force);
-                const snapshotChanged = loadedTaskSnapshotRef.current !== tasks;
+                const completedFilter = loadMode === 'taskPage' && !getShowCompletedHomeTasks()
+                    ? false
+                    : undefined;
+                const taskPageSnapshot = loadMode === 'taskPage'
+                    ? await taskService.getTaskPageInitialSnapshot(
+                        TASK_PAGE_BATCH_SIZE,
+                        completedFilter,
+                        force,
+                    )
+                    : null;
+                const tasks = taskPageSnapshot?.tasks ?? await taskService.getAllMainTasks(force);
+
+                if (allTasksLoadModeRef.current !== loadMode) return;
+
+                const snapshotChanged = loadedTaskModeRef.current !== loadMode
+                    || loadedTaskSnapshotRef.current !== tasks;
+                loadedTaskModeRef.current = loadMode;
                 loadedTaskSnapshotRef.current = tasks;
+                setActiveTaskLoadMode(loadMode);
+                if (taskPageSnapshot) {
+                    setTaskPageHasMoreFutureTasks(taskPageSnapshot.hasMoreFutureTasks);
+                    setTaskPageHasMorePastTasks(taskPageSnapshot.hasMorePastTasks);
+                }
                 if (snapshotChanged) {
                     setTaskState(prev => {
                         const next = withTaskBuckets(prev, tasks);
@@ -158,21 +181,25 @@ export function useTaskManager() {
                     setTaskLoadVersion(previous => previous + 1);
                 }
             } catch (err) {
-                setError(err instanceof Error ? err.message : 'Failed to fetch tasks');
+                if (allTasksLoadModeRef.current === loadMode) {
+                    setError(err instanceof Error ? err.message : 'Failed to fetch tasks');
+                }
                 console.error('Error fetching all tasks:', err);
             } finally {
-                if (showLoading) setLoading(false);
-                tasksLoadedRef.current = true;
-                setTasksLoaded(true);
+                if (allTasksLoadModeRef.current === loadMode) {
+                    if (showLoading) setLoading(false);
+                    tasksLoadedRef.current = true;
+                    setTasksLoaded(true);
+                }
             }
         })();
 
-        allTasksRequestRef.current = request;
+        taskRequestsRef.current.set(loadMode, request);
         try {
             await request;
         } finally {
-            if (allTasksRequestRef.current === request) {
-                allTasksRequestRef.current = null;
+            if (taskRequestsRef.current.get(loadMode) === request) {
+                taskRequestsRef.current.delete(loadMode);
             }
         }
     }, []);
@@ -186,7 +213,10 @@ export function useTaskManager() {
                 if (prev.allTasks.length === 0) {
                     return withTaskBuckets(prev, tasks);
                 }
-                return { ...prev, todayTasks: reuseTaskList(prev.todayTasks, tasks) };
+                const nextTodayTasks = reuseTaskList(prev.todayTasks, tasks);
+                return nextTodayTasks === prev.todayTasks
+                    ? prev
+                    : { ...prev, todayTasks: nextTodayTasks };
             });
             setTodayTasksLoaded(true);
         } catch (err) {
@@ -368,6 +398,9 @@ export function useTaskManager() {
         tasksLoaded,
         todayTasksLoaded,
         taskLoadVersion,
+        taskPageHasMoreFutureTasks,
+        taskPageHasMorePastTasks,
+        activeTaskLoadMode,
         error,
         // Setters
         setHighlightedTask,
@@ -396,6 +429,9 @@ export function useTaskManager() {
         tasksLoaded,
         todayTasksLoaded,
         taskLoadVersion,
+        taskPageHasMoreFutureTasks,
+        taskPageHasMorePastTasks,
+        activeTaskLoadMode,
         error,
         setHighlightedTask,
         fetchAllTasks,

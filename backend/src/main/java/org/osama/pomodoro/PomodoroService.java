@@ -14,6 +14,7 @@ import org.osama.session.task.TaskSessionRepository;
 import org.osama.session.task.TaskSessionService;
 import org.osama.task.Task;
 import org.osama.task.TaskService;
+import org.osama.task.events.TasksDeletedEvent;
 import org.osama.user.User;
 import org.osama.user.UserRepository;
 import org.springframework.context.event.EventListener;
@@ -183,6 +184,11 @@ public class PomodoroService {
         if (pomodoro.getCurrentFocusNumber() < pomodoro.getNumFocuses()) {
             sendAsyncUpdate(event.getTaskId());
         }
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void handleTasksDeleted(TasksDeletedEvent event) {
+        event.taskIds().forEach(this::pausePomodoroUpdates);
     }
 
     // ============ Pomodoro-Specific Logic ============

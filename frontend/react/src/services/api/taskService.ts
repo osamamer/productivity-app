@@ -34,12 +34,18 @@ const TASK_CACHE_TTL_MS = 60 * 60 * 1000;
 const TASK_SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 export const TASK_PAGE_BATCH_SIZE = 30;
 
+export type TaskPageInitialSnapshot = {
+    tasks: Task[];
+    hasMoreFutureTasks: boolean;
+    hasMorePastTasks: boolean;
+};
+
 type DeleteTaskOptions = {
     notifyResource?: boolean;
 };
 const mainTasksCache = new CachedResource<Task[]>({ ttlMs: TASK_CACHE_TTL_MS, maxEntries: 4 });
 const todayTasksCache = new CachedResource<Task[]>({ ttlMs: TASK_CACHE_TTL_MS, maxEntries: 4 });
-const taskPageInitialCache = new CachedResource<Task[]>({ ttlMs: TASK_CACHE_TTL_MS, maxEntries: 4 });
+const taskPageInitialCache = new CachedResource<TaskPageInitialSnapshot>({ ttlMs: TASK_CACHE_TTL_MS, maxEntries: 4 });
 const taskPageBatchCache = new CachedResource<Task[]>({ ttlMs: TASK_CACHE_TTL_MS, maxEntries: 12 });
 
 function mainTasksCacheKey(): string {
@@ -201,6 +207,17 @@ async function fetchTaskPeriod(
         : taskPageBatchCache.get(taskPageBatchCacheKey(period, limit, offset, completed), load);
 }
 
+async function fetchUndatedTasks(completed?: boolean): Promise<Task[]> {
+    const params = new URLSearchParams({ scheduled: 'false' });
+    if (completed !== undefined) params.set('completed', String(completed));
+
+    const response = await fetch(`${TASK_URL}?${params.toString()}`, {
+        headers: getAuthHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to fetch undated tasks');
+    return response.json() as Promise<Task[]>;
+}
+
 export const taskService = {
 
     // ============ Task Queries ============
@@ -250,11 +267,11 @@ export const taskService = {
         });
     },
 
-    async getTaskPageInitialTasks(
+    async getTaskPageInitialSnapshot(
         batchSize = TASK_PAGE_BATCH_SIZE,
         completed?: boolean,
         forceRefresh = false,
-    ): Promise<Task[]> {
+    ): Promise<TaskPageInitialSnapshot> {
         const completionFilter = completed === undefined ? 'all' : String(completed);
         const cacheKey = `${getAuthCacheScope()}:task-page-initial:${completionFilter}:${batchSize}`;
         if (forceRefresh) {
@@ -266,15 +283,20 @@ export const taskService = {
         return taskPageInitialCache.get(cacheKey, async () => {
             const [today, future, past, undated] = await Promise.all([
                 this.getTodayTasks(),
-                fetchTaskPeriod('FUTURE', batchSize, 0, completed),
-                fetchTaskPeriod('PAST', batchSize, 0, completed),
-                fetch(`${TASK_URL}/undated`, { headers: getAuthHeaders() })
-                    .then(response => {
-                        if (!response.ok) throw new Error('Failed to fetch undated tasks');
-                        return response.json() as Promise<Task[]>;
-                    }),
+                fetchTaskPeriod('FUTURE', batchSize + 1, 0, completed),
+                fetchTaskPeriod('PAST', batchSize + 1, 0, completed),
+                fetchUndatedTasks(completed),
             ]);
-            return [...today, ...future, ...past, ...undated];
+            return {
+                tasks: [
+                    ...today,
+                    ...future.slice(0, batchSize),
+                    ...past.slice(0, batchSize),
+                    ...undated,
+                ],
+                hasMoreFutureTasks: future.length > batchSize,
+                hasMorePastTasks: past.length > batchSize,
+            };
         });
     },
 

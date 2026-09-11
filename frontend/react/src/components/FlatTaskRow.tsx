@@ -8,7 +8,6 @@ import {
     Chip,
     CircularProgress,
     Collapse,
-    Fade,
     IconButton,
     LinearProgress,
     Slide,
@@ -308,7 +307,6 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     const [wsConnected, setWsConnected] = useState(false);
     const [actionLoading, setActionLoading] = useState(false);
     const [pomodoroFeedback, setPomodoroFeedback] = useState<PomodoroFeedback | null>(null);
-    const [pomodoroStatusRefreshing, setPomodoroStatusRefreshing] = useState(false);
     const [pomodoroHydrated, setPomodoroHydrated] = useState(!deferPomodoroHydration);
     const [detailsLoading, setDetailsLoading] = useState(false);
     const [whiteNoiseEnabled, setWhiteNoiseEnabledState] = useState(isWhiteNoiseEnabled);
@@ -555,6 +553,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         return () => {
             subscriptionRef.current?.unsubscribe();
             client.deactivate();
+            if (activePomodoroIdRef.current !== null) stopWhiteNoise();
             setWsConnected(false);
         };
     }, [pomodoroHydrated, task.taskId]);
@@ -590,8 +589,6 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
 
     const refreshPomodoroStatus = useCallback(async () => {
         const requestId = ++pomodoroStatusRequestIdRef.current;
-        const hideCurrentStatus = Boolean(pomodoroStatus?.active);
-        if (hideCurrentStatus) setPomodoroStatusRefreshing(true);
 
         try {
             const status = await taskService.getActivePomodoro();
@@ -605,12 +602,8 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
             }
         } catch (error) {
             console.error('Error refreshing pomodoro status:', error);
-        } finally {
-            if (requestId === pomodoroStatusRequestIdRef.current) {
-                setPomodoroStatusRefreshing(false);
-            }
         }
-    }, [pomodoroStatus?.active, task.taskId]);
+    }, [task.taskId]);
 
     const prefetchTaskDetails = useCallback(() => {
         void taskService.getTaskDetails(task).catch(error => {
@@ -1054,7 +1047,8 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         setIsEditingName(false);
     };
 
-    const isActive  = Boolean(pomodoroStatus?.active);
+    const pomodoroStatusPending = expectedPomodoroActive && pomodoroStatus === null;
+    const isActive  = Boolean(pomodoroStatus?.active) || pomodoroStatusPending;
     const pomodoroCompleted = pomodoroStatus?.phase === 'COMPLETED';
     const completedFocusSessions = pomodoroStatus?.completedFocusSessions
         ?? pomodoroStatus?.currentFocusNumber
@@ -1098,12 +1092,15 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
 
     // Break: pomodoro started but not in a focus session
     const waitingForPhase = isWaitingForPhase(pomodoroStatus);
-    const isBreak   = isActive && isBreakPhase(pomodoroStatus!);
+    const isBreak   = isActive && pomodoroStatus !== null && isBreakPhase(pomodoroStatus);
     const playPauseLabel = waitingForPhase
         ? pomodoroStatus?.phase === 'WAITING_FOR_BREAK' ? 'Start break' : 'Start focus session'
         : pomodoroStatus?.sessionRunning ? 'Pause focus session' : 'Resume focus session';
     // Paused: in a focus session but timer is not ticking
-    const isPaused  = isActive && pomodoroStatus!.sessionActive && !pomodoroStatus!.sessionRunning;
+    const isPaused  = pomodoroStatus !== null
+        && isActive
+        && pomodoroStatus.sessionActive
+        && !pomodoroStatus.sessionRunning;
     // Both states share the green "at rest" colour on the progress bar
     const useGreenBar = isBreak || isPaused;
     const progressPct = pomodoroStatus
@@ -1424,19 +1421,15 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                 }}
                 sx={{ willChange: 'height', '& .MuiCollapse-wrapper': { willChange: 'height' } }}
             >
-                <Fade
-                    in={expandedPanel === 'pomodoro' && !pomodoroStatusRefreshing}
-                    timeout={{ enter: 220, exit: 120 }}
+                <Box
+                    sx={{
+                        px: 2,
+                        pb: 2,
+                        pt: 0.5,
+                        animation: `${pomodoroPanelReveal} 220ms ease-out`,
+                        willChange: 'opacity',
+                    }}
                 >
-                    <Box
-                        sx={{
-                            px: 2,
-                            pb: 2,
-                            pt: 0.5,
-                            animation: `${pomodoroPanelReveal} 220ms ease-out`,
-                            willChange: 'opacity',
-                        }}
-                    >
                     {pomodoroCompleted ? (
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minHeight: 52 }}>
                             <CheckCircleOutlineIcon color="success" />
@@ -1497,6 +1490,19 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             >
                                 {actionLoading ? 'Starting…' : 'Start'}
                             </Button>
+                        </Box>
+                    ) : pomodoroStatusPending ? (
+                        <Box
+                            role="status"
+                            aria-label="Loading Pomodoro session"
+                            sx={{
+                                minHeight: 52,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                            }}
+                        >
+                            <CircularProgress size={18} />
                         </Box>
                     ) : (
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -1605,8 +1611,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             </Box>
                         </Box>
                     )}
-                    </Box>
-                </Fade>
+                </Box>
             </Collapse>
 
             {/* ── Details panel ── */}

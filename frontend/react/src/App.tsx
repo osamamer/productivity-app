@@ -5,6 +5,7 @@ import '@fontsource/roboto/500.css';
 import '@fontsource/roboto/700.css';
 import {lazy, Suspense, useEffect, type ReactNode} from "react";
 import {createBrowserRouter, Navigate, Outlet, RouterProvider} from "react-router-dom";
+import {Box, LinearProgress} from '@mui/material';
 import {ProtectedRoute} from "./components/ProtectedRoute";
 
 import {TaskProvider} from "./contexts/TaskContext.tsx";
@@ -14,10 +15,15 @@ import {AppErrorBoundary, AppErrorPage} from "./components/AppErrorBoundary.tsx"
 import {useAppContextMenuGuard} from "./components/AppContextMenuGuard.tsx";
 import {rememberMentalDestination, type MentalDestinationPath} from "./services/utils/mentalNavigation";
 import {AppShell} from "./components/AppShell.tsx";
+import {
+    loadHomePageModule,
+    loadTaskPageModule,
+    preloadInactivePrimaryRoutes,
+} from './services/routePreload';
 
-const HomePage = lazy(() => import('./pages/HomePage').then(module => ({ default: module.HomePage })));
+const HomePage = lazy(() => loadHomePageModule().then(module => ({ default: module.HomePage })));
 const CalendarPage = lazy(() => import('./pages/CalendarPage').then(module => ({ default: module.CalendarPage })));
-const TaskPage = lazy(() => import('./pages/TaskPage').then(module => ({ default: module.TaskPage })));
+const TaskPage = lazy(() => loadTaskPageModule().then(module => ({ default: module.TaskPage })));
 const MeditationPage = lazy(() => import('./pages/MeditationPage').then(module => ({ default: module.MeditationPage })));
 const LoginPage = lazy(() => import('./pages/LoginPage').then(module => ({ default: module.LoginPage })));
 const StatsPage = lazy(() => import('./pages/StatsPage').then(module => ({ default: module.StatsPage })));
@@ -29,7 +35,15 @@ const MentalPage = lazy(() => import('./pages/MentalPage').then(module => ({ def
 const DayPage = lazy(() => import('./pages/DayPage').then(module => ({ default: module.DayPage })));
 
 function RouteSuspense({ children }: { children: ReactNode }) {
-    return <Suspense fallback={null}>{children}</Suspense>;
+    return (
+        <Suspense fallback={(
+            <Box sx={{ flex: 1, minHeight: '100%', backgroundColor: 'background.default' }}>
+                <LinearProgress aria-label="Loading page" />
+            </Box>
+        )}>
+            {children}
+        </Suspense>
+    );
 }
 
 
@@ -114,6 +128,13 @@ const appRouter = createBrowserRouter(routes);
 
 function App() {
     useAppContextMenuGuard();
+    useEffect(() => {
+        const timeoutId = window.setTimeout(() => {
+            preloadInactivePrimaryRoutes(window.location.pathname);
+        }, 800);
+        return () => window.clearTimeout(timeoutId);
+    }, []);
+
     return (
         <AppErrorBoundary>
             <RouterProvider router={appRouter}/>

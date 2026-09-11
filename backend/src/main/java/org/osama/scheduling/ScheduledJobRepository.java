@@ -9,6 +9,7 @@ import org.springframework.stereotype.Repository;
 import jakarta.persistence.LockModeType;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -22,6 +23,7 @@ public interface ScheduledJobRepository extends JpaRepository<ScheduledJob, Stri
     List<ScheduledJob> findAllByScheduledIsTrueAndDueDateBetween(LocalDateTime intervalStart, LocalDateTime intervalEnd);
     List<ScheduledJob> findAllByScheduledIsTrueAndDueDateLessThanEqualOrderByDueDateAsc(LocalDateTime dueDate);
     List<ScheduledJob> findAllByAssociatedTaskId(String taskId);
+    List<ScheduledJob> findAllByAssociatedTaskIdIn(Collection<String> taskIds);
     List<ScheduledJob> findAllByScheduledIsTrueAndAssociatedTaskId(String taskId);
     List<ScheduledJob> findAllByScheduledIsFalseAndAssociatedTaskId(String taskId);
 

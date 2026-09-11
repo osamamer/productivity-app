@@ -17,6 +17,7 @@ import org.osama.scheduling.ScheduledJobRepository;
 import org.osama.scheduling.ScheduleService;
 import org.osama.scheduling.TimedExecutorService;
 import org.osama.requests.NewTaskRequest;
+import org.osama.session.task.TaskSessionRepository;
 import org.osama.session.task.TaskSessionService;
 import org.osama.task.Task;
 import org.osama.task.TaskService;
@@ -57,6 +58,8 @@ public class PomoTest {
     private PomodoroService pomodoroService;
     @Autowired
     private PomodoroRepository pomodoroRepository;
+    @Autowired
+    private TaskSessionRepository taskSessionRepository;
     @Autowired
     private ScheduleService scheduleService;
     @Autowired
@@ -172,6 +175,20 @@ public class PomoTest {
                 () -> pomodoroService.startPomodoro(task.getTaskId(), 0, 5, 15, 4, 4, testUserId));
         assertFalse(pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(task.getTaskId()).isPresent());
         assertTrue(scheduledJobRepository.findAllByAssociatedTaskId(task.getTaskId()).isEmpty());
+    }
+
+    @Test
+    @org.springframework.transaction.annotation.Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void deletingTaskRemovesItsPomodoroRuntimeState() {
+        Task task = createTask();
+        pomodoroService.startPomodoro(task.getTaskId(), 10, 10, 10, 2, 4, true, testUserId);
+
+        taskService.deleteTask(task.getTaskId(), testUserId);
+
+        assertTrue(pomodoroRepository.findAllByAssociatedTaskIdIn(List.of(task.getTaskId())).isEmpty());
+        assertTrue(scheduledJobRepository.findAllByAssociatedTaskId(task.getTaskId()).isEmpty());
+        assertTrue(taskSessionRepository.findAllByAssociatedTaskId(task.getTaskId()).isEmpty());
+        assertTrue(pomodoroService.getActivePomodoro(testUserId).isEmpty());
     }
 
     @Test

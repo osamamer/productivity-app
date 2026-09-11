@@ -1,6 +1,7 @@
 import { Box, ListItemButton, Typography } from '@mui/material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { SvgIconComponent } from '@mui/icons-material';
+import { preloadPrimaryRoute } from '../../services/routePreload';
 
 // Must match COLLAPSED_WIDTH in SideNav
 const ICON_ZONE_WIDTH = 60;
@@ -29,6 +30,8 @@ export function SideMenuButton({
     return (
         <ListItemButton
             selected={isActive}
+            onPointerEnter={() => preloadPrimaryRoute(targetPage)}
+            onFocus={() => preloadPrimaryRoute(targetPage)}
             onClick={() => {
                 if (onNavigate) {
                     onNavigate(targetPage);

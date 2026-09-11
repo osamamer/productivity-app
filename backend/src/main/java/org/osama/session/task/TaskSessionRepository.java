@@ -14,6 +14,7 @@ public interface TaskSessionRepository extends JpaRepository<TaskSession, String
 
     List<TaskSession> findAllByAssociatedTaskId(String taskId);
     List<TaskSession> findAllByAssociatedTaskIdIn(Collection<String> taskIds);
+    List<TaskSession> findAllByAssociatedTaskIdInAndActiveIsTrue(Collection<String> taskIds);
     List<TaskSession> findAllByRunningIsTrue();
     List<TaskSession> findAllByActiveIsTrue();
     int countAllByAssociatedTaskIdAndActiveIsFalse(String taskId);

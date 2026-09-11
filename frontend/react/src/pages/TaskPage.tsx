@@ -139,7 +139,10 @@ export function TaskPage() {
         setHighlightedTask,
         loading,
         tasksLoaded,
+        error,
         taskLoadVersion,
+        taskPageHasMoreFutureTasks,
+        taskPageHasMorePastTasks,
         refreshTaskBuckets,
         addTaskToState,
         appendTasksToState,
@@ -150,9 +153,6 @@ export function TaskPage() {
 
     const [expandedSections, setExpandedSections] = useState<TaskSectionExpansionState>(readTaskSectionExpansion);
     const [taskGroups, setTaskGroups] = useState<TaskGroup[]>(() => taskGroupService.getCachedGroups() ?? []);
-    const [taskGroupsLoaded, setTaskGroupsLoaded] = useState(
-        () => taskGroupService.getCachedGroups() !== undefined,
-    );
     const [deleteRequest, setDeleteRequest] = useState<DeleteRequest | null>(null);
     const [deleteSubmitting, setDeleteSubmitting] = useState(false);
     const [editRequest, setEditRequest] = useState<EditRequest | null>(null);
@@ -181,8 +181,8 @@ export function TaskPage() {
     const undatedRef = useRef<HTMLDivElement>(null);
     const [upcomingTaskLimit, setUpcomingTaskLimit] = useState(TASK_PAGE_BATCH_SIZE);
     const [leftoverTaskLimit, setLeftoverTaskLimit] = useState(TASK_PAGE_BATCH_SIZE);
-    const [hasMoreUpcomingTasks, setHasMoreUpcomingTasks] = useState(false);
-    const [hasMoreLeftoverTasks, setHasMoreLeftoverTasks] = useState(false);
+    const [hasMoreUpcomingTasks, setHasMoreUpcomingTasks] = useState(taskPageHasMoreFutureTasks);
+    const [hasMoreLeftoverTasks, setHasMoreLeftoverTasks] = useState(taskPageHasMorePastTasks);
     const [loadingMoreUpcomingTasks, setLoadingMoreUpcomingTasks] = useState(false);
     const [loadingMoreLeftoverTasks, setLoadingMoreLeftoverTasks] = useState(false);
     const initializedTaskLoadVersionRef = useRef<number | null>(null);
@@ -204,9 +204,6 @@ export function TaskPage() {
             })
             .catch(error => {
                 console.error('Error fetching task groups for Tasks page:', error);
-            })
-            .finally(() => {
-                if (active) setTaskGroupsLoaded(true);
             });
         return () => {
             active = false;
@@ -218,39 +215,9 @@ export function TaskPage() {
         initializedTaskLoadVersionRef.current = taskLoadVersion;
         setUpcomingTaskLimit(TASK_PAGE_BATCH_SIZE);
         setLeftoverTaskLimit(TASK_PAGE_BATCH_SIZE);
-        setHasMoreUpcomingTasks(false);
-        setHasMoreLeftoverTasks(false);
-
-        const completedFilter = showCompletedTasks ? undefined : false;
-        const checkForMore = async (
-            loadedTaskCount: number,
-            fetchPage: (limit: number, offset: number, completed?: boolean) => Promise<Task[]>,
-        ): Promise<boolean> => {
-            if (loadedTaskCount < TASK_PAGE_BATCH_SIZE) return false;
-            const nextTasks = await fetchPage(1, loadedTaskCount, completedFilter);
-            return nextTasks.length > 0;
-        };
-
-        let active = true;
-        void Promise.all([
-            checkForMore(futureTasks.length, (limit, offset, completed) => (
-                taskService.getFutureTasks(limit, offset, completed)
-            )),
-            checkForMore(pastTasks.length, (limit, offset, completed) => (
-                taskService.getPastTasks(limit, offset, completed)
-            )),
-        ]).then(([hasMoreUpcoming, hasMoreLeftover]) => {
-            if (!active) return;
-            setHasMoreUpcomingTasks(hasMoreUpcoming);
-            setHasMoreLeftoverTasks(hasMoreLeftover);
-        }).catch(error => {
-            console.error('Error checking for more task pages:', error);
-        });
-
-        return () => {
-            active = false;
-        };
-    }, [futureTasks.length, pastTasks.length, showCompletedTasks, taskLoadVersion]);
+        setHasMoreUpcomingTasks(taskPageHasMoreFutureTasks);
+        setHasMoreLeftoverTasks(taskPageHasMorePastTasks);
+    }, [taskLoadVersion, taskPageHasMoreFutureTasks, taskPageHasMorePastTasks]);
 
     const createTask = useCallback(async (task: TaskToCreate) => {
         try {
@@ -1244,7 +1211,19 @@ export function TaskPage() {
                             </Portal>
                         )}
 
-                        {taskGroupsLoaded && (
+                        {loading && !tasksLoaded && (
+                            <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
+                                <CircularProgress size={22} aria-label="Loading tasks" />
+                            </Box>
+                        )}
+
+                        {!loading && !tasksLoaded && error && (
+                            <Alert severity="error" sx={{ mt: 2 }}>
+                                Tasks could not be loaded. Please try again.
+                            </Alert>
+                        )}
+
+                        {tasksLoaded && (
                         <Box>
                             {(!isSearchActive || hasTodayTasks) && (
                                 <TaskPageSection
@@ -1252,7 +1231,7 @@ export function TaskPage() {
                                     title="Today"
                                     tasks={visibleTodayTasks}
                                     completedCount={visibleTodayTasks.filter(task => task.completed).length}
-                                    expanded={expandedSections.today}
+                                    expanded={isSearchActive || expandedSections.today}
                                     onToggle={toggleSection}
                                     {...sharedSectionProps}
                                     emptyMessage="No matching tasks scheduled for today"
@@ -1266,7 +1245,7 @@ export function TaskPage() {
                                     title="Coming up"
                                     tasks={futureTasksToShow}
                                     completedCount={futureTasksToShow.filter(task => task.completed).length}
-                                    expanded={expandedSections.comingUp}
+                                    expanded={isSearchActive || expandedSections.comingUp}
                                     onToggle={toggleSection}
                                     {...sharedSectionProps}
                                     emptyMessage="No matching upcoming tasks"
@@ -1287,7 +1266,7 @@ export function TaskPage() {
                                     title="Leftovers"
                                     tasks={visiblePastTasks}
                                     completedCount={visiblePastTasks.filter(task => task.completed).length}
-                                    expanded={expandedSections.leftovers}
+                                    expanded={isSearchActive || expandedSections.leftovers}
                                     onToggle={toggleSection}
                                     {...sharedSectionProps}
                                     emptyMessage="No matching older tasks"
@@ -1308,7 +1287,7 @@ export function TaskPage() {
                                     title="No date"
                                     tasks={visibleUndatedTasks}
                                     completedCount={visibleUndatedTasks.filter(task => task.completed).length}
-                                    expanded={expandedSections.undated}
+                                    expanded={isSearchActive || expandedSections.undated}
                                     onToggle={toggleSection}
                                     {...sharedSectionProps}
                                     emptyMessage="No matching undated tasks"
@@ -1318,7 +1297,7 @@ export function TaskPage() {
                         </Box>
                         )}
 
-                        {taskGroupsLoaded && tasksLoaded && !loading && !hasTasks && (
+                        {tasksLoaded && !loading && !hasTasks && (
                             <Typography variant="body1" color="text.secondary" sx={{ py: 2 }}>
                                 {isSearchActive
                                     ? `No tasks match “${searchQuery.trim()}”.`

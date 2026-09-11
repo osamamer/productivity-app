@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { alpha } from '@mui/material/styles';
 import { Box, Button, Collapse, Fade, IconButton, TextField, Typography } from '@mui/material';
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
@@ -88,8 +88,6 @@ export const TaskPageSection = React.memo(function TaskPageSection({
     const visibleTasks = useMemo(() => tasks.filter(task => !task.parentId), [tasks]);
     const listItems = useMemo(() => buildTaskListItems(visibleTasks, groups), [groups, visibleTasks]);
     const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(new Set());
-    const [contentMounted, setContentMounted] = useState(expanded);
-    const [animatedExpanded, setAnimatedExpanded] = useState(expanded);
     const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
     const [localGroupName, setLocalGroupName] = useState('');
     const [addingGroupId, setAddingGroupId] = useState<string | null>(null);
@@ -118,17 +116,6 @@ export const TaskPageSection = React.memo(function TaskPageSection({
             return next;
         });
     };
-
-    useLayoutEffect(() => {
-        if (!expanded) {
-            setAnimatedExpanded(false);
-            return;
-        }
-
-        setContentMounted(true);
-        const frameId = window.requestAnimationFrame(() => setAnimatedExpanded(true));
-        return () => window.cancelAnimationFrame(frameId);
-    }, [expanded]);
 
     useEffect(() => {
         if (!editingGroupId || !groupNameInputRef.current) return;
@@ -347,7 +334,7 @@ export const TaskPageSection = React.memo(function TaskPageSection({
                         </IconButton>
                     )}
                 </Box>
-                <Collapse in={!collapsed} timeout={210}>
+                <Collapse in={!collapsed} timeout={210} unmountOnExit>
                     <Box
                         data-task-group-content={item.group.groupId}
                         sx={{
@@ -436,35 +423,23 @@ export const TaskPageSection = React.memo(function TaskPageSection({
                 )}
             </Box>
 
-            {(contentMounted || expanded) && (
-                <Box
-                    aria-hidden={!animatedExpanded}
-                    sx={{
-                        display: 'grid',
-                        gridTemplateRows: animatedExpanded ? '1fr' : '0fr',
-                        opacity: animatedExpanded ? 1 : 0,
-                        transition: 'grid-template-rows 180ms cubic-bezier(0.4, 0, 0.2, 1), opacity 140ms ease',
-                    }}
-                >
-                    <Box sx={{ minHeight: 0, overflow: 'hidden' }}>
-                        <Box sx={{ pt: 1 }}>
-                            {visibleTasks.length > 0 ? (
-                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
-                                    {listItems.map(renderListItem)}
-                                    {showMoreButton}
-                                </Box>
-                            ) : (
-                                <>
-                                    <Typography variant="body2" color="text.secondary" sx={{ py: 1.5, pl: 4 }}>
-                                        {emptyMessage}
-                                    </Typography>
-                                    {showMoreButton}
-                                </>
-                            )}
+            <Collapse in={expanded} timeout={180} unmountOnExit>
+                <Box sx={{ pt: 1 }}>
+                    {visibleTasks.length > 0 ? (
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
+                            {listItems.map(renderListItem)}
+                            {showMoreButton}
                         </Box>
-                    </Box>
+                    ) : (
+                        <>
+                            <Typography variant="body2" color="text.secondary" sx={{ py: 1.5, pl: 4 }}>
+                                {emptyMessage}
+                            </Typography>
+                            {showMoreButton}
+                        </>
+                    )}
                 </Box>
-            )}
+            </Collapse>
         </Box>
     );
 });

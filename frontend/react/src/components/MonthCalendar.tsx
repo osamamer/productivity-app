@@ -77,8 +77,9 @@ type MonthCalenderProps = {
 type TaskStatusFilter = 'all' | 'open' | 'completed';
 
 const CALENDAR_DISPLAY_PREFERENCES_KEY = 'calendar-display-preferences';
+type CalendarDisplayView = 'month' | 'week';
 
-type CalendarDisplayPreferences = {
+type CalendarDisplaySettings = {
     showTasks: boolean;
     showStats: boolean;
     taskStatus: TaskStatusFilter;
@@ -86,7 +87,9 @@ type CalendarDisplayPreferences = {
     selectedStatIds: string[] | null;
 };
 
-const DEFAULT_CALENDAR_DISPLAY_PREFERENCES: CalendarDisplayPreferences = {
+type CalendarDisplayPreferences = Record<CalendarDisplayView, CalendarDisplaySettings>;
+
+const DEFAULT_CALENDAR_DISPLAY_SETTINGS: CalendarDisplaySettings = {
     showTasks: true,
     showStats: true,
     taskStatus: 'all',
@@ -94,33 +97,70 @@ const DEFAULT_CALENDAR_DISPLAY_PREFERENCES: CalendarDisplayPreferences = {
     selectedStatIds: null,
 };
 
+function defaultCalendarDisplayPreferences(): CalendarDisplayPreferences {
+    return {
+        month: {
+            ...DEFAULT_CALENDAR_DISPLAY_SETTINGS,
+            priorityFilters: [...DEFAULT_CALENDAR_DISPLAY_SETTINGS.priorityFilters],
+        },
+        week: {
+            ...DEFAULT_CALENDAR_DISPLAY_SETTINGS,
+            priorityFilters: [...DEFAULT_CALENDAR_DISPLAY_SETTINGS.priorityFilters],
+        },
+    };
+}
+
+function normalizeCalendarDisplaySettings(value: unknown): CalendarDisplaySettings {
+    const parsed = value && typeof value === 'object' && !Array.isArray(value)
+        ? value as Partial<CalendarDisplaySettings>
+        : {};
+
+    return {
+        showTasks: typeof parsed.showTasks === 'boolean'
+            ? parsed.showTasks
+            : DEFAULT_CALENDAR_DISPLAY_SETTINGS.showTasks,
+        showStats: typeof parsed.showStats === 'boolean'
+            ? parsed.showStats
+            : DEFAULT_CALENDAR_DISPLAY_SETTINGS.showStats,
+        taskStatus: parsed.taskStatus === 'open' || parsed.taskStatus === 'completed'
+            ? parsed.taskStatus
+            : DEFAULT_CALENDAR_DISPLAY_SETTINGS.taskStatus,
+        priorityFilters: Array.isArray(parsed.priorityFilters)
+            ? parsed.priorityFilters.filter(value => PRIORITY_OPTIONS.some(option => option.value === value))
+            : [...DEFAULT_CALENDAR_DISPLAY_SETTINGS.priorityFilters],
+        selectedStatIds: Array.isArray(parsed.selectedStatIds)
+            ? parsed.selectedStatIds.filter((id): id is string => typeof id === 'string')
+            : DEFAULT_CALENDAR_DISPLAY_SETTINGS.selectedStatIds,
+    };
+}
+
 function readCalendarDisplayPreferences(): CalendarDisplayPreferences {
-    if (typeof window === 'undefined') return DEFAULT_CALENDAR_DISPLAY_PREFERENCES;
+    const defaults = defaultCalendarDisplayPreferences();
+    if (typeof window === 'undefined') return defaults;
 
     try {
         const stored = window.localStorage.getItem(CALENDAR_DISPLAY_PREFERENCES_KEY);
-        if (!stored) return DEFAULT_CALENDAR_DISPLAY_PREFERENCES;
+        if (!stored) return defaults;
 
-        const parsed = JSON.parse(stored) as Partial<CalendarDisplayPreferences>;
+        const parsed = JSON.parse(stored) as unknown;
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return defaults;
+
+        const storedPreferences = parsed as Partial<Record<CalendarDisplayView, unknown>> & Partial<CalendarDisplaySettings>;
+        const hasPerViewPreferences = storedPreferences.month !== undefined || storedPreferences.week !== undefined;
+        if (!hasPerViewPreferences) {
+            // Keep existing month settings when upgrading from the original flat preference shape.
+            return {
+                month: normalizeCalendarDisplaySettings(parsed),
+                week: defaults.week,
+            };
+        }
+
         return {
-            showTasks: typeof parsed.showTasks === 'boolean'
-                ? parsed.showTasks
-                : DEFAULT_CALENDAR_DISPLAY_PREFERENCES.showTasks,
-            showStats: typeof parsed.showStats === 'boolean'
-                ? parsed.showStats
-                : DEFAULT_CALENDAR_DISPLAY_PREFERENCES.showStats,
-            taskStatus: parsed.taskStatus === 'open' || parsed.taskStatus === 'completed'
-                ? parsed.taskStatus
-                : DEFAULT_CALENDAR_DISPLAY_PREFERENCES.taskStatus,
-            priorityFilters: Array.isArray(parsed.priorityFilters)
-                ? parsed.priorityFilters.filter(value => PRIORITY_OPTIONS.some(option => option.value === value))
-                : DEFAULT_CALENDAR_DISPLAY_PREFERENCES.priorityFilters,
-            selectedStatIds: Array.isArray(parsed.selectedStatIds)
-                ? parsed.selectedStatIds.filter((id): id is string => typeof id === 'string')
-                : null,
+            month: normalizeCalendarDisplaySettings(storedPreferences.month),
+            week: normalizeCalendarDisplaySettings(storedPreferences.week),
         };
     } catch {
-        return DEFAULT_CALENDAR_DISPLAY_PREFERENCES;
+        return defaults;
     }
 }
 
@@ -283,13 +323,7 @@ export function MonthCalendar({
     const recurrenceOriginalDraftRef = useRef<TaskRecurrenceDraft>(defaultTaskRecurrence());
     const recurrenceDraftDirtyRef = useRef(false);
     const taskSeriesRef = useRef<TaskSeries | null>(null);
-    const [showTasks, setShowTasks] = useState(initialDisplayPreferences.showTasks);
-    const [showStats, setShowStats] = useState(initialDisplayPreferences.showStats);
-    const [taskStatus, setTaskStatus] = useState<TaskStatusFilter>(initialDisplayPreferences.taskStatus);
-    const [priorityFilters, setPriorityFilters] = useState<number[]>(initialDisplayPreferences.priorityFilters);
-    // null means the user has not customized the list, so all definitions are
-    // immediately visible as soon as they arrive from the parent.
-    const [selectedStatIds, setSelectedStatIds] = useState<string[] | null>(initialDisplayPreferences.selectedStatIds);
+    const [displayPreferencesByView, setDisplayPreferencesByView] = useState<CalendarDisplayPreferences>(initialDisplayPreferences);
     const [filterAnchor, setFilterAnchor] = useState<HTMLElement | null>(null);
     const [showTemplatePanel, setShowTemplatePanel] = useState(false);
     const [templateCreationOpen, setTemplateCreationOpen] = useState(false);
@@ -324,9 +358,27 @@ export function MonthCalendar({
         start: startOfMonth(new Date()),
         end: addMonths(startOfMonth(new Date()), 1),
     });
+    const [isWeekView, setIsWeekView] = useState(false);
     const [dayCalendarEntries, setDayCalendarEntries] = useState<DayCalendarEntry[]>([]);
     const [statEntries, setStatEntries] = useState<StatEntry[]>([]);
     const [statRefreshKey, setStatRefreshKey] = useState(0);
+    const displayView: CalendarDisplayView = isWeekView ? 'week' : 'month';
+    const {
+        showTasks,
+        showStats,
+        taskStatus,
+        priorityFilters,
+        selectedStatIds,
+    } = displayPreferencesByView[displayView];
+    const updateDisplayPreferences = useCallback((updates: Partial<CalendarDisplaySettings>) => {
+        setDisplayPreferencesByView(previous => ({
+            ...previous,
+            [displayView]: {
+                ...previous[displayView],
+                ...updates,
+            },
+        }));
+    }, [displayView]);
     const selectedStatIdsForDisplay = useMemo(
         () => selectedStatIds ?? availableStatDefinitions.map(definition => definition.id),
         [availableStatDefinitions, selectedStatIds]
@@ -444,17 +496,11 @@ export function MonthCalendar({
 
     React.useEffect(() => {
         try {
-            window.localStorage.setItem(CALENDAR_DISPLAY_PREFERENCES_KEY, JSON.stringify({
-                showTasks,
-                showStats,
-                taskStatus,
-                priorityFilters,
-                selectedStatIds,
-            } satisfies CalendarDisplayPreferences));
+            window.localStorage.setItem(CALENDAR_DISPLAY_PREFERENCES_KEY, JSON.stringify(displayPreferencesByView));
         } catch {
             // Preferences are optional; private browsing may make storage unavailable.
         }
-    }, [priorityFilters, selectedStatIds, showStats, showTasks, taskStatus]);
+    }, [displayPreferencesByView]);
 
     React.useEffect(() => {
         let cancelled = false;
@@ -923,6 +969,8 @@ export function MonthCalendar({
     }, [openTaskEditor, tasks]);
 
     const handleDatesSet = useCallback((arg: DatesSetArg) => {
+        const nextIsWeekView = arg.view.type === 'dayGridWeek';
+        setIsWeekView(previous => previous === nextIsWeekView ? previous : nextIsWeekView);
         setCalendarRange(previous => previous.start.getTime() === arg.start.getTime()
             && previous.end.getTime() === arg.end.getTime()
             ? previous
@@ -930,17 +978,19 @@ export function MonthCalendar({
     }, []);
 
     const togglePriority = (priority: number) => {
-        setPriorityFilters(previous => previous.includes(priority)
-            ? previous.filter(value => value !== priority)
-            : [...previous, priority]);
+        updateDisplayPreferences({
+            priorityFilters: priorityFilters.includes(priority)
+                ? priorityFilters.filter(value => value !== priority)
+                : [...priorityFilters, priority],
+        });
     };
 
     const toggleStat = (statId: string) => {
-        setSelectedStatIds(previous => {
-            const selected = previous ?? availableStatDefinitions.map(definition => definition.id);
-            return selected.includes(statId)
+        const selected = selectedStatIds ?? availableStatDefinitions.map(definition => definition.id);
+        updateDisplayPreferences({
+            selectedStatIds: selected.includes(statId)
                 ? selected.filter(id => id !== statId)
-                : [...selected, statId];
+                : [...selected, statId],
         });
     };
 
@@ -1161,11 +1211,11 @@ export function MonthCalendar({
                         <Typography variant="subtitle2" sx={{ mb: 1 }}>What should appear?</Typography>
                         <FormGroup>
                             <FormControlLabel
-                                control={<Switch checked={showTasks} onChange={event => setShowTasks(event.target.checked)} />}
+                                control={<Switch checked={showTasks} onChange={event => updateDisplayPreferences({ showTasks: event.target.checked })} />}
                                 label="Show tasks"
                             />
                             <FormControlLabel
-                                control={<Switch checked={showStats} onChange={event => setShowStats(event.target.checked)} />}
+                                control={<Switch checked={showStats} onChange={event => updateDisplayPreferences({ showStats: event.target.checked })} />}
                                 label="Show statistics"
                             />
                         </FormGroup>
@@ -1179,7 +1229,7 @@ export function MonthCalendar({
                                     fullWidth
                                     size="small"
                                     value={taskStatus}
-                                    onChange={(_, value: TaskStatusFilter | null) => value && setTaskStatus(value)}
+                                    onChange={(_, value: TaskStatusFilter | null) => value && updateDisplayPreferences({ taskStatus: value })}
                                     sx={{ mt: 0.75 }}
                                 >
                                     <ToggleButton value="all">All</ToggleButton>
@@ -1215,10 +1265,10 @@ export function MonthCalendar({
                                 <Stack direction="row" justifyContent="space-between" alignItems="center">
                                     <Typography variant="caption" color="text.secondary">Statistics to show</Typography>
                                     <Stack direction="row" spacing={0.25}>
-                                        <Button size="small" onClick={() => setSelectedStatIds(availableStatDefinitions.map(definition => definition.id))}>
+                                        <Button size="small" onClick={() => updateDisplayPreferences({ selectedStatIds: availableStatDefinitions.map(definition => definition.id) })}>
                                             All
                                         </Button>
-                                        <Button size="small" onClick={() => setSelectedStatIds([])}>
+                                        <Button size="small" onClick={() => updateDisplayPreferences({ selectedStatIds: [] })}>
                                             None
                                         </Button>
                                     </Stack>
@@ -1279,7 +1329,6 @@ export function MonthCalendar({
                             minHeight: 0,
                             height: '100%',
                         '& .fc': {
-                            height: '100%',
                             fontFamily: theme.typography.fontFamily,
                         },
                         '& .fc-theme-standard td, & .fc-theme-standard th': {
@@ -1317,11 +1366,35 @@ export function MonthCalendar({
                             padding: '4px',
                         },
                         '& .fc-dayGridWeek-view .fc-daygrid-day-frame': {
-                            minHeight: '128px',
+                            minHeight: '96px',
                         },
                         '& .fc-dayGridWeek-view': {
-                            maxWidth: '960px',
-                            margin: '0 auto',
+                            width: '100%',
+                            maxWidth: 'none',
+                            margin: 0,
+                        },
+                        '& .fc-dayGridWeek-view .fc-col-header-cell': {
+                            padding: '6px 4px 8px',
+                        },
+                        '& .fc-dayGridWeek-view .fc-col-header-cell.fc-day-today': {
+                            backgroundColor: `${theme.palette.primary.main}18 !important`,
+                            boxShadow: `inset 0 -3px 0 ${theme.palette.primary.main}`,
+                            opacity: 1,
+                        },
+                        '& .fc-dayGridWeek-view .fc-col-header-cell.fc-day-today .fc-col-header-cell-cushion': {
+                            color: `${theme.palette.primary.main} !important`,
+                            fontWeight: 800,
+                        },
+                        '& .fc-dayGridWeek-view .fc-daygrid-event': {
+                            overflow: 'visible',
+                            textOverflow: 'clip',
+                            whiteSpace: 'normal',
+                        },
+                        '& .fc-dayGridWeek-view .calendar-event-title': {
+                            overflow: 'visible',
+                            textOverflow: 'clip',
+                            whiteSpace: 'normal',
+                            overflowWrap: 'anywhere',
                         },
                         '& .fc-daygrid-day-top': {
                             flexDirection: 'row',
@@ -1363,15 +1436,26 @@ export function MonthCalendar({
                             lineHeight: 1,
                             padding: '0 4px',
                         },
-                        '& .fc-day-today': {
+                        '& .fc-daygrid-day.fc-day-today': {
                             background: `${theme.palette.primary.main}20 !important`,
                             borderRadius: '0px',
                             outline: `2px solid ${theme.palette.primary.main}`,
                             outlineOffset: '-2px',
                         },
-                        '& .fc-day-today .fc-daygrid-day-number': {
+                        '& .fc-daygrid-day.fc-day-today .fc-daygrid-day-number': {
                             color: theme.palette.primary.main,
                             fontWeight: 800,
+                        },
+                        '& .fc-dayGridWeek-view .fc-daygrid-day.fc-day-today': {
+                            background: theme.palette.mode === 'dark'
+                                ? 'rgba(255, 255, 255, 0.03) !important'
+                                : 'rgba(0, 0, 0, 0.02) !important',
+                            outline: `1px solid ${theme.palette.divider}`,
+                            outlineOffset: '-1px',
+                        },
+                        '& .fc-dayGridWeek-view .fc-daygrid-day.fc-day-today .fc-daygrid-day-number': {
+                            color: `${theme.palette.text.primary} !important`,
+                            fontWeight: 600,
                         },
                         '& .fc-toolbar-title': {
                             fontSize: '1.5rem',
@@ -1537,7 +1621,7 @@ export function MonthCalendar({
                             datesSet={handleDatesSet}
                             dayCellDidMount={handleDayCellDidMount}
                             dayCellWillUnmount={handleDayCellWillUnmount}
-                            dayMaxEvents={4}
+                            dayMaxEvents={isWeekView ? false : 4}
                             headerToolbar={{
                                 left: 'prev,next today',
                                 center: 'title',

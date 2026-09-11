@@ -584,7 +584,6 @@ export function HomePage() {
     const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(
         () => new Set((cachedGroups ?? []).map(group => group.groupId)),
     );
-    const [mountedGroupIds, setMountedGroupIds] = useState<Set<string>>(new Set());
     const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
     const groupNameInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
     const [draggedTaskIds, setDraggedTaskIds] = useState<string[]>([]);
@@ -1120,6 +1119,10 @@ export function HomePage() {
 
         const request = deleteRequest;
         const tasksToDelete = tasksForDeleteScope(request, scope, allTasks);
+        const deletedActivePomodoroTaskId = activePomodoroTaskIdRef.current
+            && tasksToDelete.some(task => task.taskId === activePomodoroTaskIdRef.current)
+            ? activePomodoroTaskIdRef.current
+            : null;
         const previousGroups = groups ?? [];
         const previousCollapsedGroupIds = new Set(collapsedGroupIds);
         const previousTaskOrder = allTasks.map(task => task.taskId);
@@ -1152,6 +1155,9 @@ export function HomePage() {
                     await taskGroupService.deleteGroup(request.group.groupId);
                 }
                 await deleteTasksForScope(tasksToDelete, scope);
+                if (deletedActivePomodoroTaskId) {
+                    handlePomodoroActiveChange(deletedActivePomodoroTaskId, false, { animate: false });
+                }
                 invalidateResource('tasks');
             } catch (err) {
                 console.error(`Error deleting ${request.kind === 'group' ? 'group' : request.kind === 'bulk' ? 'selected tasks' : 'task'}:`, err);
@@ -1460,8 +1466,14 @@ export function HomePage() {
 
             clearFocusTransitionTimer();
             rememberFocusTaskPosition(taskId);
+            const latestStatus = latestPomodoroStatusRef.current;
+            const initialStatus = latestStatus?.active && latestStatus.associatedTaskId === taskId
+                ? latestStatus
+                : null;
+            latestPomodoroStatusRef.current = initialStatus;
             activePomodoroTaskIdRef.current = taskId;
             setActivePomodoroTaskId(taskId);
+            setInitialPomodoroStatus(initialStatus);
             setPomodoroTaskMinimized(false);
             setSelectedTaskIds([]);
             setShowOlderTasks(false);
@@ -1479,26 +1491,37 @@ export function HomePage() {
         }
 
         clearFocusTransitionTimer();
-        setActiveExpansion(previous =>
-            previous?.taskId === taskId && previous.panel === 'pomodoro' ? null : previous,
-        );
-
-        if (activePomodoroTaskIdRef.current !== taskId) return;
+        if (activePomodoroTaskIdRef.current !== taskId) {
+            setActiveExpansion(previous =>
+                previous?.taskId === taskId && previous.panel === 'pomodoro' ? null : previous,
+            );
+            return;
+        }
 
         if (options?.animate === true && !pomodoroTaskMinimized) {
+            // Keep the returning row's height fixed until its transform completes.
             setFocusVisibility('returning');
             focusTransitionTimerRef.current = window.setTimeout(() => {
+                setActiveExpansion(previous =>
+                    previous?.taskId === taskId && previous.panel === 'pomodoro' ? null : previous,
+                );
                 activePomodoroTaskIdRef.current = null;
                 latestPomodoroStatusRef.current = null;
                 setActivePomodoroTaskId(null);
                 setInitialPomodoroStatus(null);
                 setPomodoroTaskMinimized(false);
-                setFocusVisibility('all');
-                focusTransitionTimerRef.current = null;
+                setFocusVisibility('revealing');
+                focusTransitionTimerRef.current = window.setTimeout(() => {
+                    setFocusVisibility('all');
+                    focusTransitionTimerRef.current = null;
+                }, 260);
             }, FOCUS_TASK_SLIDE_DURATION_MS);
             return;
         }
 
+        setActiveExpansion(previous =>
+            previous?.taskId === taskId && previous.panel === 'pomodoro' ? null : previous,
+        );
         activePomodoroTaskIdRef.current = null;
         latestPomodoroStatusRef.current = null;
         setActivePomodoroTaskId(null);
@@ -1546,7 +1569,10 @@ export function HomePage() {
         const activeTaskId = activePomodoroTaskIdRef.current;
         if (activeTaskId === null || activeTaskId === taskId) {
             latestPomodoroStatusRef.current = status;
-            if (status.phase === 'COMPLETED') {
+            if (status.active) {
+                // Preserve the first live snapshot for the focus-row remount.
+                setInitialPomodoroStatus(previous => previous ?? status);
+            } else if (status.phase === 'COMPLETED') {
                 // Keep a remounted focus row from hydrating the stale active snapshot.
                 setInitialPomodoroStatus(status);
             }
@@ -2259,7 +2285,6 @@ export function HomePage() {
         ));
         addTaskToState(optimisticTask);
         reorderTasksInState(taskOrder);
-        setMountedGroupIds(previous => new Set(previous).add(group.groupId));
         setCollapsedGroupIds(previous => {
             if (!previous.has(group.groupId)) return previous;
 
@@ -2306,7 +2331,6 @@ export function HomePage() {
     function startTaskInGroup(groupId: string) {
         if (groupTaskSubmissionRef.current) return;
         setGroupAddingTaskId(groupId);
-        setMountedGroupIds(previous => new Set(previous).add(groupId));
         setCollapsedGroupIds(previous => {
             if (!previous.has(groupId)) return previous;
 
@@ -2341,9 +2365,6 @@ export function HomePage() {
     }
 
     function toggleGroup(groupId: string) {
-        setMountedGroupIds(previous => (
-            previous.has(groupId) ? previous : new Set(previous).add(groupId)
-        ));
         setCollapsedGroupIds(previous => {
             const next = new Set(previous);
             if (next.has(groupId)) next.delete(groupId);
@@ -2455,13 +2476,22 @@ export function HomePage() {
     }, [addTasksToGroup, finishDragging, getDraggedGroupId, getDraggedTaskIds, groups,
         groupTasksFromDrop, handleDropOnTask, moveDraggedOlderTasksToToday, moveTasksToToday, olderTasks]);
 
+    const refreshHomeTasks = useCallback(() => refreshTaskBuckets(true), [refreshTaskBuckets]);
+
     function renderTaskRow(
         task: Task,
         options: { reorderable?: boolean; draggable?: boolean; showScheduledDate?: boolean } = {},
     ) {
         const reorderable = options.reorderable ?? true;
+        // content-visibility:auto can skip a transform-animated focus row and cause a one-frame repaint.
+        const isFocusedPomodoroRow = focusedPomodoroTask?.taskId === task.taskId;
         return (
-            <Box key={task.taskId} sx={{ contentVisibility: 'auto', containIntrinsicSize: '52px' }}>
+            <Box
+                key={task.taskId}
+                sx={isFocusedPomodoroRow
+                    ? { contentVisibility: 'visible' }
+                    : { contentVisibility: 'auto', containIntrinsicSize: '52px' }}
+            >
                 <FlatTaskRow
                     task={task}
                     onToggle={toggleTaskCompletion}
@@ -2488,7 +2518,7 @@ export function HomePage() {
                     onPomodoroActiveChange={handlePomodoroActiveChange}
                     onPomodoroStatusChange={handlePomodoroStatusChange}
                     onPomodoroFocusStart={handlePomodoroFocusStart}
-                    onRefreshTasks={() => refreshTaskBuckets(true)}
+                    onRefreshTasks={refreshHomeTasks}
                     deferPomodoroHydration={task.taskId !== activePomodoroTaskId}
                     initialPomodoroStatus={task.taskId === activePomodoroTaskId ? initialPomodoroStatus : null}
                     expectedPomodoroActive={task.taskId === activePomodoroTaskId}
@@ -2749,8 +2779,7 @@ export function HomePage() {
                             <DeleteOutlineIcon sx={{ fontSize: '1.1rem' }} />
                         </IconButton>
                     </Box>
-                    {mountedGroupIds.has(item.group.groupId) && (
-                    <Collapse in={!collapsed} timeout={210} appear>
+                    <Collapse in={!collapsed} timeout={210} unmountOnExit>
                         <Box
                             data-task-group-content={item.group.groupId}
                             onDragOver={reorderable ? (event) => {
@@ -2829,7 +2858,6 @@ export function HomePage() {
                             {item.tasks.map(task => renderTaskRow(task, options))}
                         </Box>
                     </Collapse>
-                    )}
                 </Box>
             );
         });
@@ -2978,7 +3006,9 @@ export function HomePage() {
                                     sx={{
                                         '--focus-task-offset': `${focusTaskOffset}px`,
                                         opacity: focusVisibility === 'fading' ? 0 : 1,
-                                        pointerEvents: focusVisibility === 'fading' ? 'none' : 'auto',
+                                        pointerEvents: focusVisibility === 'fading' || focusVisibility === 'returning'
+                                            ? 'none'
+                                            : 'auto',
                                         willChange: focusVisibility === 'sliding' || focusVisibility === 'returning'
                                             ? 'transform, opacity'
                                             : 'auto',

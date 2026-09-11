@@ -648,10 +648,6 @@ a {
     /*margin-right: 5px;*/
 }
 
-/* Remove yellow background */
-.fc .fc-day-today {
-    background-color: #A395F2 !important;
-}
 .fc .fc-button {
     background-color: transparent !important;
     color: #946AF5 !important;

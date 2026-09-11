@@ -1,4 +1,4 @@
-import {useContext, useEffect} from 'react';
+import {useContext, useEffect, useMemo} from 'react';
 import {TaskContext} from '../contexts/TaskContext';
 import type {TaskLoadMode} from './useTaskManager';
 
@@ -23,5 +23,19 @@ export function useGlobalTasks({ taskPageMode = false, prioritizeToday = false }
         void refreshTaskBuckets(false, loadMode);
     }, [fetchTodayTasks, loadMode, prioritizeToday, refreshTaskBuckets]);
 
-    return context;
+    return useMemo(() => {
+        if (!taskPageMode || context.activeTaskLoadMode === 'taskPage') return context;
+
+        return {
+            ...context,
+            allTasks: [],
+            todayTasks: [],
+            futureTasks: [],
+            pastTasks: [],
+            undatedTasks: [],
+            highlightedTask: null,
+            loading: context.error === null,
+            tasksLoaded: false,
+        };
+    }, [context, taskPageMode]);
 }

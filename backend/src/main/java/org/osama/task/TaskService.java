@@ -6,18 +6,24 @@ import org.osama.exceptions.ResourceNotFoundException;
 import org.osama.mentalthread.MentalThread;
 import org.osama.mentalthread.MentalThreadRepository;
 import org.osama.mentalthread.MentalThreadStatus;
+import org.osama.pomodoro.Pomodoro;
+import org.osama.pomodoro.PomodoroRepository;
 import org.osama.reminder.NotificationType;
 import org.osama.reminder.Reminder;
 import org.osama.reminder.ReminderRepository;
 import org.osama.requests.UpdateTaskRequest;
 import org.osama.requests.NewTaskRequest;
+import org.osama.scheduling.ScheduledJob;
+import org.osama.scheduling.ScheduledJobRepository;
 import org.osama.session.task.TaskSession;
 import org.osama.session.task.TaskSessionRepository;
 import org.osama.stat.StatTaskLinkService;
 import org.osama.taskgroup.TaskGroupService;
+import org.osama.task.events.TasksDeletedEvent;
 import org.osama.task.recurrence.TaskSeriesRepository;
 import org.osama.user.User;
 import org.osama.user.UserRepository;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
@@ -47,11 +53,16 @@ public class TaskService {
     private final StatTaskLinkService statTaskLinkService;
     private final TaskSeriesRepository taskSeriesRepository;
     private final ReminderRepository reminderRepository;
+    private final PomodoroRepository pomodoroRepository;
+    private final ScheduledJobRepository scheduledJobRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     public TaskService(TaskRepository taskRepository, TaskSessionRepository taskSessionRepository,
                        UserRepository userRepository, MentalThreadRepository mentalThreadRepository,
                        TaskGroupService taskGroupService, StatTaskLinkService statTaskLinkService,
-                       TaskSeriesRepository taskSeriesRepository, ReminderRepository reminderRepository) {
+                       TaskSeriesRepository taskSeriesRepository, ReminderRepository reminderRepository,
+                       PomodoroRepository pomodoroRepository, ScheduledJobRepository scheduledJobRepository,
+                       ApplicationEventPublisher eventPublisher) {
         this.taskRepository = taskRepository;
         this.taskSessionRepository = taskSessionRepository;
         this.userRepository = userRepository;
@@ -60,6 +71,9 @@ public class TaskService {
         this.statTaskLinkService = statTaskLinkService;
         this.taskSeriesRepository = taskSeriesRepository;
         this.reminderRepository = reminderRepository;
+        this.pomodoroRepository = pomodoroRepository;
+        this.scheduledJobRepository = scheduledJobRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     public List<Task> findTasks(TaskQuery query) {
@@ -498,6 +512,12 @@ public class TaskService {
         deletedTaskIds.add(taskId);
         taskGroupService.removeTasksFromGroups(deletedTaskIds, userId);
         deleteTaskReminders(deletedTaskIds);
+        if (taskToDelete.get().getTaskSeriesId() != null) {
+            clearActiveTaskRuntimeState(List.of(taskId));
+            deleteTaskRuntimeState(subtasks.stream().map(Task::getTaskId).toList());
+        } else {
+            deleteTaskRuntimeState(deletedTaskIds);
+        }
         subtasks.forEach(subtask -> taskRepository.deleteTaskByTaskId(subtask.getTaskId()));
 
         if (taskToDelete.get().getTaskSeriesId() != null) {
@@ -524,6 +544,8 @@ public class TaskService {
         deletedTaskIds.add(taskId);
         taskGroupService.removeTasksFromGroups(deletedTaskIds, userId);
         deleteTaskReminders(deletedTaskIds);
+        deleteTaskRuntimeState(subtasks.stream().map(Task::getTaskId).toList());
+        clearActiveTaskRuntimeState(List.of(taskId));
         taskRepository.deleteAll(subtasks);
 
         task.setSkipped(true);
@@ -546,6 +568,7 @@ public class TaskService {
 
         taskGroupService.removeTasksFromGroups(deletedTaskIds, userId);
         deleteTaskReminders(deletedTaskIds);
+        deleteTaskRuntimeState(deletedTaskIds);
         taskRepository.deleteAll(subtasks);
         taskRepository.deleteAll(occurrences);
         taskSeriesRepository.deleteById(seriesId);
@@ -586,6 +609,7 @@ public class TaskService {
 
         taskGroupService.removeTasksFromGroups(tasksToDelete.keySet(), userId);
         deleteTaskReminders(tasksToDelete.keySet());
+        deleteTaskRuntimeState(tasksToDelete.keySet());
 
         tasksToDelete.values().stream()
                 .map(Task::getTaskSeriesId)
@@ -608,13 +632,17 @@ public class TaskService {
 
     private void deleteRecurringSeries(String seriesId, String userId) {
         List<Task> occurrences = taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(seriesId);
-        List<String> deletedTaskIds = new ArrayList<>(occurrences.stream().map(Task::getTaskId).toList());
+        List<String> occurrenceTaskIds = occurrences.stream().map(Task::getTaskId).toList();
+        List<String> deletedTaskIds = new ArrayList<>(occurrenceTaskIds);
+        List<String> occurrenceSubtaskIds = new ArrayList<>();
         List<Task> occurrenceSubtasksToDelete = new ArrayList<>();
 
         for (Task occurrence : occurrences) {
             List<Task> occurrenceSubtasks = taskRepository
                     .findAllByUserIdAndParentIdOrderByDisplayOrderAsc(userId, occurrence.getTaskId());
-            deletedTaskIds.addAll(occurrenceSubtasks.stream().map(Task::getTaskId).toList());
+            List<String> occurrenceSubtaskTaskIds = occurrenceSubtasks.stream().map(Task::getTaskId).toList();
+            deletedTaskIds.addAll(occurrenceSubtaskTaskIds);
+            occurrenceSubtaskIds.addAll(occurrenceSubtaskTaskIds);
             occurrenceSubtasksToDelete.addAll(occurrenceSubtasks);
             occurrence.setSkipped(true);
             occurrence.setSkipReason(TaskSkipReason.USER);
@@ -622,6 +650,8 @@ public class TaskService {
 
         taskGroupService.removeTasksFromGroups(deletedTaskIds, userId);
         deleteTaskReminders(deletedTaskIds);
+        deleteTaskRuntimeState(occurrenceSubtaskIds);
+        clearActiveTaskRuntimeState(occurrenceTaskIds);
         taskRepository.deleteAll(occurrenceSubtasksToDelete);
         taskRepository.saveAll(occurrences);
         taskSeriesRepository.findBySeriesIdAndUserId(seriesId, userId).ifPresentOrElse(series -> {
@@ -636,6 +666,56 @@ public class TaskService {
     private void deleteTaskReminders(Collection<String> taskIds) {
         taskIds.forEach(reminderRepository::deleteByTaskId);
         reminderRepository.flush();
+    }
+
+    private void deleteTaskRuntimeState(Collection<String> taskIds) {
+        List<String> distinctTaskIds = taskIds.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (distinctTaskIds.isEmpty()) return;
+
+        List<TaskSession> taskSessions = taskSessionRepository.findAllByAssociatedTaskIdIn(distinctTaskIds);
+        taskSessionRepository.deleteAll(taskSessions);
+        taskSessionRepository.flush();
+
+        List<ScheduledJob> scheduledJobs = scheduledJobRepository.findAllByAssociatedTaskIdIn(distinctTaskIds);
+        scheduledJobRepository.deleteAll(scheduledJobs);
+        scheduledJobRepository.flush();
+
+        List<Pomodoro> pomodoros = pomodoroRepository.findAllByAssociatedTaskIdIn(distinctTaskIds);
+        pomodoroRepository.deleteAll(pomodoros);
+        pomodoroRepository.flush();
+
+        eventPublisher.publishEvent(new TasksDeletedEvent(distinctTaskIds));
+        log.info("Task runtime state deleted: taskCount={} sessionCount={} scheduledJobCount={} pomodoroCount={}",
+                distinctTaskIds.size(), taskSessions.size(), scheduledJobs.size(), pomodoros.size());
+    }
+
+    private void clearActiveTaskRuntimeState(Collection<String> taskIds) {
+        List<String> distinctTaskIds = taskIds.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (distinctTaskIds.isEmpty()) return;
+
+        List<TaskSession> activeTaskSessions = taskSessionRepository
+                .findAllByAssociatedTaskIdInAndActiveIsTrue(distinctTaskIds);
+        taskSessionRepository.deleteAll(activeTaskSessions);
+        taskSessionRepository.flush();
+
+        List<ScheduledJob> scheduledJobs = scheduledJobRepository.findAllByAssociatedTaskIdIn(distinctTaskIds);
+        scheduledJobRepository.deleteAll(scheduledJobs);
+        scheduledJobRepository.flush();
+
+        List<Pomodoro> activePomodoros = pomodoroRepository
+                .findAllByAssociatedTaskIdInAndIsActiveIsTrue(distinctTaskIds);
+        pomodoroRepository.deleteAll(activePomodoros);
+        pomodoroRepository.flush();
+
+        eventPublisher.publishEvent(new TasksDeletedEvent(distinctTaskIds));
+        log.info("Active task runtime state cleared: taskCount={} sessionCount={} scheduledJobCount={} pomodoroCount={}",
+                distinctTaskIds.size(), activeTaskSessions.size(), scheduledJobs.size(), activePomodoros.size());
     }
 
     // Convenience methods for common queries
