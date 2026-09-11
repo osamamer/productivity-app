@@ -639,7 +639,7 @@ export function MonthCalendar({
                         backgroundColor: 'transparent',
                         borderColor: theme.palette.divider,
                         textColor: theme.palette.text.primary,
-                        classNames: ['calendar-neutral-event'],
+                        classNames: ['calendar-neutral-event', 'calendar-task-event'],
                         extendedProps: {
                             eventType: 'task',
                             eventTypeOrder: 1,
@@ -1520,6 +1520,9 @@ export function MonthCalendar({
                             backgroundColor: 'transparent !important',
                             borderColor: `${theme.palette.divider} !important`,
                             color: `${theme.palette.text.primary} !important`,
+                        },
+                        '& .fc .calendar-task-event:hover': {
+                            backgroundColor: `${theme.palette.action.hover} !important`,
                         },
                         '& .fc-daygrid-event .fc-event-main': {
                             display: 'flex',

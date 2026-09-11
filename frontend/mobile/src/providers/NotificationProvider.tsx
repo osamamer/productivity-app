@@ -37,6 +37,7 @@ interface NotificationData {
 }
 
 const NotificationContext = createContext<NotificationContextValue | null>(null);
+const PUSH_REGISTRATION_RETRY_INTERVAL_MS = 5 * 60_000;
 
 Notifications.setNotificationHandler({
   handleNotification: async notification => {
@@ -56,6 +57,12 @@ function errorObject(cause: unknown): Error {
   return cause instanceof Error ? cause : new Error(String(cause));
 }
 
+function isMissingFirebaseConfiguration(cause: unknown): boolean {
+  const message = errorObject(cause).message.toLowerCase();
+  return message.includes('unable to get firebase messaging instance')
+    || message.includes('default firebaseapp is not initialized');
+}
+
 export function NotificationProvider({ children }: PropsWithChildren) {
   const { loading: authLoading, isAuthenticated } = useAuth();
   const { showInfo } = useAppPopup();
@@ -66,6 +73,7 @@ export function NotificationProvider({ children }: PropsWithChildren) {
   const localCheckupsEnabledRef = useRef(false);
   const pushRegistrationInFlightRef = useRef<Promise<void> | null>(null);
   const pushRegisteredRef = useRef(false);
+  const remotePushUnavailableRef = useRef(false);
 
   const syncCalendarReminders = useCallback(async (events: CalendarEvent[]) => {
     if (!isAuthenticated) return;
@@ -97,7 +105,11 @@ export function NotificationProvider({ children }: PropsWithChildren) {
   }, [isAuthenticated]);
 
   const registerRemotePushToken = useCallback(async () => {
-    if (!isAuthenticated || Platform.OS !== 'android' || pushRegisteredRef.current) return;
+    if (!isAuthenticated
+      || Platform.OS !== 'android'
+      || Constants.expoConfig?.extra?.remotePushConfigured !== true
+      || pushRegisteredRef.current
+      || remotePushUnavailableRef.current) return;
     if (pushRegistrationInFlightRef.current) return pushRegistrationInFlightRef.current;
 
     const registration = (async () => {
@@ -116,7 +128,12 @@ export function NotificationProvider({ children }: PropsWithChildren) {
     try {
       await registration;
     } catch (cause) {
-      console.error('Could not register mobile push notifications:', errorObject(cause));
+      if (isMissingFirebaseConfiguration(cause)) {
+        remotePushUnavailableRef.current = true;
+        console.info('Remote push notifications are disabled because Firebase is not configured:', errorObject(cause));
+      } else {
+        console.error('Could not register mobile push notifications:', errorObject(cause));
+      }
     } finally {
       if (pushRegistrationInFlightRef.current === registration) {
         pushRegistrationInFlightRef.current = null;
@@ -279,10 +296,19 @@ export function NotificationProvider({ children }: PropsWithChildren) {
       return;
     }
     void registerRemotePushToken();
-    const subscription = AppState.addEventListener('change', state => {
+    const retryTimer = setInterval(() => void registerRemotePushToken(), PUSH_REGISTRATION_RETRY_INTERVAL_MS);
+    const appStateSubscription = AppState.addEventListener('change', state => {
       if (state === 'active') void registerRemotePushToken();
     });
-    return () => subscription.remove();
+    const tokenSubscription = Notifications.addPushTokenListener(() => {
+      pushRegisteredRef.current = false;
+      void registerRemotePushToken();
+    });
+    return () => {
+      clearInterval(retryTimer);
+      appStateSubscription.remove();
+      tokenSubscription.remove();
+    };
   }, [authLoading, isAuthenticated, registerRemotePushToken]);
 
   useEffect(() => {

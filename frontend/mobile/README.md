@@ -22,14 +22,28 @@ npm install
 
 In Keycloak, add `solife://auth` to the `productivity-app-frontend` client's valid redirect URIs and enable Direct Access Grants for the public client. The native form uses the realm's password grant; no client secret belongs in the app.
 
-Android remote pushes require Firebase Cloud Messaging credentials in the Expo
-project. Configure them once with `npx eas-cli@latest credentials` and select
-the Android app's FCM V1 service-account key. Then build and reinstall the
-native Android app; an OTA JavaScript update cannot add the native push
-configuration. The backend sends through Expo Push Service, so production
-servers must also be able to make outbound HTTPS requests to Expo. Set
-`EXPO_PUSH_ACCESS_TOKEN` in `deployment/.env` if Expo's push access-token
-security is enabled for the project.
+Android remote pushes require both the Firebase client configuration and the
+server credential used by Expo Push Service:
+
+1. Register Android package `org.osama.solife` in the Firebase project, download
+   its `google-services.json` into this directory. `app.config.ts` detects the
+   file and adds it to the native Android configuration. For EAS builds, the
+   `GOOGLE_SERVICES_JSON` file environment variable can provide it instead.
+2. Run `npx eas-cli@latest credentials` and upload the Firebase service-account
+   key as the Android app's FCM V1 credential. Keep this private key out of the
+   repository; it is not the same file as `google-services.json`.
+3. Run `npx expo prebuild --platform android`, then build and reinstall the
+   native Android app. An OTA JavaScript update cannot add Firebase's native
+   configuration.
+
+Without the client configuration, local notifications continue to work and the
+app skips remote token registration for that development installation. Preview
+and production configuration fails immediately when the file is missing, so a
+build without remote notifications cannot be shipped accidentally. The backend
+sends through Expo Push Service, so production servers must also be able to
+make outbound HTTPS requests to Expo. Set `EXPO_PUSH_ACCESS_TOKEN` in
+`deployment/.env` if Expo's push access-token security is enabled for the
+project.
 
 Android 12 and newer can require the user to allow exact alarms in system
 settings. The app requests `SCHEDULE_EXACT_ALARM` so scheduled calendar and
