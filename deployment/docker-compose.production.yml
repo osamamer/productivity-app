@@ -34,7 +34,9 @@ services:
       KC_HTTP_PORT: "8080"
       KC_HTTP_RELATIVE_PATH: "/auth"
       KC_HTTP_MANAGEMENT_RELATIVE_PATH: "/"
-      KC_HOSTNAME: https://${APP_DOMAIN:?APP_DOMAIN is required}/auth
+      # Tokens keep the established public issuer while the web app reaches the same
+      # service through APP_DOMAIN/auth. Changing this invalidates every backend request.
+      KC_HOSTNAME: https://${AUTH_DOMAIN:?AUTH_DOMAIN is required}
       KC_PROXY_HEADERS: xforwarded
       KC_HEALTH_ENABLED: "true"
       APP_FAVICON_URL: https://${APP_DOMAIN:?APP_DOMAIN is required}/favicon.png
@@ -67,8 +69,8 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
-      KEYCLOAK_ISSUER_URI: https://${APP_DOMAIN}/auth/realms/${KEYCLOAK_REALM:-productivity-app}
-      KEYCLOAK_BASE_URL: https://${APP_DOMAIN}/auth
+      KEYCLOAK_ISSUER_URI: https://${AUTH_DOMAIN}/realms/${KEYCLOAK_REALM:-productivity-app}
+      KEYCLOAK_BASE_URL: https://${AUTH_DOMAIN}
       KEYCLOAK_REALM: ${KEYCLOAK_REALM:-productivity-app}
       KEYCLOAK_PASSWORD_VERIFICATION_CLIENT_ID: ${KEYCLOAK_PASSWORD_VERIFICATION_CLIENT_ID:-admin-cli}
       KEYCLOAK_ADMIN_REALM: ${KEYCLOAK_ADMIN_REALM:-master}

@@ -160,7 +160,7 @@ configure_mobile_sign_in() {
       --user "${KEYCLOAK_ADMIN_USER}" \
       --password "${KEYCLOAK_ADMIN_PASSWORD}" >/dev/null 2>&1 \
       && "${compose[@]}" exec -T keycloak /opt/keycloak/bin/kcadm.sh update "realms/${realm}" \
-        -s attributes.frontendUrl="https://${APP_DOMAIN}/auth" >/dev/null 2>&1 \
+        -s attributes.frontendUrl="https://${AUTH_DOMAIN}" >/dev/null 2>&1 \
       && client_id=$("${compose[@]}" exec -T keycloak /opt/keycloak/bin/kcadm.sh get clients \
         -r "${realm}" \
         -q "clientId=${client_name}" \
@@ -194,6 +194,25 @@ configure_mobile_sign_in() {
 
   echo "The mobile sign-in client ${client_name} was not found; configure it before using mobile sign-in." >&2
   return 0
+}
+
+verify_keycloak_issuer() {
+  local realm=${KEYCLOAK_REALM:-productivity-app}
+  local expected_issuer="https://${AUTH_DOMAIN}/realms/${realm}"
+  local discovery
+
+  discovery=$("${compose[@]}" run --rm --no-deps --entrypoint curl backend \
+    -fsS "http://keycloak:8080/auth/realms/${realm}/.well-known/openid-configuration") || {
+    echo "Could not read Keycloak's OpenID discovery document." >&2
+    return 1
+  }
+
+  if ! grep -Fq "\"issuer\":\"${expected_issuer}\"" <<<"${discovery}"; then
+    echo "Refusing to start the backend: Keycloak is not advertising the configured issuer ${expected_issuer}." >&2
+    return 1
+  fi
+
+  echo "Keycloak issuer matches the backend configuration."
 }
 
 wait_for_backend() {
@@ -264,6 +283,7 @@ rollout() {
   "${compose[@]}" up -d --no-build keycloak || return 1
   wait_for_keycloak || return 1
   configure_mobile_sign_in || return 1
+  verify_keycloak_issuer || return 1
 
   echo "Starting backend ${IMAGE_TAG}..."
   "${compose[@]}" up -d --no-build backend || return 1
