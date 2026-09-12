@@ -230,3 +230,7 @@ databaseChangeLog:
   # Link statistics to historical task focus time by task name
   - include:
       file: db/changelog/changes/061-add-stat-focus-task-name.yaml
+
+  # Allow statistics to include focus time from multiple task names
+  - include:
+      file: db/changelog/changes/062-add-stat-focus-task-links.yaml

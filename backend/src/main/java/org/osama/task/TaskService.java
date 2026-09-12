@@ -128,11 +128,14 @@ public class TaskService {
     }
 
     public Optional<Task> getTask(String taskId) {
-        return taskRepository.findTaskByTaskId(taskId).map(this::attachReminderMinutes);
+        return taskRepository.findTaskByTaskId(taskId)
+                .filter(task -> !task.isSkipped())
+                .map(this::attachReminderMinutes);
     }
 
     public Optional<Task> getTaskForUser(String taskId, String userId) {
         return taskRepository.findTaskByTaskIdAndUserId(taskId, userId)
+                .filter(task -> !task.isSkipped())
                 .map(this::attachReminderMinutes);
     }
 
@@ -143,7 +146,10 @@ public class TaskService {
 
     public List<Task> getSubtasks(String parentTaskId, String userId) {
         List<Task> subtasks = taskRepository
-                .findAllByUserIdAndParentIdOrderByDisplayOrderAscCreationDateTimeAscTaskIdAsc(userId, parentTaskId);
+                .findAllByUserIdAndParentIdOrderByDisplayOrderAscCreationDateTimeAscTaskIdAsc(userId, parentTaskId)
+                .stream()
+                .filter(task -> !task.isSkipped())
+                .toList();
         attachReminderMinutes(subtasks);
         return subtasks;
     }
@@ -342,7 +348,8 @@ public class TaskService {
 
     @Transactional
     public Optional<Task> updateTask(String taskId, UpdateTaskRequest request, String userId) {
-        Optional<Task> existingTask = taskRepository.findTaskByTaskIdAndUserId(taskId, userId);
+        Optional<Task> existingTask = taskRepository.findTaskByTaskIdAndUserId(taskId, userId)
+                .filter(task -> !task.isSkipped());
         if (existingTask.isEmpty()) {
             log.warn("Task update ignored: taskId={} was not found", taskId);
             return Optional.empty();
@@ -502,6 +509,11 @@ public class TaskService {
             return;
         }
 
+        if (taskToDelete.get().getTaskSeriesId() != null) {
+            deleteRecurringSeriesCompletely(taskToDelete.get().getTaskSeriesId(), userId);
+            return;
+        }
+
         // Delete subtasks first
         TaskQuery subtaskQuery = TaskQuery.builder()
                 .parentId(taskId)
@@ -512,18 +524,8 @@ public class TaskService {
         deletedTaskIds.add(taskId);
         taskGroupService.removeTasksFromGroups(deletedTaskIds, userId);
         deleteTaskReminders(deletedTaskIds);
-        if (taskToDelete.get().getTaskSeriesId() != null) {
-            clearActiveTaskRuntimeState(List.of(taskId));
-            deleteTaskRuntimeState(subtasks.stream().map(Task::getTaskId).toList());
-        } else {
-            deleteTaskRuntimeState(deletedTaskIds);
-        }
+        deleteTaskRuntimeState(deletedTaskIds);
         subtasks.forEach(subtask -> taskRepository.deleteTaskByTaskId(subtask.getTaskId()));
-
-        if (taskToDelete.get().getTaskSeriesId() != null) {
-            deleteRecurringSeries(taskToDelete.get().getTaskSeriesId(), userId);
-            return;
-        }
 
         // Delete main task
         taskRepository.deleteTaskByTaskId(taskId);
@@ -630,39 +632,6 @@ public class TaskService {
         return deletionOrder.size();
     }
 
-    private void deleteRecurringSeries(String seriesId, String userId) {
-        List<Task> occurrences = taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(seriesId);
-        List<String> occurrenceTaskIds = occurrences.stream().map(Task::getTaskId).toList();
-        List<String> deletedTaskIds = new ArrayList<>(occurrenceTaskIds);
-        List<String> occurrenceSubtaskIds = new ArrayList<>();
-        List<Task> occurrenceSubtasksToDelete = new ArrayList<>();
-
-        for (Task occurrence : occurrences) {
-            List<Task> occurrenceSubtasks = taskRepository
-                    .findAllByUserIdAndParentIdOrderByDisplayOrderAsc(userId, occurrence.getTaskId());
-            List<String> occurrenceSubtaskTaskIds = occurrenceSubtasks.stream().map(Task::getTaskId).toList();
-            deletedTaskIds.addAll(occurrenceSubtaskTaskIds);
-            occurrenceSubtaskIds.addAll(occurrenceSubtaskTaskIds);
-            occurrenceSubtasksToDelete.addAll(occurrenceSubtasks);
-            occurrence.setSkipped(true);
-            occurrence.setSkipReason(TaskSkipReason.USER);
-        }
-
-        taskGroupService.removeTasksFromGroups(deletedTaskIds, userId);
-        deleteTaskReminders(deletedTaskIds);
-        deleteTaskRuntimeState(occurrenceSubtaskIds);
-        clearActiveTaskRuntimeState(occurrenceTaskIds);
-        taskRepository.deleteAll(occurrenceSubtasksToDelete);
-        taskRepository.saveAll(occurrences);
-        taskSeriesRepository.findBySeriesIdAndUserId(seriesId, userId).ifPresentOrElse(series -> {
-            series.setActive(false);
-            taskSeriesRepository.save(series);
-        }, () -> log.warn("Recurring task series deletion found no series: userId={} seriesId={}",
-                userId, seriesId));
-        log.info("Recurring task series deleted: userId={} seriesId={} occurrenceCount={}",
-                userId, seriesId, occurrences.size());
-    }
-
     private void deleteTaskReminders(Collection<String> taskIds) {
         taskIds.forEach(reminderRepository::deleteByTaskId);
         reminderRepository.flush();
@@ -760,7 +729,7 @@ public class TaskService {
             throw new IllegalArgumentException("The task reorder list must contain unique task IDs.");
         }
 
-        List<Task> allMainTasks = taskRepository.findAllByUserIdAndParentIdIsNullOrderByDisplayOrderAsc(userId);
+        List<Task> allMainTasks = getAllMainTasks(userId);
         Map<String, Task> tasksById = allMainTasks.stream()
                 .collect(Collectors.toMap(Task::getTaskId, task -> task));
 
@@ -784,7 +753,6 @@ public class TaskService {
 
         taskRepository.saveAll(allMainTasks);
         log.info("Tasks reordered: userId={} count={} orderedTaskIds={}", userId, taskIds.size(), taskIds);
-        attachReminderMinutes(allMainTasks);
         return allMainTasks;
     }
 

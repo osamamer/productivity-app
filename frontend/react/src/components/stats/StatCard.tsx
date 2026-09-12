@@ -92,7 +92,11 @@ export const StatCard = React.memo(function StatCard({
     const comparisonDefinition = supportsComparison
         ? availableComparisons.find(item => item.id === comparisonId)
         : undefined;
-    const supportsFocusTime = Boolean(definition.recurringTaskSeriesId || definition.focusTaskName);
+    const supportsFocusTime = Boolean(
+        definition.recurringTaskSeriesId
+        || definition.focusTaskNames?.length
+        || definition.focusTaskName,
+    );
     const [viewMode, setViewMode] = useState<'stat' | 'focusTime'>('stat');
     const focusTimeView = supportsFocusTime && viewMode === 'focusTime';
     const comparisonIds = comparisonDefinitions.map(item => item.id).join(':');

@@ -164,6 +164,16 @@ function readCalendarDisplayPreferences(): CalendarDisplayPreferences {
     }
 }
 
+function writeCalendarDisplayPreferences(preferences: CalendarDisplayPreferences): void {
+    if (typeof window === 'undefined') return;
+
+    try {
+        window.localStorage.setItem(CALENDAR_DISPLAY_PREFERENCES_KEY, JSON.stringify(preferences));
+    } catch {
+        // Preferences are optional; private browsing may make storage unavailable.
+    }
+}
+
 const PRIORITY_OPTIONS = [
     { label: 'Low', value: 3, color: '#1976d2' },
     { label: 'Medium', value: 6, color: '#eab308' },
@@ -324,6 +334,7 @@ export function MonthCalendar({
     const recurrenceDraftDirtyRef = useRef(false);
     const taskSeriesRef = useRef<TaskSeries | null>(null);
     const [displayPreferencesByView, setDisplayPreferencesByView] = useState<CalendarDisplayPreferences>(initialDisplayPreferences);
+    const displayPreferencesRef = useRef(initialDisplayPreferences);
     const [filterAnchor, setFilterAnchor] = useState<HTMLElement | null>(null);
     const [showTemplatePanel, setShowTemplatePanel] = useState(false);
     const [templateCreationOpen, setTemplateCreationOpen] = useState(false);
@@ -371,14 +382,20 @@ export function MonthCalendar({
         selectedStatIds,
     } = displayPreferencesByView[displayView];
     const updateDisplayPreferences = useCallback((updates: Partial<CalendarDisplaySettings>) => {
-        setDisplayPreferencesByView(previous => ({
-            ...previous,
+        const nextPreferences = {
+            ...displayPreferencesRef.current,
             [displayView]: {
-                ...previous[displayView],
+                ...displayPreferencesRef.current[displayView],
                 ...updates,
             },
-        }));
+        };
+        displayPreferencesRef.current = nextPreferences;
+        setDisplayPreferencesByView(nextPreferences);
+        writeCalendarDisplayPreferences(nextPreferences);
     }, [displayView]);
+    const updateDisplayPreferencesFromCurrentView = useCallback((update: (current: CalendarDisplaySettings) => Partial<CalendarDisplaySettings>) => {
+        updateDisplayPreferences(update(displayPreferencesRef.current[displayView]));
+    }, [displayView, updateDisplayPreferences]);
     const selectedStatIdsForDisplay = useMemo(
         () => selectedStatIds ?? availableStatDefinitions.map(definition => definition.id),
         [availableStatDefinitions, selectedStatIds]
@@ -495,14 +512,6 @@ export function MonthCalendar({
     const showCompletedTasks = getShowCompletedHomeTasks();
 
     React.useEffect(() => {
-        try {
-            window.localStorage.setItem(CALENDAR_DISPLAY_PREFERENCES_KEY, JSON.stringify(displayPreferencesByView));
-        } catch {
-            // Preferences are optional; private browsing may make storage unavailable.
-        }
-    }, [displayPreferencesByView]);
-
-    React.useEffect(() => {
         let cancelled = false;
         if (!hasVisibleStats) {
             setStatEntries([]);
@@ -571,9 +580,7 @@ export function MonthCalendar({
                 : occurrence.status === 'TENTATIVE'
                     ? `${theme.palette.primary.main}70`
                     : theme.palette.primary.main,
-            borderColor: occurrence.status === 'CANCELLED'
-                ? theme.palette.text.disabled
-                : theme.palette.primary.main,
+            borderColor: theme.palette.primary.main,
             textColor: occurrence.status === 'CANCELLED'
                 ? theme.palette.text.secondary
                 : theme.palette.primary.contrastText,
@@ -636,6 +643,9 @@ export function MonthCalendar({
                         title: taskName,
                         start: task.scheduledPerformDateTime!,
                         allDay: false,
+                        // Tasks are point-in-time items; otherwise FullCalendar's default
+                        // one-hour duration can turn a late-night task into a multi-day bar.
+                        display: 'list-item',
                         backgroundColor: 'transparent',
                         borderColor: theme.palette.divider,
                         textColor: theme.palette.text.primary,
@@ -978,19 +988,21 @@ export function MonthCalendar({
     }, []);
 
     const togglePriority = (priority: number) => {
-        updateDisplayPreferences({
-            priorityFilters: priorityFilters.includes(priority)
-                ? priorityFilters.filter(value => value !== priority)
-                : [...priorityFilters, priority],
-        });
+        updateDisplayPreferencesFromCurrentView(current => ({
+            priorityFilters: current.priorityFilters.includes(priority)
+                ? current.priorityFilters.filter(value => value !== priority)
+                : [...current.priorityFilters, priority],
+        }));
     };
 
     const toggleStat = (statId: string) => {
-        const selected = selectedStatIds ?? availableStatDefinitions.map(definition => definition.id);
-        updateDisplayPreferences({
-            selectedStatIds: selected.includes(statId)
-                ? selected.filter(id => id !== statId)
-                : [...selected, statId],
+        updateDisplayPreferencesFromCurrentView(current => {
+            const selected = current.selectedStatIds ?? availableStatDefinitions.map(definition => definition.id);
+            return {
+                selectedStatIds: selected.includes(statId)
+                    ? selected.filter(id => id !== statId)
+                    : [...selected, statId],
+            };
         });
     };
 
@@ -1506,7 +1518,7 @@ export function MonthCalendar({
                         },
                         '& .fc .calendar-cancelled-event': {
                             backgroundColor: `${theme.palette.text.disabled}30 !important`,
-                            borderColor: `${theme.palette.text.disabled} !important`,
+                            borderColor: `${theme.palette.primary.main} !important`,
                             color: `${theme.palette.text.secondary} !important`,
                             opacity: 0.75,
                         },
@@ -1515,6 +1527,7 @@ export function MonthCalendar({
                         },
                         '& .fc .calendar-cancelled-event .calendar-event-title': {
                             textDecoration: 'line-through',
+                            textDecorationColor: theme.palette.primary.main,
                         },
                         '& .fc .calendar-neutral-event': {
                             backgroundColor: 'transparent !important',

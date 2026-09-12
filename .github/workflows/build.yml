@@ -206,8 +206,10 @@ jobs:
           fi
 
           native_changes=$(git diff --name-only "$base_sha" "$GITHUB_SHA" -- \
+            frontend/mobile/app.config.js \
             frontend/mobile/app.json \
             frontend/mobile/eas.json \
+            frontend/mobile/google-services.json \
             frontend/mobile/package.json \
             frontend/mobile/package-lock.json)
           if [[ -n "$native_changes" ]]; then

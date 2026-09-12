@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "633570919658",
+    "project_id": "claritard",
+    "storage_bucket": "claritard.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:633570919658:android:30bcde59a4524058378393",
+        "android_client_info": {
+          "package_name": "org.osama.solife"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC1a607eowBCz9R9ut8dGQo5LnPsIvW33c"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

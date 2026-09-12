@@ -7,6 +7,7 @@ import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.osama.requests.NewTaskRequest;
 import org.osama.requests.UpdateTaskRequest;
 import org.osama.task.Task;
+import org.osama.task.TaskRepository;
 import org.osama.task.TaskService;
 import org.osama.taskgroup.TaskGroupResponse;
 import org.osama.taskgroup.TaskGroupService;
@@ -36,6 +37,7 @@ class TaskGroupServiceTest {
     private static final String OTHER_USER_ID = "task-group-other-user";
 
     @Autowired private TaskGroupService taskGroupService;
+    @Autowired private TaskRepository taskRepository;
     @Autowired private TaskService taskService;
     @Autowired private UserRepository userRepository;
 
@@ -57,6 +59,24 @@ class TaskGroupServiceTest {
                 List.of(third.getTaskId(), first.getTaskId(), second.getTaskId()),
                 taskService.getTodayTasks(TEST_USER_ID).stream().map(Task::getTaskId).toList()
         );
+    }
+
+    @Test
+    void reorderMainTasks_doesNotReturnSkippedTasks() {
+        Task visible = createTask(TEST_USER_ID, "Visible");
+        Task skipped = createTask(TEST_USER_ID, "Skipped");
+        skipped.setSkipped(true);
+        taskRepository.save(skipped);
+
+        List<Task> reordered = taskService.reorderMainTasks(List.of(visible.getTaskId()), TEST_USER_ID);
+        UpdateTaskRequest update = new UpdateTaskRequest();
+        update.setName("Should stay hidden");
+
+        assertEquals(List.of(visible.getTaskId()), reordered.stream().map(Task::getTaskId).toList());
+        assertTrue(taskService.getTaskForUser(skipped.getTaskId(), TEST_USER_ID).isEmpty());
+        assertTrue(taskService.updateTask(skipped.getTaskId(), update, TEST_USER_ID).isEmpty());
+        assertEquals("Skipped", taskRepository.findTaskByTaskId(skipped.getTaskId()).orElseThrow().getName());
+        assertTrue(taskRepository.findTaskByTaskId(skipped.getTaskId()).orElseThrow().isSkipped());
     }
 
     @Test

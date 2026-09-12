@@ -190,7 +190,7 @@ export function CalendarStatCheckInSheet({ date, definitions, onClose, onSaved }
                 )}
                 options={[
                   { value: 1, label: 'Yes', color: booleanColor(definition, 1, colors) },
-                  { value: -2, label: 'Not planned', color: colors.warning },
+                  { value: -2, label: 'Not planned', color: colors.notPlanned },
                   { value: 0, label: 'No', color: booleanColor(definition, 0, colors) },
                 ]} />
             )}

@@ -65,11 +65,6 @@ if [[ ! -d "$mobile_dir/node_modules" ]]; then
   exit 1
 fi
 
-if [[ ! -x "$mobile_dir/android/gradlew" ]]; then
-  echo "The generated Android project is missing. Run 'cd frontend/mobile && npx expo prebuild --platform android' first." >&2
-  exit 1
-fi
-
 echo "Building the production APK..."
 npm --prefix "$mobile_dir" run build:android:production
 

@@ -49,6 +49,7 @@ app_tables=(
   reminder
   scheduled_job
   stat_definition
+  stat_focus_task_link
   stat_entry
   task
   task_series

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
-    Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle,
-    MenuItem, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography,
+    Alert, Box, Button, Chip, ClickAwayListener, DialogActions, DialogContent, DialogTitle,
+    MenuItem, Popover, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material';
 import { MouseEvent } from 'react';
 import {
@@ -10,6 +10,8 @@ import {
 import { defaultStatRecurringTaskDraft, STAT_RECURRENCE_DAYS } from './statRecurringTaskUtils';
 import { AppTimeField } from '../input/AppPickerFields';
 
+type PopupPosition = { top: number; left: number };
+
 const FREQUENCIES: { value: StatRecurrenceFrequency; label: string }[] = [
     { value: 'DAILY', label: 'Daily' },
     { value: 'WEEKLY', label: 'Weekly' },
@@ -17,11 +19,24 @@ const FREQUENCIES: { value: StatRecurrenceFrequency; label: string }[] = [
     { value: 'CUSTOM', label: 'Custom days' },
 ];
 
+const PRIORITY_OPTIONS = [
+    { label: 'Low', value: 3, color: '#1976d2' },
+    { label: 'Medium', value: 6, color: '#eab308' },
+    { label: 'High', value: 9, color: '#ef4444' },
+];
+
+function priorityBucket(importance: number): number {
+    if (importance > 7) return 9;
+    if (importance > 4) return 6;
+    return 3;
+}
+
 type OptionsProps = {
     value: StatRecurringTaskDraft;
     onChange: (value: StatRecurringTaskDraft) => void;
     disabled?: boolean;
     timeError?: string;
+    showPriority?: boolean;
 };
 
 export function StatRecurringTaskOptions({
@@ -29,6 +44,7 @@ export function StatRecurringTaskOptions({
     onChange,
     disabled = false,
     timeError,
+    showPriority = true,
 }: OptionsProps) {
     const updateFrequency = (recurrenceFrequency: StatRecurrenceFrequency) => {
         onChange({ ...value, recurrenceFrequency });
@@ -40,6 +56,31 @@ export function StatRecurringTaskOptions({
 
     return (
         <Stack spacing={1.5}>
+            {showPriority && <Box>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 0.75 }}>
+                    Priority for all recurrences
+                </Typography>
+                <Stack direction="row" spacing={1}>
+                    {PRIORITY_OPTIONS.map(option => {
+                        const selected = priorityBucket(value.importance) === option.value;
+                        return (
+                            <Chip
+                                key={option.label}
+                                label={option.label}
+                                onClick={() => onChange({ ...value, importance: option.value })}
+                                disabled={disabled}
+                                sx={{
+                                    border: `1px solid ${option.color}`,
+                                    color: selected ? '#fff' : option.color,
+                                    backgroundColor: selected ? option.color : 'transparent',
+                                    cursor: disabled ? 'default' : 'pointer',
+                                    fontWeight: selected ? 600 : 400,
+                                }}
+                            />
+                        );
+                    })}
+                </Stack>
+            </Box>}
             <AppTimeField
                 label="Task time"
                 value={value.timeOfDay}
@@ -94,6 +135,7 @@ type DialogProps = {
     definition: StatDefinition | null;
     saving?: boolean;
     error?: string | null;
+    anchorPosition?: PopupPosition | null;
     initialDraft?: StatRecurringTaskDraft | null;
     title?: string;
     confirmLabel?: string;
@@ -106,6 +148,7 @@ export function StatRecurringTaskDialog({
     definition,
     saving = false,
     error = null,
+    anchorPosition = null,
     initialDraft = null,
     title = 'Create recurring task',
     confirmLabel = 'Create task',
@@ -123,20 +166,25 @@ export function StatRecurringTaskDialog({
     const timeMissing = !/^\d{2}:\d{2}$/.test(draft.timeOfDay);
 
     return (
-        <Dialog
-            open={open}
+        <Popover
+            open={open && Boolean(anchorPosition)}
             onClose={saving ? undefined : onClose}
-            fullWidth
-            maxWidth="xs"
+            anchorReference="anchorPosition"
+            anchorPosition={anchorPosition ?? { top: 0, left: 0 }}
+            hideBackdrop
+            transformOrigin={{ vertical: 'top', horizontal: 'left' }}
             slotProps={{
-                container: {
+                paper: {
                     sx: {
-                        direction: 'ltr',
-                        justifyContent: 'flex-end !important',
+                        width: { xs: 'calc(100vw - 24px)', sm: 380 },
+                        maxHeight: 'calc(100vh - 24px)',
+                        overflow: 'auto',
                     },
                 },
             }}
         >
+            <ClickAwayListener onClickAway={() => { if (!saving) onClose(); }}>
+                <Box>
             <DialogTitle>
                 {title}{definition ? ` for ${definition.name}` : ''}
             </DialogTitle>
@@ -159,6 +207,8 @@ export function StatRecurringTaskDialog({
                     {saving ? 'Saving…' : confirmLabel}
                 </Button>
             </DialogActions>
-        </Dialog>
+                </Box>
+            </ClickAwayListener>
+        </Popover>
     );
 }

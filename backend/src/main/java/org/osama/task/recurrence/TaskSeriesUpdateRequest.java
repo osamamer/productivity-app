@@ -10,6 +10,7 @@ import java.util.List;
 @Data
 public class TaskSeriesUpdateRequest {
     private TaskRecurrenceFrequency recurrenceFrequency;
+    private Integer importance;
     private LocalDate recurrenceEndDate;
     private Integer recurrenceInterval;
     private TaskRecurrenceUnit recurrenceUnit;

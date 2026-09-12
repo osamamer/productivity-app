@@ -117,9 +117,13 @@ public class TaskSeriesService {
                 ? series.getStartDateTime() : request.getStartDateTime();
         validateRule(frequency, request.getRecurrenceEndDate(), request.getRecurrenceInterval(),
                 request.getRecurrenceUnit(), timeZone, recurrenceDaysOfWeek, startDateTime.toString());
+        validateImportance(request.getImportance());
 
         skipFutureOccurrences(series.getSeriesId(), TaskSkipReason.SERIES_CHANGED);
         series.setRecurrenceFrequency(frequency);
+        if (request.getImportance() != null) {
+            series.setImportance(request.getImportance());
+        }
         series.setRecurrenceEndDate(request.getRecurrenceEndDate());
         series.setRecurrenceInterval(frequency == TaskRecurrenceFrequency.CUSTOM
                 ? request.getRecurrenceInterval() : null);
@@ -133,12 +137,21 @@ public class TaskSeriesService {
             series.setActive(request.getActive());
         }
         TaskSeries saved = seriesRepository.save(series);
+        if (request.getImportance() != null) {
+            updateOccurrenceImportance(saved.getSeriesId(), request.getImportance());
+        }
         if (saved.isActive()) {
             materializeOccurrences(saved, userId);
         }
-        log.info("Task series updated: userId={} seriesId={} active={} frequency={}",
-                userId, seriesId, saved.isActive(), saved.getRecurrenceFrequency());
+        log.info("Task series updated: userId={} seriesId={} active={} frequency={} importance={}",
+                userId, seriesId, saved.isActive(), saved.getRecurrenceFrequency(), saved.getImportance());
         return toResponse(saved);
+    }
+
+    private void updateOccurrenceImportance(String seriesId, int importance) {
+        List<Task> occurrences = taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(seriesId);
+        occurrences.forEach(task -> task.setImportance(importance));
+        taskRepository.saveAll(occurrences);
     }
 
     @Transactional
@@ -305,6 +318,12 @@ public class TaskSeriesService {
 
     private String normalizeTimeZone(String timeZone) {
         return timeZone == null || timeZone.isBlank() ? ZoneId.systemDefault().getId() : timeZone;
+    }
+
+    private void validateImportance(Integer importance) {
+        if (importance != null && (importance < 0 || importance > 10)) {
+            throw new IllegalArgumentException("Task priority must be between 0 and 10.");
+        }
     }
 
     private TaskSeriesResponse toResponse(TaskSeries series) {

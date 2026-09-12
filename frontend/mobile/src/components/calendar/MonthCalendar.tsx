@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { ScrollView, StyleSheet, Switch, View } from 'react-native';
 
@@ -82,7 +82,7 @@ function statValue(definition: StatDefinition, value: number, status?: StatEntry
 
 function statColor(definition: StatDefinition, value: number, colors: ReturnType<typeof useAppTheme>['colors'], status?: StatEntry['status']): string {
   if (definition.type !== 'BOOLEAN') return colors.secondary;
-  if (status === 'NOT_PLANNED') return colors.warning;
+  if (status === 'NOT_PLANNED') return colors.notPlanned;
   const morality = definition.morality ?? 'NEUTRAL';
   if (morality === 'NEUTRAL') return value === 1 ? colors.accent : colors.secondary;
   if (morality === 'GOOD') return value === 1 ? colors.success : colors.danger;
@@ -194,7 +194,10 @@ export function MonthCalendar({
   const { colors } = useAppTheme();
   const [calendarDate, setCalendarDate] = useState(() => new Date());
   const [preferences, setPreferences] = useState<CalendarDisplayPreferences>(DEFAULT_DISPLAY_PREFERENCES);
-  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
+  const preferencesRef = useRef(preferences);
+  const preferencesLoadedRef = useRef(false);
+  const preferencesChangedBeforeLoadRef = useRef(false);
+  const preferencesWriteQueueRef = useRef(Promise.resolve());
   const [dayDate, setDayDate] = useState<string | null>(null);
   const [dayItems, setDayItems] = useState<CalendarGridItem[]>([]);
   const [dayInitialTab, setDayInitialTab] = useState<CalendarCreateTab>('event');
@@ -216,25 +219,43 @@ export function MonthCalendar({
     [calendarDate, month, preferences.viewMode],
   );
 
+  const queuePreferencesWrite = useCallback((nextPreferences: CalendarDisplayPreferences) => {
+    preferencesWriteQueueRef.current = preferencesWriteQueueRef.current
+      .catch(() => undefined)
+      .then(() => AsyncStorage.setItem(DISPLAY_PREFERENCES_KEY, JSON.stringify(nextPreferences)))
+      .catch(cause => {
+        console.warn('Could not save calendar display preferences:', cause);
+      });
+  }, []);
+
+  const updatePreferences = useCallback((update: (current: CalendarDisplayPreferences) => CalendarDisplayPreferences) => {
+    const nextPreferences = update(preferencesRef.current);
+    preferencesRef.current = nextPreferences;
+    if (!preferencesLoadedRef.current) preferencesChangedBeforeLoadRef.current = true;
+    setPreferences(nextPreferences);
+    if (preferencesLoadedRef.current) queuePreferencesWrite(nextPreferences);
+  }, [queuePreferencesWrite]);
+
   useEffect(() => {
     let active = true;
     void AsyncStorage.getItem(DISPLAY_PREFERENCES_KEY).then(value => {
       if (!active) return;
-      setPreferences(readPreferences(value));
-      setPreferencesLoaded(true);
+      if (!preferencesChangedBeforeLoadRef.current) {
+        const loadedPreferences = readPreferences(value);
+        preferencesRef.current = loadedPreferences;
+        setPreferences(loadedPreferences);
+      }
+      preferencesLoadedRef.current = true;
+      if (preferencesChangedBeforeLoadRef.current) queuePreferencesWrite(preferencesRef.current);
     }).catch(cause => {
       console.warn('Could not load calendar display preferences:', cause);
-      if (active) setPreferencesLoaded(true);
+      if (active) {
+        preferencesLoadedRef.current = true;
+        if (preferencesChangedBeforeLoadRef.current) queuePreferencesWrite(preferencesRef.current);
+      }
     });
     return () => { active = false; };
-  }, []);
-
-  useEffect(() => {
-    if (!preferencesLoaded) return;
-    void AsyncStorage.setItem(DISPLAY_PREFERENCES_KEY, JSON.stringify(preferences)).catch(cause => {
-      console.warn('Could not save calendar display preferences:', cause);
-    });
-  }, [preferences, preferencesLoaded]);
+  }, [queuePreferencesWrite]);
 
   const selectedStatIds = useMemo(
     () => preferences.selectedStatIds ?? statDefinitions.map(definition => definition.id),
@@ -421,7 +442,7 @@ export function MonthCalendar({
   }
 
   function togglePriority(value: number) {
-    setPreferences(previous => ({
+    updatePreferences(previous => ({
       ...previous,
       priorityFilters: previous.priorityFilters.includes(value)
         ? previous.priorityFilters.filter(item => item !== value)
@@ -430,7 +451,7 @@ export function MonthCalendar({
   }
 
   function toggleStat(id: string) {
-    setPreferences(previous => {
+    updatePreferences(previous => {
       const selected = previous.selectedStatIds ?? statDefinitions.map(definition => definition.id);
       return { ...previous, selectedStatIds: selected.includes(id) ? selected.filter(item => item !== id) : [...selected, id] };
     });
@@ -468,7 +489,7 @@ export function MonthCalendar({
         <AppText variant="caption" color="muted">Calendar view</AppText>
         <ChoiceChips
           value={preferences.viewMode}
-          onChange={value => setPreferences(previous => ({ ...previous, viewMode: value }))}
+          onChange={value => updatePreferences(previous => ({ ...previous, viewMode: value }))}
           options={[{ value: 'week' as const, label: 'Week' }, { value: 'month' as const, label: 'Month' }]} />
       </View>
       {preferences.viewMode === 'week' ? (
@@ -496,17 +517,17 @@ export function MonthCalendar({
           <AppText color="muted">Choose what appears in the calendar.</AppText>
           <View style={styles.switchRow}>
             <AppText variant="label">Show tasks</AppText>
-            <Switch value={preferences.showTasks} onValueChange={value => setPreferences(previous => ({ ...previous, showTasks: value }))} trackColor={{ false: colors.border, true: colors.accentSoft }} thumbColor={preferences.showTasks ? colors.accent : colors.textMuted} />
+            <Switch value={preferences.showTasks} onValueChange={value => updatePreferences(previous => ({ ...previous, showTasks: value }))} trackColor={{ false: colors.border, true: colors.accentSoft }} thumbColor={preferences.showTasks ? colors.accent : colors.textMuted} />
           </View>
           <View style={styles.switchRow}>
             <AppText variant="label">Show statistics</AppText>
-            <Switch value={preferences.showStats} onValueChange={value => setPreferences(previous => ({ ...previous, showStats: value }))} trackColor={{ false: colors.border, true: colors.accentSoft }} thumbColor={preferences.showStats ? colors.accent : colors.textMuted} />
+            <Switch value={preferences.showStats} onValueChange={value => updatePreferences(previous => ({ ...previous, showStats: value }))} trackColor={{ false: colors.border, true: colors.accentSoft }} thumbColor={preferences.showStats ? colors.accent : colors.textMuted} />
           </View>
 
           {preferences.showTasks && (
             <>
               <AppText variant="caption" color="muted">Task status</AppText>
-              <ChoiceChips value={preferences.taskStatus} onChange={value => setPreferences(previous => ({ ...previous, taskStatus: value }))} options={[{ value: 'all' as const, label: 'All' }, { value: 'open' as const, label: 'Open' }, { value: 'completed' as const, label: 'Done' }]} />
+              <ChoiceChips value={preferences.taskStatus} onChange={value => updatePreferences(previous => ({ ...previous, taskStatus: value }))} options={[{ value: 'all' as const, label: 'All' }, { value: 'open' as const, label: 'Open' }, { value: 'completed' as const, label: 'Done' }]} />
               <AppText variant="caption" color="muted">Priority levels</AppText>
               <View style={styles.filterChoices}>
                 {PRIORITY_OPTIONS.map(option => (
@@ -524,8 +545,8 @@ export function MonthCalendar({
               <View style={styles.statsHeading}>
                 <AppText variant="caption" color="muted">Statistics to show</AppText>
                 <View style={styles.smallActions}>
-                  <AppButton compact variant="ghost" label="All" onPress={() => setPreferences(previous => ({ ...previous, selectedStatIds: statDefinitions.map(definition => definition.id) }))} />
-                  <AppButton compact variant="ghost" label="None" onPress={() => setPreferences(previous => ({ ...previous, selectedStatIds: [] }))} />
+                  <AppButton compact variant="ghost" label="All" onPress={() => updatePreferences(previous => ({ ...previous, selectedStatIds: statDefinitions.map(definition => definition.id) }))} />
+                  <AppButton compact variant="ghost" label="None" onPress={() => updatePreferences(previous => ({ ...previous, selectedStatIds: [] }))} />
                 </View>
               </View>
               <View style={styles.statChoices}>

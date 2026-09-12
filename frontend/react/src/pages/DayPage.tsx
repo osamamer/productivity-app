@@ -17,7 +17,7 @@ import { addDays, format, isValid, parseISO, subDays } from 'date-fns';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { PageWrapper } from '../components/PageWrapper';
 import { dayService } from '../services/api';
-import { formatDurationValue, formatTimeValue } from '../services/utils/statValues';
+import { formatTimeValue } from '../services/utils/statValues';
 import { expandCalendarEvent } from '../components/calendar/recurrence';
 import { DayOverview, DayStat, DayTask } from '../types/DayOverview';
 
@@ -38,15 +38,26 @@ type TimelineItem = {
 
 const DAY_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
+function formatDayDuration(minutes: number | null | undefined): string {
+    if (minutes == null || !Number.isFinite(minutes) || minutes < 0) return '—';
+
+    const roundedMinutes = Math.round(minutes);
+    const hours = Math.floor(roundedMinutes / 60);
+    const remainingMinutes = roundedMinutes % 60;
+    if (hours === 0) return `${remainingMinutes}m`;
+    if (remainingMinutes === 0) return `${hours}h`;
+    return `${hours}h${remainingMinutes}m`;
+}
+
 function durationLabel(seconds: number): string {
-    return formatDurationValue(seconds / 60);
+    return formatDayDuration(seconds / 60);
 }
 
 function statValueLabel(stat: DayStat): string {
     if (stat.status === 'NOT_PLANNED') return 'Not planned';
     if (stat.type === 'BOOLEAN') return stat.value === 1 ? 'Yes' : 'No';
     if (stat.type === 'TIME') return formatTimeValue(stat.value);
-    if (stat.type === 'DURATION') return formatDurationValue(stat.value);
+    if (stat.type === 'DURATION') return formatDayDuration(stat.value);
     return Number.isInteger(stat.value) ? String(stat.value) : stat.value.toFixed(1);
 }
 
@@ -286,7 +297,7 @@ export function DayPage() {
     const sleepDuration = overview?.stats.find(stat =>
         stat.systemKey === 'sleep_hours' && stat.status !== 'NOT_PLANNED'
     );
-    const sleepDurationLabel = sleepDuration ? formatDurationValue(sleepDuration.value) : undefined;
+    const sleepDurationLabel = sleepDuration ? formatDayDuration(sleepDuration.value) : undefined;
     const moreTimeline = timeline.filter(item => item.kind === 'state' || item.kind === 'event');
     const hasDetailPanel = Boolean(overview && (
         overview.stats.length > 0

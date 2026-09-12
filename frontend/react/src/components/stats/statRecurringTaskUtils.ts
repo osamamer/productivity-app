@@ -28,5 +28,6 @@ export function defaultStatRecurringTaskDraft(): StatRecurringTaskDraft {
         recurrenceFrequency: 'DAILY',
         recurrenceDaysOfWeek: [todayDay()],
         timeOfDay: currentTimeOfDay(),
+        importance: 3,
     };
 }

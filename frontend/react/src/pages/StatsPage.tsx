@@ -23,6 +23,7 @@ import { PageWrapper } from '../components/PageWrapper';
 import { CreateStatForm } from '../components/stats/CreateStatForm';
 import { StatRecentDots } from '../components/stats/StatRecentDots';
 import { StatCard } from '../components/stats/StatCard';
+import { StatCreateLinkedTaskDialog } from '../components/stats/StatCreateLinkedTaskDialog';
 import { StatRecurringTaskDialog } from '../components/stats/StatRecurringTaskDialog';
 import { StatFocusTaskDialog } from '../components/stats/StatFocusTaskDialog';
 import {
@@ -71,6 +72,7 @@ const SELECTION_ACTIONS_GAP = 12;
 const SELECTION_ACTIONS_FALLBACK_WIDTH = 88;
 
 type GroupDropPosition = 'before' | 'after';
+type PopupPosition = { top: number; left: number };
 
 type ContextMenuState =
     | { kind: 'stat'; definition: StatDefinition; top: number; left: number }
@@ -82,6 +84,11 @@ type PendingStatCreation = {
     groupDefinitionIds: string[];
     selectedIdBeforeCreation: string | null;
 };
+
+function popupPositionForElement(element: HTMLElement): PopupPosition {
+    const bounds = element.getBoundingClientRect();
+    return { top: bounds.bottom + 8, left: bounds.left };
+}
 
 const selectionActionsReveal = keyframes`
     from { opacity: 0; }
@@ -215,12 +222,18 @@ export function StatsPage() {
     const [recurringTaskSavingId, setRecurringTaskSavingId] = useState<string | null>(null);
     const [recurringTaskError, setRecurringTaskError] = useState<string | null>(null);
     const [recurringTaskTarget, setRecurringTaskTarget] = useState<StatDefinition | null>(null);
+    const [recurringTaskAnchorPosition, setRecurringTaskAnchorPosition] = useState<PopupPosition | null>(null);
     const [recurringTaskFeedback, setRecurringTaskFeedback] = useState<string | null>(null);
     const [recurringTaskMode, setRecurringTaskMode] = useState<'create' | 'update'>('create');
     const [recurringTaskInitialDraft, setRecurringTaskInitialDraft] = useState<StatRecurringTaskDraft | null>(null);
+    const [createLinkedTaskSavingId, setCreateLinkedTaskSavingId] = useState<string | null>(null);
+    const [createLinkedTaskError, setCreateLinkedTaskError] = useState<string | null>(null);
+    const [createLinkedTaskTarget, setCreateLinkedTaskTarget] = useState<StatDefinition | null>(null);
+    const [createLinkedTaskAnchorPosition, setCreateLinkedTaskAnchorPosition] = useState<PopupPosition | null>(null);
     const [focusTaskSavingId, setFocusTaskSavingId] = useState<string | null>(null);
     const [focusTaskError, setFocusTaskError] = useState<string | null>(null);
     const [focusTaskTarget, setFocusTaskTarget] = useState<StatDefinition | null>(null);
+    const [focusTaskAnchorPosition, setFocusTaskAnchorPosition] = useState<PopupPosition | null>(null);
     const [focusTaskFeedback, setFocusTaskFeedback] = useState<string | null>(null);
     const selectionAnchorRef = useRef<string | null>(null);
     const selectionActionsRef = useRef<HTMLDivElement | null>(null);
@@ -401,7 +414,7 @@ export function StatsPage() {
         setEditTarget(null);
     };
 
-    const handleSaveFocusTask = (definition: StatDefinition, taskName: string) => {
+    const handleAddFocusTask = (definition: StatDefinition, taskName: string) => {
         if (focusTaskSavingId !== null || !taskName.trim()) return;
 
         setFocusTaskSavingId(definition.id);
@@ -409,8 +422,8 @@ export function StatsPage() {
         void statService.linkFocusTask(definition.id, taskName.trim())
             .then(updated => {
                 handleUpdated(updated);
-                setFocusTaskTarget(null);
-                setFocusTaskFeedback(`Focus time linked to “${updated.focusTaskName}”.`);
+                setFocusTaskTarget(updated);
+                setFocusTaskFeedback(`Focus time linked to “${taskName.trim()}”.`);
             })
             .catch(error => {
                 console.error('Failed to link task focus time:', error);
@@ -419,20 +432,65 @@ export function StatsPage() {
             .finally(() => setFocusTaskSavingId(null));
     };
 
-    const handleUnlinkFocusTask = (definition: StatDefinition) => {
+    const handleCreateLinkedTask = (definition: StatDefinition, taskName: string, importance: number) => {
+        if (createLinkedTaskSavingId !== null || !taskName.trim()) return;
+
+        setCreateLinkedTaskSavingId(definition.id);
+        setCreateLinkedTaskError(null);
+        void statService.startFocusTask(definition.id, taskName.trim(), importance)
+            .then(task => {
+                const linkedTaskNames = [...new Set([
+                    ...(definition.focusTaskNames ?? (definition.focusTaskName ? [definition.focusTaskName] : [])),
+                    taskName.trim(),
+                ])];
+                handleUpdated({ ...definition, focusTaskName: linkedTaskNames[0], focusTaskNames: linkedTaskNames });
+                setCreateLinkedTaskTarget(null);
+                setCreateLinkedTaskAnchorPosition(null);
+                navigate('/', { state: { openPomodoroTaskId: task.taskId } });
+            })
+            .catch(error => {
+                console.error('Failed to create linked task:', error);
+                setCreateLinkedTaskError('Could not create the linked task. Please try again.');
+            })
+            .finally(() => setCreateLinkedTaskSavingId(null));
+    };
+
+    const handleCreateRecurringLinkedTask = (definition: StatDefinition,
+                                              taskName: string,
+                                              recurrence: StatRecurringTaskDraft) => {
+        if (createLinkedTaskSavingId !== null) return;
+
+        setCreateLinkedTaskSavingId(definition.id);
+        setCreateLinkedTaskError(null);
+        void statService.createRecurringTask(definition.id, recurrence)
+            .then(updated => {
+                handleUpdated(updated);
+                setCreateLinkedTaskTarget(null);
+                setCreateLinkedTaskAnchorPosition(null);
+                setCreateLinkedTaskError(null);
+                setRecurringTaskFeedback(`Recurring task “${taskName}” created.`);
+            })
+            .catch(error => {
+                console.error('Failed to create recurring linked task:', error);
+                setCreateLinkedTaskError('Could not create the recurring linked task. Please try again.');
+            })
+            .finally(() => setCreateLinkedTaskSavingId(null));
+    };
+
+    const handleRemoveFocusTask = (definition: StatDefinition, taskName: string) => {
         if (focusTaskSavingId !== null) return;
 
         setFocusTaskSavingId(definition.id);
         setFocusTaskError(null);
-        void statService.unlinkFocusTask(definition.id)
+        void statService.unlinkFocusTask(definition.id, taskName)
             .then(updated => {
                 handleUpdated(updated);
-                setFocusTaskTarget(null);
-                setFocusTaskFeedback('Linked task focus removed.');
+                setFocusTaskTarget(updated);
+                setFocusTaskFeedback(`Focus time unlinked from “${taskName}”.`);
             })
             .catch(error => {
                 console.error('Failed to unlink task focus time:', error);
-                setFocusTaskError('Could not remove the linked tasks. Please try again.');
+                setFocusTaskError('Could not remove that linked task. Please try again.');
             })
             .finally(() => setFocusTaskSavingId(null));
     };
@@ -448,6 +506,7 @@ export function StatsPage() {
 
         if (mode === 'create') {
             setRecurringTaskTarget(null);
+            setRecurringTaskAnchorPosition(null);
             setRecurringTaskInitialDraft(null);
             setEditTarget(null);
 
@@ -469,6 +528,7 @@ export function StatsPage() {
                 const updated = await statService.updateRecurringTask(definition.id, recurrence);
                 handleUpdated(updated);
                 setRecurringTaskTarget(null);
+                setRecurringTaskAnchorPosition(null);
                 setRecurringTaskInitialDraft(null);
                 setRecurringTaskFeedback('Recurring task schedule updated.');
             } catch (error) {
@@ -480,8 +540,9 @@ export function StatsPage() {
         })();
     };
 
-    const openRecurringTaskEditor = (definition: StatDefinition) => {
+    const openRecurringTaskEditor = (definition: StatDefinition, anchorPosition?: PopupPosition) => {
         setRecurringTaskError(null);
+        setRecurringTaskAnchorPosition(anchorPosition ?? null);
         void statService.getRecurringTask(definition.id)
             .then(series => {
                 const recurrenceDaysOfWeek = series.recurrenceDaysOfWeek?.length
@@ -491,6 +552,7 @@ export function StatsPage() {
                     recurrenceFrequency: series.recurrenceFrequency,
                     recurrenceDaysOfWeek,
                     timeOfDay: timeOfDayFromDateTime(series.startDateTime),
+                    importance: series.importance,
                 });
                 setRecurringTaskMode('update');
                 setRecurringTaskTarget(definition);
@@ -1084,16 +1146,22 @@ export function StatsPage() {
                                 initialDefinition={editTarget}
                                 existingDefinitions={definitions}
                                 onUpdated={handleUpdated}
-                                onCreateRecurringTask={() => {
+                                onCreateRecurringTask={event => {
+                                    const definition = editTarget;
+                                    if (!definition) return;
+                                    setRecurringTaskAnchorPosition(popupPositionForElement(event.currentTarget));
                                     setEditTarget(null);
                                     setRecurringTaskError(null);
                                     setRecurringTaskMode('create');
                                     setRecurringTaskInitialDraft(null);
-                                    setRecurringTaskTarget(editTarget);
+                                    setRecurringTaskTarget(definition);
                                 }}
-                                onEditRecurringTask={() => {
+                                onEditRecurringTask={event => {
+                                    const definition = editTarget;
+                                    if (!definition) return;
+                                    const anchorPosition = popupPositionForElement(event.currentTarget);
                                     setEditTarget(null);
-                                    openRecurringTaskEditor(editTarget);
+                                    openRecurringTaskEditor(definition, anchorPosition);
                                 }}
                                 onDelete={() => setDeleteTarget(editTarget)}
                                 onCancel={() => setEditTarget(null)}
@@ -1102,9 +1170,35 @@ export function StatsPage() {
                     </DialogContent>
                 </Dialog>
 
+                <StatCreateLinkedTaskDialog
+                    open={Boolean(createLinkedTaskTarget)}
+                    definition={createLinkedTaskTarget}
+                    anchorPosition={createLinkedTaskAnchorPosition}
+                    saving={Boolean(createLinkedTaskTarget && createLinkedTaskSavingId === createLinkedTaskTarget.id)}
+                    error={createLinkedTaskError}
+                    onClose={() => {
+                        if (createLinkedTaskSavingId === null) {
+                            setCreateLinkedTaskTarget(null);
+                            setCreateLinkedTaskAnchorPosition(null);
+                            setCreateLinkedTaskError(null);
+                        }
+                    }}
+                    onCreate={(taskName, importance) => {
+                        if (createLinkedTaskTarget) {
+                            handleCreateLinkedTask(createLinkedTaskTarget, taskName, importance);
+                        }
+                    }}
+                    onCreateRecurring={(taskName, recurrence) => {
+                        if (createLinkedTaskTarget) {
+                            handleCreateRecurringLinkedTask(createLinkedTaskTarget, taskName, recurrence);
+                        }
+                    }}
+                />
+
                 <StatRecurringTaskDialog
                     open={Boolean(recurringTaskTarget)}
                     definition={recurringTaskTarget}
+                    anchorPosition={recurringTaskAnchorPosition}
                     saving={Boolean(recurringTaskTarget && recurringTaskSavingId === recurringTaskTarget.id)}
                     error={recurringTaskError}
                     initialDraft={recurringTaskInitialDraft}
@@ -1113,6 +1207,7 @@ export function StatsPage() {
                     onClose={() => {
                         if (recurringTaskSavingId === null) {
                             setRecurringTaskTarget(null);
+                            setRecurringTaskAnchorPosition(null);
                             setRecurringTaskError(null);
                             setRecurringTaskInitialDraft(null);
                         }
@@ -1125,19 +1220,23 @@ export function StatsPage() {
                 <StatFocusTaskDialog
                     open={Boolean(focusTaskTarget)}
                     definition={focusTaskTarget}
+                    linkedTaskNames={focusTaskTarget?.focusTaskNames
+                        ?? (focusTaskTarget?.focusTaskName ? [focusTaskTarget.focusTaskName] : [])}
+                    anchorPosition={focusTaskAnchorPosition}
                     saving={Boolean(focusTaskTarget && focusTaskSavingId === focusTaskTarget.id)}
                     error={focusTaskError}
                     onClose={() => {
                         if (focusTaskSavingId === null) {
                             setFocusTaskTarget(null);
+                            setFocusTaskAnchorPosition(null);
                             setFocusTaskError(null);
                         }
                     }}
-                    onConfirm={taskName => {
-                        if (focusTaskTarget) handleSaveFocusTask(focusTaskTarget, taskName);
+                    onAdd={taskName => {
+                        if (focusTaskTarget) handleAddFocusTask(focusTaskTarget, taskName);
                     }}
-                    onClear={() => {
-                        if (focusTaskTarget) handleUnlinkFocusTask(focusTaskTarget);
+                    onRemove={taskName => {
+                        if (focusTaskTarget) handleRemoveFocusTask(focusTaskTarget, taskName);
                     }}
                 />
 
@@ -1478,65 +1577,60 @@ export function StatsPage() {
                     : undefined}
                 MenuListProps={{ dense: true }}
             >
-                {contextMenu?.kind === 'stat'
-                    && (!contextMenu.definition.systemKey || isEditableSystemStat(contextMenu.definition)) && (
-                    <>
-                        <MenuItem onClick={() => {
-                            setEditTarget(contextMenu.definition);
-                            closeContextMenu();
-                        }}>
-                            <ListItemIcon><EditOutlinedIcon fontSize="small" /></ListItemIcon>
-                            <ListItemText>Edit statistic</ListItemText>
-                        </MenuItem>
-                    </>
-                )}
                 {contextMenu?.kind === 'stat' && !contextMenu.definition.systemKey && (
-                    <>
-                        <MenuItem onClick={() => {
-                            setDeleteTarget(contextMenu.definition);
-                            closeContextMenu();
-                        }}>
-                            <ListItemIcon><DeleteOutlineOutlinedIcon fontSize="small" /></ListItemIcon>
-                            <ListItemText>Delete statistic</ListItemText>
-                        </MenuItem>
-                    </>
-                )}
-                {contextMenu?.kind === 'stat' && canCreateRecurringTask(contextMenu.definition) && (
                     <MenuItem
                         onClick={() => {
                             const definition = contextMenu.definition;
+                            const anchorPosition = { top: contextMenu.top, left: contextMenu.left };
                             closeContextMenu();
-                            setRecurringTaskError(null);
-                            setRecurringTaskMode('create');
-                            setRecurringTaskInitialDraft(null);
-                            setRecurringTaskTarget(definition);
+                            setCreateLinkedTaskError(null);
+                            setCreateLinkedTaskAnchorPosition(anchorPosition);
+                            setCreateLinkedTaskTarget(definition);
                         }}
-                        disabled={recurringTaskSavingId !== null}
+                        disabled={createLinkedTaskSavingId !== null}
                     >
                         <ListItemIcon><AddTaskOutlinedIcon fontSize="small" /></ListItemIcon>
-                        <ListItemText>
-                            {recurringTaskSavingId === contextMenu.definition.id
-                                ? 'Creating recurring task…'
-                                : 'Create recurring task'}
-                        </ListItemText>
+                        <ListItemText>Create linked task</ListItemText>
                     </MenuItem>
                 )}
                 {contextMenu?.kind === 'stat' && !contextMenu.definition.systemKey && (
                     <MenuItem
                         onClick={() => {
                             const definition = contextMenu.definition;
+                            const anchorPosition = { top: contextMenu.top, left: contextMenu.left };
                             closeContextMenu();
                             setFocusTaskError(null);
+                            setFocusTaskAnchorPosition(anchorPosition);
                             setFocusTaskTarget(definition);
                         }}
                         disabled={focusTaskSavingId !== null}
                     >
                         <ListItemIcon><LinkOutlinedIcon fontSize="small" /></ListItemIcon>
-                        <ListItemText>
-                            {contextMenu.definition.focusTaskName
-                                ? 'Change linked task name'
-                                : 'Link existing task focus'}
-                        </ListItemText>
+                        <ListItemText>Link existing task</ListItemText>
+                    </MenuItem>
+                )}
+                {contextMenu?.kind === 'stat'
+                    && (!contextMenu.definition.systemKey || isEditableSystemStat(contextMenu.definition)) && (
+                    <MenuItem onClick={() => {
+                        setEditTarget(contextMenu.definition);
+                        closeContextMenu();
+                    }}>
+                        <ListItemIcon><EditOutlinedIcon fontSize="small" /></ListItemIcon>
+                        <ListItemText>Edit stat</ListItemText>
+                    </MenuItem>
+                )}
+                {contextMenu?.kind === 'stat' && !contextMenu.definition.systemKey && (
+                    <MenuItem
+                        onClick={() => {
+                            setDeleteTarget(contextMenu.definition);
+                            closeContextMenu();
+                        }}
+                        sx={{ color: 'error.main' }}
+                    >
+                        <ListItemIcon sx={{ color: 'inherit' }}>
+                            <DeleteOutlineOutlinedIcon fontSize="small" />
+                        </ListItemIcon>
+                        <ListItemText>Delete stat</ListItemText>
                     </MenuItem>
                 )}
                 {contextMenu?.kind === 'stat'

@@ -224,7 +224,7 @@ export default function StatsScreen() {
     const iconColor = !entry
       ? colors.accent
       : definition.type === 'BOOLEAN' && entry.status === 'NOT_PLANNED'
-        ? colors.warning
+        ? colors.notPlanned
       : definition.type === 'BOOLEAN' && entry.value !== 1
         ? colors.danger
         : colors.success;

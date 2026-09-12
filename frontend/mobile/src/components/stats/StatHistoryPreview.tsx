@@ -269,7 +269,7 @@ function getCircleColor(
   status: StatEntryStatus = 'RECORDED',
 ): string {
   if (value === undefined) return dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)';
-  if (status === 'NOT_PLANNED') return colors.warning;
+  if (status === 'NOT_PLANNED') return colors.notPlanned;
 
   // Boolean values use the same semantic colors as the entry controls. In
   // particular, a BAD stat such as cigarettes should make Yes red and No
@@ -927,7 +927,7 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, refreshK
     const noColor = getCircleColor(definition, 0, colors, dark);
     const isHeatmap = dateRange > 30;
     const heatmapBuckets = isHeatmap ? weeklyBooleanAverages(dates, entriesByDate, statusesByDate) : [];
-    const notPlannedColor = colors.warning;
+    const notPlannedColor = colors.notPlanned;
 
     return (
       <View style={styles.history}>

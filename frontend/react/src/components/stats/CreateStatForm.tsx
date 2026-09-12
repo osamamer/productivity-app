@@ -36,6 +36,7 @@ interface FormValues {
     recurrenceFrequency: StatRecurrenceFrequency;
     recurrenceDaysOfWeek: StatRecurrenceDay[];
     timeOfDay: string;
+    recurringTaskImportance: number;
 }
 
 function normalizedStatName(name: string): string {
@@ -110,8 +111,8 @@ interface Props {
     onCreatedOptimistically?: (def: StatDefinition, operationId: string) => void;
     onCreationFailed?: (operationId: string) => void;
     onUpdated?: (def: StatDefinition) => void;
-    onCreateRecurringTask?: () => void;
-    onEditRecurringTask?: () => void;
+    onCreateRecurringTask?: (event: React.MouseEvent<HTMLButtonElement>) => void;
+    onEditRecurringTask?: (event: React.MouseEvent<HTMLButtonElement>) => void;
     onDelete?: () => void;
     onCancel: () => void;
     initialDefinition?: StatDefinition;
@@ -132,6 +133,9 @@ export function CreateStatForm({
 }: Props) {
     const isEditing = Boolean(initialDefinition);
     const hasRecurringTask = Boolean(initialDefinition?.recurringTaskSeriesId);
+    // Keep the clock-based default stable so enableReinitialize cannot reset
+    // user-entered fields when a later render crosses into a new minute.
+    const [initialRecurringTaskDraft] = React.useState(defaultStatRecurringTaskDraft);
     const validationSchema = React.useMemo(
         () => createValidationSchema(existingDefinitions, initialDefinition?.id),
         [existingDefinitions, initialDefinition?.id],
@@ -162,9 +166,10 @@ export function CreateStatForm({
                         ? minutesToDurationValue(initialDefinition.goodThreshold)
                         : String(initialDefinition.goodThreshold),
             createRecurringTask: false,
-            recurrenceFrequency: 'DAILY',
-            recurrenceDaysOfWeek: defaultStatRecurringTaskDraft().recurrenceDaysOfWeek,
-            timeOfDay: defaultStatRecurringTaskDraft().timeOfDay,
+            recurrenceFrequency: initialRecurringTaskDraft.recurrenceFrequency,
+            recurrenceDaysOfWeek: initialRecurringTaskDraft.recurrenceDaysOfWeek,
+            timeOfDay: initialRecurringTaskDraft.timeOfDay,
+            recurringTaskImportance: initialRecurringTaskDraft.importance,
         },
         validationSchema,
         onSubmit: async (values, { setSubmitting, setFieldError }) => {
@@ -201,6 +206,7 @@ export function CreateStatForm({
                         recurrenceFrequency: values.recurrenceFrequency,
                         recurrenceDaysOfWeek: values.recurrenceDaysOfWeek,
                         timeOfDay: values.timeOfDay,
+                        recurringTaskImportance: values.recurringTaskImportance,
                     };
 
                     if (request.createRecurringTask
@@ -456,16 +462,18 @@ export function CreateStatForm({
                     in={!isEditing && formik.values.type === 'BOOLEAN' && formik.values.createRecurringTask}
                     unmountOnExit
                 >
-                    <StatRecurringTaskOptions
-                        value={{
-                            recurrenceFrequency: formik.values.recurrenceFrequency,
-                            recurrenceDaysOfWeek: formik.values.recurrenceDaysOfWeek,
-                            timeOfDay: formik.values.timeOfDay,
-                        }}
+                        <StatRecurringTaskOptions
+                            value={{
+                                recurrenceFrequency: formik.values.recurrenceFrequency,
+                                recurrenceDaysOfWeek: formik.values.recurrenceDaysOfWeek,
+                                timeOfDay: formik.values.timeOfDay,
+                                importance: formik.values.recurringTaskImportance,
+                            }}
                         onChange={value => {
                             void formik.setFieldValue('recurrenceFrequency', value.recurrenceFrequency);
                             void formik.setFieldValue('recurrenceDaysOfWeek', value.recurrenceDaysOfWeek);
                             void formik.setFieldValue('timeOfDay', value.timeOfDay);
+                            void formik.setFieldValue('recurringTaskImportance', value.importance);
                         }}
                         timeError={formik.touched.timeOfDay ? formik.errors.timeOfDay : undefined}
                         disabled={formik.isSubmitting}

@@ -845,23 +845,21 @@ export function SettingsPage() {
                                     </Box>
 
                                     {hideCompletedTasks && (
-                                        <Box sx={{ ml: { xs: 0, sm: 4 }, mt: 2, pl: { xs: 0, sm: 2 }, borderLeft: { sm: theme => `2px solid ${theme.palette.divider}` } }}>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
-                                                <Box sx={{ textAlign: 'left' }}>
-                                                    <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                                                        Hide today&apos;s completed tasks in Home page
-                                                    </Typography>
-                                                    <Typography variant="body2" color="text.secondary">
-                                                        {excludeTodayCompletedTasksDescription}
-                                                    </Typography>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mt: 2 }}>
+                                            <Box sx={{ textAlign: 'left' }}>
+                                                <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                                                    Hide today&apos;s completed tasks in Home page
+                                                </Typography>
+                                                <Typography variant="body2" color="text.secondary">
+                                                    {excludeTodayCompletedTasksDescription}
+                                                </Typography>
 
-                                                </Box>
-                                                <Switch
-                                                    checked={excludeTodayCompletedTasks}
-                                                    onChange={(event) => setExcludeTodayCompletedTasks(event.target.checked)}
-                                                    inputProps={{ 'aria-label': "Exclude today's completed tasks in Home page" }}
-                                                />
                                             </Box>
+                                            <Switch
+                                                checked={excludeTodayCompletedTasks}
+                                                onChange={(event) => setExcludeTodayCompletedTasks(event.target.checked)}
+                                                inputProps={{ 'aria-label': "Exclude today's completed tasks in Home page" }}
+                                            />
                                         </Box>
                                     )}
                                 </Box>

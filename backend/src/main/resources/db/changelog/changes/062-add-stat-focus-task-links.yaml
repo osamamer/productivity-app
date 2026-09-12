@@ -1,0 +1,53 @@
+databaseChangeLog:
+  - changeSet:
+      id: 062-add-stat-focus-task-links
+      author: codex
+      comment: Allow a statistic to include focus time from multiple task names
+      changes:
+        - createTable:
+            tableName: stat_focus_task_link
+            columns:
+              - column:
+                  name: id
+                  type: varchar(36)
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+                    primaryKeyName: pk_app_stat_focus_task_link
+              - column:
+                  name: stat_definition_id
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: task_name
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: stat_focus_task_link
+            baseColumnNames: stat_definition_id
+            referencedTableName: stat_definition
+            referencedColumnNames: id
+            constraintName: fk_app_stat_focus_task_link_definition
+            onDelete: CASCADE
+        - addUniqueConstraint:
+            tableName: stat_focus_task_link
+            columnNames: stat_definition_id, task_name
+            constraintName: uk_app_stat_focus_task_link_definition_name
+        - createIndex:
+            tableName: stat_focus_task_link
+            indexName: idx_app_stat_focus_task_link_definition
+            ifNotExists: true
+            columns:
+              - column:
+                  name: stat_definition_id
+        - sql:
+            sql: >-
+              INSERT INTO stat_focus_task_link (id, stat_definition_id, task_name)
+              SELECT md5(id || ':' || focus_task_name), id, focus_task_name
+              FROM stat_definition
+              WHERE focus_task_name IS NOT NULL AND trim(focus_task_name) <> ''
+      rollback:
+        - dropTable:
+            tableName: stat_focus_task_link

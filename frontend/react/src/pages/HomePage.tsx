@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
     Box,
     Button,
@@ -285,6 +286,12 @@ function taskListItemId(item: TaskListItem): string {
     return item.kind === 'task' ? `task:${item.task.taskId}` : `group:${item.group.groupId}`;
 }
 
+function taskListItemContainsTask(item: TaskListItem, taskIds: Set<string>): boolean {
+    if (item.kind === 'task') return taskIds.has(item.task.taskId);
+    return item.tasks.some(task => taskIds.has(task.taskId))
+        || item.group.taskIds.some(taskId => taskIds.has(taskId));
+}
+
 function taskDropEdge(event: React.DragEvent<HTMLElement>): DropEdge {
     const bounds = event.currentTarget.getBoundingClientRect();
     return event.clientY < bounds.top + bounds.height / 2 ? 'before' : 'after';
@@ -328,15 +335,19 @@ type AnimatedTaskListProps = {
     renderItem: (item: TaskListItem) => React.ReactNode;
     onAnimatingChange?: (animating: boolean) => void;
     animateRemovals?: boolean;
+    immediateRemovalTaskIds?: Set<string>;
 };
 
 const TASK_EXIT_DURATION_MS = 180;
+const EDGE_DROP_ZONE_OUTSIDE_REACH = 72;
+const EDGE_DROP_ZONE_LIST_OVERLAP = 16;
 
 function AnimatedTaskList({
     items,
     renderItem,
     onAnimatingChange,
     animateRemovals = true,
+    immediateRemovalTaskIds,
 }: AnimatedTaskListProps) {
     const [displayedItems, setDisplayedItems] = useState(items);
     const [exitingItemIds, setExitingItemIds] = useState<Set<string>>(() => new Set());
@@ -361,6 +372,17 @@ function AnimatedTaskList({
         const nextItemIds = new Set(items.map(taskListItemId));
         const previousItems = displayedItemsRef.current;
         const removedItems = previousItems.filter(item => !nextItemIds.has(taskListItemId(item)));
+        const immediateRemovalItemIds = new Set(
+            removedItems
+                .filter(item => immediateRemovalTaskIds && taskListItemContainsTask(item, immediateRemovalTaskIds))
+                .map(taskListItemId),
+        );
+        immediateRemovalItemIds.forEach(itemId => {
+            const timerId = exitTimersRef.current.get(itemId);
+            if (timerId !== undefined) window.clearTimeout(timerId);
+            exitTimersRef.current.delete(itemId);
+            exitingItemIdsRef.current.delete(itemId);
+        });
         const reappearedItemIds = items
             .map(taskListItemId)
             .filter(itemId => exitingItemIdsRef.current.has(itemId));
@@ -380,8 +402,11 @@ function AnimatedTaskList({
         // Follow the source order so newly created or reordered tasks appear
         // where the task state puts them. Removed rows are inserted back at
         // their previous slot only while their exit transition is running.
+        const animatedRemovedItems = removedItems.filter(
+            item => !immediateRemovalItemIds.has(taskListItemId(item)),
+        );
         const mergedItems = [...items];
-        removedItems.forEach(item => {
+        animatedRemovedItems.forEach(item => {
             const previousIndex = previousItems.findIndex(
                 previousItem => taskListItemId(previousItem) === taskListItemId(item),
             );
@@ -393,7 +418,12 @@ function AnimatedTaskList({
             setDisplayedItems(mergedItems);
         }
 
-        const newlyRemovedItems = removedItems.filter(item => !exitingItemIdsRef.current.has(taskListItemId(item)));
+        if (immediateRemovalItemIds.size > 0) {
+            setExitingItemIds(new Set(exitingItemIdsRef.current));
+            if (exitingItemIdsRef.current.size === 0) onAnimatingChange?.(false);
+        }
+
+        const newlyRemovedItems = animatedRemovedItems.filter(item => !exitingItemIdsRef.current.has(taskListItemId(item)));
         if (newlyRemovedItems.length > 0) {
             newlyRemovedItems.forEach(item => {
                 const itemId = taskListItemId(item);
@@ -416,7 +446,7 @@ function AnimatedTaskList({
             setExitingItemIds(new Set(exitingItemIdsRef.current));
             onAnimatingChange?.(true);
         }
-    }, [animateRemovals, items, onAnimatingChange]);
+    }, [animateRemovals, immediateRemovalTaskIds, items, onAnimatingChange]);
 
     useEffect(() => () => {
         exitTimersRef.current.forEach(timerId => window.clearTimeout(timerId));
@@ -553,6 +583,8 @@ function moveTaskDateToToday(task: Task): string {
 
 export function HomePage() {
     const { user } = useUser();
+    const location = useLocation();
+    const navigate = useNavigate();
     const [animateGreeting] = useState(() => !hasAnimatedHomeGreeting);
     const [activeExpansion, setActiveExpansion] = useState<ActiveExpansion>(readHomeActiveExpansion);
     const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>(() => (
@@ -563,6 +595,7 @@ export function HomePage() {
     const [selectionActionsPosition, setSelectionActionsPosition] = useState<{ top: number; left: number } | null>(null);
     const [taskFeedback, setTaskFeedback] = useState<TaskFeedback | null>(null);
     const [pendingHomeDateTaskIds, setPendingHomeDateTaskIds] = useState<string[]>([]);
+    const [pendingDeletedTaskIds, setPendingDeletedTaskIds] = useState<string[]>([]);
     const [homeTaskListAnimating, setHomeTaskListAnimating] = useState(false);
     const [showOlderTasks, setShowOlderTasks] = useState(false);
     const [bulkActionLoading, setBulkActionLoading] = useState(false);
@@ -591,15 +624,16 @@ export function HomePage() {
     const [dragTargetTaskId, setDragTargetTaskId] = useState<string | null>(null);
     const [dragTargetGroupId, setDragTargetGroupId] = useState<string | null>(null);
     const [dragTargetPosition, setDragTargetPosition] = useState<GroupDropIntent | null>(null);
-    const [dragTargetTop, setDragTargetTop] = useState(false);
-    const [dragTargetBottom, setDragTargetBottom] = useState(false);
+    const [dragEdge, setDragEdge] = useState<'top' | 'bottom' | null>(null);
     const [activePomodoroTaskId, setActivePomodoroTaskId] = useState<string | null>(null);
     const [initialPomodoroStatus, setInitialPomodoroStatus] = useState<PomodoroStatus | null>(null);
+    const [pomodoroStatusResolved, setPomodoroStatusResolved] = useState(false);
     const [pomodoroTaskMinimized, setPomodoroTaskMinimized] = useState(false);
     const [focusVisibility, setFocusVisibility] = useState<FocusVisibility>('all');
     const [focusTaskOffset, setFocusTaskOffset] = useState(0);
     const selectionAnchorRef = useRef<string | null>(activeExpansion?.taskId ?? null);
     const activePomodoroTaskIdRef = useRef<string | null>(null);
+    const handledFocusNavigationTaskIdRef = useRef<string | null>(null);
     const focusVisibilityRef = useRef<FocusVisibility>('all');
     const focusTaskSourceTopRef = useRef<number | null>(null);
     const latestPomodoroStatusRef = useRef<PomodoroStatus | null>(null);
@@ -687,6 +721,7 @@ export function HomePage() {
         pastTasks,
         tasksLoaded,
         todayTasksLoaded,
+        allTasksSynchronized,
         refreshTaskBuckets,
         addTaskToState,
         replaceTaskInState,
@@ -695,6 +730,10 @@ export function HomePage() {
         reorderTasksInState,
     } = useGlobalTasks({ prioritizeToday: true });
 
+    const pendingDeletedTaskIdSet = useMemo(
+        () => new Set(pendingDeletedTaskIds),
+        [pendingDeletedTaskIds],
+    );
     const visibleTasks = useMemo(
         () => {
             const showCompletedToday = getShowCompletedHomeTasks() || !getExcludeTodayCompletedHomeTasks();
@@ -713,13 +752,15 @@ export function HomePage() {
                 tasksInOriginalOrder.splice(Math.min(originalIndex, tasksInOriginalOrder.length), 0, task);
             });
             return tasksInOriginalOrder
+                .filter(task => !pendingDeletedTaskIdSet.has(task.taskId))
                 .filter(task => !task.parentId && (showCompletedToday || !task.completed));
         },
-        [allTasks, pendingHomeDateTaskIds, todayTasks],
+        [allTasks, pendingDeletedTaskIdSet, pendingHomeDateTaskIds, todayTasks],
     );
     const olderTasks = useMemo(
-        () => pastTasks.filter(task => !task.parentId && !task.completed),
-        [pastTasks],
+        () => pastTasks.filter(task => !pendingDeletedTaskIdSet.has(task.taskId)
+            && !task.parentId && !task.completed),
+        [pastTasks, pendingDeletedTaskIdSet],
     );
     const selectedTaskIdSet = useMemo(() => new Set(selectedTaskIds), [selectedTaskIds]);
     const selectedGroupIdSet = useMemo(() => new Set(selectedGroupIds), [selectedGroupIds]);
@@ -821,6 +862,21 @@ export function HomePage() {
     }, [focusedPomodoroTask, collapsedGroupIds, olderTaskListItems, showOlderTasks, taskListItems]);
 
     const homeContentReady = (tasksLoaded || todayTasksLoaded) && groups !== null;
+    const homeTaskControlsReady = homeContentReady && allTasksSynchronized && pomodoroStatusResolved;
+
+    useEffect(() => {
+        const navigationState = location.state as { openPomodoroTaskId?: unknown } | null;
+        const taskId = navigationState?.openPomodoroTaskId;
+        if (typeof taskId !== 'string' || handledFocusNavigationTaskIdRef.current === taskId) return;
+        if (!homeContentReady || !allTasksSynchronized) return;
+        if (!allTasks.some(task => task.taskId === taskId)) return;
+
+        handledFocusNavigationTaskIdRef.current = taskId;
+        setActiveExpansion({ taskId, panel: 'pomodoro' });
+        setSelectedTaskIds([taskId]);
+        setSelectedGroupIds([]);
+        navigate('/', { replace: true, state: null });
+    }, [allTasks, allTasksSynchronized, homeContentReady, location.state, navigate]);
 
     const updateSelectionActionsPosition = useCallback(() => {
         if (!selectionActionsVisible) {
@@ -1119,6 +1175,7 @@ export function HomePage() {
 
         const request = deleteRequest;
         const tasksToDelete = tasksForDeleteScope(request, scope, allTasks);
+        const deletedTaskIds = new Set(tasksToDelete.map(task => task.taskId));
         const deletedActivePomodoroTaskId = activePomodoroTaskIdRef.current
             && tasksToDelete.some(task => task.taskId === activePomodoroTaskIdRef.current)
             ? activePomodoroTaskIdRef.current
@@ -1128,6 +1185,10 @@ export function HomePage() {
         const previousTaskOrder = allTasks.map(task => task.taskId);
         setDeleteRequest(null);
         setDeleteSubmitting(false);
+        taskService.markTasksDeleted([...deletedTaskIds]);
+        setPendingDeletedTaskIds(previous => [
+            ...new Set([...previous, ...deletedTaskIds]),
+        ]);
 
         if (request.kind === 'group') {
             tasksToDelete.forEach(task => removeTaskFromState(task.taskId));
@@ -1144,23 +1205,30 @@ export function HomePage() {
         clearSelection();
 
         const restoreDeletedTasks = () => {
+            taskService.restoreTasks([...deletedTaskIds]);
+            setPendingDeletedTaskIds(previous => previous.filter(taskId => !deletedTaskIds.has(taskId)));
             tasksToDelete.forEach(task => addTaskToState(task));
             reorderTasksInState([...previousTaskOrder, ...tasksToDelete.map(task => task.taskId)]);
             setGroups(previousGroups);
             setCollapsedGroupIds(previousCollapsedGroupIds);
         };
         const commitDelete = async () => {
+            let taskDeletionStarted = false;
             try {
                 if (request.kind === 'group') {
                     await taskGroupService.deleteGroup(request.group.groupId);
                 }
+                taskDeletionStarted = true;
                 await deleteTasksForScope(tasksToDelete, scope);
                 if (deletedActivePomodoroTaskId) {
                     handlePomodoroActiveChange(deletedActivePomodoroTaskId, false, { animate: false });
                 }
+                setPendingDeletedTaskIds(previous => previous.filter(taskId => !deletedTaskIds.has(taskId)));
                 invalidateResource('tasks');
             } catch (err) {
                 console.error(`Error deleting ${request.kind === 'group' ? 'group' : request.kind === 'bulk' ? 'selected tasks' : 'task'}:`, err);
+                if (!taskDeletionStarted) taskService.restoreTasks([...deletedTaskIds]);
+                setPendingDeletedTaskIds(previous => previous.filter(taskId => !deletedTaskIds.has(taskId)));
                 await Promise.all([refreshTaskBuckets(true), refreshGroups()]);
             }
         };
@@ -1539,7 +1607,10 @@ export function HomePage() {
                 setInitialPomodoroStatus(status);
                 handlePomodoroActiveChange(status.associatedTaskId, true, { animate: false });
             })
-            .catch(error => console.error('Error checking active pomodoro:', error));
+            .catch(error => console.error('Error checking active pomodoro:', error))
+            .finally(() => {
+                if (!cancelled) setPomodoroStatusResolved(true);
+            });
 
         return () => {
             cancelled = true;
@@ -1614,8 +1685,7 @@ export function HomePage() {
         setDragTargetTaskId(null);
         setDragTargetGroupId(null);
         setDragTargetPosition(null);
-        setDragTargetTop(false);
-        setDragTargetBottom(false);
+        setDragEdge(null);
     }, []);
 
     const persistTaskOrder = useCallback(async (orderedTaskIds: string[], failOnError = false) => {
@@ -2163,6 +2233,28 @@ export function HomePage() {
     }, [finishDragging, getDraggedGroupId, getDraggedPreservedGroupIds, getDraggedTaskIds, getPrimaryDraggedTaskId, groups, minimizePomodoroTask,
         moveDraggedGroupToToday, moveDraggedOlderTasksToToday, persistTaskOrder, removeTasksFromGroup, visibleTasks]);
 
+    const handleEdgeDragOver = useCallback((event: React.DragEvent<HTMLElement>) => {
+        if (!hasActiveDrag()) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+        setDragTargetTaskId(null);
+        setDragTargetGroupId(null);
+        setDragTargetPosition(null);
+        const listBounds = event.currentTarget.parentElement?.getBoundingClientRect();
+        setDragEdge(listBounds && event.clientY >= listBounds.top + listBounds.height / 2 ? 'bottom' : 'top');
+    }, [hasActiveDrag]);
+
+    const handleDropAtEdge = useCallback((event: React.DragEvent<HTMLElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const listBounds = event.currentTarget.parentElement?.getBoundingClientRect();
+        if (listBounds && event.clientY < listBounds.top + listBounds.height / 2) {
+            handleDropAtTop();
+        } else {
+            handleDropAtBottom();
+        }
+    }, [handleDropAtBottom, handleDropAtTop]);
+
     function keepDragTargetInView(event: React.DragEvent<HTMLElement>) {
         if (!hasActiveDrag()) return;
 
@@ -2374,6 +2466,7 @@ export function HomePage() {
     }
 
     const handleTaskDragStart = useCallback((draggedTask: Task) => {
+        if (pendingDeletedTaskIdSet.has(draggedTask.taskId)) return;
         if (draggedTask.taskId === activePomodoroTaskIdRef.current) {
             clearFocusTransitionTimer();
             setActiveExpansion(null);
@@ -2399,13 +2492,14 @@ export function HomePage() {
         setDragTargetTaskId(null);
         setDragTargetGroupId(null);
         setDragTargetPosition(null);
-        setDragTargetTop(false);
-        setDragTargetBottom(false);
-    }, [clearFocusTransitionTimer, olderTaskIdSet, olderTasks, selectedActionTaskIdSet, selectedGroupIds, visibleTasks]);
+        setDragEdge(null);
+    }, [clearFocusTransitionTimer, olderTaskIdSet, olderTasks, pendingDeletedTaskIdSet,
+        selectedActionTaskIdSet, selectedGroupIds, visibleTasks]);
 
     const handleTaskDragOver = useCallback((dragTargetTask: Task, event: React.DragEvent<HTMLElement>) => {
         const currentDraggedTaskIds = getDraggedTaskIds();
         const activeGroupId = getDraggedGroupId();
+        setDragEdge(null);
         const containingGroup = groups?.find(group => group.taskIds.includes(dragTargetTask.taskId));
         if ((currentDraggedTaskIds.length > 0 && !currentDraggedTaskIds.includes(dragTargetTask.taskId)) || activeGroupId) {
             const addingToExpandedGroup = Boolean(
@@ -2419,8 +2513,6 @@ export function HomePage() {
                 setDragTargetTaskId(dragTargetTask.taskId);
                 setDragTargetGroupId(containingGroup!.groupId);
                 setDragTargetPosition(edge);
-                setDragTargetTop(false);
-                setDragTargetBottom(false);
                 return;
             }
 
@@ -2428,8 +2520,6 @@ export function HomePage() {
             setDragTargetTaskId(dragTargetTask.taskId);
             setDragTargetGroupId(null);
             setDragTargetPosition(edge);
-            setDragTargetTop(false);
-            setDragTargetBottom(false);
         }
     }, [getDraggedGroupId, getDraggedTaskIds, groups]);
 
@@ -2485,6 +2575,8 @@ export function HomePage() {
         const reorderable = options.reorderable ?? true;
         // content-visibility:auto can skip a transform-animated focus row and cause a one-frame repaint.
         const isFocusedPomodoroRow = focusedPomodoroTask?.taskId === task.taskId;
+        const rowDraggable = (options.draggable ?? reorderable)
+            && !pendingDeletedTaskIdSet.has(task.taskId);
         return (
             <Box
                 key={task.taskId}
@@ -2506,7 +2598,7 @@ export function HomePage() {
                     onContextMenu={handleTaskContextMenu}
                     showScheduledDate={options.showScheduledDate}
                     reorderable={reorderable}
-                    draggable={options.draggable ?? reorderable}
+                    draggable={rowDraggable}
                     onDragStart={handleTaskDragStart}
                     onDragOver={handleTaskDragOver}
                     onDrop={handleTaskDrop}
@@ -2539,7 +2631,8 @@ export function HomePage() {
             const collapsed = collapsedGroupIds.has(item.group.groupId);
             const groupDragging = draggedGroupId === item.group.groupId;
             const groupDragTarget = dragTargetGroupId === item.group.groupId;
-            const groupDraggable = options.draggable ?? reorderable;
+            const groupDraggable = (options.draggable ?? reorderable)
+                && !item.group.taskIds.some(taskId => pendingDeletedTaskIdSet.has(taskId));
             return (
                 <Box
                     key={item.group.groupId}
@@ -2610,12 +2703,12 @@ export function HomePage() {
                             setDragTargetGroupId(null);
                             setDragTargetTaskId(null);
                             setDragTargetPosition(null);
-                            setDragTargetTop(false);
-                            setDragTargetBottom(false);
+                            setDragEdge(null);
                         } : undefined}
                         onDragOver={reorderable ? (event) => {
                             event.preventDefault();
                             event.dataTransfer.dropEffect = 'move';
+                            setDragEdge(null);
                             const activeGroupId = getDraggedGroupId();
                             const activeTaskIds = getDraggedTaskIds();
                             if (activeGroupId !== item.group.groupId || activeTaskIds.length > 0) {
@@ -2623,8 +2716,7 @@ export function HomePage() {
                                 setDragTargetGroupId(item.group.groupId);
                                 setDragTargetTaskId(null);
                                 setDragTargetPosition(intent);
-                                setDragTargetTop(false);
-                                setDragTargetBottom(false);
+                                setDragEdge(null);
                             }
                         } : undefined}
                         onDrop={reorderable ? (event) => {
@@ -2783,6 +2875,7 @@ export function HomePage() {
                         <Box
                             data-task-group-content={item.group.groupId}
                             onDragOver={reorderable ? (event) => {
+                                setDragEdge(null);
                                 if (isDragOverTask(event) || getDraggedGroupId() || getDraggedTaskIds().length === 0) return;
 
                                 event.preventDefault();
@@ -2792,16 +2885,14 @@ export function HomePage() {
                                     setDragTargetGroupId(item.group.groupId);
                                     setDragTargetTaskId(placement.targetTaskId);
                                     setDragTargetPosition(placement.edge);
-                                    setDragTargetTop(false);
-                                    setDragTargetBottom(false);
+                                    setDragEdge(null);
                                     return;
                                 }
 
                                 setDragTargetGroupId(item.group.groupId);
                                 setDragTargetTaskId(null);
                                 setDragTargetPosition('inside');
-                                setDragTargetTop(false);
-                                setDragTargetBottom(false);
+                                setDragEdge(null);
                             } : undefined}
                             onDrop={reorderable ? (event) => {
                                 if (isDragOverTask(event) || getDraggedGroupId() || getDraggedTaskIds().length === 0) return;
@@ -2872,6 +2963,7 @@ export function HomePage() {
         || focusVisibility === 'fading'
         || focusVisibility === 'revealing'
         || focusVisibility === 'returning';
+    const dragInProgress = draggedTaskIds.length > 0 || draggedGroupId !== null;
 
     return (
         <PageWrapper>
@@ -3023,7 +3115,8 @@ export function HomePage() {
                                 </Box>
                             )}
 
-                            {focusedPomodoroTask && focusVisibility === 'hidden' && tasksBelowFocus.length > 0 && (
+                            {homeTaskControlsReady && focusedPomodoroTask && focusVisibility === 'hidden'
+                                && tasksBelowFocus.length > 0 && (
                                 <Button
                                     size="small"
                                     startIcon={<VisibilityIcon />}
@@ -3055,76 +3148,66 @@ export function HomePage() {
                                             ? 'opacity, transform'
                                             : 'auto',
                                         pointerEvents: focusVisibility === 'fading' ? 'none' : 'auto',
+                                        position: 'relative',
                                     }}
                                 >
-                                    <Box
-                                        aria-hidden="true"
-                                        onDragOver={(event) => {
-                                            if (!hasActiveDrag()) return;
-                                            event.preventDefault();
-                                            event.dataTransfer.dropEffect = 'move';
-                                            setDragTargetTop(true);
-                                            setDragTargetBottom(false);
-                                            setDragTargetTaskId(null);
-                                            setDragTargetGroupId(null);
-                                            setDragTargetPosition(null);
-                                        }}
-                                        onDrop={(event) => {
-                                            event.preventDefault();
-                                            event.stopPropagation();
-                                            handleDropAtTop();
-                                        }}
-                                        sx={{
-                                            position: 'relative',
-                                            height: 24,
-                                            '&::before': dragTargetTop ? {
-                                                content: '""',
-                                                position: 'absolute',
-                                                bottom: 6,
-                                                left: 10,
-                                                right: 10,
-                                                height: 2,
-                                                borderRadius: 2,
-                                                backgroundColor: 'primary.main',
-                                            } : undefined,
-                                        }}
-                                    />
-                                    <AnimatedTaskList
-                                        items={taskListItems}
-                                        renderItem={item => renderTaskList([item])}
-                                        onAnimatingChange={setHomeTaskListAnimating}
-                                        animateRemovals={focusVisibility !== 'fading'}
-                                    />
-                                    {(
+                                    {dragInProgress && (
                                         <Box
                                             aria-hidden="true"
-                                            onDragOver={(event) => {
-                                                if (!hasActiveDrag()) return;
-                                                event.preventDefault();
-                                                event.dataTransfer.dropEffect = 'move';
-                                                setDragTargetBottom(true);
-                                                setDragTargetTop(false);
-                                                setDragTargetTaskId(null);
-                                                setDragTargetGroupId(null);
-                                                setDragTargetPosition(null);
-                                            }}
-                                            onDrop={(event) => {
-                                                event.preventDefault();
-                                                event.stopPropagation();
-                                                handleDropAtBottom();
-                                            }}
+                                            onDragOver={handleEdgeDragOver}
+                                            onDrop={handleDropAtEdge}
                                             sx={{
-                                                position: 'relative',
-                                                height: 32,
-                                                '&::before': dragTargetBottom ? {
+                                                position: 'absolute',
+                                                top: -EDGE_DROP_ZONE_OUTSIDE_REACH,
+                                                left: 0,
+                                                right: 0,
+                                                height: EDGE_DROP_ZONE_OUTSIDE_REACH + EDGE_DROP_ZONE_LIST_OVERLAP,
+                                                zIndex: 1,
+                                                backgroundColor: 'transparent',
+                                                '&::before': dragEdge === 'top' ? {
                                                     content: '""',
                                                     position: 'absolute',
-                                                    top: 8,
+                                                    top: EDGE_DROP_ZONE_OUTSIDE_REACH,
                                                     left: 10,
                                                     right: 10,
                                                     height: 2,
                                                     borderRadius: 2,
                                                     backgroundColor: 'primary.main',
+                                                    zIndex: 2,
+                                                } : undefined,
+                                            }}
+                                        />
+                                    )}
+                                    <AnimatedTaskList
+                                        items={taskListItems}
+                                        renderItem={item => renderTaskList([item])}
+                                        onAnimatingChange={setHomeTaskListAnimating}
+                                        animateRemovals={focusVisibility !== 'fading'}
+                                        immediateRemovalTaskIds={pendingDeletedTaskIdSet}
+                                    />
+                                    {dragInProgress && (
+                                        <Box
+                                            aria-hidden="true"
+                                            onDragOver={handleEdgeDragOver}
+                                            onDrop={handleDropAtEdge}
+                                            sx={{
+                                                position: 'absolute',
+                                                bottom: -EDGE_DROP_ZONE_OUTSIDE_REACH,
+                                                left: 0,
+                                                right: 0,
+                                                height: EDGE_DROP_ZONE_OUTSIDE_REACH + EDGE_DROP_ZONE_LIST_OVERLAP,
+                                                zIndex: 1,
+                                                backgroundColor: 'transparent',
+                                                '&::before': dragEdge === 'bottom' ? {
+                                                    content: '""',
+                                                    position: 'absolute',
+                                                    bottom: EDGE_DROP_ZONE_OUTSIDE_REACH,
+                                                    left: 10,
+                                                    right: 10,
+                                                    height: 2,
+                                                    borderRadius: 2,
+                                                    backgroundColor: 'primary.main',
+                                                    zIndex: 2,
                                                 } : undefined,
                                             }}
                                         />
@@ -3140,11 +3223,10 @@ export function HomePage() {
                                 if (!hasActiveDrag()) return;
                                 event.preventDefault();
                                 event.dataTransfer.dropEffect = 'move';
-                                setDragTargetTop(true);
-                                setDragTargetBottom(false);
                                 setDragTargetTaskId(null);
                                 setDragTargetGroupId(null);
                                 setDragTargetPosition(null);
+                                setDragEdge(null);
                             }}
                             onDrop={(event) => {
                                 event.preventDefault();
@@ -3155,16 +3237,6 @@ export function HomePage() {
                                 position: 'relative',
                                 display: 'block',
                                 minHeight: 32,
-                                '&::before': dragTargetTop ? {
-                                    content: '""',
-                                    position: 'absolute',
-                                    bottom: 0,
-                                    left: 10,
-                                    right: 10,
-                                    height: 2,
-                                    borderRadius: 2,
-                                    backgroundColor: 'primary.main',
-                                } : undefined,
                             }}
                         >
                             Nothing scheduled for today.
@@ -3172,7 +3244,7 @@ export function HomePage() {
                     ) : null}
 
                     <Collapse
-                        in={homeContentReady && focusVisibility === 'all'
+                        in={homeTaskControlsReady && focusVisibility === 'all'
                             && showOlderTasks && olderTasks.length > 0}
                         timeout={{ enter: 260, exit: 220 }}
                         mountOnEnter
@@ -3204,13 +3276,14 @@ export function HomePage() {
                                         draggable: true,
                                         showScheduledDate: true,
                                     })}
+                                    immediateRemovalTaskIds={pendingDeletedTaskIdSet}
                                 />
                             </Box>
                         </Box>
                     </Collapse>
 
                     <Collapse
-                        in={homeContentReady && focusVisibility === 'all' && olderTasks.length > 0}
+                        in={homeTaskControlsReady && focusVisibility === 'all' && olderTasks.length > 0}
                         timeout={{ enter: 220, exit: 180 }}
                         mountOnEnter
                         unmountOnExit

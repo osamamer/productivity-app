@@ -110,7 +110,7 @@ export const TaskPageListRow = React.memo(function TaskPageListRow({
             onMouseDownCapture={event => {
                 const target = event.target;
                 dragAllowedRef.current = Boolean(draggable && !(target instanceof Element && target.closest(
-                    'input, textarea, button, [role="button"], .MuiButtonBase-root, [contenteditable="true"]',
+                    'input, textarea, button, [role="button"], .MuiButtonBase-root, [contenteditable="true"], [data-task-name="true"]',
                 )));
                 event.currentTarget.draggable = dragAllowedRef.current;
             }}
@@ -153,11 +153,6 @@ export const TaskPageListRow = React.memo(function TaskPageListRow({
                 />
                 <Box
                     data-task-text-area="true"
-                    onClick={event => {
-                        event.stopPropagation();
-                        selectTask(event);
-                        setEditing(true);
-                    }}
                     sx={{
                         flex: 1,
                         minWidth: 0,
@@ -172,24 +167,39 @@ export const TaskPageListRow = React.memo(function TaskPageListRow({
                         top: '-1px',
                     }}
                 >
-                    <Typography
+                    <Box
                         component="span"
+                        data-task-name="true"
+                        onClick={event => {
+                            event.stopPropagation();
+                            selectTask(event);
+                            setEditing(true);
+                        }}
                         sx={{
-                            display: 'block',
-                            width: '100%',
-                            pr: '32px',
+                            display: 'inline-block',
+                            width: 'max-content',
+                            maxWidth: 'calc(100% - 8px)',
+                            paddingRight: '32px',
                             boxSizing: 'border-box',
-                            fontSize: '1.05rem',
-                            lineHeight: 1.5,
-                            whiteSpace: 'pre-wrap',
-                            color: task.completed ? 'text.disabled' : 'text.primary',
-                            textDecoration: task.completed ? 'line-through' : 'none',
-                            visibility: editing ? 'hidden' : 'visible',
                             textAlign: 'left',
+                            cursor: 'text',
                         }}
                     >
-                        {editing ? localName : task.name}
-                    </Typography>
+                        <Typography
+                            component="span"
+                            sx={{
+                                fontSize: '1.05rem',
+                                lineHeight: 1.5,
+                                whiteSpace: 'pre-wrap',
+                                color: task.completed ? 'text.disabled' : 'text.primary',
+                                textDecoration: task.completed ? 'line-through' : 'none',
+                                visibility: editing ? 'hidden' : 'visible',
+                                textAlign: 'left',
+                            }}
+                        >
+                            {editing ? localName : task.name}
+                        </Typography>
+                    </Box>
                     {editing && (
                         <TextField
                             value={localName}

@@ -35,8 +35,8 @@ export function getBooleanChoiceColor(
     definition: StatDefinition,
     value: 0 | 1,
     status: StatEntryStatus = 'RECORDED',
-): 'primary' | 'secondary' | 'success' | 'error' | 'warning' {
-    if (status === 'NOT_PLANNED') return 'warning';
+): 'primary' | 'secondary' | 'success' | 'error' | 'notPlanned' {
+    if (status === 'NOT_PLANNED') return 'notPlanned';
     if (effectiveStatMorality(definition) === 'NEUTRAL') {
         return value === 1 ? 'primary' : 'secondary';
     }

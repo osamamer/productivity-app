@@ -30,6 +30,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -800,6 +801,41 @@ public class StatServiceTest {
     }
 
     @Test
+    void statRecurringTaskPriorityAppliesToAllOccurrences() {
+        StatDefinition definition = createNamedStatDefinition("Priority habit", StatType.BOOLEAN);
+        StatDefinition linked = statService.createRecurringTask(
+                definition.getId(), TEST_USER_ID, "UTC",
+                org.osama.task.recurrence.TaskRecurrenceFrequency.DAILY,
+                null, "08:30", 9);
+        String seriesId = linked.getRecurringTaskSeriesId();
+
+        assertTrue(taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(seriesId)
+                .stream().allMatch(task -> task.getImportance() == 9));
+
+        statService.updateRecurringTask(
+                definition.getId(), TEST_USER_ID, "UTC",
+                org.osama.task.recurrence.TaskRecurrenceFrequency.DAILY,
+                null, "08:30", 6);
+
+        assertEquals(6, taskSeriesRepository.findById(seriesId).orElseThrow().getImportance());
+        assertTrue(taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(seriesId)
+                .stream().allMatch(task -> task.getImportance() == 6));
+    }
+
+    @Test
+    void startingFocusCreatesScheduledLinkedTaskWithPriority() {
+        StatDefinition definition = createNamedStatDefinition("Writing", StatType.BOOLEAN);
+
+        Task task = statService.startFocusTask(definition.getId(), "Deep writing", 9, "UTC", TEST_USER_ID);
+
+        assertEquals("Deep writing", task.getName());
+        assertEquals(9, task.getImportance());
+        assertNotNull(task.getScheduledPerformDateTime());
+        assertEquals("Deep writing", definitionRepository.findById(definition.getId()).orElseThrow()
+                .getFocusTaskName());
+    }
+
+    @Test
     void linkedBooleanStatExposesFocusTimeForItsRecurringOccurrences() {
         StatDefinition definition = statService.createDefinition(
                 "Daily focus", null, StatType.BOOLEAN, null, null,
@@ -867,6 +903,32 @@ public class StatServiceTest {
 
         assertNull(unlinked.getFocusTaskName());
         assertTrue(statService.getFocusTime(unlinked.getId(), today.minusDays(1), today, TEST_USER_ID).isEmpty());
+    }
+
+    @Test
+    void focusTaskLinkSupportsMultipleTaskNamesAndRemovingOne() {
+        StatDefinition definition = createNamedStatDefinition("Deep work", StatType.BOOLEAN);
+        LocalDate today = LocalDate.now();
+        Task writingTask = createTask("Writing");
+        Task planningTask = createTask("Planning");
+
+        taskSessionRepository.save(session("writing-session", writingTask.getTaskId(), true, today, 25));
+        taskSessionRepository.save(session("planning-session", planningTask.getTaskId(), true, today, 15));
+
+        statService.linkFocusTask(definition.getId(), "writing", TEST_USER_ID);
+        StatDefinition linkedBoth = statService.linkFocusTask(definition.getId(), "Planning", TEST_USER_ID);
+
+        assertEquals(Set.of("Planning", "writing"), Set.copyOf(linkedBoth.getFocusTaskNames()));
+        assertEquals(Duration.ofMinutes(40).toSeconds(), statService.getFocusTime(
+                definition.getId(), today, today, TEST_USER_ID).getFirst().totalFocusSeconds());
+
+        StatDefinition linkedPlanningOnly = statService.unlinkFocusTask(
+                definition.getId(), "writing", TEST_USER_ID);
+
+        assertEquals(List.of("Planning"), linkedPlanningOnly.getFocusTaskNames());
+        assertEquals(Duration.ofMinutes(15).toSeconds(), statService.getFocusTime(
+                definition.getId(), today, today, TEST_USER_ID).getFirst().totalFocusSeconds());
+        assertEquals("Planning", linkedPlanningOnly.getFocusTaskName());
     }
 
     @Test

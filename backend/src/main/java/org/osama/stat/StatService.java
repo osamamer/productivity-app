@@ -22,6 +22,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +38,7 @@ import java.util.stream.Collectors;
 public class StatService {
 
     private final StatDefinitionRepository definitionRepository;
+    private final StatFocusTaskLinkRepository focusTaskLinkRepository;
     private final StatEntryRepository entryRepository;
     private final UserRepository userRepository;
     private final StatGroupService statGroupService;
@@ -45,6 +47,7 @@ public class StatService {
     private final TaskService taskService;
 
     public StatService(StatDefinitionRepository definitionRepository,
+                       StatFocusTaskLinkRepository focusTaskLinkRepository,
                        StatEntryRepository entryRepository,
                        UserRepository userRepository,
                        StatGroupService statGroupService,
@@ -52,6 +55,7 @@ public class StatService {
                        StatTaskLinkService statTaskLinkService,
                        TaskService taskService) {
         this.definitionRepository = definitionRepository;
+        this.focusTaskLinkRepository = focusTaskLinkRepository;
         this.entryRepository = entryRepository;
         this.userRepository = userRepository;
         this.statGroupService = statGroupService;
@@ -106,6 +110,21 @@ public class StatService {
                                            List<DayOfWeek> recurrenceDaysOfWeek,
                                            String requestedTimeOfDay,
                                            String userId) {
+        return createDefinition(name, description, type, minValue, maxValue, morality, goodThreshold,
+                createRecurringTask, recurrenceFrequency, recurrenceDaysOfWeek, requestedTimeOfDay,
+                null, userId);
+    }
+
+    @Transactional
+    public StatDefinition createDefinition(String name, String description, StatType type,
+                                           Double minValue, Double maxValue,
+                                           StatMorality morality, Double goodThreshold,
+                                           boolean createRecurringTask,
+                                           TaskRecurrenceFrequency recurrenceFrequency,
+                                           List<DayOfWeek> recurrenceDaysOfWeek,
+                                           String requestedTimeOfDay,
+                                           Integer recurringTaskImportance,
+                                           String userId) {
         User user = userRepository.findUserById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
 
@@ -115,7 +134,7 @@ public class StatService {
                 morality, goodThreshold, null, user);
         return createRecurringTask
                 ? createRecurringTask(definition.getId(), userId, null, recurrenceFrequency,
-                recurrenceDaysOfWeek, requestedTimeOfDay)
+                recurrenceDaysOfWeek, requestedTimeOfDay, recurringTaskImportance)
                 : definition;
     }
 
@@ -141,7 +160,7 @@ public class StatService {
         log.info("Stat definition updated: userId={} statDefinitionId={} name={} morality={} goodThreshold={}",
                 userId, savedDefinition.getId(), savedDefinition.getName(),
                 savedDefinition.getMorality(), savedDefinition.getGoodThreshold());
-        return savedDefinition;
+        return withFocusTaskNames(savedDefinition);
     }
 
     @Transactional
@@ -168,6 +187,27 @@ public class StatService {
                                               TaskRecurrenceFrequency recurrenceFrequency,
                                               List<DayOfWeek> recurrenceDaysOfWeek,
                                               String requestedTimeOfDay) {
+        return createRecurringTask(definitionId, userId, requestedTimeZone, recurrenceFrequency,
+                recurrenceDaysOfWeek, requestedTimeOfDay, null);
+    }
+
+    @Transactional
+    public StatDefinition createRecurringTask(String definitionId, String userId, String requestedTimeZone,
+                                              TaskRecurrenceFrequency recurrenceFrequency,
+                                              List<DayOfWeek> recurrenceDaysOfWeek,
+                                              String requestedTimeOfDay,
+                                              Integer requestedImportance) {
+        return createRecurringTask(definitionId, userId, requestedTimeZone, recurrenceFrequency,
+                recurrenceDaysOfWeek, requestedTimeOfDay, requestedImportance, null);
+    }
+
+    @Transactional
+    public StatDefinition createRecurringTask(String definitionId, String userId, String requestedTimeZone,
+                                              TaskRecurrenceFrequency recurrenceFrequency,
+                                              List<DayOfWeek> recurrenceDaysOfWeek,
+                                              String requestedTimeOfDay,
+                                              Integer requestedImportance,
+                                              String requestedTaskName) {
         StatDefinition definition = definitionRepository.findByIdAndUserId(definitionId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("No such stat."));
         if (definition.getType() != StatType.BOOLEAN) {
@@ -199,8 +239,11 @@ public class StatService {
                 start = start.plusDays(1);
             }
         }
+        String taskName = normalizeName(requestedTaskName);
+        if (taskName == null || taskName.isBlank()) taskName = definition.getName();
+        validateFocusTaskName(taskName);
         NewTaskRequest request = new NewTaskRequest();
-        request.setName(definition.getName());
+        request.setName(taskName);
         request.setScheduledPerformDateTime(start.toString());
         request.setRecurrenceFrequency(frequency);
         request.setRecurrenceDaysOfWeek(frequency == TaskRecurrenceFrequency.CUSTOM
@@ -210,14 +253,16 @@ public class StatService {
             request.setRecurrenceUnit(TaskRecurrenceUnit.WEEKS);
         }
         request.setTimeZone(timeZone.getId());
+        request.setImportance(resolveTaskImportance(requestedImportance));
 
         Task firstOccurrence = taskSeriesService.createSeries(request, userId);
         definition.setRecurringTaskSeriesId(firstOccurrence.getTaskSeriesId());
+        linkFocusTaskInternal(definition, taskName);
         StatDefinition savedDefinition = definitionRepository.save(definition);
         statTaskLinkService.synchronizeExistingEntries(savedDefinition, userId);
         log.info("Recurring task linked to boolean stat: userId={} statDefinitionId={} seriesId={}",
                 userId, savedDefinition.getId(), savedDefinition.getRecurringTaskSeriesId());
-        return savedDefinition;
+        return withFocusTaskNames(savedDefinition);
     }
 
     @Transactional(readOnly = true)
@@ -243,6 +288,16 @@ public class StatService {
                                               TaskRecurrenceFrequency recurrenceFrequency,
                                               List<DayOfWeek> recurrenceDaysOfWeek,
                                               String requestedTimeOfDay) {
+        return updateRecurringTask(definitionId, userId, requestedTimeZone, recurrenceFrequency,
+                recurrenceDaysOfWeek, requestedTimeOfDay, null);
+    }
+
+    @Transactional
+    public StatDefinition updateRecurringTask(String definitionId, String userId, String requestedTimeZone,
+                                              TaskRecurrenceFrequency recurrenceFrequency,
+                                              List<DayOfWeek> recurrenceDaysOfWeek,
+                                              String requestedTimeOfDay,
+                                              Integer requestedImportance) {
         StatDefinition definition = definitionRepository.findByIdAndUserId(definitionId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("No such stat."));
         if (definition.getType() != StatType.BOOLEAN || definition.getRecurringTaskSeriesId() == null) {
@@ -257,6 +312,9 @@ public class StatService {
         TaskSeriesUpdateRequest request = new TaskSeriesUpdateRequest();
         request.setRecurrenceFrequency(frequency);
         request.setTimeZone(requestedTimeZone);
+        if (requestedImportance != null) {
+            request.setImportance(resolveTaskImportance(requestedImportance));
+        }
         request.setStartDateTime(currentStart.toLocalDate().atTime(timeOfDay));
         request.setRecurrenceDaysOfWeek(frequency == TaskRecurrenceFrequency.CUSTOM
                 ? recurrenceDaysOfWeek : null);
@@ -271,7 +329,7 @@ public class StatService {
         statTaskLinkService.synchronizeExistingEntries(definition, userId);
         log.info("Recurring task schedule updated: userId={} statDefinitionId={} seriesId={} frequency={}",
                 userId, definitionId, definition.getRecurringTaskSeriesId(), frequency);
-        return definition;
+        return withFocusTaskNames(definition);
     }
 
     @Transactional
@@ -279,14 +337,14 @@ public class StatService {
         StatDefinition definition = definitionRepository.findByIdAndUserId(definitionId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("No such stat."));
         String seriesId = definition.getRecurringTaskSeriesId();
-        if (seriesId == null) return definition;
+        if (seriesId == null) return withFocusTaskNames(definition);
 
         taskService.deleteRecurringSeriesCompletely(seriesId, userId);
         definition.setRecurringTaskSeriesId(null);
         StatDefinition savedDefinition = definitionRepository.save(definition);
         log.info("Recurring task series deleted for boolean stat: userId={} statDefinitionId={} seriesId={}",
                 userId, definitionId, seriesId);
-        return savedDefinition;
+        return withFocusTaskNames(savedDefinition);
     }
 
     @Transactional
@@ -294,13 +352,13 @@ public class StatService {
         StatDefinition definition = definitionRepository.findByIdAndUserId(definitionId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("No such stat."));
         String seriesId = definition.getRecurringTaskSeriesId();
-        if (seriesId == null) return definition;
+        if (seriesId == null) return withFocusTaskNames(definition);
 
         definition.setRecurringTaskSeriesId(null);
         StatDefinition savedDefinition = definitionRepository.save(definition);
         log.info("Recurring task disconnected from boolean stat: userId={} statDefinitionId={} seriesId={}",
                 userId, savedDefinition.getId(), seriesId);
-        return savedDefinition;
+        return withFocusTaskNames(savedDefinition);
     }
 
     @Transactional
@@ -310,31 +368,82 @@ public class StatService {
         ensureUserStat(definition);
 
         String normalizedTaskName = normalizeName(taskName);
-        if (normalizedTaskName == null || normalizedTaskName.isBlank()) {
-            throw new IllegalArgumentException("A task name is required.");
-        }
-        if (normalizedTaskName.length() > 255) {
-            throw new IllegalArgumentException("The task name must be 255 characters or fewer.");
-        }
-
-        definition.setFocusTaskName(normalizedTaskName);
+        validateFocusTaskName(normalizedTaskName);
+        linkFocusTaskInternal(definition, normalizedTaskName);
         StatDefinition savedDefinition = definitionRepository.save(definition);
         log.info("Focus task linked to statistic: userId={} statDefinitionId={} taskName={}",
-                userId, savedDefinition.getId(), savedDefinition.getFocusTaskName());
-        return savedDefinition;
+                userId, savedDefinition.getId(), normalizedTaskName);
+        return withFocusTaskNames(savedDefinition);
     }
 
     @Transactional
-    public StatDefinition unlinkFocusTask(String definitionId, String userId) {
+    public Task startFocusTask(String definitionId, String requestedTaskName,
+                               Integer requestedImportance, String requestedTimeZone,
+                               String userId) {
         StatDefinition definition = definitionRepository.findByIdAndUserId(definitionId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("No such stat."));
         ensureUserStat(definition);
 
-        definition.setFocusTaskName(null);
+        String taskName = normalizeName(requestedTaskName == null || requestedTaskName.isBlank()
+                ? definition.getFocusTaskName() == null ? definition.getName() : definition.getFocusTaskName()
+                : requestedTaskName);
+        if (taskName == null || taskName.isBlank()) {
+            throw new IllegalArgumentException("A task name is required.");
+        }
+        if (taskName.length() > 255) {
+            throw new IllegalArgumentException("The task name must be 255 characters or fewer.");
+        }
+
+        ZoneId timeZone;
+        try {
+            timeZone = requestedTimeZone == null || requestedTimeZone.isBlank()
+                    ? ZoneId.systemDefault() : ZoneId.of(requestedTimeZone);
+        } catch (java.time.DateTimeException exception) {
+            throw new IllegalArgumentException("The task time zone is invalid.", exception);
+        }
+
+        NewTaskRequest request = new NewTaskRequest();
+        request.setName(taskName);
+        request.setDescription("");
+        request.setScheduledPerformDateTime(LocalDateTime.now(timeZone).withSecond(0).withNano(0).toString());
+        request.setImportance(resolveTaskImportance(requestedImportance));
+        request.setTimeZone(timeZone.getId());
+        Task task = taskService.createTask(request, userId);
+
+        linkFocusTaskInternal(definition, taskName);
+        definitionRepository.save(definition);
+        log.info("Focus task started from statistic: userId={} statDefinitionId={} taskId={} importance={}",
+                userId, definitionId, task.getTaskId(), task.getImportance());
+        return task;
+    }
+
+    @Transactional
+    public StatDefinition unlinkFocusTask(String definitionId, String userId) {
+        return unlinkFocusTask(definitionId, null, userId);
+    }
+
+    @Transactional
+    public StatDefinition unlinkFocusTask(String definitionId, String taskName, String userId) {
+        StatDefinition definition = definitionRepository.findByIdAndUserId(definitionId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("No such stat."));
+        ensureUserStat(definition);
+
+        String normalizedTaskName = normalizeName(taskName);
+        if (normalizedTaskName == null || normalizedTaskName.isBlank()) {
+            focusTaskLinkRepository.deleteAllByStatDefinitionId(definitionId);
+            definition.setFocusTaskName(null);
+        } else {
+            focusTaskLinkRepository.findByStatDefinitionIdAndTaskNameIgnoreCase(definitionId, normalizedTaskName)
+                    .ifPresent(focusTaskLinkRepository::delete);
+            if (normalizedTaskName.equalsIgnoreCase(definition.getFocusTaskName())) {
+                definition.setFocusTaskName(null);
+            }
+        }
+        refreshLegacyFocusTaskName(definition);
         StatDefinition savedDefinition = definitionRepository.save(definition);
-        log.info("Focus task unlinked from statistic: userId={} statDefinitionId={}",
-                userId, savedDefinition.getId());
-        return savedDefinition;
+        log.info("Focus task unlinked from statistic: userId={} statDefinitionId={} taskName={}",
+                userId, savedDefinition.getId(), normalizedTaskName);
+        return withFocusTaskNames(savedDefinition);
     }
 
     StatDefinition createSystemDefinition(SystemStatDefinition systemStat, User user) {
@@ -350,6 +459,51 @@ public class StatService {
 
     private String normalizeName(String name) {
         return name == null ? null : name.trim();
+    }
+
+    private void validateFocusTaskName(String taskName) {
+        if (taskName == null || taskName.isBlank()) {
+            throw new IllegalArgumentException("A task name is required.");
+        }
+        if (taskName.length() > 255) {
+            throw new IllegalArgumentException("The task name must be 255 characters or fewer.");
+        }
+    }
+
+    private void linkFocusTaskInternal(StatDefinition definition, String taskName) {
+        if (focusTaskLinkRepository.findByStatDefinitionIdAndTaskNameIgnoreCase(
+                definition.getId(), taskName).isEmpty()) {
+            StatFocusTaskLink link = new StatFocusTaskLink();
+            link.setStatDefinition(definition);
+            link.setTaskName(taskName);
+            focusTaskLinkRepository.save(link);
+        }
+        if (definition.getFocusTaskName() == null) definition.setFocusTaskName(taskName);
+    }
+
+    private void refreshLegacyFocusTaskName(StatDefinition definition) {
+        List<String> names = getFocusTaskNames(definition);
+        definition.setFocusTaskName(names.isEmpty() ? null : names.get(0));
+    }
+
+    private StatDefinition withFocusTaskNames(StatDefinition definition) {
+        List<String> names = getFocusTaskNames(definition);
+        definition.setFocusTaskNames(names);
+        if (!names.isEmpty()) definition.setFocusTaskName(names.get(0));
+        return definition;
+    }
+
+    private List<String> getFocusTaskNames(StatDefinition definition) {
+        List<String> names = new ArrayList<>();
+        if (definition.getFocusTaskName() != null && !definition.getFocusTaskName().isBlank()) {
+            names.add(definition.getFocusTaskName());
+        }
+        focusTaskLinkRepository.findAllByStatDefinitionIdOrderByTaskNameAsc(definition.getId())
+                .stream()
+                .map(StatFocusTaskLink::getTaskName)
+                .filter(taskName -> names.stream().noneMatch(existing -> existing.equalsIgnoreCase(taskName)))
+                .forEach(names::add);
+        return names;
     }
 
     private LocalTime resolveTimeOfDay(String requestedTimeOfDay, LocalTime fallback) {
@@ -442,6 +596,7 @@ public class StatService {
     public List<StatDefinition> getDefinitions(String userId) {
         return definitionRepository.findAllByUserIdOrderByDisplayOrderAsc(userId).stream()
                 .filter(this::isDailyStatDefinition)
+                .map(this::withFocusTaskNames)
                 .toList();
     }
 
@@ -500,6 +655,7 @@ public class StatService {
         return getDefinitions(userId);
     }
 
+    @Transactional
     public void deleteDefinition(String definitionId, String userId) {
         StatDefinition statDefinition = definitionRepository.findByIdAndUserId(definitionId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("No such stat."));
@@ -507,6 +663,7 @@ public class StatService {
             throw new IllegalArgumentException("Cannot delete a system stat.");
         }
         statGroupService.removeDefinitionFromGroups(definitionId, userId);
+        focusTaskLinkRepository.deleteAllByStatDefinitionId(definitionId);
         definitionRepository.delete(statDefinition);
         log.info("Stat definition deleted: userId={} statDefinitionId={} name={}",
                 userId, definitionId, statDefinition.getName());
@@ -666,11 +823,9 @@ public class StatService {
             taskService.getPomodoroFocusTimeForSeries(seriesId, from, to, userId)
                     .forEach((date, seconds) -> focusByDate.merge(date, seconds, Long::sum));
         }
-        if (definition.getFocusTaskName() != null) {
-            taskService.getPomodoroFocusTimeForTaskName(
-                            definition.getFocusTaskName(), from, to, userId, seriesId)
-                    .forEach((date, seconds) -> focusByDate.merge(date, seconds, Long::sum));
-        }
+        getFocusTaskNames(definition).forEach(taskName -> taskService.getPomodoroFocusTimeForTaskName(
+                        taskName, from, to, userId, seriesId)
+                .forEach((date, seconds) -> focusByDate.merge(date, seconds, Long::sum)));
 
         return focusByDate.entrySet().stream()
                 .map(entry -> new StatFocusTimeEntryResponse(entry.getKey(), entry.getValue()))
@@ -840,6 +995,14 @@ public class StatService {
         if (definition.getSystemKey() != null) {
             throw new IllegalArgumentException("Only user statistics can link task focus time.");
         }
+    }
+
+    private int resolveTaskImportance(Integer requestedImportance) {
+        int importance = requestedImportance == null ? 0 : requestedImportance;
+        if (importance < 0 || importance > 10) {
+            throw new IllegalArgumentException("Task priority must be between 0 and 10.");
+        }
+        return importance;
     }
 
     private void validateValue(StatDefinition statDefinition, Double value) {

@@ -414,6 +414,8 @@ export const statService = {
                 recurrenceFrequency: recurrence.recurrenceFrequency,
                 recurrenceDaysOfWeek: recurrence.recurrenceDaysOfWeek,
                 timeOfDay: recurrence.timeOfDay,
+                importance: recurrence.importance,
+                taskName: recurrence.taskName,
             }),
             headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getAuthHeaders() },
         });
@@ -439,6 +441,7 @@ export const statService = {
                 recurrenceFrequency: recurrence.recurrenceFrequency,
                 recurrenceDaysOfWeek: recurrence.recurrenceDaysOfWeek,
                 timeOfDay: recurrence.timeOfDay,
+                importance: recurrence.importance,
             }),
             headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getAuthHeaders() },
         });
@@ -482,9 +485,30 @@ export const statService = {
         return response.json();
     },
 
-    async unlinkFocusTask(definitionId: string): Promise<StatDefinition> {
+    async startFocusTask(
+        definitionId: string,
+        taskName: string,
+        importance: number,
+    ): Promise<import('../../types/Task').Task> {
+        const response = await fetch(`${STATS_URL}/definitions/${definitionId}/focus-task/start`, {
+            method: 'POST',
+            body: JSON.stringify({
+                taskName,
+                importance,
+                timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+            }),
+            headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getAuthHeaders() },
+        });
+        if (!response.ok) throw new Error('Failed to start focus task');
+        invalidateDefinitionsCache();
+        invalidateRecurringTaskResources();
+        return response.json();
+    },
+
+    async unlinkFocusTask(definitionId: string, taskName?: string): Promise<StatDefinition> {
         const response = await fetch(`${STATS_URL}/definitions/${definitionId}/focus-task`, {
             method: 'DELETE',
+            body: taskName ? JSON.stringify({ taskName }) : undefined,
             headers: getAuthHeaders(),
         });
         if (!response.ok) throw new Error('Failed to unlink task focus time');

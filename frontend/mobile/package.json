@@ -50,7 +50,7 @@
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
     "export:android": "expo export --platform android",
-    "build:android:production": "env EXPO_NO_DOTENV=1 NODE_ENV=production EXPO_PUBLIC_APP_ENV=production EXPO_PUBLIC_API_URL=https://claritard.com EXPO_PUBLIC_KEYCLOAK_URL=https://claritard.com/auth EXPO_PUBLIC_KEYCLOAK_REALM=productivity-app EXPO_PUBLIC_KEYCLOAK_CLIENT_ID=productivity-app-frontend sh -c './android/gradlew -p android :app:createBundleReleaseJsAndAssets :app:createReleaseUpdatesResources --rerun-tasks && ./android/gradlew -p android assembleRelease'"
+    "build:android:production": "env EXPO_NO_DOTENV=1 NODE_ENV=production EXPO_PUBLIC_APP_ENV=production EXPO_PUBLIC_API_URL=https://claritard.com EXPO_PUBLIC_KEYCLOAK_URL=https://claritard.com/auth EXPO_PUBLIC_KEYCLOAK_REALM=productivity-app EXPO_PUBLIC_KEYCLOAK_CLIENT_ID=productivity-app-frontend sh -c 'npx expo prebuild --platform android --no-install && ./android/gradlew -p android :app:createBundleReleaseJsAndAssets :app:createReleaseUpdatesResources --rerun-tasks && ./android/gradlew -p android assembleRelease'"
   },
   "private": true
 }

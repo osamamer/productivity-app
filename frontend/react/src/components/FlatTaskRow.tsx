@@ -252,6 +252,8 @@ function isEditableDragOrigin(target: EventTarget | null): boolean {
     const taskNameInput = target.closest('textarea[data-task-name-input="true"]');
     if (taskNameInput) return taskNameInput === document.activeElement;
 
+    if (target.closest('[data-task-name="true"]')) return true;
+
     if (target.closest('[data-subtask-text="true"]')) return true;
 
     return target.closest(
@@ -1225,11 +1227,6 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                 />
                     <Box
                         data-task-text-area="true"
-                        onClick={event => {
-                            event.stopPropagation();
-                            handleRowSelection(event);
-                            if (!readOnly) setIsEditingName(true);
-                        }}
                         sx={{
                         flex: 1,
                         minWidth: 0,
@@ -1248,9 +1245,16 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                 >
                     <Box
                         component="span"
+                        data-task-name="true"
+                        onClick={event => {
+                            event.stopPropagation();
+                            handleRowSelection(event);
+                            if (!readOnly) setIsEditingName(true);
+                        }}
                         sx={{
-                            display: 'block',
-                            width: '100%',
+                            display: 'inline-block',
+                            width: 'max-content',
+                            maxWidth: 'calc(100% - 8px)',
                             boxSizing: 'border-box',
                             paddingRight: TASK_NAME_TRAILING_SPACE,
                             textAlign: 'left',

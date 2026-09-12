@@ -6,6 +6,8 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.osama.user.User;
 
+import java.util.List;
+
 @Data
 @NoArgsConstructor
 @Entity
@@ -48,9 +50,12 @@ public class StatDefinition {
     @Column(name = "recurring_task_series_id", unique = true)
     private String recurringTaskSeriesId;
 
-    // Optional exact task-name filter used to include historical Pomodoro time.
+    // Legacy mirror of the first linked task name. New code uses focusTaskNames.
     @Column(name = "focus_task_name")
     private String focusTaskName;
+
+    @Transient
+    private List<String> focusTaskNames = List.of();
 
     @Column(name = "display_order", nullable = false)
     private Integer displayOrder;

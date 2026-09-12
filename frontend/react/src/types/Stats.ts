@@ -10,6 +10,8 @@ export type StatRecurringTaskDraft = {
     recurrenceFrequency: StatRecurrenceFrequency;
     recurrenceDaysOfWeek: StatRecurrenceDay[];
     timeOfDay: string;
+    importance: number;
+    taskName?: string;
 };
 
 export interface StatDefinition {
@@ -24,6 +26,7 @@ export interface StatDefinition {
     systemKey?: string;
     recurringTaskSeriesId?: string | null;
     focusTaskName?: string | null;
+    focusTaskNames?: string[];
     displayOrder: number;
     userId: string;
 }
@@ -55,6 +58,7 @@ export interface CreateDefinitionRequest {
     recurrenceFrequency?: StatRecurrenceFrequency;
     recurrenceDaysOfWeek?: StatRecurrenceDay[];
     timeOfDay?: string;
+    recurringTaskImportance?: number;
 }
 
 export interface UpdateDefinitionRequest {

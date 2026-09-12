@@ -219,7 +219,7 @@ export function StatEntrySheet({ definition, existing, onClose, onSaved, onRever
           }}
           options={[
             { value: 1, label: 'Yes', color: booleanChoiceColor(definition, 1, colors) },
-            { value: -2, label: 'Not planned', color: colors.warning },
+            { value: -2, label: 'Not planned', color: colors.notPlanned },
             { value: 0, label: 'No', color: booleanChoiceColor(definition, 0, colors) },
           ]}
         />

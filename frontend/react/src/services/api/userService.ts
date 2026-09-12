@@ -18,6 +18,8 @@ export interface UserPreferences {
 
 const USER_PREFERENCES_TTL_MS = 5 * 60 * 1000;
 const preferencesCache = new CachedResource<UserPreferences>({ ttlMs: USER_PREFERENCES_TTL_MS, maxEntries: 4 });
+const preferenceUpdateQueues = new Map<string, Promise<unknown>>();
+let preferenceCacheGeneration = 0;
 
 function preferencesCacheKey(): string {
     return `${getAuthCacheScope()}:preferences`;
@@ -95,19 +97,43 @@ export const userService = {
     },
 
     async getPreferences(): Promise<UserPreferences> {
-        return preferencesCache.get(preferencesCacheKey(), async () => {
+        const cacheKey = preferencesCacheKey();
+        const pendingUpdate = preferenceUpdateQueues.get(cacheKey);
+        if (pendingUpdate) await pendingUpdate.catch(() => undefined);
+
+        return preferencesCache.get(cacheKey, async () => {
             const response = await apiClient.get<UserPreferences>('/api/v1/users/me/preferences');
             return response.data;
         });
     },
 
     async updatePreferences(preferences: Partial<UserPreferences>): Promise<UserPreferences> {
-        const response = await apiClient.patch<UserPreferences>('/api/v1/users/me/preferences', preferences);
-        preferencesCache.set(preferencesCacheKey(), response.data);
-        return response.data;
+        const cacheKey = preferencesCacheKey();
+        const previousUpdate = preferenceUpdateQueues.get(cacheKey) ?? Promise.resolve();
+        const generation = preferenceCacheGeneration;
+        const request = previousUpdate
+            .catch(() => undefined)
+            .then(async () => {
+                const response = await apiClient.patch<UserPreferences>('/api/v1/users/me/preferences', preferences);
+                if (generation === preferenceCacheGeneration) {
+                    preferencesCache.set(cacheKey, response.data);
+                }
+                return response.data;
+            });
+
+        preferenceUpdateQueues.set(cacheKey, request);
+        try {
+            return await request;
+        } finally {
+            if (preferenceUpdateQueues.get(cacheKey) === request) {
+                preferenceUpdateQueues.delete(cacheKey);
+            }
+        }
     },
 
     clearPreferencesCache(): void {
+        preferenceCacheGeneration += 1;
         preferencesCache.clear();
+        preferenceUpdateQueues.clear();
     },
 };

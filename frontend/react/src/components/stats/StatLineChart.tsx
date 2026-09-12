@@ -831,7 +831,7 @@ export const StatLineChart = React.memo(function StatLineChart({
                                         </ToggleButton>
                                         <ToggleButton
                                             value="not-planned"
-                                            sx={{ '&.Mui-selected': { bgcolor: 'warning.main', color: 'warning.contrastText', '&:hover': { bgcolor: 'warning.dark' } } }}
+                                            sx={{ '&.Mui-selected': { bgcolor: 'notPlanned.main', color: 'notPlanned.contrastText', '&:hover': { bgcolor: 'notPlanned.dark' } } }}
                                         >
                                             Not planned
                                         </ToggleButton>

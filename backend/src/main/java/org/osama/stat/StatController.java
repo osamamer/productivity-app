@@ -1,6 +1,7 @@
 package org.osama.stat;
 
 import lombok.Data;
+import org.osama.task.Task;
 import org.osama.user.CurrentUserService;
 import org.osama.task.recurrence.TaskSeriesResponse;
 import org.osama.task.recurrence.TaskRecurrenceFrequency;
@@ -43,6 +44,7 @@ public class StatController {
                 request.recurrenceFrequency,
                 request.recurrenceDaysOfWeek,
                 request.timeOfDay,
+                request.recurringTaskImportance,
                 currentUserService.getCurrentUserId()
         );
     }
@@ -88,7 +90,9 @@ public class StatController {
                         ? org.osama.task.recurrence.TaskRecurrenceFrequency.DAILY
                         : request.recurrenceFrequency,
                 request == null ? null : request.recurrenceDaysOfWeek,
-                request == null ? null : request.timeOfDay
+                request == null ? null : request.timeOfDay,
+                request == null ? null : request.importance,
+                request == null ? null : request.taskName
         );
     }
 
@@ -107,7 +111,8 @@ public class StatController {
                 request == null || request.recurrenceFrequency == null
                         ? TaskRecurrenceFrequency.DAILY : request.recurrenceFrequency,
                 request == null ? null : request.recurrenceDaysOfWeek,
-                request == null ? null : request.timeOfDay
+                request == null ? null : request.timeOfDay,
+                request == null ? null : request.importance
         );
     }
 
@@ -123,9 +128,23 @@ public class StatController {
                 currentUserService.getCurrentUserId());
     }
 
+    @PostMapping("/definitions/{id}/focus-task/start")
+    public Task startFocusTask(@PathVariable String id,
+                               @RequestBody(required = false) StartFocusTaskRequest request) {
+        return statService.startFocusTask(
+                id,
+                request == null ? null : request.taskName,
+                request == null ? null : request.importance,
+                request == null ? null : request.timeZone,
+                currentUserService.getCurrentUserId()
+        );
+    }
+
     @DeleteMapping("/definitions/{id}/focus-task")
-    public StatDefinition unlinkFocusTask(@PathVariable String id) {
-        return statService.unlinkFocusTask(id, currentUserService.getCurrentUserId());
+    public StatDefinition unlinkFocusTask(@PathVariable String id,
+                                          @RequestBody(required = false) LinkFocusTaskRequest request) {
+        return statService.unlinkFocusTask(id, request == null ? null : request.taskName,
+                currentUserService.getCurrentUserId());
     }
 
     @DeleteMapping("/definitions/{id}/recurring-task/series")
@@ -212,6 +231,7 @@ public class StatController {
         org.osama.task.recurrence.TaskRecurrenceFrequency recurrenceFrequency;
         List<DayOfWeek> recurrenceDaysOfWeek;
         String timeOfDay;
+        Integer recurringTaskImportance;
     }
 
     @Data
@@ -242,10 +262,19 @@ public class StatController {
         org.osama.task.recurrence.TaskRecurrenceFrequency recurrenceFrequency;
         List<DayOfWeek> recurrenceDaysOfWeek;
         String timeOfDay;
+        Integer importance;
+        String taskName;
     }
 
     @Data
     public static class LinkFocusTaskRequest {
         String taskName;
+    }
+
+    @Data
+    public static class StartFocusTaskRequest {
+        String taskName;
+        Integer importance;
+        String timeZone;
     }
 }

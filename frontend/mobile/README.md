@@ -26,14 +26,14 @@ Android remote pushes require both the Firebase client configuration and the
 server credential used by Expo Push Service:
 
 1. Register Android package `org.osama.solife` in the Firebase project, download
-   its `google-services.json` into this directory. `app.config.ts` detects the
+   its `google-services.json` into this directory. `app.config.js` detects the
    file and adds it to the native Android configuration. For EAS builds, the
    `GOOGLE_SERVICES_JSON` file environment variable can provide it instead.
 2. Run `npx eas-cli@latest credentials` and upload the Firebase service-account
    key as the Android app's FCM V1 credential. Keep this private key out of the
    repository; it is not the same file as `google-services.json`.
-3. Run `npx expo prebuild --platform android`, then build and reinstall the
-   native Android app. An OTA JavaScript update cannot add Firebase's native
+3. Run `npm run build:android:production` and reinstall the native Android app.
+   The build runs Expo prebuild automatically. An OTA JavaScript update cannot add Firebase's native
    configuration.
 
 Without the client configuration, local notifications continue to work and the

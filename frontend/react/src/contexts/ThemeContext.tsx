@@ -25,11 +25,13 @@ declare module '@mui/material/styles' {
         low: Palette['primary'];
         medium: Palette['primary'];
         high: Palette['primary'];
+        notPlanned: Palette['primary'];
     }
     interface PaletteOptions {
         low?: PaletteOptions['primary'];
         medium?: PaletteOptions['primary'];
         high?: PaletteOptions['primary'];
+        notPlanned?: PaletteOptions['primary'];
     }
     interface PaletteColor {
         medium?: string;
@@ -98,6 +100,9 @@ export const AppThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => 
         const secondaryPalette = darkMode
             ? accentPalettes[accentColor].secondary.dark
             : accentPalettes[accentColor].secondary.light;
+        const notPlannedPalette = darkMode
+            ? { main: '#F1D477', light: '#F7E5A6', dark: '#C7AA45', contrastText: '#3C310F' }
+            : { main: '#E5C75A', light: '#F1DC91', dark: '#B59A34', contrastText: '#4A3B00' };
 
         const t = createTheme({
             typography: {
@@ -120,6 +125,7 @@ export const AppThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => 
                 low: createColor('#9FCAFA'),
                 medium: createColor('#FAEC66'),
                 high: createColor('#FF614B'),
+                notPlanned: notPlannedPalette,
                 background: {
                     default: '#1e2124',
                     paper: '#26292d',
@@ -145,6 +151,7 @@ export const AppThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => 
                 low: createColor('#9FCAFA'),
                 medium: createColor('#FAEC66'),
                 high: createColor('#FF614B'),
+                notPlanned: notPlannedPalette,
                 background: {
                     default: '#F7F6FB',
                     paper: '#FFFFFF',

@@ -16,6 +16,7 @@ export interface AppColors {
   secondary: string;
   accentSoft: string;
   onAccent: string;
+  notPlanned: string;
   success: string;
   successLight: string;
   successDark: string;
@@ -54,6 +55,7 @@ function palette(dark: boolean, accentColor: AccentColor): AppColors {
         secondary: accents[accentColor].secondary.dark,
         accentSoft: `${accent}26`,
         onAccent: '#111827',
+        notPlanned: '#F1D477',
         success: '#4ADE80',
         successLight: '#4ADE80',
         successDark: '#16A34A',
@@ -77,6 +79,7 @@ function palette(dark: boolean, accentColor: AccentColor): AppColors {
         secondary: accents[accentColor].secondary.light,
         accentSoft: `${accent}18`,
         onAccent: '#FFFFFF',
+        notPlanned: '#E5C75A',
         success: '#22C55E',
         successLight: '#4ADE80',
         successDark: '#16A34A',

@@ -271,7 +271,7 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
         ? booleanPeriodAverages(allDays, valueMap, statusMap, heatmapBucketDays)
         : [];
     const heatmapRows = splitHeatmapRows(heatmapBuckets, dateRange <= 90 ? 2 : 4);
-    const notPlannedColor = theme.palette.warning.main;
+    const notPlannedColor = theme.palette.notPlanned.main;
     const gridStyle = {
         display: 'grid',
         gridTemplateColumns: 'repeat(7, 1fr)',
@@ -578,7 +578,7 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
                                 value="not-planned"
                                 aria-label="Unplanned"
                                 title="Unplanned"
-                                sx={{ '&.Mui-selected': { bgcolor: 'transparent', color: 'warning.main' } }}
+                                sx={{ '&.Mui-selected': { bgcolor: 'transparent', color: 'notPlanned.main' } }}
                             >
                                 <RemoveCircleOutlineIcon />
                             </ToggleButton>

@@ -47,6 +47,30 @@ const mainTasksCache = new CachedResource<Task[]>({ ttlMs: TASK_CACHE_TTL_MS, ma
 const todayTasksCache = new CachedResource<Task[]>({ ttlMs: TASK_CACHE_TTL_MS, maxEntries: 4 });
 const taskPageInitialCache = new CachedResource<TaskPageInitialSnapshot>({ ttlMs: TASK_CACHE_TTL_MS, maxEntries: 4 });
 const taskPageBatchCache = new CachedResource<Task[]>({ ttlMs: TASK_CACHE_TTL_MS, maxEntries: 12 });
+// A Home deletion waits briefly for undo, and other callers can have older
+// requests in flight. Keep per-user tombstones outside response caches so
+// every task response is filtered until the deletion is undone or the user
+// leaves the session.
+const deletedTaskIdsByScope = new Map<string, Set<string>>();
+
+function deletedTaskIds(): Set<string> {
+    const scope = getAuthCacheScope();
+    const existing = deletedTaskIdsByScope.get(scope);
+    if (existing) return existing;
+
+    const created = new Set<string>();
+    deletedTaskIdsByScope.set(scope, created);
+    return created;
+}
+
+function filterDeletedTasks(tasks: Task[]): Task[] {
+    const deletedIds = deletedTaskIds();
+    return tasks.filter(task => !task.skipped && !deletedIds.has(task.taskId));
+}
+
+function isDeletedTask(taskId: string): boolean {
+    return deletedTaskIds().has(taskId);
+}
 
 function mainTasksCacheKey(): string {
     return `${getAuthCacheScope()}:main-tasks`;
@@ -72,7 +96,7 @@ function readPersistedMainTasks(): Task[] | undefined {
             window.sessionStorage.removeItem(mainTasksStorageKey());
             return undefined;
         }
-        return snapshot.tasks;
+        return filterDeletedTasks(snapshot.tasks);
     } catch (error) {
         console.warn('Could not read the cached task snapshot:', error);
         return undefined;
@@ -85,7 +109,7 @@ function persistMainTasks(tasks: Task[]): void {
     try {
         window.sessionStorage.setItem(mainTasksStorageKey(), JSON.stringify({
             savedAt: Date.now(),
-            tasks,
+            tasks: filterDeletedTasks(tasks),
         }));
     } catch (error) {
         console.warn('Could not persist the cached task snapshot:', error);
@@ -102,6 +126,13 @@ function invalidateTodayTasksCache(): void {
 
 function invalidateMainTasksCache(): void {
     mainTasksCache.invalidate(mainTasksCacheKey());
+    if (typeof window !== 'undefined') {
+        try {
+            window.sessionStorage.removeItem(mainTasksStorageKey());
+        } catch (error) {
+            console.warn('Could not invalidate the cached task snapshot:', error);
+        }
+    }
 }
 
 function invalidateTaskViewCaches(): void {
@@ -112,6 +143,30 @@ function invalidateTaskViewCaches(): void {
 function invalidateTaskListCaches(): void {
     invalidateMainTasksCache();
     invalidateTaskViewCaches();
+}
+
+function markTasksDeleted(taskIds: string[]): void {
+    if (taskIds.length === 0) return;
+
+    const deletedIds = deletedTaskIds();
+    taskIds.forEach(taskId => {
+        deletedIds.add(taskId);
+        invalidateTaskSubtasks(taskId);
+        invalidateTaskDetails(taskId);
+    });
+    invalidateTaskListCaches();
+}
+
+function restoreTasks(taskIds: string[]): void {
+    if (taskIds.length === 0) return;
+
+    const deletedIds = deletedTaskIds();
+    taskIds.forEach(taskId => {
+        deletedIds.delete(taskId);
+        invalidateTaskSubtasks(taskId);
+        invalidateTaskDetails(taskId);
+    });
+    invalidateTaskListCaches();
 }
 
 function invalidateTaskPageCache(): void {
@@ -145,8 +200,9 @@ function getMainTasksSnapshotForMutation(): Task[] | undefined {
 }
 
 function setMainTasksSnapshot(tasks: Task[]): void {
-    mainTasksCache.set(mainTasksCacheKey(), tasks, TASK_CACHE_TTL_MS);
-    persistMainTasks(tasks);
+    const visibleTasks = filterDeletedTasks(tasks);
+    mainTasksCache.set(mainTasksCacheKey(), visibleTasks, TASK_CACHE_TTL_MS);
+    persistMainTasks(visibleTasks);
 }
 
 function cacheMainTasks(tasks: Task[]): void {
@@ -202,9 +258,10 @@ async function fetchTaskPeriod(
         return response.json() as Promise<Task[]>;
     };
 
-    return limit === undefined
-        ? load()
-        : taskPageBatchCache.get(taskPageBatchCacheKey(period, limit, offset, completed), load);
+    const tasks = limit === undefined
+        ? await load()
+        : await taskPageBatchCache.get(taskPageBatchCacheKey(period, limit, offset, completed), load);
+    return filterDeletedTasks(tasks);
 }
 
 async function fetchUndatedTasks(completed?: boolean): Promise<Task[]> {
@@ -215,10 +272,19 @@ async function fetchUndatedTasks(completed?: boolean): Promise<Task[]> {
         headers: getAuthHeaders(),
     });
     if (!response.ok) throw new Error('Failed to fetch undated tasks');
-    return response.json() as Promise<Task[]>;
+    const tasks = await response.json() as Task[];
+    return filterDeletedTasks(tasks);
 }
 
 export const taskService = {
+
+    markTasksDeleted(taskIds: string[]): void {
+        markTasksDeleted(taskIds);
+    },
+
+    restoreTasks(taskIds: string[]): void {
+        restoreTasks(taskIds);
+    },
 
     // ============ Task Queries ============
 
@@ -226,7 +292,7 @@ export const taskService = {
         const key = mainTasksCacheKey();
         if (forceRefresh) mainTasksCache.invalidate(key);
 
-        return mainTasksCache.get(key, async () => {
+        const tasks = await mainTasksCache.get(key, async () => {
             const response = await fetch(`${TASK_URL}/main`, {
                 headers: getAuthHeaders(),
             });
@@ -237,14 +303,17 @@ export const taskService = {
             persistMainTasks(tasks);
             return tasks;
         });
+        return filterDeletedTasks(tasks);
     },
 
     getCachedMainTasks(): Task[] | undefined {
-        return mainTasksCache.getStale(mainTasksCacheKey()) ?? readPersistedMainTasks();
+        const tasks = mainTasksCache.getStale(mainTasksCacheKey()) ?? readPersistedMainTasks();
+        return tasks ? filterDeletedTasks(tasks) : undefined;
     },
 
     getCachedTodayTasks(): Task[] | undefined {
-        return todayTasksCache.getStale(todayTasksCacheKey());
+        const tasks = todayTasksCache.getStale(todayTasksCacheKey());
+        return tasks ? filterDeletedTasks(tasks) : undefined;
     },
 
     cacheMainTasks(tasks: Task[]): void {
@@ -256,7 +325,7 @@ export const taskService = {
         const key = todayTasksCacheKey();
         if (forceRefresh) todayTasksCache.invalidate(key);
 
-        return todayTasksCache.get(key, async () => {
+        const tasks = await todayTasksCache.get(key, async () => {
             const response = await fetch(`${TASK_URL}/today`, {
                 headers: getAuthHeaders(),
             });
@@ -265,6 +334,7 @@ export const taskService = {
             }
             return response.json() as Promise<Task[]>;
         });
+        return filterDeletedTasks(tasks);
     },
 
     async getTaskPageInitialSnapshot(
@@ -280,7 +350,7 @@ export const taskService = {
             taskPageBatchCache.clear();
         }
 
-        return taskPageInitialCache.get(cacheKey, async () => {
+        const snapshot = await taskPageInitialCache.get(cacheKey, async () => {
             const [today, future, past, undated] = await Promise.all([
                 this.getTodayTasks(),
                 fetchTaskPeriod('FUTURE', batchSize + 1, 0, completed),
@@ -298,6 +368,10 @@ export const taskService = {
                 hasMorePastTasks: past.length > batchSize,
             };
         });
+        return {
+            ...snapshot,
+            tasks: filterDeletedTasks(snapshot.tasks),
+        };
     },
 
     async reorderTasks(taskIds: string[]): Promise<Task[]> {
@@ -315,7 +389,7 @@ export const taskService = {
         const tasks = await response.json() as Task[];
         setMainTasksSnapshot(tasks);
         invalidateTaskViewCaches();
-        return tasks;
+        return filterDeletedTasks(tasks);
     },
 
     async getPastTasks(limit?: number, offset = 0, completed?: boolean): Promise<Task[]> {
@@ -333,11 +407,13 @@ export const taskService = {
         if (!response.ok) {
             throw new Error('Failed to fetch highest priority task');
         }
-        return response.json();
+        const task = await response.json() as Task;
+        if (isDeletedTask(task.taskId)) throw new Error('Failed to fetch highest priority task');
+        return task;
     },
 
     async getSubtasks(taskId: string): Promise<Task[]> {
-        return loadTaskSubtasks(taskId, async () => {
+        const subtasks = await loadTaskSubtasks(taskId, async () => {
             const response = await fetch(`${TASK_URL}/${taskId}/subtasks`, {
                 headers: getAuthHeaders(),
             });
@@ -346,19 +422,25 @@ export const taskService = {
             }
             return response.json() as Promise<Task[]>;
         });
+        return filterDeletedTasks(subtasks);
     },
 
     async getTaskDetails(task: Task) {
+        if (isDeletedTask(task.taskId)) throw new Error('Failed to fetch task details');
+
         const cached = getCachedTaskDetails(task.taskId);
         if (cached) {
             // The related fields are still warm, but keep the core task in
             // sync with the list that currently owns the row.
             if (cached.task !== task) {
-                const updated = { ...cached, task };
+                const updated = { ...cached, task, subtasks: filterDeletedTasks(cached.subtasks) };
                 setCachedTaskDetails(task.taskId, updated);
                 return updated;
             }
-            return cached;
+            return {
+                ...cached,
+                subtasks: filterDeletedTasks(cached.subtasks),
+            };
         }
 
         const details = await loadTaskDetails(task.taskId, async () => {
@@ -374,12 +456,14 @@ export const taskService = {
             return { task, subtasks, taskSeries };
         });
 
+        if (isDeletedTask(task.taskId)) throw new Error('Failed to fetch task details');
+
         if (details.task !== task) {
-            const updated = { ...details, task };
+            const updated = { ...details, task, subtasks: filterDeletedTasks(details.subtasks) };
             setCachedTaskDetails(task.taskId, updated);
             return updated;
         }
-        return details;
+        return { ...details, subtasks: filterDeletedTasks(details.subtasks) };
     },
 
     async getPomodoroStats(taskId: string, signal?: AbortSignal): Promise<TaskPomodoroStats> {
@@ -479,7 +563,9 @@ export const taskService = {
         if (!response.ok) {
             throw new Error('Failed to fetch task');
         }
-        return response.json();
+        const task = await response.json() as Task;
+        if (task.skipped || isDeletedTask(task.taskId)) throw new Error('Failed to fetch task');
+        return task;
     },
 
     async getTaskSeries(taskId: string, seriesId?: string | null): Promise<TaskSeries | null> {
@@ -562,29 +648,41 @@ export const taskService = {
     },
 
     async deleteTask(taskId: string, { notifyResource = true }: DeleteTaskOptions = {}): Promise<void> {
-        const response = await fetch(`${TASK_URL}/${taskId}`, {
-            method: 'DELETE',
-            headers: getAuthHeaders(),
-        });
-        if (!response.ok) {
-            throw new Error('Failed to delete task');
+        markTasksDeleted([taskId]);
+        try {
+            const response = await fetch(`${TASK_URL}/${taskId}`, {
+                method: 'DELETE',
+                headers: getAuthHeaders(),
+            });
+            if (!response.ok) {
+                throw new Error('Failed to delete task');
+            }
+            invalidateTaskPomodoroStats(taskId);
+            invalidateTaskListCaches();
+            if (notifyResource) invalidateResource('tasks');
+        } catch (error) {
+            restoreTasks([taskId]);
+            throw error;
         }
-        invalidateTaskPomodoroStats(taskId);
-        invalidateTaskListCaches();
-        if (notifyResource) invalidateResource('tasks');
     },
 
     async deleteTaskOccurrence(taskId: string, { notifyResource = true }: DeleteTaskOptions = {}): Promise<void> {
-        const response = await fetch(`${TASK_URL}/${taskId}/occurrence`, {
-            method: 'DELETE',
-            headers: getAuthHeaders(),
-        });
-        if (!response.ok) {
-            throw new Error('Failed to delete task occurrence');
+        markTasksDeleted([taskId]);
+        try {
+            const response = await fetch(`${TASK_URL}/${taskId}/occurrence`, {
+                method: 'DELETE',
+                headers: getAuthHeaders(),
+            });
+            if (!response.ok) {
+                throw new Error('Failed to delete task occurrence');
+            }
+            invalidateTaskPomodoroStats(taskId);
+            invalidateTaskListCaches();
+            if (notifyResource) invalidateResource('tasks');
+        } catch (error) {
+            restoreTasks([taskId]);
+            throw error;
         }
-        invalidateTaskPomodoroStats(taskId);
-        invalidateTaskListCaches();
-        if (notifyResource) invalidateResource('tasks');
     },
 
     async deleteTaskInstance(
@@ -600,6 +698,7 @@ export const taskService = {
 
     clearCache(): void {
         clearTaskDataCaches();
+        deletedTaskIdsByScope.delete(getAuthCacheScope());
     },
 
     // ============ Session Operations ============

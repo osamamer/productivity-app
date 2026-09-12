@@ -111,8 +111,12 @@ export function useTaskManager() {
     const [taskPageHasMoreFutureTasks, setTaskPageHasMoreFutureTasks] = useState(false);
     const [taskPageHasMorePastTasks, setTaskPageHasMorePastTasks] = useState(false);
     const [activeTaskLoadMode, setActiveTaskLoadMode] = useState<TaskLoadMode>('all');
+    const [allTasksSynchronized, setAllTasksSynchronized] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const taskRequestsRef = useRef(new Map<TaskLoadMode, Promise<void>>());
+    const taskRequestIdsRef = useRef(new Map<TaskLoadMode, number>());
+    const nextTaskRequestIdRef = useRef(0);
+    const taskDataGenerationRef = useRef(0);
     const allTasksLoadModeRef = useRef<TaskLoadMode>('all');
     const loadedTaskModeRef = useRef<TaskLoadMode>('all');
     const tasksLoadedRef = useRef(tasksLoaded);
@@ -139,8 +143,22 @@ export function useTaskManager() {
         const pendingRequest = taskRequestsRef.current.get(loadMode);
         if (pendingRequest) return pendingRequest;
 
+        // Cache invalidation cannot cancel a fetch already in progress. Track
+        // both the request and its data generation so late responses cannot
+        // replace a newer snapshot.
+        const requestId = ++nextTaskRequestIdRef.current;
+        const requestDataGeneration = taskDataGenerationRef.current;
+        taskRequestIdsRef.current.set(loadMode, requestId);
+        if (loadMode === 'all') setAllTasksSynchronized(false);
+        const isCurrentRequest = () => (
+            allTasksLoadModeRef.current === loadMode
+            && taskRequestIdsRef.current.get(loadMode) === requestId
+            && taskDataGenerationRef.current === requestDataGeneration
+        );
+
         const request = (async () => {
             const showLoading = !tasksLoadedRef.current;
+            let requestSucceeded = false;
             try {
                 if (showLoading) setLoading(true);
                 setError(null);
@@ -156,7 +174,7 @@ export function useTaskManager() {
                     : null;
                 const tasks = taskPageSnapshot?.tasks ?? await taskService.getAllMainTasks(force);
 
-                if (allTasksLoadModeRef.current !== loadMode) return;
+                if (!isCurrentRequest()) return;
 
                 const snapshotChanged = loadedTaskModeRef.current !== loadMode
                     || loadedTaskSnapshotRef.current !== tasks;
@@ -180,16 +198,18 @@ export function useTaskManager() {
                     });
                     setTaskLoadVersion(previous => previous + 1);
                 }
+                requestSucceeded = true;
             } catch (err) {
-                if (allTasksLoadModeRef.current === loadMode) {
+                if (isCurrentRequest()) {
                     setError(err instanceof Error ? err.message : 'Failed to fetch tasks');
                 }
                 console.error('Error fetching all tasks:', err);
             } finally {
-                if (allTasksLoadModeRef.current === loadMode) {
+                if (isCurrentRequest()) {
                     if (showLoading) setLoading(false);
                     tasksLoadedRef.current = true;
                     setTasksLoaded(true);
+                    if (loadMode === 'all' && requestSucceeded) setAllTasksSynchronized(true);
                 }
             }
         })();
@@ -205,8 +225,10 @@ export function useTaskManager() {
     }, []);
 
     const fetchTodayTasks = useCallback(async () => {
+        const requestDataGeneration = taskDataGenerationRef.current;
         try {
             const tasks = await taskService.getTodayTasks();
+            if (taskDataGenerationRef.current !== requestDataGeneration) return;
             setTaskState(prev => {
                 // Home can render this smaller snapshot while the complete
                 // task list is still being reconciled in the background.
@@ -249,17 +271,28 @@ export function useTaskManager() {
         await fetchAllTasks(force, loadMode);
     }, [fetchAllTasks]);
 
+    const invalidatePendingTaskLoads = useCallback(() => {
+        // Start a fresh request after invalidation instead of waiting for an
+        // older promise whose response may have been captured before a delete.
+        taskDataGenerationRef.current += 1;
+        taskRequestsRef.current.clear();
+        taskRequestIdsRef.current.clear();
+        setAllTasksSynchronized(false);
+    }, []);
+
     useEffect(() => subscribeToResourceInvalidation('stats', () => {
+        invalidatePendingTaskLoads();
         void refreshTaskBuckets(false, allTasksLoadModeRef.current);
-    }), [refreshTaskBuckets]);
+    }), [invalidatePendingTaskLoads, refreshTaskBuckets]);
 
     useEffect(() => subscribeToResourceInvalidation('tasks', () => {
         // Mutations invalidate the task-service cache before emitting this
         // signal. Session/stat events may emit the same signal without
         // changing task rows, so let the shared cache decide whether a GET is
         // needed instead of forcing one for every event.
+        invalidatePendingTaskLoads();
         void refreshTaskBuckets(false, allTasksLoadModeRef.current);
-    }), [refreshTaskBuckets]);
+    }), [invalidatePendingTaskLoads, refreshTaskBuckets]);
 
     useEffect(() => {
         let timeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -401,6 +434,7 @@ export function useTaskManager() {
         taskPageHasMoreFutureTasks,
         taskPageHasMorePastTasks,
         activeTaskLoadMode,
+        allTasksSynchronized,
         error,
         // Setters
         setHighlightedTask,
@@ -432,6 +466,7 @@ export function useTaskManager() {
         taskPageHasMoreFutureTasks,
         taskPageHasMorePastTasks,
         activeTaskLoadMode,
+        allTasksSynchronized,
         error,
         setHighlightedTask,
         fetchAllTasks,

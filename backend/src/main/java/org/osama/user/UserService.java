@@ -182,7 +182,7 @@ public class UserService {
             throw new IllegalArgumentException("At least one user preference is required.");
         }
 
-        User user = userRepository.findUserById(userId)
+        User user = userRepository.findUserByIdForUpdate(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
         boolean numericPreferenceChanged = includeUnloggedNumericDaysAsZero != null
                 && !Objects.equals(user.getIncludeUnloggedNumericDaysAsZero(), includeUnloggedNumericDaysAsZero);

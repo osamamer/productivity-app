@@ -104,7 +104,7 @@ class TaskSeriesServiceTest {
     }
 
     @Test
-    void deletingAnOccurrenceDeletesTheWholeSeries() {
+    void deletingARecurringTaskPermanentlyDeletesTheWholeSeries() {
         LocalDateTime start = LocalDateTime.now().plusDays(1).withSecond(0).withNano(0);
         NewTaskRequest request = request(start);
         request.setRecurrenceFrequency(TaskRecurrenceFrequency.DAILY);
@@ -112,14 +112,18 @@ class TaskSeriesServiceTest {
 
         Task first = taskSeriesService.createSeries(request, USER_ID);
         Task second = taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(first.getTaskSeriesId()).get(1);
+        List<String> occurrenceIds = taskRepository
+                .findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(first.getTaskSeriesId())
+                .stream()
+                .map(Task::getTaskId)
+                .toList();
 
         taskService.deleteTask(second.getTaskId(), USER_ID);
         taskSeriesService.expandActiveSeries();
 
-        assertTrue(taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(first.getTaskSeriesId())
-                .stream()
-                .allMatch(task -> task.isSkipped() && task.getSkipReason() == TaskSkipReason.USER));
-        assertFalse(seriesRepository.findBySeriesIdAndUserId(first.getTaskSeriesId(), USER_ID).orElseThrow().isActive());
+        assertTrue(occurrenceIds.stream().noneMatch(taskId -> taskRepository.findTaskByTaskId(taskId).isPresent()));
+        assertTrue(taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(first.getTaskSeriesId()).isEmpty());
+        assertTrue(seriesRepository.findBySeriesIdAndUserId(first.getTaskSeriesId(), USER_ID).isEmpty());
         assertEquals(0, taskService.getAllMainTasks(USER_ID).stream()
                 .filter(task -> first.getTaskSeriesId().equals(task.getTaskSeriesId())).count());
     }
@@ -194,6 +198,28 @@ class TaskSeriesServiceTest {
         assertTrue(second.isSkipped());
         assertEquals(4, taskService.getAllMainTasks(USER_ID).stream()
                 .filter(task -> first.getTaskSeriesId().equals(task.getTaskSeriesId())).count());
+    }
+
+    @Test
+    void updatingSeriesPriorityChangesEveryMaterializedOccurrence() {
+        LocalDateTime start = LocalDateTime.now().plusDays(1).withSecond(0).withNano(0);
+        NewTaskRequest request = request(start);
+        request.setImportance(3);
+        request.setRecurrenceFrequency(TaskRecurrenceFrequency.DAILY);
+        request.setRecurrenceEndDate(start.toLocalDate().plusDays(2));
+
+        Task first = taskSeriesService.createSeries(request, USER_ID);
+        TaskSeriesUpdateRequest update = new TaskSeriesUpdateRequest();
+        update.setRecurrenceFrequency(TaskRecurrenceFrequency.DAILY);
+        update.setRecurrenceEndDate(start.toLocalDate().plusDays(2));
+        update.setTimeZone("UTC");
+        update.setImportance(9);
+
+        TaskSeriesResponse updated = taskSeriesService.updateSeries(first.getTaskSeriesId(), update, USER_ID);
+
+        assertEquals(9, updated.importance());
+        assertTrue(taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(first.getTaskSeriesId())
+                .stream().allMatch(task -> task.getImportance() == 9));
     }
 
     private NewTaskRequest request(LocalDateTime start) {
