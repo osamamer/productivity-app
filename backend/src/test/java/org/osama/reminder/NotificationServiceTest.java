@@ -161,6 +161,32 @@ class NotificationServiceTest {
     }
 
     @Test
+    void acknowledgingARecurringCalendarReminderUsesTheMovedOccurrenceTime() {
+        CalendarEventRequest request = new CalendarEventRequest();
+        request.setTitle("Weekly planning");
+        request.setStartTime(Instant.parse("2027-01-10T10:00:00Z"));
+        request.setEndTime(Instant.parse("2027-01-10T11:00:00Z"));
+        request.setTimeZone("Asia/Amman");
+        request.setRecurrenceFrequency(RecurrenceFrequency.WEEKLY);
+        request.setRecurrenceEndDate(LocalDate.of(2027, 2, 28));
+
+        var event = calendarEventService.createEvent(request, USER_ID);
+        CalendarEventOccurrenceRequest move = new CalendarEventOccurrenceRequest();
+        move.setOccurrenceKey("instant:2027-01-17T10:00:00Z");
+        move.setStartTime(Instant.parse("2027-01-19T10:00:00Z"));
+        move.setEndTime(Instant.parse("2027-01-19T11:00:00Z"));
+        calendarEventService.moveEventOccurrence(event.id(), move, USER_ID);
+
+        var reminder = reminderRepository.findByEventId(event.id()).orElseThrow();
+        notificationService.acknowledge(reminder.getReminderId(), USER_ID);
+
+        Reminder nextReminder = reminderRepository.findByEventId(event.id()).orElseThrow();
+        assertEquals(Instant.parse("2027-01-17T10:00:00Z"), nextReminder.getEventOccurrenceStart());
+        assertEquals(Instant.parse("2027-01-19T10:00:00Z").minusSeconds(24 * 60 * 60),
+                nextReminder.getDateTime());
+    }
+
+    @Test
     void acknowledgingACustomCalendarReminderUsesItsIntervalAndUnit() {
         CalendarEventRequest request = new CalendarEventRequest();
         request.setTitle("Biweekly planning");

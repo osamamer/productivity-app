@@ -12,6 +12,10 @@ type Props = {
     targetPage: string;
     activePaths?: string[];
     expanded?: boolean;
+    activeIndicator?: {
+        color: string;
+        label: string;
+    };
     onNavigate?: (targetPage: string) => void;
 };
 
@@ -21,11 +25,13 @@ export function SideMenuButton({
     targetPage,
     activePaths = [targetPage],
     expanded = false,
+    activeIndicator,
     onNavigate,
 }: Props) {
     const navigate = useNavigate();
     const location = useLocation();
     const isActive = activePaths.includes(location.pathname);
+    const accessibleLabel = activeIndicator ? `${text} · Pomodoro ${activeIndicator.label.toLowerCase()}` : text;
 
     return (
         <ListItemButton
@@ -39,8 +45,8 @@ export function SideMenuButton({
                     navigate(targetPage);
                 }
             }}
-            title={text}
-            aria-label={text}
+            title={accessibleLabel}
+            aria-label={accessibleLabel}
             sx={{
                 minHeight: 46,
                 alignItems: 'center',
@@ -64,6 +70,7 @@ export function SideMenuButton({
                 justifyContent: 'center',
                 alignItems: 'center',
                 color: isActive ? 'primary.main' : 'inherit',
+                position: 'relative',
                 '& svg': {
                     transition: 'transform 0.16s ease',
                 },
@@ -72,23 +79,51 @@ export function SideMenuButton({
                 },
             }}>
                 <Icon sx={{ fontSize: 20 }} />
+                {activeIndicator && (
+                    <Box
+                        aria-hidden="true"
+                        sx={{
+                            position: 'absolute',
+                            top: 8,
+                            right: 14,
+                            width: 7,
+                            height: 7,
+                            borderRadius: '50%',
+                            backgroundColor: activeIndicator.color,
+                            boxShadow: theme => `0 0 0 2px ${theme.palette.background.paper}`,
+                        }}
+                    />
+                )}
             </Box>
-            <Typography
-                noWrap
-                variant="body2"
-                sx={{
-                    minWidth: 0,
-                    flex: 1,
-                    textAlign: 'left',
-                    fontWeight: isActive ? 600 : 400,
-                    color: isActive ? 'primary.main' : 'text.primary',
-                    opacity: expanded ? 1 : 0,
-                    visibility: expanded ? 'visible' : 'hidden',
-                    transition: 'opacity 0.18s ease',
-                }}
-            >
-                {text}
-            </Typography>
+            <Box sx={{
+                minWidth: 0,
+                flex: 1,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 0.75,
+                opacity: expanded ? 1 : 0,
+                visibility: expanded ? 'visible' : 'hidden',
+                transition: 'opacity 0.18s ease',
+            }}>
+                <Typography
+                    noWrap
+                    variant="body2"
+                    sx={{
+                        minWidth: 0,
+                        flex: 1,
+                        textAlign: 'left',
+                        fontWeight: isActive ? 600 : 400,
+                        color: isActive ? 'primary.main' : 'text.primary',
+                    }}
+                >
+                    {text}
+                </Typography>
+                {activeIndicator && (
+                    <Typography variant="caption" sx={{ color: activeIndicator.color, mr: 1.5, fontWeight: 600 }}>
+                        {activeIndicator.label}
+                    </Typography>
+                )}
+            </Box>
         </ListItemButton>
     );
 }

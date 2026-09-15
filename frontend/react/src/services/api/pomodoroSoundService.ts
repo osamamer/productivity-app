@@ -8,6 +8,7 @@ export const BUILT_IN_POMODORO_SOUND = {
     fileSize: 0,
     builtIn: true,
 } as const;
+export const MAX_POMODORO_SOUND_SIZE_BYTES = 25 * 1024 * 1024;
 
 export interface PomodoroSound {
     id: string;
@@ -30,12 +31,20 @@ export async function getPomodoroSounds(): Promise<PomodoroSound[]> {
     return response.data;
 }
 
-export async function uploadPomodoroSound(file: File): Promise<PomodoroSound> {
+export async function uploadPomodoroSound(file: File, onProgress?: (percent: number | null) => void): Promise<PomodoroSound> {
     const formData = new FormData();
     formData.append('file', file);
     const response = await apiClient.post<PomodoroSound>('/api/v1/users/me/pomodoro-sounds', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+        // Remove the JSON default so the browser can add multipart/form-data with its boundary.
+        headers: { 'Content-Type': null },
+        onUploadProgress: progressEvent => {
+            const total = progressEvent.total;
+            onProgress?.(total ? Math.min(99, Math.round((progressEvent.loaded / total) * 100)) : 0);
+        },
     });
+    onProgress?.(100);
+    // The selected sound can start immediately without downloading the same MP3 again.
+    audioUrlCache.set(response.data.id, URL.createObjectURL(file));
     return response.data;
 }
 
@@ -62,7 +71,7 @@ export async function getPomodoroSoundAudioUrl(sound: PomodoroSound): Promise<st
     return url;
 }
 
-export async function loadSelectedPomodoroSound(): Promise<{ id: string; url: string }> {
+export async function loadSelectedPomodoroSound(): Promise<{ id: string; name: string; url: string }> {
     const [preferences, uploadedSounds] = await Promise.all([
         userService.getPreferences(),
         getPomodoroSounds(),
@@ -72,6 +81,7 @@ export async function loadSelectedPomodoroSound(): Promise<{ id: string; url: st
         .find(sound => sound.id === selectedId) ?? BUILT_IN_POMODORO_SOUND;
     return {
         id: selectedSound.id,
+        name: selectedSound.name,
         url: await getPomodoroSoundAudioUrl(selectedSound),
     };
 }

@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Client } from '@stomp/stompjs';
-import keycloak from '../../services/keycloak';
 import {
     Box,
     Button,
@@ -14,6 +13,7 @@ import {
     Snackbar,
     Tooltip,
     useTheme,
+    alpha,
 } from '@mui/material';
 import { HoverCardBox } from '../box/HoverCardBox.tsx';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
@@ -22,8 +22,6 @@ import StopIcon from '@mui/icons-material/Stop';
 import TimerIcon from '@mui/icons-material/Timer';
 import FreeBreakfastIcon from '@mui/icons-material/FreeBreakfast';
 import SkipNextIcon from '@mui/icons-material/SkipNext';
-import VolumeOffIcon from '@mui/icons-material/VolumeOff';
-import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { taskService } from '../../services/api';
 import { requestSystemNotificationPermission } from '../../services/systemNotifications';
@@ -40,36 +38,22 @@ import {
 } from '../../services/api/pomodoroConfigService';
 import { GENERIC_ERROR_MESSAGE } from '../../services/utils/userMessages';
 import { PomodoroNumberField } from './PomodoroNumberField';
-import {
-    isWhiteNoiseEnabled,
-    setWhiteNoiseEnabled,
-    startWhiteNoise,
-    stopWhiteNoise,
-} from '../../services/whiteNoise';
+import { createAuthenticatedStompClient } from '../../services/authenticatedStompClient';
+import { usePomodoro } from '../../hooks/usePomodoro';
+import { PomodoroStatus } from '../../types/PomodoroStatus';
+import { WhiteNoiseControl } from './WhiteNoiseControl';
 
 interface Task {
     taskId: string;
     name: string;
 }
 
-interface Pomodoro {
-    taskId: string;
-    taskName: string;
-    active: boolean;
-    sessionActive: boolean;
-    sessionRunning: boolean;
-    secondsPassedInSession: number;
-    secondsUntilNextTransition: number;
-    currentFocusNumber: number;
-    numFocuses: number;
-    phase?: 'FOCUS' | 'BREAK' | 'WAITING_FOR_BREAK' | 'WAITING_FOR_FOCUS';
-}
-
 interface Props {
     task?: Task | null;
 }
 
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8080/ws';
+const WS_URL = import.meta.env.VITE_WS_URL
+    || `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`;
 
 const SlideFromRight = React.forwardRef<HTMLDivElement, React.ComponentProps<typeof Slide>>(
     (props, ref) => <Slide {...props} ref={ref} direction="left" />,
@@ -82,14 +66,28 @@ export function CustomTimer({ task }: Props) {
     const theme = useTheme();
     const pomodoroGreen = theme.palette.mode === 'dark' ? '#9BC5A3' : '#7EA88A';
     const pomodoroGreenForeground = theme.palette.mode === 'dark' ? '#111827' : '#1A1A2E';
-    const [status, setStatus] = useState<Pomodoro | null>(null);
+    const {
+        activePomodoro,
+        refreshActivePomodoro,
+        publishPomodoroStatus,
+    } = usePomodoro();
+    const [status, setStatus] = useState<PomodoroStatus | null>(() => (
+        activePomodoro?.associatedTaskId === task?.taskId ? activePomodoro : null
+    ));
     const [pomodoroConfig, setPomodoroConfig] = useState<PomodoroConfig>(NORMAL_POMODORO_CONFIG);
     const [isConnected, setIsConnected] = useState(false);
     const [pomodoroFeedback, setPomodoroFeedback] = useState<PomodoroFeedback | null>(null);
     const [isLoading, setIsLoading] = useState(false);
-    const [whiteNoiseEnabled, setWhiteNoiseEnabledState] = useState(isWhiteNoiseEnabled);
     const stompClientRef = useRef<Client | null>(null);
     const pomodoroFeedbackIdRef = useRef(0);
+
+    useEffect(() => {
+        if (activePomodoro?.active && activePomodoro.associatedTaskId === task?.taskId) {
+            setStatus(activePomodoro);
+        } else if (!activePomodoro) {
+            setStatus(previous => previous?.active ? null : previous);
+        }
+    }, [activePomodoro, task?.taskId]);
 
     const showPomodoroError = useCallback(() => {
         pomodoroFeedbackIdRef.current += 1;
@@ -116,12 +114,6 @@ export function CustomTimer({ task }: Props) {
     const playPauseLabel = waitingForPhase
         ? status?.phase === 'WAITING_FOR_BREAK' ? 'Start break' : 'Start focus session'
         : status?.sessionRunning ? 'Pause focus session' : 'Resume focus session';
-
-    useEffect(() => {
-        const focusRunning = Boolean(status?.active && status.sessionActive && status.sessionRunning && !isBreakPhase);
-        if (focusRunning && whiteNoiseEnabled) void startWhiteNoise();
-        else stopWhiteNoise();
-    }, [isBreakPhase, status?.active, status?.sessionActive, status?.sessionRunning, whiteNoiseEnabled]);
 
     useEffect(() => {
         let cancelled = false;
@@ -158,6 +150,9 @@ export function CustomTimer({ task }: Props) {
             } else {
                 await taskService.unpauseSession(task.taskId);
             }
+            void refreshActivePomodoro(true).catch(error => {
+                console.error('Could not refresh the Pomodoro after changing its phase:', error);
+            });
         } catch (error) {
             console.error('Error toggling play/pause:', error);
             showPomodoroError();
@@ -172,7 +167,7 @@ export function CustomTimer({ task }: Props) {
         setIsLoading(true);
         try {
             await taskService.endPomodoro(task.taskId);
-            stopWhiteNoise();
+            await refreshActivePomodoro(true);
             setStatus(null);
         } catch (error) {
             console.error('Error ending session:', error);
@@ -188,6 +183,9 @@ export function CustomTimer({ task }: Props) {
         setIsLoading(true);
         try {
             await taskService.finishPomodoroBreak(task.taskId);
+            void refreshActivePomodoro(true).catch(error => {
+                console.error('Could not refresh the Pomodoro after ending its break:', error);
+            });
         } catch (error) {
             console.error('Error ending Pomodoro break:', error);
             showPomodoroError();
@@ -209,7 +207,8 @@ export function CustomTimer({ task }: Props) {
         try {
             return client.subscribe(destination, (message) => {
                 try {
-                    const newStatus: Pomodoro = JSON.parse(message.body);
+                    const newStatus: PomodoroStatus = JSON.parse(message.body);
+                    if (!publishPomodoroStatus(newStatus)) return;
                     setStatus(newStatus);
                 } catch (error) {
                     console.error('Error parsing message:', error);
@@ -218,7 +217,7 @@ export function CustomTimer({ task }: Props) {
         } catch (error) {
             console.error('Error subscribing to task:', error);
         }
-    }, []);
+    }, [publishPomodoroStatus]);
 
     const connectWebSocket = useCallback(() => {
         if (stompClientRef.current?.active) {
@@ -227,20 +226,11 @@ export function CustomTimer({ task }: Props) {
         }
 
         console.log('Creating new STOMP client...');
-        const client = new Client({
-            brokerURL: WS_URL,
-            connectHeaders: {
-                Authorization: `Bearer ${keycloak.token ?? ''}`,
-            },
-            reconnectDelay: 5000,
-            heartbeatIncoming: 4000,
-            heartbeatOutgoing: 4000,
-            connectionTimeout: 10000,
-            onStompError: (frame) => {
-                console.error('STOMP protocol error:', frame);
-                setIsConnected(false);
-            }
-        });
+        const client = createAuthenticatedStompClient(WS_URL);
+        client.onStompError = frame => {
+            console.error('STOMP protocol error:', frame);
+            setIsConnected(false);
+        };
 
         client.onConnect = (frame) => {
             console.log('STOMP Client Connected:', frame);
@@ -269,7 +259,7 @@ export function CustomTimer({ task }: Props) {
         return () => {
             if (client.active) {
                 console.log('Deactivating STOMP client...');
-                client.deactivate();
+                void client.deactivate();
             }
         };
     }, []);
@@ -310,7 +300,9 @@ export function CustomTimer({ task }: Props) {
                 formData.longBreakCooldown,
                 pomodoroConfig.secondsMode
             );
-            void startWhiteNoise();
+            void refreshActivePomodoro(true).catch(error => {
+                console.error('Could not refresh the Pomodoro after starting it:', error);
+            });
             console.log('Pomodoro started successfully');
         } catch (error) {
             console.error('Error starting pomodoro:', error);
@@ -335,13 +327,6 @@ export function CustomTimer({ task }: Props) {
         const remaining = Math.max(0, status.secondsUntilNextTransition);
         const total = passed + remaining;
         return total > 0 ? Math.min(100, (passed / total) * 100) : 0;
-    };
-
-    const handleWhiteNoiseToggle = () => {
-        const nextEnabled = !whiteNoiseEnabled;
-        setWhiteNoiseEnabledState(nextEnabled);
-        setWhiteNoiseEnabled(nextEnabled);
-        if (nextEnabled && status?.active) void startWhiteNoise();
     };
 
     if (!task) {
@@ -491,7 +476,7 @@ export function CustomTimer({ task }: Props) {
                                     whiteSpace: 'nowrap',
                                 }}
                             >
-                                {status.taskName || task.name}
+                                {task.name}
                             </Typography>
 
                             {/* Status Chip */}
@@ -539,19 +524,7 @@ export function CustomTimer({ task }: Props) {
                             {/* Controls */}
                             {(status.sessionActive || waitingForPhase || status.phase === 'BREAK') && (
                                 <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
-                                    <Tooltip title={whiteNoiseEnabled ? 'Mute focus sound' : 'Play focus sound'}>
-                                        <span>
-                                            <IconButton
-                                                onClick={handleWhiteNoiseToggle}
-                                                aria-label={whiteNoiseEnabled ? 'Mute focus sound' : 'Play focus sound'}
-                                                color={whiteNoiseEnabled ? 'primary' : 'inherit'}
-                                                size="large"
-                                                disabled={isLoading}
-                                            >
-                                                {whiteNoiseEnabled ? <VolumeUpIcon /> : <VolumeOffIcon />}
-                                            </IconButton>
-                                        </span>
-                                    </Tooltip>
+                                    <WhiteNoiseControl size="large" disabled={isLoading} />
                                     {(status.sessionActive || waitingForPhase) && (
                                         <Tooltip title={playPauseLabel}>
                                             <span>
@@ -598,14 +571,15 @@ export function CustomTimer({ task }: Props) {
                                             <IconButton
                                                 onClick={handleEndSession}
                                                 aria-label="End Pomodoro session"
-                                                color="error"
+                                                color="inherit"
                                                 size="large"
                                                 disabled={isLoading}
                                                 sx={{
+                                                    color: 'error.light',
                                                     backgroundColor: 'action.hover',
                                                     '&:hover': {
-                                                        backgroundColor: 'error.light',
-                                                        color: 'error.contrastText',
+                                                        backgroundColor: alpha(theme.palette.error.main, 0.08),
+                                                        color: 'error.main',
                                                     },
                                                 }}
                                             >

@@ -25,12 +25,14 @@ export function useKeyboardAwareFocus(): FocusInput | null {
 interface Props extends ScrollViewProps {
   avoidKeyboard?: boolean;
   keyboardVerticalOffset?: number;
+  scrollToTopKey?: string | number | null;
 }
 
 export function KeyboardAwareScrollView({
   children,
   avoidKeyboard = true,
   keyboardVerticalOffset = 0,
+  scrollToTopKey = null,
   onFocus,
   onScroll,
   ...props
@@ -103,6 +105,16 @@ export function KeyboardAwareScrollView({
       if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
     };
   }, [scheduleReveal]);
+
+  useEffect(() => {
+    if (scrollToTopKey === null) return;
+
+    const frame = requestAnimationFrame(() => {
+      scrollOffsetRef.current = 0;
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [scrollToTopKey]);
 
   const scrollView = (
     <ScrollView

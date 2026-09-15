@@ -1,5 +1,5 @@
 import { ChangeEvent, FormEvent, SyntheticEvent, memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, MenuItem, Snackbar, Stack, Switch, Tab, Tabs, TextField, Typography } from '@mui/material';
+import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, LinearProgress, MenuItem, Snackbar, Stack, Switch, Tab, Tabs, TextField, Typography } from '@mui/material';
 import LightModeIcon from '@mui/icons-material/LightMode';
 import NightlightIcon from '@mui/icons-material/Nightlight';
 import LogoutIcon from '@mui/icons-material/Logout';
@@ -27,8 +27,10 @@ import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
 import {
-    EXCLUDE_TODAY_COMPLETED_HOME_TASKS_STORAGE_KEY,
-    SHOW_COMPLETED_HOME_TASKS_STORAGE_KEY,
+    getExcludeTodayCompletedHomeTasks,
+    getShowCompletedHomeTasks,
+    setExcludeTodayCompletedTasks,
+    setShowCompletedHomeTasks,
 } from '../services/utils/homePreferences.ts';
 import { statService } from '../services/api/statService.ts';
 import {
@@ -50,6 +52,7 @@ import {
     deletePomodoroSound,
     getPomodoroSoundAudioUrl,
     getPomodoroSounds,
+    MAX_POMODORO_SOUND_SIZE_BYTES,
     PomodoroSound,
     uploadPomodoroSound,
 } from '../services/api/pomodoroSoundService.ts';
@@ -479,12 +482,8 @@ export function SettingsPage() {
     const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
     const [passwordSaving, setPasswordSaving] = useState(false);
     const [changePasswordOpen, setChangePasswordOpen] = useState(false);
-    const [hideCompletedTasks, setHideCompletedTasks] = useState(() => (
-        localStorage.getItem(SHOW_COMPLETED_HOME_TASKS_STORAGE_KEY) === 'false'
-    ));
-    const [excludeTodayCompletedTasks, setExcludeTodayCompletedTasks] = useState(() => (
-        localStorage.getItem(EXCLUDE_TODAY_COMPLETED_HOME_TASKS_STORAGE_KEY) === 'true'
-    ));
+    const [hideCompletedTasks, setHideCompletedTasks] = useState(() => !getShowCompletedHomeTasks());
+    const [excludeTodayCompletedTasks, setExcludeTodayCompletedTasksState] = useState(getExcludeTodayCompletedHomeTasks);
     const [showClosedMentalThreads, setShowClosedMentalThreadsState] = useState(getShowClosedMentalThreads);
     const [soundEffectsEnabled, setSoundEffectsEnabledState] = useState(isAudioFeedbackEnabled);
     const [includeUnloggedNumericDaysAsZero, setIncludeUnloggedNumericDaysAsZero] = useState(false);
@@ -505,18 +504,12 @@ export function SettingsPage() {
     const [pomodoroSoundsLoading, setPomodoroSoundsLoading] = useState(true);
     const [pomodoroSoundSaving, setPomodoroSoundSaving] = useState(false);
     const [pomodoroSoundError, setPomodoroSoundError] = useState<string | null>(null);
+    const [pomodoroUploadProgress, setPomodoroUploadProgress] = useState<number | null>(null);
+    const [userPreferenceError, setUserPreferenceError] = useState<string | null>(null);
 
     useEffect(() => {
         setActiveTab(initialTab);
     }, [initialTab]);
-
-    useEffect(() => {
-        localStorage.setItem(SHOW_COMPLETED_HOME_TASKS_STORAGE_KEY, String(!hideCompletedTasks));
-    }, [hideCompletedTasks]);
-
-    useEffect(() => {
-        localStorage.setItem(EXCLUDE_TODAY_COMPLETED_HOME_TASKS_STORAGE_KEY, String(excludeTodayCompletedTasks));
-    }, [excludeTodayCompletedTasks]);
 
     useEffect(() => {
         let cancelled = false;
@@ -526,12 +519,20 @@ export function SettingsPage() {
                     setIncludeUnloggedNumericDaysAsZero(preferences.includeUnloggedNumericDaysAsZero);
                     setAutoStartPomodoroSessions(preferences.autoStartPomodoroSessions !== false);
                     setSelectedPomodoroSoundId(preferences.pomodoroSoundId || BUILT_IN_POMODORO_SOUND_ID);
+                    setHideCompletedTasks(!(preferences.showCompletedHomeTasks ?? true));
+                    setExcludeTodayCompletedTasksState(preferences.excludeTodayCompletedTasks ?? false);
+                    setShowClosedMentalThreadsState(preferences.showClosedMentalThreads ?? false);
+                    setSoundEffectsEnabledState(preferences.soundEffectsEnabled ?? true);
+                    if (preferences.pomodoroSecondsMode != null) {
+                        setPomodoroSecondsMode(preferences.pomodoroSecondsMode);
+                    }
+                    setLongBreakCooldown(preferences.pomodoroLongBreakCooldown ?? DEFAULT_LONG_BREAK_COOLDOWN);
                 }
             })
             .catch(error => {
                 console.error('Failed to load user preferences:', error);
                 if (!cancelled) {
-                    setNumericStatsPreferenceError('Could not load user preferences right now.');
+                    setUserPreferenceError('Could not load user preferences right now.');
                 }
             })
             .finally(() => {
@@ -634,6 +635,70 @@ export function SettingsPage() {
         setPasswordSuccess(null);
     }
 
+    async function handleHomeCompletedTasksChange(event: ChangeEvent<HTMLInputElement>) {
+        const nextValue = event.target.checked;
+        const previousValue = hideCompletedTasks;
+        setHideCompletedTasks(nextValue);
+        setShowCompletedHomeTasks(!nextValue);
+        setUserPreferenceError(null);
+        try {
+            await userService.updatePreferences({ showCompletedHomeTasks: !nextValue });
+        } catch (error) {
+            console.error('Failed to update completed-task preference:', error);
+            setHideCompletedTasks(previousValue);
+            setShowCompletedHomeTasks(!previousValue);
+            setUserPreferenceError('Could not save this preference right now.');
+        }
+    }
+
+    async function handleExcludeTodayCompletedTasksChange(event: ChangeEvent<HTMLInputElement>) {
+        const nextValue = event.target.checked;
+        const previousValue = excludeTodayCompletedTasks;
+        setExcludeTodayCompletedTasksState(nextValue);
+        setExcludeTodayCompletedTasks(nextValue);
+        setUserPreferenceError(null);
+        try {
+            await userService.updatePreferences({ excludeTodayCompletedTasks: nextValue });
+        } catch (error) {
+            console.error('Failed to update today completed-task preference:', error);
+            setExcludeTodayCompletedTasksState(previousValue);
+            setExcludeTodayCompletedTasks(previousValue);
+            setUserPreferenceError('Could not save this preference right now.');
+        }
+    }
+
+    async function handleShowClosedMentalThreadsChange(event: ChangeEvent<HTMLInputElement>) {
+        const nextValue = event.target.checked;
+        const previousValue = showClosedMentalThreads;
+        setShowClosedMentalThreadsState(nextValue);
+        setShowClosedMentalThreads(nextValue);
+        setUserPreferenceError(null);
+        try {
+            await userService.updatePreferences({ showClosedMentalThreads: nextValue });
+        } catch (error) {
+            console.error('Failed to update mental-thread preference:', error);
+            setShowClosedMentalThreadsState(previousValue);
+            setShowClosedMentalThreads(previousValue);
+            setUserPreferenceError('Could not save this preference right now.');
+        }
+    }
+
+    async function handleSoundEffectsChange(event: ChangeEvent<HTMLInputElement>) {
+        const nextValue = event.target.checked;
+        const previousValue = soundEffectsEnabled;
+        setSoundEffectsEnabledState(nextValue);
+        setAudioFeedbackEnabled(nextValue);
+        setUserPreferenceError(null);
+        try {
+            await userService.updatePreferences({ soundEffectsEnabled: nextValue });
+        } catch (error) {
+            console.error('Failed to update sound-effects preference:', error);
+            setSoundEffectsEnabledState(previousValue);
+            setAudioFeedbackEnabled(previousValue);
+            setUserPreferenceError('Could not save this preference right now.');
+        }
+    }
+
     async function handleNumericStatsPreferenceChange(event: ChangeEvent<HTMLInputElement>) {
         const nextValue = event.target.checked;
         const previousValue = includeUnloggedNumericDaysAsZero;
@@ -655,29 +720,34 @@ export function SettingsPage() {
 
     function handlePomodoroSecondsModeChange(event: ChangeEvent<HTMLInputElement>) {
         const nextValue = event.target.checked;
+        const previousValue = pomodoroSecondsMode;
         setPomodoroSecondsMode(nextValue);
         setPomodoroSecondsModePreference(nextValue);
+        setUserPreferenceError(null);
+        void userService.updatePreferences({ pomodoroSecondsMode: nextValue }).catch(error => {
+            console.error('Failed to update Pomodoro duration mode:', error);
+            setPomodoroSecondsMode(previousValue);
+            setPomodoroSecondsModePreference(previousValue);
+            setUserPreferenceError('Could not save this preference right now.');
+        });
     }
 
     function handleLongBreakCooldownChange(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) {
         const nextValue = Number(event.target.value);
         if (!Number.isInteger(nextValue) || nextValue < 1 || nextValue > 5) return;
 
+        const previousValue = longBreakCooldown;
         setLongBreakCooldown(nextValue);
         const currentForm = readPomodoroFormPreferences() ?? createPomodoroFormDefaults(pomodoroConfig);
         savePomodoroFormPreferences({ ...currentForm, longBreakCooldown: nextValue });
-    }
-
-    function handleShowClosedMentalThreadsChange(event: ChangeEvent<HTMLInputElement>) {
-        const nextValue = event.target.checked;
-        setShowClosedMentalThreadsState(nextValue);
-        setShowClosedMentalThreads(nextValue);
-    }
-
-    function handleSoundEffectsChange(event: ChangeEvent<HTMLInputElement>) {
-        const nextValue = event.target.checked;
-        setSoundEffectsEnabledState(nextValue);
-        setAudioFeedbackEnabled(nextValue);
+        setUserPreferenceError(null);
+        void userService.updatePreferences({ pomodoroLongBreakCooldown: nextValue }).catch(error => {
+            console.error('Failed to update long-break preference:', error);
+            setLongBreakCooldown(previousValue);
+            const rollbackForm = readPomodoroFormPreferences() ?? createPomodoroFormDefaults(pomodoroConfig);
+            savePomodoroFormPreferences({ ...rollbackForm, longBreakCooldown: previousValue });
+            setUserPreferenceError('Could not save this preference right now.');
+        });
     }
 
     async function handleAutoStartPomodoroSessionsChange(event: ChangeEvent<HTMLInputElement>) {
@@ -700,7 +770,7 @@ export function SettingsPage() {
 
     async function applyPomodoroSound(sound: PomodoroSound) {
         const url = await getPomodoroSoundAudioUrl(sound);
-        setWhiteNoiseSource({ id: sound.id, url });
+        setWhiteNoiseSource({ id: sound.id, name: sound.name, url });
     }
 
     async function handlePomodoroSoundChange(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) {
@@ -731,10 +801,16 @@ export function SettingsPage() {
         event.target.value = '';
         if (!file) return;
 
+        if (file.size > MAX_POMODORO_SOUND_SIZE_BYTES || !file.name.toLowerCase().endsWith('.mp3')) {
+            setPomodoroSoundError('Choose an MP3 file that is 25 MB or smaller.');
+            return;
+        }
+
         setPomodoroSoundSaving(true);
         setPomodoroSoundError(null);
+        setPomodoroUploadProgress(0);
         try {
-            const uploadedSound = await uploadPomodoroSound(file);
+            const uploadedSound = await uploadPomodoroSound(file, setPomodoroUploadProgress);
             setPomodoroSounds(previous => [...previous, uploadedSound]);
             await userService.updatePreferences({ pomodoroSoundId: uploadedSound.id });
             setSelectedPomodoroSoundId(uploadedSound.id);
@@ -744,6 +820,7 @@ export function SettingsPage() {
             setPomodoroSoundError('Could not upload that MP3 right now.');
         } finally {
             setPomodoroSoundSaving(false);
+            setPomodoroUploadProgress(null);
         }
     }
 
@@ -820,6 +897,11 @@ export function SettingsPage() {
                     <Stack spacing={2.5}>
                         {activeTab === 0 && (
                             <>
+                                {userPreferenceError && (
+                                    <Alert severity="warning" onClose={() => setUserPreferenceError(null)}>
+                                        {userPreferenceError}
+                                    </Alert>
+                                )}
                                 <Box sx={sectionCardSx}>
                                     <Box sx={sectionHeadingSx}>
                                         <HomeOutlinedIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
@@ -839,7 +921,8 @@ export function SettingsPage() {
                                         </Box>
                                         <Switch
                                             checked={hideCompletedTasks}
-                                            onChange={(event) => setHideCompletedTasks(event.target.checked)}
+                                            onChange={handleHomeCompletedTasksChange}
+                                            disabled={userPreferencesLoading}
                                             inputProps={{ 'aria-label': 'Hide completed tasks' }}
                                         />
                                     </Box>
@@ -857,7 +940,8 @@ export function SettingsPage() {
                                             </Box>
                                             <Switch
                                                 checked={excludeTodayCompletedTasks}
-                                                onChange={(event) => setExcludeTodayCompletedTasks(event.target.checked)}
+                                                onChange={handleExcludeTodayCompletedTasksChange}
+                                                disabled={userPreferencesLoading}
                                                 inputProps={{ 'aria-label': "Exclude today's completed tasks in Home page" }}
                                             />
                                         </Box>
@@ -884,6 +968,7 @@ export function SettingsPage() {
                                         <Switch
                                             checked={soundEffectsEnabled}
                                             onChange={handleSoundEffectsChange}
+                                            disabled={userPreferencesLoading}
                                             inputProps={{ 'aria-label': 'Play sound effects' }}
                                         />
                                     </Box>
@@ -909,6 +994,7 @@ export function SettingsPage() {
                                         <Switch
                                             checked={showClosedMentalThreads}
                                             onChange={handleShowClosedMentalThreadsChange}
+                                            disabled={userPreferencesLoading}
                                             inputProps={{ 'aria-label': 'Show closed mental threads' }}
                                         />
                                     </Box>
@@ -991,6 +1077,7 @@ export function SettingsPage() {
                                             label="Long break every"
                                             value={longBreakCooldown}
                                             onChange={handleLongBreakCooldownChange}
+                                            disabled={userPreferencesLoading}
                                             inputProps={{ 'aria-label': 'Long break frequency in focus sessions' }}
                                             sx={{ minWidth: 150, flexShrink: 0 }}
                                         >
@@ -1013,7 +1100,7 @@ export function SettingsPage() {
                                         <Switch
                                             checked={pomodoroSecondsMode}
                                             onChange={handlePomodoroSecondsModeChange}
-                                            disabled={pomodoroConfigLoading}
+                                            disabled={pomodoroConfigLoading || userPreferencesLoading}
                                             inputProps={{ 'aria-label': 'Use short Pomodoro durations in seconds' }}
                                         />
                                     </Box>
@@ -1040,7 +1127,7 @@ export function SettingsPage() {
                                             label="Sound used during focus"
                                             value={selectedPomodoroSoundId}
                                             onChange={handlePomodoroSoundChange}
-                                            disabled={pomodoroSoundsLoading || pomodoroSoundSaving}
+                                            disabled={pomodoroSoundsLoading || pomodoroSoundSaving || userPreferencesLoading}
                                         >
                                             <MenuItem value={BUILT_IN_POMODORO_SOUND_ID}>
                                                 {BUILT_IN_POMODORO_SOUND.name}
@@ -1073,7 +1160,7 @@ export function SettingsPage() {
                                                             size="small"
                                                             color="inherit"
                                                             onClick={() => void handlePomodoroSoundDelete(sound)}
-                                                            disabled={pomodoroSoundSaving}
+                                                            disabled={pomodoroSoundSaving || userPreferencesLoading}
                                                             startIcon={<DeleteOutlineIcon />}
                                                             sx={{ flexShrink: 0, textTransform: 'none' }}
                                                         >
@@ -1083,12 +1170,26 @@ export function SettingsPage() {
                                                 ))}
                                             </Stack>
                                         )}
+                                        {pomodoroUploadProgress !== null && (
+                                            <Box sx={{ mt: 1.5 }}>
+                                                <LinearProgress
+                                                    variant={pomodoroUploadProgress < 100 ? 'determinate' : 'indeterminate'}
+                                                    value={pomodoroUploadProgress}
+                                                    aria-label="Uploading Pomodoro sound"
+                                                />
+                                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                                                    {pomodoroUploadProgress < 100
+                                                        ? `${pomodoroUploadProgress}% uploaded`
+                                                        : 'Saving sound...'}
+                                                </Typography>
+                                            </Box>
+                                        )}
                                         <Button
                                             component="label"
                                             variant="outlined"
                                             size="small"
                                             startIcon={<CloudUploadOutlinedIcon />}
-                                            disabled={pomodoroSoundSaving}
+                                            disabled={pomodoroSoundSaving || userPreferencesLoading}
                                             sx={{ mt: 1.5, textTransform: 'none' }}
                                         >
                                             Upload MP3

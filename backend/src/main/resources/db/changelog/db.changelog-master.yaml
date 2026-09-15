@@ -234,3 +234,27 @@ databaseChangeLog:
   # Allow statistics to include focus time from multiple task names
   - include:
       file: db/changelog/changes/062-add-stat-focus-task-links.yaml
+
+  # Persist user-facing settings per account instead of in device-wide browser storage
+  - include:
+      file: db/changelog/changes/063-add-user-settings.yaml
+
+  # Keep newly uploaded Pomodoro audio out of PostgreSQL rows
+  - include:
+      file: db/changelog/changes/064-store-pomodoro-sounds-on-disk.yaml
+
+  # Speed up historical focus-time lookups by task and session start date
+  - include:
+      file: db/changelog/changes/065-add-task-session-focus-time-index.yaml
+
+  # Persist the remaining Pomodoro duration and cycle settings per account
+  - include:
+      file: db/changelog/changes/066-add-pomodoro-cycle-settings.yaml
+
+  # Enforce one active Pomodoro per user at the database level
+  - include:
+      file: db/changelog/changes/067-enforce-one-active-pomodoro-per-user.yaml
+
+  # Persist date and time overrides for moved repeating calendar event occurrences
+  - include:
+      file: db/changelog/changes/068-add-calendar-event-occurrence-move-overrides.yaml

@@ -6,6 +6,10 @@ export type CalendarEventOccurrenceOverride = {
     occurrenceKey: string;
     status: CalendarEventStatus;
     deleted: boolean;
+    startDate?: string | null;
+    endDate?: string | null;
+    startTime?: string | null;
+    endTime?: string | null;
 };
 
 export type CalendarEvent = {
@@ -46,3 +50,8 @@ export type CalendarEventInput = {
     recurrenceUnit: RecurrenceUnit | null;
     reminderMinutesBefore: number | null;
 };
+
+export type CalendarEventOccurrenceMoveInput = Pick<
+    CalendarEventInput,
+    'startDate' | 'endDate' | 'startTime' | 'endTime'
+>;

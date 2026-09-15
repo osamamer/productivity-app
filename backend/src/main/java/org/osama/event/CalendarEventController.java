@@ -57,6 +57,12 @@ public class CalendarEventController {
                 eventId, request, currentUserService.getCurrentUserId());
     }
 
+    @PostMapping("/{eventId}/occurrences/move")
+    public CalendarEventResponse moveEventOccurrence(@PathVariable String eventId,
+                                                     @RequestBody CalendarEventOccurrenceRequest request) {
+        return eventService.moveEventOccurrence(eventId, request, currentUserService.getCurrentUserId());
+    }
+
     @DeleteMapping("/{eventId}/occurrences")
     public CalendarEventResponse deleteEventOccurrence(@PathVariable String eventId,
                                                         @RequestBody CalendarEventOccurrenceRequest request) {

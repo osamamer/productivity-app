@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Alert, Box, Stack, Typography } from '@mui/material';
+import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Stack, Typography } from '@mui/material';
 import { PageWrapper } from '../components/PageWrapper';
 import { MentalStateCard } from '../components/mental-state/MentalStateCard';
 import { MentalStateHistory } from '../components/mental-state/MentalStateHistory';
@@ -22,6 +22,8 @@ export function MentalStatePage() {
     const [selected, setSelected] = useState<MentalStateCheckIn | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [deleteTarget, setDeleteTarget] = useState<MentalStateCheckIn | null>(null);
+    const [deleting, setDeleting] = useState(false);
     const [now, setNow] = useState(() => Date.now());
 
     useEffect(() => {
@@ -53,6 +55,32 @@ export function MentalStatePage() {
         setError(null);
         sideNavSnapshotCache.updateMentalState(checkIn.state);
     };
+
+    async function handleDelete() {
+        if (!deleteTarget || deleting) return;
+
+        const target = deleteTarget;
+        setDeleting(true);
+        setError(null);
+        try {
+            await mentalStateService.deleteCheckIn(target.id);
+            const remaining = history.filter(checkIn => checkIn.id !== target.id);
+            setHistory(remaining);
+            setSelected(current => current?.id === target.id ? null : current);
+            if (history[0]?.id === target.id) {
+                const next = remaining[0];
+                sideNavSnapshotCache.updateMentalState(
+                    next && isCurrentCheckIn(next, Date.now()) ? next.state : null,
+                );
+            }
+            setDeleteTarget(null);
+        } catch (requestError) {
+            console.error('Failed to delete mental state check-in:', requestError);
+            setError('Could not delete this check-in. Please try again.');
+        } finally {
+            setDeleting(false);
+        }
+    }
 
     const latestCheckIn = history[0] ?? null;
     const currentCheckIn = isCurrentCheckIn(latestCheckIn, now) ? latestCheckIn : null;
@@ -90,10 +118,28 @@ export function MentalStatePage() {
                             checkIns={history}
                             selectedId={selected?.id ?? currentCheckIn?.id ?? null}
                             onSelect={setSelected}
+                            onDelete={setDeleteTarget}
                         />
                     </Box>
                 </Box>
             </Box>
+            <Dialog
+                open={deleteTarget !== null}
+                onClose={() => { if (!deleting) setDeleteTarget(null); }}
+            >
+                <DialogTitle>Delete this check-in?</DialogTitle>
+                <DialogContent>
+                    <DialogContentText>
+                        This will permanently remove this mental-state check-in. This cannot be undone.
+                    </DialogContentText>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setDeleteTarget(null)} disabled={deleting}>Cancel</Button>
+                    <Button color="error" onClick={() => { void handleDelete(); }} disabled={deleting}>
+                        {deleting ? <CircularProgress size={18} color="inherit" /> : 'Delete'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </PageWrapper>
     );
 }

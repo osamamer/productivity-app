@@ -25,15 +25,43 @@ const SOUND_URLS: Record<MeditationSoundId, string> = {
 class MeditationSoundscape {
     private player: HTMLAudioElement | null = null;
     private previewTimeout: number | null = null;
+    private previewingSound: MeditationSoundId | null = null;
+    private readonly players = new Map<MeditationSoundId, HTMLAudioElement>();
+
+    prepare(sound: MeditationSoundId): void {
+        if (typeof window === 'undefined') return;
+        this.getPlayer(sound);
+    }
+
+    private getPlayer(sound: MeditationSoundId): HTMLAudioElement {
+        const existing = this.players.get(sound);
+        if (existing) return existing;
+
+        const player = new Audio(SOUND_URLS[sound]);
+        player.preload = 'auto';
+        this.players.set(sound, player);
+        return player;
+    }
 
     async start(sound: MeditationSoundId): Promise<void> {
-        this.stop();
+        const currentPlayer = this.player;
+        const continuePreview = this.previewingSound === sound && currentPlayer !== null && !currentPlayer.ended;
+        if (continuePreview) {
+            if (this.previewTimeout !== null && typeof window !== 'undefined') {
+                window.clearTimeout(this.previewTimeout);
+            }
+            this.previewTimeout = null;
+            this.previewingSound = null;
+        } else {
+            this.stop();
+        }
         if (typeof window === 'undefined') return;
-        const player = new Audio(SOUND_URLS[sound]);
+        const player = continuePreview ? currentPlayer : this.getPlayer(sound);
         player.loop = true;
         player.volume = 0.38;
         this.player = player;
         try {
+            if (!continuePreview && player.readyState > 0) player.currentTime = 0;
             await player.play();
         } catch (error) {
             if (this.player === player) this.stop();
@@ -44,14 +72,17 @@ class MeditationSoundscape {
     async preview(sound: MeditationSoundId): Promise<void> {
         this.stop();
         if (typeof window === 'undefined') return;
-        const player = new Audio(SOUND_URLS[sound]);
+        const player = this.getPlayer(sound);
+        player.loop = false;
         player.volume = 0.38;
         this.player = player;
+        this.previewingSound = sound;
         try {
+            if (player.readyState > 0) player.currentTime = 0;
             await player.play();
-            if (this.player !== player) return;
+            if (this.player !== player || this.previewingSound !== sound) return;
             this.previewTimeout = window.setTimeout(() => {
-                if (this.player === player) this.stop();
+                if (this.player === player && this.previewingSound === sound) this.stop();
             }, 5_000);
         } catch (error) {
             if (this.player === player) this.stop();
@@ -79,6 +110,7 @@ class MeditationSoundscape {
         this.previewTimeout = null;
         this.player?.pause();
         this.player = null;
+        this.previewingSound = null;
     }
 }
 

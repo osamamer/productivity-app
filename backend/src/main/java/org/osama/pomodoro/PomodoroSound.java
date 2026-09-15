@@ -41,20 +41,30 @@ public class PomodoroSound {
 
     @Basic(fetch = FetchType.LAZY)
     @JdbcTypeCode(SqlTypes.LONGVARBINARY)
-    @Column(name = "audio_data", nullable = false, columnDefinition = "bytea")
+    @Column(name = "audio_data", columnDefinition = "bytea")
     private byte[] audioData;
+
+    /** New uploads live outside PostgreSQL so listing sounds never hydrates audio bytes. */
+    @Column(name = "storage_path")
+    private String storagePath;
 
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
     public PomodoroSound(String id, User user, String name, String contentType,
                          long fileSize, byte[] audioData) {
+        this(id, user, name, contentType, fileSize, audioData, null);
+    }
+
+    public PomodoroSound(String id, User user, String name, String contentType,
+                         long fileSize, byte[] audioData, String storagePath) {
         this.id = id;
         this.user = user;
         this.name = name;
         this.contentType = contentType;
         this.fileSize = fileSize;
         this.audioData = audioData;
+        this.storagePath = storagePath;
         this.createdAt = LocalDateTime.now();
     }
 }

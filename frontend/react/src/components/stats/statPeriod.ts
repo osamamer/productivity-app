@@ -22,6 +22,8 @@ export type StatPeriodOffset = number;
 export interface StatPeriodWindow {
     from: string;
     to: string;
+    /** The complete visual span used by charts; current weeks still render future empty days. */
+    displayTo: string;
     key: string;
     label: string;
 }
@@ -51,6 +53,7 @@ export function getStatPeriodWindow(
         return {
             from: fromString,
             to: toString,
+            displayTo: toString,
             key: `${fromString}:${toString}`,
             label,
         };
@@ -81,6 +84,7 @@ export function getStatPeriodWindow(
     const to = offset === 0 ? end : periodEnd;
     const fromString = format(from, 'yyyy-MM-dd');
     const toString = format(to, 'yyyy-MM-dd');
+    const displayToString = format(dateRange === 7 ? periodEnd : to, 'yyyy-MM-dd');
     const label = dateRange === 7
         ? formatStatBucketRange(from, periodEnd)
         : dateRange === 30
@@ -92,6 +96,7 @@ export function getStatPeriodWindow(
     return {
         from: fromString,
         to: toString,
+        displayTo: displayToString,
         key: `${fromString}:${toString}`,
         label,
     };

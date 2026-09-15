@@ -205,6 +205,19 @@ public class PomoTest {
     }
 
     @Test
+    void lowerLevelPomodoroCreationCannotBypassSingleActivePomodoroRule() {
+        Task firstTask = createTask();
+        Task secondTask = createTask();
+        pomodoroService.createPomodoro(firstTask.getTaskId(), 25, 5, 15, 4, 4, testUserId);
+
+        assertThrows(IllegalStateException.class,
+                () -> pomodoroService.createPomodoro(secondTask.getTaskId(), 25, 5, 15, 4, 4, testUserId));
+        assertEquals(1, pomodoroRepository.findAll().stream()
+                .filter(pomodoro -> pomodoro.isActive() && testUserId.equals(pomodoro.getUser().getId()))
+                .count());
+    }
+
+    @Test
     @org.springframework.transaction.annotation.Transactional(propagation = Propagation.NOT_SUPPORTED)
     void endedPomodoroCanBeRestartedForTheSameTask() {
         Task task = createTask();

@@ -1,4 +1,6 @@
-import { List, ListItemButton, ListItemText, Paper, Stack, Typography } from '@mui/material';
+import { useState } from 'react';
+import { List, ListItemButton, ListItemText, ListItemIcon, Menu, MenuItem, Paper, Stack, Typography } from '@mui/material';
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import { MentalStateCheckIn } from '../../types/MentalState';
 
@@ -6,6 +8,7 @@ interface MentalStateHistoryProps {
     checkIns: MentalStateCheckIn[];
     selectedId: string | null;
     onSelect: (checkIn: MentalStateCheckIn) => void;
+    onDelete: (checkIn: MentalStateCheckIn) => void;
 }
 
 function formatRecordedAt(recordedAt: string): string {
@@ -17,7 +20,9 @@ function formatRecordedAt(recordedAt: string): string {
         : date.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
-export function MentalStateHistory({ checkIns, selectedId, onSelect }: MentalStateHistoryProps) {
+export function MentalStateHistory({ checkIns, selectedId, onSelect, onDelete }: MentalStateHistoryProps) {
+    const [contextMenu, setContextMenu] = useState<{ checkIn: MentalStateCheckIn; top: number; left: number } | null>(null);
+
     return (
         <Paper elevation={0} sx={{ border: 1, borderColor: 'divider', borderRadius: 3, overflow: 'hidden', textAlign: 'left' }}>
             <Stack direction="row" alignItems="center" spacing={1} sx={{ px: 2, py: 1.75, borderBottom: 1, borderColor: 'divider' }}>
@@ -35,6 +40,11 @@ export function MentalStateHistory({ checkIns, selectedId, onSelect }: MentalSta
                             key={checkIn.id}
                             selected={checkIn.id === selectedId}
                             onClick={() => onSelect(checkIn)}
+                            onContextMenu={event => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                setContextMenu({ checkIn, top: event.clientY, left: event.clientX });
+                            }}
                             sx={{ px: 2, py: 1.25, borderBottom: 1, borderColor: 'divider', alignItems: 'flex-start' }}
                         >
                             <ListItemText
@@ -46,6 +56,28 @@ export function MentalStateHistory({ checkIns, selectedId, onSelect }: MentalSta
                     ))}
                 </List>
             )}
+            <Menu
+                open={contextMenu !== null}
+                onClose={() => setContextMenu(null)}
+                anchorReference="anchorPosition"
+                anchorPosition={contextMenu ? { top: contextMenu.top, left: contextMenu.left } : undefined}
+                MenuListProps={{ dense: true }}
+            >
+                <MenuItem
+                    onClick={() => {
+                        if (!contextMenu) return;
+                        const checkIn = contextMenu.checkIn;
+                        setContextMenu(null);
+                        onDelete(checkIn);
+                    }}
+                    sx={{ color: 'error.main' }}
+                >
+                    <ListItemIcon sx={{ color: 'inherit' }}>
+                        <DeleteOutlineRoundedIcon fontSize="small" />
+                    </ListItemIcon>
+                    Delete check-in
+                </MenuItem>
+            </Menu>
         </Paper>
     );
 }

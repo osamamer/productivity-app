@@ -22,6 +22,17 @@ import { formatStatBucketRange, getStatPeriodWindow, StatPeriodMode, StatPeriodO
 
 type ChartPoint = StatChartPoint;
 
+type PendingEntrySave = {
+    date: string;
+    value: string;
+    status: StatEntryStatus;
+    mutationVersion: number;
+    snapshot: {
+        value: number | undefined;
+        status: StatEntryStatus | undefined;
+    };
+};
+
 interface Props {
     definition: StatDefinition;
     comparisonDefinition?: StatDefinition;
@@ -30,6 +41,7 @@ interface Props {
     periodOffset: StatPeriodOffset;
     refreshKey: number;
     onEntryChanged?: (definitionId: string) => void;
+    onError?: (message: string) => void;
     onDateContextMenu?: (date: string, event: React.MouseEvent<Element>) => void;
 }
 
@@ -246,28 +258,31 @@ export const StatLineChart = React.memo(function StatLineChart({
     periodOffset,
     refreshKey,
     onEntryChanged,
+    onError,
     onDateContextMenu,
 }: Props) {
     const theme = useTheme();
     const period = getStatPeriodWindow(dateRange, periodMode, periodOffset);
     const fromStr = period.from;
     const toStr = period.to;
+    const displayToStr = period.displayTo;
     const from = parseISO(fromStr);
-    const to = parseISO(toStr);
+    const displayTo = parseISO(displayToStr);
     const isYearView = dateRange >= 365;
-    const aggregateWeekly = isYearView && definition.type !== 'TIME';
+    const aggregateWeekly = dateRange >= 90 && definition.type !== 'TIME';
+    const isBucketedView = aggregateWeekly;
     const comparisonId = comparisonDefinition?.id;
     const createChartPoints = (entries: StatEntry[], comparisonEntries: StatEntry[]) => aggregateWeekly
         ? buildWeeklyChartPoints(
             from,
-            to,
+            displayTo,
             entries,
             definition,
             comparisonEntries,
             comparisonDefinition,
         )
-        : buildChartPoints(from, to, entries, definition, comparisonEntries, comparisonDefinition);
-    const dataKey = `${definition.id}:${comparisonId ?? 'none'}:${fromStr}:${toStr}`;
+        : buildChartPoints(from, displayTo, entries, definition, comparisonEntries, comparisonDefinition);
+    const dataKey = `${definition.id}:${comparisonId ?? 'none'}:${fromStr}:${toStr}:${displayToStr}`;
     const cachedEntries = statService.getCachedEntries(definition.id, fromStr, toStr);
     const cachedComparisonEntries = comparisonId
         ? statService.getCachedEntries(comparisonId, fromStr, toStr)
@@ -299,7 +314,14 @@ export const StatLineChart = React.memo(function StatLineChart({
     const chartRef = useRef<HTMLDivElement>(null);
     const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const pendingSaveRef = useRef<{ date: string; value: string; status: StatEntryStatus } | null>(null);
+    const pendingSaveRef = useRef<PendingEntrySave | null>(null);
+    const entryMutationVersionsRef = useRef(new Map<string, number>());
+    const entryMutationSnapshotsRef = useRef(new Map<string, {
+        version: number;
+        value: number | undefined;
+        status: StatEntryStatus | undefined;
+    }>());
+    const previousDataKeyRef = useRef(dataKey);
     const chartHoveredRef = useRef(false);
     const editorHoveredRef = useRef(false);
 
@@ -316,9 +338,13 @@ export const StatLineChart = React.memo(function StatLineChart({
         if ((!primaryEntries || !comparisonEntries) && !hasRenderedDataRef.current) {
             setLoadingKey(dataKey);
         }
-        setHoveredPoint(null);
-        setHoveredThreshold(null);
-        setEditorPosition(null);
+        const viewChanged = previousDataKeyRef.current !== dataKey;
+        previousDataKeyRef.current = dataKey;
+        if (viewChanged) {
+            setHoveredPoint(null);
+            setHoveredThreshold(null);
+            setEditorPosition(null);
+        }
         Promise.all([
             statService.getEntries(definition.id, fromStr, toStr),
             comparisonId ? statService.getEntries(comparisonId, fromStr, toStr) : Promise.resolve([]),
@@ -330,7 +356,7 @@ export const StatLineChart = React.memo(function StatLineChart({
                         points: aggregateWeekly
                             ? buildWeeklyChartPoints(
                                 parseISO(fromStr),
-                                parseISO(toStr),
+                                parseISO(displayToStr),
                                 entries,
                                 definition,
                                 nextComparisonEntries,
@@ -338,7 +364,7 @@ export const StatLineChart = React.memo(function StatLineChart({
                             )
                             : buildChartPoints(
                                 parseISO(fromStr),
-                                parseISO(toStr),
+                                parseISO(displayToStr),
                                 entries,
                                 definition,
                                 nextComparisonEntries,
@@ -353,7 +379,7 @@ export const StatLineChart = React.memo(function StatLineChart({
                 if (!cancelled) setLoadingKey(current => current === dataKey ? null : current);
             });
         return () => { cancelled = true; };
-    }, [aggregateWeekly, comparisonDefinition, comparisonId, dataKey, definition, fromStr, refreshKey, toStr]);
+    }, [aggregateWeekly, comparisonDefinition, comparisonId, dataKey, definition, displayToStr, fromStr, refreshKey, toStr]);
 
     useEffect(() => {
         setEditValue(hoveredPoint?.value === undefined
@@ -391,12 +417,28 @@ export const StatLineChart = React.memo(function StatLineChart({
     const primaryColor = theme.palette.primary.main;
     const comparisonColor = theme.palette.secondary.main;
 
-    const handleSaved = (date: string, value: number | null, status: StatEntryStatus = 'RECORDED') => {
-        const nextValue = value ?? undefined;
+    const applyLocalEntry = (date: string, value: number | null, status: StatEntryStatus) => {
+        const nextValue = status === 'NOT_PLANNED' ? 0 : value ?? undefined;
         setDataState(previous => previous.key === dataKey
             ? { ...previous, points: previous.points.map(point => point.date === date ? { ...point, value: nextValue, status } : point) }
             : previous);
         setHoveredPoint(previous => previous?.date === date ? { ...previous, value: nextValue, status } : previous);
+    };
+
+    const parseEntryValue = (rawValue: string): { value: number | null; valid: boolean } => {
+        if (rawValue.trim() === '') return { value: null, valid: true };
+
+        const value = definition.type === 'TIME'
+            ? timeValueToMinutes(rawValue)
+            : definition.type === 'DURATION'
+                ? durationValueToMinutes(rawValue)
+                : Number(rawValue);
+        if (value === null || !Number.isFinite(value)) return { value: null, valid: false };
+        if (definition.type === 'RANGE'
+            && (value < definition.minValue! || value > definition.maxValue!)) {
+            return { value, valid: false };
+        }
+        return { value, valid: true };
     };
 
     const clearCloseTimer = () => {
@@ -443,85 +485,108 @@ export const StatLineChart = React.memo(function StatLineChart({
         scheduleEditorClose();
     };
 
-    const saveEntry = async (date: string, rawValue: string, status: StatEntryStatus = 'RECORDED') => {
-        const value = definition.type === 'TIME'
-            ? rawValue.trim() === '' ? null : timeValueToMinutes(rawValue)
-            : definition.type === 'DURATION'
-                ? rawValue.trim() === '' ? null : durationValueToMinutes(rawValue)
-                : rawValue.trim() === '' ? null : Number(rawValue);
+    const rollbackEntry = (
+        date: string,
+        mutationVersion: number,
+        snapshot: { value: number | undefined; status: StatEntryStatus | undefined },
+    ) => {
+        if (entryMutationVersionsRef.current.get(date) !== mutationVersion) return false;
+        applyLocalEntry(date, snapshot.value ?? null, snapshot.status ?? 'RECORDED');
+        entryMutationSnapshotsRef.current.delete(date);
+        onEntryChanged?.(definition.id);
+        return true;
+    };
+
+    const saveEntry = async (
+        date: string,
+        rawValue: string,
+        status: StatEntryStatus = 'RECORDED',
+        mutationVersion?: number,
+        snapshot?: { value: number | undefined; status: StatEntryStatus | undefined },
+    ) => {
+        const parsed = parseEntryValue(rawValue);
         if (status === 'NOT_PLANNED') {
-            setSaveError(null);
-            try {
-                await statService.recordEntry({
-                    statDefinitionId: definition.id,
-                    date,
-                    value: null,
-                    status,
-                });
-                handleSaved(date, 0, status);
-                onEntryChanged?.(definition.id);
-            } catch (error) {
-                console.error('Failed to mark chart stat entry as not planned:', error);
-                setSaveError('Failed to save this value.');
-            }
-            return;
+            parsed.value = null;
+            parsed.valid = true;
         }
-        if (value === null) {
-            setSaveError(null);
-            try {
-                await statService.recordEntry({
-                    statDefinitionId: definition.id,
-                    date,
-                    value: null,
-                });
-                handleSaved(date, null, 'RECORDED');
-                onEntryChanged?.(definition.id);
-            } catch (error) {
-                console.error('Failed to clear chart stat entry:', error);
-                setSaveError('Failed to clear this value.');
-            }
-            return;
-        }
-        if (!Number.isFinite(value)) {
+        if (!parsed.valid) {
             setSaveError(definition.type === 'TIME'
                 ? 'Choose a valid time.'
                 : definition.type === 'DURATION'
                     ? 'Enter a duration as hours:minutes.'
-                    : 'Enter a number first.');
-            return;
-        }
-        if (definition.type === 'RANGE'
-            && (value < definition.minValue! || value > definition.maxValue!)) {
-            setSaveError(`Use a value from ${definition.minValue} to ${definition.maxValue}.`);
+                    : definition.type === 'RANGE'
+                        ? `Use a value from ${definition.minValue} to ${definition.maxValue}.`
+                        : 'Enter a number first.');
+            if (mutationVersion !== undefined && snapshot) rollbackEntry(date, mutationVersion, snapshot);
             return;
         }
 
         setSaveError(null);
+        const activeMutationVersion = mutationVersion
+            ?? (entryMutationVersionsRef.current.get(date) ?? 0);
+        const activeSnapshot = snapshot
+            ?? entryMutationSnapshotsRef.current.get(date)
+            ?? { value: undefined, status: undefined };
+        const savePromise = statService.recordEntry({
+            statDefinitionId: definition.id,
+            date,
+            value: status === 'NOT_PLANNED' ? null : parsed.value,
+            status,
+        });
+        onEntryChanged?.(definition.id);
         try {
-            await statService.recordEntry({
-                statDefinitionId: definition.id,
-                date,
-                value,
-                status,
-            });
-            showStatFeedback(definition, value, chartRef.current);
-            handleSaved(date, value, status);
-            onEntryChanged?.(definition.id);
+            await savePromise;
+            if (entryMutationVersionsRef.current.get(date) === activeMutationVersion) {
+                entryMutationSnapshotsRef.current.delete(date);
+                if (parsed.value !== null && status !== 'NOT_PLANNED') {
+                    showStatFeedback(definition, parsed.value, chartRef.current);
+                }
+            }
         } catch (error) {
             console.error('Failed to save chart stat entry:', error);
-            setSaveError('Failed to save this value.');
+            if (rollbackEntry(date, activeMutationVersion, activeSnapshot)) {
+                setSaveError('Failed to save this value.');
+            }
+            onError?.('Failed to save this statistic.');
         }
     };
 
     const queueEntrySave = (date: string, value: string, status: StatEntryStatus = 'RECORDED') => {
         if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-        pendingSaveRef.current = { date, value, status };
+        const pending = pendingSaveRef.current;
+        const parsed = status === 'NOT_PLANNED'
+            ? { value: 0, valid: true }
+            : parseEntryValue(value);
+        const currentPoint = data.find(point => point.date === date);
+        const mutationVersion = pending?.date === date
+            ? pending.mutationVersion
+            : (entryMutationVersionsRef.current.get(date) ?? 0) + 1;
+        const snapshot = pending?.date === date
+            ? pending.snapshot
+            : {
+                value: currentPoint?.value,
+                status: currentPoint?.status,
+            };
+        entryMutationVersionsRef.current.set(date, mutationVersion);
+        entryMutationSnapshotsRef.current.set(date, { version: mutationVersion, ...snapshot });
+        if (parsed.valid) {
+            applyLocalEntry(date, parsed.value, status);
+        }
+        pendingSaveRef.current = { date, value, status, mutationVersion, snapshot };
 
         saveTimerRef.current = setTimeout(() => {
             const pendingSave = pendingSaveRef.current;
             pendingSaveRef.current = null;
             saveTimerRef.current = null;
-            if (pendingSave) void saveEntry(pendingSave.date, pendingSave.value, pendingSave.status);
+            if (pendingSave) {
+                void saveEntry(
+                    pendingSave.date,
+                    pendingSave.value,
+                    pendingSave.status,
+                    pendingSave.mutationVersion,
+                    pendingSave.snapshot,
+                );
+            }
         }, 400);
     };
 
@@ -530,7 +595,15 @@ export const StatLineChart = React.memo(function StatLineChart({
         saveTimerRef.current = null;
         const pendingSave = pendingSaveRef.current;
         pendingSaveRef.current = null;
-        if (pendingSave) void saveEntry(pendingSave.date, pendingSave.value, pendingSave.status);
+        if (pendingSave) {
+            void saveEntry(
+                pendingSave.date,
+                pendingSave.value,
+                pendingSave.status,
+                pendingSave.mutationVersion,
+                pendingSave.snapshot,
+            );
+        }
     };
 
     const handleChartMouseMove = (state: MouseHandlerDataParam) => {
@@ -558,7 +631,7 @@ export const StatLineChart = React.memo(function StatLineChart({
     };
 
     const openSpecialEditor = (point: ChartPoint, event: StatChartPointClickEvent) => {
-        if (point.value === undefined || !chartRef.current) return;
+        if (point.value === undefined || point.periodEnd || point.date > toStr || !chartRef.current) return;
         chartHoveredRef.current = true;
         clearCloseTimer();
         setHoveredPoint(point);
@@ -617,7 +690,7 @@ export const StatLineChart = React.memo(function StatLineChart({
                 onMouseEnter={handleChartEnter}
                 onMouseLeave={handleChartLeave}
                 onContextMenu={event => {
-                    if (!onDateContextMenu || !hoveredPoint || hoveredPoint.periodEnd) return;
+                    if (!onDateContextMenu || !hoveredPoint || hoveredPoint.periodEnd || hoveredPoint.date > toStr) return;
                     event.preventDefault();
                     event.stopPropagation();
                     onDateContextMenu(hoveredPoint.date, event);
@@ -775,7 +848,7 @@ export const StatLineChart = React.memo(function StatLineChart({
                 />
             )}
 
-            {hoveredThreshold === null && hoveredPoint && editorPosition && dataState.key === dataKey && !isYearView && (
+            {hoveredThreshold === null && hoveredPoint && hoveredPoint.date <= toStr && editorPosition && dataState.key === dataKey && !isBucketedView && (
                 <Box
                     onMouseEnter={handleEditorEnter}
                     onMouseLeave={handleEditorLeave}
@@ -921,7 +994,7 @@ export const StatLineChart = React.memo(function StatLineChart({
                 </Box>
             )}
 
-            {hoveredThreshold === null && hoveredPoint && editorPosition && dataState.key === dataKey && isYearView && (
+            {hoveredThreshold === null && hoveredPoint && editorPosition && dataState.key === dataKey && isBucketedView && (
                 <Box
                     sx={{
                         position: 'absolute',
@@ -939,20 +1012,20 @@ export const StatLineChart = React.memo(function StatLineChart({
                     }}
                 >
                     <Typography variant="caption" color="text.secondary" display="block" noWrap>
-                        {isYearView
+                        {isBucketedView
                             ? hoveredPoint.bucketLabel
                             : format(parseISO(hoveredPoint.date), 'MMM d, yyyy')}
                     </Typography>
                     <Typography variant="body2" fontWeight={600} sx={{ color: comparisonDefinition ? primaryColor : 'text.primary' }}>
                         {comparisonDefinition && `${definition.name}: `}
-                        {formatPointValue(hoveredPoint.value, definition, isYearView, hoveredPoint.status)}
+                        {formatPointValue(hoveredPoint.value, definition, isBucketedView, hoveredPoint.status)}
                     </Typography>
                     {comparisonDefinition && (
                         <Typography variant="body2" fontWeight={600} sx={{ color: comparisonColor }}>
                             {comparisonDefinition.name}: {formatPointValue(
                                 hoveredPoint.comparisonValue,
                                 comparisonDefinition,
-                                isYearView,
+                                isBucketedView,
                                 hoveredPoint.comparisonStatus,
                             )}
                         </Typography>

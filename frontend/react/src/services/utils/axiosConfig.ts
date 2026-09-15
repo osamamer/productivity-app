@@ -1,5 +1,9 @@
 import axios from 'axios';
-import keycloak from '../keycloak';
+import keycloak, {
+    isDefinitiveRefreshFailure,
+    redirectToSignIn,
+    refreshAuthToken,
+} from '../keycloak';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
@@ -11,8 +15,16 @@ export const apiClient = axios.create({
 });
 
 apiClient.interceptors.request.use(async (config) => {
-    // Refresh token if it expires in less than 30 seconds
-    await keycloak.updateToken(30).catch(() => keycloak.logout());
+    try {
+        await refreshAuthToken(30);
+    } catch (error) {
+        if (isDefinitiveRefreshFailure(error)) {
+            redirectToSignIn();
+        } else {
+            // Let the current request use the existing token while a temporary outage recovers.
+            console.warn('Could not refresh the API session; continuing with the current token', error);
+        }
+    }
     if (keycloak.token) {
         config.headers.Authorization = `Bearer ${keycloak.token}`;
     }

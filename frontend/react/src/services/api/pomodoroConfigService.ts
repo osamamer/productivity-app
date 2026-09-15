@@ -1,5 +1,7 @@
 import { getAuthCacheScope, getAuthHeaders } from '../utils/authHeaders';
 import { TtlCache } from '../cache/ttlCache';
+import { userService } from './userService';
+import { getRuntimeUserPreference, getRuntimeUserPreferences, updateRuntimeUserPreferences } from '../userPreferenceStore';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
@@ -46,6 +48,15 @@ export const DEFAULT_LONG_BREAK_COOLDOWN = 4;
 const POMODORO_CONFIG_TTL_MS = 5 * 60 * 1000;
 const pomodoroConfigCache = new TtlCache<PomodoroConfig>({ ttlMs: POMODORO_CONFIG_TTL_MS, maxEntries: 4 });
 const pomodoroConfigRequests = new Map<string, Promise<PomodoroConfig>>();
+let pendingFormPreferenceUpdate: Partial<{
+    pomodoroFocusDuration: number;
+    pomodoroShortBreakDuration: number;
+    pomodoroLongBreakDuration: number;
+    pomodoroNumFocuses: number;
+    pomodoroLongBreakCooldown: number;
+}> | null = null;
+let pendingFormPreferenceScope: string | null = null;
+let formPreferenceUpdateTimer: number | null = null;
 
 function pomodoroFormStorageKey(): string {
     return `${POMODORO_FORM_STORAGE_PREFIX}.${getAuthCacheScope()}`;
@@ -71,9 +82,32 @@ export function readPomodoroFormPreferences(): PomodoroFormValues | null {
 
     try {
         const stored = window.localStorage.getItem(pomodoroFormStorageKey());
-        if (!stored) return null;
-        const parsed: unknown = JSON.parse(stored);
-        return isPomodoroFormValues(parsed) ? parsed : null;
+        const parsed: unknown = stored ? JSON.parse(stored) : null;
+        const runtime = getRuntimeUserPreferences();
+        if (isPomodoroFormValues(parsed)) {
+            return {
+                ...parsed,
+                focusDuration: runtime.pomodoroFocusDuration ?? parsed.focusDuration,
+                shortBreakDuration: runtime.pomodoroShortBreakDuration ?? parsed.shortBreakDuration,
+                longBreakDuration: runtime.pomodoroLongBreakDuration ?? parsed.longBreakDuration,
+                numFocuses: runtime.pomodoroNumFocuses ?? parsed.numFocuses,
+                longBreakCooldown: runtime.pomodoroLongBreakCooldown,
+            };
+        }
+
+        if (runtime.pomodoroFocusDuration !== null
+            && runtime.pomodoroShortBreakDuration !== null
+            && runtime.pomodoroLongBreakDuration !== null
+            && runtime.pomodoroNumFocuses !== null) {
+            return {
+                focusDuration: runtime.pomodoroFocusDuration,
+                shortBreakDuration: runtime.pomodoroShortBreakDuration,
+                longBreakDuration: runtime.pomodoroLongBreakDuration,
+                numFocuses: runtime.pomodoroNumFocuses,
+                longBreakCooldown: runtime.pomodoroLongBreakCooldown,
+            };
+        }
+        return null;
     } catch (error) {
         console.warn('Could not read Pomodoro input preferences:', error);
         return null;
@@ -85,6 +119,33 @@ export function savePomodoroFormPreferences(form: PomodoroFormValues): void {
 
     try {
         window.localStorage.setItem(pomodoroFormStorageKey(), JSON.stringify(form));
+        updateRuntimeUserPreferences({
+            pomodoroLongBreakCooldown: form.longBreakCooldown,
+            pomodoroFocusDuration: form.focusDuration,
+            pomodoroShortBreakDuration: form.shortBreakDuration,
+            pomodoroLongBreakDuration: form.longBreakDuration,
+            pomodoroNumFocuses: form.numFocuses,
+        });
+        pendingFormPreferenceUpdate = {
+            pomodoroFocusDuration: form.focusDuration,
+            pomodoroShortBreakDuration: form.shortBreakDuration,
+            pomodoroLongBreakDuration: form.longBreakDuration,
+            pomodoroNumFocuses: form.numFocuses,
+            pomodoroLongBreakCooldown: form.longBreakCooldown,
+        };
+        pendingFormPreferenceScope = getAuthCacheScope();
+        if (formPreferenceUpdateTimer !== null) window.clearTimeout(formPreferenceUpdateTimer);
+        formPreferenceUpdateTimer = window.setTimeout(() => {
+            const updates = pendingFormPreferenceUpdate;
+            const scope = pendingFormPreferenceScope;
+            pendingFormPreferenceUpdate = null;
+            pendingFormPreferenceScope = null;
+            formPreferenceUpdateTimer = null;
+            if (!updates || !scope || scope === 'anonymous' || getAuthCacheScope() !== scope) return;
+            void userService.updatePreferences(updates).catch(error => {
+                console.error('Could not save Pomodoro input preferences:', error);
+            });
+        }, 500);
         window.dispatchEvent(new Event(POMODORO_FORM_UPDATED_EVENT));
     } catch (error) {
         console.warn('Could not save Pomodoro input preferences:', error);
@@ -118,7 +179,7 @@ export function isPomodoroFormDefaults(form: PomodoroFormValues, config: Pomodor
 }
 
 export function setPomodoroSecondsModePreference(enabled: boolean): void {
-    localStorage.setItem(POMODORO_DEV_SECONDS_MODE_STORAGE_KEY, String(enabled));
+    updateRuntimeUserPreferences({ pomodoroSecondsMode: enabled });
 }
 
 export function clearPomodoroConfigCache(): void {
@@ -127,10 +188,7 @@ export function clearPomodoroConfigCache(): void {
 }
 
 function getLocalSecondsModePreference(): boolean | null {
-    const storedValue = localStorage.getItem(POMODORO_DEV_SECONDS_MODE_STORAGE_KEY);
-    if (storedValue === 'true') return true;
-    if (storedValue === 'false') return false;
-    return null;
+    return getRuntimeUserPreference('pomodoroSecondsMode');
 }
 
 function applyLocalPreference(config: PomodoroConfig): PomodoroConfig {

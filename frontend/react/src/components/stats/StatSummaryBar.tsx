@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Stack, Typography, Skeleton } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import { differenceInCalendarDays, parseISO } from 'date-fns';
+import { differenceInCalendarDays, format, parseISO } from 'date-fns';
 import { StatDefinition, StatEntry, StatSummary } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
 import { getStatPeriodWindow, StatPeriodMode, StatPeriodOffset } from './statPeriod';
@@ -9,6 +9,7 @@ import {
     averageTimeValues,
     formatDurationValue,
     formatTimeValue,
+    timeValueFromScale,
     timeValueToScale,
 } from '../../services/utils/statValues';
 
@@ -60,6 +61,7 @@ function pluralDays(n: number): string {
 
 function computeLongestBooleanStreak(entries: StatEntry[]): number {
     const yesDates = entries
+        .filter(entry => entry.status !== 'NOT_PLANNED')
         .filter(entry => entry.value === 1)
         .map(entry => entry.date)
         .sort();
@@ -77,6 +79,90 @@ function computeLongestBooleanStreak(entries: StatEntry[]): number {
     return longest;
 }
 
+function previousDate(date: string): string {
+    const value = parseISO(date);
+    value.setDate(value.getDate() - 1);
+    return format(value, 'yyyy-MM-dd');
+}
+
+function computeStreak(
+    entries: StatEntry[],
+    from: string,
+    to: string,
+    matches: (entry: StatEntry) => boolean,
+): number {
+    const entriesByDate = new Map(entries.map(entry => [entry.date, entry] as const));
+    let cursor = entriesByDate.has(to) ? to : previousDate(to);
+    let streak = 0;
+    while (cursor >= from) {
+        const entry = entriesByDate.get(cursor);
+        if (!entry || !matches(entry)) break;
+        streak += 1;
+        cursor = previousDate(cursor);
+    }
+    return streak;
+}
+
+function optimisticSummary(
+    definition: StatDefinition,
+    entries: StatEntry[],
+    from: string,
+    to: string,
+    serverSummary: StatSummary,
+): StatSummary {
+    if (definition.type === 'BOOLEAN') {
+        const recordedEntries = entries.filter(entry => entry.status !== 'NOT_PLANNED');
+        return {
+            ...serverSummary,
+            checkInStreak: computeStreak(entries, from, to, () => true),
+            periodYesCount: recordedEntries.filter(entry => entry.value === 1).length,
+            booleanStreak: computeStreak(
+                entries,
+                from,
+                to,
+                entry => entry.status !== 'NOT_PLANNED' && entry.value === 1,
+            ),
+            longestBooleanStreak: computeLongestBooleanStreak(entries),
+        };
+    }
+
+    const values = entries.map(entry => entry.value);
+    if (values.length === 0) {
+        return {
+            ...serverSummary,
+            checkInStreak: computeStreak(entries, from, to, () => true),
+            periodAverage: null,
+            periodTotal: 0,
+            periodHighest: null,
+        };
+    }
+
+    if (definition.type === 'TIME') {
+        const linearValues = values.map(value => timeValueToScale(definition, value));
+        const total = linearValues.reduce((sum, value) => sum + value, 0);
+        return {
+            ...serverSummary,
+            checkInStreak: computeStreak(entries, from, to, () => true),
+            periodAverage: timeValueFromScale(definition, total / values.length),
+            periodTotal: total,
+            periodHighest: timeValueFromScale(definition, Math.max(...linearValues)),
+        };
+    }
+
+    const total = values.reduce((sum, value) => sum + value, 0);
+    const periodDays = differenceInCalendarDays(parseISO(to), parseISO(from)) + 1;
+    const serverUsesUnloggedZeros = serverSummary.periodAverage != null
+        && serverSummary.periodTotal != null
+        && Math.abs(serverSummary.periodAverage - serverSummary.periodTotal / periodDays) < 0.000001;
+    return {
+        ...serverSummary,
+        checkInStreak: computeStreak(entries, from, to, () => true),
+        periodAverage: total / (serverUsesUnloggedZeros ? periodDays : values.length),
+        periodTotal: total,
+        periodHighest: Math.max(...values),
+    };
+}
+
 export const StatSummaryBar = React.memo(function StatSummaryBar({ definition, dateRange, periodMode, periodOffset, refreshKey }: Props) {
     const period = getStatPeriodWindow(dateRange, periodMode, periodOffset);
     const periodKey = `${definition.id}:${period.key}`;
@@ -92,14 +178,16 @@ export const StatSummaryBar = React.memo(function StatSummaryBar({ definition, d
     const currentSummary = summaryState?.key === periodKey
         ? summaryState.summary
         : cachedSummary ?? null;
-    const currentEntries = entryState?.key === periodKey
-        ? entryState.entries
-        : statService.getCachedEntries(definition.id, period.from, period.to) ?? null;
+    const currentEntries = statService.getCachedEntries(definition.id, period.from, period.to)
+        ?? (entryState?.key === periodKey ? entryState.entries : null);
     // Keep the previous period visible while the next period is loading. This
     // prevents the summary row from collapsing into skeletons on every range change.
     const summary = currentSummary ?? summaryState?.summary ?? null;
     const entries = currentEntries ?? entryState?.entries ?? null;
     const isRefreshing = currentSummary === null && summaryState !== null;
+    const displaySummary = summary && entries
+        ? optimisticSummary(definition, entries, period.from, period.to, summary)
+        : summary;
 
     useEffect(() => {
         let cancelled = false;
@@ -122,7 +210,7 @@ export const StatSummaryBar = React.memo(function StatSummaryBar({ definition, d
         return () => { cancelled = true; };
     }, [definition.id, period.from, period.to, periodKey, refreshKey]);
 
-    if (!summary) {
+    if (!displaySummary) {
         const tileCount = 3;
         return (
             <Stack direction="row" spacing={1.5} sx={{ mb: 2 }}>
@@ -143,20 +231,20 @@ export const StatSummaryBar = React.memo(function StatSummaryBar({ definition, d
     const derivedPeriodEarliest = entries && entries.length > 0
         ? entries.reduce((earliest, entry) => timeValueToScale(definition, entry.value) < timeValueToScale(definition, earliest) ? entry.value : earliest, entries[0].value)
         : null;
-    const periodHighest = summary.periodHighest ?? derivedPeriodHighest;
+    const periodHighest = displaySummary.periodHighest ?? derivedPeriodHighest;
 
     if (definition.type === 'BOOLEAN') {
         tiles.push({
             label: 'streak',
-            value: pluralDays(summary.booleanStreak ?? 0),
+            value: pluralDays(displaySummary.booleanStreak ?? 0),
         });
         tiles.push({
             label: 'performed',
-            value: `${summary.periodYesCount ?? 0} ${summary.periodYesCount === 1 ? 'time' : 'times'}`,
+            value: `${displaySummary.periodYesCount ?? 0} ${displaySummary.periodYesCount === 1 ? 'time' : 'times'}`,
         });
         tiles.push({
             label: 'longest streak',
-            value: pluralDays(summary.longestBooleanStreak ?? derivedLongestBooleanStreak ?? 0),
+            value: pluralDays(displaySummary.longestBooleanStreak ?? derivedLongestBooleanStreak ?? 0),
         });
     }
 
@@ -167,16 +255,18 @@ export const StatSummaryBar = React.memo(function StatSummaryBar({ definition, d
         });
         tiles.push({
             label: 'Average',
-            value: summary.periodAverage !== null ? formatAverage(summary.periodAverage) : '—',
+            value: displaySummary.periodAverage !== null ? formatAverage(displaySummary.periodAverage) : '—',
         });
         tiles.push({
             label: 'Total',
-            value: summary.periodTotal !== null ? formatAverage(summary.periodTotal) : '—',
+            value: displaySummary.periodTotal !== null ? formatAverage(displaySummary.periodTotal) : '—',
         });
     }
 
     if (definition.type === 'TIME') {
-        const timeAverage = entries ? averageTimeValues(definition, entries.map(entry => entry.value)) : null;
+        const timeAverage = displaySummary.periodAverage
+            ?? (entries ? averageTimeValues(definition, entries.map(entry => entry.value)) : null);
+        const timeLatest = displaySummary.periodHighest ?? derivedPeriodHighest;
         tiles.push({
             label: 'Earliest',
             value: derivedPeriodEarliest != null ? formatTimeValue(derivedPeriodEarliest) : '—',
@@ -187,7 +277,7 @@ export const StatSummaryBar = React.memo(function StatSummaryBar({ definition, d
         });
         tiles.push({
             label: 'Latest',
-            value: derivedPeriodHighest != null ? formatTimeValue(derivedPeriodHighest) : '—',
+            value: timeLatest != null ? formatTimeValue(timeLatest) : '—',
         });
     }
 
@@ -198,11 +288,11 @@ export const StatSummaryBar = React.memo(function StatSummaryBar({ definition, d
         });
         tiles.push({
             label: 'Average',
-            value: summary.periodAverage !== null ? formatDurationValue(summary.periodAverage) : '—',
+            value: displaySummary.periodAverage !== null ? formatDurationValue(displaySummary.periodAverage) : '—',
         });
         tiles.push({
             label: 'Total',
-            value: summary.periodTotal !== null ? formatDurationValue(summary.periodTotal) : '—',
+            value: displaySummary.periodTotal !== null ? formatDurationValue(displaySummary.periodTotal) : '—',
         });
     }
 

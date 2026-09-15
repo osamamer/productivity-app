@@ -22,4 +22,12 @@ export const mentalStateService = {
         if (!response.ok) throw new Error('Failed to record mental state check-in');
         return response.json();
     },
+
+    async deleteCheckIn(checkInId: string): Promise<void> {
+        const response = await fetch(`${MENTAL_STATE_URL}/${encodeURIComponent(checkInId)}`, {
+            method: 'DELETE',
+            headers: getAuthHeaders(),
+        });
+        if (!response.ok) throw new Error('Failed to delete mental state check-in');
+    },
 };

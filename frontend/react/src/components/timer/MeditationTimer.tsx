@@ -23,6 +23,7 @@ import StopIcon from '@mui/icons-material/Stop';
 import VolumeOffIcon from '@mui/icons-material/VolumeOff';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import { meditationService } from '../../services/api/meditationService.ts';
+import { userService } from '../../services/api/userService.ts';
 import { useUser } from '../../hooks/useUser';
 import {
     playMeditationCompletionGong,
@@ -37,13 +38,11 @@ import {
     meditationSoundscape,
 } from './meditationSounds.ts';
 import { MeditationNavigationGuard } from './MeditationNavigationGuard.tsx';
+import { getRuntimeUserPreferences, subscribeToUserPreferences, updateRuntimeUserPreferences } from '../../services/userPreferenceStore';
 
 const DURATION_OPTIONS = [5, 10, 15, 20, 30];
 const MIN_MOOD = 1;
 const MAX_MOOD = 10;
-const MEDITATION_SETTINGS_STORAGE_KEY = 'meditation-settings';
-const LEGACY_SOUND_STORAGE_KEY = 'meditation-soundscape';
-
 interface MeditationSettings {
     durationMinutes: number;
     numIntervalBells: number;
@@ -56,10 +55,6 @@ const DEFAULT_MEDITATION_SETTINGS: MeditationSettings = {
     selectedSound: 'rain',
 };
 
-function meditationSettingsStorageKey(userId: string | undefined): string {
-    return `${MEDITATION_SETTINGS_STORAGE_KEY}:${userId || 'anonymous'}`;
-}
-
 function isMeditationSound(value: unknown): value is MeditationSoundId {
     return typeof value === 'string' && MEDITATION_SOUND_OPTIONS.some(option => option.id === value);
 }
@@ -68,43 +63,33 @@ function isValidIntervalBellCount(value: unknown): value is number {
     return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 10;
 }
 
-function readMeditationSettings(userId: string | undefined): MeditationSettings {
-    if (typeof window === 'undefined') return DEFAULT_MEDITATION_SETTINGS;
-
-    try {
-        const stored = window.localStorage.getItem(meditationSettingsStorageKey(userId));
-        if (stored) {
-            const parsed = JSON.parse(stored) as Partial<MeditationSettings>;
-            const storedBellCount = parsed.numIntervalBells;
-            return {
-                durationMinutes: DURATION_OPTIONS.includes(parsed.durationMinutes ?? 0)
-                    ? parsed.durationMinutes as number
-                    : DEFAULT_MEDITATION_SETTINGS.durationMinutes,
-                numIntervalBells: isValidIntervalBellCount(storedBellCount)
-                    ? storedBellCount
-                    : DEFAULT_MEDITATION_SETTINGS.numIntervalBells,
-                selectedSound: isMeditationSound(parsed.selectedSound)
-                    ? parsed.selectedSound
-                    : DEFAULT_MEDITATION_SETTINGS.selectedSound,
-            };
-        }
-
-        const legacySound = window.localStorage.getItem(LEGACY_SOUND_STORAGE_KEY);
-        return isMeditationSound(legacySound)
-            ? { ...DEFAULT_MEDITATION_SETTINGS, selectedSound: legacySound }
-            : DEFAULT_MEDITATION_SETTINGS;
-    } catch (error) {
-        console.warn('Could not read meditation preferences:', error);
-        return DEFAULT_MEDITATION_SETTINGS;
-    }
+function readMeditationSettings(): MeditationSettings {
+    const preferences = getRuntimeUserPreferences();
+    return {
+        durationMinutes: DURATION_OPTIONS.includes(preferences.meditationDurationMinutes)
+            ? preferences.meditationDurationMinutes
+            : DEFAULT_MEDITATION_SETTINGS.durationMinutes,
+        numIntervalBells: isValidIntervalBellCount(preferences.meditationIntervalBells)
+            ? preferences.meditationIntervalBells
+            : DEFAULT_MEDITATION_SETTINGS.numIntervalBells,
+        selectedSound: isMeditationSound(preferences.meditationSound)
+            ? preferences.meditationSound
+            : DEFAULT_MEDITATION_SETTINGS.selectedSound,
+    };
 }
 
 function storeMeditationSettings(userId: string | undefined, settings: MeditationSettings): void {
-    try {
-        window.localStorage.setItem(meditationSettingsStorageKey(userId), JSON.stringify(settings));
-    } catch (error) {
-        console.warn('Could not save meditation preferences:', error);
-    }
+    updateRuntimeUserPreferences({
+        meditationDurationMinutes: settings.durationMinutes,
+        meditationIntervalBells: settings.numIntervalBells,
+        meditationSound: settings.selectedSound,
+    });
+    if (!userId) return;
+    void userService.updatePreferences({
+        meditationDurationMinutes: settings.durationMinutes,
+        meditationIntervalBells: settings.numIntervalBells,
+        meditationSound: settings.selectedSound,
+    }).catch(error => console.error('Could not save meditation preferences:', error));
 }
 
 function parseDate(value: string | null): number | null {
@@ -130,13 +115,48 @@ function durationInSeconds(value: MeditationSession['totalSessionTime']): number
     );
 }
 
-function elapsedSeconds(session: MeditationSession, now = Date.now()): number {
+interface ClientRunningAnchor {
+    sessionId: string;
+    startedAt: number;
+}
+
+function elapsedSeconds(
+    session: MeditationSession,
+    now = Date.now(),
+    clientRunningAnchor: ClientRunningAnchor | null = null,
+): number {
     const persistedSeconds = durationInSeconds(session.totalSessionTime);
     if (!session.running) return persistedSeconds;
+    if (clientRunningAnchor?.sessionId === session.id) {
+        return persistedSeconds + Math.max(0, Math.floor((now - clientRunningAnchor.startedAt) / 1000));
+    }
 
     const lastUnpause = parseDate(session.lastUnpauseTime);
     if (lastUnpause === null) return persistedSeconds;
     return persistedSeconds + Math.max(0, Math.floor((now - lastUnpause) / 1000));
+}
+
+function createOptimisticSession(
+    startedAt: number,
+    moodBefore: number,
+    numIntervalBells: number,
+    intendedLength: number,
+): MeditationSession {
+    const timestamp = new Date(startedAt).toISOString();
+    return {
+        id: `optimistic-meditation-${startedAt}-${Math.random().toString(36).slice(2)}`,
+        running: true,
+        active: true,
+        totalSessionTime: 0,
+        startTime: timestamp,
+        lastUnpauseTime: timestamp,
+        lastPauseTime: null,
+        endTime: null,
+        moodBefore,
+        moodAfter: 0,
+        numIntervalBells,
+        intendedLength,
+    };
 }
 
 function formatTime(totalSeconds: number): string {
@@ -161,7 +181,7 @@ interface MeditationTimerProps {
 
 export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
     const { user } = useUser();
-    const settingsStorageKey = meditationSettingsStorageKey(user?.id);
+    const settingsStorageKey = user?.id ?? 'anonymous';
     const [session, setSession] = useState<MeditationSession | null>(null);
     const [elapsed, setElapsed] = useState(0);
     const [moodBefore, setMoodBefore] = useState(5);
@@ -172,6 +192,7 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
     const [soundMuted, setSoundMuted] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [actionLoading, setActionLoading] = useState(false);
+    const [startPending, setStartPending] = useState(false);
     const [finishDialogOpen, setFinishDialogOpen] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [completedSession, setCompletedSession] = useState<MeditationSession | null>(null);
@@ -179,15 +200,29 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
     const lastBellRef = useRef(0);
     const completionGongSessionRef = useRef<string | null>(null);
     const soundStartedByUserRef = useRef(false);
+    const mountedRef = useRef(true);
+    const [clientRunningAnchor, setClientRunningAnchor] = useState<ClientRunningAnchor | null>(null);
     const [loadedSettingsKey, setLoadedSettingsKey] = useState<string | null>(null);
 
     useEffect(() => {
-        const stored = readMeditationSettings(user?.id);
+        let cancelled = false;
+        void userService.getPreferences().then(() => {
+            if (cancelled) return;
+            const stored = readMeditationSettings();
+            setDurationMinutes(stored.durationMinutes);
+            setNumIntervalBells(stored.numIntervalBells);
+            setSelectedSound(stored.selectedSound);
+            setLoadedSettingsKey(settingsStorageKey);
+        }).catch(error => console.error('Could not load meditation preferences:', error));
+        return () => { cancelled = true; };
+    }, [settingsStorageKey, user?.id]);
+
+    useEffect(() => subscribeToUserPreferences(() => {
+        const stored = readMeditationSettings();
         setDurationMinutes(stored.durationMinutes);
         setNumIntervalBells(stored.numIntervalBells);
         setSelectedSound(stored.selectedSound);
-        setLoadedSettingsKey(settingsStorageKey);
-    }, [settingsStorageKey, user?.id]);
+    }), [user?.id]);
 
     useEffect(() => {
         if (loadedSettingsKey !== settingsStorageKey) return;
@@ -195,10 +230,16 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
     }, [durationMinutes, loadedSettingsKey, numIntervalBells, selectedSound, settingsStorageKey, user?.id]);
 
     useEffect(() => {
+        mountedRef.current = true;
         return () => {
+            mountedRef.current = false;
             meditationSoundscape.stop();
         };
     }, []);
+
+    useEffect(() => {
+        meditationSoundscape.prepare(selectedSound);
+    }, [selectedSound]);
 
     useEffect(() => {
         let mounted = true;
@@ -227,13 +268,13 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
             return;
         }
 
-        const updateElapsed = () => setElapsed(elapsedSeconds(session));
+        const updateElapsed = () => setElapsed(elapsedSeconds(session, Date.now(), clientRunningAnchor));
         updateElapsed();
         if (!session.running) return;
 
         const interval = window.setInterval(updateElapsed, 1000);
         return () => window.clearInterval(interval);
-    }, [session]);
+    }, [clientRunningAnchor, session]);
 
     useEffect(() => {
         if (!session || !session.intendedLength || !session.numIntervalBells) {
@@ -293,7 +334,8 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
 
     const handleSoundChange = (sound: MeditationSoundId) => {
         setSelectedSound(sound);
-        if (session && !soundMuted) {
+        if (session) {
+            if (soundMuted) setSoundMuted(false);
             soundStartedByUserRef.current = true;
             void meditationSoundscape.start(sound);
         } else if (!session) {
@@ -313,29 +355,59 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
     };
 
     const startSession = async () => {
+        if (session || startPending) return;
+
+        const startedAt = Date.now();
+        const intendedLength = durationMinutes * 60;
+        const optimisticSession = createOptimisticSession(
+            startedAt,
+            moodBefore,
+            numIntervalBells,
+            intendedLength,
+        );
+        const optimisticAnchor = { sessionId: optimisticSession.id, startedAt };
+
+        setStartPending(true);
         setActionLoading(true);
         setError(null);
-        prepareAudioFeedback();
-        prepareMeditationAudio();
+        setCompletedSession(null);
+        setSession(optimisticSession);
+        setClientRunningAnchor(optimisticAnchor);
+        setElapsed(0);
         if (!soundMuted) {
             soundStartedByUserRef.current = true;
             void meditationSoundscape.start(selectedSound);
         }
+        prepareAudioFeedback();
+        prepareMeditationAudio();
         try {
             const started = await meditationService.startSession({
                 mood: moodBefore,
                 numIntervalBells,
-                intendedLength: durationMinutes * 60,
+                intendedLength,
             });
-            setCompletedSession(null);
+            if (!mountedRef.current) {
+                meditationService.endSessionOnUnload(started.id);
+                return;
+            }
+
             setSession(started);
-            setElapsed(elapsedSeconds(started));
+            const reconciledAnchor = { sessionId: started.id, startedAt };
+            setClientRunningAnchor(reconciledAnchor);
+            setElapsed(elapsedSeconds(started, Date.now(), reconciledAnchor));
         } catch (startError) {
+            if (!mountedRef.current) return;
+            setSession(null);
+            setClientRunningAnchor(null);
+            setElapsed(0);
             meditationSoundscape.stop();
             soundStartedByUserRef.current = false;
             setError(startError instanceof Error ? startError.message : 'Could not start meditation.');
         } finally {
-            setActionLoading(false);
+            if (mountedRef.current) {
+                setStartPending(false);
+                setActionLoading(false);
+            }
         }
     };
 
@@ -348,7 +420,10 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
                 ? await meditationService.pauseSession(session.id)
                 : await meditationService.unpauseSession(session.id);
             setSession(updated);
-            setElapsed(elapsedSeconds(updated));
+            const updatedAt = Date.now();
+            const nextAnchor = updated.running ? { sessionId: updated.id, startedAt: updatedAt } : null;
+            setClientRunningAnchor(nextAnchor);
+            setElapsed(elapsedSeconds(updated, updatedAt, nextAnchor));
             if (updated.running) {
                 if (!soundMuted) await meditationSoundscape.resume();
             } else {
@@ -369,6 +444,7 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
             const finished = await meditationService.endSession(session.id, moodAfter);
             setCompletedSession(finished);
             setSession(null);
+            setClientRunningAnchor(null);
             meditationSoundscape.stop();
             soundStartedByUserRef.current = false;
             setFinishDialogOpen(false);
@@ -387,6 +463,7 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
         try {
             await meditationService.discardSession(session.id);
             setSession(null);
+            setClientRunningAnchor(null);
             meditationSoundscape.stop();
             soundStartedByUserRef.current = false;
             setFinishDialogOpen(false);
@@ -508,9 +585,10 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
             </Dialog>
 
             <MeditationNavigationGuard
-                session={session}
+                session={startPending ? null : session}
                 onSessionEnded={() => {
                     setSession(null);
+                    setClientRunningAnchor(null);
                     meditationSoundscape.stop();
                     soundStartedByUserRef.current = false;
                     onSessionCompleted();
@@ -615,6 +693,7 @@ function StartMeditation({
                                         key={option.id}
                                         variant={selected ? 'contained' : 'outlined'}
                                         color={selected ? 'primary' : 'inherit'}
+                                        data-meditation-sound-preview="true"
                                         onClick={() => onSoundChange(option.id)}
                                         startIcon={<MusicNoteIcon />}
                                         sx={{

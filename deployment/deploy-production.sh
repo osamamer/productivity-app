@@ -160,6 +160,19 @@ configure_mobile_sign_in() {
       --user "${KEYCLOAK_ADMIN_USER}" \
       --password "${KEYCLOAK_ADMIN_PASSWORD}" >/dev/null 2>&1 \
       && "${compose[@]}" exec -T keycloak /opt/keycloak/bin/kcadm.sh update "realms/${realm}" \
+        -s rememberMe=true \
+        -s accessTokenLifespan=300 \
+        -s ssoSessionIdleTimeout=2592000 \
+        -s ssoSessionMaxLifespan=31536000 \
+        -s ssoSessionIdleTimeoutRememberMe=2592000 \
+        -s ssoSessionMaxLifespanRememberMe=31536000 \
+        -s clientSessionIdleTimeout=2592000 \
+        -s clientSessionMaxLifespan=31536000 \
+        -s offlineSessionIdleTimeout=2592000 \
+        -s offlineSessionMaxLifespanEnabled=true \
+        -s offlineSessionMaxLifespan=31536000 \
+        -s clientOfflineSessionIdleTimeout=2592000 \
+        -s clientOfflineSessionMaxLifespan=31536000 \
         -s attributes.frontendUrl="https://${AUTH_DOMAIN}" >/dev/null 2>&1 \
       && client_id=$("${compose[@]}" exec -T keycloak /opt/keycloak/bin/kcadm.sh get clients \
         -r "${realm}" \

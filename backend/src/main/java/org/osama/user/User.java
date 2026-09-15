@@ -52,6 +52,54 @@ public class User {
     @Column(name = "pomodoro_sound_id")
     private String pomodoroSoundId;
 
+    @Column(name = "show_completed_home_tasks")
+    private Boolean showCompletedHomeTasks;
+
+    @Column(name = "exclude_today_completed_tasks")
+    private Boolean excludeTodayCompletedTasks;
+
+    @Column(name = "show_closed_mental_threads")
+    private Boolean showClosedMentalThreads;
+
+    @Column(name = "sound_effects_enabled")
+    private Boolean soundEffectsEnabled;
+
+    @Column(name = "white_noise_enabled")
+    private Boolean whiteNoiseEnabled;
+
+    @Column(name = "pomodoro_seconds_mode")
+    private Boolean pomodoroSecondsMode;
+
+    @Column(name = "pomodoro_long_break_cooldown")
+    private Integer pomodoroLongBreakCooldown;
+
+    @Column(name = "pomodoro_focus_duration")
+    private Integer pomodoroFocusDuration;
+
+    @Column(name = "pomodoro_short_break_duration")
+    private Integer pomodoroShortBreakDuration;
+
+    @Column(name = "pomodoro_long_break_duration")
+    private Integer pomodoroLongBreakDuration;
+
+    @Column(name = "pomodoro_num_focuses")
+    private Integer pomodoroNumFocuses;
+
+    @Column(name = "theme_mode")
+    private String themeMode;
+
+    @Column(name = "accent_color")
+    private String accentColor;
+
+    @Column(name = "meditation_duration_minutes")
+    private Integer meditationDurationMinutes;
+
+    @Column(name = "meditation_interval_bells")
+    private Integer meditationIntervalBells;
+
+    @Column(name = "meditation_sound")
+    private String meditationSound;
+
     @Builder.Default
     @Column(name = "checkup_notifications_enabled", nullable = false)
     private Boolean checkupNotificationsEnabled = true;

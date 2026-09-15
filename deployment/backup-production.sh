@@ -41,4 +41,11 @@ dump_database() {
 dump_database "$POSTGRES_DB"
 dump_database "$KEYCLOAK_DB"
 
+sound_backup="$backup_dir/pomodoro-sounds-${stamp}.tar.gz"
+sound_backup_temporary="$sound_backup.tmp"
+echo "Backing up Pomodoro sound files..."
+"${compose[@]}" exec -T backend tar -czf - -C /var/lib/claritard/pomodoro-sounds . > "$sound_backup_temporary"
+mv -- "$sound_backup_temporary" "$sound_backup"
+sha256sum "$sound_backup" > "$sound_backup.sha256"
+
 echo "Backups written to $backup_dir"

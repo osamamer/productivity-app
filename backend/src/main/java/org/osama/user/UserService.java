@@ -175,80 +175,110 @@ public class UserService {
                                   Boolean repeatCheckupNotificationsEnabled, Integer checkupIntervalMinutes,
                                   LocalTime checkupStartTime, Integer checkupTimesPerDay,
                                   String pomodoroSoundId) {
-        if (includeUnloggedNumericDaysAsZero == null && autoStartPomodoroSessions == null
-                && checkupNotificationsEnabled == null && repeatCheckupNotificationsEnabled == null
-                && checkupIntervalMinutes == null
-                && checkupStartTime == null && checkupTimesPerDay == null && pomodoroSoundId == null) {
+        return updatePreferences(userId, new UserPreferenceUpdates(
+                includeUnloggedNumericDaysAsZero, autoStartPomodoroSessions,
+                checkupNotificationsEnabled, repeatCheckupNotificationsEnabled,
+                checkupIntervalMinutes, checkupStartTime, checkupTimesPerDay, pomodoroSoundId,
+                null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null));
+    }
+
+    @Transactional
+    public User updatePreferences(String userId, UserPreferenceUpdates updates) {
+        if (updates == null || updates.isEmpty()) {
             throw new IllegalArgumentException("At least one user preference is required.");
         }
 
         User user = userRepository.findUserByIdForUpdate(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
-        boolean numericPreferenceChanged = includeUnloggedNumericDaysAsZero != null
-                && !Objects.equals(user.getIncludeUnloggedNumericDaysAsZero(), includeUnloggedNumericDaysAsZero);
-        boolean pomodoroPreferenceChanged = autoStartPomodoroSessions != null
-                && !Objects.equals(user.getAutoStartPomodoroSessions(), autoStartPomodoroSessions);
-        boolean pomodoroSoundPreferenceChanged = pomodoroSoundId != null
-                && !Objects.equals(user.getPomodoroSoundId(), pomodoroSoundId);
-        boolean checkupPreferenceChanged = checkupNotificationsEnabled != null
-                && !Objects.equals(user.getCheckupNotificationsEnabled(), checkupNotificationsEnabled);
-        boolean repeatCheckupPreferenceChanged = repeatCheckupNotificationsEnabled != null
-                && !Objects.equals(user.getRepeatCheckupNotificationsEnabled(), repeatCheckupNotificationsEnabled);
-        boolean checkupScheduleChanged = checkupIntervalMinutes != null
-                || checkupStartTime != null
-                || checkupTimesPerDay != null;
+        boolean checkupScheduleChanged = updates.checkupIntervalMinutes() != null
+                || updates.checkupStartTime() != null
+                || updates.checkupTimesPerDay() != null;
 
-        int effectiveIntervalMinutes = checkupIntervalMinutes != null
-                ? checkupIntervalMinutes : user.getCheckupIntervalMinutes();
-        LocalTime effectiveStartTime = checkupStartTime != null
-                ? checkupStartTime : user.getCheckupStartTime();
-        int effectiveTimesPerDay = checkupTimesPerDay != null
-                ? checkupTimesPerDay : user.getCheckupTimesPerDay();
-        if (checkupScheduleChanged || checkupNotificationsEnabled != null) {
+        int effectiveIntervalMinutes = updates.checkupIntervalMinutes() != null
+                ? updates.checkupIntervalMinutes() : user.getCheckupIntervalMinutes();
+        LocalTime effectiveStartTime = updates.checkupStartTime() != null
+                ? updates.checkupStartTime() : user.getCheckupStartTime();
+        int effectiveTimesPerDay = updates.checkupTimesPerDay() != null
+                ? updates.checkupTimesPerDay() : user.getCheckupTimesPerDay();
+        if (checkupScheduleChanged || updates.checkupNotificationsEnabled() != null) {
             validateCheckupSchedule(effectiveIntervalMinutes, effectiveStartTime, effectiveTimesPerDay);
         }
+        validateUserSettings(updates);
 
-        if (includeUnloggedNumericDaysAsZero != null) {
-            user.setIncludeUnloggedNumericDaysAsZero(includeUnloggedNumericDaysAsZero);
+        if (updates.includeUnloggedNumericDaysAsZero() != null) user.setIncludeUnloggedNumericDaysAsZero(updates.includeUnloggedNumericDaysAsZero());
+        if (updates.autoStartPomodoroSessions() != null) user.setAutoStartPomodoroSessions(updates.autoStartPomodoroSessions());
+        if (updates.pomodoroSoundId() != null) {
+            validatePomodoroSoundSelection(updates.pomodoroSoundId(), userId);
+            user.setPomodoroSoundId(updates.pomodoroSoundId());
         }
-        if (autoStartPomodoroSessions != null) {
-            user.setAutoStartPomodoroSessions(autoStartPomodoroSessions);
-        }
-        if (pomodoroSoundId != null) {
-            validatePomodoroSoundSelection(pomodoroSoundId, userId);
-            user.setPomodoroSoundId(pomodoroSoundId);
-        }
-        if (checkupNotificationsEnabled != null) {
-            user.setCheckupNotificationsEnabled(checkupNotificationsEnabled);
-        }
-        if (repeatCheckupNotificationsEnabled != null) {
-            user.setRepeatCheckupNotificationsEnabled(repeatCheckupNotificationsEnabled);
-        }
-        if (checkupIntervalMinutes != null) {
-            user.setCheckupIntervalMinutes(checkupIntervalMinutes);
-        }
-        if (checkupStartTime != null) {
-            user.setCheckupStartTime(checkupStartTime);
-        }
-        if (checkupTimesPerDay != null) {
-            user.setCheckupTimesPerDay(checkupTimesPerDay);
-        }
+        if (updates.checkupNotificationsEnabled() != null) user.setCheckupNotificationsEnabled(updates.checkupNotificationsEnabled());
+        if (updates.repeatCheckupNotificationsEnabled() != null) user.setRepeatCheckupNotificationsEnabled(updates.repeatCheckupNotificationsEnabled());
+        if (updates.checkupIntervalMinutes() != null) user.setCheckupIntervalMinutes(updates.checkupIntervalMinutes());
+        if (updates.checkupStartTime() != null) user.setCheckupStartTime(updates.checkupStartTime());
+        if (updates.checkupTimesPerDay() != null) user.setCheckupTimesPerDay(updates.checkupTimesPerDay());
+        if (updates.showCompletedHomeTasks() != null) user.setShowCompletedHomeTasks(updates.showCompletedHomeTasks());
+        if (updates.excludeTodayCompletedTasks() != null) user.setExcludeTodayCompletedTasks(updates.excludeTodayCompletedTasks());
+        if (updates.showClosedMentalThreads() != null) user.setShowClosedMentalThreads(updates.showClosedMentalThreads());
+        if (updates.soundEffectsEnabled() != null) user.setSoundEffectsEnabled(updates.soundEffectsEnabled());
+        if (updates.whiteNoiseEnabled() != null) user.setWhiteNoiseEnabled(updates.whiteNoiseEnabled());
+        if (updates.pomodoroSecondsMode() != null) user.setPomodoroSecondsMode(updates.pomodoroSecondsMode());
+        if (updates.pomodoroLongBreakCooldown() != null) user.setPomodoroLongBreakCooldown(updates.pomodoroLongBreakCooldown());
+        if (updates.pomodoroFocusDuration() != null) user.setPomodoroFocusDuration(updates.pomodoroFocusDuration());
+        if (updates.pomodoroShortBreakDuration() != null) user.setPomodoroShortBreakDuration(updates.pomodoroShortBreakDuration());
+        if (updates.pomodoroLongBreakDuration() != null) user.setPomodoroLongBreakDuration(updates.pomodoroLongBreakDuration());
+        if (updates.pomodoroNumFocuses() != null) user.setPomodoroNumFocuses(updates.pomodoroNumFocuses());
+        if (updates.themeMode() != null) user.setThemeMode(updates.themeMode());
+        if (updates.accentColor() != null) user.setAccentColor(updates.accentColor());
+        if (updates.meditationDurationMinutes() != null) user.setMeditationDurationMinutes(updates.meditationDurationMinutes());
+        if (updates.meditationIntervalBells() != null) user.setMeditationIntervalBells(updates.meditationIntervalBells());
+        if (updates.meditationSound() != null) user.setMeditationSound(updates.meditationSound());
+
         User savedUser = userRepository.save(user);
-        log.info("User preferences updated: userId={} includeUnloggedNumericDaysAsZero={} autoStartPomodoroSessions={} "
-                        + "pomodoroSoundId={} checkupNotificationsEnabled={} repeatCheckupNotificationsEnabled={} checkupIntervalMinutes={} "
-                        + "checkupStartTime={} checkupTimesPerDay={} changed={}",
-                userId, savedUser.getIncludeUnloggedNumericDaysAsZero(), savedUser.getAutoStartPomodoroSessions(),
-                savedUser.getPomodoroSoundId(),
-                savedUser.getCheckupNotificationsEnabled(), savedUser.getRepeatCheckupNotificationsEnabled(),
-                savedUser.getCheckupIntervalMinutes(),
-                savedUser.getCheckupStartTime(), savedUser.getCheckupTimesPerDay(),
-                numericPreferenceChanged || pomodoroPreferenceChanged || pomodoroSoundPreferenceChanged || checkupPreferenceChanged
-                        || repeatCheckupPreferenceChanged || checkupScheduleChanged);
+        log.info("User preferences updated: userId={} changedFields={}", userId, updates);
         if (Boolean.FALSE.equals(savedUser.getCheckupNotificationsEnabled())
                 || Boolean.FALSE.equals(savedUser.getRepeatCheckupNotificationsEnabled())) {
             notificationService.clearPendingCheckupNotifications(userId);
         }
         return savedUser;
+    }
+
+    private void validateUserSettings(UserPreferenceUpdates updates) {
+        if (updates.pomodoroLongBreakCooldown() != null
+                && (updates.pomodoroLongBreakCooldown() < 1 || updates.pomodoroLongBreakCooldown() > 5)) {
+            throw new IllegalArgumentException("Long break frequency must be between 1 and 5 sessions.");
+        }
+        if (updates.pomodoroFocusDuration() != null && updates.pomodoroFocusDuration() < 1) {
+            throw new IllegalArgumentException("Focus duration must be positive.");
+        }
+        if (updates.pomodoroShortBreakDuration() != null && updates.pomodoroShortBreakDuration() < 1) {
+            throw new IllegalArgumentException("Short break duration must be positive.");
+        }
+        if (updates.pomodoroLongBreakDuration() != null && updates.pomodoroLongBreakDuration() < 1) {
+            throw new IllegalArgumentException("Long break duration must be positive.");
+        }
+        if (updates.pomodoroNumFocuses() != null && updates.pomodoroNumFocuses() < 1) {
+            throw new IllegalArgumentException("The number of focus sessions must be positive.");
+        }
+        if (updates.themeMode() != null
+                && !updates.themeMode().equals("light") && !updates.themeMode().equals("dark")) {
+            throw new IllegalArgumentException("Theme mode must be light or dark.");
+        }
+        if (updates.accentColor() != null
+                && !List.of("teal", "coral", "amber", "violet").contains(updates.accentColor())) {
+            throw new IllegalArgumentException("That accent color is not available.");
+        }
+        if (updates.meditationDurationMinutes() != null
+                && !List.of(5, 10, 15, 20, 30).contains(updates.meditationDurationMinutes())) {
+            throw new IllegalArgumentException("That meditation duration is not available.");
+        }
+        if (updates.meditationIntervalBells() != null
+                && (updates.meditationIntervalBells() < 0 || updates.meditationIntervalBells() > 10)) {
+            throw new IllegalArgumentException("Interval bells must be between 0 and 10.");
+        }
+        if (updates.meditationSound() != null
+                && !List.of("rain", "ocean", "forest", "bowls").contains(updates.meditationSound())) {
+            throw new IllegalArgumentException("That meditation sound is not available.");
+        }
     }
 
     private void validatePomodoroSoundSelection(String pomodoroSoundId, String userId) {

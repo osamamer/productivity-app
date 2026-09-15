@@ -95,6 +95,18 @@ class NoteServiceTest {
     }
 
     @Test
+    void updateNoteResolvesAnEmptyTitleToUntitled() {
+        Note note = saveNote("Existing title");
+        UpdateNoteRequest request = new UpdateNoteRequest();
+        request.setTitle("");
+
+        NoteResponse response = noteService.updateNote(note.getId(), request, USER_ID);
+
+        assertEquals("Untitled 1", response.title());
+        assertEquals("Untitled 1", noteRepository.findById(note.getId()).orElseThrow().getTitle());
+    }
+
+    @Test
     void bulkOperationsOnlyAffectOwnedNotes() {
         Note first = saveNote("First");
         Note second = saveNote("Second");

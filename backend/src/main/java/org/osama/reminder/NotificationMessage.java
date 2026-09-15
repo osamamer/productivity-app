@@ -1,7 +1,6 @@
 package org.osama.reminder;
 
 import java.time.Instant;
-import java.time.ZoneId;
 
 public record NotificationMessage(
         String notificationId,
@@ -17,11 +16,7 @@ public record NotificationMessage(
     static NotificationMessage from(Reminder reminder) {
         if (reminder.getNotificationType() == NotificationType.CALENDAR_EVENT && reminder.getEvent() != null) {
             var event = reminder.getEvent();
-            Instant eventStart = reminder.getEventOccurrenceStart() != null
-                    ? reminder.getEventOccurrenceStart()
-                    : event.isAllDay()
-                    ? event.getStartDate().atStartOfDay(ZoneId.of(event.getTimeZone())).toInstant()
-                    : event.getStartTime();
+            Instant eventStart = reminder.getDateTime().plusSeconds(reminder.getMinutesBefore() * 60L);
             return new NotificationMessage(
                     reminder.getReminderId(),
                     reminder.getNotificationType(),

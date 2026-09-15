@@ -160,7 +160,13 @@ export default function MentalStateScreen() {
   }
 
   return (
-    <Screen safeAreaTop={false} contentStyle={styles.content} refreshing={resource.refreshing} onRefresh={() => void resource.reload()}>
+    <Screen
+      safeAreaTop={false}
+      contentStyle={styles.content}
+      scrollToTopKey={result?.id}
+      refreshing={resource.refreshing}
+      onRefresh={() => void resource.reload()}
+    >
       {resource.loading && !resource.data ? (
         <LoadingView />
       ) : displayedCheckIn ? (

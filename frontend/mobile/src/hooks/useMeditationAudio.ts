@@ -5,6 +5,7 @@ import { playMeditationCompletionGong, playMeditationIntervalBell, prepareMedita
 
 type AudioModule = typeof import('expo-audio');
 type AudioPlayer = ReturnType<AudioModule['createAudioPlayer']>;
+type PendingSound = { sound: MeditationSoundId; loop: boolean };
 
 async function loadAudioModule(): Promise<AudioModule | null> {
   try {
@@ -20,6 +21,32 @@ async function loadAudioModule(): Promise<AudioModule | null> {
 export function useMeditationAudio() {
   const player = useRef<AudioPlayer | null>(null);
   const previewTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSound = useRef<PendingSound | null>(null);
+  const previewingSound = useRef<MeditationSoundId | null>(null);
+
+  const loadSound = useCallback((sound: MeditationSoundId, loop: boolean) => {
+    const currentPlayer = player.current;
+    if (!currentPlayer) {
+      pendingSound.current = { sound, loop };
+      return;
+    }
+    const continuePreview = loop && previewingSound.current === sound;
+    if (previewTimeout.current) clearTimeout(previewTimeout.current);
+    previewTimeout.current = null;
+    previewingSound.current = loop ? null : sound;
+    if (!continuePreview) currentPlayer.replace(MEDITATION_AUDIO_SOURCES[sound]);
+    currentPlayer.loop = loop;
+    currentPlayer.volume = 0.16;
+    currentPlayer.play();
+    if (!loop) {
+      previewTimeout.current = setTimeout(() => {
+        if (player.current !== currentPlayer || previewingSound.current !== sound) return;
+        currentPlayer.pause();
+        previewingSound.current = null;
+        previewTimeout.current = null;
+      }, 5_000);
+    }
+  }, []);
 
   useEffect(() => {
     let disposed = false;
@@ -40,47 +67,31 @@ export function useMeditationAudio() {
       }
 
       player.current = nextPlayer;
+      const pending = pendingSound.current;
+      pendingSound.current = null;
+      if (pending) loadSound(pending.sound, pending.loop);
     });
 
     return () => {
       disposed = true;
+      pendingSound.current = null;
+      previewingSound.current = null;
       if (previewTimeout.current) clearTimeout(previewTimeout.current);
       player.current?.remove();
       player.current = null;
     };
-  }, []);
-
-  const loadSound = useCallback((sound: MeditationSoundId, play: boolean) => {
-    const currentPlayer = player.current;
-    if (!currentPlayer) return;
-    if (previewTimeout.current) clearTimeout(previewTimeout.current);
-    previewTimeout.current = null;
-    currentPlayer.replace(MEDITATION_AUDIO_SOURCES[sound]);
-    currentPlayer.loop = true;
-    currentPlayer.volume = 0.16;
-    if (play) currentPlayer.play();
-  }, []);
+  }, [loadSound]);
 
   const start = useCallback((sound: MeditationSoundId) => loadSound(sound, true), [loadSound]);
   const changeSound = useCallback((sound: MeditationSoundId) => loadSound(sound, true), [loadSound]);
-  const previewSound = useCallback((sound: MeditationSoundId) => {
-    const currentPlayer = player.current;
-    if (!currentPlayer) return;
-    if (previewTimeout.current) clearTimeout(previewTimeout.current);
-    currentPlayer.replace(MEDITATION_AUDIO_SOURCES[sound]);
-    currentPlayer.loop = false;
-    currentPlayer.volume = 0.16;
-    currentPlayer.play();
-    previewTimeout.current = setTimeout(() => {
-      if (player.current === currentPlayer) currentPlayer.pause();
-      previewTimeout.current = null;
-    }, 5_000);
-  }, []);
+  const previewSound = useCallback((sound: MeditationSoundId) => loadSound(sound, false), [loadSound]);
   const pause = useCallback(() => player.current?.pause(), []);
   const resume = useCallback(() => player.current?.play(), []);
   const stop = useCallback(() => {
+    pendingSound.current = null;
     if (previewTimeout.current) clearTimeout(previewTimeout.current);
     previewTimeout.current = null;
+    previewingSound.current = null;
     player.current?.pause();
   }, []);
   const setMuted = useCallback((muted: boolean) => {

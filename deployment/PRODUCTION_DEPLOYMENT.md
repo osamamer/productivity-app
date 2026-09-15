@@ -252,8 +252,9 @@ Then test in the browser:
 
 ## 8. Backups
 
-The Docker volume is persistence, not a backup. The repository includes
-`deployment/backup-production.sh` to dump both databases:
+The Docker volumes are persistence, not backups. The repository includes
+`deployment/backup-production.sh` to dump both databases and archive the
+`pomodoro_sounds` volume:
 
 ```sh
 sudo mkdir -p /opt/productivity-backups
@@ -272,7 +273,7 @@ crontab -e
 17 3 * * * PRODUCTIVITY_BACKUP_DIR=/opt/productivity-backups /opt/productivity-app/deployment/backup-production.sh >> /opt/productivity-backups/backup.log 2>&1
 ```
 
-Copy backups to a separate machine or object-storage bucket and periodically test a
+Copy all database dumps and `pomodoro-sounds-*.tar.gz` archives to a separate machine or object-storage bucket and periodically test a
 restore. The VPS provider's snapshot/backup feature is useful as a second layer, but
 should not be the only copy.
 

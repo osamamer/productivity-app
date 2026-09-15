@@ -204,21 +204,33 @@ public class TaskService {
                                                                  LocalDate to,
                                                                  String userId,
                                                                  String excludedSeriesId) {
-        if (taskName == null || taskName.isBlank()) return Map.of();
+        return taskName == null
+                ? Map.of()
+                : getPomodoroFocusTimeForTaskNames(List.of(taskName), from, to, userId, excludedSeriesId);
+    }
 
-        List<String> taskIds = taskRepository.findAllByUserIdAndNameIgnoreCase(userId, taskName.trim()).stream()
-                .filter(task -> excludedSeriesId == null || !excludedSeriesId.equals(task.getTaskSeriesId()))
-                .map(Task::getTaskId)
-                .toList();
+    public Map<LocalDate, Long> getPomodoroFocusTimeForTaskNames(Collection<String> taskNames,
+                                                                  LocalDate from,
+                                                                  LocalDate to,
+                                                                  String userId,
+                                                                  String excludedSeriesId) {
+        if (taskNames == null || taskNames.isEmpty()) return Map.of();
+
+        Set<String> taskIds = new HashSet<>();
+        for (String taskName : taskNames) {
+            if (taskName == null || taskName.isBlank()) continue;
+            taskRepository.findAllByUserIdAndNameIgnoreCase(userId, taskName.trim()).stream()
+                    .filter(task -> excludedSeriesId == null || !excludedSeriesId.equals(task.getTaskSeriesId()))
+                    .map(Task::getTaskId)
+                    .forEach(taskIds::add);
+        }
         if (taskIds.isEmpty()) return Map.of();
 
         Map<LocalDate, Long> focusByDate = new TreeMap<>();
         LocalDateTime now = LocalDateTime.now();
-        taskSessionRepository.findAllByAssociatedTaskIdIn(taskIds).stream()
-                .filter(TaskSession::isPomodoro)
-                .filter(session -> session.getStartTime() != null)
-                .filter(session -> !session.getStartTime().toLocalDate().isBefore(from)
-                        && !session.getStartTime().toLocalDate().isAfter(to))
+        taskSessionRepository
+                .findAllByAssociatedTaskIdInAndPomodoroIsTrueAndStartTimeGreaterThanEqualAndStartTimeLessThan(
+                        taskIds, from.atStartOfDay(), to.plusDays(1).atStartOfDay())
                 .forEach(session -> focusByDate.merge(
                         session.getStartTime().toLocalDate(),
                         TaskPomodoroStatsCalculator.focusSeconds(session, now),

@@ -69,6 +69,7 @@ interface Props {
     comparisonDefinitions: StatDefinition[];
     refreshKey: number;
     onEntryChanged?: (definitionId: string) => void;
+    onError?: (message: string) => void;
     onDateContextMenu?: (date: string, event: React.MouseEvent<Element>) => void;
 }
 
@@ -77,6 +78,7 @@ export const StatCard = React.memo(function StatCard({
     comparisonDefinitions,
     refreshKey,
     onEntryChanged,
+    onError,
     onDateContextMenu,
 }: Props) {
     const [dateRange, setDateRange] = useState(30);
@@ -343,6 +345,7 @@ export const StatCard = React.memo(function StatCard({
                             periodOffset={periodOffset}
                             refreshKey={refreshKey}
                             onEntryChanged={onEntryChanged}
+                            onError={onError}
                             onDateContextMenu={onDateContextMenu}
                         />
                     ) : (
@@ -354,6 +357,7 @@ export const StatCard = React.memo(function StatCard({
                             periodOffset={periodOffset}
                             refreshKey={refreshKey}
                             onEntryChanged={onEntryChanged}
+                            onError={onError}
                             onDateContextMenu={onDateContextMenu}
                         />
                     )}

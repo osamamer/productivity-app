@@ -5,6 +5,10 @@ import {
     Checkbox,
     Collapse,
     IconButton,
+    ListItemIcon,
+    ListItemText,
+    Menu,
+    MenuItem,
     TextField,
     Typography,
 } from '@mui/material';
@@ -69,6 +73,13 @@ type SubtaskListProps = {
     items: Task[];
     onToggle: (subtask: Task) => Promise<void>;
     onDelete: (subtask: Task) => void;
+    onUpdateName: (subtask: Task, name: string) => Promise<void>;
+};
+
+type SubtaskContextMenuState = {
+    subtask: Task;
+    top: number;
+    left: number;
 };
 
 const PRIORITY_OPTIONS = [
@@ -239,40 +250,227 @@ const SubtaskComposer = React.memo(function SubtaskComposer({
     );
 });
 
-const SubtaskList = React.memo(function SubtaskList({ items, onToggle, onDelete }: SubtaskListProps) {
+const SubtaskList = React.memo(function SubtaskList({ items, onToggle, onDelete, onUpdateName }: SubtaskListProps) {
+    const [contextMenu, setContextMenu] = useState<SubtaskContextMenuState | null>(null);
+    const [editingSubtaskId, setEditingSubtaskId] = useState<string | null>(null);
+    const [localSubtaskName, setLocalSubtaskName] = useState('');
+    const subtaskNameInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+    const subtaskCommitRef = useRef<string | null>(null);
+    const subtaskPointerDownRef = useRef<{ x: number; y: number } | null>(null);
+
+    useEffect(() => {
+        if (contextMenu && !items.some(item => item.taskId === contextMenu.subtask.taskId)) {
+            setContextMenu(null);
+        }
+    }, [contextMenu, items]);
+
+    useEffect(() => {
+        if (!editingSubtaskId || !subtaskNameInputRef.current) return;
+
+        const input = subtaskNameInputRef.current;
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
+    }, [editingSubtaskId]);
+
+    useEffect(() => {
+        if (editingSubtaskId && !items.some(item => item.taskId === editingSubtaskId)) {
+            setEditingSubtaskId(null);
+            setLocalSubtaskName('');
+        }
+    }, [editingSubtaskId, items]);
+
+    const startEditing = (subtask: Task) => {
+        subtaskCommitRef.current = null;
+        setContextMenu(null);
+        setEditingSubtaskId(subtask.taskId);
+        setLocalSubtaskName(subtask.name);
+    };
+
+    const commitName = async (subtask: Task) => {
+        if (subtaskCommitRef.current === subtask.taskId) return;
+
+        subtaskCommitRef.current = subtask.taskId;
+        const trimmedName = localSubtaskName.trim();
+        const fallbackName = subtask.name;
+        setEditingSubtaskId(null);
+        setLocalSubtaskName(trimmedName || fallbackName);
+
+        if (!trimmedName || trimmedName === fallbackName) return;
+        await onUpdateName(subtask, trimmedName);
+    };
+
+    const cancelNameEdit = (subtask: Task) => {
+        subtaskCommitRef.current = subtask.taskId;
+        setLocalSubtaskName(subtask.name);
+        setEditingSubtaskId(null);
+    };
+
     return (
-        <>
-            {items.map(subtask => (
-                <Box key={subtask.taskId} sx={{ display: 'flex', alignItems: 'center', minHeight: 38 }}>
-                    <Checkbox
-                        size="small"
-                        checked={subtask.completed}
-                        onChange={() => void onToggle(subtask)}
-                        sx={{ p: 0.5, mr: 0.75 }}
-                    />
-                    <Typography
-                        variant="body2"
+        <Box
+            data-subtask-list="true"
+            sx={{
+                maxHeight: { xs: 240, sm: 280 },
+                overflowY: 'auto',
+                overflowX: 'hidden',
+                overscrollBehaviorY: 'contain',
+                scrollbarGutter: 'stable',
+                pr: 0.5,
+            }}
+        >
+            {items.map(subtask => {
+                const isEditing = editingSubtaskId === subtask.taskId;
+                return (
+                    <Box
+                        key={subtask.taskId}
+                        onContextMenu={event => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            setContextMenu({
+                                subtask,
+                                top: event.clientY,
+                                left: event.clientX,
+                            });
+                        }}
                         sx={{
-                            textAlign: 'left',
-                            color: subtask.completed ? 'text.disabled' : 'text.primary',
-                            textDecoration: subtask.completed ? 'line-through' : 'none',
+                            display: 'flex',
+                            alignItems: 'center',
+                            minHeight: 38,
+                            borderRadius: 1,
+                            '&:hover': { backgroundColor: 'action.hover' },
                         }}
                     >
-                        {subtask.name}
-                    </Typography>
-                    <IconButton
-                        size="small"
-                        color="error"
-                        onClick={() => onDelete(subtask)}
-                        aria-label={`Delete subtask ${subtask.name}`}
-                        title="Delete subtask"
-                        sx={{ ml: 'auto' }}
+                        <Checkbox
+                            size="small"
+                            checked={subtask.completed}
+                            onChange={() => void onToggle(subtask)}
+                            sx={{ p: 0.5, mr: 0.75 }}
+                        />
+                        <Box
+                            data-subtask-text="true"
+                            onMouseDown={event => {
+                                if (event.button === 0) {
+                                    subtaskPointerDownRef.current = { x: event.clientX, y: event.clientY };
+                                }
+                            }}
+                            onClick={event => {
+                                event.stopPropagation();
+                                if (isEditing) return;
+
+                                const pointerDown = subtaskPointerDownRef.current;
+                                subtaskPointerDownRef.current = null;
+                                const moved = pointerDown !== null
+                                    && (Math.abs(event.clientX - pointerDown.x) > 4
+                                        || Math.abs(event.clientY - pointerDown.y) > 4);
+                                const selection = window.getSelection();
+                                if (moved || (selection && !selection.isCollapsed)) return;
+
+                                startEditing(subtask);
+                            }}
+                            sx={{
+                                flex: 1,
+                                minWidth: 0,
+                                py: 0.5,
+                                textAlign: 'left',
+                                userSelect: 'text',
+                                overflowWrap: 'anywhere',
+                                wordBreak: 'break-word',
+                                cursor: 'text',
+                            }}
+                        >
+                            {isEditing ? (
+                                <TextField
+                                    value={localSubtaskName}
+                                    inputRef={subtaskNameInputRef}
+                                    autoComplete="off"
+                                    autoFocus
+                                    fullWidth
+                                    multiline
+                                    minRows={1}
+                                    maxRows={3}
+                                    variant="standard"
+                                    onClick={event => event.stopPropagation()}
+                                    onDoubleClick={event => event.stopPropagation()}
+                                    onChange={event => setLocalSubtaskName(event.target.value)}
+                                    onBlur={() => void commitName(subtask)}
+                                    onKeyDown={event => {
+                                        if (event.key === 'Enter' && !event.shiftKey) {
+                                            event.preventDefault();
+                                            void commitName(subtask);
+                                        }
+                                        if (event.key === 'Escape') {
+                                            event.preventDefault();
+                                            cancelNameEdit(subtask);
+                                        }
+                                    }}
+                                    InputProps={{ disableUnderline: true }}
+                                    inputProps={{
+                                        draggable: false,
+                                        'data-subtask-name-input': 'true',
+                                        'aria-label': `Edit subtask ${subtask.name}`,
+                                    }}
+                                    sx={{
+                                        '& .MuiInputBase-root': { padding: 0 },
+                                        '& .MuiInputBase-input': {
+                                            color: subtask.completed ? 'text.disabled' : 'text.primary',
+                                            textDecoration: subtask.completed ? 'line-through' : 'none',
+                                            fontSize: '0.875rem',
+                                            lineHeight: 1.45,
+                                            whiteSpace: 'pre-wrap',
+                                            overflowWrap: 'anywhere',
+                                            wordBreak: 'break-word',
+                                            textAlign: 'left',
+                                            padding: 0,
+                                        },
+                                    }}
+                                />
+                            ) : (
+                                <Typography
+                                    component="span"
+                                    variant="body2"
+                                    sx={{
+                                        display: 'block',
+                                        textAlign: 'left',
+                                        whiteSpace: 'pre-wrap',
+                                        color: subtask.completed ? 'text.disabled' : 'text.primary',
+                                        textDecoration: subtask.completed ? 'line-through' : 'none',
+                                    }}
+                                >
+                                    {subtask.name}
+                                </Typography>
+                            )}
+                        </Box>
+                    </Box>
+                );
+            })}
+            <Menu
+                open={contextMenu !== null}
+                onClose={() => setContextMenu(null)}
+                anchorReference="anchorPosition"
+                anchorPosition={contextMenu
+                    ? { top: contextMenu.top, left: contextMenu.left }
+                    : undefined}
+                MenuListProps={{
+                    dense: true,
+                    onClick: event => event.stopPropagation(),
+                }}
+            >
+                {contextMenu && (
+                    <MenuItem
+                        onClick={() => {
+                            const subtask = contextMenu.subtask;
+                            setContextMenu(null);
+                            onDelete(subtask);
+                        }}
+                        sx={{ color: 'error.main' }}
                     >
-                        <DeleteOutlineRoundedIcon fontSize="small" />
-                    </IconButton>
-                </Box>
-            ))}
-        </>
+                        <ListItemIcon sx={{ color: 'inherit' }}>
+                            <DeleteOutlineRoundedIcon fontSize="small" />
+                        </ListItemIcon>
+                        <ListItemText>Delete subtask</ListItemText>
+                    </MenuItem>
+                )}
+            </Menu>
+        </Box>
     );
 });
 
@@ -303,10 +501,27 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
     const taskSeriesRef = useRef<TaskSeries | null>(initialTaskDetails?.taskSeries ?? null);
     const recurrenceMutationRef = useRef<Promise<void>>(Promise.resolve());
     const recurrenceRequestIdRef = useRef(0);
+    const subtaskNameRequestIdsRef = useRef(new Map<string, number>());
+    const [localTaskName, setLocalTaskName] = useState(task.name ?? '');
+    const [editingTaskName, setEditingTaskName] = useState(false);
+    const taskNameInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+    const taskNameCommitRef = useRef(false);
     const visibleDescription = descriptionDraft.taskId === task.taskId
         && descriptionDraft.source === taskDescription
         ? descriptionDraft.value
         : taskDescription;
+
+    useEffect(() => {
+        setLocalTaskName(task.name ?? '');
+        setEditingTaskName(false);
+    }, [task.taskId, task.name]);
+
+    useEffect(() => {
+        if (!editingTaskName || !taskNameInputRef.current) return;
+        const input = taskNameInputRef.current;
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
+    }, [editingTaskName]);
     const [subtaskState, setSubtaskState] = useState<SubtaskState>({
         taskId: task.taskId,
         items: sortSubtasks(initialTaskDetails?.subtasks ?? EMPTY_SUBTASKS),
@@ -507,6 +722,31 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
         }
     };
 
+    const startTaskNameEditing = () => {
+        taskNameCommitRef.current = false;
+        setLocalTaskName(task.name ?? '');
+        setEditingTaskName(true);
+    };
+
+    const commitTaskName = () => {
+        if (taskNameCommitRef.current) return;
+        taskNameCommitRef.current = true;
+
+        const trimmedName = localTaskName.trim();
+        const fallbackName = task.name ?? '';
+        setEditingTaskName(false);
+        setLocalTaskName(trimmedName || fallbackName);
+        if (trimmedName && trimmedName !== fallbackName) {
+            void onUpdate(task.taskId, { name: trimmedName });
+        }
+    };
+
+    const cancelTaskNameEdit = () => {
+        taskNameCommitRef.current = true;
+        setLocalTaskName(task.name ?? '');
+        setEditingTaskName(false);
+    };
+
     const commitDateChange = async (date: Date | null) => {
         const scheduledPerformDateTime = formatTaskDateTime(date);
         await onUpdate(task.taskId, {
@@ -627,6 +867,39 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
         }
     }, [task]);
 
+    const handleUpdateSubtaskName = useCallback(async (subtask: Task, name: string) => {
+        const requestId = (subtaskNameRequestIdsRef.current.get(subtask.taskId) ?? 0) + 1;
+        subtaskNameRequestIdsRef.current.set(subtask.taskId, requestId);
+        setSubtaskError(null);
+
+        const updateVisibleName = (nextName: string) => {
+            setSubtaskState(previous => {
+                if (previous.taskId !== task.taskId) return previous;
+                const items = previous.items.map(item => item.taskId === subtask.taskId
+                    ? { ...item, name: nextName }
+                    : item);
+                updateCachedTaskDetails(task.taskId, { subtasks: items }, {
+                    task,
+                    subtasks: items,
+                    taskSeries: taskSeriesRef.current,
+                });
+                return { ...previous, items };
+            });
+        };
+
+        updateVisibleName(name);
+        try {
+            const updatedSubtask = await taskService.updateTask(subtask.taskId, { name });
+            if (subtaskNameRequestIdsRef.current.get(subtask.taskId) !== requestId) return;
+            updateVisibleName(updatedSubtask.name);
+        } catch (error) {
+            if (subtaskNameRequestIdsRef.current.get(subtask.taskId) !== requestId) return;
+            updateVisibleName(subtask.name);
+            setSubtaskError('Unable to update subtask.');
+            console.error('Error updating subtask name:', error);
+        }
+    }, [task]);
+
     const handleToggleSubtask = useCallback(async (subtask: Task) => {
         const completed = !subtask.completed;
         const updateSubtask = (item: Task, nextCompleted: boolean) => (
@@ -708,28 +981,84 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
                         '&.Mui-checked': { color: taskCheckboxColor },
                     }}
                 />
-                <Typography
-                    variant="h5"
+                <Box
                     sx={{
                         flex: 1,
                         minWidth: 0,
                         maxWidth: '100%',
                         maxHeight: '8rem',
-                        overflowY: 'auto',
+                        overflowY: editingTaskName ? 'hidden' : 'auto',
                         overflowX: 'hidden',
                         scrollbarGutter: 'stable',
-                        fontSize: getTaskNameFontSize(task.name ?? ''),
-                        textAlign: 'left',
-                        lineHeight: 1.25,
-                        overflowWrap: 'anywhere',
-                        wordBreak: 'break-word',
-                        whiteSpace: 'normal',
-                        color: task.completed ? 'text.disabled' : 'text.primary',
-                        textDecoration: task.completed ? 'line-through' : 'none',
                     }}
                 >
-                    {task.name}
-                </Typography>
+                    {editingTaskName ? (
+                        <TextField
+                            value={localTaskName}
+                            inputRef={taskNameInputRef}
+                            autoComplete="off"
+                            autoFocus
+                            fullWidth
+                            multiline
+                            minRows={1}
+                            maxRows={5}
+                            variant="standard"
+                            onClick={event => event.stopPropagation()}
+                            onChange={event => setLocalTaskName(event.target.value)}
+                            onBlur={commitTaskName}
+                            onKeyDown={event => {
+                                if (event.key === 'Enter' && !event.shiftKey) {
+                                    event.preventDefault();
+                                    commitTaskName();
+                                }
+                                if (event.key === 'Escape') {
+                                    event.preventDefault();
+                                    cancelTaskNameEdit();
+                                }
+                            }}
+                            InputProps={{ disableUnderline: true }}
+                            inputProps={{
+                                draggable: false,
+                                'data-task-name-input': 'true',
+                                'aria-label': 'Edit task name',
+                            }}
+                            sx={{
+                                '& .MuiInputBase-root': { padding: 0 },
+                                '& .MuiInputBase-input': {
+                                    color: task.completed ? 'text.disabled' : 'text.primary',
+                                    textDecoration: task.completed ? 'line-through' : 'none',
+                                    fontSize: getTaskNameFontSize(localTaskName),
+                                    lineHeight: 1.25,
+                                    overflowWrap: 'anywhere',
+                                    wordBreak: 'break-word',
+                                    padding: 0,
+                                },
+                            }}
+                        />
+                    ) : (
+                        <Typography
+                            variant="h5"
+                            onClick={event => {
+                                event.stopPropagation();
+                                startTaskNameEditing();
+                            }}
+                            sx={{
+                                maxWidth: '100%',
+                                fontSize: getTaskNameFontSize(task.name ?? ''),
+                                textAlign: 'left',
+                                lineHeight: 1.25,
+                                overflowWrap: 'anywhere',
+                                wordBreak: 'break-word',
+                                whiteSpace: 'normal',
+                                color: task.completed ? 'text.disabled' : 'text.primary',
+                                textDecoration: task.completed ? 'line-through' : 'none',
+                                cursor: 'text',
+                            }}
+                        >
+                            {task.name}
+                        </Typography>
+                    )}
+                </Box>
             </Box>
 
             <Box
@@ -903,6 +1232,7 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
                             items={displayedSubtasks}
                             onToggle={handleToggleSubtask}
                             onDelete={subtask => void handleDeleteSubtask(subtask)}
+                            onUpdateName={handleUpdateSubtaskName}
                         />
                         {subtaskError && (
                             <Typography variant="caption" color="error" sx={{ display: 'block', mt: 0.75 }}>

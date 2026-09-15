@@ -36,6 +36,7 @@ import KeyboardDoubleArrowLeftRoundedIcon from '@mui/icons-material/KeyboardDoub
 import { SideMenuButton } from './button/SideMenuButton';
 import { useAppTheme } from '../hooks/useAppTheme';
 import { useUser } from '../hooks/useUser';
+import { usePomodoro } from '../hooks/usePomodoro';
 import { sideNavSnapshotCache, type TodaySnapshot } from '../services/cache/sideNavSnapshotCache';
 
 const COLLAPSED_WIDTH = 60;
@@ -178,7 +179,7 @@ function SideNavSubItem({
     );
 }
 
-type MetricTone = 'bad' | 'caution' | 'good' | 'neutral';
+type MetricTone = 'bad' | 'caution' | 'good' | 'goodLight' | 'neutral';
 
 function getMetricToneStyles(theme: Theme, tone: MetricTone) {
     const accent = tone === 'bad'
@@ -187,6 +188,8 @@ function getMetricToneStyles(theme: Theme, tone: MetricTone) {
             ? theme.palette.warning.main
             : tone === 'good'
                 ? theme.palette.success.main
+                : tone === 'goodLight'
+                    ? theme.palette.success.light
                 : theme.palette.text.secondary;
     return { accent };
 }
@@ -210,7 +213,8 @@ function getFocusTone(seconds: number | null): MetricTone {
 function getMentalStateTone(state: string | null): MetricTone {
     if (!state) return 'neutral';
     if (state === 'Ready' || state === 'Engaged') return 'good';
-    if (state === 'Almost Ready' || state === 'Mixed' || state === 'Stimulation-Seeking') return 'caution';
+    if (state === 'Almost Ready') return 'goodLight';
+    if (state === 'Mixed' || state === 'Stimulation-Seeking') return 'caution';
     return 'bad';
 }
 
@@ -330,6 +334,7 @@ function DrawerExpandable({ open, children }: { open: boolean; children: ReactNo
 export function SideNav() {
     const { darkMode, toggleTheme } = useAppTheme();
     const { user, logout } = useUser();
+    const { activePomodoro } = usePomodoro();
     const navigate = useNavigate();
     const location = useLocation();
     const theme = useTheme();
@@ -386,6 +391,23 @@ export function SideNav() {
         duration: DRAWER_TRANSITION_MS,
         easing: theme.transitions.easing.easeInOut,
     });
+    const pomodoroGreen = theme.palette.mode === 'dark' ? '#9BC5A3' : '#7EA88A';
+    const pomodoroIsFocusRunning = Boolean(
+        activePomodoro?.active
+        && activePomodoro.sessionActive
+        && activePomodoro.sessionRunning
+        && (!activePomodoro.phase || activePomodoro.phase === 'FOCUS'),
+    );
+    const pomodoroIndicator = activePomodoro
+        ? {
+            color: pomodoroIsFocusRunning ? 'primary.main' : pomodoroGreen,
+            label: pomodoroIsFocusRunning
+                ? 'Running'
+                : activePomodoro.phase === 'BREAK' || activePomodoro.phase === 'WAITING_FOR_BREAK'
+                    ? 'Break'
+                    : 'Paused',
+        }
+        : undefined;
 
     return (
         <>
@@ -472,6 +494,7 @@ export function SideNav() {
                                 text="Home"
                                 targetPage="/"
                                 expanded={open}
+                                activeIndicator={pomodoroIndicator}
                                 onNavigate={navigateFromDrawer}
                             />
                             <DrawerExpandable open={open}>

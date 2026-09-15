@@ -100,14 +100,7 @@ public class UserController {
     public UserPreferencesResponse updateMyPreferences(@RequestBody UpdatePreferencesRequest request) {
         User updatedUser = userService.updatePreferences(
                 currentUserService.getCurrentUserId(),
-                request.includeUnloggedNumericDaysAsZero(),
-                request.autoStartPomodoroSessions(),
-                request.checkupNotificationsEnabled(),
-                request.repeatCheckupNotificationsEnabled(),
-                request.checkupIntervalMinutes(),
-                request.checkupStartTime(),
-                request.checkupTimesPerDay(),
-                request.pomodoroSoundId()
+                request.toUpdates()
         );
         return UserPreferencesResponse.from(updatedUser);
     }
@@ -182,8 +175,35 @@ public class UserController {
             @JsonFormat(pattern = "HH:mm")
             LocalTime checkupStartTime,
             Integer checkupTimesPerDay,
-            String pomodoroSoundId
-    ) {}
+            String pomodoroSoundId,
+            Boolean showCompletedHomeTasks,
+            Boolean excludeTodayCompletedTasks,
+            Boolean showClosedMentalThreads,
+            Boolean soundEffectsEnabled,
+            Boolean whiteNoiseEnabled,
+            Boolean pomodoroSecondsMode,
+            Integer pomodoroLongBreakCooldown,
+            Integer pomodoroFocusDuration,
+            Integer pomodoroShortBreakDuration,
+            Integer pomodoroLongBreakDuration,
+            Integer pomodoroNumFocuses,
+            String themeMode,
+            String accentColor,
+            Integer meditationDurationMinutes,
+            Integer meditationIntervalBells,
+            String meditationSound
+    ) {
+        UserPreferenceUpdates toUpdates() {
+            return new UserPreferenceUpdates(includeUnloggedNumericDaysAsZero, autoStartPomodoroSessions,
+                    checkupNotificationsEnabled, repeatCheckupNotificationsEnabled, checkupIntervalMinutes,
+                    checkupStartTime, checkupTimesPerDay, pomodoroSoundId, showCompletedHomeTasks,
+                    excludeTodayCompletedTasks, showClosedMentalThreads, soundEffectsEnabled, whiteNoiseEnabled,
+                    pomodoroSecondsMode, pomodoroLongBreakCooldown, pomodoroFocusDuration,
+                    pomodoroShortBreakDuration, pomodoroLongBreakDuration, pomodoroNumFocuses,
+                    themeMode, accentColor,
+                    meditationDurationMinutes, meditationIntervalBells, meditationSound);
+        }
+    }
 
     public record UserPreferencesResponse(
             boolean includeUnloggedNumericDaysAsZero,
@@ -194,7 +214,23 @@ public class UserController {
             int checkupIntervalMinutes,
             @JsonFormat(pattern = "HH:mm")
             LocalTime checkupStartTime,
-            int checkupTimesPerDay
+            int checkupTimesPerDay,
+            Boolean showCompletedHomeTasks,
+            Boolean excludeTodayCompletedTasks,
+            Boolean showClosedMentalThreads,
+            Boolean soundEffectsEnabled,
+            Boolean whiteNoiseEnabled,
+            Boolean pomodoroSecondsMode,
+            Integer pomodoroLongBreakCooldown,
+            Integer pomodoroFocusDuration,
+            Integer pomodoroShortBreakDuration,
+            Integer pomodoroLongBreakDuration,
+            Integer pomodoroNumFocuses,
+            String themeMode,
+            String accentColor,
+            Integer meditationDurationMinutes,
+            Integer meditationIntervalBells,
+            String meditationSound
     ) {
         static UserPreferencesResponse from(User user) {
             return new UserPreferencesResponse(
@@ -205,7 +241,23 @@ public class UserController {
                     !Boolean.FALSE.equals(user.getRepeatCheckupNotificationsEnabled()),
                     user.getCheckupIntervalMinutes(),
                     user.getCheckupStartTime(),
-                    user.getCheckupTimesPerDay()
+                    user.getCheckupTimesPerDay(),
+                    user.getShowCompletedHomeTasks(),
+                    user.getExcludeTodayCompletedTasks(),
+                    user.getShowClosedMentalThreads(),
+                    user.getSoundEffectsEnabled(),
+                    user.getWhiteNoiseEnabled(),
+                    user.getPomodoroSecondsMode(),
+                    user.getPomodoroLongBreakCooldown(),
+                    user.getPomodoroFocusDuration(),
+                    user.getPomodoroShortBreakDuration(),
+                    user.getPomodoroLongBreakDuration(),
+                    user.getPomodoroNumFocuses(),
+                    user.getThemeMode(),
+                    user.getAccentColor(),
+                    user.getMeditationDurationMinutes(),
+                    user.getMeditationIntervalBells(),
+                    user.getMeditationSound()
             );
         }
     }

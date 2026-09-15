@@ -9,6 +9,7 @@ import {Box, LinearProgress} from '@mui/material';
 import {ProtectedRoute} from "./components/ProtectedRoute";
 
 import {TaskProvider} from "./contexts/TaskContext.tsx";
+import {PomodoroProvider} from "./contexts/PomodoroContext.tsx";
 import {UserProvider} from "./contexts/UserContext";
 import {NotificationCenter} from "./components/notifications/NotificationCenter.tsx";
 import {AppErrorBoundary, AppErrorPage} from "./components/AppErrorBoundary.tsx";
@@ -67,10 +68,12 @@ function UserRoutes() {
 function ProtectedApp() {
     return (
         <ProtectedRoute>
-            <TaskProvider>
-                <NotificationCenter/>
-                <AppShell/>
-            </TaskProvider>
+            <PomodoroProvider>
+                <TaskProvider>
+                    <NotificationCenter/>
+                    <AppShell/>
+                </TaskProvider>
+            </PomodoroProvider>
         </ProtectedRoute>
     );
 }

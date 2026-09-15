@@ -203,6 +203,7 @@ interface Props {
     definition: StatDefinition;
     refreshKey: number;
     onEntryChanged?: (definitionId: string) => void;
+    onError?: (message: string) => void;
 }
 
 function recentValueMap(entries: StatEntry[] | undefined, recentStart: string, to: string) {
@@ -221,7 +222,7 @@ function recentStatusMap(entries: StatEntry[] | undefined, recentStart: string, 
     );
 }
 
-export const StatRecentDots = React.memo(function StatRecentDots({ definition, refreshKey, onEntryChanged }: Props) {
+export const StatRecentDots = React.memo(function StatRecentDots({ definition, refreshKey, onEntryChanged, onError }: Props) {
     const theme = useTheme();
     const { from, to } = getLastMonthWindow();
     const recentStart = format(subDays(new Date(), 4), 'yyyy-MM-dd');
@@ -237,11 +238,10 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
     const [popover, setPopover] = useState<PopoverState | null>(null);
     const [editValue, setEditValue] = useState<number | null>(null);
     const [editStatus, setEditStatus] = useState<StatEntryStatus>('RECORDED');
-    const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
-    const feedbackAnchorRef = useRef<HTMLElement | null>(null);
     const popoverContentRef = useRef<HTMLDivElement | null>(null);
     const saveButtonRef = useRef<HTMLButtonElement | null>(null);
+    const entryMutationVersionsRef = useRef(new Map<string, number>());
 
     useEffect(() => {
         let cancelled = false;
@@ -277,7 +277,6 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                 : null
         ));
         setSaveError(null);
-        feedbackAnchorRef.current = null;
         setPopover({ anchorEl: e.currentTarget, date });
     };
 
@@ -288,47 +287,76 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
         setSaveError(null);
     };
 
-    const handleSave = async () => {
+    const handleSave = () => {
         if (!popover) return;
-        setSaving(true);
+        const activePopover = popover;
+        const previousValue = valueMap.get(activePopover.date);
+        const previousStatus = statusMap.get(activePopover.date);
+        const previousHadEntry = valueMap.has(activePopover.date);
+        // The editor unmounts before the request resolves, so preserve the source circle's position.
+        const feedbackAnchor = activePopover.anchorEl.getBoundingClientRect();
+        const mutationVersion = (entryMutationVersionsRef.current.get(activePopover.date) ?? 0) + 1;
+        entryMutationVersionsRef.current.set(activePopover.date, mutationVersion);
+        const nextValue = editStatus === 'NOT_PLANNED' ? 0 : editValue;
+
+        // Reflect the edit before the request starts. The service also keeps this
+        // value in its optimistic cache so the chart and summary update together.
+        setValueMap(previous => {
+            const next = new Map(previous);
+            if (editValue === null && editStatus !== 'NOT_PLANNED') next.delete(activePopover.date);
+            else next.set(activePopover.date, nextValue ?? 0);
+            return next;
+        });
+        setStatusMap(previous => {
+            const next = new Map(previous);
+            if (editValue === null && editStatus !== 'NOT_PLANNED') next.delete(activePopover.date);
+            else next.set(activePopover.date, editStatus);
+            return next;
+        });
+        closePopover();
         setSaveError(null);
-        try {
-            await statService.recordEntry({
+        const request = {
                 statDefinitionId: definition.id,
-                date: popover.date,
+                date: activePopover.date,
                 value: editStatus === 'NOT_PLANNED' ? null : editValue,
                 status: editStatus,
+            };
+        const savePromise = statService.recordEntry(request);
+        onEntryChanged?.(definition.id);
+        void savePromise
+            .then(() => {
+                if (entryMutationVersionsRef.current.get(activePopover.date) !== mutationVersion) return;
+                if (editValue !== null && (definition.type === 'TIME' || definition.type === 'DURATION')) {
+                    saveStatInputPreference(definition.id, definition.type, editValue);
+                }
+                if (editValue !== null && editStatus !== 'NOT_PLANNED') {
+                    showStatFeedback(definition, editValue, feedbackAnchor, { positiveEffect: 'pulse' });
+                }
+            })
+            .catch(err => {
+                console.error('Failed to save entry:', err);
+                if (entryMutationVersionsRef.current.get(activePopover.date) === mutationVersion) {
+                    setValueMap(previous => {
+                        const next = new Map(previous);
+                        if (previousHadEntry) next.set(activePopover.date, previousValue!);
+                        else next.delete(activePopover.date);
+                        return next;
+                    });
+                    setStatusMap(previous => {
+                        const next = new Map(previous);
+                        if (previousHadEntry) next.set(activePopover.date, previousStatus ?? 'RECORDED');
+                        else next.delete(activePopover.date);
+                        return next;
+                    });
+                    onEntryChanged?.(definition.id);
+                    setSaveError('Failed to save. Please try again.');
+                }
+                onError?.('Failed to save this statistic.');
             });
-            if (editValue !== null && (definition.type === 'TIME' || definition.type === 'DURATION')) {
-                saveStatInputPreference(definition.id, definition.type, editValue);
-            }
-            if (editValue !== null && editStatus !== 'NOT_PLANNED') {
-                showStatFeedback(definition, editValue, feedbackAnchorRef.current);
-            }
-            setValueMap(prev => {
-                const next = new Map(prev);
-                if (editValue === null && editStatus !== 'NOT_PLANNED') next.delete(popover.date);
-                else next.set(popover.date, editValue ?? 0);
-                return next;
-            });
-            setStatusMap(prev => {
-                const next = new Map(prev);
-                if (editValue === null && editStatus !== 'NOT_PLANNED') next.delete(popover.date);
-                else next.set(popover.date, editStatus);
-                return next;
-            });
-            onEntryChanged?.(definition.id);
-            closePopover();
-        } catch (err) {
-            console.error('Failed to save entry:', err);
-            setSaveError('Failed to save. Please try again.');
-        } finally {
-            setSaving(false);
-        }
     };
 
     const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-        if (event.key !== 'Enter' || saving) return;
+        if (event.key !== 'Enter') return;
 
         // Let multiline or composition-heavy inputs keep their default behavior.
         const target = event.target as HTMLElement;
@@ -480,7 +508,6 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                             >
                                 <ToggleButton
                                     value="yes"
-                                    onClick={event => { feedbackAnchorRef.current = event.currentTarget; }}
                                     sx={{ '&.Mui-selected': { bgcolor: `${getBooleanChoiceColor(definition, 1)}.main`, color: 'white', '&:hover': { bgcolor: `${getBooleanChoiceColor(definition, 1)}.dark` } } }}
                                 >
                                     Yes
@@ -493,7 +520,6 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                                 </ToggleButton>
                                 <ToggleButton
                                     value="no"
-                                    onClick={event => { feedbackAnchorRef.current = event.currentTarget; }}
                                     sx={{ '&.Mui-selected': { bgcolor: `${getBooleanChoiceColor(definition, 0)}.main`, color: 'white', '&:hover': { bgcolor: `${getBooleanChoiceColor(definition, 0)}.dark` } } }}
                                 >
                                     No
@@ -508,7 +534,6 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                                 value={editValue ?? ''}
                                 onChange={e => setEditValue(e.target.value === '' ? null : Number(e.target.value))}
                                 onStepValueChange={value => setEditValue(value)}
-                                onFocus={event => { feedbackAnchorRef.current = event.currentTarget; }}
                                 autoFocus
                                 sx={{ width: 160 }}
                             />
@@ -522,7 +547,6 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                                 onChange={value => {
                                     setEditValue(value ? timeValueToMinutes(value) : null);
                                 }}
-                                onFocus={event => { feedbackAnchorRef.current = event.currentTarget; }}
                                 autoFocus
                                 minutesStep={1}
                                 inputProps={{ 'aria-label': `${definition.name} time` }}
@@ -541,7 +565,6 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                                     event.preventDefault();
                                     saveButton.focus();
                                 }}
-                                onFocus={event => { feedbackAnchorRef.current = event.currentTarget; }}
                                 onBlur={handleDurationBlur}
                             />
                         )}
@@ -556,7 +579,6 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                                     marks
                                     valueLabelDisplay="auto"
                                     onChange={(event, v) => {
-                                        feedbackAnchorRef.current = event.currentTarget as HTMLElement;
                                         setEditValue(v as number);
                                     }}
                                 />
@@ -590,9 +612,8 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                                 size="small"
                                 variant="contained"
                                 onClick={handleSave}
-                                disabled={saving}
                             >
-                                {saving ? <CircularProgress size={14} color="inherit" /> : 'Save'}
+                                Save
                             </Button>
                         </Stack>
                     </Box>

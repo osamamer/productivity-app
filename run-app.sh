@@ -681,7 +681,7 @@ apply_keycloak_login_theme() {
   local realm=${KEYCLOAK_REALM:-productivity-app}
   local admin_realm=${KEYCLOAK_ADMIN_REALM:-master}
   local client_name=${KEYCLOAK_CLIENT_ID:-productivity-app-frontend}
-  local client_id
+  local client_id offline_scope_id
 
   if [[ -z "${KEYCLOAK_ADMIN_USER:-}" || -z "${KEYCLOAK_ADMIN_PASSWORD:-}" ]]; then
     echo "⚠️  Keycloak admin credentials are missing; leaving the login theme unchanged."
@@ -698,6 +698,19 @@ apply_keycloak_login_theme() {
       && "${compose[@]}" exec -T keycloak /opt/keycloak/bin/kcadm.sh update "realms/$realm" \
         -s loginTheme=productivity \
         -s registrationAllowed=true \
+        -s rememberMe=true \
+        -s accessTokenLifespan=300 \
+        -s ssoSessionIdleTimeout=2592000 \
+        -s ssoSessionMaxLifespan=31536000 \
+        -s ssoSessionIdleTimeoutRememberMe=2592000 \
+        -s ssoSessionMaxLifespanRememberMe=31536000 \
+        -s clientSessionIdleTimeout=2592000 \
+        -s clientSessionMaxLifespan=31536000 \
+        -s offlineSessionIdleTimeout=2592000 \
+        -s offlineSessionMaxLifespanEnabled=true \
+        -s offlineSessionMaxLifespan=31536000 \
+        -s clientOfflineSessionIdleTimeout=2592000 \
+        -s clientOfflineSessionMaxLifespan=31536000 \
         -s attributes.frontendUrl=http://localhost:5173/auth >/dev/null 2>&1 \
       && client_id=$("${compose[@]}" exec -T keycloak /opt/keycloak/bin/kcadm.sh get clients \
         -r "$realm" \
@@ -709,6 +722,21 @@ apply_keycloak_login_theme() {
       && "${compose[@]}" exec -T keycloak /opt/keycloak/bin/kcadm.sh update "clients/$client_id" \
         -r "$realm" \
         -s directAccessGrantsEnabled=true >/dev/null 2>&1; then
+      offline_scope_id=$(
+        "${compose[@]}" exec -T keycloak /opt/keycloak/bin/kcadm.sh get client-scopes \
+          -r "$realm" \
+          -q name=offline_access \
+          --fields id \
+          --format csv \
+          --noquotes 2>/dev/null | tr -d '\r' | tail -n 1
+      )
+      if [[ -n "$offline_scope_id" ]]; then
+        "${compose[@]}" exec -T keycloak /opt/keycloak/bin/kcadm.sh update \
+          "clients/$client_id/optional-client-scopes/$offline_scope_id" \
+          -r "$realm" >/dev/null 2>&1
+      else
+        echo "⚠️  Keycloak's offline_access scope was not found; web sessions will use the regular session lifetime." >&2
+      fi
       return 0
     fi
 

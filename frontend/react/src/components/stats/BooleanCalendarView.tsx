@@ -22,6 +22,7 @@ interface Props {
     periodOffset: StatPeriodOffset;
     refreshKey: number;
     onEntryChanged?: (definitionId: string) => void;
+    onError?: (message: string) => void;
     onDateContextMenu?: (date: string, event: React.MouseEvent<Element>) => void;
 }
 
@@ -133,6 +134,7 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
     periodOffset,
     refreshKey,
     onEntryChanged,
+    onError,
     onDateContextMenu,
 }: Props) {
     const theme = useTheme();
@@ -172,9 +174,8 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
     const [popover, setPopover] = useState<{ anchorEl: HTMLElement; date: string } | null>(null);
     const [editValue, setEditValue] = useState<number | null>(null);
     const [editStatus, setEditStatus] = useState<StatEntryStatus>('RECORDED');
-    const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
-    const feedbackAnchorRef = useRef<HTMLElement | null>(null);
+    const entryMutationVersionsRef = useRef(new Map<string, number>());
 
     const allDays = eachDayOfInterval({ start: from, end: to });
     const startOffset = getDay(from);
@@ -210,7 +211,6 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
         setEditValue(valueMap.get(date) ?? null);
         setEditStatus(statusMap.get(date) ?? 'RECORDED');
         setSaveError(null);
-        feedbackAnchorRef.current = null;
         setPopover({ anchorEl: event.currentTarget, date });
     };
 
@@ -221,45 +221,70 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
         setSaveError(null);
     };
 
-    const saveEntry = async (
+    const saveEntry = (
         nextStatus: StatEntryStatus = editStatus,
         nextValue: number | null = editValue,
     ) => {
         if (!popover) return;
         const activePopover = popover;
-        setSaving(true);
+        const previousValue = valueMap.get(activePopover.date);
+        const previousStatus = statusMap.get(activePopover.date);
+        const previousHadEntry = valueMap.has(activePopover.date);
+        // The editor unmounts before the request resolves, so preserve the source cell's position.
+        const feedbackAnchor = activePopover.anchorEl.getBoundingClientRect();
+        const mutationVersion = (entryMutationVersionsRef.current.get(activePopover.date) ?? 0) + 1;
+        entryMutationVersionsRef.current.set(activePopover.date, mutationVersion);
+
+        setValueState(previous => {
+            if (previous.key !== dataKey) return previous;
+            const values = new Map(previous.values);
+            const statuses = new Map(previous.statuses);
+            if (nextValue === null && nextStatus !== 'NOT_PLANNED') {
+                values.delete(activePopover.date);
+                statuses.delete(activePopover.date);
+            } else {
+                values.set(activePopover.date, nextStatus === 'NOT_PLANNED' ? 0 : nextValue ?? 0);
+                statuses.set(activePopover.date, nextStatus);
+            }
+            return { ...previous, values, statuses };
+        });
+        closeEditor();
         setSaveError(null);
-        try {
-            await statService.recordEntry({
+        const savePromise = statService.recordEntry({
                 statDefinitionId: definition.id,
                 date: activePopover.date,
                 value: nextStatus === 'NOT_PLANNED' ? null : nextValue,
                 status: nextStatus,
-            });
-            if (nextValue !== null && nextStatus !== 'NOT_PLANNED') {
-                showStatFeedback(definition, nextValue, feedbackAnchorRef.current);
-            }
-            setValueState(previous => {
-                if (previous.key !== dataKey) return previous;
-                const values = new Map(previous.values);
-                const statuses = new Map(previous.statuses);
-                if (nextValue === null && nextStatus !== 'NOT_PLANNED') {
-                    values.delete(activePopover.date);
-                    statuses.delete(activePopover.date);
-                } else {
-                    values.set(activePopover.date, nextValue ?? 0);
-                    statuses.set(activePopover.date, nextStatus);
+            })
+        onEntryChanged?.(definition.id);
+        void savePromise
+            .then(() => {
+                if (entryMutationVersionsRef.current.get(activePopover.date) !== mutationVersion) return;
+                if (nextValue !== null && nextStatus !== 'NOT_PLANNED') {
+                    showStatFeedback(definition, nextValue, feedbackAnchor);
                 }
-                return { ...previous, values, statuses };
+            })
+            .catch(error => {
+                console.error('Failed to save boolean stat entry:', error);
+                if (entryMutationVersionsRef.current.get(activePopover.date) === mutationVersion) {
+                    setValueState(previous => {
+                        if (previous.key !== dataKey) return previous;
+                        const values = new Map(previous.values);
+                        const statuses = new Map(previous.statuses);
+                        if (previousHadEntry) {
+                            values.set(activePopover.date, previousValue!);
+                            statuses.set(activePopover.date, previousStatus ?? 'RECORDED');
+                        } else {
+                            values.delete(activePopover.date);
+                            statuses.delete(activePopover.date);
+                        }
+                        return { ...previous, values, statuses };
+                    });
+                    onEntryChanged?.(definition.id);
+                    setSaveError('Failed to save this value.');
+                }
+                onError?.('Failed to save this statistic.');
             });
-            onEntryChanged?.(definition.id);
-            closeEditor();
-        } catch (error) {
-            console.error('Failed to save boolean stat entry:', error);
-            setSaveError('Failed to save this value.');
-        } finally {
-            setSaving(false);
-        }
     };
 
     const weeks: (Date | null)[][] = [];
@@ -511,13 +536,15 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
                 slotProps={{
                     paper: {
                         sx: {
-                            p: 0.5,
+                            p: 0,
                             minWidth: 0,
                             bgcolor: 'background.paper',
                             boxShadow: 3,
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
+                            borderRadius: 1,
+                            overflow: 'hidden',
                         },
                     },
                 }}
@@ -529,7 +556,6 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
                                 ? 'not-planned'
                                 : editValue === 1 ? 'yes' : editValue === 0 ? 'no' : null}
                             exclusive
-                            disabled={saving}
                             onChange={(_, value) => {
                                 const nextStatus = value === 'not-planned' ? 'NOT_PLANNED' : 'RECORDED';
                                 const nextValue = value === null ? null : value === 'yes' ? 1 : 0;
@@ -540,7 +566,8 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
                             size="small"
                             sx={{
                                 border: 0,
-                                borderRadius: 0,
+                                borderRadius: 1,
+                                overflow: 'hidden',
                                 bgcolor: 'transparent',
                                 '& .MuiToggleButtonGroup-grouped': {
                                     border: '0 !important',
@@ -552,15 +579,20 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
                                     marginLeft: 0,
                                 },
                                 '& .MuiToggleButton-root': {
-                                    minWidth: 32,
-                                    width: 32,
-                                    height: 28,
+                                    flex: '1 1 36px',
+                                    minWidth: 36,
+                                    width: 36,
+                                    height: 32,
                                     p: 0,
                                     border: 0,
                                     bgcolor: 'transparent',
+                                    color: 'text.secondary',
                                     display: 'inline-flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
+                                    '&:hover': {
+                                        bgcolor: alpha(theme.palette.action.active, 0.08),
+                                    },
                                     '& .MuiSvgIcon-root': { fontSize: 18 },
                                 },
                             }}
@@ -569,8 +601,13 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
                                 value="no"
                                 aria-label="No"
                                 title="No"
-                                onClick={event => { feedbackAnchorRef.current = event.currentTarget; }}
-                                sx={{ '&.Mui-selected': { bgcolor: 'transparent', color: `${getBooleanChoiceColor(definition, 0)}.main` } }}
+                                sx={{
+                                    '&.Mui-selected': {
+                                        bgcolor: alpha(noColor, theme.palette.mode === 'light' ? 0.16 : 0.28),
+                                        color: noColor,
+                                        '&:hover': { bgcolor: alpha(noColor, theme.palette.mode === 'light' ? 0.24 : 0.36) },
+                                    },
+                                }}
                             >
                                 <HighlightOffIcon />
                             </ToggleButton>
@@ -578,7 +615,13 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
                                 value="not-planned"
                                 aria-label="Unplanned"
                                 title="Unplanned"
-                                sx={{ '&.Mui-selected': { bgcolor: 'transparent', color: 'notPlanned.main' } }}
+                                sx={{
+                                    '&.Mui-selected': {
+                                        bgcolor: alpha(notPlannedColor, theme.palette.mode === 'light' ? 0.16 : 0.28),
+                                        color: notPlannedColor,
+                                        '&:hover': { bgcolor: alpha(notPlannedColor, theme.palette.mode === 'light' ? 0.24 : 0.36) },
+                                    },
+                                }}
                             >
                                 <RemoveCircleOutlineIcon />
                             </ToggleButton>
@@ -586,8 +629,13 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
                                 value="yes"
                                 aria-label="Yes"
                                 title="Yes"
-                                onClick={event => { feedbackAnchorRef.current = event.currentTarget; }}
-                                sx={{ '&.Mui-selected': { bgcolor: 'transparent', color: `${getBooleanChoiceColor(definition, 1)}.main` } }}
+                                sx={{
+                                    '&.Mui-selected': {
+                                        bgcolor: alpha(yesColor, theme.palette.mode === 'light' ? 0.16 : 0.28),
+                                        color: yesColor,
+                                        '&:hover': { bgcolor: alpha(yesColor, theme.palette.mode === 'light' ? 0.24 : 0.36) },
+                                    },
+                                }}
                             >
                                 <CheckCircleOutlineIcon />
                             </ToggleButton>

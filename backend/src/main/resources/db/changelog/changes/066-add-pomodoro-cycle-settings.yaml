@@ -1,0 +1,34 @@
+databaseChangeLog:
+  - changeSet:
+      id: 066-add-pomodoro-cycle-settings
+      author: codex
+      comment: Persist Pomodoro duration and cycle settings per account
+      changes:
+        - addColumn:
+            tableName: app_user
+            columns:
+              - column:
+                  name: pomodoro_focus_duration
+                  type: int
+              - column:
+                  name: pomodoro_short_break_duration
+                  type: int
+              - column:
+                  name: pomodoro_long_break_duration
+                  type: int
+              - column:
+                  name: pomodoro_num_focuses
+                  type: int
+      rollback:
+        - dropColumn:
+            tableName: app_user
+            columnName: pomodoro_focus_duration
+        - dropColumn:
+            tableName: app_user
+            columnName: pomodoro_short_break_duration
+        - dropColumn:
+            tableName: app_user
+            columnName: pomodoro_long_break_duration
+        - dropColumn:
+            tableName: app_user
+            columnName: pomodoro_num_focuses

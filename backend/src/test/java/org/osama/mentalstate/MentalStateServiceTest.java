@@ -4,6 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
+import org.osama.exceptions.ResourceNotFoundException;
 import org.osama.user.User;
 import org.osama.user.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -92,6 +93,8 @@ class MentalStateServiceTest {
         assertEquals("Stimulation-Seeking", mentalStateService.checkIn(
                 new CreateMentalStateCheckInRequest(8, 9, 10, 8, 8, 1), USER_ID).state());
         assertEquals("Low Mood", mentalStateService.checkIn(
+                new CreateMentalStateCheckInRequest(6, 5, 5, 6, 2, 4), USER_ID).state());
+        assertEquals("Mixed", mentalStateService.checkIn(
                 new CreateMentalStateCheckInRequest(6, 5, 5, 6, 3, 4), USER_ID).state());
         assertEquals("Engaged", mentalStateService.checkIn(
                 new CreateMentalStateCheckInRequest(4, 5, 1, 5, 8, 1), USER_ID).state());
@@ -108,7 +111,7 @@ class MentalStateServiceTest {
         MentalStateCheckInResponse deepWork = mentalStateService.checkIn(
                 new CreateMentalStateCheckInRequest(10, 5, 1, 10, 10, 1), USER_ID);
         MentalStateCheckInResponse almostReady = mentalStateService.checkIn(
-                new CreateMentalStateCheckInRequest(6, 5, 5, 6, 5, 4), USER_ID);
+                new CreateMentalStateCheckInRequest(6, 5, 5, 6, 5, 6), USER_ID);
         MentalStateCheckInResponse healthyStimulation = mentalStateService.checkIn(
                 new CreateMentalStateCheckInRequest(4, 5, 1, 5, 8, 1), USER_ID);
         MentalStateCheckInResponse maintenance = mentalStateService.checkIn(
@@ -135,12 +138,12 @@ class MentalStateServiceTest {
     }
 
     @Test
-    void keepsNeutralSignalsInTheMixedState() {
+    void classifiesModerateSignalsAsReady() {
         MentalStateCheckInResponse response = mentalStateService.checkIn(
                 new CreateMentalStateCheckInRequest(5, 5, 5, 5, 5, 5), USER_ID);
 
-        assertEquals("Mixed", response.state());
-        assertTrue(response.suggestedActions().get(0).startsWith("Keep things simple"));
+        assertEquals("Ready", response.state());
+        assertTrue(response.suggestedActions().get(0).startsWith("You have a good window"));
     }
 
     @Test
@@ -164,5 +167,28 @@ class MentalStateServiceTest {
         mentalStateService.checkIn(new CreateMentalStateCheckInRequest(3, 3, 3, 3, 3, 3), other.getId());
 
         assertTrue(mentalStateService.getHistory(USER_ID, 30).isEmpty());
+    }
+
+    @Test
+    void deletesOwnedCheckInsButCannotDeleteAnotherUsersCheckIn() {
+        MentalStateCheckInResponse owned = mentalStateService.checkIn(
+                new CreateMentalStateCheckInRequest(5, 5, 5, 5, 5, 5), USER_ID);
+        User other = userRepository.save(User.builder()
+                .id("other-mental-state-delete-user")
+                .email("other-mental-state-delete@example.com")
+                .firstName("Other")
+                .lastName("User")
+                .username("other-mental-state-delete")
+                .active(true)
+                .build());
+        MentalStateCheckInResponse otherCheckIn = mentalStateService.checkIn(
+                new CreateMentalStateCheckInRequest(3, 3, 3, 3, 3, 3), other.getId());
+
+        mentalStateService.deleteCheckIn(owned.id(), USER_ID);
+
+        assertTrue(mentalStateService.getHistory(USER_ID, 30).isEmpty());
+        assertThrows(ResourceNotFoundException.class,
+                () -> mentalStateService.deleteCheckIn(otherCheckIn.id(), USER_ID));
+        assertEquals(1, mentalStateService.getHistory(other.getId(), 30).size());
     }
 }

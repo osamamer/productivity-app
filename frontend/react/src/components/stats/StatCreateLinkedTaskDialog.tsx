@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-    Alert, Box, Button, Chip, ClickAwayListener, DialogActions, DialogContent, DialogTitle,
+    Alert, Box, Button, Chip, DialogActions, DialogContent, DialogTitle,
     Popover, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material';
 import { StatDefinition, StatRecurringTaskDraft } from '../../types/Stats';
@@ -62,7 +62,6 @@ export function StatCreateLinkedTaskDialog({
             onClose={saving ? undefined : onClose}
             anchorReference="anchorPosition"
             anchorPosition={anchorPosition ?? { top: 0, left: 0 }}
-            hideBackdrop
             transformOrigin={{ vertical: 'top', horizontal: 'left' }}
             slotProps={{
                 paper: {
@@ -74,8 +73,7 @@ export function StatCreateLinkedTaskDialog({
                 },
             }}
         >
-            <ClickAwayListener onClickAway={() => { if (!saving) onClose(); }}>
-                <Box>
+            <Box>
             <DialogTitle>
                 Create linked task{definition ? ` for ${definition.name}` : ''}
             </DialogTitle>
@@ -155,8 +153,7 @@ export function StatCreateLinkedTaskDialog({
                     {saving ? 'Creating…' : mode === 'recurring' ? 'Create recurring task' : 'Create task'}
                 </Button>
             </DialogActions>
-                </Box>
-            </ClickAwayListener>
+            </Box>
         </Popover>
     );
 }

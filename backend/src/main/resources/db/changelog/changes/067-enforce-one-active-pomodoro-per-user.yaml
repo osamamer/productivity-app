@@ -1,0 +1,40 @@
+databaseChangeLog:
+  - changeSet:
+      id: 067-enforce-one-active-pomodoro-per-user
+      author: osama
+      comment: Enforce at most one active Pomodoro per user
+      changes:
+        # Existing databases may contain duplicates from the race this index prevents.
+        # Keep one deterministic row per user before creating the unique partial index.
+        # Pomodoro has no creation timestamp, so the lexicographically smallest ID survives.
+        - sql:
+            dbms: postgresql
+            splitStatements: false
+            sql: |
+              WITH ranked_active_pomodoros AS (
+                  SELECT pomodoro_id,
+                         ROW_NUMBER() OVER (
+                             PARTITION BY user_id
+                             ORDER BY pomodoro_id
+                         ) AS duplicate_rank
+                  FROM pomodoro
+                  WHERE is_active = TRUE
+                    AND user_id IS NOT NULL
+              )
+              UPDATE pomodoro
+              SET is_active = FALSE
+              WHERE pomodoro_id IN (
+                  SELECT pomodoro_id
+                  FROM ranked_active_pomodoros
+                  WHERE duplicate_rank > 1
+              );
+        - sql:
+            dbms: postgresql
+            sql: >
+              CREATE UNIQUE INDEX IF NOT EXISTS idx_app_pomodoro_one_active_per_user
+              ON pomodoro (user_id)
+              WHERE is_active = TRUE;
+      rollback:
+        - sql:
+            dbms: postgresql
+            sql: DROP INDEX IF EXISTS idx_app_pomodoro_one_active_per_user;

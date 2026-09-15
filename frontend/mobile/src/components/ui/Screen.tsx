@@ -17,6 +17,7 @@ interface Props {
   safeAreaTop?: boolean;
   contentStyle?: StyleProp<ViewStyle>;
   overlay?: ReactNode;
+  scrollToTopKey?: string | number | null;
 }
 
 export function Screen({
@@ -31,6 +32,7 @@ export function Screen({
   safeAreaTop = true,
   contentStyle,
   overlay,
+  scrollToTopKey = null,
 }: PropsWithChildren<Props>) {
   const { colors } = useAppTheme();
   const body = (
@@ -53,6 +55,7 @@ export function Screen({
       {scroll ? (
         <KeyboardAwareScrollView
           contentContainerStyle={styles.scroll}
+          scrollToTopKey={scrollToTopKey}
           keyboardShouldPersistTaps="handled"
           refreshControl={onRefresh ? <RefreshControl enabled={refreshEnabled} refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} /> : undefined}>
           {body}

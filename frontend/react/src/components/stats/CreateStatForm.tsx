@@ -110,7 +110,9 @@ interface Props {
     onCreated?: (def: StatDefinition, operationId?: string) => void;
     onCreatedOptimistically?: (def: StatDefinition, operationId: string) => void;
     onCreationFailed?: (operationId: string) => void;
-    onUpdated?: (def: StatDefinition) => void;
+    onUpdated?: (def: StatDefinition, operationId?: string) => void;
+    onUpdatedOptimistically?: (def: StatDefinition, operationId: string, previous: StatDefinition) => void;
+    onUpdateFailed?: (operationId: string, previous: StatDefinition) => void;
     onCreateRecurringTask?: (event: React.MouseEvent<HTMLButtonElement>) => void;
     onEditRecurringTask?: (event: React.MouseEvent<HTMLButtonElement>) => void;
     onDelete?: () => void;
@@ -124,6 +126,8 @@ export function CreateStatForm({
     onCreatedOptimistically,
     onCreationFailed,
     onUpdated,
+    onUpdatedOptimistically,
+    onUpdateFailed,
     onCreateRecurringTask,
     onEditRecurringTask,
     onDelete,
@@ -182,15 +186,35 @@ export function CreateStatForm({
                             ? Number(values.goodThreshold)
                             : undefined;
                 if (initialDefinition) {
-                    const def = await statService.updateDefinition(initialDefinition.id, {
+                    const request = {
                         name: values.name.trim(),
                         description: values.description || undefined,
                         morality: values.morality,
                         goodThreshold: values.type !== 'BOOLEAN' && values.morality !== 'NEUTRAL'
                             ? threshold ?? undefined
                             : undefined,
-                    });
-                    onUpdated?.(def);
+                    };
+                    if (onUpdatedOptimistically && onUpdateFailed) {
+                        const operationId = `stat-update-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+                        const optimisticDefinition: StatDefinition = {
+                            ...initialDefinition,
+                            ...request,
+                            description: request.description,
+                            morality: request.morality,
+                            goodThreshold: request.goodThreshold ?? null,
+                        };
+                        onUpdatedOptimistically(optimisticDefinition, operationId, initialDefinition);
+                        onCancel();
+                        void statService.updateDefinition(initialDefinition.id, request)
+                            .then(def => onUpdated?.(def, operationId))
+                            .catch(error => {
+                                console.error('Failed to update stat definition:', error);
+                                onUpdateFailed(operationId, initialDefinition);
+                            });
+                    } else {
+                        const def = await statService.updateDefinition(initialDefinition.id, request);
+                        onUpdated?.(def);
+                    }
                 } else {
                     const request: CreateDefinitionRequest = {
                         name: values.name.trim(),
@@ -216,8 +240,11 @@ export function CreateStatForm({
                         return;
                     }
 
-                    if (request.createRecurringTask && onCreatedOptimistically && onCreationFailed) {
+                    if (onCreatedOptimistically && onCreationFailed) {
                         const operationId = `pending-stat-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+                        const optimisticRecurringTaskSeriesId = request.createRecurringTask
+                            ? `optimistic-series-${Date.now()}-${Math.random().toString(36).slice(2)}`
+                            : null;
                         onCreatedOptimistically({
                             id: operationId,
                             name: request.name,
@@ -227,7 +254,9 @@ export function CreateStatForm({
                             minValue: request.minValue,
                             maxValue: request.maxValue,
                             goodThreshold: request.goodThreshold,
-                            recurringTaskSeriesId: null,
+                            recurringTaskSeriesId: optimisticRecurringTaskSeriesId,
+                            focusTaskName: request.createRecurringTask ? request.name : null,
+                            focusTaskNames: request.createRecurringTask ? [request.name] : [],
                             displayOrder: Number.MAX_SAFE_INTEGER,
                             userId: '',
                         }, operationId);
@@ -257,6 +286,25 @@ export function CreateStatForm({
 
         setDisconnecting(true);
         setDisconnectError(null);
+        const previousDefinition = initialDefinition;
+        const optimisticDefinition: StatDefinition = {
+            ...previousDefinition,
+            recurringTaskSeriesId: null,
+        };
+        const operationId = `stat-recurring-disconnect-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        if (onUpdatedOptimistically && onUpdateFailed) {
+            onUpdatedOptimistically(optimisticDefinition, operationId, previousDefinition);
+            setDeleteRecurringTaskOpen(false);
+            onCancel();
+            void statService.disconnectRecurringTask(initialDefinition.id)
+                .then(definition => onUpdated?.(definition, operationId))
+                .catch(error => {
+                    console.error('Failed to disconnect recurring task:', error);
+                    onUpdateFailed(operationId, previousDefinition);
+                });
+            setDisconnecting(false);
+            return;
+        }
         try {
             const definition = await statService.disconnectRecurringTask(initialDefinition.id);
             setDeleteRecurringTaskOpen(false);
@@ -274,6 +322,25 @@ export function CreateStatForm({
 
         setDeletingRecurringTask(true);
         setDisconnectError(null);
+        const previousDefinition = initialDefinition;
+        const optimisticDefinition: StatDefinition = {
+            ...previousDefinition,
+            recurringTaskSeriesId: null,
+        };
+        const operationId = `stat-recurring-delete-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        if (onUpdatedOptimistically && onUpdateFailed) {
+            onUpdatedOptimistically(optimisticDefinition, operationId, previousDefinition);
+            setDeleteRecurringTaskOpen(false);
+            onCancel();
+            void statService.deleteRecurringTaskSeries(initialDefinition.id)
+                .then(definition => onUpdated?.(definition, operationId))
+                .catch(error => {
+                    console.error('Failed to delete recurring task series:', error);
+                    onUpdateFailed(operationId, previousDefinition);
+                });
+            setDeletingRecurringTask(false);
+            return;
+        }
         try {
             const definition = await statService.deleteRecurringTaskSeries(initialDefinition.id);
             setDeleteRecurringTaskOpen(false);

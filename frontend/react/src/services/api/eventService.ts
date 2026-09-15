@@ -1,4 +1,4 @@
-import { CalendarEvent, CalendarEventInput } from '../../types/CalendarEvent';
+import { CalendarEvent, CalendarEventInput, CalendarEventOccurrenceMoveInput } from '../../types/CalendarEvent';
 import { getAuthCacheScope, getAuthHeaders } from '../utils/authHeaders';
 import { CachedResource } from '../cache/ttlCache';
 
@@ -43,6 +43,21 @@ export const eventService = {
             body: JSON.stringify(event),
         });
         if (!response.ok) throw await parseError(response, 'Failed to update event');
+        eventsCache.invalidate(eventsCacheKey());
+        return response.json();
+    },
+
+    async moveEventOccurrence(
+        eventId: string,
+        occurrenceKey: string,
+        move: CalendarEventOccurrenceMoveInput,
+    ): Promise<CalendarEvent> {
+        const response = await fetch(`${EVENT_URL}/${eventId}/occurrences/move`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify({ occurrenceKey, ...move }),
+        });
+        if (!response.ok) throw await parseError(response, 'Failed to move event occurrence');
         eventsCache.invalidate(eventsCacheKey());
         return response.json();
     },

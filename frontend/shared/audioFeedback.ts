@@ -3,6 +3,8 @@ export type AudioFeedbackKind =
   | 'eventCreated'
   | 'dayRatingHigh'
   | 'dayRatingLow'
+  | 'statGood'
+  | 'statBad'
   | 'mentalThreadCreated'
   | 'pomodoroFocusEnded'
   | 'pomodoroBreakEnded'
@@ -24,6 +26,9 @@ const F4 = 349.23;
 const G4 = 392.0;
 const A4 = 440.0;
 const B4 = 493.88;
+const C3 = 130.81;
+const E3 = 164.81;
+const G3 = 196.0;
 const C5 = 523.25;
 const E5 = 659.25;
 const G5 = 783.99;
@@ -62,6 +67,20 @@ export const AUDIO_FEEDBACK_SOUNDS: Record<AudioFeedbackKind, readonly AudioFeed
     NOTE(A4, 0.12, { waveform: 'triangle', volume: 0.06 }),
     NOTE(F4, 0.12, { waveform: 'triangle', volume: 0.06 }),
     NOTE(D4, 0.22, { gapAfter: 0, waveform: 'triangle', volume: 0.07 }),
+  ],
+  // A bright arcade-like rise for a value that lands on the good side.
+  statGood: [
+    NOTE(C5, 0.07, { volume: 0.07 }),
+    NOTE(E5, 0.07, { volume: 0.08 }),
+    NOTE(G5, 0.07, { volume: 0.09 }),
+    NOTE(C6, 0.3, { gapAfter: 0, volume: 0.12 }),
+  ],
+  // The exact descending opposite, with a sharper timbre, for the reprimand cue.
+  statBad: [
+    NOTE(C4, 0.07, { waveform: 'triangle', volume: 0.12 }),
+    NOTE(G3, 0.07, { waveform: 'triangle', volume: 0.09 }),
+    NOTE(E3, 0.07, { waveform: 'triangle', volume: 0.08 }),
+    NOTE(C3, 0.3, { gapAfter: 0, waveform: 'triangle', volume: 0.07 }),
   ],
   // An open, unfinished-feeling interval for capturing a thought.
   mentalThreadCreated: [

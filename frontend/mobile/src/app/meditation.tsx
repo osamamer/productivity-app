@@ -32,6 +32,8 @@ import type { MeditationSession } from '@/types/models';
 const MIN_SESSION_MINUTES = 1;
 const MAX_SESSION_MINUTES = 120;
 const DURATION_ITEM_HEIGHT = 44;
+const DURATION_VISIBLE_ITEMS = 5;
+const DURATION_CENTER_INDEX = Math.floor(DURATION_VISIBLE_ITEMS / 2);
 const MIN_MOOD = 1;
 const MAX_MOOD = 10;
 const MEDITATION_SETTINGS_STORAGE_KEY = 'meditation.settings';
@@ -102,6 +104,29 @@ function elapsedSeconds(session: MeditationSession, now: number, clientAnchor: C
   return saved + Math.floor(elapsedSince(session.lastUnpauseTime, now) / 1_000);
 }
 
+function createOptimisticSession(
+  startedAt: number,
+  moodBefore: number,
+  numIntervalBells: number,
+  intendedLength: number,
+): MeditationSession {
+  const timestamp = new Date(startedAt).toISOString();
+  return {
+    id: `optimistic-meditation-${startedAt}-${Math.random().toString(36).slice(2)}`,
+    running: true,
+    active: true,
+    totalSessionTime: 0,
+    startTime: timestamp,
+    lastUnpauseTime: timestamp,
+    lastPauseTime: null,
+    endTime: null,
+    moodBefore,
+    moodAfter: 0,
+    numIntervalBells,
+    intendedLength,
+  };
+}
+
 function moodLabel(mood: number): string {
   if (mood <= 2) return 'Very low';
   if (mood <= 4) return 'Low';
@@ -158,20 +183,39 @@ const DURATION_VALUES = Array.from(
 function DurationPicker({ value, onChange }: { value: number; onChange: (value: number) => void }) {
   const { colors } = useAppTheme();
   const scrollRef = useRef<ScrollView>(null);
+  const [previewValue, setPreviewValue] = useState(value);
+  const lastPropValueRef = useRef<number | null>(null);
 
   useEffect(() => {
+    const initialRender = lastPropValueRef.current === null;
+    lastPropValueRef.current = value;
+
     const frame = requestAnimationFrame(() => {
-      scrollRef.current?.scrollTo({ y: (value - MIN_SESSION_MINUTES) * DURATION_ITEM_HEIGHT, animated: false });
+      scrollRef.current?.scrollTo({
+        y: (value - MIN_SESSION_MINUTES) * DURATION_ITEM_HEIGHT,
+        animated: !initialRender,
+      });
     });
     return () => cancelAnimationFrame(frame);
   }, [value]);
 
+  function valueAtOffset(offsetY: number): number {
+    const index = Math.round(Math.max(0, offsetY) / DURATION_ITEM_HEIGHT);
+    return Math.max(MIN_SESSION_MINUTES, Math.min(MAX_SESSION_MINUTES, index + MIN_SESSION_MINUTES));
+  }
+
+  function selectFromOffset(offsetY: number) {
+    setPreviewValue(valueAtOffset(offsetY));
+  }
+
   function selectFromScroll(event: NativeSyntheticEvent<NativeScrollEvent>) {
-    const index = Math.round(event.nativeEvent.contentOffset.y / DURATION_ITEM_HEIGHT);
-    onChange(Math.max(MIN_SESSION_MINUTES, Math.min(MAX_SESSION_MINUTES, index + MIN_SESSION_MINUTES)));
+    const nextValue = valueAtOffset(event.nativeEvent.contentOffset.y);
+    setPreviewValue(nextValue);
+    onChange(nextValue);
   }
 
   function selectValue(minutes: number) {
+    setPreviewValue(minutes);
     onChange(minutes);
     scrollRef.current?.scrollTo({ y: (minutes - MIN_SESSION_MINUTES) * DURATION_ITEM_HEIGHT, animated: true });
   }
@@ -182,14 +226,17 @@ function DurationPicker({ value, onChange }: { value: number; onChange: (value: 
         ref={scrollRef}
         nestedScrollEnabled
         snapToInterval={DURATION_ITEM_HEIGHT}
+        snapToAlignment="start"
         decelerationRate="fast"
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.durationOptions}
+        scrollEventThrottle={16}
+        onScroll={event => selectFromOffset(event.nativeEvent.contentOffset.y)}
         onScrollEndDrag={selectFromScroll}
         onMomentumScrollEnd={selectFromScroll}
       >
         {DURATION_VALUES.map(minutes => {
-          const selected = minutes === value;
+          const selected = minutes === previewValue;
           return (
             <SilentPressable
               key={minutes}
@@ -211,6 +258,10 @@ function DurationPicker({ value, onChange }: { value: number; onChange: (value: 
           );
         })}
       </ScrollView>
+      <View
+        pointerEvents="none"
+        style={[styles.durationSelectionFrame, { borderColor: `${colors.accent}80`, backgroundColor: `${colors.accent}0d` }]}
+      />
     </View>
   );
 }
@@ -270,6 +321,7 @@ export default function MeditationScreen() {
   const [clientRunningAnchor, setClientRunningAnchor] = useState<ClientRunningAnchor | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [saving, setSaving] = useState(false);
+  const [startPending, setStartPending] = useState(false);
   const [finishSheetOpen, setFinishSheetOpen] = useState(false);
   const [optionSheet, setOptionSheet] = useState<OptionSheet>(null);
   const [completedSession, setCompletedSession] = useState<MeditationSession | null>(null);
@@ -284,6 +336,7 @@ export default function MeditationScreen() {
   const [loadedSettingsKey, setLoadedSettingsKey] = useState<string | null>(null);
   const leavePromptOpenRef = useRef(false);
   const leavingRef = useRef(false);
+  const mountedRef = useRef(true);
   const [activeOpacity] = useState(() => new Animated.Value(0));
   const [activeScale] = useState(() => new Animated.Value(0.94));
   const [activeOffset] = useState(() => new Animated.Value(24));
@@ -291,6 +344,11 @@ export default function MeditationScreen() {
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1_000);
     return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
   }, []);
 
   useEffect(() => {
@@ -426,8 +484,17 @@ export default function MeditationScreen() {
   }
 
   async function start() {
+    if (session || startPending) return;
+
+    const startedAt = Date.now();
+    const intendedLength = durationMinutes * 60;
+    const optimisticSession = createOptimisticSession(startedAt, moodBefore, numIntervalBells, intendedLength);
+    setStartPending(true);
     setSaving(true);
     setError(null);
+    setCompletedSession(null);
+    setClientRunningAnchor({ sessionId: optimisticSession.id, startedAt });
+    resource.setData(optimisticSession);
     prepareAudio();
     if (!soundMuted) {
       startAudio(selectedSound);
@@ -435,22 +502,32 @@ export default function MeditationScreen() {
       audioStartedRef.current = true;
     }
     try {
-      const started = await api.meditation.start(moodBefore, durationMinutes * 60, numIntervalBells);
-      const startedAt = Date.now();
+      const started = await api.meditation.start(moodBefore, intendedLength, numIntervalBells);
+      if (!mountedRef.current) {
+        void api.meditation.end(started.id).catch(cause => console.error('Could not close a meditation started while leaving the app:', cause));
+        return;
+      }
+
       setClientRunningAnchor({ sessionId: started.id, startedAt });
       resource.setData(started);
-      setCompletedSession(null);
-      completionNotificationScheduledRef.current = await scheduleMeditationCompletionNotification(
+      void scheduleMeditationCompletionNotification(
         started.id,
         startedAt + started.intendedLength * 1_000,
-      );
+      ).then(schedule => {
+        if (mountedRef.current) completionNotificationScheduledRef.current = schedule;
+      });
     } catch (cause) {
+      if (!mountedRef.current) return;
+      resource.setData(undefined);
+      setClientRunningAnchor(null);
       stopAudio();
       audioStartedRef.current = false;
-      setClientRunningAnchor(null);
       setError(reportError('Could not start meditation', cause));
     } finally {
-      setSaving(false);
+      if (mountedRef.current) {
+        setStartPending(false);
+        setSaving(false);
+      }
     }
   }
 
@@ -544,7 +621,7 @@ export default function MeditationScreen() {
   }
 
   useEffect(() => {
-    if (!session) return;
+    if (!session || startPending) return;
 
     const unsubscribe = navigation.addListener('beforeRemove', event => {
       if (leavingRef.current) return;
@@ -585,7 +662,7 @@ export default function MeditationScreen() {
     });
 
     return unsubscribe;
-  }, [confirm, navigation, session, setSessionData, stopAudio]);
+  }, [confirm, navigation, session, setSessionData, startPending, stopAudio]);
 
   return (
     <Screen safeAreaTop={false} contentStyle={styles.screenContent} refreshing={resource.refreshing} onRefresh={() => void resource.reload()}>
@@ -728,8 +805,9 @@ const styles = StyleSheet.create({
   center: { textAlign: 'center' },
   sectionHeading: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 },
   sheetValue: { alignItems: 'center', gap: 3 },
-  durationWheel: { height: DURATION_ITEM_HEIGHT * 3, borderWidth: 1, borderRadius: 16, overflow: 'hidden' },
-  durationOptions: { paddingVertical: DURATION_ITEM_HEIGHT },
+  durationWheel: { height: DURATION_ITEM_HEIGHT * DURATION_VISIBLE_ITEMS, borderWidth: 1, borderRadius: 16, overflow: 'hidden' },
+  durationOptions: { paddingVertical: DURATION_ITEM_HEIGHT * DURATION_CENTER_INDEX },
+  durationSelectionFrame: { position: 'absolute', top: DURATION_ITEM_HEIGHT * DURATION_CENTER_INDEX, left: 8, right: 8, height: DURATION_ITEM_HEIGHT, borderWidth: 1.5, borderRadius: 11 },
   durationOption: { height: DURATION_ITEM_HEIGHT, marginHorizontal: 8, borderRadius: 11, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   soundGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   soundChoice: { width: '100%', minHeight: 60, flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: 15, borderWidth: 1 },

@@ -160,16 +160,29 @@ function SevenDayDurationBars({ definition, comparisonDefinition, points, theme,
                                                     onDateContextMenu(point.date, event);
                                                 } : undefined}
                                                 sx={{
-                                                    width: comparisonDefinition ? 'clamp(3px, 12%, 5px)' : 'clamp(3px, 14%, 6px)',
-                                                    height: `${primaryHeight}%`,
-                                                    minHeight: 3,
-                                                    borderRadius: '6px 6px 1px 1px',
-                                                    bgcolor: primaryColor,
+                                                    width: comparisonDefinition ? 'clamp(3px, 12%, 5px)' : '100%',
+                                                    height: comparisonDefinition ? `${primaryHeight}%` : '100%',
+                                                    minHeight: comparisonDefinition ? 3 : undefined,
+                                                    display: 'flex',
+                                                    alignItems: 'flex-end',
+                                                    justifyContent: 'center',
+                                                    position: 'relative',
                                                     cursor: onPointClick ? 'pointer' : 'default',
-                                                    transition: 'filter 120ms ease',
-                                                    '&:hover': { filter: 'brightness(1.16)' },
+                                                    '&:hover > .duration-bar': { filter: 'brightness(1.16)' },
                                                 }}
-                                            />
+                                            >
+                                                <Box
+                                                    className="duration-bar"
+                                                    sx={{
+                                                        width: comparisonDefinition ? '100%' : 'clamp(3px, 14%, 6px)',
+                                                        height: comparisonDefinition ? '100%' : `${primaryHeight}%`,
+                                                        minHeight: 3,
+                                                        borderRadius: '6px 6px 1px 1px',
+                                                        bgcolor: primaryColor,
+                                                        transition: 'filter 120ms ease',
+                                                    }}
+                                                />
+                                            </Box>
                                         </MuiTooltip>
                                     )}
                                     {comparisonDefinition && point.comparisonValue !== undefined && (
@@ -204,7 +217,7 @@ function SevenDayDurationBars({ definition, comparisonDefinition, points, theme,
     );
 }
 
-function DurationTrend({ definition, comparisonDefinition, points, theme }: Omit<Props, 'dateRange' | 'onPointClick'>) {
+function DurationTrend({ definition, comparisonDefinition, points, dateRange, theme }: Omit<Props, 'onPointClick'>) {
     const primaryColor = theme.palette.primary.main;
     const comparisonColor = theme.palette.secondary.main;
     const axis = durationAxis(chartMaximum(definition, points));
@@ -275,8 +288,8 @@ function DurationTrend({ definition, comparisonDefinition, points, theme }: Omit
                         stroke={primaryColor}
                         strokeWidth={2.25}
                         fill={`url(#${gradientId})`}
-                        dot={false}
-                        activeDot={{ r: 4 }}
+                        dot={dateRange >= 365 ? false : { r: 3, fill: primaryColor }}
+                        activeDot={{ r: 5 }}
                         connectNulls={true}
                         isAnimationActive={false}
                     />
@@ -288,8 +301,8 @@ function DurationTrend({ definition, comparisonDefinition, points, theme }: Omit
                             stroke={comparisonColor}
                             strokeWidth={2}
                             fill="transparent"
-                            dot={false}
-                            activeDot={{ r: 4 }}
+                            dot={dateRange >= 365 ? false : { r: 3, fill: comparisonColor }}
+                            activeDot={{ r: 5 }}
                             connectNulls={true}
                             isAnimationActive={false}
                         />

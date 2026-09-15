@@ -2,6 +2,7 @@ package org.osama.session.task;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.Collection;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -14,6 +15,8 @@ public interface TaskSessionRepository extends JpaRepository<TaskSession, String
 
     List<TaskSession> findAllByAssociatedTaskId(String taskId);
     List<TaskSession> findAllByAssociatedTaskIdIn(Collection<String> taskIds);
+    List<TaskSession> findAllByAssociatedTaskIdInAndPomodoroIsTrueAndStartTimeGreaterThanEqualAndStartTimeLessThan(
+            Collection<String> taskIds, LocalDateTime from, LocalDateTime toExclusive);
     List<TaskSession> findAllByAssociatedTaskIdInAndActiveIsTrue(Collection<String> taskIds);
     List<TaskSession> findAllByRunningIsTrue();
     List<TaskSession> findAllByActiveIsTrue();

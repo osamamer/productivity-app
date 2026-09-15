@@ -210,6 +210,10 @@ export interface CalendarEventOccurrenceOverride {
   occurrenceKey: string;
   status: CalendarEventStatus;
   deleted: boolean;
+  startDate?: string | null;
+  endDate?: string | null;
+  startTime?: string | null;
+  endTime?: string | null;
 }
 
 export interface CalendarEvent {

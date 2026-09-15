@@ -3,12 +3,11 @@ import React, { createContext, useState, useEffect, useMemo, useCallback, ReactN
 import { ThemeProvider as MuiThemeProvider, createTheme, responsiveFontSizes } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import {accentPalettes, type AccentColor} from './themeOptions';
+import keycloak from '../services/keycloak';
+import { userService } from '../services/api/userService';
+import { getRuntimeUserPreferences, subscribeToUserPreferences } from '../services/userPreferenceStore';
 
 type ThemeMode = 'light' | 'dark';
-
-const THEME_MODE_STORAGE_KEY = 'themeMode';
-const LEGACY_DARK_MODE_STORAGE_KEY = 'darkMode';
-const ACCENT_COLOR_STORAGE_KEY = 'accentColor';
 
 interface ThemeContextType {
     darkMode: boolean;
@@ -51,45 +50,62 @@ interface ThemeProviderProps {
 
 export const AppThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     const [mode, setMode] = useState<ThemeMode>(() => {
-        const savedMode = localStorage.getItem(THEME_MODE_STORAGE_KEY);
+        const savedMode = getRuntimeUserPreferences().themeMode;
         if (savedMode === 'light' || savedMode === 'dark') {
             return savedMode;
-        }
-
-        const legacyDarkMode = localStorage.getItem(LEGACY_DARK_MODE_STORAGE_KEY);
-        if (legacyDarkMode !== null) {
-            return JSON.parse(legacyDarkMode) ? 'dark' : 'light';
         }
 
         return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     });
     const [accentColor, setAccentColorState] = useState<AccentColor>(() => {
-        const savedAccentColor = localStorage.getItem(ACCENT_COLOR_STORAGE_KEY);
+        const savedAccentColor = getRuntimeUserPreferences().accentColor;
         return savedAccentColor === 'teal' || savedAccentColor === 'coral' || savedAccentColor === 'amber' || savedAccentColor === 'violet'
-            ? savedAccentColor
-            : 'violet';
+            ? savedAccentColor : 'violet';
     });
     const darkMode = mode === 'dark';
 
     useEffect(() => {
-        localStorage.setItem(THEME_MODE_STORAGE_KEY, mode);
-        localStorage.setItem(LEGACY_DARK_MODE_STORAGE_KEY, JSON.stringify(darkMode));
-    }, [darkMode, mode]);
+        if (!keycloak.authenticated) return;
 
-    useEffect(() => {
-        localStorage.setItem(ACCENT_COLOR_STORAGE_KEY, accentColor);
-    }, [accentColor]);
+        const syncRuntimePreferences = () => {
+            const preferences = getRuntimeUserPreferences();
+            if (preferences.themeMode) setMode(preferences.themeMode);
+            if (preferences.accentColor === 'teal' || preferences.accentColor === 'coral'
+                || preferences.accentColor === 'amber' || preferences.accentColor === 'violet') {
+                setAccentColorState(preferences.accentColor);
+            }
+        };
 
-    const toggleTheme = useCallback(() => {
-        setMode(prev => prev === 'dark' ? 'light' : 'dark');
+        const unsubscribe = subscribeToUserPreferences(syncRuntimePreferences);
+        syncRuntimePreferences();
+        void userService.getPreferences().catch(error => {
+            console.error('Could not load user appearance preferences:', error);
+        });
+        return unsubscribe;
     }, []);
 
     const setTheme = useCallback((mode: ThemeMode) => {
         setMode(mode);
+        void userService.updatePreferences({ themeMode: mode }).catch(error => {
+            console.error('Could not save theme preference:', error);
+        });
+    }, []);
+
+    const toggleTheme = useCallback(() => {
+        setMode(previousMode => {
+            const nextMode = previousMode === 'dark' ? 'light' : 'dark';
+            void userService.updatePreferences({ themeMode: nextMode }).catch(error => {
+                console.error('Could not save theme preference:', error);
+            });
+            return nextMode;
+        });
     }, []);
 
     const setAccentColor = useCallback((color: AccentColor) => {
         setAccentColorState(color);
+        void userService.updatePreferences({ accentColor: color }).catch(error => {
+            console.error('Could not save accent color preference:', error);
+        });
     }, []);
 
     const theme = useMemo(() => {

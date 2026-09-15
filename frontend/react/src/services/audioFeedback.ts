@@ -1,5 +1,4 @@
 import {
-    AUDIO_FEEDBACK_STORAGE_KEY,
     dayRatingFeedback,
     renderAudioFeedback,
     renderMeditationCompletionGong,
@@ -7,19 +6,13 @@ import {
     type AudioContextLike,
     type AudioFeedbackKind,
 } from '../../../shared/audioFeedback.ts';
+import { getRuntimeUserPreference, subscribeToUserPreferences, updateRuntimeUserPreferences } from './userPreferenceStore';
 
 let audioContext: AudioContextLike | null = null;
-let enabled = readEnabled();
-
-function readEnabled(): boolean {
-    if (typeof window === 'undefined') return true;
-    try {
-        return window.localStorage.getItem(AUDIO_FEEDBACK_STORAGE_KEY) !== 'false';
-    } catch (error) {
-        console.warn('Could not read sound effects preference:', error);
-        return true;
-    }
-}
+let enabled = getRuntimeUserPreference('soundEffectsEnabled');
+subscribeToUserPreferences(() => {
+    enabled = getRuntimeUserPreference('soundEffectsEnabled');
+});
 
 function getAudioContext(): AudioContextLike | null {
     if (typeof window === 'undefined') return null;
@@ -41,16 +34,18 @@ export function isAudioFeedbackEnabled(): boolean {
 
 export function setAudioFeedbackEnabled(nextEnabled: boolean): void {
     enabled = nextEnabled;
-    if (typeof window === 'undefined') return;
-    try {
-        window.localStorage.setItem(AUDIO_FEEDBACK_STORAGE_KEY, String(nextEnabled));
-    } catch (error) {
-        console.warn('Could not save sound effects preference:', error);
-    }
+    updateRuntimeUserPreferences({ soundEffectsEnabled: nextEnabled });
+}
+
+function isMeditationSoundPreviewGesture(event: Event | undefined): boolean {
+    if (!event || typeof Element === 'undefined' || !(event.target instanceof Element)) return false;
+    return Boolean(event.target.closest('[data-meditation-sound-preview]'));
 }
 
 /** Prime the browser audio context while a user gesture is still active. */
-export function prepareAudioFeedback(): void {
+export function prepareAudioFeedback(event?: Event): void {
+    // Let direct HTML audio previews keep the browser's user-activation token.
+    if (isMeditationSoundPreviewGesture(event)) return;
     if (!enabled) return;
     const context = getAudioContext();
     if (context?.state === 'suspended') {

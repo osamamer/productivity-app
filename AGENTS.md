@@ -51,13 +51,13 @@ Feature packages follow a consistent pattern — each has an entity, repository,
 - `taskgroup/` — User-owned groups that relate multiple tasks independently of subtasks
 - `mentalthread/` — User-owned unresolved concerns with acting/ruminating/planned/pending attention states, subjective load history, closure outcomes, daily capacity check-ins, and connected next-action tasks
 - `day/` — Daily rating/plan/summary (`DayEntity`, one per user per date)
-- `pomodoro/` — Pomodoro timer settings, persisted phase state, and automatic/manual phase transitions
+- `pomodoro/` — Pomodoro timer settings, persisted phase state, automatic/manual phase transitions, and user-owned MP3 sounds. New audio files live in the configured persistent `app.pomodoro.sounds.directory`; the database keeps metadata and supports legacy database blobs.
 - `reminder/` — Durable, typed notification inbox shared by calendar reminders and Pomodoro transitions; notifications remain due until the client acknowledges presentation, while authenticated WebSocket pushes are only a low-latency delivery signal
 - `stat/` — Daily user-defined tracking plus built-in meditation activity and sleep stats provisioned from `SystemStatCatalog`; built-ins use a stable `systemKey`, cannot be deleted, and expose server-side personal correlation insights. User statistics can also link focus time from historical Pomodoro tasks by an exact case-insensitive task name, including completed tasks.
 - `mentalstate/` — Timestamped, multiple-per-day check-ins that capture energy, activation, stimulation hunger, clarity, valence, and emotional load together and generate deterministic state guidance
 - `session/task/` and `session/meditation/` — Session tracking with start/pause/unpause/end lifecycle, published as Spring events via `ApplicationEventPublisher`
 - `scheduling/` — Automated job scheduling for pomodoro cycles (`TimedExecutorService`, `ScheduledJob`)
-- `user/` — User management and persisted preferences backed by Keycloak (see Auth below)
+- `user/` — User management and account-scoped preferences backed by Keycloak (see Auth below). Browser storage is migration-only for preferences; cache invalidation must never clear persisted settings.
 
 WebSocket (STOMP) is configured in `WebSocketConfig.java`. The frontend connects via `/ws` (proxied by Vite).
 

@@ -1,0 +1,34 @@
+databaseChangeLog:
+  - changeSet:
+      id: 068-add-calendar-event-occurrence-move-overrides
+      author: codex
+      comment: Persist date and time overrides for moved repeating calendar event occurrences
+      changes:
+        - addColumn:
+            tableName: calendar_event_cancellation
+            columns:
+              - column:
+                  name: override_start_date
+                  type: date
+              - column:
+                  name: override_end_date
+                  type: date
+              - column:
+                  name: override_start_time
+                  type: timestamp with time zone
+              - column:
+                  name: override_end_time
+                  type: timestamp with time zone
+      rollback:
+        - dropColumn:
+            tableName: calendar_event_cancellation
+            columnName: override_start_date
+        - dropColumn:
+            tableName: calendar_event_cancellation
+            columnName: override_end_date
+        - dropColumn:
+            tableName: calendar_event_cancellation
+            columnName: override_start_time
+        - dropColumn:
+            tableName: calendar_event_cancellation
+            columnName: override_end_time

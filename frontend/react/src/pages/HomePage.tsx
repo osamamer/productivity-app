@@ -26,6 +26,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import AddIcon from '@mui/icons-material/Add';
 import GroupWorkIcon from '@mui/icons-material/GroupWork';
 import VisibilityIcon from '@mui/icons-material/Visibility';
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import AdsClickIcon from '@mui/icons-material/AdsClick';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
@@ -57,6 +58,7 @@ import { playAudioFeedback } from '../services/audioFeedback';
 import { BulkTaskDatePopover } from '../components/task/BulkTaskDatePopover';
 import { findKeyboardDeleteAnchor, useKeyboardDelete } from '../hooks/useKeyboardDelete';
 import { TaskReminderPicker } from '../components/task/TaskReminderPicker';
+import { usePomodoro } from '../hooks/usePomodoro';
 
 type ActiveExpansion = { taskId: string; panel: 'pomodoro' | 'details' } | null;
 type FocusVisibility = 'all' | 'fading' | 'sliding' | 'hidden' | 'revealing' | 'returning';
@@ -87,8 +89,8 @@ type PendingHomeDateEdit = {
 };
 
 type TaskListItem =
-    | { kind: 'task'; task: Task }
-    | { kind: 'group'; group: TaskGroup; tasks: Task[] };
+    | { kind: 'task'; task: Task; renderKey: string }
+    | { kind: 'group'; group: TaskGroup; tasks: Task[]; renderKey: string };
 type SelectionEntity =
     | { kind: 'task'; id: string }
     | { kind: 'group'; id: string };
@@ -237,7 +239,11 @@ SlideFromRight.displayName = 'SlideFromRight';
 
 let hasAnimatedHomeGreeting = false;
 
-function buildTaskListItems(tasks: Task[], groups: TaskGroup[]): TaskListItem[] {
+function buildTaskListItems(
+    tasks: Task[],
+    groups: TaskGroup[],
+    getTaskRenderKey: (taskId: string) => string,
+): TaskListItem[] {
     const visibleTaskIds = new Set(tasks.map(task => task.taskId));
     const groupByTaskId = new Map<string, TaskGroup>();
     const tasksByGroupId = new Map<string, Task[]>();
@@ -266,7 +272,7 @@ function buildTaskListItems(tasks: Task[], groups: TaskGroup[]): TaskListItem[] 
     tasks.forEach(task => {
         const group = groupByTaskId.get(task.taskId);
         if (!group) {
-            items.push({ kind: 'task', task });
+            items.push({ kind: 'task', task, renderKey: getTaskRenderKey(task.taskId) });
             return;
         }
         if (emittedGroupIds.has(group.groupId)) return;
@@ -276,6 +282,7 @@ function buildTaskListItems(tasks: Task[], groups: TaskGroup[]): TaskListItem[] 
             kind: 'group',
             group,
             tasks: tasksByGroupId.get(group.groupId) ?? [],
+            renderKey: `group:${group.groupId}`,
         });
     });
 
@@ -283,7 +290,7 @@ function buildTaskListItems(tasks: Task[], groups: TaskGroup[]): TaskListItem[] 
 }
 
 function taskListItemId(item: TaskListItem): string {
-    return item.kind === 'task' ? `task:${item.task.taskId}` : `group:${item.group.groupId}`;
+    return item.renderKey;
 }
 
 function taskListItemContainsTask(item: TaskListItem, taskIds: Set<string>): boolean {
@@ -369,8 +376,23 @@ function AnimatedTaskList({
             return;
         }
 
-        const nextItemIds = new Set(items.map(taskListItemId));
+        const nextItemIdsInOrder = items.map(taskListItemId);
+        const nextItemIds = new Set(nextItemIdsInOrder);
         const previousItems = displayedItemsRef.current;
+        const previousItemIds = previousItems.map(taskListItemId);
+        const sameDisplayedItems = exitingItemIdsRef.current.size === 0
+            && previousItemIds.length === nextItemIdsInOrder.length
+            && previousItemIds.every((itemId, index) => itemId === nextItemIdsInOrder[index]);
+
+        // A server response can replace the optimistic task payload without
+        // changing the list's layout identity. Reconcile that payload in place
+        // so the completed entrance transition is not treated as a second add.
+        if (sameDisplayedItems) {
+            currentItemIdsRef.current = nextItemIds;
+            displayedItemsRef.current = items;
+            setDisplayedItems(previous => previous === items ? previous : items);
+            return;
+        }
         const removedItems = previousItems.filter(item => !nextItemIds.has(taskListItemId(item)));
         const immediateRemovalItemIds = new Set(
             removedItems
@@ -581,12 +603,48 @@ function moveTaskDateToToday(task: Task): string {
     return formatLocalDateTime(nextDate);
 }
 
+function createOptimisticTask(taskToCreate: TaskToCreate): Task {
+    const now = new Date();
+    const createdAt = formatLocalDateTime(now);
+
+    return {
+        taskId: `optimistic-task-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        name: taskToCreate.name,
+        description: taskToCreate.description,
+        completed: false,
+        creationDateTime: createdAt,
+        creationDate: createdAt.slice(0, 10),
+        scheduledPerformDateTime: taskToCreate.scheduledPerformDateTime || null,
+        timeZone: taskToCreate.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+        reminderMinutesBefore: taskToCreate.reminderMinutesBefore,
+        completionDateTime: '',
+        parentId: taskToCreate.parentId ?? '',
+        tag: taskToCreate.tag,
+        importance: taskToCreate.importance,
+        displayOrder: 0,
+        mentalThreadId: taskToCreate.mentalThreadId ?? null,
+        taskSeriesId: null,
+        seriesOccurrenceAt: null,
+        skipped: false,
+    };
+}
+
 export function HomePage() {
     const { user } = useUser();
+    const {
+        activePomodoro,
+        pomodoroStatusResolved,
+    } = usePomodoro();
+    const restoredPomodoro = activePomodoro?.active ? activePomodoro : null;
+    const restoredPomodoroTaskId = restoredPomodoro?.associatedTaskId ?? null;
     const location = useLocation();
     const navigate = useNavigate();
     const [animateGreeting] = useState(() => !hasAnimatedHomeGreeting);
-    const [activeExpansion, setActiveExpansion] = useState<ActiveExpansion>(readHomeActiveExpansion);
+    const [activeExpansion, setActiveExpansion] = useState<ActiveExpansion>(() => (
+        restoredPomodoroTaskId
+            ? { taskId: restoredPomodoroTaskId, panel: 'pomodoro' }
+            : readHomeActiveExpansion()
+    ));
     const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>(() => (
         activeExpansion ? [activeExpansion.taskId] : []
     ));
@@ -625,18 +683,19 @@ export function HomePage() {
     const [dragTargetGroupId, setDragTargetGroupId] = useState<string | null>(null);
     const [dragTargetPosition, setDragTargetPosition] = useState<GroupDropIntent | null>(null);
     const [dragEdge, setDragEdge] = useState<'top' | 'bottom' | null>(null);
-    const [activePomodoroTaskId, setActivePomodoroTaskId] = useState<string | null>(null);
-    const [initialPomodoroStatus, setInitialPomodoroStatus] = useState<PomodoroStatus | null>(null);
-    const [pomodoroStatusResolved, setPomodoroStatusResolved] = useState(false);
+    const [activePomodoroTaskId, setActivePomodoroTaskId] = useState<string | null>(restoredPomodoroTaskId);
+    const [initialPomodoroStatus, setInitialPomodoroStatus] = useState<PomodoroStatus | null>(restoredPomodoro);
+    const [resolvedActivePomodoroTask, setResolvedActivePomodoroTask] = useState<Task | null>(null);
     const [pomodoroTaskMinimized, setPomodoroTaskMinimized] = useState(false);
-    const [focusVisibility, setFocusVisibility] = useState<FocusVisibility>('all');
+    const [focusVisibility, setFocusVisibility] = useState<FocusVisibility>(
+        restoredPomodoro ? 'hidden' : 'all',
+    );
     const [focusTaskOffset, setFocusTaskOffset] = useState(0);
     const selectionAnchorRef = useRef<string | null>(activeExpansion?.taskId ?? null);
-    const activePomodoroTaskIdRef = useRef<string | null>(null);
+    const activePomodoroTaskIdRef = useRef<string | null>(restoredPomodoroTaskId);
     const handledFocusNavigationTaskIdRef = useRef<string | null>(null);
-    const focusVisibilityRef = useRef<FocusVisibility>('all');
     const focusTaskSourceTopRef = useRef<number | null>(null);
-    const latestPomodoroStatusRef = useRef<PomodoroStatus | null>(null);
+    const latestPomodoroStatusRef = useRef<PomodoroStatus | null>(restoredPomodoro);
     const taskListTopRef = useRef<HTMLDivElement | null>(null);
     const olderTasksSectionRef = useRef<HTMLDivElement | null>(null);
     const selectionActionsRef = useRef<HTMLDivElement | null>(null);
@@ -647,6 +706,17 @@ export function HomePage() {
     const temporarilyCollapsedGroupIdRef = useRef<string | null>(null);
     const groupTaskSubmissionRef = useRef(false);
     const activeDragRef = useRef<ActiveDrag | null>(null);
+    const taskRenderKeysRef = useRef(new Map<string, string>());
+
+    const rememberTaskRenderKey = useCallback((taskId: string, renderKey: string) => {
+        if (!taskRenderKeysRef.current.has(taskId)) {
+            taskRenderKeysRef.current.set(taskId, renderKey);
+        }
+    }, []);
+
+    const getTaskRenderKey = useCallback((taskId: string) => (
+        `task:${taskRenderKeysRef.current.get(taskId) ?? taskId}`
+    ), []);
 
     useEffect(() => {
         try {
@@ -734,10 +804,34 @@ export function HomePage() {
         () => new Set(pendingDeletedTaskIds),
         [pendingDeletedTaskIds],
     );
+    const activePomodoroTaskIdForHome = activePomodoro?.active
+        ? activePomodoro.associatedTaskId
+        : activePomodoroTaskId;
+    const homeTodayTasks = useMemo(() => {
+        const seenTaskIds = new Set<string>();
+        const mergedTasks: Task[] = [];
+        const addMainTask = (task: Task) => {
+            if (task.parentId || seenTaskIds.has(task.taskId)) return;
+            seenTaskIds.add(task.taskId);
+            mergedTasks.push(task);
+        };
+
+        todayTasks.forEach(addMainTask);
+        allTasks.forEach(task => {
+            if (isScheduledForToday(task) || task.taskId === activePomodoroTaskIdForHome) {
+                addMainTask(task);
+            }
+        });
+        if (resolvedActivePomodoroTask?.taskId === activePomodoroTaskIdForHome) {
+            addMainTask(resolvedActivePomodoroTask);
+        }
+
+        return mergedTasks;
+    }, [activePomodoroTaskIdForHome, allTasks, resolvedActivePomodoroTask, todayTasks]);
     const visibleTasks = useMemo(
         () => {
             const showCompletedToday = getShowCompletedHomeTasks() || !getExcludeTodayCompletedHomeTasks();
-            const todayTaskIds = new Set(todayTasks.map(task => task.taskId));
+            const todayTaskIds = new Set(homeTodayTasks.map(task => task.taskId));
             const pendingDateTasks = pendingHomeDateTaskIds
                 .map(taskId => allTasks.find(task => task.taskId === taskId))
                 .filter((task): task is Task => task !== undefined && !todayTaskIds.has(task.taskId))
@@ -745,7 +839,7 @@ export function HomePage() {
                     (pendingHomeDateEditsRef.current.get(first.taskId)?.originalIndex ?? Number.MAX_SAFE_INTEGER)
                     - (pendingHomeDateEditsRef.current.get(second.taskId)?.originalIndex ?? Number.MAX_SAFE_INTEGER)
                 ));
-            const tasksInOriginalOrder = [...todayTasks];
+            const tasksInOriginalOrder = [...homeTodayTasks];
             pendingDateTasks.forEach(task => {
                 const originalIndex = pendingHomeDateEditsRef.current.get(task.taskId)?.originalIndex
                     ?? tasksInOriginalOrder.length;
@@ -753,9 +847,13 @@ export function HomePage() {
             });
             return tasksInOriginalOrder
                 .filter(task => !pendingDeletedTaskIdSet.has(task.taskId))
-                .filter(task => !task.parentId && (showCompletedToday || !task.completed));
+                .filter(task => !task.parentId && (
+                    showCompletedToday
+                    || !task.completed
+                    || task.taskId === activePomodoroTaskIdForHome
+                ));
         },
-        [allTasks, pendingDeletedTaskIdSet, pendingHomeDateTaskIds, todayTasks],
+        [activePomodoroTaskIdForHome, allTasks, homeTodayTasks, pendingDeletedTaskIdSet, pendingHomeDateTaskIds],
     );
     const olderTasks = useMemo(
         () => pastTasks.filter(task => !pendingDeletedTaskIdSet.has(task.taskId)
@@ -815,9 +913,59 @@ export function HomePage() {
         },
     });
 
+    const activePomodoroTaskIdForRender = activePomodoroTaskIdForHome;
+    const activePomodoroTaskFromState = useMemo(
+        () => allTasks.find(task => task.taskId === activePomodoroTaskIdForRender)
+            ?? visibleTasks.find(task => task.taskId === activePomodoroTaskIdForRender)
+            ?? null,
+        [activePomodoroTaskIdForRender, allTasks, visibleTasks],
+    );
+    const activePomodoroTaskRequestRef = useRef<string | null>(null);
+
+    useEffect(() => {
+        const taskId = activePomodoroTaskIdForRender;
+        if (!taskId) {
+            activePomodoroTaskRequestRef.current = null;
+            setResolvedActivePomodoroTask(null);
+            return;
+        }
+
+        if (activePomodoroTaskFromState) {
+            activePomodoroTaskRequestRef.current = taskId;
+            setResolvedActivePomodoroTask(previous => (
+                previous?.taskId === taskId && previous === activePomodoroTaskFromState
+                    ? previous
+                    : activePomodoroTaskFromState
+            ));
+            return;
+        }
+
+        if (activePomodoroTaskRequestRef.current === taskId) return;
+        activePomodoroTaskRequestRef.current = taskId;
+        let cancelled = false;
+        taskService.getTask(taskId)
+            .then(task => {
+                if (!cancelled) setResolvedActivePomodoroTask(task);
+            })
+            .catch(error => {
+                if (!cancelled) {
+                    console.error('Could not load the active task for Home:', error);
+                    setResolvedActivePomodoroTask(null);
+                }
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [activePomodoroTaskFromState, activePomodoroTaskIdForRender]);
+
     const activePomodoroTask = useMemo(
-        () => visibleTasks.find(task => task.taskId === activePomodoroTaskId) ?? null,
-        [activePomodoroTaskId, visibleTasks],
+        () => activePomodoroTaskFromState
+            ?? (resolvedActivePomodoroTask?.taskId === activePomodoroTaskIdForRender
+                ? resolvedActivePomodoroTask
+                : null)
+            ?? null,
+        [activePomodoroTaskFromState, activePomodoroTaskIdForRender, resolvedActivePomodoroTask],
     );
     const focusedPomodoroTask = useMemo(
         () => pomodoroTaskMinimized ? null : activePomodoroTask,
@@ -830,12 +978,12 @@ export function HomePage() {
         [focusedPomodoroTask, visibleTasks],
     );
     const taskListItems = useMemo(
-        () => buildTaskListItems(tasksBelowFocus, groups ?? []),
-        [groups, tasksBelowFocus],
+        () => buildTaskListItems(tasksBelowFocus, groups ?? [], getTaskRenderKey),
+        [getTaskRenderKey, groups, tasksBelowFocus],
     );
     const olderTaskListItems = useMemo(
-        () => buildTaskListItems(olderTasks, groups ?? []),
-        [groups, olderTasks],
+        () => buildTaskListItems(olderTasks, groups ?? [], getTaskRenderKey),
+        [getTaskRenderKey, groups, olderTasks],
     );
     const renderedSelectionEntities = useMemo(() => {
         const entities: SelectionEntity[] = focusedPomodoroTask
@@ -861,7 +1009,9 @@ export function HomePage() {
         return entities;
     }, [focusedPomodoroTask, collapsedGroupIds, olderTaskListItems, showOlderTasks, taskListItems]);
 
-    const homeContentReady = (tasksLoaded || todayTasksLoaded) && groups !== null;
+    // Task groups are optional decoration; they must not blank the task list
+    // while their separate request is still loading.
+    const homeContentReady = tasksLoaded || todayTasksLoaded || focusedPomodoroTask !== null;
     const homeTaskControlsReady = homeContentReady && allTasksSynchronized && pomodoroStatusResolved;
 
     useEffect(() => {
@@ -1034,17 +1184,21 @@ export function HomePage() {
         void pendingUndo.commit();
     }, []);
 
-    useEffect(() => {
-        focusVisibilityRef.current = focusVisibility;
-    }, [focusVisibility]);
-
     async function createTask(task: TaskToCreate) {
+        if (!task.name.trim()) return;
+
+        const optimisticTask = createOptimisticTask(task);
+        rememberTaskRenderKey(optimisticTask.taskId, optimisticTask.taskId);
+        addTaskToState(optimisticTask);
+
         try {
             const created = await taskService.createTask(task);
-            addTaskToState(created);
+            rememberTaskRenderKey(created.taskId, optimisticTask.taskId);
+            replaceTaskInState(optimisticTask.taskId, created);
         } catch (err) {
             console.error('Error creating task:', err);
-            await refreshTaskBuckets(true);
+            removeTaskFromState(optimisticTask.taskId);
+            showTaskFeedback('error', 'Could not add that task right now.');
         }
     }
 
@@ -1347,7 +1501,7 @@ export function HomePage() {
 
     const handleAutoExpand = useCallback((taskId: string, panel: 'pomodoro') => {
         setActiveExpansion(previous => (
-            previous?.taskId === taskId && previous.panel === panel
+            previous?.taskId === taskId && (previous.panel === panel || previous.panel === 'details')
                 ? previous
                 : { taskId, panel }
         ));
@@ -1599,53 +1753,49 @@ export function HomePage() {
     }, [clearFocusTransitionTimer, finishFocusTransition, pomodoroTaskMinimized, rememberFocusTaskPosition]);
 
     useEffect(() => {
-        let cancelled = false;
-        taskService.getActivePomodoro()
-            .then(status => {
-                if (cancelled || !status?.active) return;
-                latestPomodoroStatusRef.current = status;
-                setInitialPomodoroStatus(status);
-                handlePomodoroActiveChange(status.associatedTaskId, true, { animate: false });
-            })
-            .catch(error => console.error('Error checking active pomodoro:', error))
-            .finally(() => {
-                if (!cancelled) setPomodoroStatusResolved(true);
-            });
+        if (!activePomodoro?.active) return;
 
-        return () => {
-            cancelled = true;
-        };
-    }, [handlePomodoroActiveChange]);
+        const taskId = activePomodoro.associatedTaskId;
+        const taskChanged = activePomodoroTaskIdRef.current !== taskId;
+        latestPomodoroStatusRef.current = activePomodoro;
+        if (taskChanged) {
+            setInitialPomodoroStatus(activePomodoro);
+            handlePomodoroActiveChange(taskId, true, { animate: false });
+        }
 
-    const handlePomodoroFocusStart = useCallback((taskId: string) => {
-        if (activePomodoroTaskIdRef.current !== taskId) return;
-        if (pomodoroTaskMinimized) return;
-        if (
-            focusVisibilityRef.current === 'hidden'
-            || focusVisibilityRef.current === 'fading'
-            || focusVisibilityRef.current === 'sliding'
-        ) return;
-
-        clearFocusTransitionTimer();
-        rememberFocusTaskPosition(taskId);
-        setShowOlderTasks(false);
-        setFocusVisibility('fading');
-        focusTransitionTimerRef.current = window.setTimeout(
-            finishFocusTransition,
-            TASKS_FADE_DURATION_MS,
-        );
-    }, [clearFocusTransitionTimer, finishFocusTransition, pomodoroTaskMinimized, rememberFocusTaskPosition]);
+        // Restore the timer panel by default, while preserving an explicit
+        // details choice made for the active task.
+        setActiveExpansion(previous => (
+            previous?.taskId === taskId
+                && (previous.panel === 'pomodoro' || previous.panel === 'details')
+                ? previous
+                : { taskId, panel: 'pomodoro' }
+        ));
+    }, [activePomodoro, handlePomodoroActiveChange]);
 
     const handlePomodoroStatusChange = useCallback((taskId: string, status: PomodoroStatus) => {
         const activeTaskId = activePomodoroTaskIdRef.current;
         if (activeTaskId === null || activeTaskId === taskId) {
             latestPomodoroStatusRef.current = status;
             if (status.active) {
-                // Preserve the first live snapshot for the focus-row remount.
-                setInitialPomodoroStatus(previous => previous ?? status);
+                // Preserve the first live snapshot for the focus-row remount,
+                // but replace an optimistic completed snapshot if a mutation
+                // is rolled back to this still-active session.
+                setInitialPomodoroStatus(previous => (
+                    previous?.active && previous.pomodoroId === status.pomodoroId
+                        ? previous
+                        : status
+                ));
             } else if (status.phase === 'COMPLETED') {
                 // Keep a remounted focus row from hydrating the stale active snapshot.
                 setInitialPomodoroStatus(status);
+                // The completion panel contains the dismiss action; do not
+                // leave a finished focus row stranded behind its details.
+                setActiveExpansion(previous => (
+                    previous?.taskId === taskId && previous.panel === 'details'
+                        ? { taskId, panel: 'pomodoro' }
+                        : previous
+                ));
             }
         }
     }, []);
@@ -1658,6 +1808,20 @@ export function HomePage() {
             focusTransitionTimerRef.current = null;
         }, 260);
     }, [clearFocusTransitionTimer]);
+
+    const hideAllTasks = useCallback(() => {
+        if (!focusedPomodoroTask || tasksBelowFocus.length === 0) return;
+
+        clearFocusTransitionTimer();
+        rememberFocusTaskPosition(focusedPomodoroTask.taskId);
+        setShowOlderTasks(false);
+        setFocusVisibility('fading');
+        focusTransitionTimerRef.current = window.setTimeout(
+            finishFocusTransition,
+            TASKS_FADE_DURATION_MS,
+        );
+    }, [clearFocusTransitionTimer, finishFocusTransition, focusedPomodoroTask,
+        rememberFocusTaskPosition, tasksBelowFocus.length]);
 
     const minimizePomodoroTask = useCallback((taskId: string) => {
         if (activePomodoroTaskIdRef.current !== taskId) return;
@@ -2344,6 +2508,7 @@ export function HomePage() {
         groupTaskSubmissionRef.current = true;
         setGroupTaskInputGeneration(previous => previous + 1);
         const optimisticTaskId = `optimistic-task-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        rememberTaskRenderKey(optimisticTaskId, optimisticTaskId);
         const now = new Date();
         const optimisticTask: Task = {
             taskId: optimisticTaskId,
@@ -2389,6 +2554,7 @@ export function HomePage() {
         try {
             const createdTask = await taskService.createTask(taskToCreate);
             createdTaskId = createdTask.taskId;
+            rememberTaskRenderKey(createdTask.taskId, optimisticTaskId);
             const nextTaskIds = optimisticTaskIds.map(taskId =>
                 taskId === optimisticTaskId ? createdTask.taskId : taskId,
             );
@@ -2575,11 +2741,14 @@ export function HomePage() {
         const reorderable = options.reorderable ?? true;
         // content-visibility:auto can skip a transform-animated focus row and cause a one-frame repaint.
         const isFocusedPomodoroRow = focusedPomodoroTask?.taskId === task.taskId;
+        const isGlobalActivePomodoro = activePomodoro?.active
+            && activePomodoro.associatedTaskId === task.taskId;
+        const rowHasActivePomodoro = isGlobalActivePomodoro || task.taskId === activePomodoroTaskId;
         const rowDraggable = (options.draggable ?? reorderable)
             && !pendingDeletedTaskIdSet.has(task.taskId);
         return (
             <Box
-                key={task.taskId}
+                key={getTaskRenderKey(task.taskId)}
                 sx={isFocusedPomodoroRow
                     ? { contentVisibility: 'visible' }
                     : { contentVisibility: 'auto', containIntrinsicSize: '52px' }}
@@ -2588,7 +2757,9 @@ export function HomePage() {
                     task={task}
                     onToggle={toggleTaskCompletion}
                     onUpdate={updateTask}
-                    expandedPanel={activeExpansion?.taskId === task.taskId ? activeExpansion.panel : null}
+                    expandedPanel={activeExpansion?.taskId === task.taskId
+                        ? activeExpansion.panel
+                        : isGlobalActivePomodoro ? 'pomodoro' : null}
                     onTogglePanel={handleTogglePanel}
                     onAutoExpand={handleAutoExpand}
                     onDelete={deleteTask}
@@ -2609,11 +2780,13 @@ export function HomePage() {
                     isGroupDropTarget={dragTargetTaskId === task.taskId && dragTargetPosition === 'inside'}
                     onPomodoroActiveChange={handlePomodoroActiveChange}
                     onPomodoroStatusChange={handlePomodoroStatusChange}
-                    onPomodoroFocusStart={handlePomodoroFocusStart}
                     onRefreshTasks={refreshHomeTasks}
-                    deferPomodoroHydration={task.taskId !== activePomodoroTaskId}
-                    initialPomodoroStatus={task.taskId === activePomodoroTaskId ? initialPomodoroStatus : null}
-                    expectedPomodoroActive={task.taskId === activePomodoroTaskId}
+                    deferPomodoroHydration={!rowHasActivePomodoro}
+                    subtaskDeletionContextMenu
+                    initialPomodoroStatus={isGlobalActivePomodoro
+                        ? activePomodoro
+                        : task.taskId === activePomodoroTaskId ? initialPomodoroStatus : null}
+                    expectedPomodoroActive={rowHasActivePomodoro}
                     onScheduledDateBlur={handleScheduledDateBlur}
                 />
             </Box>
@@ -2963,6 +3136,7 @@ export function HomePage() {
         || focusVisibility === 'fading'
         || focusVisibility === 'revealing'
         || focusVisibility === 'returning';
+    const hasHomeTaskRows = visibleTasks.length > 0 || focusedPomodoroTask !== null || homeTaskListAnimating;
     const dragInProgress = draggedTaskIds.length > 0 || draggedGroupId !== null;
 
     return (
@@ -3090,7 +3264,7 @@ export function HomePage() {
 
                     <Box ref={taskListTopRef} sx={{ height: 0 }} />
 
-                    {homeContentReady && (visibleTasks.length > 0 || homeTaskListAnimating) ? (
+                    {homeContentReady && hasHomeTaskRows ? (
                         <>
                             {/* Keep the live Pomodoro row mounted while the surrounding task list animates. */}
                             {focusedPomodoroTask && (
@@ -3283,24 +3457,51 @@ export function HomePage() {
                     </Collapse>
 
                     <Collapse
-                        in={homeTaskControlsReady && focusVisibility === 'all' && olderTasks.length > 0}
+                        in={homeTaskControlsReady && focusVisibility === 'all'
+                            && (olderTasks.length > 0 || (focusedPomodoroTask !== null && tasksBelowFocus.length > 0))}
                         timeout={{ enter: 220, exit: 180 }}
                         mountOnEnter
                         unmountOnExit
                     >
-                        <Button
-                            variant="text"
-                            size="small"
-                            color={overdueCount > 0 ? 'warning' : 'inherit'}
-                            startIcon={<HistoryIcon />}
-                            onClick={event => {
-                                event.stopPropagation();
-                                toggleOlderTasks();
+                        <Box
+                            sx={{
+                                display: 'flex',
+                                flexWrap: 'wrap',
+                                justifyContent: focusedPomodoroTask && tasksBelowFocus.length > 0
+                                    ? 'flex-start'
+                                    : 'center',
+                                gap: 0.5,
+                                mt: 2,
                             }}
-                            sx={{ mt: 2, alignSelf: 'flex-start' }}
                         >
-                            {showOlderTasks ? 'Hide older tasks' : `View older tasks (${olderTasks.length})`}
-                        </Button>
+                            {focusedPomodoroTask && tasksBelowFocus.length > 0 && (
+                                <Button
+                                    variant="text"
+                                    size="small"
+                                    startIcon={<VisibilityOffIcon />}
+                                    onClick={event => {
+                                        event.stopPropagation();
+                                        hideAllTasks();
+                                    }}
+                                >
+                                    Hide all tasks
+                                </Button>
+                            )}
+                            {olderTasks.length > 0 && (
+                                <Button
+                                    variant="text"
+                                    size="small"
+                                    color={overdueCount > 0 ? 'warning' : 'inherit'}
+                                    startIcon={<HistoryIcon />}
+                                    onClick={event => {
+                                        event.stopPropagation();
+                                        toggleOlderTasks();
+                                    }}
+                                >
+                                    {showOlderTasks ? 'Hide older tasks' : `View older tasks (${olderTasks.length})`}
+                                </Button>
+                            )}
+                        </Box>
                     </Collapse>
                 </Box>
 

@@ -25,7 +25,7 @@ public class MentalStateAdviceService {
         if (stimulationHunger >= 8) return MentalState.STIMULATION_SEEKING;
         if (activation >= 7 && clarity <= 5) return MentalState.SCATTERED;
         if (emotionalLoad >= 7) return MentalState.EMOTIONALLY_LOADED;
-        if (valence <= 4) return MentalState.LOW_MOOD;
+        if (valence <= 2) return MentalState.LOW_MOOD;
         if (isReady(energy, activation, stimulationHunger, clarity, valence, emotionalLoad)) {
             return MentalState.READY;
         }
@@ -44,17 +44,17 @@ public class MentalStateAdviceService {
                 && activation >= 4 && activation <= 8
                 && stimulationHunger <= 5
                 && clarity >= 6
-                && valence >= 6
+                && valence >= 4
                 && emotionalLoad <= 4;
     }
 
     private boolean isAlmostReady(int energy, int activation, int stimulationHunger,
                                   int clarity, int valence, int emotionalLoad) {
-        return energy >= 6
-                && activation >= 4 && activation <= 7
+        return energy >= 5
+                && activation >= 3 && activation <= 7
                 && stimulationHunger <= 6
-                && clarity >= 6
-                && valence >= 5
+                && clarity >= 5
+                && valence >= 4
                 && emotionalLoad <= 6;
     }
 

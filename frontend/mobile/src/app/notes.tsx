@@ -157,7 +157,7 @@ export default function NotesScreen() {
       const categoryId = categories.some(category => category.id === activeFilter) ? activeFilter : null;
       const note = await api.notes.create(categoryId);
       resource.setData(current => current ? { ...current, notes: [note, ...current.notes] } : current);
-      router.push(`/notes/${note.id}`);
+      router.push(`/notes/${note.id}?focus=body`);
     } catch (cause) { void showError('Could not create note', reportError('Could not create note', cause)); }
     finally { setCreating(false); }
   }

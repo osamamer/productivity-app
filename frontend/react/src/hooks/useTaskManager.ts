@@ -120,6 +120,7 @@ export function useTaskManager() {
     const allTasksLoadModeRef = useRef<TaskLoadMode>('all');
     const loadedTaskModeRef = useRef<TaskLoadMode>('all');
     const tasksLoadedRef = useRef(tasksLoaded);
+    const todayTasksLoadedRef = useRef(todayTasksLoaded);
     const loadedTaskSnapshotRef = useRef(taskState.allTasks);
 
     const {
@@ -188,6 +189,9 @@ export function useTaskManager() {
                 if (snapshotChanged) {
                     setTaskState(prev => {
                         const next = withTaskBuckets(prev, tasks);
+                        if (loadMode === 'all' && todayTasksLoadedRef.current && prev.todayTasks.length > 0) {
+                            next.todayTasks = prev.todayTasks;
+                        }
                         return {
                             ...next,
                             // Keep the user's current selection across refreshes. On the
@@ -229,6 +233,7 @@ export function useTaskManager() {
         try {
             const tasks = await taskService.getTodayTasks();
             if (taskDataGenerationRef.current !== requestDataGeneration) return;
+            todayTasksLoadedRef.current = true;
             setTaskState(prev => {
                 // Home can render this smaller snapshot while the complete
                 // task list is still being reconciled in the background.
@@ -282,8 +287,9 @@ export function useTaskManager() {
 
     useEffect(() => subscribeToResourceInvalidation('stats', () => {
         invalidatePendingTaskLoads();
+        void fetchTodayTasks();
         void refreshTaskBuckets(false, allTasksLoadModeRef.current);
-    }), [invalidatePendingTaskLoads, refreshTaskBuckets]);
+    }), [fetchTodayTasks, invalidatePendingTaskLoads, refreshTaskBuckets]);
 
     useEffect(() => subscribeToResourceInvalidation('tasks', () => {
         // Mutations invalidate the task-service cache before emitting this
@@ -291,8 +297,9 @@ export function useTaskManager() {
         // changing task rows, so let the shared cache decide whether a GET is
         // needed instead of forcing one for every event.
         invalidatePendingTaskLoads();
+        void fetchTodayTasks();
         void refreshTaskBuckets(false, allTasksLoadModeRef.current);
-    }), [invalidatePendingTaskLoads, refreshTaskBuckets]);
+    }), [fetchTodayTasks, invalidatePendingTaskLoads, refreshTaskBuckets]);
 
     useEffect(() => {
         let timeoutId: ReturnType<typeof setTimeout> | null = null;

@@ -15,6 +15,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.Instant;
+import java.time.LocalDate;
 
 @Data
 @NoArgsConstructor
@@ -45,6 +46,18 @@ public class CalendarEventCancellation {
 
     @Column(name = "deleted", nullable = false)
     private boolean deleted;
+
+    @Column(name = "override_start_date")
+    private LocalDate overrideStartDate;
+
+    @Column(name = "override_end_date")
+    private LocalDate overrideEndDate;
+
+    @Column(name = "override_start_time")
+    private Instant overrideStartTime;
+
+    @Column(name = "override_end_time")
+    private Instant overrideEndTime;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

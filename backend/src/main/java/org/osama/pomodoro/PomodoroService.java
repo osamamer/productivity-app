@@ -1,6 +1,7 @@
 package org.osama.pomodoro;
 
 import lombok.extern.slf4j.Slf4j;
+import org.hibernate.exception.ConstraintViolationException;
 import org.osama.scheduling.ScheduleService;
 import org.osama.scheduling.ScheduledJob;
 import org.osama.scheduling.ScheduledJobRepository;
@@ -18,6 +19,7 @@ import org.osama.task.events.TasksDeletedEvent;
 import org.osama.user.User;
 import org.osama.user.UserRepository;
 import org.springframework.context.event.EventListener;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -36,6 +38,10 @@ import java.util.concurrent.atomic.AtomicReference;
 @Slf4j
 @Service
 public class PomodoroService {
+    private static final String ACTIVE_POMODORO_INDEX = "idx_app_pomodoro_one_active_per_user";
+    private static final String ACTIVE_POMODORO_CONFLICT =
+            "Cannot start a pomodoro while another pomodoro is active.";
+
     private final PomodoroRepository pomodoroRepository;
     private final ScheduledJobRepository scheduledJobRepository;
     private final TaskSessionRepository taskSessionRepository;
@@ -380,7 +386,8 @@ public class PomodoroService {
         pomodoro.setAutoStartSessions(!Boolean.FALSE.equals(user.getAutoStartPomodoroSessions()));
         pomodoro.setUser(user);
 
-        Pomodoro savedPomodoro = pomodoroRepository.save(pomodoro);
+        ensureNoActivePomodoro(userId);
+        Pomodoro savedPomodoro = saveActivePomodoro(pomodoro, userId, associatedTaskId);
         log.info("Pomodoro configured: userId={} pomodoroId={} taskId={} focusDuration={} shortBreakDuration={} longBreakDuration={} numFocuses={} longBreakCooldown={}",
                 userId, savedPomodoro.getPomodoroId(), associatedTaskId, focusDuration,
                 shortBreakDuration, longBreakDuration, numFocuses, longBreakCooldown);
@@ -405,12 +412,46 @@ public class PomodoroService {
         if (longBreakCooldown <= 0) {
             throw new IllegalArgumentException("Long break cooldown must be positive.");
         }
-        if (pomodoroRepository.existsByUserIdAndIsActiveIsTrue(userId)) {
-            throw new IllegalStateException("Cannot start a pomodoro while another pomodoro is active.");
-        }
+        ensureNoActivePomodoro(userId);
         if (taskSessionRepository.existsByAssociatedTaskIdAndActiveIsTrue(task.getTaskId())) {
             throw new IllegalStateException("Cannot start a pomodoro while the task already has an active session.");
         }
+    }
+
+    private void ensureNoActivePomodoro(String userId) {
+        if (pomodoroRepository.existsByUserIdAndIsActiveIsTrue(userId)) {
+            throw new IllegalStateException(ACTIVE_POMODORO_CONFLICT);
+        }
+    }
+
+    private Pomodoro saveActivePomodoro(Pomodoro pomodoro, String userId, String taskId) {
+        try {
+            // Flush now so a concurrent start receives the database conflict before scheduling side effects.
+            return pomodoroRepository.saveAndFlush(pomodoro);
+        } catch (DataIntegrityViolationException exception) {
+            if (!isActivePomodoroConstraintViolation(exception)) {
+                log.error("Pomodoro could not be persisted: userId={} taskId={}", userId, taskId, exception);
+                throw exception;
+            }
+            log.warn("Pomodoro start rejected by the active-user database constraint: userId={} taskId={}",
+                    userId, taskId, exception);
+            throw new IllegalStateException(ACTIVE_POMODORO_CONFLICT, exception);
+        }
+    }
+
+    private boolean isActivePomodoroConstraintViolation(DataIntegrityViolationException exception) {
+        Throwable cause = exception;
+        while (cause != null) {
+            if (cause instanceof ConstraintViolationException violation
+                    && ACTIVE_POMODORO_INDEX.equals(violation.getConstraintName())) {
+                return true;
+            }
+            if (cause.getMessage() != null && cause.getMessage().contains(ACTIVE_POMODORO_INDEX)) {
+                return true;
+            }
+            cause = cause.getCause();
+        }
+        return false;
     }
 
     private Pomodoro getOwnedActivePomodoro(String taskId, String userId) {

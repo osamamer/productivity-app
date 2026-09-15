@@ -3,8 +3,18 @@ import { statService } from '../api/statService';
 import { sideNavSnapshotCache } from '../cache/sideNavSnapshotCache';
 import { getAuthCacheScope } from '../utils/authHeaders';
 import { initializeWhiteNoiseSource } from '../whiteNoise';
+import { userService } from '../api/userService';
 
 const bootstrapRequests = new Map<string, Promise<void>>();
+
+export async function loadUserPreferences(): Promise<void> {
+    try {
+        await userService.getPreferences();
+    } catch (error) {
+        // Preferences are optional at startup; each settings surface still has safe defaults.
+        console.error('Failed to load user preferences:', error);
+    }
+}
 
 /**
  * Warms data shared by the app shell and Stats page before the user needs it.
@@ -20,6 +30,7 @@ export function warmAppData(): Promise<void> {
     void initializeWhiteNoiseSource();
 
     const request = Promise.allSettled([
+        loadUserPreferences(),
         statService.prefetchLastMonth(),
         statGroupService.getGroups(),
         sideNavSnapshotCache.get(),

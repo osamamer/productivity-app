@@ -11,7 +11,7 @@ import React, { useMemo, useState, useCallback, useRef } from "react";
 import { keyframes } from '@mui/system';
 import { Task } from "../types/Task.tsx";
 import { useTheme } from "@mui/material";
-import { DayCellContentArg, DayCellMountArg, DatesSetArg, EventClickArg, EventContentArg, EventMountArg } from '@fullcalendar/core';
+import { DayCellContentArg, DayCellMountArg, DatesSetArg, EventClickArg, EventContentArg, EventDropArg, EventMountArg } from '@fullcalendar/core';
 import { TaskToCreate } from "../types/TaskToCreate.tsx";
 import { TaskGroup } from "../types/TaskGroup.ts";
 import { StatDefinition, StatEntry } from "../types/Stats.ts";
@@ -29,7 +29,12 @@ import SaveAsIcon from '@mui/icons-material/SaveAs';
 import ViewDayIcon from '@mui/icons-material/ViewDay';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import ReplayIcon from '@mui/icons-material/Replay';
-import { CalendarEvent, CalendarEventInput, CalendarEventStatus } from "../types/CalendarEvent.ts";
+import {
+    CalendarEvent,
+    CalendarEventInput,
+    CalendarEventOccurrenceMoveInput,
+    CalendarEventStatus,
+} from "../types/CalendarEvent.ts";
 import { DayTemplate, DayTemplateApplication, DayTemplateRequest } from "../types/DayTemplate.ts";
 import { CalendarEventForm } from "./calendar/CalendarEventForm.tsx";
 import { DayTemplateCreationDialog } from "./calendar/DayTemplateCreationDialog.tsx";
@@ -57,6 +62,7 @@ type MonthCalenderProps = {
     onUpdateTask: (taskId: string, updates: Partial<Task>) => Promise<void>,
     onCreateEvent: (event: CalendarEventInput) => Promise<void>,
     onUpdateEvent: (eventId: string, event: CalendarEventInput) => Promise<void>,
+    onMoveEventOccurrence: (eventId: string, occurrenceKey: string, move: CalendarEventOccurrenceMoveInput) => Promise<void>,
     onDeleteEvent: (eventId: string) => Promise<void>,
     onCancelEventOccurrence: (eventId: string, occurrenceKey: string) => Promise<void>,
     onRestoreEventOccurrence: (eventId: string, occurrenceKey: string) => Promise<void>,
@@ -199,6 +205,56 @@ function calendarEventTimeLabel(start: Date | null): string {
     return format(start, start.getMinutes() === 0 ? 'h a' : 'h:mm a');
 }
 
+function taskDateTimeOnDate(scheduledDateTime: string, date: Date): string | null {
+    const time = /T(\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?)/.exec(scheduledDateTime)?.[1];
+    if (!time || Number.isNaN(date.getTime())) return null;
+
+    return `${format(date, 'yyyy-MM-dd')}T${time.length === 5 ? `${time}:00` : time}`;
+}
+
+function calendarEventMoveInput(
+    allDay: boolean,
+    start: Date | null,
+    end: Date | null,
+): CalendarEventOccurrenceMoveInput | null {
+    if (!start || !end || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+
+    if (allDay) {
+        return {
+            startDate: format(start, 'yyyy-MM-dd'),
+            endDate: format(subDays(end, 1), 'yyyy-MM-dd'),
+            startTime: null,
+            endTime: null,
+        };
+    }
+
+    return {
+        startDate: null,
+        endDate: null,
+        startTime: start.toISOString(),
+        endTime: end.toISOString(),
+    };
+}
+
+function calendarEventInputWithMove(
+    event: CalendarEvent,
+    move: CalendarEventOccurrenceMoveInput,
+): CalendarEventInput {
+    return {
+        title: event.title,
+        description: event.description,
+        allDay: event.allDay,
+        ...move,
+        timeZone: event.timeZone,
+        status: event.status,
+        recurrenceFrequency: event.recurrenceFrequency,
+        recurrenceEndDate: event.recurrenceEndDate,
+        recurrenceInterval: event.recurrenceInterval,
+        recurrenceUnit: event.recurrenceUnit,
+        reminderMinutesBefore: event.reminderMinutesBefore,
+    };
+}
+
 function recurrenceDraftFromSeries(series: TaskSeries | null): TaskRecurrenceDraft {
     if (!series?.active) return defaultTaskRecurrence();
 
@@ -297,6 +353,7 @@ function CalendarLoadingState() {
 
 export function MonthCalendar({
     tasks, groups, events, onCreateTask, onDeleteTask, onDeleteTaskOccurrence, onUpdateTask, onCreateEvent, onUpdateEvent, onDeleteEvent,
+    onMoveEventOccurrence,
     onCancelEventOccurrence, onRestoreEventOccurrence, onUpdateEventOccurrenceStatus, onDeleteEventOccurrence,
     dayTemplates, onCreateDayTemplate, onUpdateDayTemplate, onDeleteDayTemplate, onApplyDayTemplate, onUndoDayTemplate,
     statDefinitions, loading = false, onRefreshTasks, onOpenDay,
@@ -584,6 +641,9 @@ export function MonthCalendar({
             textColor: occurrence.status === 'CANCELLED'
                 ? theme.palette.text.secondary
                 : theme.palette.primary.contrastText,
+            editable: true,
+            startEditable: true,
+            durationEditable: false,
             classNames: [occurrence.status === 'CANCELLED'
                 ? 'calendar-cancelled-event'
                 : occurrence.status === 'TENTATIVE'
@@ -649,6 +709,9 @@ export function MonthCalendar({
                         backgroundColor: 'transparent',
                         borderColor: theme.palette.divider,
                         textColor: theme.palette.text.primary,
+                        editable: true,
+                        startEditable: true,
+                        durationEditable: false,
                         classNames: ['calendar-neutral-event', 'calendar-task-event'],
                         extendedProps: {
                             eventType: 'task',
@@ -977,6 +1040,62 @@ export function MonthCalendar({
 
         openTaskEditor(task);
     }, [openTaskEditor, tasks]);
+
+    const handleEventDrop = useCallback((arg: EventDropArg) => {
+        const eventType = arg.event.extendedProps.eventType;
+        if (eventType === 'task') {
+            const task = tasks.find(item => item.taskId === arg.event.id);
+            if (!task?.scheduledPerformDateTime || !arg.event.start) {
+                arg.revert();
+                return;
+            }
+
+            const scheduledPerformDateTime = taskDateTimeOnDate(task.scheduledPerformDateTime, arg.event.start);
+            if (!scheduledPerformDateTime
+                || taskDateKey(scheduledPerformDateTime) === taskDateKey(task.scheduledPerformDateTime)) {
+                arg.revert();
+                return;
+            }
+
+            void onUpdateTask(task.taskId, { scheduledPerformDateTime })
+                .catch(error => {
+                    console.error('Failed to move calendar task:', error);
+                    arg.revert();
+                });
+            return;
+        }
+
+        if (eventType !== 'calendarEvent') {
+            arg.revert();
+            return;
+        }
+
+        const calendarEventId = arg.event.extendedProps.calendarEventId;
+        const occurrenceKey = arg.event.extendedProps.calendarEventOccurrenceKey;
+        const calendarEvent = typeof calendarEventId === 'string'
+            ? events.find(event => event.id === calendarEventId)
+            : undefined;
+        if (!calendarEvent || typeof occurrenceKey !== 'string'
+            || !arg.oldEvent.start || !arg.event.start
+            || format(arg.oldEvent.start, 'yyyy-MM-dd') === format(arg.event.start, 'yyyy-MM-dd')) {
+            arg.revert();
+            return;
+        }
+
+        const move = calendarEventMoveInput(calendarEvent.allDay, arg.event.start, arg.event.end);
+        if (!move) {
+            arg.revert();
+            return;
+        }
+
+        const save = calendarEvent.recurrenceFrequency === 'NONE'
+            ? onUpdateEvent(calendarEvent.id, calendarEventInputWithMove(calendarEvent, move))
+            : onMoveEventOccurrence(calendarEvent.id, occurrenceKey, move);
+        void save.catch(error => {
+            console.error('Failed to move calendar event:', error);
+            arg.revert();
+        });
+    }, [events, onMoveEventOccurrence, onUpdateEvent, onUpdateTask, tasks]);
 
     const handleDatesSet = useCallback((arg: DatesSetArg) => {
         const nextIsWeekView = arg.view.type === 'dayGridWeek';
@@ -1366,6 +1485,11 @@ export function MonthCalendar({
                                     : 'rgba(0, 0, 0, 0.05)',
                             },
                         },
+                        '& .fc .fc-highlight': {
+                            background: theme.palette.mode === 'dark'
+                                ? 'rgba(255, 255, 255, 0.08)'
+                                : 'rgba(0, 0, 0, 0.05)',
+                        },
                         '& .fc-daygrid-day.calendar-template-drop-target': {
                             background: `${theme.palette.primary.main}35 !important`,
                             outline: `2px solid ${theme.palette.primary.main}`,
@@ -1627,12 +1751,14 @@ export function MonthCalendar({
                             plugins={[dayGridPlugin, interactionPlugin]}
                             initialView="dayGridMonth"
                             height="100%"
+                            fixedMirrorParent={document.body}
                             events={calendarEvents}
                             dayCellContent={renderDayCellContent}
                             eventContent={renderEventContent}
                             eventOrder="eventTypeOrder,start,title"
                             eventDidMount={handleEventDidMount}
                             eventClick={handleEventClick}
+                            eventDrop={handleEventDrop}
                             dateClick={handleDateClick}
                             datesSet={handleDatesSet}
                             dayCellDidMount={handleDayCellDidMount}

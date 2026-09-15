@@ -119,6 +119,33 @@ public class CalendarEventService {
     }
 
     @Transactional
+    public CalendarEventResponse moveEventOccurrence(String eventId, CalendarEventOccurrenceRequest request,
+                                                     String userId) {
+        CalendarEvent event = findEvent(eventId, userId);
+        ensureRepeatingEvent(event);
+        String occurrenceKey = normalizeOccurrenceKey(request);
+        validateOccurrenceMove(event, request);
+
+        CalendarEventCancellation override = findOrCreateOccurrenceOverride(event, occurrenceKey);
+        if (event.isAllDay()) {
+            override.setOverrideStartDate(request.getStartDate());
+            override.setOverrideEndDate(request.getEndDate());
+            override.setOverrideStartTime(null);
+            override.setOverrideEndTime(null);
+        } else {
+            override.setOverrideStartDate(null);
+            override.setOverrideEndDate(null);
+            override.setOverrideStartTime(request.getStartTime());
+            override.setOverrideEndTime(request.getEndTime());
+        }
+        cancellationRepository.save(override);
+        rescheduleMovedOccurrenceReminder(event, occurrenceKey, override);
+        log.info("Calendar event occurrence moved: userId={} eventId={} occurrenceKey={} allDay={} startDate={} startTime={}",
+                userId, eventId, occurrenceKey, event.isAllDay(), request.getStartDate(), request.getStartTime());
+        return toResponse(event);
+    }
+
+    @Transactional
     public CalendarEventResponse deleteEventOccurrence(String eventId, CalendarEventOccurrenceRequest request,
                                                         String userId) {
         CalendarEvent event = findEvent(eventId, userId);
@@ -157,18 +184,69 @@ public class CalendarEventService {
 
     private void saveOccurrenceOverride(CalendarEvent event, String occurrenceKey,
                                         CalendarEventStatus status, boolean deleted) {
-        CalendarEventCancellation override = cancellationRepository
-                .findByEventIdAndOccurrenceKey(event.getId(), occurrenceKey)
+        CalendarEventCancellation override = findOrCreateOccurrenceOverride(event, occurrenceKey);
+        override.setOccurrenceStatus(status);
+        override.setDeleted(deleted);
+        cancellationRepository.save(override);
+    }
+
+    private CalendarEventCancellation findOrCreateOccurrenceOverride(CalendarEvent event, String occurrenceKey) {
+        return cancellationRepository.findByEventIdAndOccurrenceKey(event.getId(), occurrenceKey)
                 .orElseGet(() -> {
                     CalendarEventCancellation created = new CalendarEventCancellation();
                     created.setId(UUID.randomUUID().toString());
                     created.setEvent(event);
                     created.setOccurrenceKey(occurrenceKey);
+                    created.setOccurrenceStatus(event.getStatus());
                     return created;
                 });
-        override.setOccurrenceStatus(status);
-        override.setDeleted(deleted);
-        cancellationRepository.save(override);
+    }
+
+    private void rescheduleMovedOccurrenceReminder(CalendarEvent event, String occurrenceKey,
+                                                   CalendarEventCancellation override) {
+        reminderRepository.findByEventId(event.getId())
+                .filter(reminder -> occurrenceKey.equals(eventOccurrenceKey(event, reminder.getEventOccurrenceStart())))
+                .ifPresent(reminder -> {
+                    Instant movedStart = movedOccurrenceStart(event, override);
+                    reminder.setDateTime(movedStart.minusSeconds(reminder.getMinutesBefore() * 60L));
+                    reminder.setDispatchedAt(null);
+                    reminder.setAcknowledgedAt(null);
+                    reminderRepository.save(reminder);
+                    log.info("Calendar event reminder rescheduled for moved occurrence: eventId={} occurrenceKey={} scheduledAt={}",
+                            event.getId(), occurrenceKey, reminder.getDateTime());
+                });
+    }
+
+    private Instant movedOccurrenceStart(CalendarEvent event, CalendarEventCancellation override) {
+        return event.isAllDay()
+                ? override.getOverrideStartDate().atStartOfDay(ZoneId.of(event.getTimeZone())).toInstant()
+                : override.getOverrideStartTime();
+    }
+
+    private String eventOccurrenceKey(CalendarEvent event, Instant occurrenceStart) {
+        if (occurrenceStart == null) return null;
+        return event.isAllDay()
+                ? "date:" + occurrenceStart.atZone(ZoneId.of(event.getTimeZone())).toLocalDate()
+                : "instant:" + occurrenceStart;
+    }
+
+    private void validateOccurrenceMove(CalendarEvent event, CalendarEventOccurrenceRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("An event occurrence is required.");
+        }
+        if (event.isAllDay()) {
+            if (request.getStartDate() == null || request.getEndDate() == null
+                    || request.getEndDate().isBefore(request.getStartDate())
+                    || request.getStartTime() != null || request.getEndTime() != null) {
+                throw new IllegalArgumentException("An all-day occurrence needs a valid start and finish date.");
+            }
+            return;
+        }
+        if (request.getStartTime() == null || request.getEndTime() == null
+                || !request.getEndTime().isAfter(request.getStartTime())
+                || request.getStartDate() != null || request.getEndDate() != null) {
+            throw new IllegalArgumentException("A timed occurrence needs a valid start and finish time.");
+        }
     }
 
     private void applyRequest(CalendarEvent event, CalendarEventRequest request) {
@@ -319,7 +397,9 @@ public class CalendarEventService {
                         .toList(),
                 occurrenceOverrides.stream()
                         .map(override -> new CalendarEventOccurrenceResponse(
-                                override.getOccurrenceKey(), override.getOccurrenceStatus(), override.isDeleted()))
+                                override.getOccurrenceKey(), override.getOccurrenceStatus(), override.isDeleted(),
+                                override.getOverrideStartDate(), override.getOverrideEndDate(),
+                                override.getOverrideStartTime(), override.getOverrideEndTime()))
                         .toList(),
                 reminderMinutes,
                 event.getCreatedAt(), event.getUpdatedAt());

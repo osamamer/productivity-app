@@ -61,8 +61,9 @@ public class DayOverviewService {
     public DayOverviewResponse getOverview(LocalDate date, String userId) {
         if (date == null) throw new IllegalArgumentException("A day is required.");
 
+        LocalDate today = LocalDate.now();
         List<StatEntry> dateStats = statEntryRepository.findAllByUserIdAndDate(userId, date);
-        DayWindow window = buildDayWindow(date, dateStats);
+        DayWindow window = buildDayWindow(date, dateStats, today);
         List<Task> userTasks = taskRepository.findAllByUserId(userId);
         Map<String, Task> taskById = userTasks.stream()
                 .collect(Collectors.toMap(Task::getTaskId, task -> task));
@@ -72,8 +73,9 @@ public class DayOverviewService {
                 .toList();
         List<DayOverviewResponse.TaskSummary> tasks = userTasks.stream()
                 .filter(task -> !task.isSkipped())
-                .filter(task -> isTaskPartOfDay(task, date, window))
-                .sorted(Comparator.comparing(this::taskTime, Comparator.nullsLast(Comparator.naturalOrder()))
+                .filter(task -> isTaskPartOfDay(task, date, window, today))
+                .sorted(Comparator.comparing((Task task) -> taskTime(task, date, today),
+                                Comparator.nullsLast(Comparator.naturalOrder()))
                         .thenComparing(Task::getName, String.CASE_INSENSITIVE_ORDER))
                 .map(this::toTaskSummary)
                 .toList();
@@ -123,7 +125,11 @@ public class DayOverviewService {
         );
     }
 
-    private DayWindow buildDayWindow(LocalDate date, List<StatEntry> stats) {
+    private DayWindow buildDayWindow(LocalDate date, List<StatEntry> stats, LocalDate today) {
+        if (date.isAfter(today)) {
+            return new DayWindow(date.atStartOfDay(), date.plusDays(1).atStartOfDay());
+        }
+
         Integer wakeUpMinutes = statMinutes(stats, "wake_up_time");
         Integer sleepMinutes = statMinutes(stats, "sleep_time");
         LocalDateTime start = date.atStartOfDay().plusMinutes(wakeUpMinutes == null ? 0 : wakeUpMinutes);
@@ -149,7 +155,16 @@ public class DayOverviewService {
                 .orElse(null);
     }
 
-    private boolean isTaskPartOfDay(Task task, LocalDate date, DayWindow window) {
+    private boolean isTaskPartOfDay(Task task, LocalDate date, DayWindow window, LocalDate today) {
+        if (date.isBefore(today)) {
+            return task.isCompleted()
+                    ? isOnDate(task.getCompletionDateTime(), date)
+                    : isOnDate(task.getScheduledPerformDateTime(), date);
+        }
+        if (date.isAfter(today)) {
+            return isOnDate(task.getScheduledPerformDateTime(), date);
+        }
+
         LocalDateTime activityTime = task.getCompletionDateTime() != null
                 ? task.getCompletionDateTime()
                 : task.getScheduledPerformDateTime();
@@ -158,7 +173,15 @@ public class DayOverviewService {
                 && isWithin(activityTime, window);
     }
 
-    private LocalDateTime taskTime(Task task) {
+    private boolean isOnDate(LocalDateTime time, LocalDate date) {
+        return time != null && date.equals(time.toLocalDate());
+    }
+
+    private LocalDateTime taskTime(Task task, LocalDate date, LocalDate today) {
+        if (date.isBefore(today)) {
+            return task.isCompleted() ? task.getCompletionDateTime() : LocalDateTime.MAX;
+        }
+        if (date.isAfter(today)) return task.getScheduledPerformDateTime();
         if (task.getCompletionDateTime() != null) return task.getCompletionDateTime();
         if (task.getScheduledPerformDateTime() != null) return task.getScheduledPerformDateTime();
         return task.getCreationDateTime();

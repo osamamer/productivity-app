@@ -223,6 +223,73 @@ class CalendarEventServiceTest {
     }
 
     @Test
+    void movingOneTimedOccurrenceDoesNotChangeTheSeriesSchedule() {
+        CalendarEventRequest request = timedRequest(
+                Instant.parse("2027-01-10T10:00:00Z"), Instant.parse("2027-01-10T11:00:00Z"));
+        request.setRecurrenceFrequency(RecurrenceFrequency.WEEKLY);
+        CalendarEventResponse event = eventService.createEvent(request, USER_ID);
+
+        CalendarEventOccurrenceRequest move = new CalendarEventOccurrenceRequest();
+        move.setOccurrenceKey("instant:2027-01-17T10:00:00Z");
+        move.setStartTime(Instant.parse("2027-01-18T10:00:00Z"));
+        move.setEndTime(Instant.parse("2027-01-18T11:00:00Z"));
+
+        CalendarEventResponse moved = eventService.moveEventOccurrence(event.id(), move, USER_ID);
+
+        assertEquals(Instant.parse("2027-01-10T10:00:00Z"), moved.startTime());
+        CalendarEventOccurrenceResponse override = moved.occurrenceOverrides().get(0);
+        assertEquals("instant:2027-01-17T10:00:00Z", override.occurrenceKey());
+        assertEquals(CalendarEventStatus.CONFIRMED, override.status());
+        assertEquals(Instant.parse("2027-01-18T10:00:00Z"), override.startTime());
+        assertEquals(Instant.parse("2027-01-18T11:00:00Z"), override.endTime());
+        assertNull(override.startDate());
+        assertNull(override.endDate());
+    }
+
+    @Test
+    void movingTheCurrentTimedOccurrenceReschedulesOnlyItsReminder() {
+        CalendarEventRequest request = timedRequest(
+                Instant.parse("2027-01-10T10:00:00Z"), Instant.parse("2027-01-10T11:00:00Z"));
+        request.setRecurrenceFrequency(RecurrenceFrequency.WEEKLY);
+        CalendarEventResponse event = eventService.createEvent(request, USER_ID);
+
+        CalendarEventOccurrenceRequest move = new CalendarEventOccurrenceRequest();
+        move.setOccurrenceKey("instant:2027-01-10T10:00:00Z");
+        move.setStartTime(Instant.parse("2027-01-11T10:00:00Z"));
+        move.setEndTime(Instant.parse("2027-01-11T11:00:00Z"));
+
+        eventService.moveEventOccurrence(event.id(), move, USER_ID);
+
+        Reminder reminder = reminderRepository.findByEventId(event.id()).orElseThrow();
+        assertEquals(Instant.parse("2027-01-10T10:00:00Z"), reminder.getEventOccurrenceStart());
+        assertEquals(Instant.parse("2027-01-11T10:00:00Z").minusSeconds(24 * 60 * 60),
+                reminder.getDateTime());
+    }
+
+    @Test
+    void movingOneAllDayOccurrenceDoesNotChangeTheSeriesSchedule() {
+        CalendarEventRequest request = allDayRequest();
+        request.setRecurrenceFrequency(RecurrenceFrequency.WEEKLY);
+        CalendarEventResponse event = eventService.createEvent(request, USER_ID);
+
+        CalendarEventOccurrenceRequest move = new CalendarEventOccurrenceRequest();
+        move.setOccurrenceKey("date:2027-01-17");
+        move.setStartDate(LocalDate.of(2027, 1, 19));
+        move.setEndDate(LocalDate.of(2027, 1, 19));
+
+        CalendarEventResponse moved = eventService.moveEventOccurrence(event.id(), move, USER_ID);
+
+        assertEquals(LocalDate.of(2027, 1, 10), moved.startDate());
+        CalendarEventOccurrenceResponse override = moved.occurrenceOverrides().get(0);
+        assertEquals("date:2027-01-17", override.occurrenceKey());
+        assertEquals(CalendarEventStatus.CONFIRMED, override.status());
+        assertEquals(LocalDate.of(2027, 1, 19), override.startDate());
+        assertEquals(LocalDate.of(2027, 1, 19), override.endDate());
+        assertNull(override.startTime());
+        assertNull(override.endTime());
+    }
+
+    @Test
     void deletingOneRecurringOccurrenceHidesOnlyThatOccurrence() {
         CalendarEventRequest request = timedRequest(
                 Instant.parse("2027-01-10T10:00:00Z"), Instant.parse("2027-01-10T11:00:00Z"));

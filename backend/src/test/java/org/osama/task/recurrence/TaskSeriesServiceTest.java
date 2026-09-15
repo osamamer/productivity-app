@@ -68,6 +68,34 @@ class TaskSeriesServiceTest {
     }
 
     @Test
+    void movingOneOccurrenceDoesNotChangeTheSeriesOrOtherOccurrences() {
+        LocalDateTime start = LocalDateTime.now().plusDays(1).withSecond(0).withNano(0);
+        NewTaskRequest request = request(start);
+        request.setRecurrenceFrequency(TaskRecurrenceFrequency.DAILY);
+        request.setRecurrenceEndDate(start.toLocalDate().plusDays(2));
+
+        Task first = taskSeriesService.createSeries(request, USER_ID);
+        List<Task> originalOccurrences = taskRepository
+                .findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(first.getTaskSeriesId());
+        Task second = originalOccurrences.get(1);
+        LocalDateTime movedDateTime = second.getScheduledPerformDateTime().plusDays(3);
+
+        UpdateTaskRequest update = new UpdateTaskRequest();
+        update.setScheduledPerformDateTime(movedDateTime.toString());
+        taskService.updateTask(second.getTaskId(), update, USER_ID);
+
+        List<Task> updatedOccurrences = taskRepository
+                .findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(first.getTaskSeriesId());
+        assertEquals(start, updatedOccurrences.get(0).getScheduledPerformDateTime());
+        assertEquals(movedDateTime, updatedOccurrences.get(1).getScheduledPerformDateTime());
+        assertEquals(start.plusDays(2), updatedOccurrences.get(2).getScheduledPerformDateTime());
+        assertEquals(start, seriesRepository.findBySeriesIdAndUserId(first.getTaskSeriesId(), USER_ID)
+                .orElseThrow().getStartDateTime());
+        assertEquals(originalOccurrences.get(1).getSeriesOccurrenceAt(),
+                updatedOccurrences.get(1).getSeriesOccurrenceAt());
+    }
+
+    @Test
     void seriesExpansionPrependsOccurrencesWithoutChangingTheirEstablishedOrder() {
         Task existingTask = taskService.createTask(
                 request(LocalDateTime.now().plusHours(1).withSecond(0).withNano(0)), USER_ID);

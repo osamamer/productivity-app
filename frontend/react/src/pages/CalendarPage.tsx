@@ -9,7 +9,12 @@ import {StatDefinition} from "../types/Stats.ts";
 import {statService} from "../services/api/statService.ts";
 import {Task} from "../types/Task.tsx";
 import {TaskGroup} from "../types/TaskGroup.ts";
-import {CalendarEvent, CalendarEventInput, CalendarEventStatus} from "../types/CalendarEvent.ts";
+import {
+    CalendarEvent,
+    CalendarEventInput,
+    CalendarEventOccurrenceMoveInput,
+    CalendarEventStatus,
+} from "../types/CalendarEvent.ts";
 import {DayTemplate, DayTemplateApplication, DayTemplateRequest} from "../types/DayTemplate.ts";
 import { playAudioFeedback } from '../services/audioFeedback';
 import { useNavigate } from 'react-router-dom';
@@ -163,6 +168,15 @@ export function CalendarPage() {
 
     const handleUpdateEvent = async (eventId: string, input: CalendarEventInput) => {
         const updated = await eventService.updateEvent(eventId, input);
+        setEvents(current => current.map(event => event.id === eventId ? updated : event));
+    };
+
+    const handleMoveEventOccurrence = async (
+        eventId: string,
+        occurrenceKey: string,
+        move: CalendarEventOccurrenceMoveInput,
+    ) => {
+        const updated = await eventService.moveEventOccurrence(eventId, occurrenceKey, move);
         setEvents(current => current.map(event => event.id === eventId ? updated : event));
     };
 
@@ -334,6 +348,7 @@ export function CalendarPage() {
                     onUpdateTask={handleUpdateTask}
                     onCreateEvent={handleCreateEvent}
                     onUpdateEvent={handleUpdateEvent}
+                    onMoveEventOccurrence={handleMoveEventOccurrence}
                     onDeleteEvent={handleDeleteEvent}
                     onCancelEventOccurrence={handleCancelEventOccurrence}
                     onRestoreEventOccurrence={handleRestoreEventOccurrence}

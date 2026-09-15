@@ -154,22 +154,26 @@ public class NotificationService {
         }
 
         ZonedDateTime nextOccurrence = currentOccurrenceStart.atZone(zone);
+        Instant nextOccurrenceStart;
+        Instant effectiveNextOccurrenceStart;
         do {
             nextOccurrence = nextOccurrence(event, nextOccurrence, zone);
+            nextOccurrenceStart = nextOccurrence.toInstant();
             if (event.getRecurrenceEndDate() != null
                     && nextOccurrence.toLocalDate().isAfter(event.getRecurrenceEndDate())) {
                 return false;
             }
-        } while (!nextOccurrence.toInstant().isAfter(now)
-                || isCancelledEventOccurrence(event, nextOccurrence.toInstant()));
+            effectiveNextOccurrenceStart = effectiveEventOccurrenceStart(event, nextOccurrenceStart);
+        } while (!effectiveNextOccurrenceStart.isAfter(now)
+                || isCancelledEventOccurrence(event, nextOccurrenceStart));
 
         String userId = reminder.getUser().getId();
         Reminder nextReminder = new Reminder();
         nextReminder.setReminderId(UUID.randomUUID().toString());
         nextReminder.setUser(reminder.getUser());
         nextReminder.setEvent(event);
-        nextReminder.setEventOccurrenceStart(nextOccurrence.toInstant());
-        nextReminder.setDateTime(nextOccurrence.toInstant()
+        nextReminder.setEventOccurrenceStart(nextOccurrenceStart);
+        nextReminder.setDateTime(effectiveNextOccurrenceStart
                 .minusSeconds(reminder.getMinutesBefore() * 60L));
         nextReminder.setRepeat(0);
         nextReminder.setNotificationType(reminder.getNotificationType());
@@ -182,7 +186,7 @@ public class NotificationService {
         reminderRepository.flush();
         reminderRepository.save(nextReminder);
         log.info("Recurring calendar reminder advanced: userId={} eventId={} nextReminderId={} occurrenceStart={}",
-                userId, event.getId(), nextReminder.getReminderId(), nextOccurrence.toInstant());
+                userId, event.getId(), nextReminder.getReminderId(), nextOccurrenceStart);
         return true;
     }
 
@@ -197,13 +201,34 @@ public class NotificationService {
                 || event.getRecurrenceFrequency() == RecurrenceFrequency.NONE) {
             return false;
         }
-        String occurrenceKey = event.isAllDay()
-                ? "date:" + occurrenceStart.atZone(ZoneId.of(event.getTimeZone())).toLocalDate()
-                : "instant:" + occurrenceStart;
+        String occurrenceKey = eventOccurrenceKey(event, occurrenceStart);
         return cancellationRepository.findByEventIdAndOccurrenceKey(event.getId(), occurrenceKey)
                 .map(override -> override.isDeleted()
                         || override.getOccurrenceStatus() == org.osama.event.CalendarEventStatus.CANCELLED)
                 .orElse(false);
+    }
+
+    private Instant effectiveEventOccurrenceStart(CalendarEvent event, Instant occurrenceStart) {
+        String occurrenceKey = eventOccurrenceKey(event, occurrenceStart);
+        return cancellationRepository.findByEventIdAndOccurrenceKey(event.getId(), occurrenceKey)
+                .map(override -> {
+                    if (event.isAllDay() && override.getOverrideStartDate() != null) {
+                        return override.getOverrideStartDate()
+                                .atStartOfDay(ZoneId.of(event.getTimeZone())).toInstant();
+                    }
+                    if (!event.isAllDay() && override.getOverrideStartTime() != null) {
+                        return override.getOverrideStartTime();
+                    }
+                    return occurrenceStart;
+                })
+                .orElse(occurrenceStart);
+    }
+
+    private String eventOccurrenceKey(CalendarEvent event, Instant occurrenceStart) {
+        if (occurrenceStart == null) return null;
+        return event.isAllDay()
+                ? "date:" + occurrenceStart.atZone(ZoneId.of(event.getTimeZone())).toLocalDate()
+                : "instant:" + occurrenceStart;
     }
 
     private ZonedDateTime nextOccurrence(CalendarEvent event, ZonedDateTime current, ZoneId zone) {

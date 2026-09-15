@@ -2,8 +2,11 @@ package org.osama.mentalstate;
 
 import org.osama.user.CurrentUserService;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -36,5 +39,11 @@ public class MentalStateController {
     public List<MentalStateCheckInResponse> getHistory(
             @RequestParam(defaultValue = "30") int limit) {
         return mentalStateService.getHistory(currentUserService.getCurrentUserId(), limit);
+    }
+
+    @DeleteMapping("/check-ins/{checkInId}")
+    public ResponseEntity<Void> deleteCheckIn(@PathVariable String checkInId) {
+        mentalStateService.deleteCheckIn(checkInId, currentUserService.getCurrentUserId());
+        return ResponseEntity.noContent().build();
     }
 }

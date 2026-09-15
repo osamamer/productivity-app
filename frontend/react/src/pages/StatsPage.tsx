@@ -85,6 +85,12 @@ type PendingStatCreation = {
     selectedIdBeforeCreation: string | null;
 };
 
+type PendingDefinitionMutation = {
+    definitionId: string;
+    version: number;
+    previous: StatDefinition;
+};
+
 function popupPositionForElement(element: HTMLElement): PopupPosition {
     const bounds = element.getBoundingClientRect();
     return { top: bounds.bottom + 8, left: bounds.left };
@@ -192,7 +198,6 @@ export function StatsPage() {
     const [resourceRefreshKey, setResourceRefreshKey] = useState(0);
     const [deleteTarget, setDeleteTarget] = useState<StatDefinition | null>(null);
     const [draggedId, setDraggedId] = useState<string | null>(null);
-    const [reorderSaving, setReorderSaving] = useState(false);
     const [orderError, setOrderError] = useState<string | null>(null);
     const [groups, setGroups] = useState<StatGroup[]>([]);
     const [groupError, setGroupError] = useState<string | null>(null);
@@ -202,8 +207,6 @@ export function StatsPage() {
     const [groupSaving, setGroupSaving] = useState(false);
     const [deleteGroupTarget, setDeleteGroupTarget] = useState<StatGroup | null>(null);
     const [groupCreateDefinitionIds, setGroupCreateDefinitionIds] = useState<string[]>([]);
-    const [groupOrderSaving, setGroupOrderSaving] = useState(false);
-    const [groupMembershipSaving, setGroupMembershipSaving] = useState(false);
     const [groupOrderError, setGroupOrderError] = useState<string | null>(null);
     const [draggedGroupId, setDraggedGroupId] = useState<string | null>(null);
     const [dragTargetGroupId, setDragTargetGroupId] = useState<string | null>(null);
@@ -219,25 +222,39 @@ export function StatsPage() {
     const [selectionError, setSelectionError] = useState<string | null>(null);
     const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
     const [dayContextMenu, setDayContextMenu] = useState<{ date: string; top: number; left: number } | null>(null);
-    const [recurringTaskSavingId, setRecurringTaskSavingId] = useState<string | null>(null);
+    const [recurringTaskSavingId] = useState<string | null>(null);
     const [recurringTaskError, setRecurringTaskError] = useState<string | null>(null);
     const [recurringTaskTarget, setRecurringTaskTarget] = useState<StatDefinition | null>(null);
     const [recurringTaskAnchorPosition, setRecurringTaskAnchorPosition] = useState<PopupPosition | null>(null);
     const [recurringTaskFeedback, setRecurringTaskFeedback] = useState<string | null>(null);
     const [recurringTaskMode, setRecurringTaskMode] = useState<'create' | 'update'>('create');
     const [recurringTaskInitialDraft, setRecurringTaskInitialDraft] = useState<StatRecurringTaskDraft | null>(null);
-    const [createLinkedTaskSavingId, setCreateLinkedTaskSavingId] = useState<string | null>(null);
+    const [createLinkedTaskSavingId] = useState<string | null>(null);
     const [createLinkedTaskError, setCreateLinkedTaskError] = useState<string | null>(null);
     const [createLinkedTaskTarget, setCreateLinkedTaskTarget] = useState<StatDefinition | null>(null);
     const [createLinkedTaskAnchorPosition, setCreateLinkedTaskAnchorPosition] = useState<PopupPosition | null>(null);
-    const [focusTaskSavingId, setFocusTaskSavingId] = useState<string | null>(null);
+    const [focusTaskSavingId] = useState<string | null>(null);
     const [focusTaskError, setFocusTaskError] = useState<string | null>(null);
     const [focusTaskTarget, setFocusTaskTarget] = useState<StatDefinition | null>(null);
     const [focusTaskAnchorPosition, setFocusTaskAnchorPosition] = useState<PopupPosition | null>(null);
     const [focusTaskFeedback, setFocusTaskFeedback] = useState<string | null>(null);
+    const [errorSnackbar, setErrorSnackbar] = useState<string | null>(null);
     const selectionAnchorRef = useRef<string | null>(null);
     const selectionActionsRef = useRef<HTMLDivElement | null>(null);
     const pendingStatCreationsRef = useRef(new Map<string, PendingStatCreation>());
+    const definitionsRef = useRef<StatDefinition[]>([]);
+    const groupsRef = useRef<StatGroup[]>([]);
+    const definitionMutationVersionsRef = useRef(new Map<string, number>());
+    const pendingDefinitionMutationsRef = useRef(new Map<string, PendingDefinitionMutation>());
+    const definitionOrderVersionRef = useRef(0);
+    const groupMutationVersionRef = useRef(0);
+
+    useEffect(() => { definitionsRef.current = definitions; }, [definitions]);
+    useEffect(() => { groupsRef.current = groups; }, [groups]);
+
+    const showErrorSnackbar = useCallback((message: string) => {
+        setErrorSnackbar(message);
+    }, []);
 
     useEffect(() => {
         if (loadedGroupPreferencesKey === groupPreferencesKey) return;
@@ -255,14 +272,32 @@ export function StatsPage() {
     const loadDefinitions = useCallback(() => {
         return statService.getDefinitions()
             .then(defs => {
-                setDefinitions(defs);
+                const pendingDefinitionIds = new Set([
+                    ...Array.from(pendingStatCreationsRef.current.values()).map(pending => pending.tempId),
+                    ...Array.from(pendingDefinitionMutationsRef.current.values())
+                        .map(pending => pending.definitionId),
+                ]);
+                const optimisticDefinitions = definitionsRef.current.filter(definition =>
+                    pendingDefinitionIds.has(definition.id),
+                );
+                const serverDefinitionIds = new Set(defs.map(definition => definition.id));
+                const mergedDefinitions = [
+                    ...defs.map(definition => optimisticDefinitions.find(
+                        optimistic => optimistic.id === definition.id,
+                    ) ?? definition),
+                    ...optimisticDefinitions.filter(definition => !serverDefinitionIds.has(definition.id)),
+                ];
+                definitionsRef.current = mergedDefinitions;
+                setDefinitions(mergedDefinitions);
                 setSelectedId(prev => {
-                    const visibleDefs = defs.filter(definition => !isDedicatedStat(definition));
+                    const visibleDefs = mergedDefinitions.filter(definition =>
+                        !isDedicatedStat(definition) && !pendingStatCreationsRef.current.has(definition.id),
+                    );
                     if (prev && visibleDefs.some(d => d.id === prev)) return prev;
                     return visibleDefs[0]?.id ?? null;
                 });
                 setSelectedStatIds(previous => previous.filter(id =>
-                    defs.some(definition => !isDedicatedStat(definition) && definition.id === id),
+                    mergedDefinitions.some(definition => !isDedicatedStat(definition) && definition.id === id),
                 ));
             })
             .catch(e => {
@@ -308,6 +343,67 @@ export function StatsPage() {
         }));
     }, []);
 
+    const applyOptimisticDefinition = (
+        optimisticDefinition: StatDefinition,
+        operationId: string,
+        previous: StatDefinition,
+    ) => {
+        const version = (definitionMutationVersionsRef.current.get(optimisticDefinition.id) ?? 0) + 1;
+        definitionMutationVersionsRef.current.set(optimisticDefinition.id, version);
+        pendingDefinitionMutationsRef.current.set(operationId, {
+            definitionId: optimisticDefinition.id,
+            version,
+            previous,
+        });
+        definitionsRef.current = definitionsRef.current.map(definition =>
+            definition.id === optimisticDefinition.id ? optimisticDefinition : definition,
+        );
+        setDefinitions(definitionsRef.current);
+        setFocusTaskTarget(current => current?.id === optimisticDefinition.id ? optimisticDefinition : current);
+        setRecurringTaskTarget(current => current?.id === optimisticDefinition.id ? optimisticDefinition : current);
+    };
+
+    const reconcileDefinition = (updated: StatDefinition, operationId?: string) => {
+        if (operationId) {
+            const pending = pendingDefinitionMutationsRef.current.get(operationId);
+            if (!pending) return;
+            pendingDefinitionMutationsRef.current.delete(operationId);
+            if (definitionMutationVersionsRef.current.get(pending.definitionId) !== pending.version) return;
+        }
+        definitionsRef.current = definitionsRef.current.map(definition =>
+            definition.id === updated.id ? updated : definition,
+        );
+        setDefinitions(definitionsRef.current);
+        setFocusTaskTarget(current => current?.id === updated.id ? updated : current);
+        setRecurringTaskTarget(current => current?.id === updated.id ? updated : current);
+        setEditTarget(current => current?.id === updated.id ? null : current);
+    };
+
+    const rollbackDefinition = (
+        operationId: string,
+        fallbackPrevious: StatDefinition,
+        message = 'Could not save that statistic change.',
+    ) => {
+        const pending = pendingDefinitionMutationsRef.current.get(operationId);
+        if (!pending) {
+            showErrorSnackbar(message);
+            return;
+        }
+        pendingDefinitionMutationsRef.current.delete(operationId);
+        if (definitionMutationVersionsRef.current.get(pending.definitionId) !== pending.version) {
+            showErrorSnackbar(message);
+            return;
+        }
+        const previous = pending.previous ?? fallbackPrevious;
+        definitionsRef.current = definitionsRef.current.map(definition =>
+            definition.id === previous.id ? previous : definition,
+        );
+        setDefinitions(definitionsRef.current);
+        setFocusTaskTarget(current => current?.id === previous.id ? previous : current);
+        setRecurringTaskTarget(current => current?.id === previous.id ? previous : current);
+        showErrorSnackbar(message);
+    };
+
     const handleCreatedOptimistically = (draft: StatDefinition, operationId: string) => {
         const groupTarget = createStatGroupTarget;
         pendingStatCreationsRef.current.set(operationId, {
@@ -316,7 +412,14 @@ export function StatsPage() {
             groupDefinitionIds: groupTarget?.statDefinitionIds ?? [],
             selectedIdBeforeCreation: selectedId,
         });
-        setDefinitions(prev => [...prev, draft]);
+        definitionsRef.current = [...definitionsRef.current, draft];
+        setDefinitions(definitionsRef.current);
+        if (groupTarget) {
+            groupsRef.current = groupsRef.current.map(group => group.groupId === groupTarget.groupId
+                ? { ...group, statDefinitionIds: [...new Set([...group.statDefinitionIds, draft.id])] }
+                : group);
+            setGroups(groupsRef.current);
+        }
         closeCreateStatDialog();
     };
 
@@ -324,10 +427,17 @@ export function StatsPage() {
         const pending = pendingStatCreationsRef.current.get(operationId);
         if (!pending) return;
         pendingStatCreationsRef.current.delete(operationId);
-        setDefinitions(prev => prev.filter(definition => definition.id !== pending.tempId));
+        definitionsRef.current = definitionsRef.current.filter(definition => definition.id !== pending.tempId);
+        setDefinitions(definitionsRef.current);
+        groupsRef.current = groupsRef.current.map(group => ({
+            ...group,
+            statDefinitionIds: group.statDefinitionIds.filter(id => id !== pending.tempId),
+        }));
+        setGroups(groupsRef.current);
         setSelectedId(current => current === pending.tempId ? null : current);
         setSelectedStatIds(previous => previous.filter(id => id !== pending.tempId));
         if (selectionAnchorRef.current === pending.tempId) selectionAnchorRef.current = null;
+        showErrorSnackbar('Could not create that statistic.');
     };
 
     const handleCreated = (def: StatDefinition, operationId?: string) => {
@@ -335,32 +445,42 @@ export function StatsPage() {
             const pending = pendingStatCreationsRef.current.get(operationId);
             if (!pending) return;
             pendingStatCreationsRef.current.delete(operationId);
-            setDefinitions(previous => previous.map(definition =>
+            definitionsRef.current = definitionsRef.current.map(definition =>
                 definition.id === pending.tempId ? def : definition,
-            ));
+            );
+            setDefinitions(definitionsRef.current);
             setSelectedId(current => current === null && pending.selectedIdBeforeCreation === null
                 ? def.id
                 : current);
             if (def.recurringTaskSeriesId) setRecurringTaskFeedback('Recurring task created.');
 
             if (pending.groupId) {
-                const nextDefinitionIds = [...new Set([...pending.groupDefinitionIds, def.id])];
+                const nextDefinitionIds = groupsRef.current
+                    .find(group => group.groupId === pending.groupId)
+                    ?.statDefinitionIds
+                    .map(id => id === pending.tempId ? def.id : id)
+                    ?? [...new Set([...pending.groupDefinitionIds, def.id])];
                 setGroups(previous => previous.map(group => group.groupId === pending.groupId
                     ? { ...group, statDefinitionIds: nextDefinitionIds }
                     : group));
-                setGroupMembershipSaving(true);
-                statGroupService.replaceDefinitions(pending.groupId, nextDefinitionIds)
+                const groupMutationVersion = ++groupMutationVersionRef.current;
+                void statGroupService.replaceDefinitions(pending.groupId, nextDefinitionIds)
                     .then(updatedGroup => {
+                        if (groupMutationVersion !== groupMutationVersionRef.current) return;
                         setGroups(previous => previous.map(group => group.groupId === updatedGroup.groupId
                             ? updatedGroup
                             : group));
                     })
                     .catch(e => {
                         console.error('Failed to add new stat to group:', e);
+                        if (groupMutationVersion === groupMutationVersionRef.current) {
+                            setGroups(previous => previous.map(group => group.groupId === pending.groupId
+                                ? { ...group, statDefinitionIds: group.statDefinitionIds.filter(id => id !== def.id) }
+                                : group));
+                        }
                         setGroupError('The statistic was created, but could not be added to the group.');
-                        void loadGroups();
-                    })
-                    .finally(() => setGroupMembershipSaving(false));
+                        showErrorSnackbar('The statistic was created, but could not be added to the group.');
+                    });
             }
             return;
         }
@@ -379,19 +499,24 @@ export function StatsPage() {
             setGroups(previous => previous.map(group => group.groupId === groupTarget.groupId
                 ? { ...group, statDefinitionIds: nextDefinitionIds }
                 : group));
-            setGroupMembershipSaving(true);
-            statGroupService.replaceDefinitions(groupTarget.groupId, nextDefinitionIds)
+            const groupMutationVersion = ++groupMutationVersionRef.current;
+            void statGroupService.replaceDefinitions(groupTarget.groupId, nextDefinitionIds)
                 .then(updatedGroup => {
+                    if (groupMutationVersion !== groupMutationVersionRef.current) return;
                     setGroups(previous => previous.map(group => group.groupId === updatedGroup.groupId
                         ? updatedGroup
                         : group));
                 })
                 .catch(e => {
                     console.error('Failed to add new stat to group:', e);
+                    if (groupMutationVersion === groupMutationVersionRef.current) {
+                        setGroups(previous => previous.map(group => group.groupId === groupTarget.groupId
+                            ? { ...group, statDefinitionIds: group.statDefinitionIds.filter(id => id !== def.id) }
+                            : group));
+                    }
                     setGroupError('The statistic was created, but could not be added to the group.');
-                    void loadGroups();
-                })
-                .finally(() => setGroupMembershipSaving(false));
+                    showErrorSnackbar('The statistic was created, but could not be added to the group.');
+                });
         }
     };
 
@@ -407,104 +532,162 @@ export function StatsPage() {
 
     const closeContextMenu = () => setContextMenu(null);
 
-    const handleUpdated = (updated: StatDefinition) => {
-        setDefinitions(prev => prev.map(definition =>
-            definition.id === updated.id ? updated : definition,
-        ));
+    const handleUpdated = (updated: StatDefinition, operationId?: string) => {
+        reconcileDefinition(updated, operationId);
+    };
+
+    const handleUpdatedOptimistically = (
+        updated: StatDefinition,
+        operationId: string,
+        previous: StatDefinition,
+    ) => {
+        applyOptimisticDefinition(updated, operationId, previous);
+        setEditTarget(null);
+    };
+
+    const handleUpdateFailed = (operationId: string, previous: StatDefinition) => {
+        rollbackDefinition(operationId, previous);
         setEditTarget(null);
     };
 
     const handleAddFocusTask = (definition: StatDefinition, taskName: string) => {
-        if (focusTaskSavingId !== null || !taskName.trim()) return;
-
-        setFocusTaskSavingId(definition.id);
+        const trimmedTaskName = taskName.trim();
+        if (!trimmedTaskName) return;
+        const previous = definitionsRef.current.find(item => item.id === definition.id) ?? definition;
+        const linkedTaskNames = [...new Set([
+            ...(previous.focusTaskNames ?? (previous.focusTaskName ? [previous.focusTaskName] : [])),
+            trimmedTaskName,
+        ])];
+        const optimisticDefinition = {
+            ...previous,
+            focusTaskName: linkedTaskNames[0] ?? null,
+            focusTaskNames: linkedTaskNames,
+        };
+        const operationId = `stat-focus-link-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        applyOptimisticDefinition(optimisticDefinition, operationId, previous);
+        setFocusTaskTarget(optimisticDefinition);
         setFocusTaskError(null);
-        void statService.linkFocusTask(definition.id, taskName.trim())
+        void statService.linkFocusTask(definition.id, trimmedTaskName)
             .then(updated => {
-                handleUpdated(updated);
-                setFocusTaskTarget(updated);
-                setFocusTaskFeedback(`Focus time linked to “${taskName.trim()}”.`);
+                handleUpdated(updated, operationId);
+                setFocusTaskFeedback(`Focus time linked to “${trimmedTaskName}”.`);
             })
             .catch(error => {
                 console.error('Failed to link task focus time:', error);
+                rollbackDefinition(operationId, previous, 'Could not link those tasks.');
                 setFocusTaskError('Could not link those tasks. Please try again.');
-            })
-            .finally(() => setFocusTaskSavingId(null));
+            });
     };
 
     const handleCreateLinkedTask = (definition: StatDefinition, taskName: string, importance: number) => {
-        if (createLinkedTaskSavingId !== null || !taskName.trim()) return;
-
-        setCreateLinkedTaskSavingId(definition.id);
+        const trimmedTaskName = taskName.trim();
+        if (!trimmedTaskName) return;
+        const previous = definitionsRef.current.find(item => item.id === definition.id) ?? definition;
+        const linkedTaskNames = [...new Set([
+            ...(previous.focusTaskNames ?? (previous.focusTaskName ? [previous.focusTaskName] : [])),
+            trimmedTaskName,
+        ])];
+        const optimisticDefinition = {
+            ...previous,
+            focusTaskName: linkedTaskNames[0] ?? null,
+            focusTaskNames: linkedTaskNames,
+        };
+        const operationId = `stat-focus-start-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        applyOptimisticDefinition(optimisticDefinition, operationId, previous);
         setCreateLinkedTaskError(null);
-        void statService.startFocusTask(definition.id, taskName.trim(), importance)
+        setCreateLinkedTaskTarget(null);
+        setCreateLinkedTaskAnchorPosition(null);
+        void statService.startFocusTask(definition.id, trimmedTaskName, importance)
             .then(task => {
-                const linkedTaskNames = [...new Set([
-                    ...(definition.focusTaskNames ?? (definition.focusTaskName ? [definition.focusTaskName] : [])),
-                    taskName.trim(),
-                ])];
-                handleUpdated({ ...definition, focusTaskName: linkedTaskNames[0], focusTaskNames: linkedTaskNames });
-                setCreateLinkedTaskTarget(null);
-                setCreateLinkedTaskAnchorPosition(null);
+                reconcileDefinition({ ...optimisticDefinition }, operationId);
                 navigate('/', { state: { openPomodoroTaskId: task.taskId } });
             })
             .catch(error => {
                 console.error('Failed to create linked task:', error);
+                rollbackDefinition(operationId, previous, 'Could not create the linked task.');
                 setCreateLinkedTaskError('Could not create the linked task. Please try again.');
-            })
-            .finally(() => setCreateLinkedTaskSavingId(null));
+            });
     };
 
     const handleCreateRecurringLinkedTask = (definition: StatDefinition,
                                               taskName: string,
                                               recurrence: StatRecurringTaskDraft) => {
-        if (createLinkedTaskSavingId !== null) return;
-
-        setCreateLinkedTaskSavingId(definition.id);
+        const trimmedTaskName = taskName.trim();
+        const previous = definitionsRef.current.find(item => item.id === definition.id) ?? definition;
+        const linkedTaskNames = [...new Set([
+            ...(previous.focusTaskNames ?? (previous.focusTaskName ? [previous.focusTaskName] : [])),
+            trimmedTaskName,
+        ])];
+        const optimisticDefinition = {
+            ...previous,
+            recurringTaskSeriesId: `optimistic-series-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+            focusTaskName: linkedTaskNames[0] ?? null,
+            focusTaskNames: linkedTaskNames,
+        };
+        const operationId = `stat-recurring-start-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        applyOptimisticDefinition(optimisticDefinition, operationId, previous);
         setCreateLinkedTaskError(null);
-        void statService.createRecurringTask(definition.id, recurrence)
+        setCreateLinkedTaskTarget(null);
+        setCreateLinkedTaskAnchorPosition(null);
+        void statService.createRecurringTask(definition.id, { ...recurrence, taskName: trimmedTaskName })
             .then(updated => {
-                handleUpdated(updated);
-                setCreateLinkedTaskTarget(null);
-                setCreateLinkedTaskAnchorPosition(null);
+                handleUpdated(updated, operationId);
                 setCreateLinkedTaskError(null);
-                setRecurringTaskFeedback(`Recurring task “${taskName}” created.`);
+                setRecurringTaskFeedback(`Recurring task “${trimmedTaskName}” created.`);
             })
             .catch(error => {
                 console.error('Failed to create recurring linked task:', error);
+                rollbackDefinition(operationId, previous, 'Could not create the recurring linked task.');
                 setCreateLinkedTaskError('Could not create the recurring linked task. Please try again.');
-            })
-            .finally(() => setCreateLinkedTaskSavingId(null));
+            });
     };
 
     const handleRemoveFocusTask = (definition: StatDefinition, taskName: string) => {
-        if (focusTaskSavingId !== null) return;
-
-        setFocusTaskSavingId(definition.id);
+        const previous = definitionsRef.current.find(item => item.id === definition.id) ?? definition;
+        const linkedTaskNames = (previous.focusTaskNames ?? (previous.focusTaskName ? [previous.focusTaskName] : []))
+            .filter(name => name.toLocaleLowerCase() !== taskName.toLocaleLowerCase());
+        const optimisticDefinition = {
+            ...previous,
+            focusTaskName: linkedTaskNames[0] ?? null,
+            focusTaskNames: linkedTaskNames,
+        };
+        const operationId = `stat-focus-unlink-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        applyOptimisticDefinition(optimisticDefinition, operationId, previous);
+        setFocusTaskTarget(optimisticDefinition);
         setFocusTaskError(null);
         void statService.unlinkFocusTask(definition.id, taskName)
             .then(updated => {
-                handleUpdated(updated);
-                setFocusTaskTarget(updated);
+                handleUpdated(updated, operationId);
                 setFocusTaskFeedback(`Focus time unlinked from “${taskName}”.`);
             })
             .catch(error => {
                 console.error('Failed to unlink task focus time:', error);
+                rollbackDefinition(operationId, previous, 'Could not remove that linked task.');
                 setFocusTaskError('Could not remove that linked task. Please try again.');
-            })
-            .finally(() => setFocusTaskSavingId(null));
+            });
     };
 
     const handleSaveRecurringTask = (definition: StatDefinition, recurrence: StatRecurringTaskDraft) => {
         const mode = recurringTaskMode;
         if ((mode === 'create' && !canCreateRecurringTask(definition))
-            || (mode === 'update' && !definition.recurringTaskSeriesId)
-            || recurringTaskSavingId !== null) return;
+            || (mode === 'update' && !definition.recurringTaskSeriesId)) return;
 
-        setRecurringTaskSavingId(definition.id);
+        const previous = definitionsRef.current.find(item => item.id === definition.id) ?? definition;
         setRecurringTaskError(null);
+        const operationId = `stat-recurring-save-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
         if (mode === 'create') {
+            const linkedTaskNames = [...new Set([
+                ...(previous.focusTaskNames ?? (previous.focusTaskName ? [previous.focusTaskName] : [])),
+                previous.name,
+            ])];
+            const optimisticDefinition = {
+                ...previous,
+                recurringTaskSeriesId: `optimistic-series-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+                focusTaskName: linkedTaskNames[0] ?? null,
+                focusTaskNames: linkedTaskNames,
+            };
+            applyOptimisticDefinition(optimisticDefinition, operationId, previous);
             setRecurringTaskTarget(null);
             setRecurringTaskAnchorPosition(null);
             setRecurringTaskInitialDraft(null);
@@ -512,32 +695,31 @@ export function StatsPage() {
 
             void statService.createRecurringTask(definition.id, recurrence)
                 .then(updated => {
-                    handleUpdated(updated);
+                    handleUpdated(updated, operationId);
                     setRecurringTaskFeedback('Recurring task created.');
                 })
                 .catch(error => {
                     console.error('Failed to create recurring task for stat:', error);
+                    rollbackDefinition(operationId, previous, 'Could not create the recurring task.');
                     setRecurringTaskError('Could not create the recurring task. Please try again.');
-                })
-                .finally(() => setRecurringTaskSavingId(null));
+                });
             return;
         }
 
-        void (async () => {
-            try {
-                const updated = await statService.updateRecurringTask(definition.id, recurrence);
-                handleUpdated(updated);
-                setRecurringTaskTarget(null);
-                setRecurringTaskAnchorPosition(null);
-                setRecurringTaskInitialDraft(null);
+        applyOptimisticDefinition(previous, operationId, previous);
+        setRecurringTaskTarget(null);
+        setRecurringTaskAnchorPosition(null);
+        setRecurringTaskInitialDraft(null);
+        void statService.updateRecurringTask(definition.id, recurrence)
+            .then(updated => {
+                handleUpdated(updated, operationId);
                 setRecurringTaskFeedback('Recurring task schedule updated.');
-            } catch (error) {
+            })
+            .catch(error => {
                 console.error('Failed to update recurring task schedule for stat:', error);
+                rollbackDefinition(operationId, previous, 'Could not update the recurring task schedule.');
                 setRecurringTaskError('Could not update the recurring task schedule. Please try again.');
-            } finally {
-                setRecurringTaskSavingId(null);
-            }
-        })();
+            });
     };
 
     const openRecurringTaskEditor = (definition: StatDefinition, anchorPosition?: PopupPosition) => {
@@ -560,34 +742,60 @@ export function StatsPage() {
             .catch(error => {
                 console.error('Failed to load recurring task schedule:', error);
                 setRecurringTaskError('Could not load the recurring task schedule. Please try again.');
+                showErrorSnackbar('Could not load the recurring task schedule.');
             });
     };
 
-    const handleDeleteConfirm = async () => {
+    const handleDeleteConfirm = () => {
         if (!deleteTarget) return;
-        try {
-            await statService.deleteDefinition(deleteTarget.id);
-            setDefinitions(prev => {
-                const next = prev.filter(d => d.id !== deleteTarget.id);
-                const nextVisible = next.filter(definition => !isDedicatedStat(definition));
-                setSelectedId(current => {
-                    if (current !== deleteTarget.id) return current;
-                    return nextVisible[0]?.id ?? null;
-                });
-                return next;
-            });
-            setGroups(prev => prev.map(group => ({
-                ...group,
-                statDefinitionIds: group.statDefinitionIds.filter(id => id !== deleteTarget.id),
-            })));
-            setSelectedStatIds(previous => previous.filter(id => id !== deleteTarget.id));
-            if (selectionAnchorRef.current === deleteTarget.id) selectionAnchorRef.current = null;
-            setEditTarget(null);
-        } catch (e) {
-            console.error('Failed to delete stat definition:', e);
-        } finally {
-            setDeleteTarget(null);
+        const target = deleteTarget;
+        const previousDefinitions = definitionsRef.current;
+        const previousGroups = groupsRef.current;
+        const previousSelectedId = selectedId;
+        const previousSelectedStatIds = selectedStatIds;
+        const previousAnchor = selectionAnchorRef.current;
+        const groupMutationVersion = ++groupMutationVersionRef.current;
+        const targetIndex = previousDefinitions.findIndex(definition => definition.id === target.id);
+        const mutationVersion = (definitionMutationVersionsRef.current.get(target.id) ?? 0) + 1;
+        definitionMutationVersionsRef.current.set(target.id, mutationVersion);
+        const nextDefinitions = previousDefinitions.filter(definition => definition.id !== target.id);
+        setDefinitions(nextDefinitions);
+        setGroups(previousGroups.map(group => ({
+            ...group,
+            statDefinitionIds: group.statDefinitionIds.filter(id => id !== target.id),
+        })));
+        setSelectedStatIds(previous => previous.filter(id => id !== target.id));
+        if (selectedId === target.id) {
+            setSelectedId(nextDefinitions.find(definition =>
+                !isDedicatedStat(definition) && !pendingStatCreationsRef.current.has(definition.id),
+            )?.id ?? null);
         }
+        if (selectionAnchorRef.current === target.id) selectionAnchorRef.current = null;
+        setEditTarget(null);
+        setDeleteTarget(null);
+
+        void statService.deleteDefinition(target.id)
+            .catch(error => {
+                console.error('Failed to delete stat definition:', error);
+                if (definitionMutationVersionsRef.current.get(target.id) === mutationVersion) {
+                    const currentDefinitions = definitionsRef.current;
+                    if (!currentDefinitions.some(definition => definition.id === target.id)) {
+                        const insertionIndex = Math.max(0, Math.min(targetIndex, currentDefinitions.length));
+                        setDefinitions([
+                            ...currentDefinitions.slice(0, insertionIndex),
+                            target,
+                            ...currentDefinitions.slice(insertionIndex),
+                        ]);
+                    }
+                    if (groupMutationVersionRef.current === groupMutationVersion) {
+                        setGroups(previousGroups);
+                    }
+                    setSelectedId(previousSelectedId);
+                    setSelectedStatIds(previousSelectedStatIds);
+                    selectionAnchorRef.current = previousAnchor;
+                }
+                showErrorSnackbar('Could not delete that statistic.');
+            });
     };
 
     const clearSelection = () => {
@@ -618,60 +826,107 @@ export function StatsPage() {
         setGroupName('');
     };
 
-    const saveGroup = async () => {
+    const saveGroup = () => {
         const trimmedName = groupName.trim();
         if (!trimmedName || groupSaving) return;
 
+        const previousGroups = groupsRef.current;
+        const mutationVersion = ++groupMutationVersionRef.current;
         setGroupSaving(true);
         setGroupError(null);
-        try {
-            if (groupEditTarget) {
-                const updatedGroup = await statGroupService.renameGroup(groupEditTarget.groupId, trimmedName);
-                setGroups(prev => prev.map(group =>
-                    group.groupId === updatedGroup.groupId ? updatedGroup : group,
-                ));
-            } else {
-                const createdGroup = await statGroupService.createGroup(trimmedName, groupCreateDefinitionIds);
-                const selectedDefinitionIdSet = new Set(groupCreateDefinitionIds);
-                setGroups(prev => [
-                    ...prev.map(group => ({
-                        ...group,
-                        statDefinitionIds: group.statDefinitionIds.filter(id => !selectedDefinitionIdSet.has(id)),
-                    })),
-                    createdGroup,
-                ]);
-                if (groupCreateDefinitionIds.length > 1) {
-                    clearSelection();
-                }
-            }
+        if (groupEditTarget) {
+            const target = groupEditTarget;
+            const optimisticGroup = { ...target, name: trimmedName };
+            setGroups(previousGroups.map(group => group.groupId === target.groupId
+                ? optimisticGroup
+                : group));
             closeGroupDialog();
-        } catch (e) {
-            console.error('Failed to save stat group:', e);
-            setGroupError('Could not save this statistic group.');
-        } finally {
-            setGroupSaving(false);
+            void statGroupService.renameGroup(target.groupId, trimmedName)
+                .then(updatedGroup => {
+                    if (mutationVersion !== groupMutationVersionRef.current) return;
+                    setGroups(current => current.map(group =>
+                        group.groupId === updatedGroup.groupId ? updatedGroup : group,
+                    ));
+                })
+                .catch(error => {
+                    console.error('Failed to rename stat group:', error);
+                    if (mutationVersion === groupMutationVersionRef.current) setGroups(previousGroups);
+                    setGroupError('Could not save this statistic group.');
+                    showErrorSnackbar('Could not rename this statistic group.');
+                })
+                .finally(() => setGroupSaving(false));
+            return;
         }
+
+        const temporaryGroupId = `optimistic-group-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        const selectedDefinitionIdSet = new Set(groupCreateDefinitionIds);
+        const previousSelectedIds = selectedStatIds;
+        const previousSelectedId = selectedId;
+        const previousAnchor = selectionAnchorRef.current;
+        const optimisticGroup: StatGroup = {
+            groupId: temporaryGroupId,
+            name: trimmedName,
+            statDefinitionIds: [...groupCreateDefinitionIds],
+            displayOrder: previousGroups.length,
+        };
+        setGroups([
+            ...previousGroups.map(group => ({
+                ...group,
+                statDefinitionIds: group.statDefinitionIds.filter(id => !selectedDefinitionIdSet.has(id)),
+            })),
+            optimisticGroup,
+        ]);
+        if (groupCreateDefinitionIds.length > 1) clearSelection();
+        closeGroupDialog();
+        void statGroupService.createGroup(trimmedName, groupCreateDefinitionIds)
+            .then(createdGroup => {
+                setGroups(current => current.map(group => group.groupId === temporaryGroupId
+                    ? { ...createdGroup, statDefinitionIds: group.statDefinitionIds }
+                    : group));
+            })
+            .catch(error => {
+                console.error('Failed to create stat group:', error);
+                if (mutationVersion === groupMutationVersionRef.current) {
+                    setGroups(previousGroups);
+                    if (groupCreateDefinitionIds.length > 1) {
+                        setSelectedStatIds(previousSelectedIds);
+                        setSelectedId(previousSelectedId);
+                        selectionAnchorRef.current = previousAnchor;
+                    }
+                } else {
+                    setGroups(current => current.filter(group => group.groupId !== temporaryGroupId));
+                }
+                setGroupError('Could not save this statistic group.');
+                showErrorSnackbar('Could not create this statistic group.');
+            })
+            .finally(() => setGroupSaving(false));
     };
 
-    const deleteGroup = async () => {
+    const deleteGroup = () => {
         if (!deleteGroupTarget) return;
 
         const groupToDelete = deleteGroupTarget;
+        const previousGroups = groupsRef.current;
+        const previousOpenGroupIds = new Set(openGroupIds);
+        const mutationVersion = ++groupMutationVersionRef.current;
         setGroupError(null);
-        try {
-            await statGroupService.deleteGroup(groupToDelete.groupId);
-            setGroups(prev => prev.filter(group => group.groupId !== groupToDelete.groupId));
-            setOpenGroupIds(prev => {
-                const next = new Set(prev);
-                next.delete(groupToDelete.groupId);
-                return next;
+        setGroups(previousGroups.filter(group => group.groupId !== groupToDelete.groupId));
+        setOpenGroupIds(previous => {
+            const next = new Set(previous);
+            next.delete(groupToDelete.groupId);
+            return next;
+        });
+        setDeleteGroupTarget(null);
+        void statGroupService.deleteGroup(groupToDelete.groupId)
+            .catch(error => {
+                console.error('Failed to delete stat group:', error);
+                if (mutationVersion === groupMutationVersionRef.current) {
+                    setGroups(previousGroups);
+                    setOpenGroupIds(previousOpenGroupIds);
+                }
+                setGroupError('Could not delete this statistic group.');
+                showErrorSnackbar('Could not delete this statistic group.');
             });
-        } catch (e) {
-            console.error('Failed to delete stat group:', e);
-            setGroupError('Could not delete this statistic group.');
-        } finally {
-            setDeleteGroupTarget(null);
-        }
     };
 
     const toggleGroup = (groupId: string) => {
@@ -693,11 +948,15 @@ export function StatsPage() {
         () => definitions.filter(definition => !isDedicatedStat(definition)),
         [definitions],
     );
-    const selectedDef = visibleDefinitions.find(d => d.id === selectedId) ?? null;
+    const selectableDefinitions = useMemo(
+        () => visibleDefinitions.filter(definition => !pendingStatCreationsRef.current.has(definition.id)),
+        [visibleDefinitions],
+    );
+    const selectedDef = selectableDefinitions.find(d => d.id === selectedId) ?? null;
     const selectedStatIdSet = useMemo(() => new Set(selectedStatIds), [selectedStatIds]);
     const selectedDefinitions = useMemo(
-        () => visibleDefinitions.filter(definition => selectedStatIdSet.has(definition.id)),
-        [selectedStatIdSet, visibleDefinitions],
+        () => selectableDefinitions.filter(definition => selectedStatIdSet.has(definition.id)),
+        [selectableDefinitions, selectedStatIdSet],
     );
     const selectedDeletableDefinitions = useMemo(
         () => selectedDefinitions.filter(definition => !definition.systemKey),
@@ -851,36 +1110,79 @@ export function StatsPage() {
         selectionAnchorRef.current = definitionId;
     };
 
-    const handleBulkDeleteConfirm = async () => {
+    const handleBulkDeleteConfirm = () => {
         if (!bulkDeleteTargets || deleteSubmitting) return;
 
         const targets = bulkDeleteTargets;
         const targetIds = new Set(targets.map(definition => definition.id));
+        const previousDefinitions = definitionsRef.current;
+        const previousGroups = groupsRef.current;
+        const previousSelectedIds = selectedStatIds;
+        const previousSelectedId = selectedId;
+        const previousAnchor = selectionAnchorRef.current;
+        const groupMutationVersion = ++groupMutationVersionRef.current;
         setDeleteSubmitting(true);
         setSelectionError(null);
-        try {
-            await Promise.all(targets.map(definition => statService.deleteDefinition(definition.id)));
-            setDefinitions(previous => {
-                const next = previous.filter(definition => !targetIds.has(definition.id));
-                setSelectedId(current => targetIds.has(current ?? '')
-                    ? next.filter(definition => !isDedicatedStat(definition))[0]?.id ?? null
-                    : current);
-                return next;
-            });
-            setGroups(previous => previous.map(group => ({
-                ...group,
-                statDefinitionIds: group.statDefinitionIds.filter(id => !targetIds.has(id)),
-            })));
-            clearSelection();
-            setBulkDeleteTargets(null);
-        } catch (e) {
-            console.error('Failed to delete selected stat definitions:', e);
-            setSelectionError('Could not delete the selected statistics.');
-            void loadDefinitions();
-            void loadGroups();
-        } finally {
-            setDeleteSubmitting(false);
-        }
+        const mutationVersions = new Map(targets.map(definition => {
+            const version = (definitionMutationVersionsRef.current.get(definition.id) ?? 0) + 1;
+            definitionMutationVersionsRef.current.set(definition.id, version);
+            return [definition.id, version] as const;
+        }));
+        setDefinitions(previousDefinitions.filter(definition => !targetIds.has(definition.id)));
+        setGroups(previousGroups.map(group => ({
+            ...group,
+            statDefinitionIds: group.statDefinitionIds.filter(id => !targetIds.has(id)),
+        })));
+        const nextVisibleDefinitions = previousDefinitions
+            .filter(definition => !targetIds.has(definition.id)
+                && !isDedicatedStat(definition)
+                && !pendingStatCreationsRef.current.has(definition.id));
+        if (targetIds.has(selectedId ?? '')) setSelectedId(nextVisibleDefinitions[0]?.id ?? null);
+        clearSelection();
+        setBulkDeleteTargets(null);
+
+        void Promise.allSettled(targets.map(definition => statService.deleteDefinition(definition.id)))
+            .then(results => {
+                const failedTargets = targets.filter((_, index) => results[index].status === 'rejected');
+                failedTargets.forEach(definition => {
+                    const result = results[targets.indexOf(definition)];
+                    if (result.status === 'rejected') {
+                        console.error('Failed to delete selected stat definition:', result.reason);
+                    }
+                });
+                if (failedTargets.length === 0) return;
+
+                const failedIds = new Set(failedTargets.map(definition => definition.id));
+                const successfulIds = new Set(
+                    targets
+                        .filter(definition => !failedIds.has(definition.id))
+                        .map(definition => definition.id),
+                );
+                setDefinitions(current => {
+                    const next = [...current];
+                    failedTargets
+                        .sort((left, right) => previousDefinitions.indexOf(left) - previousDefinitions.indexOf(right))
+                        .forEach(definition => {
+                            if (definitionMutationVersionsRef.current.get(definition.id) !== mutationVersions.get(definition.id)
+                                || next.some(currentDefinition => currentDefinition.id === definition.id)) return;
+                            const insertionIndex = Math.max(0, Math.min(previousDefinitions.indexOf(definition), next.length));
+                            next.splice(insertionIndex, 0, definition);
+                        });
+                    return next;
+                });
+                if (groupMutationVersionRef.current === groupMutationVersion) {
+                    setGroups(previousGroups.map(group => ({
+                        ...group,
+                        statDefinitionIds: group.statDefinitionIds.filter(id => !successfulIds.has(id)),
+                    })));
+                }
+                setSelectedStatIds(previousSelectedIds.filter(id => failedIds.has(id)));
+                setSelectedId(failedIds.has(previousSelectedId ?? '') ? previousSelectedId : nextVisibleDefinitions[0]?.id ?? null);
+                if (failedIds.has(previousAnchor ?? '')) selectionAnchorRef.current = previousAnchor;
+                setSelectionError('Could not delete the selected statistics.');
+                showErrorSnackbar('Could not delete the selected statistics.');
+            })
+            .finally(() => setDeleteSubmitting(false));
     };
 
     const finishDefinitionDragging = () => {
@@ -890,10 +1192,10 @@ export function StatsPage() {
     };
 
     const handleDefinitionDropIntoGroup = async (targetGroupId: string) => {
-        if (!draggedId || groupMembershipSaving) return;
+        if (!draggedId) return;
 
         const definitionId = draggedId;
-        const previous = groups;
+        const previous = groupsRef.current;
         const targetGroup = previous.find(group => group.groupId === targetGroupId);
         if (!targetGroup || targetGroup.statDefinitionIds.includes(definitionId)) {
             finishDefinitionDragging();
@@ -909,29 +1211,30 @@ export function StatsPage() {
         setGroups(next);
         finishDefinitionDragging();
         setGroupError(null);
-        setGroupMembershipSaving(true);
+        const mutationVersion = ++groupMutationVersionRef.current;
 
         try {
             const persistedTargetGroup = await statGroupService.replaceDefinitions(
                 targetGroupId,
                 next.find(group => group.groupId === targetGroupId)!.statDefinitionIds,
             );
-            setGroups(current => current.map(group =>
-                group.groupId === persistedTargetGroup.groupId ? persistedTargetGroup : group,
-            ));
+            if (mutationVersion === groupMutationVersionRef.current) {
+                setGroups(current => current.map(group =>
+                    group.groupId === persistedTargetGroup.groupId ? persistedTargetGroup : group,
+                ));
+            }
         } catch (e) {
             console.error('Failed to move stat into group:', e);
-            setGroups(previous);
+            if (mutationVersion === groupMutationVersionRef.current) setGroups(previous);
             setGroupError('Could not move this statistic into the group.');
-        } finally {
-            setGroupMembershipSaving(false);
+            showErrorSnackbar('Could not move this statistic into the group.');
         }
     };
 
     const handleGroupDrop = async (targetGroupId: string, dropPosition?: GroupDropPosition) => {
-        if (!draggedGroupId || draggedGroupId === targetGroupId || groupOrderSaving || groupMembershipSaving) return;
+        if (!draggedGroupId || draggedGroupId === targetGroupId) return;
 
-        const previous = groups;
+        const previous = groupsRef.current;
         const draggedIndex = previous.findIndex(group => group.groupId === draggedGroupId);
         const targetIndex = previous.findIndex(group => group.groupId === targetGroupId);
         const position = dropPosition ?? dragTargetGroupPosition;
@@ -949,17 +1252,16 @@ export function StatsPage() {
         setDragTargetGroupId(null);
         setDragTargetGroupPosition(null);
         setGroupOrderError(null);
-        setGroupOrderSaving(true);
+        const mutationVersion = ++groupMutationVersionRef.current;
 
         try {
             const persisted = await statGroupService.reorderGroups(next.map(group => group.groupId));
-            setGroups(persisted);
+            if (mutationVersion === groupMutationVersionRef.current) setGroups(persisted);
         } catch (e) {
             console.error('Failed to reorder stat groups:', e);
-            setGroups(previous);
+            if (mutationVersion === groupMutationVersionRef.current) setGroups(previous);
             setGroupOrderError('Failed to save the statistic group order.');
-        } finally {
-            setGroupOrderSaving(false);
+            showErrorSnackbar('Failed to save the statistic group order.');
         }
     };
 
@@ -970,9 +1272,9 @@ export function StatsPage() {
     };
 
     const handleDefinitionDrop = async (targetId: string) => {
-        if (!draggedId || draggedId === targetId || reorderSaving) return;
+        if (!draggedId || draggedId === targetId) return;
 
-        const previous = definitions;
+        const previous = definitionsRef.current;
         const visiblePrevious = previous.filter(definition => !isDedicatedStat(definition));
         const draggedIndex = visiblePrevious.findIndex(def => def.id === draggedId);
         const targetIndex = visiblePrevious.findIndex(def => def.id === targetId);
@@ -985,17 +1287,16 @@ export function StatsPage() {
         setDefinitions(next);
         setDraggedId(null);
         setOrderError(null);
-        setReorderSaving(true);
+        const mutationVersion = ++definitionOrderVersionRef.current;
 
         try {
             const persisted = await statService.reorderDefinitions(next.map(def => def.id));
-            setDefinitions(persisted);
+            if (mutationVersion === definitionOrderVersionRef.current) setDefinitions(persisted);
         } catch (e) {
             console.error('Failed to reorder stat definitions:', e);
-            setDefinitions(previous);
+            if (mutationVersion === definitionOrderVersionRef.current) setDefinitions(previous);
             setOrderError('Failed to save the statistics order.');
-        } finally {
-            setReorderSaving(false);
+            showErrorSnackbar('Failed to save the statistics order.');
         }
     };
 
@@ -1003,7 +1304,7 @@ export function StatsPage() {
         const isPrimarySelected = def.id === selectedId;
         const isSelected = selectedStatIdSet.has(def.id);
         const isPending = pendingStatCreationsRef.current.has(def.id);
-        const rowDraggable = !isPending && !reorderSaving && !groupOrderSaving && !groupMembershipSaving;
+        const rowDraggable = !isPending;
 
         return (
             <Box
@@ -1078,6 +1379,7 @@ export function StatsPage() {
                                 definition={def}
                                 refreshKey={resourceRefreshKey + (entryRefreshKeys[def.id] ?? 0)}
                                 onEntryChanged={handleEntryChanged}
+                                onError={showErrorSnackbar}
                             />
                         )}
                     </Stack>
@@ -1146,6 +1448,8 @@ export function StatsPage() {
                                 initialDefinition={editTarget}
                                 existingDefinitions={definitions}
                                 onUpdated={handleUpdated}
+                                onUpdatedOptimistically={handleUpdatedOptimistically}
+                                onUpdateFailed={handleUpdateFailed}
                                 onCreateRecurringTask={event => {
                                     const definition = editTarget;
                                     if (!definition) return;
@@ -1320,7 +1624,7 @@ export function StatsPage() {
                                 const groupDragging = draggedGroupId === group.groupId;
                                 const groupDragTarget = dragTargetGroupId === group.groupId;
                                 const statDropTarget = draggedId !== null && groupDragTarget;
-                                const groupDraggable = !groupOrderSaving && !reorderSaving && !groupMembershipSaving;
+                                const groupDraggable = true;
                                 return (
                                     <Box
                                         component="section"
@@ -1496,9 +1800,10 @@ export function StatsPage() {
                             {selectedDef ? (
                                 <StatCard
                                     definition={selectedDef}
-                                    comparisonDefinitions={visibleDefinitions}
+                                    comparisonDefinitions={selectableDefinitions}
                                     refreshKey={resourceRefreshKey + (entryRefreshKeys[selectedDef.id] ?? 0)}
                                     onEntryChanged={handleEntryChanged}
+                                    onError={showErrorSnackbar}
                                     onDateContextMenu={(date, event) => {
                                         event.preventDefault();
                                         event.stopPropagation();
@@ -1729,6 +2034,16 @@ export function StatsPage() {
                 </DialogActions>
             </Dialog>
 
+            <Snackbar
+                open={Boolean(errorSnackbar)}
+                autoHideDuration={5000}
+                onClose={() => setErrorSnackbar(null)}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+            >
+                <Alert severity="error" onClose={() => setErrorSnackbar(null)} sx={{ width: '100%' }}>
+                    {errorSnackbar}
+                </Alert>
+            </Snackbar>
             <Snackbar
                 open={Boolean(recurringTaskFeedback)}
                 autoHideDuration={4000}

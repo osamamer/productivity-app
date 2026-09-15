@@ -67,21 +67,22 @@ export const TaskFocusTimeChart = React.memo(function TaskFocusTimeChart({
     const theme = useTheme();
     const period = getStatPeriodWindow(dateRange, periodMode, periodOffset);
     const from = parseISO(period.from);
-    const to = parseISO(period.to);
+    const displayTo = parseISO(period.displayTo);
     const fromStr = period.from;
     const toStr = period.to;
-    const aggregateWeekly = dateRange >= 365;
-    const dataKey = `${definition.id}:${fromStr}:${toStr}`;
+    const displayToStr = period.displayTo;
+    const aggregateWeekly = dateRange >= 90;
+    const dataKey = `${definition.id}:${fromStr}:${toStr}:${displayToStr}`;
     const cachedEntries = statService.getCachedFocusTime(definition.id, fromStr, toStr);
     const hasCachedData = Boolean(cachedEntries);
     const [dataState, setDataState] = useState<{ key: string; points: StatChartPoint[] }>(() => ({
         key: dataKey,
-        points: buildPoints(from, to, cachedEntries ?? [], aggregateWeekly),
+        points: buildPoints(from, displayTo, cachedEntries ?? [], aggregateWeekly),
     }));
     const hasRenderedDataRef = useRef(hasCachedData);
     const [loadingKey, setLoadingKey] = useState<string | null>(hasCachedData ? null : dataKey);
     const cachedPoints = cachedEntries
-        ? buildPoints(from, to, cachedEntries, aggregateWeekly)
+        ? buildPoints(from, displayTo, cachedEntries, aggregateWeekly)
         : null;
     const points = dataState.key === dataKey ? dataState.points : cachedPoints ?? dataState.points;
     const loading = loadingKey === dataKey
@@ -97,7 +98,7 @@ export const TaskFocusTimeChart = React.memo(function TaskFocusTimeChart({
                 if (!cancelled) {
                     setDataState({
                         key: dataKey,
-                        points: buildPoints(parseISO(fromStr), parseISO(toStr), entries, aggregateWeekly),
+                        points: buildPoints(parseISO(fromStr), parseISO(displayToStr), entries, aggregateWeekly),
                     });
                     hasRenderedDataRef.current = true;
                 }
@@ -107,7 +108,7 @@ export const TaskFocusTimeChart = React.memo(function TaskFocusTimeChart({
                 if (!cancelled) setLoadingKey(current => current === dataKey ? null : current);
             });
         return () => { cancelled = true; };
-    }, [aggregateWeekly, dataKey, definition.id, fromStr, refreshKey, toStr]);
+    }, [aggregateWeekly, dataKey, definition.id, displayToStr, fromStr, refreshKey, toStr]);
 
     const durationDefinition: StatDefinition = {
         ...definition,

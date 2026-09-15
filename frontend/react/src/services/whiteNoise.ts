@@ -1,32 +1,61 @@
-import { loadSelectedPomodoroSound } from './api/pomodoroSoundService';
+import {
+    BUILT_IN_POMODORO_SOUND,
+    getPomodoroSoundAudioUrl,
+    getPomodoroSounds,
+    loadSelectedPomodoroSound,
+    PomodoroSound,
+} from './api/pomodoroSoundService';
+import { userService } from './api/userService';
+import { getRuntimeUserPreference, subscribeToUserPreferences, updateRuntimeUserPreferences } from './userPreferenceStore';
 import { getAuthCacheScope } from './utils/authHeaders';
 
-const WHITE_NOISE_STORAGE_KEY = 'pomodoro-white-noise-enabled';
-const DEFAULT_SOURCE = { id: 'brown-noise', url: '/audio/brown-noise.mp3' };
+export interface WhiteNoiseSource {
+    id: string;
+    name: string;
+    url: string;
+}
+
+const DEFAULT_SOURCE: WhiteNoiseSource = {
+    id: BUILT_IN_POMODORO_SOUND.id,
+    name: BUILT_IN_POMODORO_SOUND.name,
+    url: '/audio/brown-noise.mp3',
+};
 const VOLUME = 0.22;
 const MAX_CROSSFADE_SECONDS = 3;
 
-let enabled = readEnabled();
+let enabled = getRuntimeUserPreference('whiteNoiseEnabled');
 let source = DEFAULT_SOURCE;
 const players: [HTMLAudioElement | null, HTMLAudioElement | null] = [null, null];
 let activeLayer = 0;
 let running = false;
 let crossfadeTimer: number | null = null;
+let crossfadeGeneration = 0;
 let sourceOwnerScope: string | null = null;
 let initializedSourceScope: string | null = null;
 let sourceLoadScope: string | null = null;
 let sourceLoadPromise: Promise<void> | null = null;
 let sourceRevision = 0;
 let playbackRequestId = 0;
+let preferenceRevision = 0;
+let sourceSelectionQueue: Promise<void> = Promise.resolve();
+const sourceListeners = new Set<(source: WhiteNoiseSource) => void>();
 
-function readEnabled(): boolean {
-    if (typeof window === 'undefined') return true;
-    try {
-        return window.localStorage.getItem(WHITE_NOISE_STORAGE_KEY) !== 'false';
-    } catch (error) {
-        console.warn('Could not read Pomodoro white noise preference:', error);
-        return true;
-    }
+subscribeToUserPreferences(() => {
+    enabled = getRuntimeUserPreference('whiteNoiseEnabled');
+});
+
+export function getWhiteNoiseSource(): WhiteNoiseSource {
+    return { ...source };
+}
+
+export function subscribeToWhiteNoiseSource(listener: (nextSource: WhiteNoiseSource) => void): () => void {
+    sourceListeners.add(listener);
+    return () => sourceListeners.delete(listener);
+}
+
+function publishSource(): void {
+    const nextSource = getWhiteNoiseSource();
+    sourceListeners.forEach(listener => listener(nextSource));
 }
 
 function getPlayer(index: 0 | 1): HTMLAudioElement | null {
@@ -43,8 +72,10 @@ function getPlayer(index: 0 | 1): HTMLAudioElement | null {
 }
 
 function clearCrossfade(): void {
-    if (crossfadeTimer === null || typeof window === 'undefined') return;
-    window.clearInterval(crossfadeTimer);
+    crossfadeGeneration += 1;
+    if (crossfadeTimer !== null && typeof window !== 'undefined') {
+        window.clearInterval(crossfadeTimer);
+    }
     crossfadeTimer = null;
 }
 
@@ -89,6 +120,7 @@ async function crossfadeTo(nextIndex: 0 | 1, durationMs: number): Promise<void> 
     const current = getPlayer(activeLayer as 0 | 1);
     const next = getPlayer(nextIndex);
     if (!current || !next) return;
+    const generation = crossfadeGeneration;
 
     setSource(next, source);
     next.currentTime = 0;
@@ -100,16 +132,20 @@ async function crossfadeTo(nextIndex: 0 | 1, durationMs: number): Promise<void> 
         await next.play();
     } catch (error) {
         console.warn('Could not play the next Pomodoro white noise layer:', error);
-        next.pause();
-        next.volume = 0;
-        clearCrossfade();
+        if (generation === crossfadeGeneration) {
+            next.pause();
+            next.volume = 0;
+            clearCrossfade();
+        }
         return;
     }
 
-    if (!running) {
-        next.pause();
-        next.volume = 0;
-        clearCrossfade();
+    if (!running || generation !== crossfadeGeneration) {
+        if (generation === crossfadeGeneration) {
+            next.pause();
+            next.volume = 0;
+            clearCrossfade();
+        }
         return;
     }
 
@@ -122,13 +158,24 @@ async function crossfadeTo(nextIndex: 0 | 1, durationMs: number): Promise<void> 
     }
 
     const startedAt = performance.now();
-    crossfadeTimer = window.setInterval(() => {
+    const timer = window.setInterval(() => {
+        if (!running || generation !== crossfadeGeneration) {
+            window.clearInterval(timer);
+            if (generation === crossfadeGeneration && crossfadeTimer === timer) {
+                crossfadeTimer = null;
+                next.pause();
+                next.volume = 0;
+            }
+            return;
+        }
+
         const progress = Math.min(1, (performance.now() - startedAt) / durationMs);
         current.volume = VOLUME * (1 - progress);
         next.volume = VOLUME * progress;
 
         if (progress >= 1) {
-            clearCrossfade();
+            window.clearInterval(timer);
+            if (crossfadeTimer === timer) crossfadeTimer = null;
             current.pause();
             current.currentTime = 0;
             current.volume = 0;
@@ -136,6 +183,7 @@ async function crossfadeTo(nextIndex: 0 | 1, durationMs: number): Promise<void> 
             activeLayer = nextIndex;
         }
     }, 40);
+    crossfadeTimer = timer;
 }
 
 export function isWhiteNoiseEnabled(): boolean {
@@ -195,19 +243,23 @@ export function resetWhiteNoiseSource(): void {
     sourceLoadScope = null;
     sourceLoadPromise = null;
     source = DEFAULT_SOURCE;
+    publishSource();
     stopWhiteNoise();
 }
 
-export function setWhiteNoiseSource(nextSource: { id: string; url: string }): void {
+export function setWhiteNoiseSource(nextSource: { id: string; name?: string; url: string }): void {
     const sourceScope = getAuthCacheScope();
-    const sourceUnchanged = source.id === nextSource.id && source.url === nextSource.url;
+    const nextName = nextSource.name
+        ?? (nextSource.id === source.id ? source.name : nextSource.id === DEFAULT_SOURCE.id ? DEFAULT_SOURCE.name : 'Focus sound');
+    const sourceUnchanged = source.id === nextSource.id && source.url === nextSource.url && source.name === nextName;
     sourceOwnerScope = sourceScope;
     initializedSourceScope = sourceScope;
     sourceRevision += 1;
     if (sourceUnchanged) return;
 
     const wasRunning = running;
-    source = nextSource;
+    source = { id: nextSource.id, name: nextName, url: nextSource.url };
+    publishSource();
     clearCrossfade();
 
     if (!wasRunning) {
@@ -227,16 +279,51 @@ export function setWhiteNoiseSource(nextSource: { id: string; url: string }): vo
     void crossfadeTo(nextIndex, 1500);
 }
 
-export function setWhiteNoiseEnabled(nextEnabled: boolean): void {
-    enabled = nextEnabled;
-    if (typeof window !== 'undefined') {
-        try {
-            window.localStorage.setItem(WHITE_NOISE_STORAGE_KEY, String(nextEnabled));
-        } catch (error) {
-            console.warn('Could not save Pomodoro white noise preference:', error);
-        }
+export async function getAvailableWhiteNoiseSounds(): Promise<PomodoroSound[]> {
+    return [BUILT_IN_POMODORO_SOUND, ...(await getPomodoroSounds())];
+}
+
+async function applyWhiteNoiseSound(sound: PomodoroSound): Promise<WhiteNoiseSource> {
+    await initializeWhiteNoiseSource();
+    const scope = getAuthCacheScope();
+    const url = await getPomodoroSoundAudioUrl(sound);
+    if (getAuthCacheScope() !== scope) return getWhiteNoiseSource();
+
+    if (sound.id !== source.id && scope !== 'anonymous') {
+        await userService.updatePreferences({ pomodoroSoundId: sound.id });
     }
-    if (!nextEnabled) stopWhiteNoise();
+    if (getAuthCacheScope() !== scope) return getWhiteNoiseSource();
+
+    setWhiteNoiseSource({ id: sound.id, name: sound.name, url });
+    return getWhiteNoiseSource();
+}
+
+function queueWhiteNoiseSoundChange(change: () => Promise<WhiteNoiseSource>): Promise<WhiteNoiseSource> {
+    const request = sourceSelectionQueue.then(change);
+    sourceSelectionQueue = request.then(() => undefined, () => undefined);
+    return request;
+}
+
+export function selectWhiteNoiseSound(sound: PomodoroSound): Promise<WhiteNoiseSource> {
+    return queueWhiteNoiseSoundChange(() => applyWhiteNoiseSound(sound));
+}
+
+export function setWhiteNoiseEnabled(nextEnabled: boolean): void {
+    const previousEnabled = enabled;
+    const revision = ++preferenceRevision;
+    enabled = nextEnabled;
+    updateRuntimeUserPreferences({ whiteNoiseEnabled: nextEnabled });
+    // Muting is a pause, not the end of the sound session. Keep the active
+    // layer's currentTime so turning the sound back on resumes in place.
+    if (!nextEnabled) pauseWhiteNoise();
+
+    if (getAuthCacheScope() === 'anonymous') return;
+    void userService.updatePreferences({ whiteNoiseEnabled: nextEnabled }).catch(error => {
+        console.error('Could not save focus audio preference:', error);
+        if (revision !== preferenceRevision) return;
+        enabled = previousEnabled;
+        updateRuntimeUserPreferences({ whiteNoiseEnabled: previousEnabled });
+    });
 }
 
 export async function startWhiteNoise(): Promise<void> {
@@ -264,7 +351,13 @@ export async function startWhiteNoise(): Promise<void> {
 
 export function pauseWhiteNoise(): void {
     playbackRequestId += 1;
-    resetPlaybackState();
+    running = false;
+    clearCrossfade();
+    players.forEach(player => {
+        if (!player) return;
+        player.pause();
+        player.volume = 0;
+    });
 }
 
 export async function resumeWhiteNoise(): Promise<void> {

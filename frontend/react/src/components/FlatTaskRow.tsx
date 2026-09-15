@@ -10,6 +10,10 @@ import {
     Collapse,
     IconButton,
     LinearProgress,
+    ListItemIcon,
+    ListItemText,
+    Menu,
+    MenuItem,
     Slide,
     Snackbar,
     TextField,
@@ -24,8 +28,6 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
 import StopIcon from '@mui/icons-material/Stop';
 import SkipNextIcon from '@mui/icons-material/SkipNext';
-import VolumeOffIcon from '@mui/icons-material/VolumeOff';
-import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
@@ -33,8 +35,7 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
-import { Client, StompSubscription } from '@stomp/stompjs';
-import keycloak from '../services/keycloak';
+import { StompSubscription } from '@stomp/stompjs';
 import { taskService } from '../services/api';
 import { Task } from '../types/Task';
 import { TaskSeries } from '../types/TaskSeries';
@@ -62,12 +63,14 @@ import {
 import { PomodoroNumberField } from './timer/PomodoroNumberField';
 import { AppDateField } from './input/AppPickerFields';
 import { TaskRecurrenceCustomOptions, TaskRecurrencePicker } from './task/TaskRecurrencePicker';
+import { WhiteNoiseControl } from './timer/WhiteNoiseControl';
+import { createAuthenticatedStompClient } from '../services/authenticatedStompClient';
+import { usePomodoro } from '../hooks/usePomodoro';
 import {
-    isWhiteNoiseEnabled,
-    setWhiteNoiseEnabled,
-    startWhiteNoise,
-    stopWhiteNoise,
-} from '../services/whiteNoise';
+    createOptimisticCompletedPomodoroStatus,
+    createOptimisticPomodoroStatus,
+    getOptimisticPomodoroStatus,
+} from '../services/utils/optimisticPomodoro';
 
 // ─── types ─────────────────────────────────────────────────────────────────
 
@@ -99,18 +102,19 @@ export type FlatTaskRowProps = {
     isGroupDropTarget?: boolean;
     onPomodoroActiveChange?: (taskId: string, active: boolean, options?: { animate?: boolean }) => void;
     onPomodoroStatusChange?: (taskId: string, status: PomodoroStatus) => void;
-    onPomodoroFocusStart?: (taskId: string) => void;
     deferPomodoroHydration?: boolean;
     initialPomodoroStatus?: PomodoroStatus | null;
     expectedPomodoroActive?: boolean;
     readOnly?: boolean;
     onRefreshTasks?: () => Promise<void>;
     onScheduledDateBlur?: (taskId: string) => void;
+    subtaskDeletionContextMenu?: boolean;
 };
 
 // ─── helpers ───────────────────────────────────────────────────────────────
 
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8080/ws';
+const WS_URL = import.meta.env.VITE_WS_URL
+    || `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`;
 
 const PanelSlide = React.forwardRef<HTMLDivElement, React.ComponentProps<typeof Slide>>(
     (props, ref) => <Slide {...props} ref={ref} direction="left" />,
@@ -118,6 +122,12 @@ const PanelSlide = React.forwardRef<HTMLDivElement, React.ComponentProps<typeof 
 PanelSlide.displayName = 'PanelSlide';
 
 type PomodoroFeedback = { id: number; message: string };
+
+type SubtaskContextMenuState = {
+    subtask: Task;
+    top: number;
+    left: number;
+};
 
 const EMPTY_SUBTASKS: Task[] = [];
 const subtaskReveal = keyframes`
@@ -291,32 +301,37 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     isGroupDropTarget = false,
     onPomodoroActiveChange,
     onPomodoroStatusChange,
-    onPomodoroFocusStart,
     deferPomodoroHydration = false,
     initialPomodoroStatus = null,
     expectedPomodoroActive = false,
     readOnly = false,
     onRefreshTasks,
     onScheduledDateBlur,
+    subtaskDeletionContextMenu = false,
 }: FlatTaskRowProps) {
     const theme = useTheme();
     const accent = theme.palette.primary.light;
     const activeAccent = theme.palette.primary.main;
     const pomodoroGreen = theme.palette.mode === 'dark' ? '#9BC5A3' : '#7EA88A';
+    const {
+        activePomodoro: globallyActivePomodoro,
+        refreshActivePomodoro,
+        publishPomodoroStatus,
+        clearPomodoroMutation,
+    } = usePomodoro();
 
     const [pomodoroStatus, setPomodoroStatus] = useState<PomodoroStatus | null>(initialPomodoroStatus);
     const [pomodoroConfig, setPomodoroConfig] = useState<PomodoroConfig>(NORMAL_POMODORO_CONFIG);
-    const [wsConnected, setWsConnected] = useState(false);
     const [actionLoading, setActionLoading] = useState(false);
     const [pomodoroFeedback, setPomodoroFeedback] = useState<PomodoroFeedback | null>(null);
     const [pomodoroHydrated, setPomodoroHydrated] = useState(!deferPomodoroHydration);
     const [detailsLoading, setDetailsLoading] = useState(false);
-    const [whiteNoiseEnabled, setWhiteNoiseEnabledState] = useState(isWhiteNoiseEnabled);
     const taskRef = useRef(task);
     taskRef.current = task;
     const initialTaskDetails = getStaleTaskDetails(task.taskId);
     const [subtasks, setSubtasks] = useState<Task[]>(() => sortSubtasks(initialTaskDetails?.subtasks ?? EMPTY_SUBTASKS));
     const [newSubtaskId, setNewSubtaskId] = useState<string | null>(null);
+    const [subtaskContextMenu, setSubtaskContextMenu] = useState<SubtaskContextMenuState | null>(null);
     const [editingSubtaskId, setEditingSubtaskId] = useState<string | null>(null);
     const [localSubtaskName, setLocalSubtaskName] = useState('');
     const initialTaskSeries = initialTaskDetails?.taskSeries;
@@ -368,6 +383,12 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         input.focus();
         input.setSelectionRange(input.value.length, input.value.length);
     }, [editingSubtaskId]);
+
+    useEffect(() => {
+        if (subtaskContextMenu && !subtasks.some(item => item.taskId === subtaskContextMenu.subtask.taskId)) {
+            setSubtaskContextMenu(null);
+        }
+    }, [subtaskContextMenu, subtasks]);
 
     const showPomodoroError = useCallback(() => {
         pomodoroFeedbackIdRef.current += 1;
@@ -454,9 +475,6 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         if (stored) setForm(stored);
     }), []);
 
-    const stompRef = useRef<Client | null>(null);
-    const subscriptionRef = useRef<StompSubscription | null>(null);
-    const previousSessionRunningRef = useRef<boolean | undefined>(initialPomodoroStatus?.sessionRunning);
     const activePomodoroIdRef = useRef<string | null>(initialPomodoroStatus?.pomodoroId ?? null);
     const endedPomodoroIdRef = useRef<string | null>(null);
     const lastPomodoroStatusRef = useRef<PomodoroStatus | null>(initialPomodoroStatus);
@@ -472,6 +490,38 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     useEffect(() => {
         onPomodoroStatusChangeRef.current = onPomodoroStatusChange;
     }, [onPomodoroStatusChange]);
+
+    const applyLocalPomodoroStatus = useCallback((
+        nextStatus: PomodoroStatus | null,
+        authoritative = false,
+        optimistic = false,
+    ): boolean => {
+        if (!publishPomodoroStatus(nextStatus, authoritative, optimistic)) return false;
+
+        activePomodoroIdRef.current = nextStatus?.active ? nextStatus.pomodoroId : null;
+        lastPomodoroStatusRef.current = nextStatus;
+        setPomodoroStatus(nextStatus);
+        if (nextStatus?.active) {
+            onPomodoroActiveChangeRef.current?.(task.taskId, true);
+        } else if (!nextStatus || nextStatus.phase !== 'COMPLETED') {
+            onPomodoroActiveChangeRef.current?.(task.taskId, false);
+        }
+        if (nextStatus) onPomodoroStatusChangeRef.current?.(task.taskId, nextStatus);
+        return true;
+    }, [publishPomodoroStatus, task.taskId]);
+
+    const rollbackPomodoroMutation = useCallback((
+        optimisticStatus: PomodoroStatus,
+        previousStatus: PomodoroStatus | null,
+    ) => {
+        // A WebSocket snapshot or a later action supersedes this mutation.
+        if (lastPomodoroStatusRef.current !== optimisticStatus) return;
+        clearPomodoroMutation();
+        endedPomodoroIdRef.current = null;
+        // Stopping locally retires the ID; authoritative mode reopens it if
+        // the request failed and the previous session is still active.
+        applyLocalPomodoroStatus(previousStatus, true);
+    }, [applyLocalPomodoroStatus, clearPomodoroMutation]);
 
     useEffect(() => {
         if (expandedPanel === 'pomodoro' || initialPomodoroStatus?.active) {
@@ -490,17 +540,12 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
             return;
         }
 
-        const client = new Client({
-            brokerURL: WS_URL,
-            connectHeaders: { Authorization: `Bearer ${keycloak.token ?? ''}` },
-            reconnectDelay: 5000,
-            heartbeatIncoming: 4000,
-            heartbeatOutgoing: 4000,
-        });
+        const client = createAuthenticatedStompClient(WS_URL);
+        let subscription: StompSubscription | null = null;
 
         client.onConnect = () => {
-            setWsConnected(true);
-            subscriptionRef.current = client.subscribe(
+            subscription?.unsubscribe();
+            subscription = client.subscribe(
                 `/topic/pomodoro/${task.taskId}`,
                 (msg) => {
                     try {
@@ -511,14 +556,13 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                 && activePomodoroIdRef.current !== nextStatus.pomodoroId) {
                                 return;
                             }
+                            if (!publishPomodoroStatus(nextStatus)) return;
                             activePomodoroIdRef.current = null;
                             endedPomodoroIdRef.current = nextStatus.pomodoroId;
-                            stopWhiteNoise();
                             if (nextStatus.phase === 'COMPLETED') {
                                 lastPomodoroStatusRef.current = nextStatus;
                                 setPomodoroStatus(nextStatus);
                                 onPomodoroStatusChangeRef.current?.(task.taskId, nextStatus);
-                                if (previousStatus?.active) playAudioFeedback('pomodoroCompleted');
                             } else {
                                 lastPomodoroStatusRef.current = null;
                                 setPomodoroStatus(null);
@@ -526,6 +570,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             }
                         } else if (endedPomodoroIdRef.current !== nextStatus.pomodoroId) {
                             const pomodoroBecameActive = activePomodoroIdRef.current !== nextStatus.pomodoroId;
+                            if (!publishPomodoroStatus(nextStatus)) return;
                             if (previousStatus?.active) {
                                 const wasBreak = isBreakPhase(previousStatus);
                                 const isBreak = isBreakPhase(nextStatus);
@@ -546,19 +591,14 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
             );
         };
 
-        client.onDisconnect = () => { setWsConnected(false); };
-        client.onWebSocketError = () => { setWsConnected(false); };
-
-        stompRef.current = client;
         client.activate();
 
         return () => {
-            subscriptionRef.current?.unsubscribe();
-            client.deactivate();
-            if (activePomodoroIdRef.current !== null) stopWhiteNoise();
-            setWsConnected(false);
+            subscription?.unsubscribe();
+            subscription = null;
+            void client.deactivate();
         };
-    }, [pomodoroHydrated, task.taskId]);
+    }, [pomodoroHydrated, publishPomodoroStatus, task.taskId]);
 
     // Auto-open an active timer after hydration.
     useEffect(() => {
@@ -567,11 +607,13 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         }
 
         if (initialPomodoroStatus?.active) {
-            onAutoExpand(task.taskId, 'pomodoro');
+            // An active Pomodoro should open its timer by default, but an
+            // explicitly opened details panel must remain usable while it runs.
+            if (expandedPanel !== 'details') onAutoExpand(task.taskId, 'pomodoro');
             return;
         }
 
-        taskService.getActivePomodoro()
+        refreshActivePomodoro()
             .then(status => {
                 if (status?.active && status.associatedTaskId === task.taskId) {
                     activePomodoroIdRef.current = status.pomodoroId;
@@ -587,13 +629,14 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                 }
             })
             .catch(e => console.error('Error checking pomodoro status:', e));
-    }, [expectedPomodoroActive, initialPomodoroStatus, onAutoExpand, pomodoroHydrated, pomodoroStatus?.phase, task.taskId]);
+    }, [expectedPomodoroActive, expandedPanel, initialPomodoroStatus, onAutoExpand, pomodoroHydrated,
+        pomodoroStatus?.phase, refreshActivePomodoro, task.taskId]);
 
     const refreshPomodoroStatus = useCallback(async () => {
         const requestId = ++pomodoroStatusRequestIdRef.current;
 
         try {
-            const status = await taskService.getActivePomodoro();
+            const status = await refreshActivePomodoro(true);
             if (requestId !== pomodoroStatusRequestIdRef.current) return;
 
             if (status?.active && status.associatedTaskId === task.taskId) {
@@ -605,7 +648,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         } catch (error) {
             console.error('Error refreshing pomodoro status:', error);
         }
-    }, [task.taskId]);
+    }, [refreshActivePomodoro, task.taskId]);
 
     const prefetchTaskDetails = useCallback(() => {
         void taskService.getTaskDetails(task).catch(error => {
@@ -649,8 +692,17 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     }, [applyTaskDetails, expandedPanel, onTogglePanel, readOnly, refreshPomodoroStatus, task]);
 
     const handleStart = async () => {
-        // Starting before the live timer channel is ready is harmless; the next click can try again.
-        if (!wsConnected) return;
+        if (globallyActivePomodoro?.active && globallyActivePomodoro.associatedTaskId !== task.taskId) {
+            showPomodoroError();
+            return;
+        }
+
+        const optimisticStatus = createOptimisticPomodoroStatus(
+            task.taskId,
+            form,
+            pomodoroConfig.secondsMode,
+        );
+        if (!applyLocalPomodoroStatus(optimisticStatus, false, true)) return;
 
         setActionLoading(true);
         endedPomodoroIdRef.current = null;
@@ -662,57 +714,100 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                 form.longBreakDuration, form.numFocuses, form.longBreakCooldown,
                 pomodoroConfig.secondsMode,
             );
-            void startWhiteNoise();
-            onPomodoroActiveChange?.(task.taskId, true);
+            clearPomodoroMutation();
+            void refreshPomodoroStatus();
         } catch (e) {
             console.error('Error starting pomodoro:', e);
+            rollbackPomodoroMutation(optimisticStatus, null);
             showPomodoroError();
         }
         finally { setActionLoading(false); }
     };
 
     const handlePlayPause = async () => {
+        const previousStatus = lastPomodoroStatusRef.current?.active
+            ? lastPomodoroStatusRef.current
+            : pomodoroStatus?.active ? pomodoroStatus : null;
+        if (!previousStatus) return;
+
+        const optimisticStatus = getOptimisticPomodoroStatus(
+            previousStatus,
+            'toggle',
+            form,
+            pomodoroConfig.secondsMode,
+        );
+        if (!optimisticStatus || !applyLocalPomodoroStatus(optimisticStatus, false, true)) return;
+
         setActionLoading(true);
         try {
-            if (isWaitingForPhase(pomodoroStatus)) {
+            if (isWaitingForPhase(previousStatus)) {
                 await taskService.startNextPomodoroPhase(task.taskId);
-            } else if (pomodoroStatus?.sessionRunning) {
+            } else if (previousStatus.sessionRunning) {
                 await taskService.pauseSession(task.taskId);
             } else {
                 await taskService.unpauseSession(task.taskId);
             }
+            clearPomodoroMutation();
+            void refreshPomodoroStatus();
         } catch (e) {
             console.error('Error toggling pomodoro:', e);
+            rollbackPomodoroMutation(optimisticStatus, previousStatus);
             showPomodoroError();
         }
         finally { setActionLoading(false); }
     };
 
     const handleStop = async () => {
+        const previousStatus = lastPomodoroStatusRef.current?.active
+            ? lastPomodoroStatusRef.current
+            : pomodoroStatus?.active ? pomodoroStatus : null;
+        if (!previousStatus) return;
+
+        const optimisticStatus = createOptimisticCompletedPomodoroStatus(previousStatus);
         setActionLoading(true);
-        const stoppedPomodoroId = activePomodoroIdRef.current;
-        if (stoppedPomodoroId) endedPomodoroIdRef.current = stoppedPomodoroId;
+        endedPomodoroIdRef.current = previousStatus.pomodoroId;
+        if (!applyLocalPomodoroStatus(optimisticStatus, false, true)) {
+            endedPomodoroIdRef.current = null;
+            setActionLoading(false);
+            return;
+        }
         try {
             const completedStatus = await taskService.endPomodoro(task.taskId);
-            stopWhiteNoise();
-            activePomodoroIdRef.current = null;
-            lastPomodoroStatusRef.current = completedStatus;
-            setPomodoroStatus(completedStatus);
-            onPomodoroStatusChange?.(task.taskId, completedStatus);
+            clearPomodoroMutation();
+            if (lastPomodoroStatusRef.current === optimisticStatus) {
+                endedPomodoroIdRef.current = completedStatus.pomodoroId;
+                applyLocalPomodoroStatus(completedStatus);
+            }
         } catch (e) {
-            endedPomodoroIdRef.current = null;
             console.error('Error stopping pomodoro:', e);
+            rollbackPomodoroMutation(optimisticStatus, previousStatus);
             showPomodoroError();
         }
         finally { setActionLoading(false); }
     };
 
     const handleFinishBreak = async () => {
+        const previousStatus = lastPomodoroStatusRef.current?.active
+            ? lastPomodoroStatusRef.current
+            : pomodoroStatus?.active ? pomodoroStatus : null;
+        if (!previousStatus) return;
+
+        const optimisticStatus = getOptimisticPomodoroStatus(
+            previousStatus,
+            'finish-break',
+            form,
+            pomodoroConfig.secondsMode,
+        );
+        if (!optimisticStatus || !applyLocalPomodoroStatus(optimisticStatus, false, true)) return;
+
         setActionLoading(true);
         try {
             await taskService.finishPomodoroBreak(task.taskId);
+            clearPomodoroMutation();
+            void refreshPomodoroStatus();
         } catch (e) {
             console.error('Error ending Pomodoro break:', e);
+            rollbackPomodoroMutation(optimisticStatus, previousStatus);
             showPomodoroError();
         }
         finally { setActionLoading(false); }
@@ -1059,38 +1154,12 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         ?? pomodoroStatus?.secondsPassedInSession
         ?? 0;
     const activePomodoro = pomodoroStatus?.active;
-    const sessionRunning = pomodoroStatus?.sessionRunning;
-
-    useEffect(() => {
-        const focusRunning = expectedPomodoroActive
-            && isActive
-            && sessionRunning
-            && Boolean(pomodoroStatus)
-            && !isBreakPhase(pomodoroStatus as PomodoroStatus);
-        if (focusRunning && whiteNoiseEnabled) void startWhiteNoise();
-        else if (expectedPomodoroActive) stopWhiteNoise();
-    }, [expectedPomodoroActive, isActive, pomodoroStatus, sessionRunning, whiteNoiseEnabled]);
-
-    const handleWhiteNoiseToggle = () => {
-        const nextEnabled = !whiteNoiseEnabled;
-        setWhiteNoiseEnabledState(nextEnabled);
-        setWhiteNoiseEnabled(nextEnabled);
-        if (nextEnabled && isActive) void startWhiteNoise();
-    };
 
     useEffect(() => {
         if (activePomodoro !== undefined && pomodoroStatus?.phase !== 'COMPLETED') {
             onPomodoroActiveChange?.(task.taskId, activePomodoro);
         }
     }, [activePomodoro, onPomodoroActiveChange, pomodoroStatus?.phase, task.taskId]);
-
-    useEffect(() => {
-        const wasRunning = previousSessionRunningRef.current;
-        previousSessionRunningRef.current = sessionRunning;
-        if (wasRunning === false && sessionRunning === true) {
-            onPomodoroFocusStart?.(task.taskId);
-        }
-    }, [onPomodoroFocusStart, sessionRunning, task.taskId]);
 
     // Break: pomodoro started but not in a focus session
     const waitingForPhase = isWaitingForPhase(pomodoroStatus);
@@ -1105,6 +1174,12 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         && !pomodoroStatus.sessionRunning;
     // Both states share the green "at rest" colour on the progress bar
     const useGreenBar = isBreak || isPaused;
+    const rowBorderColor = isActive
+        ? (useGreenBar ? pomodoroGreen : alpha(activeAccent, 0.7))
+        : selected
+            ? alpha(activeAccent, 0.38)
+            : 'transparent';
+    const rowBottomBorderColor = isActive ? 'transparent' : rowBorderColor;
     const progressPct = pomodoroStatus
         ? (() => {
             const passed = Math.max(0, pomodoroStatus.secondsPassedInSession);
@@ -1132,13 +1207,11 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                 position: 'relative',
                 borderRadius: 1.5,
                 border: '1.5px solid transparent',
-                borderColor:
-                    isActive
-                        ? (useGreenBar ? pomodoroGreen : alpha(activeAccent, 0.7))
-                        : selected
-                            ? alpha(activeAccent, 0.38)
-                            : 'transparent',
-                borderBottom: isActive ? 'none' : undefined,
+                borderColor: rowBorderColor,
+                // Keep the border width stable while the progress bar sits
+                // over the bottom edge; changing border geometry interrupts
+                // the color transition and causes a small layout jump.
+                borderBottomColor: rowBottomBorderColor,
                 backgroundColor: isActive
                     ? alpha(activeAccent, 0.05)
                     : selected
@@ -1151,7 +1224,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                 opacity: isDragging ? 0.42 : 1,
                 transform: isDragging ? 'scale(0.985)' : 'scale(1)',
                 boxShadow: isDragging ? `0 10px 24px ${alpha(activeAccent, 0.18)}` : 'none',
-                transition: 'opacity 0.16s, transform 0.16s, box-shadow 0.16s, border-color 0.2s, background-color 0.2s',
+                transition: 'opacity 0.16s, transform 0.16s, box-shadow 0.16s, border-color 0.32s ease, border-bottom-color 0.32s ease, background-color 0.32s ease',
                 '&:hover': {
                     backgroundColor: isActive
                         ? alpha(activeAccent, 0.05)
@@ -1555,19 +1628,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             </Box>
 
                             <Box sx={{ display: 'flex', gap: 0.5, ml: 'auto' }}>
-                                <Tooltip title={whiteNoiseEnabled ? 'Mute focus audio' : 'Play focus audio'}>
-                                    <span>
-                                        <IconButton
-                                            size="small"
-                                            onClick={handleWhiteNoiseToggle}
-                                            disabled={actionLoading}
-                                            color={whiteNoiseEnabled ? 'primary' : 'default'}
-                                            aria-label={whiteNoiseEnabled ? 'Mute focus audio' : 'Play focus audio'}
-                                        >
-                                            {whiteNoiseEnabled ? <VolumeUpIcon /> : <VolumeOffIcon />}
-                                        </IconButton>
-                                    </span>
-                                </Tooltip>
+                                <WhiteNoiseControl size="small" disabled={actionLoading} />
                                 {(waitingForPhase || !isBreak) && (
                                     <Tooltip title={playPauseLabel}>
                                         <span>
@@ -1605,8 +1666,15 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                             size="small"
                                             onClick={handleStop}
                                             disabled={actionLoading}
-                                            color="error"
+                                            color="inherit"
                                             aria-label="End Pomodoro session"
+                                            sx={{
+                                                color: 'error.light',
+                                                '&:hover': {
+                                                    color: 'error.main',
+                                                    backgroundColor: alpha(theme.palette.error.main, 0.08),
+                                                },
+                                            }}
                                         >
                                             <StopIcon />
                                         </IconButton>
@@ -1777,6 +1845,16 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             return (
                                 <Box
                                     key={subtask.taskId}
+                                    onContextMenu={event => {
+                                        event.stopPropagation();
+                                        if (!subtaskDeletionContextMenu || readOnly) return;
+                                        event.preventDefault();
+                                        setSubtaskContextMenu({
+                                            subtask,
+                                            top: event.clientY,
+                                            left: event.clientX,
+                                        });
+                                    }}
                                     sx={{
                                         display: 'flex',
                                         alignItems: 'center',
@@ -1814,7 +1892,6 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
 
                                             startSubtaskEditing(subtask);
                                         }}
-                                        onContextMenu={event => event.stopPropagation()}
                                         sx={{
                                             flex: 1,
                                             minWidth: 0,
@@ -1889,21 +1966,6 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                             </Typography>
                                         )}
                                     </Box>
-                                    {!readOnly && (
-                                        <IconButton
-                                            size="small"
-                                            color="error"
-                                            onClick={event => {
-                                                event.stopPropagation();
-                                                void handleSubtaskDelete(subtask);
-                                            }}
-                                            aria-label={`Delete subtask ${subtask.name}`}
-                                            title="Delete subtask"
-                                            sx={{ ml: 0.5 }}
-                                        >
-                                            <DeleteOutlineIcon fontSize="small" />
-                                        </IconButton>
-                                    )}
                                 </Box>
                             );
                         })}
@@ -1920,6 +1982,36 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                 sx={{ '& .MuiInputBase-input': { fontSize: '1rem', py: 0.75 } }}
                             />
                         </Box>
+                        {subtaskDeletionContextMenu && (
+                            <Menu
+                                open={subtaskContextMenu !== null}
+                                onClose={() => setSubtaskContextMenu(null)}
+                                anchorReference="anchorPosition"
+                                anchorPosition={subtaskContextMenu
+                                    ? { top: subtaskContextMenu.top, left: subtaskContextMenu.left }
+                                    : undefined}
+                                MenuListProps={{
+                                    dense: true,
+                                    onClick: event => event.stopPropagation(),
+                                }}
+                            >
+                                {subtaskContextMenu && (
+                                    <MenuItem
+                                        onClick={() => {
+                                            const subtask = subtaskContextMenu.subtask;
+                                            setSubtaskContextMenu(null);
+                                            void handleSubtaskDelete(subtask);
+                                        }}
+                                        sx={{ color: 'error.main' }}
+                                    >
+                                        <ListItemIcon sx={{ color: 'inherit' }}>
+                                            <DeleteOutlineIcon fontSize="small" />
+                                        </ListItemIcon>
+                                        <ListItemText>Delete subtask</ListItemText>
+                                    </MenuItem>
+                                )}
+                            </Menu>
+                        )}
                     </Box>
 
                     {/* Tag (read-only) */}
@@ -1942,9 +2034,11 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                         height: 2,
                         borderRadius: 0,
                         backgroundColor: alpha(useGreenBar ? pomodoroGreen : activeAccent, 0.15),
+                        transition: 'background-color 0.32s ease',
                         '& .MuiLinearProgress-bar': {
                             backgroundColor: useGreenBar ? pomodoroGreen : activeAccent,
                             borderRadius: 0,
+                            transition: 'background-color 0.32s ease, transform 0.2s linear',
                         },
                     }}
                 />

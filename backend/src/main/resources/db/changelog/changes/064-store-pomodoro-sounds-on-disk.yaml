@@ -1,0 +1,24 @@
+databaseChangeLog:
+  - changeSet:
+      id: 064-store-pomodoro-sounds-on-disk
+      author: codex
+      comment: Keep newly uploaded Pomodoro audio out of the application database
+      changes:
+        - addColumn:
+            tableName: pomodoro_sound
+            columns:
+              - column:
+                  name: storage_path
+                  type: varchar(512)
+        - dropNotNullConstraint:
+            tableName: pomodoro_sound
+            columnName: audio_data
+            columnDataType: bytea
+      rollback:
+        - addNotNullConstraint:
+            tableName: pomodoro_sound
+            columnName: audio_data
+            columnDataType: bytea
+        - dropColumn:
+            tableName: pomodoro_sound
+            columnName: storage_path

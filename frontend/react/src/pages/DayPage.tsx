@@ -23,6 +23,7 @@ import { DayOverview, DayStat, DayTask } from '../types/DayOverview';
 
 type TimelineKind = 'task' | 'focus' | 'meditation' | 'state' | 'note' | 'event';
 type DetailTab = 'stats' | 'tasks' | 'notes' | 'more';
+type DayViewMode = 'past' | 'today' | 'future';
 
 type TimelineItem = {
     id: string;
@@ -73,26 +74,44 @@ function isWithinWindow(value: string | null | undefined, start: Date, end: Date
     return isValid(parsed) && parsed >= start && parsed < end;
 }
 
-function taskStart(task: DayTask, start: Date, end: Date): Date {
-    const candidates = [task.completedAt, task.scheduledAt];
-    const activityTime = candidates.find(value => isWithinWindow(value, start, end));
-    return activityTime ? parseISO(activityTime) : start;
+function dayViewMode(date: string): DayViewMode {
+    const today = format(new Date(), 'yyyy-MM-dd');
+    if (date < today) return 'past';
+    if (date > today) return 'future';
+    return 'today';
 }
 
-function buildTimeline(overview: DayOverview): TimelineItem[] {
+function isOnCalendarDate(value: string | null | undefined, date: string): boolean {
+    if (!value) return false;
+    const parsed = parseISO(value);
+    return isValid(parsed) && format(parsed, 'yyyy-MM-dd') === date;
+}
+
+function taskCompletionTime(task: DayTask, date: string): Date | null {
+    if (!task.completed || !isOnCalendarDate(task.completedAt, date)) return null;
+
+    const completionTime = parseISO(task.completedAt!);
+    return isValid(completionTime) ? completionTime : null;
+}
+
+function buildTimeline(overview: DayOverview, mode: DayViewMode): TimelineItem[] {
     const dayStart = parseISO(overview.dayStart);
     const dayEnd = parseISO(overview.dayEnd);
     const calendarDayStart = parseISO(`${overview.date}T00:00:00`);
     const calendarDayEnd = addDays(calendarDayStart, 1);
-    const items: TimelineItem[] = overview.tasks.map(task => ({
-        id: `task-${task.id}`,
-        kind: 'task',
-        title: task.name || 'Untitled task',
-        start: taskStart(task, dayStart, dayEnd),
-        end: null,
-        detail: undefined,
-        completed: task.completed,
-    }));
+    const items: TimelineItem[] = overview.tasks.flatMap(task => {
+        const completionTime = taskCompletionTime(task, overview.date);
+        if (!completionTime) return [];
+
+        return [{
+            id: `task-${task.id}`,
+            kind: 'task' as const,
+            title: task.name || 'Untitled task',
+            start: completionTime,
+            end: null,
+            completed: true,
+        }];
+    });
 
     overview.focusSessions.forEach(session => {
         const start = parseISO(session.startTime);
@@ -145,7 +164,11 @@ function buildTimeline(overview: DayOverview): TimelineItem[] {
     });
 
     overview.events.forEach(event => {
-        const occurrences = expandCalendarEvent(event, dayStart, dayEnd);
+        const occurrences = expandCalendarEvent(
+            event,
+            mode === 'future' ? calendarDayStart : dayStart,
+            mode === 'future' ? calendarDayEnd : dayEnd,
+        );
         occurrences
             .filter(occurrence => {
                 if (occurrence.allDay) {
@@ -200,8 +223,11 @@ function buildTimeline(overview: DayOverview): TimelineItem[] {
     });
 
     return items
-        .filter(item => isValid(item.start) && item.start >= dayStart && item.start < dayEnd)
-        .sort((first, second) => first.start.getTime() - second.start.getTime());
+        .filter(item => (mode === 'past' && item.kind === 'task')
+            || (isValid(item.start) && item.start >= dayStart && item.start < dayEnd))
+        .sort((first, second) => {
+            return first.start.getTime() - second.start.getTime();
+        });
 }
 
 function TimelineIcon({ kind }: { kind: TimelineKind }) {
@@ -283,7 +309,8 @@ export function DayPage() {
         return () => controller.abort();
     }, [date, navigate, routeDate]);
 
-    const timeline = useMemo(() => overview ? buildTimeline(overview) : [], [overview]);
+    const viewMode = dayViewMode(date);
+    const timeline = useMemo(() => overview ? buildTimeline(overview, viewMode) : [], [overview, viewMode]);
     const completedTasks = overview?.tasks.filter(task => task.completed).length ?? 0;
     const pomodoroSeconds = overview?.focusSessions
         .filter(session => session.pomodoro)
@@ -293,11 +320,17 @@ export function DayPage() {
     const dateValue = parseISO(`${date}T12:00:00`);
     const windowStart = overview ? parseISO(overview.dayStart) : dateValue;
     const windowEnd = overview ? parseISO(overview.dayEnd) : addDays(dateValue, 1);
-    const hasLoggedSleep = overview?.stats.some(stat => stat.systemKey === 'sleep_time') ?? false;
+    const hasLoggedWakeUp = viewMode !== 'future'
+        && (overview?.stats.some(stat => stat.systemKey === 'wake_up_time') ?? false);
+    const hasLoggedSleep = viewMode !== 'future'
+        && (overview?.stats.some(stat => stat.systemKey === 'sleep_time') ?? false);
     const sleepDuration = overview?.stats.find(stat =>
         stat.systemKey === 'sleep_hours' && stat.status !== 'NOT_PLANNED'
     );
     const sleepDurationLabel = sleepDuration ? formatDayDuration(sleepDuration.value) : undefined;
+    const timeViewLabel = hasLoggedWakeUp
+        ? `${format(windowStart, 'h:mm a')}${hasLoggedSleep ? ` – ${format(windowEnd, 'h:mm a')}` : ''}`
+        : hasLoggedSleep ? `Sleep · ${format(windowEnd, 'h:mm a')}` : null;
     const moreTimeline = timeline.filter(item => item.kind === 'state' || item.kind === 'event');
     const hasDetailPanel = Boolean(overview && (
         overview.stats.length > 0
@@ -377,16 +410,17 @@ export function DayPage() {
                                     <TimelineRoundedIcon color="primary" />
                                     <Box>
                                         <Typography variant="h6" fontWeight={700}>Time view</Typography>
-                                        <Typography variant="caption" color="text.secondary">
-                                            {format(windowStart, 'h:mm a')}
-                                            {hasLoggedSleep && ` – ${format(windowEnd, 'h:mm a')}`}
-                                        </Typography>
+                                        {timeViewLabel && <Typography variant="caption" color="text.secondary">{timeViewLabel}</Typography>}
                                     </Box>
                                 </Stack>
                                 <Stack spacing={0} sx={{ position: 'relative', '&:before': { content: '""', position: 'absolute', left: 16, top: 14, bottom: 14, width: 2, bgcolor: 'divider' } }}>
-                                    <TimeBoundary label="Wake up" time={windowStart} detail={sleepDurationLabel ? `Slept ${sleepDurationLabel}` : undefined} />
+                                    {hasLoggedWakeUp && <TimeBoundary label="Wake up" time={windowStart} detail={sleepDurationLabel ? `Slept ${sleepDurationLabel}` : undefined} />}
                                     {timeline.length === 0 ? (
-                                        <Typography color="text.secondary" sx={{ py: 4, pl: 5 }}>Nothing recorded during this window yet.</Typography>
+                                        <Typography color="text.secondary" sx={{ py: 4, pl: 5 }}>
+                                            {viewMode === 'future'
+                                                ? 'No completed tasks or other activity recorded for this day yet.'
+                                                : 'Nothing recorded during this window yet.'}
+                                        </Typography>
                                     ) : timeline.map(item => (
                                         <Stack key={item.id} direction="row" spacing={1.5} sx={{ position: 'relative', py: 1 }}>
                                             <Box sx={{ width: 34, flexShrink: 0, display: 'flex', justifyContent: 'center', zIndex: 1 }}>
@@ -418,7 +452,7 @@ export function DayPage() {
                                 </Stack>
                             </Card>
 
-                            {hasDetailPanel && <DayDetailsPanel overview={overview} moreTimeline={moreTimeline} tab={detailTab} onTabChange={setDetailTab} />}
+                            {hasDetailPanel && <DayDetailsPanel overview={overview} moreTimeline={moreTimeline} tab={detailTab} onTabChange={setDetailTab} viewMode={viewMode} />}
                         </Box>
                     </Stack>
                 )}
@@ -432,11 +466,13 @@ function DayDetailsPanel({
     moreTimeline,
     tab,
     onTabChange,
+    viewMode,
 }: {
     overview: DayOverview;
     moreTimeline: TimelineItem[];
     tab: DetailTab;
     onTabChange: (tab: DetailTab) => void;
+    viewMode: DayViewMode;
 }) {
     const availableTabs: { value: DetailTab; label: string }[] = [];
     if (overview.stats.length > 0) availableTabs.push({ value: 'stats', label: `Stats (${overview.stats.length})` });
@@ -487,7 +523,7 @@ function DayDetailsPanel({
                     <DetailSection title="Tasks" icon={<CheckCircleOutlineRoundedIcon color="primary" />}>
                         {overview.tasks.length === 0 ? <EmptySection text="No tasks connected to this day." /> : (
                             <Stack divider={<Divider flexItem />}>
-                                {overview.tasks.map(task => <TaskSummaryRow key={task.id} task={task} />)}
+                                {overview.tasks.map(task => <TaskSummaryRow key={task.id} task={task} viewMode={viewMode} />)}
                             </Stack>
                         )}
                     </DetailSection>
@@ -573,21 +609,26 @@ function EmptySection({ text }: { text: string }) {
     return <Typography variant="body2" color="text.secondary" sx={{ py: 1 }}>{text}</Typography>;
 }
 
-function TaskSummaryRow({ task }: { task: DayTask }) {
+function TaskSummaryRow({ task, viewMode }: { task: DayTask; viewMode: DayViewMode }) {
     const completionTime = task.completedAt && isValid(parseISO(task.completedAt))
         ? format(parseISO(task.completedAt), 'h:mm a')
         : null;
+    const scheduledTime = task.scheduledAt && isValid(parseISO(task.scheduledAt))
+        ? format(parseISO(task.scheduledAt), 'h:mm a')
+        : null;
+    const notCompleted = viewMode === 'past' && !task.completed;
+    const timeLabel = viewMode === 'future' ? scheduledTime : completionTime;
 
     return (
         <Stack direction="row" alignItems="center" justifyContent="flex-start" spacing={1} sx={{ py: 1, textAlign: 'left' }}>
-            <Box sx={{ color: task.completed ? 'success.main' : 'text.disabled', display: 'flex' }}>
+            <Box sx={{ color: notCompleted ? 'error.main' : task.completed ? 'success.main' : 'text.disabled', display: 'flex' }}>
                 <CheckCircleOutlineRoundedIcon fontSize="small" />
             </Box>
             <Typography variant="body2" sx={{ flex: 1, minWidth: 0, textDecoration: task.completed ? 'line-through' : 'none' }} noWrap>
                 {task.name || 'Untitled task'}
             </Typography>
             <Typography variant="caption" color="text.secondary">
-                {completionTime ?? 'Open'}
+                {notCompleted ? 'Not completed' : timeLabel ?? 'Open'}
             </Typography>
         </Stack>
     );

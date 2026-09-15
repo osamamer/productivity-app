@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-    Alert, Box, Button, Chip, ClickAwayListener, DialogActions, DialogContent, DialogTitle,
+    Alert, Box, Button, Chip, DialogActions, DialogContent, DialogTitle,
     MenuItem, Popover, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material';
 import { MouseEvent } from 'react';
@@ -95,8 +95,16 @@ export function StatRecurringTaskOptions({
                 size="small"
                 label="Repeat"
                 value={value.recurrenceFrequency}
+                onMouseDown={event => event.stopPropagation()}
+                onClick={event => event.stopPropagation()}
                 onChange={event => updateFrequency(event.target.value as StatRecurrenceFrequency)}
                 disabled={disabled}
+                SelectProps={{
+                    MenuProps: {
+                        onMouseDown: event => event.stopPropagation(),
+                        onClick: event => event.stopPropagation(),
+                    },
+                }}
             >
                 {FREQUENCIES.map(option => (
                     <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
@@ -171,7 +179,6 @@ export function StatRecurringTaskDialog({
             onClose={saving ? undefined : onClose}
             anchorReference="anchorPosition"
             anchorPosition={anchorPosition ?? { top: 0, left: 0 }}
-            hideBackdrop
             transformOrigin={{ vertical: 'top', horizontal: 'left' }}
             slotProps={{
                 paper: {
@@ -183,8 +190,7 @@ export function StatRecurringTaskDialog({
                 },
             }}
         >
-            <ClickAwayListener onClickAway={() => { if (!saving) onClose(); }}>
-                <Box>
+            <Box>
             <DialogTitle>
                 {title}{definition ? ` for ${definition.name}` : ''}
             </DialogTitle>
@@ -207,8 +213,7 @@ export function StatRecurringTaskDialog({
                     {saving ? 'Saving…' : confirmLabel}
                 </Button>
             </DialogActions>
-                </Box>
-            </ClickAwayListener>
+            </Box>
         </Popover>
     );
 }

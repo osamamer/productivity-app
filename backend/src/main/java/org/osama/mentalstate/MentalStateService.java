@@ -93,6 +93,14 @@ public class MentalStateService {
                 .toList();
     }
 
+    @Transactional
+    public void deleteCheckIn(String checkInId, String userId) {
+        MentalStateCheckIn checkIn = checkInRepository.findByIdAndUserId(checkInId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("Mental state check-in not found: " + checkInId));
+        checkInRepository.delete(checkIn);
+        log.info("Mental state check-in deleted: userId={} checkInId={}", userId, checkInId);
+    }
+
     private MentalStateCheckInResponse toResponse(MentalStateCheckIn checkIn) {
         MentalStateAssessment assessment = adviceService.assess(
                 checkIn.getEnergy(), checkIn.getActivation(), checkIn.getStimulationHunger(),

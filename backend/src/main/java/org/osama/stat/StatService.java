@@ -823,9 +823,8 @@ public class StatService {
             taskService.getPomodoroFocusTimeForSeries(seriesId, from, to, userId)
                     .forEach((date, seconds) -> focusByDate.merge(date, seconds, Long::sum));
         }
-        getFocusTaskNames(definition).forEach(taskName -> taskService.getPomodoroFocusTimeForTaskName(
-                        taskName, from, to, userId, seriesId)
-                .forEach((date, seconds) -> focusByDate.merge(date, seconds, Long::sum)));
+        taskService.getPomodoroFocusTimeForTaskNames(getFocusTaskNames(definition), from, to, userId, seriesId)
+                .forEach((date, seconds) -> focusByDate.merge(date, seconds, Long::sum));
 
         return focusByDate.entrySet().stream()
                 .map(entry -> new StatFocusTimeEntryResponse(entry.getKey(), entry.getValue()))

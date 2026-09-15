@@ -2,7 +2,7 @@ package org.osama.pomodoro;
 
 import lombok.RequiredArgsConstructor;
 import org.osama.user.CurrentUserService;
-import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.Resource;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -37,17 +37,17 @@ public class PomodoroSoundController {
     }
 
     @GetMapping("/{soundId}/audio")
-    public ResponseEntity<ByteArrayResource> getAudio(@PathVariable String soundId) {
-        PomodoroSound sound = soundService.getSound(soundId, currentUserService.getCurrentUserId());
-        ByteArrayResource resource = new ByteArrayResource(sound.getAudioData());
+    public ResponseEntity<Resource> getAudio(@PathVariable String soundId) {
+        PomodoroSoundService.PomodoroSoundAudio audio = soundService.getAudio(
+                soundId, currentUserService.getCurrentUserId());
         return ResponseEntity.ok()
-                .contentType(MediaType.parseMediaType(sound.getContentType()))
-                .contentLength(sound.getFileSize())
+                .contentType(MediaType.parseMediaType(audio.contentType()))
+                .contentLength(audio.fileSize())
                 .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline()
-                        .filename(sound.getName(), StandardCharsets.UTF_8)
+                        .filename(audio.name(), StandardCharsets.UTF_8)
                         .build()
                         .toString())
-                .body(resource);
+                .body(audio.resource());
     }
 
     @DeleteMapping("/{soundId}")

@@ -745,6 +745,9 @@ export const statService = {
             return entry;
         } catch (error) {
             clearOptimisticWrite(optimisticWrite, true);
+            // Keep the pre-write entry caches on failure. They already contain
+            // the persisted value, and retaining them lets every read surface
+            // roll back immediately without an extra round trip.
             invalidateResource('stats');
             throw error;
         }

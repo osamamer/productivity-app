@@ -1,0 +1,19 @@
+databaseChangeLog:
+  - changeSet:
+      id: 065-add-task-session-focus-time-index
+      author: codex
+      comment: Speed up historical focus-time lookups by task and session start date
+      changes:
+        - createIndex:
+            tableName: task_session
+            indexName: idx_app_task_session_task_start
+            ifNotExists: true
+            columns:
+              - column:
+                  name: associated_task_id
+              - column:
+                  name: start_time
+      rollback:
+        - dropIndex:
+            tableName: task_session
+            indexName: idx_app_task_session_task_start

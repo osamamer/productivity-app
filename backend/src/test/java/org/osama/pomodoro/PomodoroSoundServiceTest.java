@@ -44,7 +44,7 @@ class PomodoroSoundServiceTest {
     }
 
     @Test
-    void uploadsPrivateMp3AndAllowsItToBeSelected() {
+    void uploadsPrivateMp3AndAllowsItToBeSelected() throws Exception {
         byte[] bytes = {1, 2, 3, 4};
         PomodoroSoundService.PomodoroSoundResponse response = soundService.upload(
                 user.getId(), new MockMultipartFile("file", "rain.mp3", "audio/mpeg", bytes));
@@ -53,7 +53,7 @@ class PomodoroSoundServiceTest {
         assertEquals(bytes.length, response.fileSize());
         assertEquals(1, soundService.getSounds(user.getId()).size());
         assertEquals(0, soundService.getSounds(otherUser.getId()).size());
-        assertArrayEquals(bytes, soundService.getSound(response.id(), user.getId()).getAudioData());
+        assertArrayEquals(bytes, soundService.getAudio(response.id(), user.getId()).resource().getInputStream().readAllBytes());
 
         userService.updatePreferences(user.getId(), null, null, null, null, null, null, null, response.id());
         assertEquals(response.id(), userRepository.findById(user.getId()).orElseThrow().getPomodoroSoundId());

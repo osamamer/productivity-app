@@ -823,7 +823,7 @@ export const taskService = {
             headers: getAuthHeaders(),
         });
         if (response.status === 204) return null;
-        if (!response.ok) return null;
+        if (!response.ok) throw new Error(`Failed to fetch active pomodoro (${response.status})`);
         return response.json();
     },
 };
