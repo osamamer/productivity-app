@@ -134,11 +134,11 @@ export function CalendarEventForm({
 
     const handleStartTimeChange = (nextStartTime: string) => {
         setStartTime(nextStartTime);
-        if (!nextStartTime || !endTime || startDate !== endDate || nextStartTime < endTime) return;
+        if (!nextStartTime) return;
 
         const adjustedEnd = addHour(nextStartTime);
         setEndTime(adjustedEnd.time);
-        if (adjustedEnd.crossesMidnight) setEndDate(addDay(startDate));
+        if (startDate) setEndDate(adjustedEnd.crossesMidnight ? addDay(startDate) : startDate);
     };
 
     const handleStartDateChange = (nextStartDate: string) => {

@@ -187,7 +187,7 @@ function formatDurationCircleValue(value: number): string {
     const minutes = rounded % 60;
     if (hours === 0) return `${minutes}m`;
     if (minutes === 0) return `${hours}h`;
-    return `${Number((rounded / 60).toFixed(2))}h`;
+    return `${(rounded / 60).toFixed(1)}h`;
 }
 
 function formatSleepDurationCircleValue(value: number): string {

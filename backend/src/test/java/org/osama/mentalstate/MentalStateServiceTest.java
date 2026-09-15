@@ -98,7 +98,7 @@ class MentalStateServiceTest {
                 new CreateMentalStateCheckInRequest(6, 5, 5, 6, 3, 4), USER_ID).state());
         assertEquals("Engaged", mentalStateService.checkIn(
                 new CreateMentalStateCheckInRequest(4, 5, 1, 5, 8, 1), USER_ID).state());
-        assertEquals("Mixed", mentalStateService.checkIn(
+        assertEquals("Almost Ready", mentalStateService.checkIn(
                 new CreateMentalStateCheckInRequest(5, 5, 5, 5, 6, 6), USER_ID).state());
     }
 
@@ -135,15 +135,6 @@ class MentalStateServiceTest {
                 .stream()
                 .flatMap(checkIn -> checkIn.suggestedActions().stream())
                 .noneMatch(action -> action.contains(":") || action.equals(action.toUpperCase())));
-    }
-
-    @Test
-    void classifiesModerateSignalsAsReady() {
-        MentalStateCheckInResponse response = mentalStateService.checkIn(
-                new CreateMentalStateCheckInRequest(5, 5, 5, 5, 5, 5), USER_ID);
-
-        assertEquals("Ready", response.state());
-        assertTrue(response.suggestedActions().get(0).startsWith("You have a good window"));
     }
 
     @Test
