@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { POMODORO_AUDIO_SOURCE } from '@/lib/pomodoroAudio';
+import { configureBackgroundAudio } from '@/lib/audioMode';
 
 type AudioModule = typeof import('expo-audio');
 type AudioPlayer = ReturnType<AudioModule['createAudioPlayer']>;
@@ -26,12 +27,12 @@ export function usePomodoroAudio() {
     void loadAudioModule().then(audioModule => {
       if (!audioModule || disposed) return;
 
-      void audioModule.setAudioModeAsync({
-        playsInSilentMode: true,
-        shouldPlayInBackground: true,
-        interruptionMode: 'mixWithOthers',
-      }).catch(error => console.error('Could not configure Pomodoro audio:', error));
+      void configureBackgroundAudio(audioModule, 'Pomodoro');
 
+      if (typeof audioModule.createAudioPlayer !== 'function') {
+        console.warn('Pomodoro audio playback is unavailable in this native build.');
+        return;
+      }
       const nextPlayer = audioModule.createAudioPlayer(POMODORO_AUDIO_SOURCE, { keepAudioSessionActive: true });
       nextPlayer.loop = true;
       nextPlayer.volume = 0.12;

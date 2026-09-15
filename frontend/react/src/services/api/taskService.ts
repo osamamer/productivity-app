@@ -552,7 +552,10 @@ export const taskService = {
         invalidateTaskPomodoroStats(taskId);
         cacheMainTasks([updatedTask]);
         invalidateTaskViewCaches();
-        if (updates.completed !== undefined) invalidateResource('tasks');
+        if (updates.completed !== undefined || updates.scheduledPerformDateTime !== undefined) {
+            invalidateResource('tasks');
+            if (updatedTask.statLinked) invalidateResource('stats');
+        }
         return updatedTask;
     },
 
@@ -602,6 +605,7 @@ export const taskService = {
         if (cachedDetails) setCachedTaskDetails(taskId, { ...cachedDetails, taskSeries: series });
         invalidateTaskListCaches();
         invalidateResource('tasks');
+        if (series.statLinked) invalidateResource('stats');
         return series;
     },
 
@@ -621,7 +625,9 @@ export const taskService = {
         clearTaskDetailsCache();
         invalidateTaskListCaches();
         invalidateResource('tasks');
-        return response.json();
+        const updatedSeries = await response.json() as TaskSeries;
+        if (updatedSeries.statLinked) invalidateResource('stats');
+        return updatedSeries;
     },
 
     async stopTaskSeries(seriesId: string): Promise<void> {

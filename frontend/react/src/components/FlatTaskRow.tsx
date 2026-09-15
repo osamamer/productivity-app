@@ -322,7 +322,6 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
 
     const [pomodoroStatus, setPomodoroStatus] = useState<PomodoroStatus | null>(initialPomodoroStatus);
     const [pomodoroConfig, setPomodoroConfig] = useState<PomodoroConfig>(NORMAL_POMODORO_CONFIG);
-    const [actionLoading, setActionLoading] = useState(false);
     const [pomodoroFeedback, setPomodoroFeedback] = useState<PomodoroFeedback | null>(null);
     const [pomodoroHydrated, setPomodoroHydrated] = useState(!deferPomodoroHydration);
     const [detailsLoading, setDetailsLoading] = useState(false);
@@ -479,6 +478,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     const endedPomodoroIdRef = useRef<string | null>(null);
     const lastPomodoroStatusRef = useRef<PomodoroStatus | null>(initialPomodoroStatus);
     const pomodoroStatusRequestIdRef = useRef(0);
+    const pomodoroMutationRevisionRef = useRef(0);
     const clearCompletedPomodoroAfterExitRef = useRef(false);
     const onPomodoroActiveChangeRef = useRef(onPomodoroActiveChange);
     const onPomodoroStatusChangeRef = useRef(onPomodoroStatusChange);
@@ -511,11 +511,13 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     }, [publishPomodoroStatus, task.taskId]);
 
     const rollbackPomodoroMutation = useCallback((
+        mutationRevision: number,
         optimisticStatus: PomodoroStatus,
         previousStatus: PomodoroStatus | null,
     ) => {
         // A WebSocket snapshot or a later action supersedes this mutation.
-        if (lastPomodoroStatusRef.current !== optimisticStatus) return;
+        if (pomodoroMutationRevisionRef.current !== mutationRevision
+            || lastPomodoroStatusRef.current !== optimisticStatus) return;
         clearPomodoroMutation();
         endedPomodoroIdRef.current = null;
         // Stopping locally retires the ID; authoritative mode reopens it if
@@ -632,12 +634,14 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     }, [expectedPomodoroActive, expandedPanel, initialPomodoroStatus, onAutoExpand, pomodoroHydrated,
         pomodoroStatus?.phase, refreshActivePomodoro, task.taskId]);
 
-    const refreshPomodoroStatus = useCallback(async () => {
+    const refreshPomodoroStatus = useCallback(async (expectedMutationRevision?: number) => {
         const requestId = ++pomodoroStatusRequestIdRef.current;
 
         try {
             const status = await refreshActivePomodoro(true);
             if (requestId !== pomodoroStatusRequestIdRef.current) return;
+            if (expectedMutationRevision !== undefined
+                && pomodoroMutationRevisionRef.current !== expectedMutationRevision) return;
 
             if (status?.active && status.associatedTaskId === task.taskId) {
                 activePomodoroIdRef.current = status.pomodoroId;
@@ -691,7 +695,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         detailsRequestRef.current = request;
     }, [applyTaskDetails, expandedPanel, onTogglePanel, readOnly, refreshPomodoroStatus, task]);
 
-    const handleStart = async () => {
+    const handleStart = () => {
         if (globallyActivePomodoro?.active && globallyActivePomodoro.associatedTaskId !== task.taskId) {
             showPomodoroError();
             return;
@@ -704,27 +708,25 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         );
         if (!applyLocalPomodoroStatus(optimisticStatus, false, true)) return;
 
-        setActionLoading(true);
+        const mutationRevision = ++pomodoroMutationRevisionRef.current;
         endedPomodoroIdRef.current = null;
-        try {
-            void requestSystemNotificationPermission()
-                .catch(error => console.error('Failed to request Pomodoro notification permission:', error));
-            await taskService.startPomodoro(
-                task.taskId, form.focusDuration, form.shortBreakDuration,
-                form.longBreakDuration, form.numFocuses, form.longBreakCooldown,
-                pomodoroConfig.secondsMode,
-            );
-            clearPomodoroMutation();
-            void refreshPomodoroStatus();
-        } catch (e) {
+        void requestSystemNotificationPermission()
+            .catch(error => console.error('Failed to request Pomodoro notification permission:', error));
+        void taskService.startPomodoro(
+            task.taskId, form.focusDuration, form.shortBreakDuration,
+            form.longBreakDuration, form.numFocuses, form.longBreakCooldown,
+            pomodoroConfig.secondsMode,
+        ).then(() => {
+            if (pomodoroMutationRevisionRef.current !== mutationRevision) return;
+            void refreshPomodoroStatus(mutationRevision);
+        }).catch(e => {
             console.error('Error starting pomodoro:', e);
-            rollbackPomodoroMutation(optimisticStatus, null);
-            showPomodoroError();
-        }
-        finally { setActionLoading(false); }
+            rollbackPomodoroMutation(mutationRevision, optimisticStatus, null);
+            if (pomodoroMutationRevisionRef.current === mutationRevision) showPomodoroError();
+        });
     };
 
-    const handlePlayPause = async () => {
+    const handlePlayPause = () => {
         const previousStatus = lastPomodoroStatusRef.current?.active
             ? lastPomodoroStatusRef.current
             : pomodoroStatus?.active ? pomodoroStatus : null;
@@ -738,55 +740,49 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         );
         if (!optimisticStatus || !applyLocalPomodoroStatus(optimisticStatus, false, true)) return;
 
-        setActionLoading(true);
-        try {
-            if (isWaitingForPhase(previousStatus)) {
-                await taskService.startNextPomodoroPhase(task.taskId);
-            } else if (previousStatus.sessionRunning) {
-                await taskService.pauseSession(task.taskId);
-            } else {
-                await taskService.unpauseSession(task.taskId);
-            }
-            clearPomodoroMutation();
-            void refreshPomodoroStatus();
-        } catch (e) {
+        const mutationRevision = ++pomodoroMutationRevisionRef.current;
+        const request = isWaitingForPhase(previousStatus)
+            ? taskService.startNextPomodoroPhase(task.taskId)
+            : previousStatus.sessionRunning
+                ? taskService.pauseSession(task.taskId)
+                : taskService.unpauseSession(task.taskId);
+        void request.then(() => {
+            if (pomodoroMutationRevisionRef.current !== mutationRevision) return;
+            void refreshPomodoroStatus(mutationRevision);
+        }).catch(e => {
             console.error('Error toggling pomodoro:', e);
-            rollbackPomodoroMutation(optimisticStatus, previousStatus);
-            showPomodoroError();
-        }
-        finally { setActionLoading(false); }
+            rollbackPomodoroMutation(mutationRevision, optimisticStatus, previousStatus);
+            if (pomodoroMutationRevisionRef.current === mutationRevision) showPomodoroError();
+        });
     };
 
-    const handleStop = async () => {
+    const handleStop = () => {
         const previousStatus = lastPomodoroStatusRef.current?.active
             ? lastPomodoroStatusRef.current
             : pomodoroStatus?.active ? pomodoroStatus : null;
         if (!previousStatus) return;
 
         const optimisticStatus = createOptimisticCompletedPomodoroStatus(previousStatus);
-        setActionLoading(true);
+        const mutationRevision = ++pomodoroMutationRevisionRef.current;
         endedPomodoroIdRef.current = previousStatus.pomodoroId;
         if (!applyLocalPomodoroStatus(optimisticStatus, false, true)) {
             endedPomodoroIdRef.current = null;
-            setActionLoading(false);
             return;
         }
-        try {
-            const completedStatus = await taskService.endPomodoro(task.taskId);
-            clearPomodoroMutation();
-            if (lastPomodoroStatusRef.current === optimisticStatus) {
+        void taskService.endPomodoro(task.taskId).then(completedStatus => {
+            if (pomodoroMutationRevisionRef.current === mutationRevision
+                && lastPomodoroStatusRef.current === optimisticStatus) {
                 endedPomodoroIdRef.current = completedStatus.pomodoroId;
-                applyLocalPomodoroStatus(completedStatus);
+                applyLocalPomodoroStatus(completedStatus, true);
             }
-        } catch (e) {
+        }).catch(e => {
             console.error('Error stopping pomodoro:', e);
-            rollbackPomodoroMutation(optimisticStatus, previousStatus);
-            showPomodoroError();
-        }
-        finally { setActionLoading(false); }
+            rollbackPomodoroMutation(mutationRevision, optimisticStatus, previousStatus);
+            if (pomodoroMutationRevisionRef.current === mutationRevision) showPomodoroError();
+        });
     };
 
-    const handleFinishBreak = async () => {
+    const handleFinishBreak = () => {
         const previousStatus = lastPomodoroStatusRef.current?.active
             ? lastPomodoroStatusRef.current
             : pomodoroStatus?.active ? pomodoroStatus : null;
@@ -800,17 +796,15 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         );
         if (!optimisticStatus || !applyLocalPomodoroStatus(optimisticStatus, false, true)) return;
 
-        setActionLoading(true);
-        try {
-            await taskService.finishPomodoroBreak(task.taskId);
-            clearPomodoroMutation();
-            void refreshPomodoroStatus();
-        } catch (e) {
+        const mutationRevision = ++pomodoroMutationRevisionRef.current;
+        void taskService.finishPomodoroBreak(task.taskId).then(() => {
+            if (pomodoroMutationRevisionRef.current !== mutationRevision) return;
+            void refreshPomodoroStatus(mutationRevision);
+        }).catch(e => {
             console.error('Error ending Pomodoro break:', e);
-            rollbackPomodoroMutation(optimisticStatus, previousStatus);
-            showPomodoroError();
-        }
-        finally { setActionLoading(false); }
+            rollbackPomodoroMutation(mutationRevision, optimisticStatus, previousStatus);
+            if (pomodoroMutationRevisionRef.current === mutationRevision) showPomodoroError();
+        });
     };
 
     const handleSubtaskToggle = async (subtask: Task) => {
@@ -866,7 +860,10 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         });
 
         try {
-            await taskService.deleteTaskInstance(subtask);
+            // A subtask is not part of the main-task list. Avoid invalidating
+            // that list while the details panel is applying its optimistic
+            // update, which would briefly remount the surrounding row.
+            await taskService.deleteTaskInstance(subtask, { notifyResource: false });
         } catch (error) {
             setSubtasks(previous => {
                 if (previous.some(item => item.taskId === subtask.taskId)) return previous;
@@ -1545,7 +1542,6 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                         label={label}
                                         value={form[key]}
                                         onChange={value => updatePomodoroForm({ [key]: value })}
-                                        disabled={actionLoading}
                                     />
                                 ))}
                             </Box>
@@ -1553,9 +1549,8 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                 variant="outlined"
                                 size="small"
                                 fullWidth
-                                disabled={actionLoading}
                                 onClick={handleStart}
-                                startIcon={actionLoading ? <CircularProgress size={14} /> : <PlayArrowIcon />}
+                                startIcon={<PlayArrowIcon />}
                                 sx={{
                                     borderColor: 'primary',
                                     color: 'primary',
@@ -1565,7 +1560,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                     },
                                 }}
                             >
-                                {actionLoading ? 'Starting…' : 'Start'}
+                                Start
                             </Button>
                         </Box>
                     ) : pomodoroStatusPending ? (
@@ -1628,14 +1623,13 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             </Box>
 
                             <Box sx={{ display: 'flex', gap: 0.5, ml: 'auto' }}>
-                                <WhiteNoiseControl size="small" disabled={actionLoading} />
+                                <WhiteNoiseControl size="small" />
                                 {(waitingForPhase || !isBreak) && (
                                     <Tooltip title={playPauseLabel}>
                                         <span>
                                             <IconButton
                                                 size="small"
                                                 onClick={handlePlayPause}
-                                                disabled={actionLoading}
                                                 color={pomodoroStatus!.phase === 'WAITING_FOR_BREAK' ? 'inherit' : 'primary'}
                                                 aria-label={playPauseLabel}
                                                 sx={pomodoroStatus!.phase === 'WAITING_FOR_BREAK' ? { color: pomodoroGreen } : undefined}
@@ -1651,7 +1645,6 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                             <IconButton
                                                 size="small"
                                                 onClick={handleFinishBreak}
-                                                disabled={actionLoading}
                                                 color="primary"
                                                 aria-label="End break and start the next focus session"
                                             >
@@ -1665,7 +1658,6 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                         <IconButton
                                             size="small"
                                             onClick={handleStop}
-                                            disabled={actionLoading}
                                             color="inherit"
                                             aria-label="End Pomodoro session"
                                             sx={{
@@ -1997,7 +1989,8 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             >
                                 {subtaskContextMenu && (
                                     <MenuItem
-                                        onClick={() => {
+                                        onClick={event => {
+                                            event.stopPropagation();
                                             const subtask = subtaskContextMenu.subtask;
                                             setSubtaskContextMenu(null);
                                             void handleSubtaskDelete(subtask);

@@ -7,7 +7,6 @@ import { subscribeToResourceInvalidation } from '@/lib/resourceInvalidation';
 import { api, TASK_PAGE_BATCH_SIZE } from '@/services/api';
 import type { Task, TaskGroup } from '@/types/models';
 import { useAuth } from './AuthProvider';
-import { useNotifications } from './NotificationProvider';
 
 type TaskWorkspaceValue = {
   allTasks: Task[];
@@ -87,7 +86,6 @@ function orderWithTasksAtEndOfToday(tasks: Task[], movedTaskIds: string[]): stri
 
 export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
   const { isAuthenticated } = useAuth();
-  const { syncTaskReminders } = useNotifications();
   const [allTasks, setAllTasks] = useState<Task[]>([]);
   const [groups, setGroups] = useState<TaskGroup[]>([]);
   const [loading, setLoading] = useState(true);
@@ -213,22 +211,19 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
     setAllTasks(previous => previous.some(item => item.taskId === task.taskId)
       ? replaceTask(previous, task)
       : [task, ...previous]);
-    void syncTaskReminders();
-  }, [syncTaskReminders]);
+  }, []);
 
   const updateTask = useCallback((task: Task) => {
     animateLayout();
     setAllTasks(previous => replaceTask(previous, task));
-    void syncTaskReminders();
-  }, [syncTaskReminders]);
+  }, []);
 
   const removeTask = useCallback((taskId: string) => {
     animateLayout();
     setAllTasks(previous => previous.filter(task => task.taskId !== taskId));
     setGroups(previous => usableGroups(previous
       .map(group => ({ ...group, taskIds: group.taskIds.filter(id => id !== taskId) }))));
-    void syncTaskReminders();
-  }, [syncTaskReminders]);
+  }, []);
 
   const moveTask = useCallback(async (taskId: string, direction: 'up' | 'down') => {
     const current = allTasks.filter(task => !task.parentId);
@@ -308,13 +303,12 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
         const reorderedById = new Map(reordered.map(task => [task.taskId, task]));
         setAllTasks(previous => previous.map(task => reorderedById.get(task.taskId) ?? task));
       }
-      await syncTaskReminders();
     } catch (cause) {
       console.error('Could not move mobile tasks to a new date:', cause);
       await load(true);
       throw cause;
     }
-  }, [allTasks, load, syncTaskReminders]);
+  }, [allTasks, load]);
 
   const moveTasksToToday = useCallback(async (taskIds: string[]) => {
     const now = new Date();

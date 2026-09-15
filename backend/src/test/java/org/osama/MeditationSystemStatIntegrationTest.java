@@ -11,6 +11,7 @@ import org.osama.stat.StatDefinition;
 import org.osama.stat.StatDefinitionRepository;
 import org.osama.stat.StatEntryRepository;
 import org.osama.stat.SystemStatCatalog;
+import org.osama.reminder.ReminderRepository;
 import org.osama.user.User;
 import org.osama.user.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -36,6 +37,7 @@ class MeditationSystemStatIntegrationTest {
     @Autowired private StatDefinitionRepository definitionRepository;
     @Autowired private StatEntryRepository entryRepository;
     @Autowired private UserRepository userRepository;
+    @Autowired private ReminderRepository reminderRepository;
 
     @BeforeEach
     void setUp() {
@@ -80,6 +82,7 @@ class MeditationSystemStatIntegrationTest {
         meditationSessionService.discardSession(session.getId(), TEST_USER_ID);
 
         assertFalse(meditationSessionRepository.findById(session.getId()).isPresent());
+        assertFalse(reminderRepository.findById("meditation-completion-" + session.getId()).isPresent());
         assertEquals(0, entryRepository.findAllByUserIdAndDateBetween(
                 TEST_USER_ID,
                 session.getStartTime().toLocalDate(),

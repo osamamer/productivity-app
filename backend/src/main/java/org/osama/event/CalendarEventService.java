@@ -371,6 +371,8 @@ public class CalendarEventService {
         reminder.setUser(user);
         reminder.setEvent(event);
         reminder.setNotificationType(NotificationType.CALENDAR_EVENT);
+        reminder.setTitle(event.getTitle());
+        reminder.setBody("Event reminder");
         reminder.setTargetUrl("/calendar");
         reminder.setDateTime(eventStart.minusSeconds(minutesBefore.longValue() * 60));
         reminder.setEventOccurrenceStart(eventStart);

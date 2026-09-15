@@ -527,6 +527,9 @@ export const StatLineChart = React.memo(function StatLineChart({
         const activeSnapshot = snapshot
             ?? entryMutationSnapshotsRef.current.get(date)
             ?? { value: undefined, status: undefined };
+        if (parsed.value !== null && status !== 'NOT_PLANNED') {
+            showStatFeedback(definition, parsed.value, chartRef.current);
+        }
         const savePromise = statService.recordEntry({
             statDefinitionId: definition.id,
             date,
@@ -538,9 +541,6 @@ export const StatLineChart = React.memo(function StatLineChart({
             await savePromise;
             if (entryMutationVersionsRef.current.get(date) === activeMutationVersion) {
                 entryMutationSnapshotsRef.current.delete(date);
-                if (parsed.value !== null && status !== 'NOT_PLANNED') {
-                    showStatFeedback(definition, parsed.value, chartRef.current);
-                }
             }
         } catch (error) {
             console.error('Failed to save chart stat entry:', error);

@@ -22,6 +22,7 @@ public record TaskSeriesResponse(
         Integer reminderMinutesBefore,
         boolean active,
         LocalDateTime createdAt,
-        LocalDateTime updatedAt
+        LocalDateTime updatedAt,
+        boolean statLinked
 ) {
 }

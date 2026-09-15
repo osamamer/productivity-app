@@ -25,6 +25,7 @@ export interface Task {
   taskSeriesId: string | null;
   seriesOccurrenceAt: string | null;
   skipped: boolean;
+  statLinked?: boolean;
 }
 
 export type TaskRecurrenceFrequency = 'NONE' | 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'CUSTOM';
@@ -46,6 +47,7 @@ export interface TaskSeries {
   active: boolean;
   createdAt: string;
   updatedAt: string;
+  statLinked?: boolean;
 }
 
 export interface TaskInput {
@@ -261,19 +263,8 @@ export type NotificationType =
   | 'MENTAL_STATE_CHECKUP'
   | 'POMODORO_FOCUS_ENDED'
   | 'POMODORO_BREAK_ENDED'
-  | 'POMODORO_COMPLETED';
-
-export interface ApplicationNotification {
-  notificationId: string;
-  type: NotificationType;
-  title: string;
-  body: string | null;
-  targetUrl: string | null;
-  scheduledAt: string;
-  eventStart: string | null;
-  allDay: boolean | null;
-  taskId: string | null;
-}
+  | 'POMODORO_COMPLETED'
+  | 'MEDITATION_COMPLETED';
 
 export interface UserPreferences {
   includeUnloggedNumericDaysAsZero: boolean;

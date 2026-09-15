@@ -68,19 +68,19 @@ export const AUDIO_FEEDBACK_SOUNDS: Record<AudioFeedbackKind, readonly AudioFeed
     NOTE(F4, 0.12, { waveform: 'triangle', volume: 0.06 }),
     NOTE(D4, 0.22, { gapAfter: 0, waveform: 'triangle', volume: 0.07 }),
   ],
-  // A bright arcade-like rise for a value that lands on the good side.
+  // A warm, slightly unhurried rise for a value that lands on the good side.
   statGood: [
-    NOTE(C5, 0.07, { volume: 0.07 }),
-    NOTE(E5, 0.07, { volume: 0.08 }),
-    NOTE(G5, 0.07, { volume: 0.09 }),
-    NOTE(C6, 0.3, { gapAfter: 0, volume: 0.12 }),
+    NOTE(C5, 0.11, { volume: 0.065 }),
+    NOTE(E5, 0.12, { volume: 0.075 }),
+    NOTE(G5, 0.14, { volume: 0.085 }),
+    NOTE(C6, 0.4, { gapAfter: 0, volume: 0.105 }),
   ],
-  // The exact descending opposite, with a sharper timbre, for the reprimand cue.
+  // A soft, minor-leaning descent that gives disappointment room to land.
   statBad: [
-    NOTE(C4, 0.07, { waveform: 'triangle', volume: 0.12 }),
-    NOTE(G3, 0.07, { waveform: 'triangle', volume: 0.09 }),
-    NOTE(E3, 0.07, { waveform: 'triangle', volume: 0.08 }),
-    NOTE(C3, 0.3, { gapAfter: 0, waveform: 'triangle', volume: 0.07 }),
+    NOTE(A4, 0.15, { waveform: 'sine', volume: 0.055 }),
+    NOTE(F4, 0.16, { waveform: 'sine', volume: 0.05 }),
+    NOTE(D4, 0.18, { waveform: 'sine', volume: 0.05 }),
+    NOTE(C4, 0.36, { gapAfter: 0, waveform: 'sine', volume: 0.06 }),
   ],
   // An open, unfinished-feeling interval for capturing a thought.
   mentalThreadCreated: [

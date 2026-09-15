@@ -40,11 +40,10 @@ public interface ReminderRepository extends JpaRepository<Reminder, String> {
             left join fetch reminder.event event
             where reminder.acknowledgedAt is null
               and reminder.dateTime <= :now
-              and (reminder.dispatchedAt is null or reminder.dispatchedAt <= :retryBefore)
+              and reminder.dispatchedAt is null
             order by reminder.dateTime
             """)
     List<Reminder> lockDueForPush(@Param("now") Instant now,
-                                  @Param("retryBefore") Instant retryBefore,
                                   Pageable pageable);
 
     @Query("""

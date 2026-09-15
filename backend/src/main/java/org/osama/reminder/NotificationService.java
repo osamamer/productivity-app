@@ -28,7 +28,6 @@ import java.util.UUID;
 @Slf4j
 public class NotificationService {
     private static final int PUSH_BATCH_SIZE = 100;
-    private static final long PUSH_RETRY_SECONDS = 30;
     private static final long CHECKUP_REPEAT_MINUTES = 30;
     private static final String USER_DESTINATION = "/queue/notifications";
     public static final String DEFAULT_CHANNEL_ID = "default";
@@ -58,9 +57,8 @@ public class NotificationService {
     @Transactional
     public void pushDueNotifications() {
         Instant now = Instant.now();
-        Instant retryBefore = now.minus(PUSH_RETRY_SECONDS, ChronoUnit.SECONDS);
         List<Reminder> due = reminderRepository.lockDueForPush(
-                now, retryBefore, PageRequest.of(0, PUSH_BATCH_SIZE));
+                now, PageRequest.of(0, PUSH_BATCH_SIZE));
 
         for (Reminder reminder : due) {
             if (isCancelledEventReminder(reminder)) {
@@ -70,19 +68,22 @@ public class NotificationService {
                 continue;
             }
             String keycloakId = reminder.getUser().getKeycloakId();
-            if (keycloakId == null || keycloakId.isBlank()) {
-                reminder.setDispatchedAt(now);
-                log.warn("Notification push skipped because user has no Keycloak identity: userId={} notificationId={}",
+            if (keycloakId != null && !keycloakId.isBlank()) {
+                messagingTemplate.convertAndSendToUser(
+                        keycloakId, USER_DESTINATION, NotificationMessage.from(reminder));
+            } else {
+                log.warn("WebSocket notification skipped because user has no Keycloak identity: userId={} notificationId={}",
                         reminder.getUserId(), reminder.getReminderId());
-                continue;
             }
-            messagingTemplate.convertAndSendToUser(
-                    keycloakId, USER_DESTINATION, NotificationMessage.from(reminder));
             boolean remotePushAccepted = expoPushNotificationService.send(reminder);
-            // Record the attempt even if Expo is temporarily unavailable. The
-            // existing retry window will try again without hot-looping every five seconds;
-            // the unacknowledged reminder remains available through the durable inbox.
+            // A reminder is claimed permanently after its first delivery attempt. Expo
+            // can accept a request even when the response is lost, so retrying an
+            // unacknowledged request would create duplicate native notifications.
             reminder.setDispatchedAt(now);
+            if (!remotePushAccepted) {
+                log.warn("Remote notification delivery was not accepted: userId={} notificationId={} type={}",
+                        reminder.getUserId(), reminder.getReminderId(), reminder.getNotificationType());
+            }
             log.debug("Notification push attempted: userId={} notificationId={} type={} remotePushAccepted={}",
                     reminder.getUserId(), reminder.getReminderId(), reminder.getNotificationType(), remotePushAccepted);
         }

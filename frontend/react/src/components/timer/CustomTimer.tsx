@@ -42,6 +42,11 @@ import { createAuthenticatedStompClient } from '../../services/authenticatedStom
 import { usePomodoro } from '../../hooks/usePomodoro';
 import { PomodoroStatus } from '../../types/PomodoroStatus';
 import { WhiteNoiseControl } from './WhiteNoiseControl';
+import {
+    createOptimisticCompletedPomodoroStatus,
+    createOptimisticPomodoroStatus,
+    getOptimisticPomodoroStatus,
+} from '../../services/utils/optimisticPomodoro';
 
 interface Task {
     taskId: string;
@@ -62,6 +67,10 @@ SlideFromRight.displayName = 'SlideFromRight';
 
 type PomodoroFeedback = { id: number; message: string };
 
+function isWaitingForPhase(status: PomodoroStatus | null): boolean {
+    return status?.phase === 'WAITING_FOR_BREAK' || status?.phase === 'WAITING_FOR_FOCUS';
+}
+
 export function CustomTimer({ task }: Props) {
     const theme = useTheme();
     const pomodoroGreen = theme.palette.mode === 'dark' ? '#9BC5A3' : '#7EA88A';
@@ -70,22 +79,29 @@ export function CustomTimer({ task }: Props) {
         activePomodoro,
         refreshActivePomodoro,
         publishPomodoroStatus,
+        clearPomodoroMutation,
     } = usePomodoro();
     const [status, setStatus] = useState<PomodoroStatus | null>(() => (
         activePomodoro?.associatedTaskId === task?.taskId ? activePomodoro : null
     ));
     const [pomodoroConfig, setPomodoroConfig] = useState<PomodoroConfig>(NORMAL_POMODORO_CONFIG);
+    const lastPomodoroStatusRef = useRef<PomodoroStatus | null>(status);
+    const pomodoroMutationRevisionRef = useRef(0);
     const [isConnected, setIsConnected] = useState(false);
     const [pomodoroFeedback, setPomodoroFeedback] = useState<PomodoroFeedback | null>(null);
-    const [isLoading, setIsLoading] = useState(false);
     const stompClientRef = useRef<Client | null>(null);
     const pomodoroFeedbackIdRef = useRef(0);
 
     useEffect(() => {
         if (activePomodoro?.active && activePomodoro.associatedTaskId === task?.taskId) {
+            lastPomodoroStatusRef.current = activePomodoro;
             setStatus(activePomodoro);
         } else if (!activePomodoro) {
-            setStatus(previous => previous?.active ? null : previous);
+            setStatus(previous => {
+                const next = previous?.active ? null : previous;
+                lastPomodoroStatusRef.current = next;
+                return next;
+            });
         }
     }, [activePomodoro, task?.taskId]);
 
@@ -115,6 +131,28 @@ export function CustomTimer({ task }: Props) {
         ? status?.phase === 'WAITING_FOR_BREAK' ? 'Start break' : 'Start focus session'
         : status?.sessionRunning ? 'Pause focus session' : 'Resume focus session';
 
+    const applyLocalPomodoroStatus = useCallback((
+        nextStatus: PomodoroStatus | null,
+        authoritative = false,
+        optimistic = false,
+    ): boolean => {
+        if (!publishPomodoroStatus(nextStatus, authoritative, optimistic)) return false;
+        lastPomodoroStatusRef.current = nextStatus;
+        setStatus(nextStatus);
+        return true;
+    }, [publishPomodoroStatus]);
+
+    const rollbackPomodoroMutation = useCallback((
+        mutationRevision: number,
+        optimisticStatus: PomodoroStatus,
+        previousStatus: PomodoroStatus | null,
+    ) => {
+        if (pomodoroMutationRevisionRef.current !== mutationRevision
+            || lastPomodoroStatusRef.current !== optimisticStatus) return;
+        clearPomodoroMutation();
+        applyLocalPomodoroStatus(previousStatus, true);
+    }, [applyLocalPomodoroStatus, clearPomodoroMutation]);
+
     useEffect(() => {
         let cancelled = false;
         getPomodoroConfig()
@@ -138,60 +176,91 @@ export function CustomTimer({ task }: Props) {
         if (stored) setFormData(stored);
     }), []);
 
-    const handleTogglePlayPause = async () => {
+    const handleTogglePlayPause = () => {
         if (!task) return;
 
-        setIsLoading(true);
-        try {
-            if (waitingForPhase) {
-                await taskService.startNextPomodoroPhase(task.taskId);
-            } else if (status?.sessionRunning) {
-                await taskService.pauseSession(task.taskId);
-            } else {
-                await taskService.unpauseSession(task.taskId);
-            }
+        const previousStatus = lastPomodoroStatusRef.current?.active
+            ? lastPomodoroStatusRef.current
+            : status?.active ? status : null;
+        if (!previousStatus) return;
+
+        const optimisticStatus = getOptimisticPomodoroStatus(
+            previousStatus,
+            'toggle',
+            formData,
+            pomodoroConfig.secondsMode,
+        );
+        if (!optimisticStatus || !applyLocalPomodoroStatus(optimisticStatus, false, true)) return;
+
+        const mutationRevision = ++pomodoroMutationRevisionRef.current;
+        const request = isWaitingForPhase(previousStatus)
+            ? taskService.startNextPomodoroPhase(task.taskId)
+            : previousStatus.sessionRunning
+                ? taskService.pauseSession(task.taskId)
+                : taskService.unpauseSession(task.taskId);
+        void request.then(() => {
+            if (pomodoroMutationRevisionRef.current !== mutationRevision) return;
             void refreshActivePomodoro(true).catch(error => {
                 console.error('Could not refresh the Pomodoro after changing its phase:', error);
             });
-        } catch (error) {
+        }).catch(error => {
             console.error('Error toggling play/pause:', error);
-            showPomodoroError();
-        } finally {
-            setIsLoading(false);
-        }
+            rollbackPomodoroMutation(mutationRevision, optimisticStatus, previousStatus);
+            if (pomodoroMutationRevisionRef.current === mutationRevision) showPomodoroError();
+        });
     };
 
-    const handleEndSession = async () => {
+    const handleEndSession = () => {
         if (!task) return;
 
-        setIsLoading(true);
-        try {
-            await taskService.endPomodoro(task.taskId);
-            await refreshActivePomodoro(true);
-            setStatus(null);
-        } catch (error) {
+        const previousStatus = lastPomodoroStatusRef.current?.active
+            ? lastPomodoroStatusRef.current
+            : status?.active ? status : null;
+        if (!previousStatus) return;
+
+        const optimisticStatus = createOptimisticCompletedPomodoroStatus(previousStatus);
+        if (!applyLocalPomodoroStatus(optimisticStatus, false, true)) return;
+
+        const mutationRevision = ++pomodoroMutationRevisionRef.current;
+        void taskService.endPomodoro(task.taskId).then(completedStatus => {
+            if (pomodoroMutationRevisionRef.current === mutationRevision
+                && lastPomodoroStatusRef.current === optimisticStatus) {
+                applyLocalPomodoroStatus(completedStatus, true);
+            }
+        }).catch(error => {
             console.error('Error ending session:', error);
-            showPomodoroError();
-        } finally {
-            setIsLoading(false);
-        }
+            rollbackPomodoroMutation(mutationRevision, optimisticStatus, previousStatus);
+            if (pomodoroMutationRevisionRef.current === mutationRevision) showPomodoroError();
+        });
     };
 
-    const handleFinishBreak = async () => {
+    const handleFinishBreak = () => {
         if (!task) return;
 
-        setIsLoading(true);
-        try {
-            await taskService.finishPomodoroBreak(task.taskId);
+        const previousStatus = lastPomodoroStatusRef.current?.active
+            ? lastPomodoroStatusRef.current
+            : status?.active ? status : null;
+        if (!previousStatus) return;
+
+        const optimisticStatus = getOptimisticPomodoroStatus(
+            previousStatus,
+            'finish-break',
+            formData,
+            pomodoroConfig.secondsMode,
+        );
+        if (!optimisticStatus || !applyLocalPomodoroStatus(optimisticStatus, false, true)) return;
+
+        const mutationRevision = ++pomodoroMutationRevisionRef.current;
+        void taskService.finishPomodoroBreak(task.taskId).then(() => {
+            if (pomodoroMutationRevisionRef.current !== mutationRevision) return;
             void refreshActivePomodoro(true).catch(error => {
                 console.error('Could not refresh the Pomodoro after ending its break:', error);
             });
-        } catch (error) {
+        }).catch(error => {
             console.error('Error ending Pomodoro break:', error);
-            showPomodoroError();
-        } finally {
-            setIsLoading(false);
-        }
+            rollbackPomodoroMutation(mutationRevision, optimisticStatus, previousStatus);
+            if (pomodoroMutationRevisionRef.current === mutationRevision) showPomodoroError();
+        });
     };
 
     const subscribeToTask = useCallback((taskId: string) => {
@@ -209,6 +278,7 @@ export function CustomTimer({ task }: Props) {
                 try {
                     const newStatus: PomodoroStatus = JSON.parse(message.body);
                     if (!publishPomodoroStatus(newStatus)) return;
+                    lastPomodoroStatusRef.current = newStatus;
                     setStatus(newStatus);
                 } catch (error) {
                     console.error('Error parsing message:', error);
@@ -280,36 +350,41 @@ export function CustomTimer({ task }: Props) {
         }
     }, [task?.taskId, isConnected, subscribeToTask]);
 
-    const startPomodoro = async () => {
-        // Starting before the live timer channel is ready is harmless; the next click can try again.
-        if (!task || !isConnected) {
-            return;
-        }
+    const startPomodoro = () => {
+        // Starting before the live timer channel is ready is harmless; the
+        // optimistic state keeps the timer usable while the socket connects.
+        if (!task) return;
 
-        setIsLoading(true);
-        try {
-            void requestSystemNotificationPermission()
-                .catch(error => console.error('Failed to request Pomodoro notification permission:', error));
-            console.log('Starting pomodoro with data:', formData);
-            await taskService.startPomodoro(
-                task.taskId,
-                formData.focusDuration,
-                formData.shortBreakDuration,
-                formData.longBreakDuration,
-                formData.numFocuses,
-                formData.longBreakCooldown,
-                pomodoroConfig.secondsMode
-            );
+        const optimisticStatus = createOptimisticPomodoroStatus(
+            task.taskId,
+            formData,
+            pomodoroConfig.secondsMode,
+        );
+        if (!applyLocalPomodoroStatus(optimisticStatus, false, true)) return;
+
+        const mutationRevision = ++pomodoroMutationRevisionRef.current;
+        void requestSystemNotificationPermission()
+            .catch(error => console.error('Failed to request Pomodoro notification permission:', error));
+        console.log('Starting pomodoro with data:', formData);
+        void taskService.startPomodoro(
+            task.taskId,
+            formData.focusDuration,
+            formData.shortBreakDuration,
+            formData.longBreakDuration,
+            formData.numFocuses,
+            formData.longBreakCooldown,
+            pomodoroConfig.secondsMode
+        ).then(() => {
+            if (pomodoroMutationRevisionRef.current !== mutationRevision) return;
             void refreshActivePomodoro(true).catch(error => {
                 console.error('Could not refresh the Pomodoro after starting it:', error);
             });
             console.log('Pomodoro started successfully');
-        } catch (error) {
+        }).catch(error => {
             console.error('Error starting pomodoro:', error);
-            showPomodoroError();
-        } finally {
-            setIsLoading(false);
-        }
+            rollbackPomodoroMutation(mutationRevision, optimisticStatus, null);
+            if (pomodoroMutationRevisionRef.current === mutationRevision) showPomodoroError();
+        });
     };
 
     const formatTime = (seconds: number): string => {
@@ -360,21 +435,18 @@ export function CustomTimer({ task }: Props) {
                                 label={`Focus (${pomodoroConfig.durationUnit})`}
                                 value={formData.focusDuration}
                                 onChange={value => updatePomodoroForm({ focusDuration: value })}
-                                disabled={isLoading}
                             />
                             <PomodoroNumberField
                                 name="shortBreakDuration"
                                 label={`Short Break (${pomodoroConfig.durationUnit})`}
                                 value={formData.shortBreakDuration}
                                 onChange={value => updatePomodoroForm({ shortBreakDuration: value })}
-                                disabled={isLoading}
                             />
                             <PomodoroNumberField
                                 name="longBreakDuration"
                                 label={`Long Break (${pomodoroConfig.durationUnit})`}
                                 value={formData.longBreakDuration}
                                 onChange={value => updatePomodoroForm({ longBreakDuration: value })}
-                                disabled={isLoading}
                             />
                             <PomodoroNumberField
                                 name="numFocuses"
@@ -383,7 +455,6 @@ export function CustomTimer({ task }: Props) {
                                 onChange={value => updatePomodoroForm({ numFocuses: value })}
                                 min={1}
                                 max={10}
-                                disabled={isLoading}
                             />
                         </Box>
 
@@ -391,11 +462,10 @@ export function CustomTimer({ task }: Props) {
                             variant="contained"
                             color="primary"
                             onClick={startPomodoro}
-                            disabled={isLoading}
                             fullWidth
-                            startIcon={isLoading ? <CircularProgress size={20} /> : <PlayArrowIcon />}
+                            startIcon={<PlayArrowIcon />}
                         >
-                            {isLoading ? 'Starting...' : 'Start Session'}
+                            Start Session
                         </Button>
                     </>
                 ) : (
@@ -524,7 +594,7 @@ export function CustomTimer({ task }: Props) {
                             {/* Controls */}
                             {(status.sessionActive || waitingForPhase || status.phase === 'BREAK') && (
                                 <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
-                                    <WhiteNoiseControl size="large" disabled={isLoading} />
+                                    <WhiteNoiseControl size="large" />
                                     {(status.sessionActive || waitingForPhase) && (
                                         <Tooltip title={playPauseLabel}>
                                             <span>
@@ -533,7 +603,6 @@ export function CustomTimer({ task }: Props) {
                                                     aria-label={playPauseLabel}
                                                     color={waitingForPhase && status.phase === 'WAITING_FOR_BREAK' ? 'inherit' : 'primary'}
                                                     size="large"
-                                                    disabled={isLoading}
                                                     sx={{
                                                         color: waitingForPhase && status.phase === 'WAITING_FOR_BREAK' ? pomodoroGreen : undefined,
                                                         backgroundColor: 'action.hover',
@@ -555,7 +624,6 @@ export function CustomTimer({ task }: Props) {
                                                     aria-label="End break and start the next focus session"
                                                     color="primary"
                                                     size="large"
-                                                    disabled={isLoading}
                                                     sx={{
                                                         backgroundColor: 'action.hover',
                                                         '&:hover': { backgroundColor: 'action.selected' },
@@ -573,7 +641,6 @@ export function CustomTimer({ task }: Props) {
                                                 aria-label="End Pomodoro session"
                                                 color="inherit"
                                                 size="large"
-                                                disabled={isLoading}
                                                 sx={{
                                                     color: 'error.light',
                                                     backgroundColor: 'action.hover',

@@ -16,7 +16,6 @@ import { reportError } from '@/lib/errors';
 import { useAuth } from '@/providers/AuthProvider';
 import { usePreferences } from '@/providers/PreferencesProvider';
 import { useAppPopup } from '@/providers/PopupProvider';
-import { useNotifications } from '@/providers/NotificationProvider';
 import { accentOptions, useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
 
@@ -64,7 +63,6 @@ export default function SettingsScreen() {
     setSoundEffectsEnabled,
   } = usePreferences();
   const { confirm, showError } = useAppPopup();
-  const { syncCheckupNotifications } = useNotifications();
   const { colors, mode, accent, setMode, setAccent } = useAppTheme();
   const resource = useAsyncData(() => api.preferences.get());
   const [currentPassword, setCurrentPassword] = useState('');
@@ -99,11 +97,6 @@ export default function SettingsScreen() {
     try {
       const updated = await api.preferences.update({ [key]: value });
       resource.setData(updated);
-      if (key === 'checkupNotificationsEnabled') {
-        void syncCheckupNotifications(updated).catch(cause => {
-          console.error('Could not synchronize check-up notifications:', cause);
-        });
-      }
     }
     catch (cause) { resource.setData(previous); void showError('Could not save setting', reportError('Could not save setting', cause)); }
   }
@@ -140,9 +133,6 @@ export default function SettingsScreen() {
       setCheckupStartTime(updated.checkupStartTime.slice(0, 5));
       setCheckupTimesPerDay(String(updated.checkupTimesPerDay));
       setCheckupScheduleEdited(false);
-      void syncCheckupNotifications(updated).catch(cause => {
-        console.error('Could not synchronize check-up notifications:', cause);
-      });
     } catch (cause) {
       resource.setData(previous);
       void showError('Could not save schedule', reportError('Could not save check-up schedule', cause));

@@ -3,10 +3,13 @@ package org.osama.task.recurrence;
 import lombok.extern.slf4j.Slf4j;
 import org.osama.exceptions.ResourceNotFoundException;
 import org.osama.requests.NewTaskRequest;
+import org.osama.stat.StatTaskLinkService;
 import org.osama.task.Task;
 import org.osama.task.TaskRepository;
 import org.osama.task.TaskSkipReason;
 import org.osama.task.TaskService;
+import org.osama.task.recurrence.events.TaskSeriesOccurrencesChangedEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,13 +34,19 @@ public class TaskSeriesService {
     private final TaskSeriesRepository seriesRepository;
     private final TaskRepository taskRepository;
     private final TaskService taskService;
+    private final StatTaskLinkService statTaskLinkService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public TaskSeriesService(TaskSeriesRepository seriesRepository,
                              TaskRepository taskRepository,
-                             TaskService taskService) {
+                             TaskService taskService,
+                             StatTaskLinkService statTaskLinkService,
+                             ApplicationEventPublisher eventPublisher) {
         this.seriesRepository = seriesRepository;
         this.taskRepository = taskRepository;
         this.taskService = taskService;
+        this.statTaskLinkService = statTaskLinkService;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
@@ -84,13 +93,13 @@ public class TaskSeriesService {
         materializeOccurrences(series, userId);
         log.info("Task converted to recurring series: userId={} taskId={} seriesId={}",
                 userId, taskId, series.getSeriesId());
-        return toResponse(series);
+        return toResponse(series, userId);
     }
 
     @Transactional(readOnly = true)
     public TaskSeriesResponse getSeries(String seriesId, String userId) {
         return toResponse(seriesRepository.findBySeriesIdAndUserId(seriesId, userId)
-                .orElseThrow(() -> new ResourceNotFoundException("Task series not found: " + seriesId)));
+                .orElseThrow(() -> new ResourceNotFoundException("Task series not found: " + seriesId)), userId);
     }
 
     @Transactional(readOnly = true)
@@ -142,10 +151,11 @@ public class TaskSeriesService {
         }
         if (saved.isActive()) {
             materializeOccurrences(saved, userId);
+            eventPublisher.publishEvent(new TaskSeriesOccurrencesChangedEvent(saved.getSeriesId(), userId));
         }
         log.info("Task series updated: userId={} seriesId={} active={} frequency={} importance={}",
                 userId, seriesId, saved.isActive(), saved.getRecurrenceFrequency(), saved.getImportance());
-        return toResponse(saved);
+        return toResponse(saved, userId);
     }
 
     private void updateOccurrenceImportance(String seriesId, int importance) {
@@ -326,13 +336,14 @@ public class TaskSeriesService {
         }
     }
 
-    private TaskSeriesResponse toResponse(TaskSeries series) {
+    private TaskSeriesResponse toResponse(TaskSeries series, String userId) {
         return new TaskSeriesResponse(
                 series.getSeriesId(), series.getName(), series.getDescription(), series.getTag(),
                 series.getImportance(), series.getMentalThreadId(), series.getStartDateTime(),
                 series.getRecurrenceFrequency(), series.getRecurrenceEndDate(), series.getRecurrenceInterval(),
                 series.getRecurrenceUnit(), TaskRecurrenceDays.decode(series.getRecurrenceDaysOfWeek()),
                 series.getTimeZone(), series.getReminderMinutesBefore(), series.isActive(),
-                series.getCreatedAt(), series.getUpdatedAt());
+                series.getCreatedAt(), series.getUpdatedAt(),
+                statTaskLinkService.isStatLinkedSeries(series.getSeriesId(), series.getName(), userId));
     }
 }

@@ -22,11 +22,6 @@ import { useAuth } from '@/providers/AuthProvider';
 import { useAppPopup } from '@/providers/PopupProvider';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
-import {
-  cancelMeditationCompletionNotification,
-  getMeditationCompletionNotification,
-  scheduleMeditationCompletionNotification,
-} from '@/services/localNotifications';
 import type { MeditationSession } from '@/types/models';
 
 const MIN_SESSION_MINUTES = 1;
@@ -330,7 +325,6 @@ export default function MeditationScreen() {
   const bellSessionRef = useRef<string | null>(null);
   const lastBellRef = useRef(0);
   const completionGongSessionRef = useRef<string | null>(null);
-  const completionNotificationScheduledRef = useRef(false);
   const audioStartedRef = useRef(false);
   const lastAppliedSoundRef = useRef<MeditationSoundId>('rain');
   const [loadedSettingsKey, setLoadedSettingsKey] = useState<string | null>(null);
@@ -447,30 +441,14 @@ export default function MeditationScreen() {
   useEffect(() => {
     if (!session) {
       completionGongSessionRef.current = null;
-      completionNotificationScheduledRef.current = false;
       return;
     }
     if (!sessionComplete || completionGongSessionRef.current === session.id) return;
 
     completionGongSessionRef.current = session.id;
     stopAudio();
-    if (completionNotificationScheduledRef.current) return;
-
-    // The persistent marker covers the case where the app was killed while the
-    // native completion notification was delivered and is opened again later.
-    void getMeditationCompletionNotification(session.id).then(schedule => {
-      if (!schedule && completionGongSessionRef.current === session.id) playCompletionGong();
-    });
+    playCompletionGong();
   }, [playCompletionGong, session, sessionComplete, stopAudio]);
-
-  useEffect(() => {
-    if (!session) return;
-    let active = true;
-    void getMeditationCompletionNotification(session.id).then(schedule => {
-      if (active) completionNotificationScheduledRef.current = schedule !== null;
-    });
-    return () => { active = false; };
-  }, [session]);
 
   function chooseSound(sound: MeditationSoundId) {
     setSelectedSound(sound);
@@ -510,12 +488,6 @@ export default function MeditationScreen() {
 
       setClientRunningAnchor({ sessionId: started.id, startedAt });
       resource.setData(started);
-      void scheduleMeditationCompletionNotification(
-        started.id,
-        startedAt + started.intendedLength * 1_000,
-      ).then(schedule => {
-        if (mountedRef.current) completionNotificationScheduledRef.current = schedule;
-      });
     } catch (cause) {
       if (!mountedRef.current) return;
       resource.setData(undefined);
@@ -542,18 +514,9 @@ export default function MeditationScreen() {
         const resumedAt = Date.now();
         setClientRunningAnchor({ sessionId: updated.id, startedAt: resumedAt });
         if (!soundMuted) resumeAudio();
-        const remainingSeconds = Math.max(0, updated.intendedLength - durationInSeconds(updated.totalSessionTime));
-        if (remainingSeconds > 0) {
-          completionNotificationScheduledRef.current = await scheduleMeditationCompletionNotification(
-            updated.id,
-            resumedAt + remainingSeconds * 1_000,
-          );
-        }
       } else {
         setClientRunningAnchor(null);
         pauseAudio();
-        completionNotificationScheduledRef.current = false;
-        void cancelMeditationCompletionNotification(updated.id);
       }
     } catch (cause) {
       setError(reportError('Could not update meditation', cause));
@@ -591,8 +554,6 @@ export default function MeditationScreen() {
       setFinishSheetOpen(false);
       stopAudio();
       audioStartedRef.current = false;
-      completionNotificationScheduledRef.current = false;
-      void cancelMeditationCompletionNotification(finished.id);
     } catch (cause) {
       setError(reportError('Could not finish meditation', cause));
     } finally {
@@ -611,8 +572,6 @@ export default function MeditationScreen() {
       setFinishSheetOpen(false);
       stopAudio();
       audioStartedRef.current = false;
-      completionNotificationScheduledRef.current = false;
-      void cancelMeditationCompletionNotification(session.id);
     } catch (cause) {
       setError(reportError('Could not dismiss meditation', cause));
     } finally {
@@ -649,8 +608,6 @@ export default function MeditationScreen() {
           setFinishSheetOpen(false);
           stopAudio();
           audioStartedRef.current = false;
-          completionNotificationScheduledRef.current = false;
-          void cancelMeditationCompletionNotification(session.id);
           navigation.dispatch(event.data.action);
         } catch (cause) {
           leavingRef.current = false;

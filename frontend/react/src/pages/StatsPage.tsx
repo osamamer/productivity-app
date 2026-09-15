@@ -327,10 +327,6 @@ export function StatsPage() {
         return () => { active = false; };
     }, [loadDefinitions, loadGroups]);
 
-    useEffect(() => subscribeToResourceInvalidation('tasks', () => {
-        setResourceRefreshKey(previous => previous + 1);
-    }), []);
-
     useEffect(() => subscribeToResourceInvalidation('stats', () => {
         setResourceRefreshKey(previous => previous + 1);
         void loadDefinitions();

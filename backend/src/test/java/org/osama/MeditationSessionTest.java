@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class MeditationSessionTest {
 
     private final MeditationSessionService meditationSessionService =
-            new MeditationSessionService(null, null, null);
+            new MeditationSessionService(null, null, null, null);
 
     @Test
     void newSessionStartsWithNoAccumulatedTime() {

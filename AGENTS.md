@@ -61,7 +61,9 @@ Feature packages follow a consistent pattern — each has an entity, repository,
 
 WebSocket (STOMP) is configured in `WebSocketConfig.java`. The frontend connects via `/ws` (proxied by Vite).
 
-Reminder delivery is database-first. `ScheduledJobExecutor` locks and runs each due Pomodoro job in one transaction with creation of its notification, while `NotificationService` retries WebSocket pushes for unacknowledged due records. The app-wide frontend `NotificationCenter` owns the single authenticated socket, synchronizes `/api/v1/notifications/due` on startup/reconnect/focus/visibility/online changes and on a recovery interval, presents either an OS notification or a queued in-app fallback, then acknowledges it. Never add feature-specific ephemeral notification sockets; create another typed durable notification instead.
+Reminder delivery is database-first. `ScheduledJobExecutor` locks and runs each due Pomodoro job in one transaction with creation of its notification, while `NotificationService` sends each due record once to the WebSocket and Expo Push Service. The app-wide frontend `NotificationCenter` owns the single authenticated socket, synchronizes `/api/v1/notifications/due` on startup/reconnect/focus/visibility/online changes and on a recovery interval, presents either an OS notification or a queued in-app fallback, then acknowledges it. Never add feature-specific ephemeral notification sockets; create another typed durable notification instead.
+
+The mobile client uses Expo remote push for every application notification, including calendar, task, check-up, Pomodoro, and meditation notifications. It must not schedule local copies or re-present the durable inbox; startup cleanup only removes schedules left by older mobile builds. The backend records the first dispatch attempt so an unacknowledged remote push is not sent repeatedly.
 
 ### Database
 

@@ -2,6 +2,9 @@ package org.osama.session.meditation;
 
 import jakarta.transaction.Transactional;
 import lombok.extern.slf4j.Slf4j;
+import org.osama.reminder.NotificationType;
+import org.osama.reminder.Reminder;
+import org.osama.reminder.ReminderRepository;
 import org.osama.session.events.MeditationSessionEndedEvent;
 import org.osama.user.User;
 import org.osama.user.UserRepository;
@@ -9,6 +12,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.UUID;
@@ -19,16 +23,24 @@ import static org.osama.constants.MeditationConstants.*;
 @Service
 @Transactional
 public class MeditationSessionService {
+    private static final String COMPLETION_NOTIFICATION_PREFIX = "meditation-completion-";
+    private static final String COMPLETION_NOTIFICATION_TITLE = "Meditation complete";
+    private static final String COMPLETION_NOTIFICATION_BODY = "Your meditation is complete.";
+    private static final String COMPLETION_NOTIFICATION_TARGET = "/meditation";
+
     private final MeditationSessionRepository meditationSessionRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final UserRepository userRepository;
+    private final ReminderRepository reminderRepository;
 
     public MeditationSessionService(MeditationSessionRepository meditationSessionRepository,
                                     ApplicationEventPublisher eventPublisher,
-                                    UserRepository userRepository) {
+                                    UserRepository userRepository,
+                                    ReminderRepository reminderRepository) {
         this.meditationSessionRepository = meditationSessionRepository;
         this.eventPublisher = eventPublisher;
         this.userRepository = userRepository;
+        this.reminderRepository = reminderRepository;
     }
 
     public MeditationSession startSession(int mood, int numIntervalBells, int intendedLength, String userId) {
@@ -54,6 +66,7 @@ public class MeditationSessionService {
         session.setRunning(true);
         session.setUser(user);
         MeditationSession savedSession = meditationSessionRepository.save(session);
+        createCompletionReminder(savedSession, savedSession.getIntendedLength());
         log.info("Meditation session started: userId={} sessionId={} moodBefore={} intendedLength={} intervalBells={}",
                 userId, savedSession.getId(), mood, intendedLength, numIntervalBells);
         return savedSession;
@@ -84,7 +97,9 @@ public class MeditationSessionService {
         addSessionTimeAfterPausing(runningSession);
         log.info("Meditation session paused: userId={} sessionId={} totalTime={}",
                 userId, runningSession.getId(), runningSession.getTotalSessionTime());
-        return meditationSessionRepository.save(runningSession);
+        MeditationSession savedSession = meditationSessionRepository.save(runningSession);
+        deleteCompletionReminder(savedSession.getId());
+        return savedSession;
     }
 
     public MeditationSession pauseSession(String sessionId) {
@@ -106,7 +121,9 @@ public class MeditationSessionService {
         session.setRunning(true);
         session.setLastUnpauseTime(LocalDateTime.now());
         log.info("Meditation session unpaused: userId={} sessionId={}", userId, session.getId());
-        return meditationSessionRepository.save(session);
+        MeditationSession savedSession = meditationSessionRepository.save(session);
+        createCompletionReminder(savedSession, remainingSeconds(savedSession));
+        return savedSession;
     }
 
     public MeditationSession unpauseSession(String sessionId) {
@@ -137,6 +154,7 @@ public class MeditationSessionService {
         log.info("Meditation session ended: userId={} sessionId={} totalTime={} moodAfter={}",
                 userId, session.getId(), session.getTotalSessionTime(), moodAfter);
         MeditationSession savedSession = meditationSessionRepository.save(session);
+        deleteCompletionReminder(savedSession.getId());
         eventPublisher.publishEvent(new MeditationSessionEndedEvent(
                 savedSession.getId(),
                 savedSession.getUser().getId(),
@@ -159,6 +177,7 @@ public class MeditationSessionService {
         }
 
         MeditationSession session = activeSession.get();
+        deleteCompletionReminder(session.getId());
         meditationSessionRepository.delete(session);
         log.info("Meditation session discarded: userId={} sessionId={}", userId, session.getId());
     }
@@ -198,5 +217,36 @@ public class MeditationSessionService {
     public void validateIntendedLength(int intendedLength) {
         if (intendedLength < 0)
             throw new IllegalArgumentException("Intended meditation length cannot be negative");
+    }
+
+    private void createCompletionReminder(MeditationSession session, long durationSeconds) {
+        if (durationSeconds <= 0) return;
+
+        Reminder reminder = new Reminder();
+        reminder.setReminderId(completionNotificationId(session.getId()));
+        reminder.setDateTime(Instant.now().plusSeconds(durationSeconds));
+        reminder.setRepeat(0);
+        reminder.setNotificationType(NotificationType.MEDITATION_COMPLETED);
+        reminder.setTitle(COMPLETION_NOTIFICATION_TITLE);
+        reminder.setBody(COMPLETION_NOTIFICATION_BODY);
+        reminder.setTargetUrl(COMPLETION_NOTIFICATION_TARGET);
+        reminder.setUser(session.getUser());
+        reminderRepository.save(reminder);
+    }
+
+    private long remainingSeconds(MeditationSession session) {
+        Duration totalSessionTime = session.getTotalSessionTime() == null
+                ? Duration.ZERO
+                : session.getTotalSessionTime();
+        return Math.max(0L, session.getIntendedLength() - totalSessionTime.getSeconds());
+    }
+
+    private void deleteCompletionReminder(String sessionId) {
+        reminderRepository.findById(completionNotificationId(sessionId))
+                .ifPresent(reminderRepository::delete);
+    }
+
+    private String completionNotificationId(String sessionId) {
+        return COMPLETION_NOTIFICATION_PREFIX + sessionId;
     }
 }

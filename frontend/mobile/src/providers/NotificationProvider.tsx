@@ -1,33 +1,18 @@
 import { router } from 'expo-router';
 import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
-import { PropsWithChildren, createContext, useCallback, useContext, useEffect, useRef } from 'react';
+import { PropsWithChildren, useCallback, useEffect, useRef } from 'react';
 import { AppState, Platform } from 'react-native';
 
 import { useAuth } from '@/providers/AuthProvider';
-import { useAppPopup } from '@/providers/PopupProvider';
 import { api } from '@/services/api';
 import {
-  clearLocalCalendarReminders,
-  clearLocalTaskReminders,
-  clearLocalCheckupNotifications,
+  clearLegacyLocalNotifications,
   ensureNotificationPermission,
-  MEDITATION_COMPLETION_NOTIFICATION_KIND,
-  syncLocalCheckupNotifications,
   LOCAL_CALENDAR_REMINDER_KIND,
   LOCAL_TASK_REMINDER_KIND,
-  syncCalendarReminders as syncLocalCalendarReminders,
-  syncTaskReminders as syncLocalTaskReminders,
-  type CalendarReminderRecord,
-  type TaskReminderRecord,
+  MEDITATION_COMPLETION_NOTIFICATION_KIND,
 } from '@/services/localNotifications';
-import type { ApplicationNotification, CalendarEvent, Task, UserPreferences } from '@/types/models';
-
-interface NotificationContextValue {
-  syncCalendarReminders: (events: CalendarEvent[]) => Promise<void>;
-  syncTaskReminders: (tasks?: Task[]) => Promise<void>;
-  syncCheckupNotifications: (preferences?: UserPreferences) => Promise<void>;
-}
 
 interface NotificationData {
   kind?: string;
@@ -36,13 +21,13 @@ interface NotificationData {
   type?: string;
 }
 
-const NotificationContext = createContext<NotificationContextValue | null>(null);
 const PUSH_REGISTRATION_RETRY_INTERVAL_MS = 5 * 60_000;
 
 Notifications.setNotificationHandler({
   handleNotification: async notification => {
     const data = notification.request.content.data;
-    const isMeditationCompletion = data?.kind === MEDITATION_COMPLETION_NOTIFICATION_KIND;
+    const isMeditationCompletion = data?.kind === MEDITATION_COMPLETION_NOTIFICATION_KIND
+      || data?.type === 'MEDITATION_COMPLETED';
     const hideForegroundMeditationNotification = isMeditationCompletion && AppState.currentState === 'active';
     return {
       shouldPlaySound: true,
@@ -65,44 +50,41 @@ function isMissingFirebaseConfiguration(cause: unknown): boolean {
 
 export function NotificationProvider({ children }: PropsWithChildren) {
   const { loading: authLoading, isAuthenticated } = useAuth();
-  const { showInfo } = useAppPopup();
-  const syncingRef = useRef(false);
-  const shownRef = useRef(new Set<string>());
-  const calendarRemindersRef = useRef<CalendarReminderRecord[]>([]);
-  const taskRemindersRef = useRef<TaskReminderRecord[]>([]);
-  const localCheckupsEnabledRef = useRef(false);
+  const acknowledgedRef = useRef(new Set<string>());
   const pushRegistrationInFlightRef = useRef<Promise<void> | null>(null);
   const pushRegisteredRef = useRef(false);
   const remotePushUnavailableRef = useRef(false);
 
-  const syncCalendarReminders = useCallback(async (events: CalendarEvent[]) => {
-    if (!isAuthenticated) return;
+  const acknowledgeNotification = useCallback(async (notificationId: string) => {
+    if (acknowledgedRef.current.has(notificationId)) return;
     try {
-      const result = await syncLocalCalendarReminders(events);
-      calendarRemindersRef.current = result.reminders;
+      await api.notifications.acknowledge(notificationId);
+      acknowledgedRef.current.add(notificationId);
     } catch (cause) {
-      calendarRemindersRef.current = [];
-      console.error('Could not synchronize Android calendar reminders:', errorObject(cause));
+      acknowledgedRef.current.delete(notificationId);
+      throw cause;
     }
-  }, [isAuthenticated]);
+  }, []);
 
-  const syncCheckupNotifications = useCallback(async (preferences?: UserPreferences) => {
-    if (!isAuthenticated) return;
-    const currentPreferences = preferences ?? await api.preferences.get();
-    const status = await syncLocalCheckupNotifications(currentPreferences);
-    localCheckupsEnabledRef.current = status === 'granted';
-  }, [isAuthenticated]);
-
-  const syncTaskReminders = useCallback(async (tasks?: Task[]) => {
-    if (!isAuthenticated || Platform.OS !== 'android') return;
+  const acknowledgePresentedNotifications = useCallback(async () => {
+    if (!isAuthenticated || Platform.OS === 'web') return;
     try {
-      const scheduledTasks = tasks ?? await api.tasks.scheduled();
-      taskRemindersRef.current = await syncLocalTaskReminders(scheduledTasks);
+      const presented = await Notifications.getPresentedNotificationsAsync();
+      const notificationIds = [...new Set(presented.map(notification => {
+        const data = notification.request.content.data as NotificationData | null | undefined;
+        return data?.notificationId;
+      }).filter((id): id is string => Boolean(id)))];
+      await Promise.all(notificationIds.map(async notificationId => {
+        try {
+          await acknowledgeNotification(notificationId);
+        } catch (cause) {
+          console.error(`Could not acknowledge presented notification ${notificationId}:`, errorObject(cause));
+        }
+      }));
     } catch (cause) {
-      taskRemindersRef.current = [];
-      console.error('Could not synchronize Android task reminders:', errorObject(cause));
+      console.error('Could not inspect presented mobile notifications:', errorObject(cause));
     }
-  }, [isAuthenticated]);
+  }, [acknowledgeNotification, isAuthenticated]);
 
   const registerRemotePushToken = useCallback(async () => {
     if (!isAuthenticated
@@ -113,6 +95,9 @@ export function NotificationProvider({ children }: PropsWithChildren) {
     if (pushRegistrationInFlightRef.current) return pushRegistrationInFlightRef.current;
 
     const registration = (async () => {
+      // Finish removing schedules from older builds before registering the token
+      // that enables the first remote push for this installation.
+      await clearLegacyLocalNotifications();
       if (!await ensureNotificationPermission()) return;
       const projectId = Constants.easConfig?.projectId
         ?? Constants.expoConfig?.extra?.eas?.projectId;
@@ -141,158 +126,33 @@ export function NotificationProvider({ children }: PropsWithChildren) {
     }
   }, [isAuthenticated]);
 
-  const localReminderMatches = useCallback((notification: ApplicationNotification): boolean => {
-    if (notification.type === 'MENTAL_STATE_CHECKUP') {
-      return localCheckupsEnabledRef.current
-        && !notification.notificationId.startsWith('mental-state-checkup-repeat-');
-    }
-    if (Platform.OS !== 'android') return false;
-    if (notification.type === 'CALENDAR_EVENT' && notification.eventStart) {
-      return calendarRemindersRef.current.some(record => record.eventStart === notification.eventStart
-        && record.title === notification.title
-        && record.allDay === Boolean(notification.allDay));
-    }
-    if (notification.type === 'TASK_REMINDER' && notification.taskId) {
-      return taskRemindersRef.current.some(record => record.taskId === notification.taskId
-        && record.title === notification.title
-        && record.triggerAt === new Date(notification.scheduledAt).getTime());
-    }
-    return false;
-  }, []);
-
-  const presentDueNotification = useCallback(async (notification: ApplicationNotification) => {
-    if (localReminderMatches(notification)) {
-      await api.notifications.acknowledge(notification.notificationId);
-      return;
-    }
-
-    if (Platform.OS === 'web') {
-      await showInfo(notification.title, notification.body ?? undefined);
-      await api.notifications.acknowledge(notification.notificationId);
-      return;
-    }
-
-    if (await ensureNotificationPermission()) {
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: notification.title,
-          body: notification.body ?? undefined,
-          data: {
-            notificationId: notification.notificationId,
-            targetUrl: notification.targetUrl,
-            type: notification.type,
-          },
-          sound: true,
-        },
-        trigger: null,
-      });
-    } else {
-      await showInfo(notification.title, notification.body ?? undefined);
-    }
-    await api.notifications.acknowledge(notification.notificationId);
-  }, [localReminderMatches, showInfo]);
-
-  const syncDue = useCallback(async () => {
-    if (!isAuthenticated || syncingRef.current) return;
-    syncingRef.current = true;
-    try {
-      const due = await api.notifications.due();
-      for (const notification of due) {
-        if (shownRef.current.has(notification.notificationId)) continue;
-        shownRef.current.add(notification.notificationId);
-        try {
-          await presentDueNotification(notification);
-        } catch (cause) {
-          console.error(`Could not present notification ${notification.notificationId}:`, errorObject(cause));
-          shownRef.current.delete(notification.notificationId);
-        }
-      }
-    } catch (cause) {
-      console.error('Could not synchronize due notifications:', errorObject(cause));
-    } finally {
-      syncingRef.current = false;
-    }
-  }, [isAuthenticated, presentDueNotification]);
-
-  const acknowledgePresentedNotifications = useCallback(async () => {
-    if (!isAuthenticated || Platform.OS === 'web') return;
-    try {
-      const presented = await Notifications.getPresentedNotificationsAsync();
-      await Promise.all(presented.map(async notification => {
-        const data = notification.request.content.data as NotificationData | null | undefined;
-        if (!data?.notificationId) return;
-        try {
-          await api.notifications.acknowledge(data.notificationId);
-        } catch (cause) {
-          console.error(`Could not acknowledge presented notification ${data.notificationId}:`, errorObject(cause));
-        }
-      }));
-    } catch (cause) {
-      console.error('Could not inspect presented mobile notifications:', errorObject(cause));
-    }
-  }, [isAuthenticated]);
-
-  const synchronizeAll = useCallback(async () => {
-    if (!isAuthenticated) return;
-    try {
-      await acknowledgePresentedNotifications();
-      const [checkupResult, eventsResult, tasksResult] = await Promise.allSettled([
-        syncCheckupNotifications(),
-        api.events.all(),
-        api.tasks.scheduled(),
-      ]);
-      if (checkupResult.status === 'rejected') {
-        console.error('Could not synchronize mental state check-ups:', errorObject(checkupResult.reason));
-      }
-      if (eventsResult.status === 'fulfilled') {
-        await syncCalendarReminders(eventsResult.value);
-      } else {
-        console.error('Could not load calendar events for reminders:', errorObject(eventsResult.reason));
-      }
-      if (tasksResult.status === 'fulfilled') {
-        await syncTaskReminders(tasksResult.value);
-      } else {
-        console.error('Could not load tasks for reminders:', errorObject(tasksResult.reason));
-      }
-      await syncDue();
-    } catch (cause) {
-      console.error('Could not synchronize mobile reminders:', errorObject(cause));
-    }
-  }, [acknowledgePresentedNotifications, isAuthenticated, syncCalendarReminders, syncCheckupNotifications, syncDue, syncTaskReminders]);
-
   useEffect(() => {
-    // Auth starts without a user while the encrypted session is being restored.
-    // Clearing native alarms during that window loses reminders across a cold start.
     if (authLoading) return;
 
     if (!isAuthenticated) {
-      shownRef.current.clear();
-      calendarRemindersRef.current = [];
-      taskRemindersRef.current = [];
-      localCheckupsEnabledRef.current = false;
+      acknowledgedRef.current.clear();
       pushRegisteredRef.current = false;
-      void clearLocalCalendarReminders();
-      void clearLocalTaskReminders();
-      void clearLocalCheckupNotifications();
+      remotePushUnavailableRef.current = false;
+      void clearLegacyLocalNotifications();
       return;
     }
 
-    void synchronizeAll();
-    const dueTimer = setInterval(() => void syncDue(), 60_000);
-    const calendarTimer = setInterval(() => void synchronizeAll(), 5 * 60_000);
-    const subscription = AppState.addEventListener('change', state => {
-      if (state === 'active') void synchronizeAll();
+    // Remove alarms from versions that used the local calendar, task, check-up,
+    // or meditation channels before the first remote push can arrive.
+    void clearLegacyLocalNotifications();
+    void acknowledgePresentedNotifications();
+    const appStateSubscription = AppState.addEventListener('change', state => {
+      if (state === 'active') void acknowledgePresentedNotifications();
     });
-    return () => {
-      clearInterval(dueTimer);
-      clearInterval(calendarTimer);
-      subscription.remove();
-    };
-  }, [authLoading, isAuthenticated, synchronizeAll, syncDue]);
+    return () => appStateSubscription.remove();
+  }, [acknowledgePresentedNotifications, authLoading, isAuthenticated]);
 
   useEffect(() => {
     if (authLoading || !isAuthenticated || Platform.OS === 'web') {
-      if (!isAuthenticated) pushRegisteredRef.current = false;
+      if (!isAuthenticated) {
+        pushRegisteredRef.current = false;
+        remotePushUnavailableRef.current = false;
+      }
       return;
     }
     void registerRemotePushToken();
@@ -313,22 +173,25 @@ export function NotificationProvider({ children }: PropsWithChildren) {
 
   useEffect(() => {
     if (!isAuthenticated || Platform.OS === 'web') return;
+
     const openNotification = (response: Notifications.NotificationResponse) => {
       const data = response.notification.request.content.data as NotificationData | null | undefined;
       if (data?.notificationId) {
-        void api.notifications.acknowledge(data.notificationId).catch(cause => {
+        void acknowledgeNotification(data.notificationId).catch(cause => {
           console.error(`Could not acknowledge opened notification ${data.notificationId}:`, errorObject(cause));
         });
       }
-      if (data?.kind === LOCAL_CALENDAR_REMINDER_KIND || data?.targetUrl === '/calendar') {
+      if (data?.kind === LOCAL_CALENDAR_REMINDER_KIND || data?.targetUrl === '/calendar' || data?.type === 'CALENDAR_EVENT') {
         router.push('/(tabs)/calendar');
       } else if (data?.kind === LOCAL_TASK_REMINDER_KIND || data?.targetUrl === '/tasks' || data?.type === 'TASK_REMINDER') {
         router.push('/(tabs)/tasks');
       } else if (data?.targetUrl === '/mental-state' || data?.type === 'MENTAL_STATE_CHECKUP') {
         router.push('/mental-state');
-      } else if (data?.kind === MEDITATION_COMPLETION_NOTIFICATION_KIND || data?.targetUrl === '/meditation') {
+      } else if (data?.kind === MEDITATION_COMPLETION_NOTIFICATION_KIND
+        || data?.targetUrl === '/meditation'
+        || data?.type === 'MEDITATION_COMPLETED') {
         router.push('/meditation');
-      } else if (data?.targetUrl === '/') {
+      } else if (data?.targetUrl === '/' || data?.type?.startsWith('POMODORO_')) {
         router.push('/(tabs)');
       } else {
         return;
@@ -337,11 +200,12 @@ export function NotificationProvider({ children }: PropsWithChildren) {
         console.error('Could not clear the opened notification response:', errorObject(cause));
       });
     };
-    const subscription = Notifications.addNotificationResponseReceivedListener(openNotification);
+
+    const responseSubscription = Notifications.addNotificationResponseReceivedListener(openNotification);
     const receivedSubscription = Notifications.addNotificationReceivedListener(notification => {
       const data = notification.request.content.data as NotificationData | null | undefined;
       if (!data?.notificationId) return;
-      void api.notifications.acknowledge(data.notificationId).catch(cause => {
+      void acknowledgeNotification(data.notificationId).catch(cause => {
         console.error(`Could not acknowledge received notification ${data.notificationId}:`, errorObject(cause));
       });
     });
@@ -351,20 +215,10 @@ export function NotificationProvider({ children }: PropsWithChildren) {
       console.error('Could not read the opened notification response:', errorObject(cause));
     });
     return () => {
-      subscription.remove();
+      responseSubscription.remove();
       receivedSubscription.remove();
     };
-  }, [isAuthenticated]);
+  }, [acknowledgeNotification, isAuthenticated]);
 
-  return (
-    <NotificationContext.Provider value={{ syncCalendarReminders, syncTaskReminders, syncCheckupNotifications }}>
-      {children}
-    </NotificationContext.Provider>
-  );
-}
-
-export function useNotifications(): NotificationContextValue {
-  const context = useContext(NotificationContext);
-  if (!context) throw new Error('useNotifications must be used inside NotificationProvider');
-  return context;
+  return <>{children}</>;
 }

@@ -456,7 +456,8 @@ const SubtaskList = React.memo(function SubtaskList({ items, onToggle, onDelete,
             >
                 {contextMenu && (
                     <MenuItem
-                        onClick={() => {
+                        onClick={event => {
+                            event.stopPropagation();
                             const subtask = contextMenu.subtask;
                             setContextMenu(null);
                             onDelete(subtask);
@@ -848,7 +849,10 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
         });
 
         try {
-            await taskService.deleteTaskInstance(subtask);
+            // A subtask is not part of the main-task list. Avoid invalidating
+            // that list while the details panel is applying its optimistic
+            // update, which would briefly remount the surrounding panel.
+            await taskService.deleteTaskInstance(subtask, { notifyResource: false });
         } catch (error) {
             setSubtaskState(previous => {
                 if (previous.taskId !== task.taskId

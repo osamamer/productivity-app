@@ -102,6 +102,21 @@ function isWaitingForPhase(status: PomodoroStatus | null): boolean {
   return status?.phase === 'WAITING_FOR_BREAK' || status?.phase === 'WAITING_FOR_FOCUS';
 }
 
+function optimisticStatusAllowsUpdate(
+  optimistic: PomodoroStatus | null,
+  next: PomodoroStatus | null,
+): boolean {
+  if (!optimistic) return true;
+  if (!next) return !optimistic.active;
+  if (next.pomodoroId !== optimistic.pomodoroId) return true;
+  if (!optimistic.active) return !next.active;
+  if (!next.active) return true;
+
+  return optimistic.sessionActive === next.sessionActive
+    && optimistic.sessionRunning === next.sessionRunning
+    && optimistic.phase === next.phase;
+}
+
 function isBreakPhase(status: PomodoroStatus): boolean {
   return status.phase
     ? status.phase === 'BREAK' || status.phase === 'WAITING_FOR_BREAK'
@@ -130,12 +145,70 @@ function optimisticStatus(taskId: string, form: PomodoroFormValues, config: Pomo
   };
 }
 
+function durationInSeconds(value: number, config: PomodoroConfig): number {
+  return Math.max(0, Math.round(config.secondsMode ? value : value * 60));
+}
+
+function optimisticToggleStatus(
+  status: PomodoroStatus,
+  form: PomodoroFormValues,
+  config: PomodoroConfig,
+): PomodoroStatus {
+  if (status.phase === 'WAITING_FOR_BREAK') {
+    const longBreak = status.currentFocusNumber % form.longBreakCooldown === 0;
+    return {
+      ...status,
+      sessionActive: false,
+      sessionRunning: false,
+      secondsPassedInSession: 0,
+      secondsUntilNextTransition: durationInSeconds(
+        longBreak ? form.longBreakDuration : form.shortBreakDuration,
+        config,
+      ),
+      phase: 'BREAK',
+    };
+  }
+
+  if (status.phase === 'WAITING_FOR_FOCUS' || status.phase === 'BREAK') {
+    return {
+      ...status,
+      sessionActive: true,
+      sessionRunning: true,
+      secondsPassedInSession: 0,
+      secondsUntilNextTransition: durationInSeconds(form.focusDuration, config),
+      currentFocusNumber: Math.min(status.numFocuses, status.currentFocusNumber + 1),
+      phase: 'FOCUS',
+    };
+  }
+
+  return {
+    ...status,
+    sessionActive: true,
+    sessionRunning: !status.sessionRunning,
+  };
+}
+
+function optimisticCompletedStatus(status: PomodoroStatus): PomodoroStatus {
+  return {
+    ...status,
+    active: false,
+    sessionActive: false,
+    sessionRunning: false,
+    secondsPassedInSession: 0,
+    secondsUntilNextTransition: 0,
+    completedFocusSessions: (status.completedFocusSessions ?? 0) + (status.sessionActive ? 1 : 0),
+    totalFocusSeconds: (status.totalFocusSeconds ?? 0)
+      + (status.sessionActive ? Math.max(0, status.secondsPassedInSession) : 0),
+    phase: 'COMPLETED',
+  };
+}
+
 export function PomodoroPanel({ taskId, initialStatus, onClose, onActiveChange, onStatusChange }: {
   taskId: string;
   initialStatus?: PomodoroStatus | null;
   onClose: () => void;
   onActiveChange: (active: boolean) => void;
-  onStatusChange: (status: PomodoroStatus) => void;
+  onStatusChange: (status: PomodoroStatus, optimistic?: boolean) => void;
 }) {
   const { colors, dark } = useAppTheme();
   const { user } = useAuth();
@@ -143,7 +216,6 @@ export function PomodoroPanel({ taskId, initialStatus, onClose, onActiveChange, 
   const [status, setStatus] = useState<PomodoroStatus | null>(initialStatus ?? null);
   const [config, setConfig] = useState<PomodoroConfig>(DEFAULT_CONFIG);
   const [form, setForm] = useState<PomodoroFormValues>(DEFAULT_FORM);
-  const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [statusReceivedAt, setStatusReceivedAt] = useState(0);
@@ -152,6 +224,9 @@ export function PomodoroPanel({ taskId, initialStatus, onClose, onActiveChange, 
   const onActiveChangeRef = useRef(onActiveChange);
   const onStatusChangeRef = useRef(onStatusChange);
   const lastStatusRef = useRef<PomodoroStatus | null>(initialStatus ?? null);
+  const optimisticStatusRef = useRef<PomodoroStatus | null>(null);
+  const statusRevisionRef = useRef(0);
+  const pomodoroMutationRevisionRef = useRef(0);
 
   useEffect(() => { onActiveChangeRef.current = onActiveChange; }, [onActiveChange]);
   useEffect(() => { onStatusChangeRef.current = onStatusChange; }, [onStatusChange]);
@@ -172,7 +247,18 @@ export function PomodoroPanel({ taskId, initialStatus, onClose, onActiveChange, 
     else stopBrownNoise();
   }, [brownNoiseEnabled, brownNoiseReady, focusRunning, startBrownNoise, stopBrownNoise]);
 
-  const commitStatus = useCallback((next: PomodoroStatus | null, announceTransition = false) => {
+  const commitStatus = useCallback((
+    next: PomodoroStatus | null,
+    announceTransition = false,
+    authoritative = false,
+    optimistic = false,
+  ): boolean => {
+    if (!optimistic && !authoritative && !optimisticStatusAllowsUpdate(optimisticStatusRef.current, next)) {
+      // A live snapshot can race a request that changed this state. Keep the
+      // optimistic control state until a matching authoritative read arrives.
+      return false;
+    }
+
     const previous = lastStatusRef.current;
     if (announceTransition && previous?.active && next?.active) {
       const wasBreak = isBreakPhase(previous);
@@ -180,16 +266,31 @@ export function PomodoroPanel({ taskId, initialStatus, onClose, onActiveChange, 
       if (!wasBreak && isBreak) playAudioFeedback('pomodoroFocusEnded');
       if (wasBreak && !isBreak) playAudioFeedback('pomodoroBreakEnded');
     }
+    if (optimistic) optimisticStatusRef.current = next;
+    else if (authoritative) optimisticStatusRef.current = null;
     lastStatusRef.current = next?.active || next?.phase === 'COMPLETED' ? next : null;
+    statusRevisionRef.current += 1;
     setStatusReceivedAt(Date.now());
     setStatus(next);
     if (next?.active || next?.phase === 'COMPLETED') {
       onActiveChangeRef.current(true);
-      onStatusChangeRef.current(next);
+      onStatusChangeRef.current(next, optimistic);
     } else {
       onActiveChangeRef.current(false);
     }
+    return true;
   }, []);
+
+  const rollbackPomodoroMutation = useCallback((
+    mutationRevision: number,
+    optimistic: PomodoroStatus,
+    previous: PomodoroStatus | null,
+  ) => {
+    if (pomodoroMutationRevisionRef.current !== mutationRevision
+      || lastStatusRef.current !== optimistic) return;
+
+    commitStatus(previous, false, true);
+  }, [commitStatus]);
 
   useEffect(() => {
     let cancelled = false;
@@ -225,10 +326,11 @@ export function PomodoroPanel({ taskId, initialStatus, onClose, onActiveChange, 
 
   useEffect(() => {
     let cancelled = false;
+    const revisionAtStart = statusRevisionRef.current;
     void api.pomodoro.statusForTask(taskId).then(next => {
-      if (cancelled) return;
+      if (cancelled || revisionAtStart !== statusRevisionRef.current) return;
       if (next?.active) {
-        commitStatus(next);
+        commitStatus(next, false, true);
       } else if (!initialStatus?.active) {
         // Opening a new panel is not an inactive-session transition. Reporting
         // false here would make the parent immediately unmount the setup form.
@@ -275,10 +377,11 @@ export function PomodoroPanel({ taskId, initialStatus, onClose, onActiveChange, 
             const next = JSON.parse(frame.body) as PomodoroStatus;
             if (next.active) commitStatus(next, true);
             else {
-              if (next.phase === 'COMPLETED' && lastStatusRef.current?.active) {
+              const previous = lastStatusRef.current;
+              const accepted = commitStatus(next.phase === 'COMPLETED' ? next : null, true);
+              if (accepted && next.phase === 'COMPLETED' && previous?.active) {
                 playAudioFeedback('pomodoroCompleted');
               }
-              commitStatus(next.phase === 'COMPLETED' ? next : null, true);
             }
           } catch (cause) {
             // Ignore malformed broadcasts; REST status remains the recovery path.
@@ -322,12 +425,17 @@ export function PomodoroPanel({ taskId, initialStatus, onClose, onActiveChange, 
     }
   };
 
-  const refreshStatus = useCallback(async (preserveActiveWhenMissing = false) => {
+  const refreshStatus = useCallback(async (
+    preserveActiveWhenMissing = false,
+    authoritative = false,
+  ) => {
+    const revisionAtStart = statusRevisionRef.current;
     const next = await api.pomodoro.statusForTask(taskId);
+    if (revisionAtStart !== statusRevisionRef.current) return;
     if (next?.active) {
-      commitStatus(next);
+      commitStatus(next, false, authoritative);
     } else if (!preserveActiveWhenMissing) {
-      commitStatus(null);
+      commitStatus(null, false, authoritative);
     }
   }, [commitStatus, taskId]);
 
@@ -339,39 +447,99 @@ export function PomodoroPanel({ taskId, initialStatus, onClose, onActiveChange, 
     return () => clearInterval(timer);
   }, [refreshStatus, status?.active]);
 
-  async function start() {
+  const start = useCallback(() => {
     if (Object.values(form).some(value => value <= 0)) {
       setError('All focus and break values must be positive.');
       return;
     }
-    setActionLoading(true); setError(null);
-    try {
-      await api.pomodoro.start(taskId, { ...form, secondsMode: config.secondsMode });
-      commitStatus(optimisticStatus(taskId, form, config));
-      await refreshStatus(true).catch(cause => console.warn('Could not refresh Pomodoro after starting:', cause));
-    } catch (cause) {
-      console.error('Could not start Pomodoro:', cause);
-      setError(GENERIC_ERROR_MESSAGE);
-    } finally { setActionLoading(false); }
-  }
+    const previousStatus = lastStatusRef.current?.active ? lastStatusRef.current : null;
+    const nextStatus = optimisticStatus(taskId, form, config);
+    const mutationRevision = ++pomodoroMutationRevisionRef.current;
+    commitStatus(nextStatus, false, false, true);
+    setError(null);
 
-  const runAction = useCallback(async (action: () => Promise<void>) => {
-    setActionLoading(true); setError(null);
-    try {
-      await action();
-      await refreshStatus();
-    } catch (cause) {
-      console.error('Could not update Pomodoro:', cause);
-      setError(GENERIC_ERROR_MESSAGE);
-    } finally { setActionLoading(false); }
-  }, [refreshStatus]);
+    void api.pomodoro.start(taskId, { ...form, secondsMode: config.secondsMode })
+      .then(() => {
+        if (pomodoroMutationRevisionRef.current !== mutationRevision) return;
+        void refreshStatus(true, true).catch(cause => console.warn('Could not refresh Pomodoro after starting:', cause));
+      })
+      .catch(cause => {
+        console.error('Could not start Pomodoro:', cause);
+        rollbackPomodoroMutation(mutationRevision, nextStatus, previousStatus);
+        if (pomodoroMutationRevisionRef.current === mutationRevision) setError(GENERIC_ERROR_MESSAGE);
+      });
+  }, [commitStatus, config, form, refreshStatus, rollbackPomodoroMutation, taskId]);
+
+  const runAction = useCallback((
+    previousStatus: PomodoroStatus,
+    nextStatus: PomodoroStatus,
+    action: () => Promise<unknown>,
+  ) => {
+    const mutationRevision = ++pomodoroMutationRevisionRef.current;
+    commitStatus(nextStatus, false, false, true);
+    setError(null);
+
+    void action()
+      .then(() => {
+        if (pomodoroMutationRevisionRef.current !== mutationRevision) return;
+        void refreshStatus(true, true).catch(cause => console.warn('Could not refresh Pomodoro after updating:', cause));
+      })
+      .catch(cause => {
+        console.error('Could not update Pomodoro:', cause);
+        rollbackPomodoroMutation(mutationRevision, nextStatus, previousStatus);
+        if (pomodoroMutationRevisionRef.current === mutationRevision) setError(GENERIC_ERROR_MESSAGE);
+      });
+  }, [commitStatus, refreshStatus, rollbackPomodoroMutation]);
 
   const stop = useCallback(() => {
-    void runAction(async () => {
-      const completedStatus = await api.pomodoro.end(taskId);
-      commitStatus(completedStatus);
-    });
-  }, [commitStatus, runAction, taskId]);
+    const previousStatus = lastStatusRef.current?.active ? lastStatusRef.current : null;
+    if (!previousStatus) return;
+
+    const nextStatus = optimisticCompletedStatus(previousStatus);
+    const mutationRevision = ++pomodoroMutationRevisionRef.current;
+    commitStatus(nextStatus, false, false, true);
+    setError(null);
+
+    void api.pomodoro.end(taskId)
+      .then(completedStatus => {
+        if (pomodoroMutationRevisionRef.current !== mutationRevision) return;
+        if (lastStatusRef.current === nextStatus) {
+          commitStatus(completedStatus, false, true);
+        } else {
+          void refreshStatus(true, true).catch(cause => console.warn('Could not refresh Pomodoro after stopping:', cause));
+        }
+      })
+      .catch(cause => {
+        console.error('Could not stop Pomodoro:', cause);
+        rollbackPomodoroMutation(mutationRevision, nextStatus, previousStatus);
+        if (pomodoroMutationRevisionRef.current === mutationRevision) setError(GENERIC_ERROR_MESSAGE);
+      });
+  }, [commitStatus, refreshStatus, rollbackPomodoroMutation, taskId]);
+
+  const toggle = useCallback(() => {
+    const previousStatus = lastStatusRef.current?.active ? lastStatusRef.current : null;
+    if (!previousStatus) return;
+
+    const nextStatus = optimisticToggleStatus(previousStatus, form, config);
+    runAction(
+      previousStatus,
+      nextStatus,
+      isWaitingForPhase(previousStatus)
+        ? () => api.pomodoro.startNextPhase(taskId)
+        : previousStatus.sessionRunning ? () => api.session.pause(taskId) : () => api.session.resume(taskId),
+    );
+  }, [config, form, runAction, taskId]);
+
+  const finishBreak = useCallback(() => {
+    const previousStatus = lastStatusRef.current?.active ? lastStatusRef.current : null;
+    if (!previousStatus || previousStatus.phase !== 'BREAK') return;
+
+    runAction(
+      previousStatus,
+      optimisticToggleStatus(previousStatus, form, config),
+      () => api.pomodoro.finishBreakEarly(taskId),
+    );
+  }, [config, form, runAction, taskId]);
 
   const toggleBrownNoise = useCallback(() => {
     setBrownNoiseEnabled(previous => {
@@ -396,26 +564,20 @@ export function PomodoroPanel({ taskId, initialStatus, onClose, onActiveChange, 
             : undefined}
           icon={!waiting && status.sessionRunning ? 'pause' : 'play'}
           label={waiting ? (status.phase === 'WAITING_FOR_BREAK' ? 'Start break' : 'Start focus') : status.sessionRunning ? 'Pause' : 'Resume'}
-          loading={actionLoading}
-          onPress={() => void runAction(
-            waiting
-              ? () => api.pomodoro.startNextPhase(taskId)
-              : status.sessionRunning ? () => api.session.pause(taskId) : () => api.session.resume(taskId),
-          )}
+          onPress={toggle}
         />
       )}
       {status.phase === 'BREAK' && (
-        <AppButton compact variant="primary" icon="play-forward" label="Start focus" loading={actionLoading} onPress={() => void runAction(() => api.pomodoro.finishBreakEarly(taskId))} />
+        <AppButton compact variant="primary" icon="play-forward" label="Start focus" onPress={finishBreak} />
       )}
       <AppButton
         compact
         variant="secondary"
         icon={brownNoiseEnabled ? 'volume-high-outline' : 'volume-mute-outline'}
         label={brownNoiseEnabled ? 'Mute focus audio' : 'Play focus audio'}
-        loading={actionLoading}
         onPress={toggleBrownNoise}
       />
-      <AppButton compact variant="danger" icon="stop" label="Stop" loading={actionLoading} onPress={stop} />
+      <AppButton compact variant="danger" icon="stop" label="Stop" onPress={stop} />
     </View>
   ) : null;
 
@@ -456,11 +618,11 @@ export function PomodoroPanel({ taskId, initialStatus, onClose, onActiveChange, 
               ['numFocuses', 'Sessions'],
             ] as const).map(([key, label]) => (
               <View key={key} style={styles.option}>
-                <AppInput label={label} value={String(form[key])} onChangeText={text => setFormValue(key, text)} keyboardType="number-pad" editable={!actionLoading} />
+                <AppInput label={label} value={String(form[key])} onChangeText={text => setFormValue(key, text)} keyboardType="number-pad" />
               </View>
             ))}
           </View>
-          <AppButton label={actionLoading ? 'Starting…' : 'Start focus'} icon="play" loading={actionLoading} onPress={() => void start()} />
+          <AppButton label="Start focus" icon="play" onPress={start} />
           {error && <AppText color="danger">{error}</AppText>}
         </View>
       </ModalSheet>

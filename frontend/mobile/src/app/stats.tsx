@@ -98,10 +98,6 @@ export default function StatsScreen() {
     await reload();
   }, [reload]);
 
-  useEffect(() => subscribeToResourceInvalidation('tasks', () => {
-    void refresh();
-  }), [refresh]);
-
   useEffect(() => subscribeToResourceInvalidation('stats', () => {
     void refresh();
   }), [refresh]);

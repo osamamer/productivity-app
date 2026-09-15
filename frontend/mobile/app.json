@@ -13,8 +13,7 @@
     },
     "android": {
       "permissions": [
-        "POST_NOTIFICATIONS",
-        "SCHEDULE_EXACT_ALARM"
+        "POST_NOTIFICATIONS"
       ],
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {

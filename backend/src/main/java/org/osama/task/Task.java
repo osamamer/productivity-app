@@ -92,4 +92,7 @@ public class Task {
 
     @Transient
     private Integer reminderMinutesBefore;
+
+    @Transient
+    private boolean statLinked;
 }

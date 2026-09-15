@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 
 import { MEDITATION_AUDIO_SOURCES, type MeditationSoundId } from '@/lib/meditationAudio';
 import { playMeditationCompletionGong, playMeditationIntervalBell, prepareMeditationAudio } from '@/lib/audioFeedback';
+import { configureBackgroundAudio } from '@/lib/audioMode';
 
 type AudioModule = typeof import('expo-audio');
 type AudioPlayer = ReturnType<AudioModule['createAudioPlayer']>;
@@ -54,12 +55,12 @@ export function useMeditationAudio() {
     void loadAudioModule().then(audioModule => {
       if (!audioModule || disposed) return;
 
-      void audioModule.setAudioModeAsync({
-        playsInSilentMode: true,
-        shouldPlayInBackground: true,
-        interruptionMode: 'mixWithOthers',
-      }).catch(error => console.error('Could not configure meditation audio:', error));
+      void configureBackgroundAudio(audioModule, 'meditation');
 
+      if (typeof audioModule.createAudioPlayer !== 'function') {
+        console.warn('Meditation audio playback is unavailable in this native build.');
+        return;
+      }
       const nextPlayer = audioModule.createAudioPlayer(null, { keepAudioSessionActive: true, updateInterval: 1_000 });
       if (disposed) {
         nextPlayer.remove();

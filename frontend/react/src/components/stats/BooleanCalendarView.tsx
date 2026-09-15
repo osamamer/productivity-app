@@ -250,6 +250,9 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
         });
         closeEditor();
         setSaveError(null);
+        if (nextValue !== null && nextStatus !== 'NOT_PLANNED') {
+            showStatFeedback(definition, nextValue, feedbackAnchor);
+        }
         const savePromise = statService.recordEntry({
                 statDefinitionId: definition.id,
                 date: activePopover.date,
@@ -257,14 +260,7 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
                 status: nextStatus,
             })
         onEntryChanged?.(definition.id);
-        void savePromise
-            .then(() => {
-                if (entryMutationVersionsRef.current.get(activePopover.date) !== mutationVersion) return;
-                if (nextValue !== null && nextStatus !== 'NOT_PLANNED') {
-                    showStatFeedback(definition, nextValue, feedbackAnchor);
-                }
-            })
-            .catch(error => {
+        void savePromise.catch(error => {
                 console.error('Failed to save boolean stat entry:', error);
                 if (entryMutationVersionsRef.current.get(activePopover.date) === mutationVersion) {
                     setValueState(previous => {

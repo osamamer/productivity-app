@@ -21,6 +21,7 @@ import org.springframework.test.context.TestExecutionListeners;
 import org.springframework.test.context.support.DependencyInjectionTestExecutionListener;
 import org.springframework.test.context.transaction.TransactionalTestExecutionListener;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.domain.PageRequest;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -78,6 +79,24 @@ class NotificationServiceTest {
         notificationService.acknowledge(due.get(0).notificationId(), USER_ID);
 
         assertTrue(notificationService.getDue(USER_ID).isEmpty());
+    }
+
+    @Test
+    void anAlreadyDispatchedReminderIsNotSelectedForAnotherPush() {
+        Reminder reminder = new Reminder();
+        reminder.setReminderId("already-dispatched");
+        reminder.setNotificationType(NotificationType.TASK_REMINDER);
+        reminder.setTitle("Task reminder");
+        reminder.setBody("Task reminder");
+        reminder.setTargetUrl("/tasks");
+        reminder.setDateTime(Instant.now().minusSeconds(60));
+        reminder.setDispatchedAt(Instant.now().minusSeconds(30));
+        reminder.setRepeat(0);
+        reminder.setMinutesBefore(0);
+        reminder.setUser(user);
+        reminderRepository.save(reminder);
+
+        assertTrue(reminderRepository.lockDueForPush(Instant.now(), PageRequest.of(0, 100)).isEmpty());
     }
 
     @Test

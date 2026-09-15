@@ -8,8 +8,7 @@ React Native client for the productivity app, built with Expo SDK 57 and Expo Ro
 - Today dashboard, day rating, task creation/editing/completion, and the full in-row Pomodoro focus flow
 - Task, calendar event, mental thread, mental-state, meditation, note, and stat workflows
 - Shared Raleway typography, web palette, four accent colors, light/dark/system themes, soft cards, and task-priority colors
-- Durable notification recovery from the backend, presented through native notifications when permission is available
-- Android remote push delivery for Pomodoro transitions and unanswered repeated check-ups when the app is closed
+- All application notifications are delivered through Expo remote push and acknowledged against the durable backend inbox
 
 ## First-time setup
 
@@ -36,19 +35,14 @@ server credential used by Expo Push Service:
    The build runs Expo prebuild automatically. An OTA JavaScript update cannot add Firebase's native
    configuration.
 
-Without the client configuration, local notifications continue to work and the
-app skips remote token registration for that development installation. Preview
-and production configuration fails immediately when the file is missing, so a
-build without remote notifications cannot be shipped accidentally. The backend
-sends through Expo Push Service, so production servers must also be able to
-make outbound HTTPS requests to Expo. Set `EXPO_PUSH_ACCESS_TOKEN` in
+Without the client configuration, the development installation skips remote
+push registration and does not schedule a local fallback. Preview and
+production configuration fails immediately when the file is missing, so a
+build without remote notifications cannot be shipped accidentally. The
+backend sends through Expo Push Service, so production servers must also be
+able to make outbound HTTPS requests to Expo. Set `EXPO_PUSH_ACCESS_TOKEN` in
 `deployment/.env` if Expo's push access-token security is enabled for the
 project.
-
-Android 12 and newer can require the user to allow exact alarms in system
-settings. The app requests `SCHEDULE_EXACT_ALARM` so scheduled calendar and
-task reminders can fire at their requested time; Android may still apply its
-own power-saving policy, and remote pushes are used for server-created events.
 
 The mobile app has explicit environment guards. A local native build uses the
 `EXPO_PUBLIC_*` values from `.env.local`; the `preview` and `production` EAS

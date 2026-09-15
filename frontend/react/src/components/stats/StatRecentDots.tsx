@@ -315,6 +315,9 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
         });
         closePopover();
         setSaveError(null);
+        if (editValue !== null && editStatus !== 'NOT_PLANNED') {
+            showStatFeedback(definition, editValue, feedbackAnchor, { positiveEffect: 'pulse' });
+        }
         const request = {
                 statDefinitionId: definition.id,
                 date: activePopover.date,
@@ -328,9 +331,6 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                 if (entryMutationVersionsRef.current.get(activePopover.date) !== mutationVersion) return;
                 if (editValue !== null && (definition.type === 'TIME' || definition.type === 'DURATION')) {
                     saveStatInputPreference(definition.id, definition.type, editValue);
-                }
-                if (editValue !== null && editStatus !== 'NOT_PLANNED') {
-                    showStatFeedback(definition, editValue, feedbackAnchor, { positiveEffect: 'pulse' });
                 }
             })
             .catch(err => {

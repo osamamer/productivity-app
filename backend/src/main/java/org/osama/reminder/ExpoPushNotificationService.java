@@ -45,13 +45,9 @@ public class ExpoPushNotificationService {
         this.accessToken = accessToken;
     }
 
-    /**
-     * Sends only notifications that have no reliable native alarm equivalent.
-     * Calendar, task, and normal daily check-up reminders are scheduled on-device
-     * so they still work if the server is temporarily unavailable.
-     */
+    /** Sends one Expo push message per registered native device for every application notification. */
     public boolean send(Reminder reminder) {
-        if (!enabled || !requiresRemoteDelivery(reminder)) return true;
+        if (!enabled) return true;
 
         List<MobilePushToken> tokens = tokenRepository.findAllByUserId(reminder.getUserId());
         if (tokens.isEmpty()) return true;
@@ -69,15 +65,15 @@ public class ExpoPushNotificationService {
         return successful;
     }
 
-    private boolean requiresRemoteDelivery(Reminder reminder) {
-        return switch (reminder.getNotificationType()) {
-            case POMODORO_FOCUS_ENDED, POMODORO_BREAK_ENDED, POMODORO_COMPLETED -> true;
-            case MENTAL_STATE_CHECKUP -> reminder.getReminderId().startsWith("mental-state-checkup-repeat-");
-            case CALENDAR_EVENT, TASK_REMINDER -> false;
-        };
-    }
-
     private Map<String, Object> messageFor(Reminder reminder, String token) {
+        String title = reminder.getTitle();
+        String body = reminder.getBody();
+        if (reminder.getNotificationType() == NotificationType.CALENDAR_EVENT && reminder.getEvent() != null) {
+            if (title == null || title.isBlank()) title = reminder.getEvent().getTitle();
+            if (body == null || body.isBlank()) body = "Event reminder";
+        }
+        if (title == null || title.isBlank()) title = "Reminder";
+
         Map<String, Object> data = new HashMap<>();
         data.put("notificationId", reminder.getReminderId());
         data.put("targetUrl", reminder.getTargetUrl());
@@ -86,8 +82,8 @@ public class ExpoPushNotificationService {
 
         Map<String, Object> message = new HashMap<>();
         message.put("to", token);
-        message.put("title", reminder.getTitle());
-        message.put("body", reminder.getBody());
+        message.put("title", title);
+        message.put("body", body);
         message.put("data", data);
         message.put("priority", "high");
         message.put("channelId", NotificationService.DEFAULT_CHANNEL_ID);

@@ -103,7 +103,7 @@ export function TaskRow({ task, onToggle, onPress, onLongPress, onSelectionToggl
   pomodoroStatus?: PomodoroStatus | null;
   onPomodoroClose?: () => void;
   onPomodoroActiveChange?: (active: boolean) => void;
-  onPomodoroStatusChange?: (status: PomodoroStatus) => void;
+  onPomodoroStatusChange?: (status: PomodoroStatus, optimistic?: boolean) => void;
   dragEnabled?: boolean;
   dragging?: boolean;
   dragInProgress?: boolean;

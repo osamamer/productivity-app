@@ -20,7 +20,11 @@ import {
     subscribeToWhiteNoiseSource,
     type WhiteNoiseSource,
 } from '../../services/whiteNoise';
-import type { PomodoroSound } from '../../services/api/pomodoroSoundService';
+import {
+    BUILT_IN_POMODORO_SOUND,
+    getCachedPomodoroSounds,
+    type PomodoroSound,
+} from '../../services/api/pomodoroSoundService';
 
 interface WhiteNoiseControlProps {
     disabled?: boolean;
@@ -30,7 +34,10 @@ interface WhiteNoiseControlProps {
 export function WhiteNoiseControl({ disabled = false, size = 'medium' }: WhiteNoiseControlProps) {
     const { whiteNoiseEnabled, setWhiteNoiseEnabled } = usePomodoro();
     const [source, setSource] = useState<WhiteNoiseSource>(getWhiteNoiseSource);
-    const [sounds, setSounds] = useState<PomodoroSound[]>([]);
+    const [sounds, setSounds] = useState<PomodoroSound[]>(() => {
+        const cached = getCachedPomodoroSounds();
+        return cached ? [BUILT_IN_POMODORO_SOUND, ...cached] : [];
+    });
     const [soundsLoading, setSoundsLoading] = useState(false);
     const [selectionLoading, setSelectionLoading] = useState(false);
     const [soundLoadError, setSoundLoadError] = useState<string | null>(null);
@@ -41,7 +48,13 @@ export function WhiteNoiseControl({ disabled = false, size = 'medium' }: WhiteNo
     useEffect(() => subscribeToWhiteNoiseSource(setSource), []);
 
     const loadSounds = useCallback(async () => {
-        setSoundsLoading(true);
+        const cached = getCachedPomodoroSounds();
+        if (cached) {
+            setSounds([BUILT_IN_POMODORO_SOUND, ...cached]);
+            setSoundsLoading(false);
+        } else {
+            setSoundsLoading(true);
+        }
         setSoundLoadError(null);
         try {
             setSounds(await getAvailableWhiteNoiseSounds());
@@ -176,7 +189,7 @@ export function WhiteNoiseControl({ disabled = false, size = 'medium' }: WhiteNo
                         <ListItemText primary={soundLoadError} />
                     </MenuItem>
                 )}
-                {!soundsLoading && !soundLoadError && sounds.map(sound => (
+                {!soundsLoading && sounds.map(sound => (
                     <MenuItem
                         key={sound.id}
                         selected={sound.id === source.id}

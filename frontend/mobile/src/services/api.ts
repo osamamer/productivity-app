@@ -1,7 +1,6 @@
 import { appConfig } from '@/lib/config';
 import { GENERIC_ERROR_MESSAGE } from '@/lib/errors';
 import type {
-  ApplicationNotification,
   CalendarEvent,
   CalendarEventInput,
   Day,
@@ -99,25 +98,36 @@ export const api = {
       timeZone: input.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC',
     }),
     recurrence: (taskId: string) => apiRequest<TaskSeries | undefined>(`/api/v1/tasks/${taskId}/recurrence`),
-    startRecurrence: (taskId: string, recurrence: {
+    startRecurrence: async (taskId: string, recurrence: {
       recurrenceFrequency: Exclude<TaskRecurrenceFrequency, 'NONE'>;
       recurrenceEndDate: string | null;
       recurrenceInterval: number | null;
       recurrenceUnit: 'DAYS' | 'WEEKS' | 'MONTHS' | null;
       timeZone: string;
-    }) => json<TaskSeries>(`/api/v1/tasks/${taskId}/recurrence`, 'POST', recurrence),
-    updateRecurrence: (seriesId: string, recurrence: {
+    }) => {
+      const series = await json<TaskSeries>(`/api/v1/tasks/${taskId}/recurrence`, 'POST', recurrence);
+      if (series.statLinked) invalidateResource('stats');
+      return series;
+    },
+    updateRecurrence: async (seriesId: string, recurrence: {
       recurrenceFrequency: Exclude<TaskRecurrenceFrequency, 'NONE'>;
       recurrenceEndDate: string | null;
       recurrenceInterval: number | null;
       recurrenceUnit: 'DAYS' | 'WEEKS' | 'MONTHS' | null;
       timeZone: string;
       active?: boolean;
-    }) => json<TaskSeries>(`/api/v1/task-series/${seriesId}`, 'PATCH', recurrence),
+    }) => {
+      const updated = await json<TaskSeries>(`/api/v1/task-series/${seriesId}`, 'PATCH', recurrence);
+      if (updated.statLinked) invalidateResource('stats');
+      return updated;
+    },
     stopRecurrence: (seriesId: string) => apiRequest<void>(`/api/v1/task-series/${seriesId}`, { method: 'DELETE' }),
     update: async (id: string, updates: Partial<Task>) => {
       const updated = await json<Task>(`/api/v1/tasks/${id}`, 'PATCH', updates);
-      if (updates.completed !== undefined) invalidateResource('tasks');
+      if (updates.completed !== undefined || updates.scheduledPerformDateTime !== undefined) {
+        invalidateResource('tasks');
+        if (updated.statLinked) invalidateResource('stats');
+      }
       return updated;
     },
     subtasks: (taskId: string) => apiRequest<Task[]>(`/api/v1/tasks/${taskId}/subtasks`),
@@ -280,7 +290,6 @@ export const api = {
       json<void>('/api/v1/users/me/password', 'PUT', { currentPassword, newPassword }),
   },
   notifications: {
-    due: () => apiRequest<ApplicationNotification[]>('/api/v1/notifications/due'),
     acknowledge: (id: string) =>
       json<void>(`/api/v1/notifications/${id}/acknowledge`, 'POST'),
     registerPushToken: (token: string) =>

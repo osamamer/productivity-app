@@ -17,4 +17,5 @@ export type TaskSeries = {
     active: boolean;
     createdAt: string;
     updatedAt: string;
+    statLinked?: boolean;
 };

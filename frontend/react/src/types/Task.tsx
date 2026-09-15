@@ -19,5 +19,6 @@ export interface Task   {
     taskSeriesId: string | null;
     seriesOccurrenceAt: string | null;
     skipped: boolean;
+    statLinked?: boolean;
     optimisticRecurrence?: TaskRecurrenceDraft;
 }

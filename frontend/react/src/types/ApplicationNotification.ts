@@ -4,7 +4,8 @@ export type NotificationType =
     | 'MENTAL_STATE_CHECKUP'
     | 'POMODORO_FOCUS_ENDED'
     | 'POMODORO_BREAK_ENDED'
-    | 'POMODORO_COMPLETED';
+    | 'POMODORO_COMPLETED'
+    | 'MEDITATION_COMPLETED';
 
 export type ApplicationNotification = {
     notificationId: string;

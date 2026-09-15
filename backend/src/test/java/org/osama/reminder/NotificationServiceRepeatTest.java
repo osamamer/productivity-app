@@ -12,6 +12,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Instant;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -20,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.any;
 
 @ExtendWith(MockitoExtension.class)
 class NotificationServiceRepeatTest {
@@ -50,6 +53,7 @@ class NotificationServiceRepeatTest {
                 expoPushNotificationService);
         user = User.builder()
                 .id(USER_ID)
+                .keycloakId("repeat-keycloak-user")
                 .email("repeat@example.com")
                 .firstName("Repeat")
                 .lastName("Tester")
@@ -104,6 +108,34 @@ class NotificationServiceRepeatTest {
         assertNotNull(reminder.getAcknowledgedAt());
     }
 
+    @Test
+    void dispatchesEveryNotificationTypeThroughExpo() {
+        List<Reminder> reminders = Arrays.stream(NotificationType.values())
+                .map(this::reminderOfType)
+                .toList();
+        when(reminderRepository.lockDueForPush(any(Instant.class), any())).thenReturn(reminders);
+        when(expoPushNotificationService.send(any(Reminder.class))).thenReturn(true);
+
+        notificationService.pushDueNotifications();
+
+        reminders.forEach(reminder -> {
+            verify(expoPushNotificationService).send(reminder);
+            assertNotNull(reminder.getDispatchedAt());
+        });
+    }
+
+    @Test
+    void remoteDeliveryDoesNotDependOnWebSocketIdentity() {
+        user.setKeycloakId(null);
+        Reminder reminder = reminderOfType(NotificationType.TASK_REMINDER);
+        when(reminderRepository.lockDueForPush(any(Instant.class), any())).thenReturn(List.of(reminder));
+        when(expoPushNotificationService.send(reminder)).thenReturn(true);
+
+        notificationService.pushDueNotifications();
+
+        verify(expoPushNotificationService).send(reminder);
+    }
+
     private Reminder checkupReminder(Instant scheduledAt) {
         Reminder reminder = new Reminder();
         reminder.setReminderId("checkup-1");
@@ -112,6 +144,20 @@ class NotificationServiceRepeatTest {
         reminder.setMinutesBefore(0);
         reminder.setUser(user);
         reminder.setNotificationType(NotificationType.MENTAL_STATE_CHECKUP);
+        return reminder;
+    }
+
+    private Reminder reminderOfType(NotificationType type) {
+        Reminder reminder = new Reminder();
+        reminder.setReminderId("notification-" + type.name());
+        reminder.setDateTime(Instant.now().minusSeconds(1));
+        reminder.setRepeat(0);
+        reminder.setMinutesBefore(0);
+        reminder.setNotificationType(type);
+        reminder.setTitle(type.name());
+        reminder.setBody(type.name());
+        reminder.setTargetUrl("/");
+        reminder.setUser(user);
         return reminder;
     }
 }

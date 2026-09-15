@@ -83,6 +83,12 @@ export function TodayCheckIn({ definitions, onSaved }: Props) {
         const today = format(new Date(), 'yyyy-MM-dd');
         try {
             const toSave = definitions.filter(d => touched.has(d.id));
+            toSave.forEach(definition => {
+                const value = values[definition.id];
+                if (value !== null && value !== undefined && statuses[definition.id] !== 'NOT_PLANNED') {
+                    showStatFeedback(definition, value, feedbackAnchorRef.current);
+                }
+            });
             await Promise.all(
                 toSave.map(d =>
                     statService.recordEntry({
@@ -93,12 +99,6 @@ export function TodayCheckIn({ definitions, onSaved }: Props) {
                     })
                 )
             );
-            toSave.forEach(definition => {
-                const value = values[definition.id];
-                if (value !== null && value !== undefined && statuses[definition.id] !== 'NOT_PLANNED') {
-                    showStatFeedback(definition, value, feedbackAnchorRef.current);
-                }
-            });
             setSuccess(true);
             onSaved();
         } catch (e) {

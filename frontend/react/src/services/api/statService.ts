@@ -2,7 +2,7 @@ import { StatBootstrapResponse, StatDefinition, StatEntry, StatEntryStatus, Stat
 import { TaskSeries } from '../../types/TaskSeries';
 import { getAuthCacheScope, getAuthHeaders } from '../utils/authHeaders';
 import { CachedResource, TtlCache } from '../cache/ttlCache';
-import { invalidateResource, subscribeToResourceInvalidation } from '../cache/resourceInvalidation';
+import { invalidateResource } from '../cache/resourceInvalidation';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 const STATS_URL = `${API_BASE_URL}/api/v1/stats`;
@@ -290,8 +290,6 @@ function clearDataCaches(): void {
     dailyEntriesCache.clear();
     lastMonthPrefetchRequests.clear();
 }
-
-subscribeToResourceInvalidation('tasks', clearDataCaches);
 
 export const statService = {
     async getDefinitions(): Promise<StatDefinition[]> {

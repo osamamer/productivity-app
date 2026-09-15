@@ -4,7 +4,6 @@ import { CalendarDisplayButton, MonthCalendar } from '@/components/calendar/Mont
 import { ErrorView } from '@/components/ui/StateView';
 import { Screen } from '@/components/ui/Screen';
 import { useAsyncData } from '@/hooks/useAsyncData';
-import { useNotifications } from '@/providers/NotificationProvider';
 import { useTaskWorkspace } from '@/providers/TaskWorkspaceProvider';
 import { api } from '@/services/api';
 import type { CalendarEvent, Task } from '@/types/models';
@@ -12,7 +11,6 @@ import type { CalendarEvent, Task } from '@/types/models';
 export default function CalendarScreen() {
   const [displayOptionsOpen, setDisplayOptionsOpen] = useState(false);
   const eventsResource = useAsyncData(() => api.events.all());
-  const { syncCalendarReminders } = useNotifications();
   const definitionsResource = useAsyncData(() => api.stats.definitions());
   const {
     allTasks,
@@ -35,14 +33,12 @@ export default function CalendarScreen() {
       ? current.map(item => item.id === event.id ? event : item)
       : [...current, event];
     eventsResource.setData(next);
-    void syncCalendarReminders(next);
   }
 
   async function deleteEvent(eventId: string) {
     await api.events.remove(eventId);
     const next = (eventsResource.data ?? []).filter(event => event.id !== eventId);
     eventsResource.setData(next);
-    void syncCalendarReminders(next);
   }
 
   async function cancelEventOccurrence(eventId: string, occurrenceKey: string) {

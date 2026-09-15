@@ -369,6 +369,7 @@ public class TaskService {
 
         Task task = existingTask.get();
         Optional<Reminder> existingReminder = findTaskReminder(taskId);
+        LocalDate previousTaskDate = taskDate(task);
         boolean scheduleChanged = request.getScheduledPerformDateTime() != null;
         boolean timeZoneChanged = request.getTimeZone() != null;
         List<String> changedFields = new ArrayList<>();
@@ -432,9 +433,15 @@ public class TaskService {
         } else {
             savedTask.setReminderMinutesBefore(existingReminder.map(Reminder::getMinutesBefore).orElse(null));
         }
-        if (request.getCompleted() != null) {
+        if (scheduleChanged) {
+            statTaskLinkService.synchronizeTaskSchedule(savedTask, previousTaskDate, userId);
+        }
+        if (request.getCompleted() != null || (scheduleChanged && savedTask.isCompleted())) {
+            // Schedule migration happens before this state write so a
+            // completion change in the same request wins at the new date.
             statTaskLinkService.synchronizeTaskCompletion(savedTask, userId);
         }
+        savedTask.setStatLinked(statTaskLinkService.isStatLinkedTask(savedTask, userId));
         log.info("Task updated: userId={} taskId={} changedFields={}",
                 task.getUserId(), savedTask.getTaskId(), changedFields);
         return Optional.of(savedTask);
@@ -803,6 +810,13 @@ public class TaskService {
 
     private String normalizeOptionalId(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private LocalDate taskDate(Task task) {
+        if (task.getScheduledPerformDateTime() != null) {
+            return task.getScheduledPerformDateTime().toLocalDate();
+        }
+        return task.getSeriesOccurrenceAt() == null ? null : task.getSeriesOccurrenceAt().toLocalDate();
     }
 
 }

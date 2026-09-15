@@ -326,7 +326,6 @@ public class StatService {
             request.setRecurrenceUnit(TaskRecurrenceUnit.WEEKS);
         }
         taskSeriesService.updateSeries(definition.getRecurringTaskSeriesId(), request, userId);
-        statTaskLinkService.synchronizeExistingEntries(definition, userId);
         log.info("Recurring task schedule updated: userId={} statDefinitionId={} seriesId={} frequency={}",
                 userId, definitionId, definition.getRecurringTaskSeriesId(), frequency);
         return withFocusTaskNames(definition);
