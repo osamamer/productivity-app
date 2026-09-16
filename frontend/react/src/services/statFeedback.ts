@@ -1,11 +1,18 @@
 import { StatDefinition, StatEntryStatus, StatFeedback, StatMorality } from '../types/Stats';
+import type { Theme } from '@mui/material/styles';
 import { playAudioFeedback } from './audioFeedback';
-import { affirmStatLogged, celebrateStatLogged, reprimandStatLogged } from './statCelebration';
+import {
+    affirmStatLogged,
+    celebrateStatLogged,
+    reprimandStatLogged,
+    type StatFeedbackMark,
+} from './statCelebration';
 import type { CelebrationAnchor } from './statCelebration';
 import { isTimeAtOrBeforeThreshold } from './utils/statValues';
 
 type StatFeedbackOptions = {
     positiveEffect?: 'confetti' | 'pulse';
+    color?: string;
 };
 
 export function effectiveStatMorality(definition: StatDefinition): StatMorality {
@@ -60,6 +67,29 @@ export function getBooleanChoiceColor(
     return value === 1 ? 'success' : 'error';
 }
 
+export function getStatFeedbackColor(
+    definition: StatDefinition,
+    value: number,
+    theme: Theme,
+): string | undefined {
+    const feedback = getStatFeedback(definition, value);
+    if (feedback === 'NONE') return undefined;
+
+    if (definition.type === 'BOOLEAN') {
+        return theme.palette[getBooleanChoiceColor(definition, value === 1 ? 1 : 0)].main;
+    }
+
+    return feedback === 'CELEBRATE'
+        ? theme.palette.success.main
+        : theme.palette.error.main;
+}
+
+function getStatFeedbackMark(definition: StatDefinition, value: number): StatFeedbackMark | null {
+    return definition.type === 'BOOLEAN'
+        ? value === 1 ? 'check' : 'cross'
+        : null;
+}
+
 export function showStatFeedback(
     definition: StatDefinition,
     value: number,
@@ -69,11 +99,17 @@ export function showStatFeedback(
     const feedback = getStatFeedback(definition, value);
     if (feedback === 'CELEBRATE') {
         playAudioFeedback('statGood');
-        if (options.positiveEffect === 'pulse') affirmStatLogged(anchor);
+        const mark = getStatFeedbackMark(definition, value);
+        if (options.positiveEffect === 'pulse') {
+            affirmStatLogged(anchor, { mark, color: options.color });
+        }
         else celebrateStatLogged(anchor);
     }
     if (feedback === 'SAD') {
         playAudioFeedback('statBad');
-        reprimandStatLogged(anchor);
+        reprimandStatLogged(anchor, {
+            mark: getStatFeedbackMark(definition, value),
+            color: options.color,
+        });
     }
 }

@@ -20,6 +20,8 @@ export interface PomodoroSound {
 }
 
 const audioUrlCache = new Map<string, string>();
+const audioUrlRequests = new Map<string, Promise<string>>();
+let audioCacheGeneration = 0;
 const POMODORO_SOUND_LIST_TTL_MS = 5 * 60 * 1000;
 const POMODORO_SOUND_SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const POMODORO_SOUND_STORAGE_PREFIX = 'claritard:pomodoro-sounds:';
@@ -70,6 +72,8 @@ function persistPomodoroSounds(cacheKey: string, sounds: PomodoroSound[]): void 
 }
 
 export function clearPomodoroSoundCache(): void {
+    audioCacheGeneration += 1;
+    audioUrlRequests.clear();
     if (typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function') {
         audioUrlCache.forEach(url => URL.revokeObjectURL(url));
     }
@@ -155,7 +159,7 @@ export async function uploadPomodoroSound(
     });
     onProgress?.(100);
     // The selected sound can start immediately without downloading the same MP3 again.
-    audioUrlCache.set(response.data.id, URL.createObjectURL(file));
+    audioUrlCache.set(audioCacheKey(response.data.id), URL.createObjectURL(file));
     updateCachedPomodoroSounds(sounds => sounds.some(sound => sound.id === response.data.id)
         ? sounds
         : [...sounds, response.data]);
@@ -164,9 +168,11 @@ export async function uploadPomodoroSound(
 
 export async function deletePomodoroSound(soundId: string): Promise<void> {
     await apiClient.delete(`/api/v1/users/me/pomodoro-sounds/${soundId}`);
-    const cachedUrl = audioUrlCache.get(soundId);
+    const cacheKey = audioCacheKey(soundId);
+    const cachedUrl = audioUrlCache.get(cacheKey);
     if (cachedUrl) URL.revokeObjectURL(cachedUrl);
-    audioUrlCache.delete(soundId);
+    audioUrlCache.delete(cacheKey);
+    audioUrlRequests.delete(cacheKey);
     updateCachedPomodoroSounds(sounds => sounds.filter(sound => sound.id !== soundId));
 }
 
@@ -175,28 +181,56 @@ export async function getPomodoroSoundAudioUrl(sound: PomodoroSound): Promise<st
         return '/audio/brown-noise.mp3';
     }
 
-    const cachedUrl = audioUrlCache.get(sound.id);
+    const cacheKey = audioCacheKey(sound.id);
+    const cachedUrl = audioUrlCache.get(cacheKey);
     if (cachedUrl) return cachedUrl;
 
-    const response = await apiClient.get<Blob>(`/api/v1/users/me/pomodoro-sounds/${sound.id}/audio`, {
+    const pendingRequest = audioUrlRequests.get(cacheKey);
+    if (pendingRequest) return pendingRequest;
+
+    const generation = audioCacheGeneration;
+    const request = apiClient.get<Blob>(`/api/v1/users/me/pomodoro-sounds/${sound.id}/audio`, {
         responseType: 'blob',
+    }).then(response => {
+        const url = URL.createObjectURL(response.data);
+        if (generation !== audioCacheGeneration) {
+            URL.revokeObjectURL(url);
+            throw new Error('Pomodoro sound cache was cleared.');
+        }
+        audioUrlCache.set(cacheKey, url);
+        return url;
+    }).finally(() => {
+        if (audioUrlRequests.get(cacheKey) === request) audioUrlRequests.delete(cacheKey);
     });
-    const url = URL.createObjectURL(response.data);
-    audioUrlCache.set(sound.id, url);
-    return url;
+
+    audioUrlRequests.set(cacheKey, request);
+    return request;
+}
+
+/** Start downloading a sound before the user selects it from the menu. */
+export function preloadPomodoroSoundAudio(sound: PomodoroSound): Promise<void> {
+    return getPomodoroSoundAudioUrl(sound).then(() => undefined);
+}
+
+function audioCacheKey(soundId: string): string {
+    return `${getAuthCacheScope()}:${soundId}`;
 }
 
 export async function loadSelectedPomodoroSound(): Promise<{ id: string; name: string; url: string }> {
-    const [preferences, uploadedSounds] = await Promise.all([
-        userService.getPreferences(),
-        getPomodoroSounds(),
-    ]);
-    const selectedId = preferences.pomodoroSoundId || BUILT_IN_POMODORO_SOUND_ID;
-    const selectedSound = [BUILT_IN_POMODORO_SOUND, ...uploadedSounds]
-        .find(sound => sound.id === selectedId) ?? BUILT_IN_POMODORO_SOUND;
+    const selectedSound = await loadSelectedPomodoroSoundMetadata();
     return {
         id: selectedSound.id,
         name: selectedSound.name,
         url: await getPomodoroSoundAudioUrl(selectedSound),
     };
+}
+
+export async function loadSelectedPomodoroSoundMetadata(): Promise<PomodoroSound> {
+    const [preferences, uploadedSounds] = await Promise.all([
+        userService.getPreferences(),
+        getPomodoroSounds(),
+    ]);
+    const selectedId = preferences.pomodoroSoundId || BUILT_IN_POMODORO_SOUND_ID;
+    return [BUILT_IN_POMODORO_SOUND, ...uploadedSounds]
+        .find(sound => sound.id === selectedId) ?? BUILT_IN_POMODORO_SOUND;
 }

@@ -1,6 +1,7 @@
 package org.osama.exceptions;
 
 import lombok.extern.slf4j.Slf4j;
+import org.osama.pomodoro.PomodoroSoundStorageException;
 import org.osama.user.InvalidCurrentPasswordException;
 import org.osama.user.PasswordUpdateFailedException;
 import org.springframework.http.HttpStatus;
@@ -28,6 +29,13 @@ public class GlobalExceptionHandler {
     public ResponseEntity<String> handleIllegalArgument(IllegalArgumentException ex) {
         log.warn("Request rejected due to invalid input: {}", ex.getMessage(), ex);
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ex.getMessage());
+    }
+
+    @ExceptionHandler(PomodoroSoundStorageException.class)
+    public ResponseEntity<String> handlePomodoroSoundStorage(PomodoroSoundStorageException ex) {
+        log.error("Pomodoro sound storage failed: {}", ex.getMessage(), ex);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body("The sound could not be stored right now. Please try again.");
     }
 
     @ExceptionHandler(InvalidCurrentPasswordException.class)

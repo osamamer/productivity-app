@@ -172,7 +172,7 @@ export const StatCard = React.memo(function StatCard({
     };
 
     return (
-        <Card variant="outlined">
+        <Card variant="outlined" sx={{ containerType: 'inline-size' }}>
             <CardHeader
                 avatar={insightsAvailable ? (
                     <Tooltip title={`See insights about this statistic`}>
@@ -213,16 +213,21 @@ export const StatCard = React.memo(function StatCard({
                 <Box
                     sx={{
                         display: 'grid',
-                        gridTemplateColumns: { xs: '1fr', sm: 'minmax(0, 1fr) auto minmax(0, 1fr)' },
+                        gridTemplateColumns: 'minmax(0, 1fr)',
                         alignItems: 'center',
                         gap: 1.5,
                         mb: 2,
+                        '@container (min-width: 900px)': {
+                            gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)',
+                        },
                     }}
                 >
                     <Stack
                         direction="row"
                         spacing={0.5}
-                        sx={{ justifySelf: { sm: 'start' }, minWidth: 0 }}
+                        flexWrap="wrap"
+                        useFlexGap
+                        sx={{ justifySelf: 'start', minWidth: 0 }}
                     >
                         {dateRanges.map(r => (
                             <ToggleButton
@@ -275,11 +280,15 @@ export const StatCard = React.memo(function StatCard({
                         variant="caption"
                         color="text.secondary"
                         sx={{
-                            gridColumn: { xs: 1, sm: 2 },
-                            gridRow: { xs: 2, sm: 1 },
+                            gridColumn: 1,
+                            gridRow: 2,
                             justifySelf: 'center',
                             textAlign: 'center',
                             whiteSpace: 'nowrap',
+                            '@container (min-width: 900px)': {
+                                gridColumn: 2,
+                                gridRow: 1,
+                            },
                         }}
                     >
                         {periodWindow.label}
@@ -288,11 +297,25 @@ export const StatCard = React.memo(function StatCard({
                         <Stack
                             direction="row"
                             spacing={1}
+                            flexWrap="wrap"
+                            useFlexGap
                             justifyContent="flex-end"
-                            sx={{ gridColumn: { xs: 1, sm: 3 }, gridRow: { xs: 3, sm: 1 }, justifySelf: { sm: 'end' } }}
+                            sx={{
+                                gridColumn: 1,
+                                gridRow: 3,
+                                justifySelf: 'stretch',
+                                minWidth: 0,
+                                width: '100%',
+                                '@container (min-width: 900px)': {
+                                    gridColumn: 3,
+                                    gridRow: 1,
+                                    justifySelf: 'end',
+                                    width: 'auto',
+                                },
+                            }}
                         >
                             {supportsFocusTime && (
-                                <FormControl size="small" sx={{ minWidth: { sm: 180 } }}>
+                                <FormControl size="small" sx={{ flex: '1 1 180px', minWidth: 0 }}>
                                     <InputLabel id={`stat-view-label-${definition.id}`}>View</InputLabel>
                                     <Select
                                         labelId={`stat-view-label-${definition.id}`}
@@ -307,7 +330,7 @@ export const StatCard = React.memo(function StatCard({
                                 </FormControl>
                             )}
                             {supportsComparison && (
-                                <FormControl size="small" sx={{ minWidth: { sm: 220 } }} disabled={availableComparisons.length === 0 || focusTimeView}>
+                                <FormControl size="small" sx={{ flex: '1 1 220px', minWidth: 0 }} disabled={availableComparisons.length === 0 || focusTimeView}>
                                     <InputLabel id="stat-overlay-label">Overlay stat</InputLabel>
                                     <Select
                                         labelId="stat-overlay-label"

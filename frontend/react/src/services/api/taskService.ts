@@ -533,6 +533,30 @@ export const taskService = {
         return createdTask;
     },
 
+    async moveTasksToParent(taskIds: string[], parentId: string | null): Promise<Task[]> {
+        const response = await fetch(`${TASK_URL}/parent`, {
+            method: 'PUT',
+            body: JSON.stringify({ taskIds, parentId }),
+            headers: {
+                'Content-Type': 'application/json; charset=UTF-8',
+                ...getAuthHeaders(),
+            },
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to move tasks under the parent task');
+        }
+
+        const movedTasks = await response.json() as Task[];
+        // The request can change either side of an existing parent relationship,
+        // so no individual subtask/detail cache can be trusted after it returns.
+        clearTaskSubtasksCache();
+        clearTaskDetailsCache();
+        invalidateTaskListCaches();
+        invalidateResource('tasks');
+        return movedTasks;
+    },
+
     async updateTask(taskId: string, updates: Partial<Task>): Promise<Task> {
         const response = await fetch(`${TASK_URL}/${taskId}`, {
             method: 'PATCH',

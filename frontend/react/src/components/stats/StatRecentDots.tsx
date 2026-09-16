@@ -12,7 +12,13 @@ import { format, subDays } from 'date-fns';
 import { StatDefinition, StatEntry, StatEntryStatus } from '../../types/Stats';
 import { getLastMonthWindow, statService } from '../../services/api/statService';
 import { KeyboardEvent } from 'react';
-import { effectiveStatMorality, getBooleanChoiceColor, getStatFeedback, showStatFeedback } from '../../services/statFeedback';
+import {
+    effectiveStatMorality,
+    getBooleanChoiceColor,
+    getStatFeedback,
+    getStatFeedbackColor,
+    showStatFeedback,
+} from '../../services/statFeedback';
 import {
     formatDurationValue,
     formatTimeValue,
@@ -316,7 +322,10 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
         closePopover();
         setSaveError(null);
         if (editValue !== null && editStatus !== 'NOT_PLANNED') {
-            showStatFeedback(definition, editValue, feedbackAnchor, { positiveEffect: 'pulse' });
+            showStatFeedback(definition, editValue, feedbackAnchor, {
+                positiveEffect: 'pulse',
+                color: getStatFeedbackColor(definition, editValue, theme),
+            });
         }
         const request = {
                 statDefinitionId: definition.id,

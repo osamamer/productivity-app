@@ -154,6 +154,88 @@ public class TaskService {
         return subtasks;
     }
 
+    /**
+     * Reparents existing tasks as one atomic operation. The same operation is
+     * used for grouping tasks under a newly-created parent and can later move
+     * tasks under an existing parent or detach them with a null parentId.
+     */
+    @Transactional
+    public List<Task> moveTasksToParent(List<String> taskIds, String parentId, String userId) {
+        List<String> normalizedTaskIds = normalizeTaskIds(taskIds);
+        String normalizedParentId = normalizeOptionalId(parentId);
+        Set<String> taskIdSet = new LinkedHashSet<>(normalizedTaskIds);
+
+        List<Task> tasks = taskRepository.findAllByTaskIdInAndUserId(normalizedTaskIds, userId);
+        if (tasks.size() != normalizedTaskIds.size()) {
+            throw new IllegalArgumentException("All tasks must belong to the current user.");
+        }
+
+        Map<String, Task> tasksById = tasks.stream()
+                .collect(Collectors.toMap(Task::getTaskId, task -> task));
+        if (tasks.stream().anyMatch(Task::isSkipped)) {
+            throw new IllegalArgumentException("Skipped tasks cannot be moved.");
+        }
+        if (tasks.stream().anyMatch(task -> task.getTaskSeriesId() != null)) {
+            throw new IllegalArgumentException("Recurring tasks cannot be moved as subtasks.");
+        }
+
+        if (normalizedParentId != null) {
+            Task parent = taskRepository.findTaskByTaskIdAndUserId(normalizedParentId, userId)
+                    .filter(task -> !task.isSkipped())
+                    .orElseThrow(() -> new IllegalArgumentException("Parent task not found: " + normalizedParentId));
+            if (taskIdSet.contains(parent.getTaskId())) {
+                throw new IllegalArgumentException("A task cannot be its own parent.");
+            }
+            validateParentMoveDoesNotCreateCycle(taskIdSet, normalizedParentId, userId);
+        }
+
+        int nextDisplayOrder = nextDisplayOrder(userId, normalizedParentId);
+        List<Task> movedTasks = normalizedTaskIds.stream()
+                .map(tasksById::get)
+                .toList();
+        for (int index = 0; index < movedTasks.size(); index++) {
+            Task task = movedTasks.get(index);
+            task.setParentId(normalizedParentId);
+            task.setDisplayOrder(nextDisplayOrder + index);
+        }
+        taskRepository.saveAll(movedTasks);
+        attachReminderMinutes(movedTasks);
+        log.info("Tasks moved to parent: userId={} parentTaskId={} taskCount={} taskIds={}",
+                userId, normalizedParentId, movedTasks.size(), normalizedTaskIds);
+        return movedTasks;
+    }
+
+    private List<String> normalizeTaskIds(List<String> taskIds) {
+        if (taskIds == null || taskIds.isEmpty()) {
+            throw new IllegalArgumentException("At least one task ID is required.");
+        }
+
+        List<String> normalizedTaskIds = taskIds.stream()
+                .map(taskId -> taskId == null ? null : taskId.trim())
+                .toList();
+        if (normalizedTaskIds.stream().anyMatch(taskId -> taskId == null || taskId.isBlank())) {
+            throw new IllegalArgumentException("Task IDs must not be blank.");
+        }
+        if (normalizedTaskIds.size() != new HashSet<>(normalizedTaskIds).size()) {
+            throw new IllegalArgumentException("Task IDs must be unique.");
+        }
+        return normalizedTaskIds;
+    }
+
+    private void validateParentMoveDoesNotCreateCycle(Set<String> movedTaskIds, String parentId, String userId) {
+        Map<String, Task> tasksById = taskRepository.findAllByUserId(userId).stream()
+                .collect(Collectors.toMap(Task::getTaskId, task -> task));
+        Set<String> visited = new HashSet<>();
+        String ancestorId = parentId;
+        while (ancestorId != null && visited.add(ancestorId)) {
+            if (movedTaskIds.contains(ancestorId)) {
+                throw new IllegalArgumentException("A task cannot be moved below one of its own subtasks.");
+            }
+            Task ancestor = tasksById.get(ancestorId);
+            ancestorId = ancestor == null ? null : ancestor.getParentId();
+        }
+    }
+
     @Transactional(readOnly = true)
     public TaskPomodoroStatsResponse getPomodoroStats(String taskId, String userId) {
         getTaskForUserOrThrow(taskId, userId);

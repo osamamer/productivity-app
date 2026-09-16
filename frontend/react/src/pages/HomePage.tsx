@@ -24,6 +24,7 @@ import { alpha } from '@mui/material/styles';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import AddIcon from '@mui/icons-material/Add';
+import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import GroupWorkIcon from '@mui/icons-material/GroupWork';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
@@ -45,6 +46,7 @@ import { useGlobalTasks } from '../hooks/useGlobalTasks';
 import { useUser } from '../hooks/useUser';
 import { SmartTaskInput } from '../components/input/SmartTaskInput';
 import { GroupTaskInputRow } from '../components/task/GroupTaskInputRow';
+import { TaskParentPopover } from '../components/task/TaskParentPopover';
 import { FlatTaskRow } from '../components/FlatTaskRow';
 import { TaskToCreate } from '../types/TaskToCreate';
 import {
@@ -664,6 +666,8 @@ export function HomePage() {
     const [groupAnchorEl, setGroupAnchorEl] = useState<HTMLElement | null>(null);
     const [groupName, setGroupName] = useState('');
     const [groupSubmitting, setGroupSubmitting] = useState(false);
+    const [parentTaskAnchorEl, setParentTaskAnchorEl] = useState<HTMLElement | null>(null);
+    const [parentTaskSubmitting, setParentTaskSubmitting] = useState(false);
     const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
     const [localGroupName, setLocalGroupName] = useState('');
     const [groupAddingTaskId, setGroupAddingTaskId] = useState<string | null>(null);
@@ -884,6 +888,10 @@ export function HomePage() {
     const selectionEntityCount = selectedTaskIds.length + selectedGroupIds.length;
     const selectionActionsVisible = selectionEntityCount > 1 || selectedGroupIds.length > 0;
     const canGroupSelectedTasks = selectedGroupIds.length === 0 && selectedTaskIds.length >= 2;
+    const canCreateParentTask = selectedGroupIds.length === 0
+        && selectedTaskIds.length >= 2
+        && selectedTasks.length === selectedTaskIds.length
+        && selectedTasks.every(task => !task.parentId && !task.taskSeriesId);
 
     useKeyboardDelete({
         enabled: selectionEntityCount > 0 && !deleteRequest && !deleteSubmitting && !bulkActionLoading,
@@ -2443,6 +2451,7 @@ export function HomePage() {
         setBulkDateAnchorEl(null);
         setGroupAnchorEl(null);
         setGroupName('');
+        setParentTaskAnchorEl(null);
         setTaskContextMenu(null);
         selectionAnchorRef.current = null;
     }
@@ -2495,6 +2504,41 @@ export function HomePage() {
             console.error('Error creating task group:', err);
         } finally {
             setGroupSubmitting(false);
+        }
+    }
+
+    async function createParentTask(name: string) {
+        if (!canCreateParentTask || parentTaskSubmitting) return;
+
+        const selectedTaskIdsForParent = selectedTasks.map(task => task.taskId);
+        setParentTaskSubmitting(true);
+        try {
+            const parentTask = await taskService.createTask({
+                name,
+                description: '',
+                scheduledPerformDateTime: selectedTasks[0]?.scheduledPerformDateTime
+                    ?? formatLocalDateTime(new Date()),
+                tag: '',
+                importance: 0,
+            });
+            await taskService.moveTasksToParent(selectedTaskIdsForParent, parentTask.taskId);
+            await refreshTaskBuckets(true);
+            clearSelection();
+            showTaskFeedback(
+                'success',
+                `Created “${parentTask.name}” with ${selectedTaskIdsForParent.length} subtasks`,
+            );
+        } catch (error) {
+            console.error('Error creating parent task from selected tasks:', error);
+            try {
+                await refreshTaskBuckets(true);
+            } catch (refreshError) {
+                console.error('Error refreshing tasks after creating parent task:', refreshError);
+            }
+            showTaskFeedback('error', 'Could not group the selected tasks as subtasks');
+            throw error;
+        } finally {
+            setParentTaskSubmitting(false);
         }
     }
 
@@ -3232,6 +3276,21 @@ export function HomePage() {
                 >
                     <CalendarMonthIcon fontSize="small" />
                 </IconButton>
+                                {canCreateParentTask && (
+                                    <IconButton
+                                        size="small"
+                                        color="inherit"
+                                        aria-label="Make selected tasks subtasks of a new task"
+                                        title="Make selected tasks subtasks of a new task"
+                                        onClick={event => {
+                                            event.stopPropagation();
+                                            setParentTaskAnchorEl(event.currentTarget);
+                                        }}
+                                        disabled={bulkActionLoading || parentTaskSubmitting}
+                                    >
+                                        <AccountTreeIcon fontSize="small" />
+                                    </IconButton>
+                                )}
                                 {canGroupSelectedTasks && (
                                     <IconButton
                                         size="small"
@@ -3713,6 +3772,14 @@ export function HomePage() {
                         />
                     </Box>
                 </Popover>
+
+                <TaskParentPopover
+                    anchorEl={parentTaskAnchorEl}
+                    selectedCount={selectedTaskIds.length}
+                    submitting={parentTaskSubmitting}
+                    onClose={() => setParentTaskAnchorEl(null)}
+                    onSubmit={createParentTask}
+                />
 
                 <BulkTaskDatePopover
                     anchorEl={bulkDateAnchorEl}

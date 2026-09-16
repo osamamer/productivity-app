@@ -2,7 +2,7 @@ import {
     BUILT_IN_POMODORO_SOUND,
     getPomodoroSoundAudioUrl,
     getPomodoroSounds,
-    loadSelectedPomodoroSound,
+    loadSelectedPomodoroSoundMetadata,
     PomodoroSound,
 } from './api/pomodoroSoundService';
 import { userService } from './api/userService';
@@ -39,7 +39,7 @@ let sourceLoadPromise: Promise<void> | null = null;
 let sourceRevision = 0;
 let playbackRequestId = 0;
 let preferenceRevision = 0;
-let sourceSelectionQueue: Promise<void> = Promise.resolve();
+let sourceSelectionRevision = 0;
 let sourcePreloadRevision: number | null = null;
 let sourcePreloadPromise: Promise<void> | null = null;
 const sourceListeners = new Set<(source: WhiteNoiseSource) => void>();
@@ -252,13 +252,12 @@ export function isWhiteNoiseEnabled(): boolean {
 }
 
 /**
- * Loads the authenticated user's selected source before a player is created.
- * This is shared by every focus-timer entry point so a refresh cannot create a
- * default player before the user's database preference has been resolved.
+ * Resolves the authenticated user's selected source without blocking player
+ * creation. A fallback can start immediately while the private MP3 loads.
  */
 export function initializeWhiteNoiseSource(): Promise<void> {
     const scope = getAuthCacheScope();
-    if (initializedSourceScope === scope) return preloadWhiteNoiseSource();
+    if (initializedSourceScope === scope) return Promise.resolve();
     if (sourceLoadPromise && sourceLoadScope === scope) return sourceLoadPromise;
 
     if (sourceOwnerScope !== scope) {
@@ -271,20 +270,33 @@ export function initializeWhiteNoiseSource(): Promise<void> {
 
     const revisionAtStart = sourceRevision;
     sourceLoadScope = scope;
-    const request = loadSelectedPomodoroSound()
-        .then(async selectedSource => {
+    const request = loadSelectedPomodoroSoundMetadata()
+        .then(selectedSound => {
             const requestIsCurrent = sourceRevision === revisionAtStart && getAuthCacheScope() === scope;
             if (requestIsCurrent) {
-                setWhiteNoiseSource(selectedSource);
-                await preloadWhiteNoiseSource();
                 initializedSourceScope = scope;
+                // Metadata is enough to finish initialization. Fetch the MP3
+                // in the background and let a running timer move to it when
+                // the authenticated audio URL becomes available.
+                void getPomodoroSoundAudioUrl(selectedSound)
+                    .then(url => {
+                        if (sourceRevision === revisionAtStart && getAuthCacheScope() === scope) {
+                            setWhiteNoiseSource({
+                                id: selectedSound.id,
+                                name: selectedSound.name,
+                                url,
+                            });
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Could not load the selected Pomodoro sound audio:', error);
+                    });
             }
         })
-        .catch(async error => {
+        .catch(error => {
             // Keep brown noise as the safe fallback if the preference request is unavailable.
             console.error('Could not load the selected Pomodoro sound:', error);
             if (sourceRevision === revisionAtStart && getAuthCacheScope() === scope) {
-                await preloadWhiteNoiseSource();
                 initializedSourceScope = scope;
             }
         })
@@ -300,6 +312,7 @@ export function initializeWhiteNoiseSource(): Promise<void> {
 }
 
 export function resetWhiteNoiseSource(): void {
+    sourceSelectionRevision += 1;
     sourceRevision += 1;
     sourceOwnerScope = null;
     initializedSourceScope = null;
@@ -352,29 +365,65 @@ export async function getAvailableWhiteNoiseSounds(): Promise<PomodoroSound[]> {
     return [BUILT_IN_POMODORO_SOUND, ...(await getPomodoroSounds())];
 }
 
-async function applyWhiteNoiseSound(sound: PomodoroSound): Promise<WhiteNoiseSource> {
-    await initializeWhiteNoiseSource();
-    const scope = getAuthCacheScope();
-    const url = await getPomodoroSoundAudioUrl(sound);
-    if (getAuthCacheScope() !== scope) return getWhiteNoiseSource();
-
-    if (sound.id !== source.id && scope !== 'anonymous') {
-        await userService.updatePreferences({ pomodoroSoundId: sound.id });
-    }
-    if (getAuthCacheScope() !== scope) return getWhiteNoiseSource();
-
-    setWhiteNoiseSource({ id: sound.id, name: sound.name, url });
-    return getWhiteNoiseSource();
-}
-
-function queueWhiteNoiseSoundChange(change: () => Promise<WhiteNoiseSource>): Promise<WhiteNoiseSource> {
-    const request = sourceSelectionQueue.then(change);
-    sourceSelectionQueue = request.then(() => undefined, () => undefined);
-    return request;
-}
-
 export function selectWhiteNoiseSound(sound: PomodoroSound): Promise<WhiteNoiseSource> {
-    return queueWhiteNoiseSoundChange(() => applyWhiteNoiseSound(sound));
+    const scope = getAuthCacheScope();
+    const revision = ++sourceSelectionRevision;
+    // Prevent a slower startup request from applying an older database
+    // preference after the user has already chosen a different sound.
+    sourceRevision += 1;
+    const previousSource = getWhiteNoiseSource();
+    let audioLoaded = false;
+    let preferenceSaved = scope === 'anonymous' || sound.id === previousSource.id;
+    const audioRequest = getPomodoroSoundAudioUrl(sound).then(url => {
+        audioLoaded = true;
+        return url;
+    });
+    const preferenceRequest = preferenceSaved
+        ? Promise.resolve()
+        : userService.updatePreferences({ pomodoroSoundId: sound.id }).then(() => {
+            preferenceSaved = true;
+        });
+    const switchRequest = audioRequest.then(url => {
+        if (revision === sourceSelectionRevision && getAuthCacheScope() === scope) {
+            setWhiteNoiseSource({ id: sound.id, name: sound.name, url });
+        }
+        return url;
+    });
+
+    return Promise.all([switchRequest, preferenceRequest])
+        .then(() => getWhiteNoiseSource())
+        .catch(async error => {
+            if (revision !== sourceSelectionRevision || getAuthCacheScope() !== scope) {
+                return getWhiteNoiseSource();
+            }
+
+            // Keep the audio and persisted preference aligned if one half of
+            // the parallel change failed after the other half succeeded.
+            let shouldRollBackPreference = preferenceSaved;
+            if (!shouldRollBackPreference && scope !== 'anonymous' && sound.id !== previousSource.id) {
+                try {
+                    await preferenceRequest;
+                    shouldRollBackPreference = true;
+                } catch (preferenceError) {
+                    // The original failure is the useful error for this selection.
+                    console.error('Could not confirm the Pomodoro sound preference:', preferenceError);
+                }
+            }
+            if (revision !== sourceSelectionRevision || getAuthCacheScope() !== scope) {
+                return getWhiteNoiseSource();
+            }
+            if (audioLoaded && source.id === sound.id) {
+                setWhiteNoiseSource(previousSource);
+            }
+            if (shouldRollBackPreference && scope !== 'anonymous' && sound.id !== previousSource.id) {
+                try {
+                    await userService.updatePreferences({ pomodoroSoundId: previousSource.id });
+                } catch (rollbackError) {
+                    console.error('Could not roll back the Pomodoro sound preference:', rollbackError);
+                }
+            }
+            throw error;
+        });
 }
 
 export function setWhiteNoiseEnabled(nextEnabled: boolean): void {
@@ -398,7 +447,10 @@ export function setWhiteNoiseEnabled(nextEnabled: boolean): void {
 export async function startWhiteNoise(): Promise<void> {
     if (!enabled) return;
     const requestId = ++playbackRequestId;
-    await initializeWhiteNoiseSource();
+    // Starting playback must not wait for an authenticated MP3 download.
+    // Initialization continues in the background and swaps the source when
+    // it is ready.
+    void initializeWhiteNoiseSource();
     if (!enabled || requestId !== playbackRequestId) return;
 
     const audio = getPlayer(activeLayer as 0 | 1);

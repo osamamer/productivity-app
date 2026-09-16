@@ -29,7 +29,9 @@ import {
     createPomodoroFormDefaults,
     getPomodoroConfig,
     isPomodoroFormDefaults,
+    isPomodoroFormValid,
     NORMAL_POMODORO_CONFIG,
+    POMODORO_DURATION_LIMITS,
     PomodoroConfig,
     PomodoroFormValues,
     readPomodoroFormPreferences,
@@ -353,7 +355,7 @@ export function CustomTimer({ task }: Props) {
     const startPomodoro = () => {
         // Starting before the live timer channel is ready is harmless; the
         // optimistic state keeps the timer usable while the socket connects.
-        if (!task) return;
+        if (!task || !canStartPomodoro) return;
 
         const optimisticStatus = createOptimisticPomodoroStatus(
             task.taskId,
@@ -404,6 +406,9 @@ export function CustomTimer({ task }: Props) {
         return total > 0 ? Math.min(100, (passed / total) * 100) : 0;
     };
 
+    const durationLimits = POMODORO_DURATION_LIMITS[pomodoroConfig.durationUnit];
+    const canStartPomodoro = isPomodoroFormValid(formData, pomodoroConfig);
+
     if (!task) {
         return (
             <HoverCardBox>
@@ -435,18 +440,21 @@ export function CustomTimer({ task }: Props) {
                                 label={`Focus (${pomodoroConfig.durationUnit})`}
                                 value={formData.focusDuration}
                                 onChange={value => updatePomodoroForm({ focusDuration: value })}
+                                max={durationLimits.focusDuration}
                             />
                             <PomodoroNumberField
                                 name="shortBreakDuration"
                                 label={`Short Break (${pomodoroConfig.durationUnit})`}
                                 value={formData.shortBreakDuration}
                                 onChange={value => updatePomodoroForm({ shortBreakDuration: value })}
+                                max={durationLimits.shortBreakDuration}
                             />
                             <PomodoroNumberField
                                 name="longBreakDuration"
                                 label={`Long Break (${pomodoroConfig.durationUnit})`}
                                 value={formData.longBreakDuration}
                                 onChange={value => updatePomodoroForm({ longBreakDuration: value })}
+                                max={durationLimits.longBreakDuration}
                             />
                             <PomodoroNumberField
                                 name="numFocuses"
@@ -462,6 +470,7 @@ export function CustomTimer({ task }: Props) {
                             variant="contained"
                             color="primary"
                             onClick={startPomodoro}
+                            disabled={!canStartPomodoro}
                             fullWidth
                             startIcon={<PlayArrowIcon />}
                         >

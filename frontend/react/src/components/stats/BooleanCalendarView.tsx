@@ -10,7 +10,7 @@ import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
 import { format, eachDayOfInterval, getDay, getMonth, parseISO } from 'date-fns';
 import { StatDefinition, StatEntry, StatEntryStatus } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
-import { getBooleanChoiceColor, showStatFeedback } from '../../services/statFeedback';
+import { getBooleanChoiceColor, getStatFeedbackColor, showStatFeedback } from '../../services/statFeedback';
 import { formatStatBucketRange, getStatPeriodWindow, StatPeriodMode, StatPeriodOffset } from './statPeriod';
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -251,7 +251,9 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
         closeEditor();
         setSaveError(null);
         if (nextValue !== null && nextStatus !== 'NOT_PLANNED') {
-            showStatFeedback(definition, nextValue, feedbackAnchor);
+            showStatFeedback(definition, nextValue, feedbackAnchor, {
+                color: getStatFeedbackColor(definition, nextValue, theme),
+            });
         }
         const savePromise = statService.recordEntry({
                 statDefinitionId: definition.id,

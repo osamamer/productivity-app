@@ -2,6 +2,21 @@ import confetti from 'canvas-confetti';
 
 export type CelebrationAnchor = HTMLElement | DOMRect;
 
+export type StatFeedbackMark = 'check' | 'cross';
+
+export interface StatFeedbackAnimationOptions {
+    mark?: StatFeedbackMark | null;
+    color?: string;
+}
+
+function feedbackMarkClass(
+    mark: StatFeedbackMark | null | undefined,
+    defaultMark: StatFeedbackMark,
+): string {
+    if (mark === null) return '';
+    return ` stat-feedback-${mark ?? defaultMark}`;
+}
+
 function getOrigin(anchor: CelebrationAnchor | null | undefined): { x?: number; y?: number } {
     if (!anchor) return { y: 0.72 };
 
@@ -38,22 +53,22 @@ function ensureGoodFeedbackStyles(): void {
             0% {
                 opacity: 0;
                 transform: translate(-50%, -50%) scale(.65);
-                box-shadow: 0 0 0 0 rgba(46, 125, 50, .42);
+                box-shadow: 0 0 0 0 color-mix(in srgb, var(--stat-feedback-color, #22C55E) 42%, transparent);
             }
             18% {
                 opacity: 1;
                 transform: translate(-50%, -50%) scale(1.08);
-                box-shadow: 0 0 0 0 rgba(46, 125, 50, .42);
+                box-shadow: 0 0 0 0 color-mix(in srgb, var(--stat-feedback-color, #22C55E) 42%, transparent);
             }
             70% {
                 opacity: 1;
                 transform: translate(-50%, -50%) scale(1);
-                box-shadow: 0 0 0 9px rgba(46, 125, 50, 0);
+                box-shadow: 0 0 0 9px color-mix(in srgb, var(--stat-feedback-color, #22C55E) 0%, transparent);
             }
             100% {
                 opacity: 0;
                 transform: translate(-50%, -50%) scale(1.08);
-                box-shadow: 0 0 0 15px rgba(46, 125, 50, 0);
+                box-shadow: 0 0 0 15px color-mix(in srgb, var(--stat-feedback-color, #22C55E) 0%, transparent);
             }
         }
 
@@ -64,11 +79,11 @@ function ensureGoodFeedbackStyles(): void {
             height: 30px;
             border: 2px solid currentColor;
             border-radius: 50%;
-            background: rgba(46, 125, 50, .12);
-            color: #2e7d32;
+            background: color-mix(in srgb, var(--stat-feedback-color, #22C55E) 12%, transparent);
+            color: var(--stat-feedback-color, #22C55E);
         }
 
-        .stat-good-feedback::before {
+        .stat-good-feedback.stat-feedback-check::before {
             content: '';
             position: absolute;
             top: 4px;
@@ -80,18 +95,41 @@ function ensureGoodFeedbackStyles(): void {
             border-radius: 1px;
             transform: rotate(45deg);
         }
+
+        .stat-good-feedback.stat-feedback-cross::before,
+        .stat-good-feedback.stat-feedback-cross::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 14px;
+            height: 2px;
+            border-radius: 999px;
+            background: currentColor;
+        }
+
+        .stat-good-feedback.stat-feedback-cross::before {
+            transform: translate(-50%, -50%) rotate(45deg);
+        }
+
+        .stat-good-feedback.stat-feedback-cross::after {
+            transform: translate(-50%, -50%) rotate(-45deg);
+        }
     `;
     document.head.appendChild(style);
     goodFeedbackStylesAdded = true;
 }
 
-export function affirmStatLogged(anchor?: CelebrationAnchor | null): void {
+export function affirmStatLogged(
+    anchor?: CelebrationAnchor | null,
+    options: StatFeedbackAnimationOptions = {},
+): void {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
     ensureGoodFeedbackStyles();
     const origin = getOrigin(anchor);
     const animation = document.createElement('div');
-    animation.className = 'stat-good-feedback';
+    animation.className = `stat-good-feedback${feedbackMarkClass(options.mark, 'check')}`;
     animation.setAttribute('aria-hidden', 'true');
     Object.assign(animation.style, {
         position: 'fixed',
@@ -103,6 +141,7 @@ export function affirmStatLogged(anchor?: CelebrationAnchor | null): void {
         animation: 'stat-good-feedback 900ms cubic-bezier(.2, .8, .2, 1) forwards',
         willChange: 'transform, opacity, box-shadow',
     });
+    animation.style.setProperty('--stat-feedback-color', options.color ?? '#22C55E');
     document.body.appendChild(animation);
     window.setTimeout(() => animation.remove(), 950);
 }
@@ -119,22 +158,22 @@ function ensureBadFeedbackStyles(): void {
             0% {
                 opacity: 0;
                 transform: translate(-50%, -50%) scale(.65);
-                box-shadow: 0 0 0 0 rgba(211, 47, 47, .42);
+                box-shadow: 0 0 0 0 color-mix(in srgb, var(--stat-feedback-color, #d32f2f) 42%, transparent);
             }
             18% {
                 opacity: 1;
                 transform: translate(-50%, -50%) scale(1);
-                box-shadow: 0 0 0 0 rgba(211, 47, 47, .42);
+                box-shadow: 0 0 0 0 color-mix(in srgb, var(--stat-feedback-color, #d32f2f) 42%, transparent);
             }
             70% {
                 opacity: 1;
                 transform: translate(-50%, -50%) scale(1);
-                box-shadow: 0 0 0 9px rgba(211, 47, 47, 0);
+                box-shadow: 0 0 0 9px color-mix(in srgb, var(--stat-feedback-color, #d32f2f) 0%, transparent);
             }
             100% {
                 opacity: 0;
                 transform: translate(-50%, -50%) scale(1.08);
-                box-shadow: 0 0 0 15px rgba(211, 47, 47, 0);
+                box-shadow: 0 0 0 15px color-mix(in srgb, var(--stat-feedback-color, #d32f2f) 0%, transparent);
             }
         }
 
@@ -145,12 +184,12 @@ function ensureBadFeedbackStyles(): void {
             height: 30px;
             border: 2px solid currentColor;
             border-radius: 50%;
-            background: rgba(211, 47, 47, .12);
-            color: #d32f2f;
+            background: color-mix(in srgb, var(--stat-feedback-color, #d32f2f) 12%, transparent);
+            color: var(--stat-feedback-color, #d32f2f);
         }
 
-        .stat-bad-feedback::before,
-        .stat-bad-feedback::after {
+        .stat-bad-feedback.stat-feedback-cross::before,
+        .stat-bad-feedback.stat-feedback-cross::after {
             content: '';
             position: absolute;
             top: 50%;
@@ -161,25 +200,41 @@ function ensureBadFeedbackStyles(): void {
             background: currentColor;
         }
 
-        .stat-bad-feedback::before {
+        .stat-bad-feedback.stat-feedback-cross::before {
             transform: translate(-50%, -50%) rotate(45deg);
         }
 
-        .stat-bad-feedback::after {
+        .stat-bad-feedback.stat-feedback-cross::after {
             transform: translate(-50%, -50%) rotate(-45deg);
+        }
+
+        .stat-bad-feedback.stat-feedback-check::before {
+            content: '';
+            position: absolute;
+            top: 4px;
+            left: 8px;
+            width: 8px;
+            height: 14px;
+            border: solid currentColor;
+            border-width: 0 3px 3px 0;
+            border-radius: 1px;
+            transform: rotate(45deg);
         }
     `;
     document.head.appendChild(style);
     badFeedbackStylesAdded = true;
 }
 
-export function reprimandStatLogged(anchor?: CelebrationAnchor | null): void {
+export function reprimandStatLogged(
+    anchor?: CelebrationAnchor | null,
+    options: StatFeedbackAnimationOptions = {},
+): void {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
     ensureBadFeedbackStyles();
     const origin = getOrigin(anchor);
     const animation = document.createElement('div');
-    animation.className = 'stat-bad-feedback';
+    animation.className = `stat-bad-feedback${feedbackMarkClass(options.mark, 'cross')}`;
     animation.setAttribute('aria-hidden', 'true');
     Object.assign(animation.style, {
         position: 'fixed',
@@ -191,6 +246,7 @@ export function reprimandStatLogged(anchor?: CelebrationAnchor | null): void {
         animation: 'stat-bad-feedback 900ms cubic-bezier(.2, .8, .2, 1) forwards',
         willChange: 'transform, opacity, box-shadow',
     });
+    animation.style.setProperty('--stat-feedback-color', options.color ?? '#d32f2f');
     document.body.appendChild(animation);
     window.setTimeout(() => animation.remove(), 950);
 }

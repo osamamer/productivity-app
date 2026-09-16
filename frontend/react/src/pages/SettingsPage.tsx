@@ -1,5 +1,5 @@
-import { ChangeEvent, FormEvent, SyntheticEvent, memo, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
-import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, LinearProgress, MenuItem, Snackbar, Stack, Switch, Tab, Tabs, TextField, Typography } from '@mui/material';
+import { ChangeEvent, FormEvent, SyntheticEvent, memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, IconButton, LinearProgress, MenuItem, Snackbar, Stack, Switch, Tab, Tabs, TextField, Typography } from '@mui/material';
 import LightModeIcon from '@mui/icons-material/LightMode';
 import NightlightIcon from '@mui/icons-material/Nightlight';
 import LogoutIcon from '@mui/icons-material/Logout';
@@ -54,18 +54,20 @@ import {
     getPomodoroSoundAudioUrl,
     getPomodoroSounds,
     MAX_POMODORO_SOUND_SIZE_BYTES,
+    preloadPomodoroSoundAudio,
     PomodoroSound,
 } from '../services/api/pomodoroSoundService.ts';
 import {
     cancelPomodoroSoundUpload,
     clearPomodoroSoundUploadResult,
     getPomodoroSoundUploadSnapshot,
+    getPomodoroSoundUploadErrorMessage,
     isPomodoroSoundUploadActive,
     isPomodoroSoundUploadCancellation,
     startPomodoroSoundUpload,
     subscribeToPomodoroSoundUpload,
 } from '../services/pomodoroSoundUpload.ts';
-import { setWhiteNoiseSource } from '../services/whiteNoise.ts';
+import { selectWhiteNoiseSound, setWhiteNoiseSource } from '../services/whiteNoise.ts';
 
 const sectionCardSx = {
     backgroundColor: 'background.paper',
@@ -512,6 +514,8 @@ export function SettingsPage() {
     const [selectedPomodoroSoundId, setSelectedPomodoroSoundId] = useState(BUILT_IN_POMODORO_SOUND_ID);
     const [pomodoroSoundsLoading, setPomodoroSoundsLoading] = useState(() => getCachedPomodoroSounds() === undefined);
     const [pomodoroSoundSaving, setPomodoroSoundSaving] = useState(false);
+    const pomodoroSoundSelectionRevision = useRef(0);
+    const [pomodoroSoundDeleteTarget, setPomodoroSoundDeleteTarget] = useState<PomodoroSound | null>(null);
     const [pomodoroSoundError, setPomodoroSoundError] = useState<string | null>(null);
     const [userPreferenceError, setUserPreferenceError] = useState<string | null>(null);
     const pomodoroUpload = useSyncExternalStore(
@@ -820,19 +824,22 @@ export function SettingsPage() {
         if (!sound) return;
 
         clearPomodoroSoundUploadResult();
+        const selectionRevision = ++pomodoroSoundSelectionRevision.current;
         setSelectedPomodoroSoundId(nextValue);
-        setPomodoroSoundSaving(true);
         setPomodoroSoundError(null);
-        try {
-            await userService.updatePreferences({ pomodoroSoundId: nextValue });
-            await applyPomodoroSound(sound);
-        } catch (error) {
+        void selectWhiteNoiseSound(sound).catch(error => {
+            if (selectionRevision !== pomodoroSoundSelectionRevision.current) return;
             console.error('Failed to update Pomodoro sound:', error);
             setSelectedPomodoroSoundId(previousValue);
             setPomodoroSoundError('Could not save this Pomodoro sound right now.');
-        } finally {
-            setPomodoroSoundSaving(false);
-        }
+
+            const previousSound = previousValue === BUILT_IN_POMODORO_SOUND_ID
+                ? BUILT_IN_POMODORO_SOUND
+                : pomodoroSounds.find(candidate => candidate.id === previousValue);
+            if (previousSound) void selectWhiteNoiseSound(previousSound).catch(rollbackError => {
+                console.error('Failed to restore the previous Pomodoro sound:', rollbackError);
+            });
+        });
     }
 
     async function handlePomodoroSoundUpload(event: ChangeEvent<HTMLInputElement>) {
@@ -850,21 +857,25 @@ export function SettingsPage() {
         setPomodoroSoundError(null);
         try {
             const uploadedSound = await startPomodoroSoundUpload(file);
+            // A pending manual selection must not roll back over this newly
+            // accepted upload when its slower request finishes later.
+            pomodoroSoundSelectionRevision.current += 1;
             setPomodoroSounds(previous => previous.some(sound => sound.id === uploadedSound.id)
                 ? previous
                 : [...previous, uploadedSound]);
             setSelectedPomodoroSoundId(uploadedSound.id);
         } catch (error) {
             if (!isPomodoroSoundUploadCancellation(error)) {
-                setPomodoroSoundError('Could not upload that MP3 right now.');
+                setPomodoroSoundError(getPomodoroSoundUploadErrorMessage(error));
             }
         } finally {
             setPomodoroSoundSaving(false);
         }
     }
 
-    async function handlePomodoroSoundDelete(sound: PomodoroSound) {
-        if (!window.confirm(`Delete ${sound.name}?`)) return;
+    async function handlePomodoroSoundDelete() {
+        const sound = pomodoroSoundDeleteTarget;
+        if (!sound || pomodoroSoundSaving) return;
 
         clearPomodoroSoundUploadResult();
         setPomodoroSoundSaving(true);
@@ -877,6 +888,7 @@ export function SettingsPage() {
                 setSelectedPomodoroSoundId(BUILT_IN_POMODORO_SOUND_ID);
                 await applyPomodoroSound(BUILT_IN_POMODORO_SOUND);
             }
+            setPomodoroSoundDeleteTarget(null);
         } catch (error) {
             console.error('Failed to delete Pomodoro sound:', error);
             setPomodoroSoundError('Could not delete that Pomodoro sound right now.');
@@ -892,7 +904,7 @@ export function SettingsPage() {
     const pomodoroUploadProgress = pomodoroUpload.phase === 'uploading' || pomodoroUpload.phase === 'saving'
         ? pomodoroUpload.progress
         : null;
-    const pomodoroUploadError = pomodoroUpload.phase === 'failed' ? pomodoroUpload.error : null;
+    const pomodoroUploadError = pomodoroUpload.error;
 
     return (
         <PageWrapper>
@@ -1177,7 +1189,20 @@ export function SettingsPage() {
                                                 {BUILT_IN_POMODORO_SOUND.name}
                                             </MenuItem>
                                             {pomodoroSounds.map(sound => (
-                                                <MenuItem key={sound.id} value={sound.id}>
+                                                <MenuItem
+                                                    key={sound.id}
+                                                    value={sound.id}
+                                                    onMouseEnter={() => {
+                                                        void preloadPomodoroSoundAudio(sound).catch(error => {
+                                                            console.warn('Could not preload Pomodoro sound:', error);
+                                                        });
+                                                    }}
+                                                    onFocus={() => {
+                                                        void preloadPomodoroSoundAudio(sound).catch(error => {
+                                                            console.warn('Could not preload Pomodoro sound:', error);
+                                                        });
+                                                    }}
+                                                >
                                                     {sound.name}
                                                 </MenuItem>
                                             ))}
@@ -1200,16 +1225,25 @@ export function SettingsPage() {
                                                         <Typography variant="body2" noWrap sx={{ minWidth: 0 }}>
                                                             {sound.name}
                                                         </Typography>
-                                                        <Button
+                                                        <IconButton
                                                             size="small"
-                                                            color="inherit"
-                                                            onClick={() => void handlePomodoroSoundDelete(sound)}
+                                                            aria-label={`Delete ${sound.name}`}
+                                                            onClick={() => {
+                                                                setPomodoroSoundError(null);
+                                                                setPomodoroSoundDeleteTarget(sound);
+                                                            }}
                                                             disabled={pomodoroSoundSaving || pomodoroUploadActive || userPreferencesLoading}
-                                                            startIcon={<DeleteOutlineIcon />}
-                                                            sx={{ flexShrink: 0, textTransform: 'none' }}
+                                                            sx={{
+                                                                flexShrink: 0,
+                                                                color: 'text.secondary',
+                                                                '&:hover': {
+                                                                    color: 'error.main',
+                                                                    backgroundColor: 'action.hover',
+                                                                },
+                                                            }}
                                                         >
-                                                            Delete
-                                                        </Button>
+                                                            <DeleteOutlineIcon fontSize="small" />
+                                                        </IconButton>
                                                     </Box>
                                                 ))}
                                             </Stack>
@@ -1506,6 +1540,26 @@ export function SettingsPage() {
                         }}
                     >
                         Log out
+                    </Button>
+                </DialogActions>
+            </Dialog>
+            <Dialog
+                open={pomodoroSoundDeleteTarget !== null}
+                onClose={() => { if (!pomodoroSoundSaving) setPomodoroSoundDeleteTarget(null); }}
+                fullWidth
+                maxWidth="xs"
+            >
+                <DialogTitle>Delete “{pomodoroSoundDeleteTarget?.name}”?</DialogTitle>
+                <DialogContent>
+                    <DialogContentText>
+                        This focus sound will be permanently deleted. This cannot be undone.
+                    </DialogContentText>
+                    {pomodoroSoundError && <Alert severity="error" sx={{ mt: 2 }}>{pomodoroSoundError}</Alert>}
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setPomodoroSoundDeleteTarget(null)} disabled={pomodoroSoundSaving}>Cancel</Button>
+                    <Button color="error" variant="contained" onClick={() => void handlePomodoroSoundDelete()} disabled={pomodoroSoundSaving}>
+                        {pomodoroSoundSaving ? <CircularProgress size={18} color="inherit" /> : 'Delete'}
                     </Button>
                 </DialogActions>
             </Dialog>

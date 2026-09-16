@@ -13,6 +13,7 @@ import {
 } from '@mui/material';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
+import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import GroupWorkIcon from '@mui/icons-material/GroupWork';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
@@ -32,6 +33,7 @@ import { playAudioFeedback } from '../services/audioFeedback';
 import { createTaskSearchMatcher, normalizeTaskSearchText } from '../services/utils/taskSearch';
 import { findKeyboardDeleteAnchor, useKeyboardDelete } from '../hooks/useKeyboardDelete';
 import { BulkTaskDatePopover } from '../components/task/BulkTaskDatePopover';
+import { TaskParentPopover } from '../components/task/TaskParentPopover';
 import { invalidateResource } from '../services/cache/resourceInvalidation';
 import {
     readTaskSectionExpansion,
@@ -163,6 +165,8 @@ export function TaskPage() {
     const [groupAnchorEl, setGroupAnchorEl] = useState<HTMLElement | null>(null);
     const [groupName, setGroupName] = useState('');
     const [groupSubmitting, setGroupSubmitting] = useState(false);
+    const [parentTaskAnchorEl, setParentTaskAnchorEl] = useState<HTMLElement | null>(null);
+    const [parentTaskSubmitting, setParentTaskSubmitting] = useState(false);
     const [bulkDateAnchorEl, setBulkDateAnchorEl] = useState<HTMLElement | null>(null);
     const [bulkDateDraft, setBulkDateDraft] = useState(() => new Date());
     const [bulkActionLoading, setBulkActionLoading] = useState(false);
@@ -309,6 +313,7 @@ export function TaskPage() {
         setBulkDateAnchorEl(null);
         setGroupAnchorEl(null);
         setGroupName('');
+        setParentTaskAnchorEl(null);
         selectionAnchorRef.current = null;
     }, [setHighlightedTask]);
 
@@ -531,6 +536,10 @@ export function TaskPage() {
     const selectionEntityCount = selectedTaskIds.length + selectedGroupIds.length;
     const selectionActionsVisible = selectionEntityCount > 1 || selectedGroupIds.length > 0;
     const canGroupSelectedTasks = selectedGroupIds.length === 0 && selectedTaskIds.length >= 2;
+    const canCreateParentTask = selectedGroupIds.length === 0
+        && selectedTaskIds.length >= 2
+        && selectedTasks.length === selectedTaskIds.length
+        && selectedTasks.every(task => !task.parentId && !task.taskSeriesId);
     const selectedTask = taskSelectionEnabled
         && highlightedTask
         && visibleTaskIds.has(highlightedTask.taskId)
@@ -872,6 +881,40 @@ export function TaskPage() {
         }
     }, [canGroupSelectedTasks, clearSelection, groupName, groupSubmitting, selectedTasks, showTaskFeedback]);
 
+    const createParentTask = useCallback(async (name: string) => {
+        if (!canCreateParentTask || parentTaskSubmitting) return;
+
+        const selectedTaskIdsForParent = selectedTasks.map(task => task.taskId);
+        setParentTaskSubmitting(true);
+        try {
+            const parentTask = await taskService.createTask({
+                name,
+                description: '',
+                scheduledPerformDateTime: selectedTasks[0]?.scheduledPerformDateTime ?? '',
+                tag: '',
+                importance: 0,
+            });
+            await taskService.moveTasksToParent(selectedTaskIdsForParent, parentTask.taskId);
+            await refreshTaskBuckets(true, 'taskPage');
+            clearSelection();
+            showTaskFeedback(
+                'success',
+                `Created “${parentTask.name}” with ${selectedTaskIdsForParent.length} subtasks`,
+            );
+        } catch (error) {
+            console.error('Error creating parent task from selected tasks:', error);
+            try {
+                await refreshTaskBuckets(true, 'taskPage');
+            } catch (refreshError) {
+                console.error('Error refreshing tasks after creating parent task:', refreshError);
+            }
+            showTaskFeedback('error', 'Could not group the selected tasks as subtasks');
+            throw error;
+        } finally {
+            setParentTaskSubmitting(false);
+        }
+    }, [canCreateParentTask, clearSelection, parentTaskSubmitting, refreshTaskBuckets, selectedTasks, showTaskFeedback]);
+
     const addTasksToGroup = useCallback(async (targetGroup: TaskGroup, taskIds: string[]) => {
         const taskIdsToAdd = taskIds.filter(taskId => !targetGroup.taskIds.includes(taskId));
         if (taskIdsToAdd.length === 0) return;
@@ -1182,6 +1225,20 @@ export function TaskPage() {
                                     >
                                         <CalendarMonthIcon fontSize="small" />
                                     </IconButton>
+                                    {canCreateParentTask && (
+                                        <IconButton
+                                            size="small"
+                                            aria-label="Make selected tasks subtasks of a new task"
+                                            title="Make selected tasks subtasks of a new task"
+                                            onClick={event => {
+                                                event.stopPropagation();
+                                                setParentTaskAnchorEl(event.currentTarget);
+                                            }}
+                                            disabled={bulkActionLoading || parentTaskSubmitting}
+                                        >
+                                            <AccountTreeIcon fontSize="small" />
+                                        </IconButton>
+                                    )}
                                     {canGroupSelectedTasks && (
                                         <IconButton
                                             size="small"
@@ -1460,6 +1517,14 @@ export function TaskPage() {
                     </Box>
                 </Box>
             </Popover>
+
+            <TaskParentPopover
+                anchorEl={parentTaskAnchorEl}
+                selectedCount={selectedTaskIds.length}
+                submitting={parentTaskSubmitting}
+                onClose={() => setParentTaskAnchorEl(null)}
+                onSubmit={createParentTask}
+            />
 
             <BulkTaskDatePopover
                 anchorEl={bulkDateAnchorEl}

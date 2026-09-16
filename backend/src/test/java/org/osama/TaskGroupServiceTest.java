@@ -242,6 +242,53 @@ class TaskGroupServiceTest {
     }
 
     @Test
+    void moveTasksToParent_assignsTasksInRequestOrder() {
+        Task first = createTask(TEST_USER_ID, "First");
+        Task second = createTask(TEST_USER_ID, "Second");
+        Task parent = createTask(TEST_USER_ID, "Parent");
+
+        List<Task> moved = taskService.moveTasksToParent(
+                List.of(second.getTaskId(), first.getTaskId()), parent.getTaskId(), TEST_USER_ID);
+
+        assertEquals(List.of(second.getTaskId(), first.getTaskId()),
+                moved.stream().map(Task::getTaskId).toList());
+        assertEquals(List.of(second.getTaskId(), first.getTaskId()),
+                taskService.getSubtasks(parent.getTaskId(), TEST_USER_ID).stream()
+                        .map(Task::getTaskId)
+                        .toList());
+        assertEquals(parent.getTaskId(), first.getParentId());
+        assertEquals(parent.getTaskId(), second.getParentId());
+        assertEquals(0, second.getDisplayOrder());
+        assertEquals(1, first.getDisplayOrder());
+    }
+
+    @Test
+    void moveTasksToParent_rejectsTasksOwnedByAnotherUserWithoutMovingAnyTask() {
+        Task ownTask = createTask(TEST_USER_ID, "Own task");
+        Task otherUsersTask = createTask(OTHER_USER_ID, "Other task");
+        Task parent = createTask(TEST_USER_ID, "Parent");
+
+        assertThrows(IllegalArgumentException.class, () -> taskService.moveTasksToParent(
+                List.of(ownTask.getTaskId(), otherUsersTask.getTaskId()),
+                parent.getTaskId(),
+                TEST_USER_ID));
+
+        assertNull(ownTask.getParentId());
+        assertNull(otherUsersTask.getParentId());
+    }
+
+    @Test
+    void moveTasksToParent_rejectsCycles() {
+        Task parent = createTask(TEST_USER_ID, "Parent");
+        Task child = createSubtask(parent, "Child");
+
+        assertThrows(IllegalArgumentException.class, () -> taskService.moveTasksToParent(
+                List.of(parent.getTaskId()), child.getTaskId(), TEST_USER_ID));
+
+        assertNull(parent.getParentId());
+    }
+
+    @Test
     void deletingATaskAlsoRemovesItFromItsTaskGroup() {
         Task first = createTask(TEST_USER_ID, "First");
         Task second = createTask(TEST_USER_ID, "Second");

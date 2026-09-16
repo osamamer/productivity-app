@@ -1,5 +1,6 @@
 package org.osama.pomodoro;
 
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.osama.exceptions.ResourceNotFoundException;
 import org.osama.user.User;
@@ -14,10 +15,8 @@ import org.springframework.core.io.Resource;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.UUID;
 
@@ -39,6 +38,19 @@ public class PomodoroSoundService {
         this.storageDirectory = Path.of(storageDirectory).toAbsolutePath().normalize();
     }
 
+    @PostConstruct
+    void prepareStorageDirectory() {
+        try {
+            Files.createDirectories(storageDirectory);
+            Files.createDirectories(storageDirectory.resolve(".uploads"));
+        } catch (IOException exception) {
+            // Multipart staging and persisted sounds share this directory. Keep
+            // startup usable for read-only features and report the real cause if
+            // an upload is attempted before storage is repaired.
+            log.error("Could not prepare Pomodoro sound storage directory: {}", storageDirectory, exception);
+        }
+    }
+
     @Transactional(readOnly = true)
     public List<PomodoroSoundResponse> getSounds(String userId) {
         return soundRepository.findMetadataByUserIdOrderByCreatedAtAsc(userId).stream()
@@ -58,21 +70,15 @@ public class PomodoroSoundService {
         String soundId = UUID.randomUUID().toString();
         String storagePath = soundId + ".mp3";
         Path target = storageDirectory.resolve(storagePath).normalize();
-        Path temporaryFile = null;
-
         try {
             Files.createDirectories(storageDirectory);
-            temporaryFile = Files.createTempFile(storageDirectory, soundId + "-", ".upload");
-            try (InputStream input = file.getInputStream()) {
-                Files.copy(input, temporaryFile, StandardCopyOption.REPLACE_EXISTING);
-            }
-            if (Files.size(temporaryFile) != file.getSize()) {
+            // MultipartFile can move the servlet upload's temporary file directly
+            // when the provider supports it, avoiding a second full-file copy.
+            // Keep the original MP3 bytes: re-encoding an already compressed file
+            // adds latency and a second lossy generation without improving playback.
+            file.transferTo(target);
+            if (Files.size(target) != file.getSize()) {
                 throw new IOException("The uploaded sound size changed while it was being stored.");
-            }
-            try {
-                Files.move(temporaryFile, target, StandardCopyOption.ATOMIC_MOVE);
-            } catch (java.nio.file.AtomicMoveNotSupportedException exception) {
-                Files.move(temporaryFile, target);
             }
 
             PomodoroSound sound = new PomodoroSound(
@@ -80,11 +86,12 @@ public class PomodoroSoundService {
             soundRepository.save(sound);
             log.info("Uploaded Pomodoro sound: userId={} soundId={} fileSize={}", userId, sound.getId(), file.getSize());
             return PomodoroSoundResponse.from(sound);
-        } catch (IOException | RuntimeException exception) {
-            deleteQuietly(temporaryFile);
+        } catch (IOException exception) {
             deleteQuietly(target);
-            if (exception instanceof IllegalArgumentException argumentException) throw argumentException;
-            throw new IllegalArgumentException("The sound file could not be stored.", exception);
+            throw new PomodoroSoundStorageException("Could not store Pomodoro sound " + soundId, exception);
+        } catch (RuntimeException exception) {
+            deleteQuietly(target);
+            throw exception;
         }
     }
 

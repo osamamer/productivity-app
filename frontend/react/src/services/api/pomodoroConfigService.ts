@@ -34,6 +34,23 @@ export const NORMAL_POMODORO_CONFIG: PomodoroConfig = {
     defaultLongBreakDuration: 15,
 };
 
+export const POMODORO_DURATION_LIMITS: Record<PomodoroDurationUnit, {
+    focusDuration: number;
+    shortBreakDuration: number;
+    longBreakDuration: number;
+}> = {
+    minutes: {
+        focusDuration: 120,
+        shortBreakDuration: 60,
+        longBreakDuration: 120,
+    },
+    seconds: {
+        focusDuration: 7_200,
+        shortBreakDuration: 3_600,
+        longBreakDuration: 7_200,
+    },
+};
+
 const DEV_POMODORO_CONFIG: PomodoroConfig = {
     secondsMode: true,
     durationUnit: 'seconds',
@@ -44,6 +61,10 @@ const DEV_POMODORO_CONFIG: PomodoroConfig = {
 
 const DEFAULT_NUM_FOCUSES = 4;
 export const DEFAULT_LONG_BREAK_COOLDOWN = 4;
+export const POMODORO_NUM_FOCUSES_MIN = 1;
+export const POMODORO_NUM_FOCUSES_MAX = 10;
+export const POMODORO_LONG_BREAK_COOLDOWN_MIN = 1;
+export const POMODORO_LONG_BREAK_COOLDOWN_MAX = 5;
 
 const POMODORO_CONFIG_TTL_MS = 5 * 60 * 1000;
 const pomodoroConfigCache = new TtlCache<PomodoroConfig>({ ttlMs: POMODORO_CONFIG_TTL_MS, maxEntries: 4 });
@@ -176,6 +197,23 @@ export function createPomodoroFormDefaults(config: PomodoroConfig): PomodoroForm
 
 export function isPomodoroFormDefaults(form: PomodoroFormValues, config: PomodoroConfig): boolean {
     return JSON.stringify(form) === JSON.stringify(createPomodoroFormDefaults(config));
+}
+
+export function isPomodoroFormValid(form: PomodoroFormValues, config: PomodoroConfig): boolean {
+    const durationLimits = POMODORO_DURATION_LIMITS[config.durationUnit];
+    const isInRange = (value: number, min: number, max: number) => (
+        Number.isSafeInteger(value) && value >= min && value <= max
+    );
+
+    return isInRange(form.focusDuration, 1, durationLimits.focusDuration)
+        && isInRange(form.shortBreakDuration, 1, durationLimits.shortBreakDuration)
+        && isInRange(form.longBreakDuration, 1, durationLimits.longBreakDuration)
+        && isInRange(form.numFocuses, POMODORO_NUM_FOCUSES_MIN, POMODORO_NUM_FOCUSES_MAX)
+        && isInRange(
+            form.longBreakCooldown,
+            POMODORO_LONG_BREAK_COOLDOWN_MIN,
+            POMODORO_LONG_BREAK_COOLDOWN_MAX,
+        );
 }
 
 export function setPomodoroSecondsModePreference(enabled: boolean): void {

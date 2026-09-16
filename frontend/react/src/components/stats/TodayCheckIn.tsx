@@ -3,10 +3,11 @@ import {
     Box, Typography, Stack, ToggleButton, ToggleButtonGroup,
     Slider, Button, Alert, CircularProgress, Divider,
 } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import { format } from 'date-fns';
 import { StatDefinition, StatEntryStatus } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
-import { getBooleanChoiceColor, showStatFeedback } from '../../services/statFeedback';
+import { getBooleanChoiceColor, getStatFeedbackColor, showStatFeedback } from '../../services/statFeedback';
 import { minutesToTimeValue, timeValueToMinutes } from '../../services/utils/statValues';
 import { DurationInput } from './DurationInput';
 import { AppTimeField } from '../input/AppPickerFields';
@@ -19,6 +20,7 @@ interface Props {
 }
 
 export function TodayCheckIn({ definitions, onSaved }: Props) {
+    const theme = useTheme();
     const [values, setValues] = useState<Record<string, number | null>>({});
     const [statuses, setStatuses] = useState<Record<string, StatEntryStatus>>({});
     // touched tracks which definitions have been explicitly set by the user (or pre-loaded from today's entries)
@@ -86,7 +88,9 @@ export function TodayCheckIn({ definitions, onSaved }: Props) {
             toSave.forEach(definition => {
                 const value = values[definition.id];
                 if (value !== null && value !== undefined && statuses[definition.id] !== 'NOT_PLANNED') {
-                    showStatFeedback(definition, value, feedbackAnchorRef.current);
+                    showStatFeedback(definition, value, feedbackAnchorRef.current, {
+                        color: getStatFeedbackColor(definition, value, theme),
+                    });
                 }
             });
             await Promise.all(

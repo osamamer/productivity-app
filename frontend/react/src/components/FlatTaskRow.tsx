@@ -47,7 +47,10 @@ import {
     createPomodoroFormDefaults,
     getPomodoroConfig,
     isPomodoroFormDefaults,
+    isPomodoroFormValid,
     NORMAL_POMODORO_CONFIG,
+    POMODORO_DURATION_LIMITS,
+    POMODORO_NUM_FOCUSES_MAX,
     PomodoroConfig,
     PomodoroFormValues,
     readPomodoroFormPreferences,
@@ -695,7 +698,17 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         detailsRequestRef.current = request;
     }, [applyTaskDetails, expandedPanel, onTogglePanel, readOnly, refreshPomodoroStatus, task]);
 
+    const durationLimits = POMODORO_DURATION_LIMITS[pomodoroConfig.durationUnit];
+    const pomodoroFieldMax = {
+        focusDuration: durationLimits.focusDuration,
+        shortBreakDuration: durationLimits.shortBreakDuration,
+        longBreakDuration: durationLimits.longBreakDuration,
+        numFocuses: POMODORO_NUM_FOCUSES_MAX,
+    } as const;
+    const canStartPomodoro = isPomodoroFormValid(form, pomodoroConfig);
+
     const handleStart = () => {
+        if (!canStartPomodoro) return;
         if (globallyActivePomodoro?.active && globallyActivePomodoro.associatedTaskId !== task.taskId) {
             showPomodoroError();
             return;
@@ -1542,6 +1555,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                         label={label}
                                         value={form[key]}
                                         onChange={value => updatePomodoroForm({ [key]: value })}
+                                        max={pomodoroFieldMax[key]}
                                     />
                                 ))}
                             </Box>
@@ -1550,6 +1564,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                 size="small"
                                 fullWidth
                                 onClick={handleStart}
+                                disabled={!canStartPomodoro}
                                 startIcon={<PlayArrowIcon />}
                                 sx={{
                                     borderColor: 'primary',

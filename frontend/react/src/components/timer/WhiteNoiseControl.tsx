@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useState, type MouseEvent } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type MouseEvent } from 'react';
 import {
     Divider,
     IconButton,
@@ -23,6 +23,7 @@ import {
 import {
     BUILT_IN_POMODORO_SOUND,
     getCachedPomodoroSounds,
+    preloadPomodoroSoundAudio,
     type PomodoroSound,
 } from '../../services/api/pomodoroSoundService';
 
@@ -39,13 +40,17 @@ export function WhiteNoiseControl({ disabled = false, size = 'medium' }: WhiteNo
         return cached ? [BUILT_IN_POMODORO_SOUND, ...cached] : [];
     });
     const [soundsLoading, setSoundsLoading] = useState(false);
-    const [selectionLoading, setSelectionLoading] = useState(false);
     const [soundLoadError, setSoundLoadError] = useState<string | null>(null);
     const [soundSelectionError, setSoundSelectionError] = useState<string | null>(null);
+    const [pendingSoundId, setPendingSoundId] = useState<string | null>(null);
+    const selectionAttempt = useRef(0);
     const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
     const menuId = useId();
 
-    useEffect(() => subscribeToWhiteNoiseSource(setSource), []);
+    useEffect(() => subscribeToWhiteNoiseSource(nextSource => {
+        setSource(nextSource);
+        setPendingSoundId(current => current === nextSource.id ? null : current);
+    }), []);
 
     const loadSounds = useCallback(async () => {
         const cached = getCachedPomodoroSounds();
@@ -73,7 +78,7 @@ export function WhiteNoiseControl({ disabled = false, size = 'medium' }: WhiteNo
     };
 
     const handleMenuClose = () => {
-        if (!selectionLoading) setMenuAnchor(null);
+        setMenuAnchor(null);
     };
 
     const handleToggle = () => {
@@ -82,39 +87,44 @@ export function WhiteNoiseControl({ disabled = false, size = 'medium' }: WhiteNo
     };
 
     const handleSoundSelect = (sound: PomodoroSound) => {
-        if (sound.id === source.id) {
+        if (sound.id === source.id && pendingSoundId === null) {
             if (!whiteNoiseEnabled) setWhiteNoiseEnabled(true);
             setMenuAnchor(null);
             return;
         }
 
+        const attempt = ++selectionAttempt.current;
         setSoundSelectionError(null);
-        setSelectionLoading(true);
+        setPendingSoundId(sound.id);
+        setMenuAnchor(null);
+        if (!whiteNoiseEnabled) setWhiteNoiseEnabled(true);
         void selectWhiteNoiseSound(sound)
             .then(() => {
-                if (!whiteNoiseEnabled) setWhiteNoiseEnabled(true);
-                setMenuAnchor(null);
+                if (attempt === selectionAttempt.current) setPendingSoundId(null);
             })
             .catch(error => {
+                if (attempt !== selectionAttempt.current) return;
                 console.error('Could not select focus sound:', error);
+                setPendingSoundId(null);
                 setSoundSelectionError('Could not change the focus sound right now.');
-            })
-            .finally(() => setSelectionLoading(false));
+            });
     };
 
-    const busy = disabled || selectionLoading;
-    const sourceLabel = source.name || 'Focus sound';
+    const pendingSound = pendingSoundId ? sounds.find(sound => sound.id === pendingSoundId) : undefined;
+    const sourceLabel = pendingSound?.name || source.name || 'Focus sound';
+    const busy = disabled;
 
     return (
         <>
             <span style={{ display: 'inline-flex', alignItems: 'center' }}>
-                <Tooltip title={`Focus sound options: ${sourceLabel}`}>
+                <Tooltip title={soundSelectionError ?? `Focus sound options: ${sourceLabel}`}>
                     <span>
                         <IconButton
                             onClick={handleMenuOpen}
                             aria-label="Open focus sound options"
                             aria-controls={menuAnchor ? menuId : undefined}
                             aria-haspopup="menu"
+                            aria-busy={pendingSoundId !== null}
                             color={whiteNoiseEnabled ? 'primary' : 'inherit'}
                             size={size}
                             disabled={busy}
@@ -192,12 +202,22 @@ export function WhiteNoiseControl({ disabled = false, size = 'medium' }: WhiteNo
                 {!soundsLoading && sounds.map(sound => (
                     <MenuItem
                         key={sound.id}
-                        selected={sound.id === source.id}
+                        selected={sound.id === (pendingSoundId ?? source.id)}
                         onClick={() => handleSoundSelect(sound)}
+                        onMouseEnter={() => {
+                            void preloadPomodoroSoundAudio(sound).catch(error => {
+                                console.warn('Could not preload focus sound:', error);
+                            });
+                        }}
+                        onFocus={() => {
+                            void preloadPomodoroSoundAudio(sound).catch(error => {
+                                console.warn('Could not preload focus sound:', error);
+                            });
+                        }}
                         disabled={busy}
                     >
                         <ListItemIcon>
-                            {sound.id === source.id
+                            {sound.id === (pendingSoundId ?? source.id)
                                 ? <CheckIcon fontSize="small" />
                                 : <MusicNoteIcon fontSize="small" />}
                         </ListItemIcon>

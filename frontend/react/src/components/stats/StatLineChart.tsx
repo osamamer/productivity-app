@@ -8,12 +8,13 @@ import { useTheme } from '@mui/material/styles';
 import { format, parseISO, eachDayOfInterval } from 'date-fns';
 import { StatDefinition, StatEntry, StatEntryStatus } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
-import { getBooleanChoiceColor, showStatFeedback } from '../../services/statFeedback';
+import { getBooleanChoiceColor, getStatFeedbackColor, showStatFeedback } from '../../services/statFeedback';
 import {
     durationValueToMinutes, formatDurationValue, formatTimeValue,
     minutesToDurationValue, minutesToTimeValue, timeValueToMinutes,
 } from '../../services/utils/statValues';
 import { DurationStatChart } from './DurationStatChart';
+import { NumericStatChart } from './NumericStatChart';
 import { TimeStatChart } from './TimeStatChart';
 import { StatChartPoint, StatChartPointClickEvent } from './statChartTypes';
 import { AppTimeField } from '../input/AppPickerFields';
@@ -528,7 +529,9 @@ export const StatLineChart = React.memo(function StatLineChart({
             ?? entryMutationSnapshotsRef.current.get(date)
             ?? { value: undefined, status: undefined };
         if (parsed.value !== null && status !== 'NOT_PLANNED') {
-            showStatFeedback(definition, parsed.value, chartRef.current);
+            showStatFeedback(definition, parsed.value, chartRef.current, {
+                color: getStatFeedbackColor(definition, parsed.value, theme),
+            });
         }
         const savePromise = statService.recordEntry({
             statDefinitionId: definition.id,
@@ -669,6 +672,20 @@ export const StatLineChart = React.memo(function StatLineChart({
                     onDateContextMenu={onDateContextMenu}
                 />
             )
+            : (definition.type === 'NUMBER' || definition.type === 'RANGE')
+                && dateRange <= 7
+                && comparisonHasSameType
+                ? (
+                    <NumericStatChart
+                        definition={definition}
+                        comparisonDefinition={comparisonDefinition}
+                        points={data}
+                        dateRange={dateRange}
+                        theme={theme}
+                        onPointClick={openSpecialEditor}
+                        onDateContextMenu={onDateContextMenu}
+                    />
+                )
             : null;
 
     return (
@@ -695,7 +712,7 @@ export const StatLineChart = React.memo(function StatLineChart({
                     event.stopPropagation();
                     onDateContextMenu(hoveredPoint.date, event);
                 }}
-                sx={{ minHeight: definition.type === 'TIME' && dateRange <= 7 ? 220 : 200, opacity: loading ? 0.55 : 1, transition: 'opacity 120ms ease', pb: definition.type === 'DURATION' ? 3 : 0 }}
+                sx={{ minHeight: definition.type === 'TIME' && dateRange <= 7 ? 220 : 200, opacity: loading ? 0.55 : 1, transition: 'opacity 120ms ease', pb: (definition.type === 'DURATION' || ((definition.type === 'NUMBER' || definition.type === 'RANGE') && dateRange <= 7 && comparisonHasSameType)) ? 3 : 0 }}
             >
                 {specialChart ?? <ResponsiveContainer width="100%" height={200}>
                 <AreaChart

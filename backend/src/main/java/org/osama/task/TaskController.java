@@ -2,6 +2,7 @@ package org.osama.task;
 
 import org.osama.requests.UpdateTaskRequest;
 import org.osama.requests.NewTaskRequest;
+import org.osama.requests.MoveTasksToParentRequest;
 import org.osama.task.recurrence.TaskSeriesResponse;
 import org.osama.task.recurrence.TaskSeriesRuleRequest;
 import org.osama.task.recurrence.TaskSeriesService;
@@ -86,6 +87,16 @@ public class TaskController {
     public ResponseEntity<List<Task>> reorderTasks(@RequestBody ReorderTasksRequest request) {
         return ResponseEntity.ok(taskService.reorderMainTasks(
                 request.getTaskIds(), currentUserService.getCurrentUserId()));
+    }
+
+    /**
+     * Moves one or more existing tasks under a parent task. Passing a null
+     * parentId detaches them and returns them to the main-task list.
+     */
+    @PutMapping("/parent")
+    public ResponseEntity<List<Task>> moveTasksToParent(@RequestBody @Valid MoveTasksToParentRequest request) {
+        return ResponseEntity.ok(taskService.moveTasksToParent(
+                request.getTaskIds(), request.getParentId(), currentUserService.getCurrentUserId()));
     }
 
     @GetMapping("/focus-today")

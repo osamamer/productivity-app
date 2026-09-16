@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
     Box,
     Chip,
@@ -197,9 +197,11 @@ const FocusStat = React.memo(function FocusStat({ label, value }: { label: strin
 const SubtaskComposer = React.memo(function SubtaskComposer({
     taskId,
     onSubmit,
+    composerRef,
 }: {
     taskId: string;
     onSubmit: (name: string) => Promise<void>;
+    composerRef?: React.Ref<HTMLFormElement>;
 }) {
     const [draft, setDraft] = useState({ taskId, name: '', focused: false });
     const visibleDraft = draft.taskId === taskId
@@ -218,13 +220,11 @@ const SubtaskComposer = React.memo(function SubtaskComposer({
     return (
         <Box
             component="form"
+            ref={composerRef}
             onSubmit={submit}
             sx={{
                 display: 'flex',
                 alignItems: 'center',
-                borderBottom: '1px solid',
-                borderColor: visibleDraft.focused ? 'primary.main' : 'divider',
-                transition: 'border-color 0.15s ease',
             }}
         >
             <Checkbox
@@ -250,7 +250,12 @@ const SubtaskComposer = React.memo(function SubtaskComposer({
     );
 });
 
-const SubtaskList = React.memo(function SubtaskList({ items, onToggle, onDelete, onUpdateName }: SubtaskListProps) {
+const SubtaskList = React.memo(function SubtaskList({
+    items,
+    onToggle,
+    onDelete,
+    onUpdateName,
+}: SubtaskListProps) {
     const [contextMenu, setContextMenu] = useState<SubtaskContextMenuState | null>(null);
     const [editingSubtaskId, setEditingSubtaskId] = useState<string | null>(null);
     const [localSubtaskName, setLocalSubtaskName] = useState('');
@@ -307,15 +312,7 @@ const SubtaskList = React.memo(function SubtaskList({ items, onToggle, onDelete,
 
     return (
         <Box
-            data-subtask-list="true"
-            sx={{
-                maxHeight: { xs: 240, sm: 280 },
-                overflowY: 'auto',
-                overflowX: 'hidden',
-                overscrollBehaviorY: 'contain',
-                scrollbarGutter: 'stable',
-                pr: 0.5,
-            }}
+            sx={{ minWidth: 0 }}
         >
             {items.map(subtask => {
                 const isEditing = editingSubtaskId === subtask.taskId;
@@ -705,6 +702,8 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
         ? scheduledDate
         : null;
     const [scheduledDraft, setScheduledDraft] = useState<Date | null>(validScheduledDate);
+    const subtaskComposerRef = useRef<HTMLFormElement | null>(null);
+    const revealSubtaskComposerRef = useRef(false);
     useEffect(() => {
         const nextDate = task.scheduledPerformDateTime
             ? new Date(task.scheduledPerformDateTime)
@@ -713,6 +712,14 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
     }, [task.taskId, task.scheduledPerformDateTime]);
     const displayedSubtasks = visibleSubtaskState.items;
     const displayedPomodoroStats = visiblePomodoroStatsState.stats;
+
+    useLayoutEffect(() => {
+        if (!revealSubtaskComposerRef.current || !subtaskComposerRef.current) return;
+
+        revealSubtaskComposerRef.current = false;
+        subtaskComposerRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, [displayedSubtasks.length]);
+
     const taskCheckboxColor = PRIORITY_OPTIONS.find(
         option => option.label === getPriorityLabel(task.importance),
     )?.color ?? PRIORITY_OPTIONS[0].color;
@@ -824,6 +831,7 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
             importance: 0,
             parentId: task.taskId,
         });
+        revealSubtaskComposerRef.current = true;
         setSubtaskState(previous => {
             if (previous.taskId !== task.taskId) return previous;
             const items = sortSubtasks([...previous.items, createdSubtask]);
@@ -1232,19 +1240,35 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
                         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
                             Subtasks {displayedSubtasks.length > 0 ? `· ${displayedSubtasks.filter(subtask => subtask.completed).length}/${displayedSubtasks.length}` : ''}
                         </Typography>
-                        <SubtaskList
-                            items={displayedSubtasks}
-                            onToggle={handleToggleSubtask}
-                            onDelete={subtask => void handleDeleteSubtask(subtask)}
-                            onUpdateName={handleUpdateSubtaskName}
-                        />
+                        <Box
+                            data-subtask-list="true"
+                            sx={{
+                                maxHeight: { xs: 240, sm: 280 },
+                                overflowY: 'auto',
+                                overflowX: 'hidden',
+                                overscrollBehaviorY: 'contain',
+                                scrollbarGutter: 'stable',
+                                pr: 0.5,
+                            }}
+                        >
+                            <SubtaskList
+                                items={displayedSubtasks}
+                                onToggle={handleToggleSubtask}
+                                onDelete={subtask => void handleDeleteSubtask(subtask)}
+                                onUpdateName={handleUpdateSubtaskName}
+                            />
+                            {!visibleSubtaskState.loading && (
+                                <SubtaskComposer
+                                    taskId={task.taskId}
+                                    onSubmit={handleCreateSubtask}
+                                    composerRef={subtaskComposerRef}
+                                />
+                            )}
+                        </Box>
                         {subtaskError && (
                             <Typography variant="caption" color="error" sx={{ display: 'block', mt: 0.75 }}>
                                 {subtaskError}
                             </Typography>
-                        )}
-                        {!visibleSubtaskState.loading && (
-                            <SubtaskComposer taskId={task.taskId} onSubmit={handleCreateSubtask} />
                         )}
                     </Box>
                 </Box>

@@ -43,6 +43,7 @@ public class PomodoroSoundController {
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(audio.contentType()))
                 .contentLength(audio.fileSize())
+                .header(HttpHeaders.CACHE_CONTROL, "private, max-age=86400, immutable")
                 .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline()
                         .filename(audio.name(), StandardCharsets.UTF_8)
                         .build()

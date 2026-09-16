@@ -1,11 +1,9 @@
 import axios from 'axios';
 import {
-    getPomodoroSoundAudioUrl,
     PomodoroSound,
     uploadPomodoroSound,
 } from './api/pomodoroSoundService';
-import { userService } from './api/userService';
-import { setWhiteNoiseSource } from './whiteNoise';
+import { selectWhiteNoiseSound } from './whiteNoise';
 
 export type PomodoroSoundUploadPhase = 'idle' | 'uploading' | 'saving' | 'completed' | 'failed';
 
@@ -47,6 +45,30 @@ export function isPomodoroSoundUploadCancellation(error: unknown): boolean {
     return axios.isCancel(error) || (error instanceof Error && error.name === 'AbortError');
 }
 
+export function getPomodoroSoundUploadErrorMessage(error: unknown): string {
+    if (axios.isAxiosError(error)) {
+        if (error.response?.status === 413) {
+            return 'That MP3 is too large. Choose a file that is 25 MB or smaller.';
+        }
+        if (error.response?.status === 401 || error.response?.status === 403) {
+            return 'Your session has expired. Sign in again and retry the upload.';
+        }
+        if (error.response?.status && error.response.status >= 500) {
+            return 'The sound could not be stored right now. Please try again.';
+        }
+        if (typeof error.response?.data === 'string') {
+            const message = error.response.data.trim();
+            if (message === 'Choose an MP3 file to upload.'
+                || message === 'MP3 files must be 25 MB or smaller.'
+                || message === 'Only MP3 files can be uploaded.'
+                || message === 'You can store up to 10 Pomodoro sounds.') {
+                return message;
+            }
+        }
+    }
+    return 'Could not upload that MP3 right now. Please try again.';
+}
+
 export function cancelPomodoroSoundUpload(): void {
     if (activeUpload && snapshot.phase === 'uploading') {
         activeUpload.controller.abort();
@@ -85,7 +107,7 @@ export function startPomodoroSoundUpload(file: File): Promise<PomodoroSound> {
         }),
         controller.signal,
     )
-        .then(async sound => {
+        .then(sound => {
             if (controller.signal.aborted) {
                 const cancellation = new Error('Pomodoro sound upload canceled.');
                 cancellation.name = 'AbortError';
@@ -93,22 +115,25 @@ export function startPomodoroSoundUpload(file: File): Promise<PomodoroSound> {
             }
             uploadedSound = sound;
             publish({
-                phase: 'saving',
+                phase: 'completed',
                 fileName: file.name,
                 progress: 100,
                 sound,
                 error: null,
             });
 
-            await userService.updatePreferences({ pomodoroSoundId: sound.id });
-            const url = await getPomodoroSoundAudioUrl(sound);
-            setWhiteNoiseSource({ id: sound.id, name: sound.name, url });
-            publish({
-                phase: 'completed',
-                fileName: file.name,
-                progress: 100,
-                sound,
-                error: null,
+            // The file is accepted as soon as the upload endpoint has stored
+            // it. Preference persistence and audio loading continue in the
+            // background so neither can turn a successful upload into a false
+            // upload failure or block the settings UI.
+            void selectWhiteNoiseSound(sound).catch(error => {
+                console.error('Could not select the newly uploaded Pomodoro sound:', error);
+                if (snapshot.phase === 'completed' && snapshot.sound?.id === sound.id) {
+                    publish({
+                        ...snapshot,
+                        error: 'Sound uploaded, but it could not be selected. Choose it from the list to retry.',
+                    });
+                }
             });
             return sound;
         })
@@ -122,7 +147,7 @@ export function startPomodoroSoundUpload(file: File): Promise<PomodoroSound> {
                     fileName: file.name,
                     progress: uploadedSound ? 100 : snapshot.progress,
                     sound: uploadedSound,
-                    error: 'Could not upload that MP3 right now.',
+                    error: getPomodoroSoundUploadErrorMessage(error),
                 });
             }
             throw error;
