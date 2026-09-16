@@ -9,6 +9,7 @@ import FullscreenRoundedIcon from '@mui/icons-material/FullscreenRounded';
 import CloseFullscreenRoundedIcon from '@mui/icons-material/CloseFullscreenRounded';
 import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
+import type { DeltaStatic } from 'quill';
 import { format } from 'date-fns';
 import { alpha } from '@mui/material/styles';
 import { Note, NoteCategory } from '../../types/Note.ts';
@@ -68,7 +69,7 @@ interface NoteEditorProps {
     saveState: 'saved' | 'saving' | 'error';
     onUpdate: (updates: Partial<Pick<Note, 'categoryId' | 'pinned'>>) => void;
     onDraftUpdate: (updates: NoteDraftPatch) => void;
-    onDelete: () => void;
+    onDelete: (anchorEl: HTMLElement) => void;
     onRetrySave: () => void;
     focusMode: boolean;
     onToggleFocusMode: () => void;
@@ -77,6 +78,22 @@ interface NoteEditorProps {
 }
 
 type NoteDraftPatch = Partial<Pick<Note, 'title' | 'content'>>;
+
+type ListFormat = 'ordered' | 'bullet' | 'checked' | 'unchecked';
+
+const LIST_FORMATS = new Set<ListFormat>(['ordered', 'bullet', 'checked', 'unchecked']);
+
+function getPastedLines(text: string): string[] {
+    const lines = text.replace(/\r\n?/g, '\n').split('\n');
+
+    // Clipboard text commonly ends with a newline. It terminates the final
+    // source line rather than representing another empty list item.
+    if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
+
+    // Some rich-text sources export an empty line between each visual line.
+    // Empty list items are not useful for this paste interaction.
+    return lines.filter(line => line.trim().length > 0);
+}
 
 const WORD_COUNT_UPDATE_DELAY_MS = 600;
 
@@ -121,6 +138,48 @@ function NoteDraftEditorView({
     useEffect(() => {
         if (title.trim() && !draftTitle.trim()) setDraftTitle(title);
     }, [draftTitle, title]);
+
+    useEffect(() => {
+        const quill = quillRef.current?.getEditor();
+        if (!quill) return;
+
+        const handleListPaste = (event: ClipboardEvent) => {
+            if (event.defaultPrevented || !event.clipboardData) return;
+
+            const pastedText = event.clipboardData.getData('text/plain');
+            if (!pastedText.includes('\n') && !pastedText.includes('\r')) return;
+
+            const range = quill.getSelection();
+            if (!range) return;
+
+            const listFormat = quill.getFormat(range.index).list;
+            if (typeof listFormat !== 'string' || !LIST_FORMATS.has(listFormat as ListFormat)) return;
+
+            const lines = getPastedLines(pastedText);
+            if (lines.length === 0) return;
+
+            event.preventDefault();
+            event.stopImmediatePropagation();
+
+            const Delta = ReactQuill.Quill.import('delta') as new () => DeltaStatic;
+            const paste = new Delta();
+            if (range.index > 0) paste.retain(range.index);
+            if (range.length > 0) paste.delete(range.length);
+
+            const insertedText = lines.join('\n');
+            paste.insert(insertedText);
+
+            quill.updateContents(paste, 'user');
+            quill.formatLine(range.index, Math.max(insertedText.length, 1), { list: listFormat }, 'user');
+            quill.setSelection(range.index + insertedText.length, 0, 'silent');
+            quill.focus();
+        };
+
+        // Quill's own listener is attached in the bubbling phase. Handling the
+        // event here lets us prevent its newline-collapsing conversion first.
+        quill.root.addEventListener('paste', handleListPaste, true);
+        return () => quill.root.removeEventListener('paste', handleListPaste, true);
+    }, [noteId]);
 
     useEffect(() => () => {
         if (wordCountTimerRef.current !== null) window.clearTimeout(wordCountTimerRef.current);
@@ -302,7 +361,7 @@ export function NoteEditor({
                     </IconButton>
                 </Tooltip>
                 <Tooltip title="Delete note">
-                    <IconButton onClick={onDelete} aria-label="Delete note">
+                    <IconButton onClick={event => onDelete(event.currentTarget)} aria-label="Delete note">
                         <DeleteOutlineRoundedIcon />
                     </IconButton>
                 </Tooltip>

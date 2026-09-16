@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, type MouseEvent } from 'react';
 import { Box, Checkbox, Chip, IconButton, InputAdornment, MenuItem, Select, TextField, Tooltip, Typography } from '@mui/material';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import PushPinRoundedIcon from '@mui/icons-material/PushPinRounded';
@@ -27,6 +27,7 @@ interface NotesListProps {
     onSelectAllVisible: () => void;
     onClearSelection: () => void;
     onRequestBulkDelete: () => void;
+    onNoteContextMenu: (note: Note, event: MouseEvent<HTMLElement>) => void;
 }
 
 function notePreview(content: string) {
@@ -53,6 +54,7 @@ export const NotesList = memo(function NotesList({
     onSelectAllVisible,
     onClearSelection,
     onRequestBulkDelete,
+    onNoteContextMenu,
 }: NotesListProps) {
     const categoriesById = new Map(categories.map(category => [category.id, category]));
     const selectedIds = new Set(selectedNoteIds);
@@ -175,6 +177,7 @@ export const NotesList = memo(function NotesList({
                                     onSelectNote(note.id);
                                 }
                             }}
+                            onContextMenu={event => onNoteContextMenu(note, event)}
                             onKeyDown={event => {
                                 if (event.key !== 'Enter' && event.key !== ' ') return;
                                 event.preventDefault();

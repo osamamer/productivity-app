@@ -401,6 +401,7 @@ export const statService = {
         invalidateEntryCache(id);
         invalidateSummaryCache(id);
         invalidateInsightsCache();
+        invalidateRecurringTaskResources();
         return response.json();
     },
 

@@ -10,6 +10,24 @@ interface WorkspaceState {
 
 const EMPTY_WORKSPACE: WorkspaceState = { notes: [], categories: [] };
 
+interface IndexedNote {
+    note: Note;
+    index: number;
+}
+
+function restoreNotes(currentNotes: Note[], notesToRestore: IndexedNote[]) {
+    const existingIds = new Set(currentNotes.map(note => note.id));
+    const restoredNotes = [...currentNotes];
+
+    for (const { note, index } of notesToRestore.sort((left, right) => left.index - right.index)) {
+        if (existingIds.has(note.id)) continue;
+        restoredNotes.splice(Math.min(index, restoredNotes.length), 0, note);
+        existingIds.add(note.id);
+    }
+
+    return restoredNotes;
+}
+
 function errorMessage(error: unknown, fallback: string) {
     return error instanceof Error ? error.message : fallback;
 }
@@ -197,6 +215,16 @@ export function useNotesWorkspace(userId: string) {
 
     const deleteNote = useCallback(async (noteId: string) => {
         setOperationError(null);
+        const noteIndex = workspace.notes.findIndex(note => note.id === noteId);
+        const noteToDelete = noteIndex >= 0 ? workspace.notes[noteIndex] : null;
+        if (!noteToDelete) return;
+
+        setWorkspace(current => ({
+            ...current,
+            notes: current.notes.filter(note => note.id !== noteId),
+        }));
+        setSelectedNoteId(current => current === noteId ? null : current);
+
         try {
             await flushNote(noteId);
             await notesService.deleteNote(noteId);
@@ -205,13 +233,20 @@ export function useNotesWorkspace(userId: string) {
             saveTimersRef.current.delete(noteId);
             pendingUpdatesRef.current.delete(noteId);
             failedUpdatesRef.current.delete(noteId);
-            setWorkspace(current => ({ ...current, notes: current.notes.filter(note => note.id !== noteId) }));
+            setWorkspace(current => ({
+                ...current,
+                notes: current.notes.filter(note => note.id !== noteId),
+            }));
             setSelectedNoteId(current => current === noteId ? null : current);
             updateSaveState();
         } catch (error) {
+            setWorkspace(current => ({
+                ...current,
+                notes: restoreNotes(current.notes, [{ note: noteToDelete, index: noteIndex }]),
+            }));
             setOperationError(errorMessage(error, 'Could not delete note.'));
         }
-    }, [flushNote, updateSaveState]);
+    }, [flushNote, updateSaveState, workspace.notes]);
 
     const updateNotes = useCallback(async (noteIds: string[], updates: BulkNotePatch) => {
         setOperationError(null);
@@ -233,6 +268,17 @@ export function useNotesWorkspace(userId: string) {
 
     const deleteNotes = useCallback(async (noteIds: string[]) => {
         setOperationError(null);
+        const deletedIds = new Set(noteIds);
+        const notesToRestore = workspace.notes
+            .map((note, index) => ({ note, index }))
+            .filter(({ note }) => deletedIds.has(note.id));
+
+        setWorkspace(current => ({
+            ...current,
+            notes: current.notes.filter(note => !deletedIds.has(note.id)),
+        }));
+        setSelectedNoteId(current => current && deletedIds.has(current) ? null : current);
+
         try {
             await Promise.all(noteIds.map(noteId => flushNote(noteId)));
             await notesService.deleteNotes(noteIds);
@@ -243,7 +289,6 @@ export function useNotesWorkspace(userId: string) {
                 pendingUpdatesRef.current.delete(noteId);
                 failedUpdatesRef.current.delete(noteId);
             }
-            const deletedIds = new Set(noteIds);
             setWorkspace(current => ({
                 ...current,
                 notes: current.notes.filter(note => !deletedIds.has(note.id)),
@@ -252,10 +297,14 @@ export function useNotesWorkspace(userId: string) {
             updateSaveState();
             return true;
         } catch (error) {
+            setWorkspace(current => ({
+                ...current,
+                notes: restoreNotes(current.notes, notesToRestore),
+            }));
             setOperationError(errorMessage(error, 'Could not delete notes.'));
             return false;
         }
-    }, [flushNote, updateSaveState]);
+    }, [flushNote, updateSaveState, workspace.notes]);
 
     const createCategory = useCallback(async (name: string, color: string) => {
         setOperationError(null);

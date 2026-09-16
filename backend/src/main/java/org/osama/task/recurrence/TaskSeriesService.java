@@ -102,6 +102,25 @@ public class TaskSeriesService {
                 .orElseThrow(() -> new ResourceNotFoundException("Task series not found: " + seriesId)), userId);
     }
 
+    @Transactional
+    public TaskSeriesResponse renameSeries(String seriesId, String name, String userId) {
+        TaskSeries series = seriesRepository.lockBySeriesIdAndUserId(seriesId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("Task series not found: " + seriesId));
+        String normalizedName = normalizeSeriesName(name);
+        if (normalizedName.equals(series.getName())) {
+            return toResponse(series, userId);
+        }
+
+        series.setName(normalizedName);
+        TaskSeries saved = seriesRepository.save(series);
+        List<Task> occurrences = taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(seriesId);
+        occurrences.forEach(occurrence -> occurrence.setName(normalizedName));
+        taskRepository.saveAll(occurrences);
+        log.info("Task series renamed: userId={} seriesId={} name={} occurrenceCount={}",
+                userId, seriesId, normalizedName, occurrences.size());
+        return toResponse(saved, userId);
+    }
+
     @Transactional(readOnly = true)
     public Optional<TaskSeriesResponse> getSeriesForTask(String taskId, String userId) {
         return taskService.getTaskForUser(taskId, userId)
@@ -328,6 +347,17 @@ public class TaskSeriesService {
 
     private String normalizeTimeZone(String timeZone) {
         return timeZone == null || timeZone.isBlank() ? ZoneId.systemDefault().getId() : timeZone;
+    }
+
+    private String normalizeSeriesName(String name) {
+        String normalized = name == null ? null : name.trim();
+        if (normalized == null || normalized.isBlank()) {
+            throw new IllegalArgumentException("Task name is required.");
+        }
+        if (normalized.length() > 255) {
+            throw new IllegalArgumentException("Task name must be 255 characters or fewer.");
+        }
+        return normalized;
     }
 
     private void validateImportance(Integer importance) {

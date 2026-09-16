@@ -402,9 +402,9 @@ export function SideNav() {
         ? {
             color: pomodoroIsFocusRunning ? 'primary.main' : pomodoroGreen,
             label: pomodoroIsFocusRunning
-                ? 'Running'
+                ? 'Focused'
                 : activePomodoro.phase === 'BREAK' || activePomodoro.phase === 'WAITING_FOR_BREAK'
-                    ? 'Break'
+                    ? 'On break'
                     : 'Paused',
         }
         : undefined;

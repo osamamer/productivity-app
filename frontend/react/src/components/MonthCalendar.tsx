@@ -29,6 +29,8 @@ import SaveAsIcon from '@mui/icons-material/SaveAs';
 import ViewDayIcon from '@mui/icons-material/ViewDay';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import ReplayIcon from '@mui/icons-material/Replay';
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import {
     CalendarEvent,
     CalendarEventInput,
@@ -277,6 +279,10 @@ function recurrenceDraftsEqual(first: TaskRecurrenceDraft, second: TaskRecurrenc
 
 type CreateTab = 'event' | 'task' | 'stats';
 
+type CalendarItemTarget =
+    | { eventType: 'task'; taskId: string; top: number; left: number }
+    | { eventType: 'calendarEvent'; eventId: string; occurrenceKey: string; top: number; left: number };
+
 const calendarLoadingReveal = keyframes`
     from {
         opacity: 0;
@@ -401,6 +407,13 @@ export function MonthCalendar({
     const [templateSourceDate, setTemplateSourceDate] = useState(format(new Date(), 'yyyy-MM-dd'));
     const [templateActionError, setTemplateActionError] = useState<string | null>(null);
     const [dayContextMenu, setDayContextMenu] = useState<{ date: string; top: number; left: number } | null>(null);
+    const [calendarItemContextMenu, setCalendarItemContextMenu] = useState<CalendarItemTarget | null>(null);
+    const [calendarDeleteScopeTarget, setCalendarDeleteScopeTarget] = useState<CalendarItemTarget | null>(null);
+    const [calendarDeleteTarget, setCalendarDeleteTarget] = useState<CalendarItemTarget | null>(null);
+    const [calendarDeleteScope, setCalendarDeleteScope] = useState<'occurrence' | 'series' | null>(null);
+    const [calendarDeleteConfirmationOpen, setCalendarDeleteConfirmationOpen] = useState(false);
+    const [calendarDeleteError, setCalendarDeleteError] = useState<string | null>(null);
+    const [calendarDeleting, setCalendarDeleting] = useState(false);
     const [applyingTemplateId, setApplyingTemplateId] = useState<string | null>(null);
     const [templateFeedback, setTemplateFeedback] = useState<{
         id: number;
@@ -418,6 +431,7 @@ export function MonthCalendar({
         drop: (event: DragEvent) => void;
         contextMenu: (event: MouseEvent) => void;
     }>());
+    const eventContextMenuListenersRef = useRef(new Map<HTMLElement, (event: MouseEvent) => void>());
 
     React.useEffect(() => {
         onApplyDayTemplateRef.current = onApplyDayTemplate;
@@ -796,6 +810,46 @@ export function MonthCalendar({
         const fullDescription = info.event.extendedProps.fullDescription;
         info.el.setAttribute('title', fullDescription);
         info.el.style.cursor = 'pointer';
+
+        const eventType = info.event.extendedProps.eventType;
+        if (eventType !== 'task' && eventType !== 'calendarEvent') return;
+
+        const contextMenu = (event: MouseEvent) => {
+            event.preventDefault();
+            event.stopPropagation();
+
+            if (eventType === 'task') {
+                setCalendarItemContextMenu({
+                    eventType,
+                    taskId: info.event.id,
+                    top: event.clientY,
+                    left: event.clientX,
+                });
+                return;
+            }
+
+            const eventId = info.event.extendedProps.calendarEventId;
+            const occurrenceKey = info.event.extendedProps.calendarEventOccurrenceKey;
+            if (typeof eventId !== 'string' || typeof occurrenceKey !== 'string') return;
+
+            setCalendarItemContextMenu({
+                eventType,
+                eventId,
+                occurrenceKey,
+                top: event.clientY,
+                left: event.clientX,
+            });
+        };
+
+        info.el.addEventListener('contextmenu', contextMenu);
+        eventContextMenuListenersRef.current.set(info.el, contextMenu);
+    }, []);
+
+    const handleEventWillUnmount = useCallback((info: EventMountArg) => {
+        const contextMenu = eventContextMenuListenersRef.current.get(info.el);
+        if (!contextMenu) return;
+        info.el.removeEventListener('contextmenu', contextMenu);
+        eventContextMenuListenersRef.current.delete(info.el);
     }, []);
 
     const handleDateClick = useCallback((arg: DateClickArg) => {
@@ -1010,6 +1064,107 @@ export function MonthCalendar({
         setTaskDialogOpen(true);
     }, []);
 
+    const openCalendarEventEditor = useCallback((eventId: string, occurrenceKey: string) => {
+        setSelectedEventSelection({ eventId, occurrenceKey });
+        setSelectedEventDialogOpen(true);
+    }, []);
+
+    const openCalendarDeleteConfirmation = useCallback((target: CalendarItemTarget, scope: 'occurrence' | 'series') => {
+        setCalendarDeleteTarget(target);
+        setCalendarDeleteScope(scope);
+        setCalendarDeleteError(null);
+        setCalendarDeleteConfirmationOpen(true);
+    }, []);
+
+    const requestCalendarItemDelete = useCallback((target: CalendarItemTarget) => {
+        if (target.eventType === 'task') {
+            const task = tasks.find(item => item.taskId === target.taskId);
+            if (!task || task.optimisticRecurrence) return;
+            if (task.taskSeriesId) {
+                setCalendarDeleteScopeTarget(target);
+            } else {
+                openCalendarDeleteConfirmation(target, 'series');
+            }
+            return;
+        }
+
+        const event = events.find(item => item.id === target.eventId);
+        if (!event) return;
+        if ((event.recurrenceFrequency ?? 'NONE') !== 'NONE') {
+            setCalendarDeleteScopeTarget(target);
+        } else {
+            openCalendarDeleteConfirmation(target, 'series');
+        }
+    }, [events, openCalendarDeleteConfirmation, tasks]);
+
+    const openCalendarItemEditor = useCallback((target: CalendarItemTarget) => {
+        setCalendarItemContextMenu(null);
+        if (target.eventType === 'task') {
+            const task = tasks.find(item => item.taskId === target.taskId);
+            if (task) openTaskEditor(task);
+            return;
+        }
+
+        if (!events.some(event => event.id === target.eventId)) return;
+        openCalendarEventEditor(target.eventId, target.occurrenceKey);
+    }, [events, openCalendarEventEditor, openTaskEditor, tasks]);
+
+    const handleCalendarItemContextDelete = useCallback(() => {
+        const target = calendarItemContextMenu;
+        if (!target) return;
+        setCalendarItemContextMenu(null);
+        requestCalendarItemDelete(target);
+    }, [calendarItemContextMenu, requestCalendarItemDelete]);
+
+    const chooseCalendarDeleteScope = useCallback((scope: 'occurrence' | 'series') => {
+        const target = calendarDeleteScopeTarget;
+        if (!target) return;
+        setCalendarDeleteScopeTarget(null);
+        openCalendarDeleteConfirmation(target, scope);
+    }, [calendarDeleteScopeTarget, openCalendarDeleteConfirmation]);
+
+    const closeCalendarDeleteConfirmation = useCallback(() => {
+        if (calendarDeleting) return;
+        setCalendarDeleteConfirmationOpen(false);
+        setCalendarDeleteTarget(null);
+        setCalendarDeleteScope(null);
+        setCalendarDeleteError(null);
+    }, [calendarDeleting]);
+
+    const handleCalendarDelete = useCallback(async () => {
+        const target = calendarDeleteTarget;
+        const scope = calendarDeleteScope;
+        if (!target || !scope || calendarDeleting) return;
+
+        setCalendarDeleting(true);
+        setCalendarDeleteError(null);
+        try {
+            if (target.eventType === 'task') {
+                if (scope === 'occurrence') await onDeleteTaskOccurrence(target.taskId);
+                else await onDeleteTask(target.taskId);
+            } else if (scope === 'occurrence') {
+                await onDeleteEventOccurrence(target.eventId, target.occurrenceKey);
+            } else {
+                await onDeleteEvent(target.eventId);
+            }
+            setCalendarDeleteConfirmationOpen(false);
+            setCalendarDeleteTarget(null);
+            setCalendarDeleteScope(null);
+        } catch (error) {
+            console.error('Failed to delete calendar item:', error);
+            setCalendarDeleteError('Failed to delete. Please try again.');
+        } finally {
+            setCalendarDeleting(false);
+        }
+    }, [calendarDeleteScope, calendarDeleteTarget, calendarDeleting, onDeleteEvent, onDeleteEventOccurrence, onDeleteTask, onDeleteTaskOccurrence]);
+
+    const calendarDeleteTask = calendarDeleteTarget?.eventType === 'task'
+        ? tasks.find(task => task.taskId === calendarDeleteTarget.taskId) ?? null
+        : null;
+    const calendarDeleteEvent = calendarDeleteTarget?.eventType === 'calendarEvent'
+        ? events.find(event => event.id === calendarDeleteTarget.eventId) ?? null
+        : null;
+
     const handleEventClick = useCallback((arg: EventClickArg) => {
         if (arg.event.extendedProps.eventType === 'taskGroup') {
             const groupId = arg.event.extendedProps.groupId;
@@ -1021,11 +1176,10 @@ export function MonthCalendar({
             const calendarEventId = arg.event.extendedProps.calendarEventId;
             const occurrenceKey = arg.event.extendedProps.calendarEventOccurrenceKey;
             if (typeof occurrenceKey !== 'string') return;
-            setSelectedEventSelection({
-                eventId: typeof calendarEventId === 'string' ? calendarEventId : arg.event.id,
+            openCalendarEventEditor(
+                typeof calendarEventId === 'string' ? calendarEventId : arg.event.id,
                 occurrenceKey,
-            });
-            setSelectedEventDialogOpen(true);
+            );
             return;
         }
         if (arg.event.extendedProps.eventType === 'stat') {
@@ -1039,7 +1193,7 @@ export function MonthCalendar({
         if (!task) return;
 
         openTaskEditor(task);
-    }, [openTaskEditor, tasks]);
+    }, [openCalendarEventEditor, openTaskEditor, tasks]);
 
     const handleEventDrop = useCallback((arg: EventDropArg) => {
         const eventType = arg.event.extendedProps.eventType;
@@ -1452,6 +1606,61 @@ export function MonthCalendar({
                 </MenuItem>
             </Menu>
 
+            <Menu
+                open={Boolean(calendarItemContextMenu)}
+                onClose={() => setCalendarItemContextMenu(null)}
+                TransitionComponent={Fade}
+                transitionDuration={{ enter: 160, exit: 120 }}
+                anchorReference="anchorPosition"
+                anchorPosition={calendarItemContextMenu
+                    ? { top: calendarItemContextMenu.top, left: calendarItemContextMenu.left }
+                    : undefined}
+                MenuListProps={{ dense: true }}
+            >
+                {calendarItemContextMenu && (
+                    <>
+                        <MenuItem onClick={() => openCalendarItemEditor(calendarItemContextMenu)}>
+                            <ListItemIcon><EditOutlinedIcon fontSize="small" /></ListItemIcon>
+                            <ListItemText>
+                                {calendarItemContextMenu.eventType === 'task' ? 'Edit task' : 'Edit event'}
+                            </ListItemText>
+                        </MenuItem>
+                        <MenuItem
+                            onClick={handleCalendarItemContextDelete}
+                            disabled={calendarItemContextMenu.eventType === 'task'
+                                && Boolean(tasks.find(task => task.taskId === calendarItemContextMenu.taskId)?.optimisticRecurrence)}
+                            sx={{ color: 'error.main' }}
+                        >
+                            <ListItemIcon sx={{ color: 'inherit' }}>
+                                <DeleteOutlineRoundedIcon fontSize="small" />
+                            </ListItemIcon>
+                            <ListItemText>
+                                {calendarItemContextMenu.eventType === 'task' ? 'Delete task' : 'Delete event'}
+                            </ListItemText>
+                        </MenuItem>
+                    </>
+                )}
+            </Menu>
+
+            <Menu
+                open={Boolean(calendarDeleteScopeTarget)}
+                onClose={() => setCalendarDeleteScopeTarget(null)}
+                TransitionComponent={Fade}
+                transitionDuration={{ enter: 160, exit: 120 }}
+                anchorReference="anchorPosition"
+                anchorPosition={calendarDeleteScopeTarget
+                    ? { top: calendarDeleteScopeTarget.top, left: calendarDeleteScopeTarget.left }
+                    : undefined}
+                MenuListProps={{ dense: true }}
+            >
+                <MenuItem onClick={() => chooseCalendarDeleteScope('occurrence')}>
+                    This occurrence
+                </MenuItem>
+                <MenuItem onClick={() => chooseCalendarDeleteScope('series')}>
+                    All occurrences
+                </MenuItem>
+            </Menu>
+
                     <Box
                         sx={{
                             flex: 1,
@@ -1700,6 +1909,62 @@ export function MonthCalendar({
                                 background: `${theme.palette.primary.main} !important`,
                             },
                         },
+                        '& .fc-toolbar .fc-button-group': {
+                            alignItems: 'center',
+                            gap: '8px',
+                            '& > .fc-button': {
+                                marginLeft: '0 !important',
+                                border: `2px solid ${theme.palette.divider} !important`,
+                                borderRadius: '6px !important',
+                                backgroundColor: 'transparent !important',
+                                color: `${theme.palette.text.secondary} !important`,
+                                minWidth: '72px',
+                                padding: '0.42rem 0.9rem',
+                                transition: 'background-color 160ms ease, border-color 160ms ease, color 160ms ease',
+                                '&:hover': {
+                                    backgroundColor: `${theme.palette.primary.main}12 !important`,
+                                    borderColor: `${theme.palette.primary.main} !important`,
+                                    color: `${theme.palette.primary.main} !important`,
+                                },
+                                '&:focus': {
+                                    outline: 'none !important',
+                                    boxShadow: 'none !important',
+                                },
+                                '&:focus-visible': {
+                                    borderColor: `${theme.palette.primary.main} !important`,
+                                },
+                                '&.fc-button-active': {
+                                    backgroundColor: 'transparent !important',
+                                    borderColor: `${theme.palette.primary.main} !important`,
+                                    color: `${theme.palette.primary.main} !important`,
+                                    fontWeight: 800,
+                                },
+                            },
+                        },
+                        '& .fc-toolbar .fc-today-button': {
+                            border: `2px solid ${theme.palette.primary.main}80 !important`,
+                            borderRadius: '6px !important',
+                            background: 'transparent !important',
+                            color: `${theme.palette.primary.main} !important`,
+                            padding: '0.42rem 0.9rem',
+                            transition: 'background-color 160ms ease, border-color 160ms ease, color 160ms ease',
+                            '&:hover:not(:disabled)': {
+                                backgroundColor: `${theme.palette.primary.main}12 !important`,
+                                borderColor: `${theme.palette.primary.main} !important`,
+                            },
+                            '&:focus': {
+                                outline: 'none !important',
+                                boxShadow: 'none !important',
+                            },
+                            '&:focus-visible': {
+                                borderColor: `${theme.palette.primary.main} !important`,
+                            },
+                            '&:disabled': {
+                                background: 'transparent !important',
+                                borderColor: `${theme.palette.divider} !important`,
+                                color: `${theme.palette.text.disabled} !important`,
+                            },
+                        },
                         '& .fc-prev-button, & .fc-next-button': {
                             background: 'transparent !important',
                             border: 'none !important',
@@ -1757,6 +2022,7 @@ export function MonthCalendar({
                             eventContent={renderEventContent}
                             eventOrder="eventTypeOrder,start,title"
                             eventDidMount={handleEventDidMount}
+                            eventWillUnmount={handleEventWillUnmount}
                             eventClick={handleEventClick}
                             eventDrop={handleEventDrop}
                             dateClick={handleDateClick}
@@ -1857,6 +2123,61 @@ export function MonthCalendar({
                     )}
                 </DialogContent>
             </Dialog>
+
+            <Popover
+                open={calendarDeleteConfirmationOpen}
+                onClose={() => !calendarDeleting && closeCalendarDeleteConfirmation()}
+                anchorReference="anchorPosition"
+                anchorPosition={calendarDeleteTarget
+                    ? { top: calendarDeleteTarget.top, left: calendarDeleteTarget.left }
+                    : undefined}
+                TransitionComponent={Fade}
+                transitionDuration={{ enter: 180, exit: 140 }}
+                slotProps={{
+                    paper: {
+                        sx: {
+                            p: 1.75,
+                            width: 320,
+                            maxWidth: 'calc(100vw - 32px)',
+                            borderRadius: 2.5,
+                        },
+                    },
+                }}
+            >
+                <Box>
+                    <Typography variant="subtitle1" fontWeight={600}>
+                        {calendarDeleteScope === 'occurrence'
+                            ? 'Delete this occurrence?'
+                            : calendarDeleteTarget?.eventType === 'calendarEvent'
+                                ? 'Delete event?'
+                                : calendarDeleteTask?.taskSeriesId
+                                    ? 'Delete task series?'
+                                    : 'Delete task?'}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+                        {calendarDeleteTarget?.eventType === 'task'
+                            ? calendarDeleteScope === 'occurrence'
+                                ? `Delete “${calendarDeleteTask?.name ?? 'this task'}” from this date? This occurrence will be removed from your calendar.`
+                                : calendarDeleteTask?.taskSeriesId
+                                    ? `Delete “${calendarDeleteTask.name}” and all occurrences in its series?`
+                                    : `Delete “${calendarDeleteTask?.name ?? 'this task'}” and its subtasks?`
+                            : calendarDeleteScope === 'occurrence'
+                                ? 'This occurrence will be removed from your calendar. This cannot be undone.'
+                                : calendarDeleteEvent && (calendarDeleteEvent.recurrenceFrequency ?? 'NONE') !== 'NONE'
+                                    ? 'All occurrences of this event will be removed from your calendar. This cannot be undone.'
+                                    : 'This event will be removed from your calendar. This cannot be undone.'}
+                    </Typography>
+                    {calendarDeleteError && <Alert severity="error" sx={{ mt: 1.5 }}>{calendarDeleteError}</Alert>}
+                    <Stack direction="row" justifyContent="flex-end" spacing={1} sx={{ mt: 1.5 }}>
+                        <Button size="small" onClick={closeCalendarDeleteConfirmation} disabled={calendarDeleting}>
+                            Keep {calendarDeleteTarget?.eventType === 'task' ? 'task' : 'event'}
+                        </Button>
+                        <Button size="small" color="error" variant="contained" onClick={() => void handleCalendarDelete()} disabled={calendarDeleting}>
+                            {calendarDeleting ? 'Deleting…' : 'Delete'}
+                        </Button>
+                    </Stack>
+                </Box>
+            </Popover>
 
             <DayTemplateCreationDialog
                 open={templateCreationOpen}

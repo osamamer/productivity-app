@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Box, Button, CircularProgress, ClickAwayListener, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Snackbar, Typography } from '@mui/material';
+import { Alert, Box, Button, CircularProgress, ClickAwayListener, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Divider, ListItemIcon, ListItemText, Menu, MenuItem, Popover, Snackbar, Typography } from '@mui/material';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import EditNoteRoundedIcon from '@mui/icons-material/EditNoteRounded';
+import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
+import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
+import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined';
+import PushPinRoundedIcon from '@mui/icons-material/PushPinRounded';
 import { PageWrapper } from '../components/PageWrapper.tsx';
 import { NotesFilter, NotesSidebar } from '../components/notes/NotesSidebar.tsx';
 import { NotesList } from '../components/notes/NotesList.tsx';
@@ -11,6 +16,17 @@ import { useNotesWorkspace } from '../hooks/useNotesWorkspace.ts';
 import { useKeyboardDelete } from '../hooks/useKeyboardDelete';
 import { useUser } from '../hooks/useUser';
 import { Note, NoteCategory, NoteSort } from '../types/Note.ts';
+
+interface NoteContextMenuState {
+    note: Note;
+    top: number;
+    left: number;
+}
+
+interface NoteDeleteAnchorPosition {
+    top: number;
+    left: number;
+}
 
 export function NotesPage() {
     const { user } = useUser();
@@ -51,6 +67,10 @@ export function NotesPage() {
     const selectionAnchorIdRef = useRef<string | null>(null);
     const [focusMode, setFocusMode] = useState(false);
     const [noteIdToFocus, setNoteIdToFocus] = useState<string | null>(null);
+    const [noteContextMenu, setNoteContextMenu] = useState<NoteContextMenuState | null>(null);
+    const [noteCategoryMenu, setNoteCategoryMenu] = useState<NoteContextMenuState | null>(null);
+    const [noteDeleteAnchorEl, setNoteDeleteAnchorEl] = useState<HTMLElement | null>(null);
+    const [noteDeleteAnchorPosition, setNoteDeleteAnchorPosition] = useState<NoteDeleteAnchorPosition | null>(null);
 
     const noteCounts = useMemo(() => {
         const counts: Record<string, number> = {
@@ -232,13 +252,28 @@ export function NotesPage() {
         if (succeeded) clearNoteSelection();
     }
 
-    function requestNoteDelete(note: Note | null = selectedNote) {
+    function requestNoteDelete(
+        note: Note | null = selectedNote,
+        anchorEl: HTMLElement | null = null,
+        anchorPosition: NoteDeleteAnchorPosition | null = null,
+    ) {
         if (!note) return;
         if (selectedNoteIds.length > 1 && selectedNoteIds.includes(note.id)) {
             setBulkDeleteDialogOpen(true);
         } else {
+            setNoteDeleteAnchorEl(anchorEl);
+            setNoteDeleteAnchorPosition(anchorPosition ?? (anchorEl ? null : {
+                top: window.innerHeight / 2,
+                left: window.innerWidth / 2,
+            }));
             setNoteDeleteTarget(note);
         }
+    }
+
+    function closeNoteDeleteConfirmation() {
+        setNoteDeleteTarget(null);
+        setNoteDeleteAnchorEl(null);
+        setNoteDeleteAnchorPosition(null);
     }
 
     function requestKeyboardNoteDelete() {
@@ -251,6 +286,34 @@ export function NotesPage() {
             ? notes.find(note => note.id === selectedNoteIds[0]) ?? null
             : selectedNote;
         requestNoteDelete(selectedKeyboardNote);
+    }
+
+    function handleNoteContextMenu(note: Note, event: React.MouseEvent<HTMLElement>) {
+        event.preventDefault();
+        event.stopPropagation();
+        setSelectedNoteIds([note.id]);
+        setSelectionMode(false);
+        selectionAnchorIdRef.current = note.id;
+        selectNote(note.id);
+        setNoteCategoryMenu(null);
+        setNoteContextMenu({ note, top: event.clientY + 2, left: event.clientX + 2 });
+    }
+
+    function closeNoteContextMenu() {
+        setNoteContextMenu(null);
+    }
+
+    function handleNoteCategoryMenuOpen() {
+        if (!noteContextMenu) return;
+        setNoteCategoryMenu(noteContextMenu);
+        closeNoteContextMenu();
+    }
+
+    function handleNoteCategoryChange(categoryId: string | null) {
+        if (!noteCategoryMenu) return;
+        const { note } = noteCategoryMenu;
+        setNoteCategoryMenu(null);
+        updateNote(note.id, { categoryId });
     }
 
     async function handleCategorySave(name: string, color: string) {
@@ -360,9 +423,10 @@ export function NotesPage() {
                                 onToggleSelectionMode={() => setSelectionMode(true)}
                                 onToggleNoteSelection={toggleNoteSelection}
                                 onSelectAllVisible={selectAllVisibleNotes}
-                            onClearSelection={clearNoteSelection}
-                            onRequestBulkDelete={() => setBulkDeleteDialogOpen(true)}
-                        />
+                                onClearSelection={clearNoteSelection}
+                                onRequestBulkDelete={() => setBulkDeleteDialogOpen(true)}
+                                onNoteContextMenu={handleNoteContextMenu}
+                            />
                         </Box>
                     </ClickAwayListener>}
                     {selectedNote ? (
@@ -373,7 +437,7 @@ export function NotesPage() {
                             saveState={saveState}
                             onUpdate={updates => updateNote(selectedNote.id, updates)}
                             onDraftUpdate={updates => updateNoteDraft(selectedNote.id, updates)}
-                            onDelete={() => requestNoteDelete(selectedNote)}
+                            onDelete={anchorEl => requestNoteDelete(selectedNote, anchorEl)}
                             onRetrySave={retryFailedSaves}
                             focusMode={focusMode}
                             onToggleFocusMode={() => setFocusMode(current => !current)}
@@ -400,6 +464,89 @@ export function NotesPage() {
                 </Box>
             </Box>
 
+            <Menu
+                open={Boolean(noteContextMenu)}
+                onClose={closeNoteContextMenu}
+                anchorReference="anchorPosition"
+                anchorPosition={noteContextMenu
+                    ? { top: noteContextMenu.top, left: noteContextMenu.left }
+                    : undefined}
+                MenuListProps={{ dense: true }}
+                slotProps={{ paper: { sx: { minWidth: 190, borderRadius: 2.5 } } }}
+            >
+                {noteContextMenu && (
+                    <>
+                        <MenuItem onClick={() => {
+                            const { note } = noteContextMenu;
+                            closeNoteContextMenu();
+                            updateNote(note.id, { pinned: !note.pinned });
+                        }}>
+                            <ListItemIcon>
+                                {noteContextMenu.note.pinned
+                                    ? <PushPinRoundedIcon fontSize="small" />
+                                    : <PushPinOutlinedIcon fontSize="small" />}
+                            </ListItemIcon>
+                            <ListItemText>{noteContextMenu.note.pinned ? 'Unpin note' : 'Pin note'}</ListItemText>
+                        </MenuItem>
+                        <MenuItem onClick={handleNoteCategoryMenuOpen}>
+                            <ListItemIcon><FolderOutlinedIcon fontSize="small" /></ListItemIcon>
+                            <ListItemText>Change category</ListItemText>
+                            <ChevronRightRoundedIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
+                        </MenuItem>
+                        <Divider />
+                        <MenuItem
+                            onClick={() => {
+                                const { note } = noteContextMenu;
+                                const anchorPosition = { top: noteContextMenu.top, left: noteContextMenu.left };
+                                closeNoteContextMenu();
+                                requestNoteDelete(note, null, anchorPosition);
+                            }}
+                            sx={{ color: 'error.main' }}
+                        >
+                            <ListItemIcon sx={{ color: 'inherit' }}>
+                                <DeleteOutlineRoundedIcon fontSize="small" />
+                            </ListItemIcon>
+                            <ListItemText>Delete note</ListItemText>
+                        </MenuItem>
+                    </>
+                )}
+            </Menu>
+
+            <Menu
+                open={Boolean(noteCategoryMenu)}
+                onClose={() => setNoteCategoryMenu(null)}
+                anchorReference="anchorPosition"
+                anchorPosition={noteCategoryMenu
+                    ? { top: noteCategoryMenu.top, left: noteCategoryMenu.left }
+                    : undefined}
+                MenuListProps={{ dense: true }}
+                slotProps={{ paper: { sx: { minWidth: 190, borderRadius: 2.5 } } }}
+            >
+                {noteCategoryMenu && (
+                    <>
+                        <MenuItem
+                            selected={noteCategoryMenu.note.categoryId === null}
+                            onClick={() => handleNoteCategoryChange(null)}
+                        >
+                            <ListItemIcon><FolderOutlinedIcon fontSize="small" /></ListItemIcon>
+                            <ListItemText>Uncategorized</ListItemText>
+                        </MenuItem>
+                        {categories.map(category => (
+                            <MenuItem
+                                key={category.id}
+                                selected={noteCategoryMenu.note.categoryId === category.id}
+                                onClick={() => handleNoteCategoryChange(category.id)}
+                            >
+                                <ListItemIcon>
+                                    <Box sx={{ width: 9, height: 9, borderRadius: '50%', backgroundColor: category.color }} />
+                                </ListItemIcon>
+                                <ListItemText>{category.name}</ListItemText>
+                            </MenuItem>
+                        ))}
+                    </>
+                )}
+            </Menu>
+
             <CategoryDialog
                 open={categoryDialogOpen}
                 category={editingCategory}
@@ -407,24 +554,51 @@ export function NotesPage() {
                 onSave={handleCategorySave}
             />
 
-            <Dialog open={noteDeleteTarget !== null} onClose={() => setNoteDeleteTarget(null)}>
-                <DialogTitle>Delete “{noteDeleteTarget?.title.trim() || 'Untitled'}”?</DialogTitle>
-                <DialogContent>
-                    <DialogContentText>This cannot be undone.</DialogContentText>
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setNoteDeleteTarget(null)}>Cancel</Button>
-                    <Button
-                        color="error"
-                        onClick={() => {
-                            if (noteDeleteTarget) void deleteNote(noteDeleteTarget.id);
-                            setNoteDeleteTarget(null);
-                        }}
-                    >
-                        Delete
-                    </Button>
-                </DialogActions>
-            </Dialog>
+            <Popover
+                open={noteDeleteTarget !== null}
+                anchorEl={noteDeleteAnchorEl}
+                anchorReference={noteDeleteAnchorPosition ? 'anchorPosition' : 'anchorEl'}
+                anchorPosition={noteDeleteAnchorPosition ?? undefined}
+                onClose={closeNoteDeleteConfirmation}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                slotProps={{
+                    paper: {
+                        sx: {
+                            p: 1.5,
+                            width: 270,
+                            maxWidth: 'calc(100vw - 32px)',
+                            borderRadius: 2.5,
+                        },
+                    },
+                }}
+            >
+                {noteDeleteTarget && (
+                    <Box>
+                        <Typography variant="body2" sx={{ mb: 1.25 }}>
+                            Delete “{noteDeleteTarget.title.trim() || 'Untitled'}”?
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.25 }}>
+                            This cannot be undone.
+                        </Typography>
+                        <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 0.5 }}>
+                            <Button size="small" onClick={closeNoteDeleteConfirmation}>Cancel</Button>
+                            <Button
+                                size="small"
+                                color="error"
+                                variant="contained"
+                                onClick={() => {
+                                    const target = noteDeleteTarget;
+                                    closeNoteDeleteConfirmation();
+                                    void deleteNote(target.id);
+                                }}
+                            >
+                                Delete
+                            </Button>
+                        </Box>
+                    </Box>
+                )}
+            </Popover>
 
             <Dialog open={bulkDeleteDialogOpen} onClose={() => setBulkDeleteDialogOpen(false)}>
                 <DialogTitle>Delete {selectedNoteIds.length} notes?</DialogTitle>

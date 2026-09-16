@@ -152,11 +152,21 @@ public class StatService {
         String normalizedName = normalizeName(name);
         validateDefinition(normalizedName, definition.getType(), definition.getMinValue(),
                 definition.getMaxValue(), morality, goodThreshold, userId, definitionId);
+        boolean nameChanged = !normalizedName.equals(definition.getName());
+        TaskSeriesResponse linkedSeries = nameChanged && definition.getRecurringTaskSeriesId() != null
+                ? taskSeriesService.getSeries(definition.getRecurringTaskSeriesId(), userId)
+                : null;
+        if (linkedSeries != null) {
+            renameRecurringFocusTaskLink(definition, linkedSeries.name(), normalizedName);
+        }
         definition.setName(normalizedName);
         definition.setDescription(description);
         definition.setMorality(morality);
         definition.setGoodThreshold(goodThreshold);
         StatDefinition savedDefinition = definitionRepository.save(definition);
+        if (linkedSeries != null) {
+            taskSeriesService.renameSeries(linkedSeries.seriesId(), normalizedName, userId);
+        }
         log.info("Stat definition updated: userId={} statDefinitionId={} name={} morality={} goodThreshold={}",
                 userId, savedDefinition.getId(), savedDefinition.getName(),
                 savedDefinition.getMorality(), savedDefinition.getGoodThreshold());
@@ -483,6 +493,28 @@ public class StatService {
     private void refreshLegacyFocusTaskName(StatDefinition definition) {
         List<String> names = getFocusTaskNames(definition);
         definition.setFocusTaskName(names.isEmpty() ? null : names.get(0));
+    }
+
+    private void renameRecurringFocusTaskLink(StatDefinition definition,
+                                              String previousSeriesName,
+                                              String newStatName) {
+        if (previousSeriesName == null || previousSeriesName.equalsIgnoreCase(newStatName)) return;
+
+        Optional<StatFocusTaskLink> previousLink = focusTaskLinkRepository
+                .findByStatDefinitionIdAndTaskNameIgnoreCase(definition.getId(), previousSeriesName);
+        if (previousLink.isPresent()) {
+            Optional<StatFocusTaskLink> newNameLink = focusTaskLinkRepository
+                    .findByStatDefinitionIdAndTaskNameIgnoreCase(definition.getId(), newStatName);
+            if (newNameLink.isPresent() && !newNameLink.get().getId().equals(previousLink.get().getId())) {
+                focusTaskLinkRepository.delete(previousLink.get());
+            } else {
+                previousLink.get().setTaskName(newStatName);
+                focusTaskLinkRepository.save(previousLink.get());
+            }
+        }
+        if (previousSeriesName.equalsIgnoreCase(definition.getFocusTaskName())) {
+            definition.setFocusTaskName(newStatName);
+        }
     }
 
     private StatDefinition withFocusTaskNames(StatDefinition definition) {

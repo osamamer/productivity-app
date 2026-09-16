@@ -25,6 +25,7 @@ import { AppText } from '../ui/AppText';
 
 const RECENT_DAYS = 5;
 const PLOT_HEIGHT = 108;
+const WEEK_BAR_PLOT_HEIGHT = 188;
 const PLOT_VERTICAL_INSET = 12;
 const PLOT_HORIZONTAL_INSET = 7;
 const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
@@ -735,6 +736,103 @@ function formatAxisValue(value: number, definition: StatDefinition): string {
   return definition.type === 'DURATION' ? formatDurationValue(value) : formatChartValue(value);
 }
 
+function numericTarget(definition: StatDefinition): number | undefined {
+  const target = definition.goodThreshold;
+  return target != null
+    && Number.isFinite(target)
+    && definition.morality !== undefined
+    && definition.morality !== 'NEUTRAL'
+    ? target
+    : undefined;
+}
+
+function valuePosition(value: number, domain: NumericDomain): number {
+  return (value - domain[0]) / (domain[1] - domain[0]) * 100;
+}
+
+function NumericWeekBars({
+  definition,
+  dates,
+  entriesByDate,
+  statusesByDate,
+  colors,
+}: {
+  definition: StatDefinition;
+  dates: string[];
+  entriesByDate: Map<string, number>;
+  statusesByDate: Map<string, StatEntryStatus>;
+  colors: ReturnType<typeof useAppTheme>['colors'];
+}) {
+  const bars = dates.map(date => ({
+    date,
+    status: statusesByDate.get(date) ?? 'RECORDED',
+    value: statusesByDate.get(date) === 'NOT_PLANNED' ? undefined : entriesByDate.get(date),
+  }));
+  const recordedValues = bars
+    .map(bar => bar.value)
+    .filter((value): value is number => value !== undefined);
+  const domain = chartDomain(definition, recordedValues);
+  const ticks = axisTicks(definition, domain);
+  const chartSpan = domain[1] - domain[0] || 1;
+  const zeroBottom = valuePosition(0, domain);
+  const target = numericTarget(definition);
+
+  return (
+    <View style={styles.numericWeekChart} accessibilityLabel={`${definition.name} for the last seven days`}>
+      <View style={styles.numericWeekAxis}>
+        {[...ticks].reverse().map(value => (
+          <AppText key={value} variant="caption" color="muted" numberOfLines={1}>
+            {formatAxisValue(value, definition)}
+          </AppText>
+        ))}
+      </View>
+      <View style={styles.numericWeekPlot}>
+        <View style={[styles.numericWeekBarArea, { borderBottomColor: colors.border }]}>
+          {ticks.map(value => (
+            <View key={value} style={[styles.gridLine, { top: `${100 - valuePosition(value, domain)}%`, backgroundColor: colors.border }]} />
+          ))}
+          <View style={[styles.gridLine, { top: `${100 - zeroBottom}%`, backgroundColor: colors.border, opacity: 0.9 }]} />
+          {target !== undefined && (
+            <View style={[styles.targetLine, { top: `${100 - valuePosition(target, domain)}%`, borderTopColor: colors.success }]} />
+          )}
+          <View style={styles.numericWeekBars}>
+            {bars.map(bar => (
+              <View
+                key={bar.date}
+                style={styles.numericWeekBarColumn}
+                accessible
+                accessibilityLabel={`${bar.date}: ${bar.value === undefined ? bar.status === 'NOT_PLANNED' ? 'Not planned' : 'No entry' : formatChartValue(bar.value)}`}>
+                {bar.value !== undefined && (
+                  <View
+                    style={[
+                      styles.numericWeekBar,
+                      {
+                        bottom: `${bar.value >= 0 ? zeroBottom : valuePosition(bar.value, domain)}%`,
+                        height: `${Math.max(3, Math.abs(bar.value) / chartSpan * 100)}%`,
+                        backgroundColor: colors.accent,
+                        ...(bar.value >= 0
+                          ? { borderTopLeftRadius: 5, borderTopRightRadius: 5 }
+                          : { borderBottomLeftRadius: 5, borderBottomRightRadius: 5 }),
+                      },
+                    ]}
+                  />
+                )}
+              </View>
+            ))}
+          </View>
+        </View>
+        <View style={styles.numericWeekBarLabels}>
+          {bars.map(bar => (
+            <AppText key={bar.date} variant="caption" color="muted" style={styles.numericWeekBarLabel}>
+              {formatWeekday(bar.date)}
+            </AppText>
+          ))}
+        </View>
+      </View>
+    </View>
+  );
+}
+
 interface ChartSegment {
   start: ChartPoint;
   end: ChartPoint;
@@ -1016,6 +1114,27 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, refreshK
     );
   }
 
+  if (dateRange <= 7) {
+    return (
+      <View style={styles.history}>
+        <View style={styles.compactHeader}>
+          {header && <View style={styles.headerSlot}>{header}</View>}
+          <RecentValueDots definition={definition} dates={recentDates} entriesByDate={entriesByDate} statusesByDate={statusesByDate} colors={colors} dark={dark} />
+          {loading && <ActivityIndicator size="small" color={colors.accent} />}
+        </View>
+        <NumericWeekBars
+          definition={definition}
+          dates={dates}
+          entriesByDate={entriesByDate}
+          statusesByDate={statusesByDate}
+          colors={colors}
+        />
+        {error && <AppText variant="caption" color="danger">History unavailable</AppText>}
+        {!error && !hasHistory && <AppText variant="caption" color="muted">No history yet</AppText>}
+      </View>
+    );
+  }
+
   return (
     <View style={styles.history}>
       <View style={styles.compactHeader}>
@@ -1073,7 +1192,7 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, refreshK
 }
 
 const styles = StyleSheet.create({
-  history: { gap: 8 },
+  history: { gap: 8, minWidth: 0 },
   compactHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   headerSlot: { flex: 1, minWidth: 0 },
   recentDots: { flexDirection: 'row', alignItems: 'center', gap: 6 },
@@ -1122,6 +1241,15 @@ const styles = StyleSheet.create({
   calendarFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   calendarLegend: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   legendSwatch: { width: 8, height: 8, borderRadius: 3, marginLeft: 4 },
+  numericWeekChart: { width: '100%', minWidth: 0, flexDirection: 'row', height: WEEK_BAR_PLOT_HEIGHT + 18, gap: 8 },
+  numericWeekAxis: { width: 46, height: WEEK_BAR_PLOT_HEIGHT, justifyContent: 'space-between', alignItems: 'flex-end', paddingVertical: 3 },
+  numericWeekPlot: { flex: 1, minWidth: 0, position: 'relative', height: WEEK_BAR_PLOT_HEIGHT + 18 },
+  numericWeekBarArea: { position: 'absolute', top: 0, left: 0, right: 0, height: WEEK_BAR_PLOT_HEIGHT, overflow: 'hidden', borderRadius: 8, borderBottomWidth: 1 },
+  numericWeekBars: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, flexDirection: 'row', alignItems: 'stretch', gap: 3, paddingHorizontal: 2 },
+  numericWeekBarColumn: { flex: 1, height: '100%', position: 'relative' },
+  numericWeekBar: { position: 'absolute', left: '50%', width: 6, minHeight: 3, marginLeft: -3 },
+  numericWeekBarLabels: { position: 'absolute', left: 0, right: 0, top: WEEK_BAR_PLOT_HEIGHT + 2, flexDirection: 'row', gap: 3, paddingHorizontal: 2 },
+  numericWeekBarLabel: { flex: 1, textAlign: 'center', fontSize: 9 },
   chart: { flexDirection: 'row', height: PLOT_HEIGHT, gap: 8 },
   chartEmpty: { opacity: 0.55 },
   chartAxis: { width: 46, justifyContent: 'space-between', alignItems: 'flex-end', paddingVertical: 3 },

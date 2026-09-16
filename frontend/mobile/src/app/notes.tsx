@@ -227,14 +227,16 @@ export default function NotesScreen() {
                 </View>
                 {note.pinned && <Ionicons name="pin" size={16} color={colors.accent} />}
               </View>
-              <AppText color="muted" numberOfLines={5}>{plainText(note.content) || 'Empty note'}</AppText>
-              {note.categoryId && categoryById.get(note.categoryId) && (
-                <View style={[styles.category, { backgroundColor: `${categoryById.get(note.categoryId)?.color}18`, borderColor: categoryById.get(note.categoryId)?.color }]}>
-                  <View style={[styles.categoryDot, { backgroundColor: categoryById.get(note.categoryId)?.color }]} />
-                  <AppText variant="caption" numberOfLines={1} style={{ color: categoryById.get(note.categoryId)?.color }}>{categoryById.get(note.categoryId)?.name}</AppText>
-                </View>
-              )}
-              <AppText variant="caption" color="muted">{new Date(note.updatedAt).toLocaleDateString()}</AppText>
+              <AppText color="muted" numberOfLines={3} style={styles.preview}>{plainText(note.content) || 'Empty note'}</AppText>
+              <View style={styles.categorySlot}>
+                {note.categoryId && categoryById.get(note.categoryId) && (
+                  <View style={[styles.category, { backgroundColor: `${categoryById.get(note.categoryId)?.color}18`, borderColor: categoryById.get(note.categoryId)?.color }]}>
+                    <View style={[styles.categoryDot, { backgroundColor: categoryById.get(note.categoryId)?.color }]} />
+                    <AppText variant="caption" numberOfLines={1} style={{ color: categoryById.get(note.categoryId)?.color }}>{categoryById.get(note.categoryId)?.name}</AppText>
+                  </View>
+                )}
+              </View>
+              <AppText variant="caption" color="muted" numberOfLines={1} style={styles.updatedAt}>{new Date(note.updatedAt).toLocaleDateString()}</AppText>
             </Card>
           </SilentPressable>
         ))}
@@ -277,8 +279,8 @@ const styles = StyleSheet.create({
   selectionHeader: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 8, borderBottomWidth: 1 },
   bulkActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   newButton: { position: 'absolute', right: 18, shadowColor: '#11111A', shadowOffset: { width: 0, height: 5 }, shadowRadius: 12, shadowOpacity: 0.28, elevation: 6 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -5 }, half: { width: '50%', paddingHorizontal: 5, marginBottom: 10 }, note: { minHeight: 190, gap: 10, padding: 14 },
-  grow: { flex: 1 }, spaceBetween: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 }, titleRow: { flex: 1, flexDirection: 'row', alignItems: 'flex-start', gap: 6 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -5 }, half: { width: '50%', paddingHorizontal: 5, marginBottom: 10 }, note: { height: 220, gap: 10, padding: 14, overflow: 'hidden' },
+  grow: { flex: 1 }, spaceBetween: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 }, titleRow: { flex: 1, flexDirection: 'row', alignItems: 'flex-start', gap: 6 }, preview: { flex: 1 }, categorySlot: { height: 24 }, updatedAt: { height: 16 },
   category: { alignSelf: 'flex-start', maxWidth: '100%', minHeight: 24, paddingHorizontal: 8, borderRadius: 12, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 5 }, categoryDot: { width: 6, height: 6, borderRadius: 3 },
   categoryChoices: { gap: 8 }, categoryChoice: { minHeight: 44, paddingHorizontal: 12, borderWidth: 1, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 8 },
   pressed: { opacity: 0.72 },

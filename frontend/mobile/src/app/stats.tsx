@@ -371,7 +371,7 @@ const styles = StyleSheet.create({
   iconAction: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
   groupItems: { gap: 10 },
   emptyGroup: { paddingHorizontal: 12, paddingVertical: 12 },
-  stat: { padding: 14 },
+  stat: { padding: 14, overflow: 'hidden' },
   statHeader: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
   check: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   grow: { flex: 1 },

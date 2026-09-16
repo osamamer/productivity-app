@@ -73,6 +73,11 @@ export interface TaskGroup {
   displayOrder: number;
 }
 
+export interface TodayFocusSummary {
+  date: string;
+  totalFocusSeconds: number;
+}
+
 export interface Day {
   id: number;
   rating: number;

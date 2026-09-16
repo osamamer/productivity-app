@@ -173,7 +173,7 @@ Docker services are defined in `deployment/docker-compose.yml`. Environment vari
 
 **Prefer direct manipulation over obvious instructional UI.** Do not add permanent helper text, drag handles, or mode-launch buttons for interactions users can perform directly on the content. Make the content itself draggable/selectable, provide immediate visual feedback, and reveal contextual actions only after they become relevant. Keep grouped items inline with the list they organize, and let focus modes fully remove distractions until the user explicitly reveals them.
 
-**Modal and popup preference.** The user does not like large modals that blur the whole app. Prefer inline editing and small anchored popups for confirmations or contextual actions.
+**Modal and popup preference.** The user does not like large modals that blur the whole app. Prefer inline editing and small anchored popups for confirmations or contextual actions. Any delete action initiated from a menu must use a small anchored popup for confirmation; recurring occurrence/series choices follow the same rule. Reserve full-page dialogs for substantial editing forms.
 
 **App-styled date/time controls.** Use the app's themed date/time picker components and popup surfaces for date and time input. Do not fall back to unstyled browser or platform-native date/time controls when an app-styled picker is available; match the existing picker popup styling.
 

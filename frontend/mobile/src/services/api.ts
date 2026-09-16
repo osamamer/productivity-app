@@ -25,6 +25,7 @@ import type {
   TaskInput,
   TaskRecurrenceFrequency,
   TaskSeries,
+  TodayFocusSummary,
   UserPreferences,
 } from '@/types/models';
 import { resolveAccessToken } from './auth-session';
@@ -90,6 +91,7 @@ export const api = {
     all: () => apiRequest<Task[]>('/api/v1/tasks/main'),
     scheduled: () => apiRequest<Task[]>('/api/v1/tasks?scheduled=true'),
     today: () => apiRequest<Task[]>('/api/v1/tasks/today'),
+    focusToday: (date: string) => apiRequest<TodayFocusSummary>(`/api/v1/tasks/focus-today?date=${encodeURIComponent(date)}`),
     past: (limit?: number, offset = 0) => apiRequest<Task[]>(taskPeriodPath('PAST', limit, offset)),
     future: (limit?: number, offset = 0) => apiRequest<Task[]>(taskPeriodPath('FUTURE', limit, offset)),
     undated: () => apiRequest<Task[]>('/api/v1/tasks/undated'),

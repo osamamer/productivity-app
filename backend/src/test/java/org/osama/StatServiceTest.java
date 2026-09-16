@@ -476,6 +476,22 @@ public class StatServiceTest {
     }
 
     @Test
+    void renamingStatRenamesItsLinkedRecurringTaskAndOccurrences() {
+        StatDefinition definition = createNamedStatDefinition("Drink water", StatType.BOOLEAN);
+        StatDefinition linked = statService.createRecurringTask(definition.getId(), TEST_USER_ID);
+        String seriesId = linked.getRecurringTaskSeriesId();
+
+        StatDefinition updated = statService.updateDefinition(
+                definition.getId(), "Hydration", null,
+                StatMorality.NEUTRAL, null, TEST_USER_ID);
+
+        assertEquals("Hydration", taskSeriesRepository.findById(seriesId).orElseThrow().getName());
+        assertTrue(taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(seriesId).stream()
+                .allMatch(task -> "Hydration".equals(task.getName())));
+        assertEquals(List.of("Hydration"), updated.getFocusTaskNames());
+    }
+
+    @Test
     void definitionUpdateRejectsDuplicateStatName() {
         createNamedStatDefinition("Already used", StatType.BOOLEAN);
         StatDefinition other = createNamedStatDefinition("Other", StatType.BOOLEAN);

@@ -17,19 +17,18 @@ import { Card } from '@/components/ui/Card';
 import { ErrorView, LoadingView } from '@/components/ui/StateView';
 import { Screen } from '@/components/ui/Screen';
 import { SilentPressable } from '@/components/ui/SilentPressable';
-import { formatCalendarTime, formatLongDate, greeting, localDate, startOfToday } from '@/lib/date';
+import { formatCalendarTime, localDate, startOfToday } from '@/lib/date';
 import { datesCoveredByOccurrence, expandCalendarEvent, type CalendarEventOccurrence } from '@/lib/calendarRecurrence';
 import { playAudioFeedback } from '@/lib/audioFeedback';
 import { reportError } from '@/lib/errors';
 import { animateLayout } from '@/lib/motion';
 import { useAsyncData } from '@/hooks/useAsyncData';
-import { useAuth } from '@/providers/AuthProvider';
 import { useAppPopup } from '@/providers/PopupProvider';
 import { usePreferences } from '@/providers/PreferencesProvider';
 import { useTaskWorkspace } from '@/providers/TaskWorkspaceProvider';
-import { useAppTheme } from '@/providers/ThemeProvider';
+import { useAppTheme, type AppColors } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
-import type { CalendarEvent, Day, Task, TaskGroup } from '@/types/models';
+import type { CalendarEvent, Day, MentalStateCheckIn, Task, TaskGroup, TodayFocusSummary } from '@/types/models';
 
 interface TodayData { day: Day }
 
@@ -62,6 +61,118 @@ interface DragTarget {
 const taskItemKey = (taskId: string): DragItemKey => `task:${taskId}`;
 const groupItemKey = (groupId: string): DragItemKey => `group:${groupId}`;
 const TASK_LIST_GAP = 10;
+const MENTAL_STATE_FRESHNESS_WINDOW_MS = 60 * 60 * 1000;
+
+interface TodaySnapshot {
+  focusSeconds: number | null;
+  mentalState: string | null;
+}
+
+function isFreshMentalState(recordedAt: string, now = Date.now()): boolean {
+  const recordedAtMs = Date.parse(recordedAt);
+  const ageMs = now - recordedAtMs;
+  return Number.isFinite(recordedAtMs)
+    && ageMs >= 0
+    && ageMs <= MENTAL_STATE_FRESHNESS_WINDOW_MS;
+}
+
+async function loadTodaySnapshot(): Promise<TodaySnapshot> {
+  const [focusResult, mentalStateResult] = await Promise.allSettled([
+    api.tasks.focusToday(localDate()),
+    api.mentalState.history(1),
+  ]);
+
+  if (focusResult.status === 'rejected') {
+    console.error('Could not load today focus summary:', focusResult.reason);
+  }
+  if (mentalStateResult.status === 'rejected') {
+    console.error('Could not load today mental state:', mentalStateResult.reason);
+  }
+
+  const focusSummary: TodayFocusSummary | null = focusResult.status === 'fulfilled' ? focusResult.value : null;
+  const mentalCheckIns: MentalStateCheckIn[] | null = mentalStateResult.status === 'fulfilled' ? mentalStateResult.value : null;
+  const latestMentalCheckIn = mentalCheckIns?.[0];
+
+  return {
+    focusSeconds: focusSummary?.totalFocusSeconds ?? null,
+    mentalState: latestMentalCheckIn && isFreshMentalState(latestMentalCheckIn.recordedAt)
+      ? latestMentalCheckIn.state
+      : null,
+  };
+}
+
+function focusMetricColor(seconds: number | null, colors: AppColors): string {
+  if (seconds === null) return colors.textMuted;
+  const hours = Number((seconds / 3600).toFixed(1));
+  if (hours < 1) return colors.danger;
+  if (hours < 2) return colors.warning;
+  return colors.success;
+}
+
+function mentalStateMetricColor(state: string | null, colors: AppColors): string {
+  if (!state) return colors.textMuted;
+  if (state === 'Ready' || state === 'Engaged') return colors.success;
+  if (state === 'Almost Ready') return colors.successLight;
+  if (state === 'Mixed' || state === 'Stimulation-Seeking') return colors.warning;
+  return colors.danger;
+}
+
+function TodaySnapshotCard({ snapshot }: { snapshot: TodaySnapshot | null }) {
+  const { colors } = useAppTheme();
+  const focusLabel = snapshot?.focusSeconds === null || snapshot === null
+    ? '—'
+    : `${(snapshot.focusSeconds / 3600).toFixed(1)}h`;
+  const mentalStateLabel = snapshot === null
+    ? 'Checking'
+    : snapshot.mentalState ?? 'Not checked in';
+  const mentalStateMissing = snapshot !== null && snapshot.mentalState === null;
+
+  return (
+    <Card style={styles.snapshotCard}>
+      <View style={styles.snapshotHeading}>
+        <View style={styles.snapshotHeadingCopy}>
+          <AppText variant="heading">Today at a glance</AppText>
+          <AppText color="muted">A quick read on your focus and state</AppText>
+        </View>
+        <Ionicons name="sparkles-outline" size={24} color={colors.accent} />
+      </View>
+      <View style={styles.snapshotMetrics}>
+        <View style={[styles.snapshotMetric, { backgroundColor: colors.accentSoft, borderColor: `${colors.accent}45` }]}>
+          <View style={styles.snapshotMetricLabel}>
+            <Ionicons name="time-outline" size={15} color={colors.accent} />
+            <AppText variant="caption" color="muted">Hours focused</AppText>
+          </View>
+          <AppText variant="heading" style={{ color: focusMetricColor(snapshot?.focusSeconds ?? null, colors) }}>{focusLabel}</AppText>
+        </View>
+        <SilentPressable
+          accessibilityRole="button"
+          accessibilityLabel={snapshot?.mentalState ? `View current mental state: ${snapshot.mentalState}` : 'Check in mental state'}
+          onPress={() => router.push('/mental-state')}
+          style={({ pressed }) => [
+            styles.snapshotMetric,
+            { backgroundColor: colors.background, borderColor: colors.border },
+            pressed && styles.pressed,
+          ]}>
+          <View style={styles.snapshotMetricLabel}>
+            <Ionicons name="pulse-outline" size={15} color={colors.accent} />
+            <AppText variant="caption" color="muted">Mental state</AppText>
+          </View>
+          <View style={styles.snapshotStateValue}>
+            <AppText
+              variant="heading"
+              numberOfLines={2}
+              adjustsFontSizeToFit
+              minimumFontScale={0.85}
+              style={{ color: mentalStateMetricColor(snapshot?.mentalState ?? null, colors) }}>
+              {mentalStateLabel}
+            </AppText>
+          </View>
+          {mentalStateMissing && <AppText variant="caption" color="accent">Check in now</AppText>}
+        </SilentPressable>
+      </View>
+    </Card>
+  );
+}
 
 function nearestTarget(
   absoluteY: number,
@@ -157,13 +268,15 @@ function buildTaskListItems(tasks: Task[], groups: TaskGroup[]): TaskListItem[] 
 }
 
 export default function TodayScreen() {
-  const { user } = useAuth();
   const { colors } = useAppTheme();
   const { confirm, showError } = useAppPopup();
   const resource = useAsyncData<TodayData>(async () => ({ day: await api.day.today() }));
   const eventsResource = useAsyncData<CalendarEvent[]>(() => api.events.all());
+  const snapshotResource = useAsyncData<TodaySnapshot>(loadTodaySnapshot);
   const { reload: reloadEvents } = eventsResource;
+  const { reload: reloadSnapshot } = snapshotResource;
   const eventFocusLoadedRef = useRef(false);
+  const snapshotFocusLoadedRef = useRef(false);
   const {
     allTasks,
     todayTasks,
@@ -205,6 +318,14 @@ export default function TodayScreen() {
     if (eventFocusLoadedRef.current) void reloadEvents();
     else eventFocusLoadedRef.current = true;
   }, [reloadEvents]));
+
+  useFocusEffect(useCallback(() => {
+    if (snapshotFocusLoadedRef.current) void reloadSnapshot();
+    else snapshotFocusLoadedRef.current = true;
+
+    const refreshInterval = setInterval(() => void reloadSnapshot(), 30_000);
+    return () => clearInterval(refreshInterval);
+  }, [reloadSnapshot]));
 
   function updateTask(updated: Task) {
     updateTaskInWorkspace(updated);
@@ -526,7 +647,6 @@ export default function TodayScreen() {
     }
   }
 
-  const name = user?.firstName || user?.username;
   const listItems = buildTaskListItems(
     todayTasks.filter(task => !task.parentId && (showCompletedTasks || !task.completed)),
     groups,
@@ -559,10 +679,6 @@ export default function TodayScreen() {
       dragSource.height + TASK_LIST_GAP,
     );
   })();
-  const rootTodayTasks = todayTasks.filter(task => !task.parentId);
-  const completed = rootTodayTasks.filter(task => task.completed).length;
-  const remaining = rootTodayTasks.length - completed;
-  const progress = rootTodayTasks.length ? completed / rootTodayTasks.length : 0;
   const todayEvents = useMemo<TodayEventItem[]>(() => {
     const start = startOfToday();
     const end = new Date(start);
@@ -580,12 +696,12 @@ export default function TodayScreen() {
   }, [eventsResource.data]);
 
   async function refreshToday() {
-    await Promise.all([resource.reload(), eventsResource.reload(), refreshTasks()]);
+    await Promise.all([resource.reload(), eventsResource.reload(), reloadSnapshot(), refreshTasks()]);
   }
 
   return (
     <Screen
-      refreshing={resource.refreshing || eventsResource.refreshing || tasksLoading}
+      refreshing={resource.refreshing || eventsResource.refreshing || snapshotResource.refreshing || tasksLoading}
       refreshEnabled={dragSource === null}
       onRefresh={() => void refreshToday()}
       overlay={(
@@ -601,29 +717,11 @@ export default function TodayScreen() {
           onDismiss={clearSelection}
         />
       )}>
-      <View style={styles.heroCopy}>
-        <AppText variant="display">{greeting()}{name ? `, ${name}` : ''}.</AppText>
-        <AppText color="muted">{formatLongDate()}</AppText>
-      </View>
-
       {resource.loading && <LoadingView label="Gathering your day…" />}
       {resource.error && !resource.data && <ErrorView message={resource.error} retry={() => void resource.reload()} />}
       {resource.data && (
         <>
-          <Card style={styles.overview}>
-            <View style={styles.spaceBetween}>
-              <View>
-                <AppText variant="heading">Today</AppText>
-                <AppText color="muted">{remaining ? `${remaining} left · ${completed} done` : rootTodayTasks.length ? 'Everything is done' : 'A clear day'}</AppText>
-              </View>
-              <View style={[styles.progressCircle, { borderColor: colors.accentSoft }]}>
-                <AppText variant="label" color="accent">{Math.round(progress * 100)}%</AppText>
-              </View>
-            </View>
-            <View style={[styles.track, { backgroundColor: colors.accentSoft }]}>
-              <View style={[styles.fill, { width: `${progress * 100}%`, backgroundColor: colors.accent }]} />
-            </View>
-          </Card>
+          <TodaySnapshotCard snapshot={snapshotResource.data} />
 
           <Card style={styles.eventsCard}>
             <View style={styles.spaceBetween}>
@@ -874,8 +972,13 @@ export default function TodayScreen() {
 }
 
 const styles = StyleSheet.create({
-  heroCopy: { gap: 5, paddingTop: 4 },
-  overview: { gap: 18 },
+  snapshotCard: { gap: 8, padding: 14, borderRadius: 18 },
+  snapshotHeading: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  snapshotHeadingCopy: { flex: 1, gap: 1 },
+  snapshotMetrics: { flexDirection: 'row', gap: 8 },
+  snapshotMetric: { flex: 1, minWidth: 0, minHeight: 76, borderWidth: 1, borderRadius: 14, padding: 10, gap: 4 },
+  snapshotMetricLabel: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  snapshotStateValue: { justifyContent: 'center' },
   eventsCard: { gap: 12 },
   eventsList: { gap: 4 },
   eventRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 },
@@ -884,9 +987,6 @@ const styles = StyleSheet.create({
   cancelled: { textDecorationLine: 'line-through', opacity: 0.62 },
   spaceBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 14 },
   taskActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  progressCircle: { width: 54, height: 54, borderRadius: 27, borderWidth: 6, alignItems: 'center', justifyContent: 'center' },
-  track: { height: 8, borderRadius: 4, overflow: 'hidden' },
-  fill: { height: 8, borderRadius: 4 },
   list: { gap: TASK_LIST_GAP },
   group: { borderWidth: 1, borderRadius: 20, overflow: 'hidden' },
   groupHeader: { minHeight: 64, borderTopLeftRadius: 19, borderTopRightRadius: 19, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14 },
