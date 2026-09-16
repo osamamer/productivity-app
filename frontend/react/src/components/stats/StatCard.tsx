@@ -311,11 +311,19 @@ export const StatCard = React.memo(function StatCard({
                                     gridRow: 1,
                                     justifySelf: 'end',
                                     width: 'auto',
+                                    maxWidth: '100%',
                                 },
                             }}
                         >
                             {supportsFocusTime && (
-                                <FormControl size="small" sx={{ flex: '1 1 180px', minWidth: 0 }}>
+                                <FormControl
+                                    size="small"
+                                    sx={{
+                                        flex: '1 1 180px',
+                                        minWidth: 0,
+                                        '@container (min-width: 900px)': { minWidth: 180 },
+                                    }}
+                                >
                                     <InputLabel id={`stat-view-label-${definition.id}`}>View</InputLabel>
                                     <Select
                                         labelId={`stat-view-label-${definition.id}`}
@@ -330,7 +338,15 @@ export const StatCard = React.memo(function StatCard({
                                 </FormControl>
                             )}
                             {supportsComparison && (
-                                <FormControl size="small" sx={{ flex: '1 1 220px', minWidth: 0 }} disabled={availableComparisons.length === 0 || focusTimeView}>
+                                <FormControl
+                                    size="small"
+                                    sx={{
+                                        flex: '1 1 220px',
+                                        minWidth: 0,
+                                        '@container (min-width: 900px)': { minWidth: 220 },
+                                    }}
+                                    disabled={availableComparisons.length === 0 || focusTimeView}
+                                >
                                     <InputLabel id="stat-overlay-label">Overlay stat</InputLabel>
                                     <Select
                                         labelId="stat-overlay-label"
