@@ -138,6 +138,8 @@ jobs:
     if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     needs: deploy_production
     runs-on: ubuntu-latest
+    outputs:
+      skipped: ${{ steps.queue_android_build.outputs.skipped }}
     permissions:
       contents: read
     steps:
@@ -166,12 +168,31 @@ jobs:
         working-directory: frontend/mobile
         run: npm ci
       - name: Queue Android preview build
+        id: queue_android_build
         working-directory: frontend/mobile
-        run: eas build --platform android --profile preview --non-interactive --no-wait
+        run: |
+          set +e
+          log_file=$(mktemp)
+          eas build --platform android --profile preview --non-interactive --no-wait 2>&1 | tee "$log_file"
+          eas_status=${PIPESTATUS[0]}
+
+          if [[ "$eas_status" -eq 0 ]]; then
+            echo "skipped=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if grep -Eqi 'used its .* builds from the Free plan|build limit|monthly.*build.*limit' "$log_file"; then
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::Skipping Android preview build because the EAS monthly build limit has been reached."
+            exit 0
+          fi
+
+          echo "skipped=false" >> "$GITHUB_OUTPUT"
+          exit "$eas_status"
 
   publish_mobile_update:
     name: Publish Android OTA update
-    if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && needs.build_mobile.outputs.skipped != 'true'
     needs: [deploy_production, build_mobile]
     runs-on: ubuntu-latest
     permissions:
