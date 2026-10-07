@@ -89,13 +89,71 @@ public class ScheduleService {
     public void scheduleBreakEnd(String taskId) {
         Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(taskId)
                 .orElseThrow(() -> new IllegalStateException("No active pomodoro found for task: " + taskId));
-        long breakDuration = pomodoro.getCurrentFocusNumber() % pomodoro.getLongBreakCooldown() == 0
-                ? pomodoroSettings.durationInSeconds(pomodoro.getLongBreakDuration(), pomodoro.isSecondsMode())
-                : pomodoroSettings.durationInSeconds(pomodoro.getShortBreakDuration(), pomodoro.isSecondsMode());
+        long breakDuration = breakDurationInSeconds(pomodoro);
         createScheduledJob(JobType.START_SESSION,
                 LocalDateTime.now().plusSeconds(breakDuration), taskId, pomodoro.getUser());
         log.info("Scheduled manual Pomodoro break end: userId={} taskId={} durationSeconds={}",
                 pomodoro.getUser().getId(), taskId, breakDuration);
+    }
+
+    public void startBreakEarly(String taskId) {
+        Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(taskId)
+                .orElseThrow(() -> new IllegalStateException("No active pomodoro found for task: " + taskId));
+        List<ScheduledJob> pendingJobs = scheduledJobRepository
+                .findAllByScheduledIsTrueAndAssociatedTaskId(taskId)
+                .stream()
+                .sorted(Comparator.comparing(ScheduledJob::getDueDate))
+                .toList();
+        if (pendingJobs.isEmpty() || pendingJobs.get(0).getJobType() != JobType.END_SESSION) {
+            throw new IllegalStateException("Pomodoro focus does not have a pending break transition.");
+        }
+
+        scheduledJobRepository.deleteAll(pendingJobs);
+        if (pomodoro.isAutoStartSessions()) {
+            scheduleAutomaticPhasesAfterEarlyBreak(taskId, pomodoro);
+        } else {
+            scheduleBreakEnd(taskId);
+        }
+        log.info("Pomodoro break started early: userId={} taskId={} focusNumber={} autoStart={}",
+                pomodoro.getUser().getId(), taskId, pomodoro.getCurrentFocusNumber(),
+                pomodoro.isAutoStartSessions());
+    }
+
+    private void scheduleAutomaticPhasesAfterEarlyBreak(String taskId, Pomodoro pomodoro) {
+        LocalDateTime scheduleStart = LocalDateTime.now();
+        long elapsedSeconds = breakDurationInSeconds(pomodoro);
+        createScheduledJob(JobType.START_SESSION,
+                scheduleStart.plusSeconds(elapsedSeconds), taskId, pomodoro.getUser());
+
+        long focusDuration = pomodoroSettings.durationInSeconds(
+                pomodoro.getFocusDuration(), pomodoro.isSecondsMode());
+        int nextFocusNumber = pomodoro.getCurrentFocusNumber() + 1;
+        for (int focusNumber = nextFocusNumber; focusNumber <= pomodoro.getNumFocuses(); focusNumber++) {
+            elapsedSeconds += focusDuration;
+            JobType jobType = focusNumber == pomodoro.getNumFocuses()
+                    ? JobType.END_POMODORO
+                    : JobType.END_SESSION;
+            createScheduledJob(jobType,
+                    scheduleStart.plusSeconds(elapsedSeconds), taskId, pomodoro.getUser());
+            if (jobType == JobType.END_POMODORO) {
+                break;
+            }
+
+            long breakDuration = focusNumber % pomodoro.getLongBreakCooldown() == 0
+                    ? pomodoroSettings.durationInSeconds(
+                            pomodoro.getLongBreakDuration(), pomodoro.isSecondsMode())
+                    : pomodoroSettings.durationInSeconds(
+                            pomodoro.getShortBreakDuration(), pomodoro.isSecondsMode());
+            elapsedSeconds += breakDuration;
+            createScheduledJob(JobType.START_SESSION,
+                    scheduleStart.plusSeconds(elapsedSeconds), taskId, pomodoro.getUser());
+        }
+    }
+
+    private long breakDurationInSeconds(Pomodoro pomodoro) {
+        return pomodoro.getCurrentFocusNumber() % pomodoro.getLongBreakCooldown() == 0
+                ? pomodoroSettings.durationInSeconds(pomodoro.getLongBreakDuration(), pomodoro.isSecondsMode())
+                : pomodoroSettings.durationInSeconds(pomodoro.getShortBreakDuration(), pomodoro.isSecondsMode());
     }
 
     private void scheduleFocusEnd(String taskId, Pomodoro pomodoro, boolean secondsMode) {

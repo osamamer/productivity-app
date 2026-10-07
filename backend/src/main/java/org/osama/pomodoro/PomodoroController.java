@@ -44,6 +44,11 @@ public class PomodoroController {
         pomodoroService.finishBreakEarly(taskId, currentUserService.getCurrentUserId());
     }
 
+    @PostMapping("/phase/start-break/{taskId}")
+    public void startBreakEarly(@PathVariable String taskId) {
+        pomodoroService.startBreakEarly(taskId, currentUserService.getCurrentUserId());
+    }
+
     @GetMapping("/status/{taskId}")
     public ResponseEntity<Pomodoro> getStatus(@PathVariable String taskId) {
         return pomodoroService.getActivePomodoro(taskId, currentUserService.getCurrentUserId())

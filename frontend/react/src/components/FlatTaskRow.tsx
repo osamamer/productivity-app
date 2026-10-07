@@ -14,6 +14,7 @@ import {
     ListItemText,
     Menu,
     MenuItem,
+    Popover,
     Slide,
     Snackbar,
     TextField,
@@ -28,6 +29,7 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
 import StopIcon from '@mui/icons-material/Stop';
 import SkipNextIcon from '@mui/icons-material/SkipNext';
+import FreeBreakfastIcon from '@mui/icons-material/FreeBreakfast';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
@@ -324,6 +326,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     } = usePomodoro();
 
     const [pomodoroStatus, setPomodoroStatus] = useState<PomodoroStatus | null>(initialPomodoroStatus);
+    const [endOptionsAnchor, setEndOptionsAnchor] = useState<HTMLElement | null>(null);
     const [pomodoroConfig, setPomodoroConfig] = useState<PomodoroConfig>(NORMAL_POMODORO_CONFIG);
     const [pomodoroFeedback, setPomodoroFeedback] = useState<PomodoroFeedback | null>(null);
     const [pomodoroHydrated, setPomodoroHydrated] = useState(!deferPomodoroHydration);
@@ -818,6 +821,47 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         });
     };
 
+    const handleStartBreakEarly = () => {
+        const previousStatus = lastPomodoroStatusRef.current?.active
+            ? lastPomodoroStatusRef.current
+            : pomodoroStatus?.active ? pomodoroStatus : null;
+        if (!previousStatus) return;
+
+        const optimisticStatus = getOptimisticPomodoroStatus(
+            previousStatus,
+            'start-break',
+            form,
+            pomodoroConfig.secondsMode,
+        );
+        if (!optimisticStatus || !applyLocalPomodoroStatus(optimisticStatus, false, true)) return;
+
+        const mutationRevision = ++pomodoroMutationRevisionRef.current;
+        void taskService.startPomodoroBreak(task.taskId).then(() => {
+            if (pomodoroMutationRevisionRef.current !== mutationRevision) return;
+            void refreshPomodoroStatus(mutationRevision);
+        }).catch(e => {
+            console.error('Error starting Pomodoro break early:', e);
+            rollbackPomodoroMutation(mutationRevision, optimisticStatus, previousStatus);
+            if (pomodoroMutationRevisionRef.current === mutationRevision) showPomodoroError();
+        });
+    };
+
+    const toggleEndOptions = (event: React.MouseEvent<HTMLButtonElement>) => {
+        event.stopPropagation();
+        const anchor = event.currentTarget;
+        setEndOptionsAnchor(current => current === anchor ? null : anchor);
+    };
+
+    const handleEndFromOptions = () => {
+        setEndOptionsAnchor(null);
+        handleStop();
+    };
+
+    const handleBreakFromOptions = () => {
+        setEndOptionsAnchor(null);
+        handleStartBreakEarly();
+    };
+
     const handleSubtaskToggle = async (subtask: Task) => {
         const completed = !subtask.completed;
         const optimisticSubtasks = subtasks.map(item => item.taskId === subtask.taskId
@@ -1131,6 +1175,10 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     // Break: pomodoro started but not in a focus session
     const waitingForPhase = isWaitingForPhase(pomodoroStatus);
     const isBreak   = isActive && pomodoroStatus !== null && isBreakPhase(pomodoroStatus);
+    const canStartBreakEarly = Boolean(pomodoroStatus?.active
+        && (pomodoroStatus.phase ? pomodoroStatus.phase === 'FOCUS' : pomodoroStatus.sessionActive)
+        && pomodoroStatus.sessionRunning
+        && pomodoroStatus.currentFocusNumber < pomodoroStatus.numFocuses);
     const playPauseLabel = waitingForPhase
         ? pomodoroStatus?.phase === 'WAITING_FOR_BREAK' ? 'Start break' : 'Start focus session'
         : pomodoroStatus?.sessionRunning ? 'Pause focus session' : 'Resume focus session';
@@ -1625,13 +1673,15 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                         </span>
                                     </Tooltip>
                                 )}
-                                <Tooltip title="End Pomodoro session">
+                                <Tooltip title="End session options">
                                     <span>
                                         <IconButton
                                             size="small"
-                                            onClick={handleStop}
+                                            onClick={toggleEndOptions}
                                             color="inherit"
-                                            aria-label="End Pomodoro session"
+                                            aria-label="Open end session options"
+                                            aria-haspopup="true"
+                                            aria-expanded={Boolean(endOptionsAnchor)}
                                             sx={{
                                                 color: 'error.light',
                                                 '&:hover': {
@@ -2004,6 +2054,52 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                     }}
                 />
             )}
+            <Popover
+                open={Boolean(endOptionsAnchor)}
+                anchorEl={endOptionsAnchor}
+                onClose={() => setEndOptionsAnchor(null)}
+                anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+                transformOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+                slotProps={{
+                    paper: {
+                        sx: {
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 0.25,
+                            p: 0.5,
+                            border: 1,
+                            borderColor: 'divider',
+                            borderRadius: 2,
+                            boxShadow: theme.shadows[6],
+                        },
+                    },
+                }}
+            >
+                <Box onClick={event => event.stopPropagation()} sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }}>
+                    <Tooltip title="End Pomodoro session">
+                        <IconButton
+                            onClick={handleEndFromOptions}
+                            aria-label="End Pomodoro session"
+                            size="small"
+                            sx={{ color: 'error.light' }}
+                        >
+                            <StopIcon fontSize="small" />
+                        </IconButton>
+                    </Tooltip>
+                    {canStartBreakEarly && (
+                        <Tooltip title="End focus and start break now">
+                            <IconButton
+                                onClick={handleBreakFromOptions}
+                                aria-label="End focus and start break now"
+                                size="small"
+                                sx={{ color: pomodoroGreen }}
+                            >
+                                <FreeBreakfastIcon sx={{ fontSize: 17 }} />
+                            </IconButton>
+                        </Tooltip>
+                    )}
+                </Box>
+            </Popover>
             <Snackbar
                 key={pomodoroFeedback?.id}
                 open={pomodoroFeedback !== null}

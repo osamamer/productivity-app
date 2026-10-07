@@ -1,7 +1,7 @@
 import type { PomodoroFormValues } from '../api/pomodoroConfigService';
 import type { PomodoroStatus } from '../../types/PomodoroStatus';
 
-export type OptimisticPomodoroAction = 'toggle' | 'finish-break';
+export type OptimisticPomodoroAction = 'toggle' | 'finish-break' | 'start-break';
 
 export function pomodoroDurationInSeconds(duration: number, secondsMode: boolean): number {
     return Math.max(0, Math.round(secondsMode ? duration : duration * 60));
@@ -63,6 +63,22 @@ export function getOptimisticPomodoroStatus(
     if (action === 'finish-break') {
         if (status.phase !== 'BREAK') return null;
         return startFocus(status, form, secondsMode);
+    }
+
+    if (action === 'start-break') {
+        const phase = status.phase ?? (status.sessionActive ? 'FOCUS' : 'BREAK');
+        if (phase !== 'FOCUS' || !status.sessionRunning
+            || status.currentFocusNumber >= status.numFocuses) return null;
+        return {
+            ...status,
+            sessionActive: false,
+            sessionRunning: false,
+            secondsPassedInSession: 0,
+            secondsUntilNextTransition: breakDurationInSeconds(form, status, secondsMode),
+            completedFocusSessions: (status.completedFocusSessions ?? 0) + 1,
+            totalFocusSeconds: (status.totalFocusSeconds ?? 0) + Math.max(0, status.secondsPassedInSession),
+            phase: 'BREAK',
+        };
     }
 
     if (status.phase === 'WAITING_FOR_BREAK') {

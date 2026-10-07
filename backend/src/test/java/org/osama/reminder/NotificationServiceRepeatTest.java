@@ -18,6 +18,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -109,7 +110,7 @@ class NotificationServiceRepeatTest {
     }
 
     @Test
-    void dispatchesEveryNotificationTypeThroughExpo() {
+    void dispatchesSupportedNotificationTypesAndSuppressesLegacyMeditationCompletion() {
         List<Reminder> reminders = Arrays.stream(NotificationType.values())
                 .map(this::reminderOfType)
                 .toList();
@@ -119,8 +120,15 @@ class NotificationServiceRepeatTest {
         notificationService.pushDueNotifications();
 
         reminders.forEach(reminder -> {
-            verify(expoPushNotificationService).send(reminder);
-            assertNotNull(reminder.getDispatchedAt());
+            if (reminder.getNotificationType() == NotificationType.MEDITATION_COMPLETED) {
+                verify(expoPushNotificationService, never()).send(reminder);
+                assertNull(reminder.getDispatchedAt());
+                assertNotNull(reminder.getAcknowledgedAt());
+            } else {
+                verify(expoPushNotificationService).send(reminder);
+                assertNotNull(reminder.getDispatchedAt());
+                assertNull(reminder.getAcknowledgedAt());
+            }
         });
     }
 

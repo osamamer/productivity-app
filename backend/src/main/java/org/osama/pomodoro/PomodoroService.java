@@ -357,6 +357,38 @@ public class PomodoroService {
     }
 
     @Transactional
+    public void startBreakEarly(String taskId, String userId) {
+        Task task = taskService.getTaskForUserOrThrow(taskId, userId);
+        Pomodoro pomodoro = getOwnedActivePomodoro(task.getTaskId(), userId);
+        if (currentPhase(pomodoro) != PomodoroPhase.FOCUS || !pomodoro.isSessionRunning()) {
+            throw new IllegalStateException("Pomodoro focus is not running.");
+        }
+        if (pomodoro.getCurrentFocusNumber() >= pomodoro.getNumFocuses()) {
+            throw new IllegalStateException("Pomodoro has no remaining break.");
+        }
+
+        pausePomodoroUpdates(taskId);
+        scheduleService.startBreakEarly(taskId);
+        taskSessionService.endSession(taskId);
+
+        pomodoro.setPhase(PomodoroPhase.BREAK);
+        pomodoro.setSessionActive(false);
+        pomodoro.setSessionRunning(false);
+        pomodoro.setSecondsPassedInSession(0);
+        pomodoro.setSecondsUntilNextTransition(
+                pomodoro.getCurrentFocusNumber() % pomodoro.getLongBreakCooldown() == 0
+                        ? pomodoroSettings.durationInSeconds(
+                                pomodoro.getLongBreakDuration(), pomodoro.isSecondsMode())
+                        : pomodoroSettings.durationInSeconds(
+                                pomodoro.getShortBreakDuration(), pomodoro.isSecondsMode()));
+        pomodoroRepository.save(pomodoro);
+        startPomodoroUpdates(taskId);
+        sendAsyncUpdate(taskId);
+        log.info("Pomodoro focus ended early for a break: userId={} taskId={} focusNumber={} completedFocusSessions={}",
+                userId, taskId, pomodoro.getCurrentFocusNumber(), pomodoro.getCompletedFocusSessions());
+    }
+
+    @Transactional
     public Pomodoro endPomodoro(String taskId) {
         Pomodoro pomodoro = pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(taskId)
                 .orElseThrow(() -> new IllegalStateException("No pomodoro found for task."));

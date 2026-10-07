@@ -91,6 +91,7 @@ class MentalStateCheckupSchedulerTest {
                 .checkupStartTime(startTime)
                 .checkupIntervalMinutes(intervalMinutes)
                 .checkupTimesPerDay(timesPerDay)
+                .checkupTimeZone(ZONE.getId())
                 .build();
     }
 }
