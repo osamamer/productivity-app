@@ -16,7 +16,8 @@ import { Task } from '../../types/Task';
 import { ProjectTaskRow } from './ProjectTaskRow';
 import { GroupTaskInputRow } from '../task/GroupTaskInputRow';
 import { formatScheduledDate, projectProgressPercent, summarizeProjectTasks } from './projectsPresentation';
-import { ProjectIdentityIcon, projectAccent } from './projectAppearance';
+import { ProjectIdentityIcon } from './projectAppearance';
+import { projectAccent } from './projectAppearanceConfig';
 import { TaskToCreate } from '../../types/TaskToCreate';
 
 interface ProjectDetailProps {

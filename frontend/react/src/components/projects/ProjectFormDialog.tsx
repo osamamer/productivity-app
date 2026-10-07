@@ -5,12 +5,8 @@ import {
     Stack, TextField, ToggleButton, Typography,
 } from '@mui/material';
 import { Project, ProjectColor, ProjectIcon, ProjectInput } from '../../types/Project';
-import {
-    PROJECT_COLOR_OPTIONS,
-    PROJECT_ICON_OPTIONS,
-    ProjectIconGlyph,
-    projectAccent,
-} from './projectAppearance';
+import { ProjectIconGlyph } from './projectAppearance';
+import { PROJECT_COLOR_OPTIONS, PROJECT_ICON_OPTIONS, projectAccent } from './projectAppearanceConfig';
 
 interface ProjectFormDialogProps {
     open: boolean;

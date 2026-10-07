@@ -96,7 +96,7 @@ export function NotificationCenter() {
         } finally {
             inFlight.current.delete(notification.notificationId);
         }
-    }, [navigate]);
+    }, []);
 
     useEffect(() => {
         const current = fallbackQueue[0];

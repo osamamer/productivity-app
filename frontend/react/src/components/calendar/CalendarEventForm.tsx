@@ -6,6 +6,7 @@ import {
     TextField, Typography,
 } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
+import type { Theme } from '@mui/material/styles';
 import { useRef, useState } from 'react';
 import { CalendarEvent, CalendarEventInput, CalendarEventStatus, RecurrenceFrequency, RecurrenceUnit } from '../../types/CalendarEvent';
 import { Calendar } from '../../types/Calendar';
@@ -65,7 +66,7 @@ function eventStatusLabel(status: CalendarEventStatus): string {
     return 'Confirmed';
 }
 
-function eventStatusColor(status: CalendarEventStatus, theme: ReturnType<typeof useTheme>): string {
+function eventStatusColor(status: CalendarEventStatus, theme: Theme): string {
     if (status === 'TENTATIVE') return theme.palette.mode === 'dark' ? '#d9bc72' : '#ad7c2e';
     if (status === 'CANCELLED') return theme.palette.error.main;
     return theme.palette.primary.main;
@@ -125,7 +126,7 @@ export function CalendarEventForm({
     const [title, setTitle] = useState(event?.title ?? '');
     const [calendarId, setCalendarId] = useState(event?.calendarId
         ?? (visibleCalendars.length === 1 ? visibleCalendars[0].id : ''));
-    const [description, setDescription] = useState(event?.description ?? '');
+    const description = event?.description ?? '';
     const [allDay, setAllDay] = useState(event?.allDay ?? false);
     const [startDate, setStartDate] = useState(event?.startDate ?? localDatePart(event?.startTime, initialDate));
     const [endDate, setEndDate] = useState(event?.endDate ?? localDatePart(event?.endTime, initialDate));

@@ -170,9 +170,10 @@ class TaskSeriesServiceTest {
         taskSeriesService.expandActiveSeries();
 
         List<Task> occurrences = taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(first.getTaskSeriesId());
-        assertEquals(3, occurrences.size());
-        assertTrue(second.isSkipped());
-        assertEquals(TaskSkipReason.USER, second.getSkipReason());
+        assertEquals(2, occurrences.size());
+        assertTrue(taskRepository.findTaskByTaskId(second.getTaskId()).isEmpty());
+        assertTrue(taskRepository.existsAnyByTaskSeriesIdAndSeriesOccurrenceAt(
+                first.getTaskSeriesId(), second.getSeriesOccurrenceAt()));
         assertTrue(seriesRepository.findBySeriesIdAndUserId(first.getTaskSeriesId(), USER_ID).orElseThrow().isActive());
         assertEquals(2, taskService.getAllMainTasks(USER_ID).stream()
                 .filter(task -> first.getTaskSeriesId().equals(task.getTaskSeriesId())).count());

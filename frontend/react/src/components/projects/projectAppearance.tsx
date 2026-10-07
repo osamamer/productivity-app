@@ -1,5 +1,4 @@
 import { alpha, Box } from '@mui/material';
-import type { Theme } from '@mui/material/styles';
 import BookRoundedIcon from '@mui/icons-material/BookRounded';
 import FolderRoundedIcon from '@mui/icons-material/FolderRounded';
 import HomeWorkRoundedIcon from '@mui/icons-material/HomeWorkRounded';
@@ -7,31 +6,7 @@ import LightbulbRoundedIcon from '@mui/icons-material/LightbulbRounded';
 import LocalFloristRoundedIcon from '@mui/icons-material/LocalFloristRounded';
 import RocketLaunchRoundedIcon from '@mui/icons-material/RocketLaunchRounded';
 import type { ProjectColor, ProjectIcon } from '../../types/Project';
-
-export const PROJECT_COLOR_OPTIONS: Array<{ value: ProjectColor; label: string }> = [
-    { value: 'blue', label: 'Blue' },
-    { value: 'violet', label: 'Violet' },
-    { value: 'teal', label: 'Teal' },
-    { value: 'amber', label: 'Amber' },
-    { value: 'rose', label: 'Rose' },
-];
-
-export const PROJECT_ICON_OPTIONS: Array<{ value: ProjectIcon; label: string }> = [
-    { value: 'folder', label: 'Folder' },
-    { value: 'rocket', label: 'Rocket' },
-    { value: 'lightbulb', label: 'Idea' },
-    { value: 'book', label: 'Book' },
-    { value: 'home', label: 'Home' },
-    { value: 'leaf', label: 'Personal' },
-];
-
-const PROJECT_PALETTE_KEYS = {
-    blue: 'primary',
-    violet: 'secondary',
-    teal: 'success',
-    amber: 'warning',
-    rose: 'error',
-} as const;
+import { projectAccent } from './projectAppearanceConfig';
 
 const PROJECT_ICONS = {
     folder: FolderRoundedIcon,
@@ -41,10 +16,6 @@ const PROJECT_ICONS = {
     home: HomeWorkRoundedIcon,
     leaf: LocalFloristRoundedIcon,
 } as const;
-
-export function projectAccent(theme: Theme, color: ProjectColor | null | undefined): string {
-    return theme.palette[PROJECT_PALETTE_KEYS[color ?? 'blue']].main;
-}
 
 export function ProjectIconGlyph({ icon, size = 20 }: { icon: ProjectIcon; size?: number }) {
     const Icon = PROJECT_ICONS[icon];

@@ -8,7 +8,7 @@ type SubtaskNameFieldProps = {
     inputRef?: React.Ref<HTMLInputElement | HTMLTextAreaElement>;
     onChange: React.ChangeEventHandler<HTMLInputElement | HTMLTextAreaElement>;
     onBlur: React.FocusEventHandler<HTMLInputElement | HTMLTextAreaElement>;
-    onKeyDown: React.KeyboardEventHandler<HTMLInputElement | HTMLTextAreaElement>;
+    onKeyDown: React.KeyboardEventHandler<HTMLDivElement>;
     ariaLabel: string;
 };
 

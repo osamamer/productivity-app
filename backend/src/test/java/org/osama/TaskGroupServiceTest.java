@@ -4,6 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
+import org.osama.exceptions.ResourceNotFoundException;
 import org.osama.requests.NewTaskRequest;
 import org.osama.requests.UpdateTaskRequest;
 import org.osama.task.Task;
@@ -176,7 +177,8 @@ class TaskGroupServiceTest {
         request.setName("Should not change");
 
         assertTrue(taskService.updateTask(otherUserTask.getTaskId(), request, TEST_USER_ID).isEmpty());
-        taskService.deleteTask(otherUserTask.getTaskId(), TEST_USER_ID);
+        assertThrows(ResourceNotFoundException.class,
+                () -> taskService.deleteTask(otherUserTask.getTaskId(), TEST_USER_ID));
 
         assertTrue(taskService.getTaskForUser(otherUserTask.getTaskId(), OTHER_USER_ID).isPresent());
         assertEquals("Other user's task", taskService.getTaskForUser(

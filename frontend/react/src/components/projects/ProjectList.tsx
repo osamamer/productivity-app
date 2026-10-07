@@ -12,7 +12,8 @@ import {
 import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded';
 import { Project } from '../../types/Project';
 import { projectProgressPercent } from './projectsPresentation';
-import { ProjectIdentityIcon, projectAccent } from './projectAppearance';
+import { ProjectIdentityIcon } from './projectAppearance';
+import { projectAccent } from './projectAppearanceConfig';
 
 interface ProjectListProps {
     projects: Project[];
