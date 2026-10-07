@@ -5,10 +5,13 @@ import { SmartTaskInput } from '../input/SmartTaskInput';
 import { TaskToCreate } from '../../types/TaskToCreate';
 
 type GroupTaskInputRowProps = {
-    groupName: string;
+    contextName: string;
     onSubmit: (task: TaskToCreate) => void;
-    onEscape: () => void;
-    onBlur: () => void;
+    onEscape?: () => void;
+    onBlur?: () => void;
+    placeholder?: string;
+    maxLength?: number;
+    autoFocus?: boolean;
     animate?: boolean;
 };
 
@@ -24,10 +27,13 @@ const groupTaskInputReveal = keyframes`
 `;
 
 export const GroupTaskInputRow = React.forwardRef<HTMLDivElement, GroupTaskInputRowProps>(function GroupTaskInputRow({
-    groupName,
+    contextName,
     onSubmit,
     onEscape,
     onBlur,
+    placeholder = 'Add to group',
+    maxLength,
+    autoFocus = true,
     animate = false,
 }, ref) {
     const [importance, setImportance] = useState(0);
@@ -69,8 +75,8 @@ export const GroupTaskInputRow = React.forwardRef<HTMLDivElement, GroupTaskInput
                 <Box sx={{ flex: 1, minWidth: 0, position: 'relative' }}>
                     <SmartTaskInput
                         defaultToToday
-                        autoFocus
-                        placeholder="Add to group"
+                        autoFocus={autoFocus}
+                        placeholder={placeholder}
                         submitOnBlur
                         onSubmit={onSubmit}
                         onEscape={onEscape}
@@ -82,7 +88,8 @@ export const GroupTaskInputRow = React.forwardRef<HTMLDivElement, GroupTaskInput
                         maxRows={4}
                         inputProps={{
                             draggable: false,
-                            'aria-label': `New task in ${groupName}`,
+                            maxLength,
+                            'aria-label': `New task in ${contextName}`,
                         }}
                         textFieldSx={{
                             '& .MuiInput-underline:before, & .MuiInput-underline:after, & .MuiInput-underline:hover:not(.Mui-disabled):before': {

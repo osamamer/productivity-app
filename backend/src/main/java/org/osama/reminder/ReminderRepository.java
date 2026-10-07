@@ -17,9 +17,21 @@ public interface ReminderRepository extends JpaRepository<Reminder, String> {
     Optional<Reminder> findByEventId(String eventId);
     void deleteByEventId(String eventId);
     Optional<Reminder> findByTaskIdAndNotificationType(String taskId, NotificationType notificationType);
+    List<Reminder> findAllByTaskIdInAndUserId(Collection<String> taskIds, String userId);
     List<Reminder> findAllByTaskIdInAndNotificationType(Collection<String> taskIds, NotificationType notificationType);
-    void deleteByTaskIdAndNotificationType(String taskId, NotificationType notificationType);
-    void deleteByTaskId(String taskId);
+    @Modifying
+    @Query("update Reminder reminder set reminder.softDeleted = true "
+            + "where reminder.taskId in :taskIds and reminder.userId = :userId and reminder.softDeleted = false")
+    int softDeleteByTaskIdInAndUserId(@Param("taskIds") Collection<String> taskIds,
+                                      @Param("userId") String userId);
+
+    @Modifying
+    @Query("update Reminder reminder set reminder.softDeleted = true "
+            + "where reminder.taskId = :taskId and reminder.notificationType = :notificationType "
+            + "and reminder.userId = :userId and reminder.softDeleted = false")
+    int softDeleteByTaskIdAndNotificationType(@Param("taskId") String taskId,
+                                              @Param("notificationType") NotificationType notificationType,
+                                              @Param("userId") String userId);
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<Reminder> findByReminderIdAndUserId(String reminderId, String userId);
 

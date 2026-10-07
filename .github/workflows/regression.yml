@@ -1,0 +1,59 @@
+name: Regression
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend regression tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+      - name: Run focused backend regressions
+        working-directory: backend
+        run: >-
+          ./mvnw -B -ntp
+          -Dtest=EndToEndTest,TaskProjectAssignmentTest,MentalStateServiceTest,CalendarEventServiceTest,NotificationServiceRepeatTest
+          test
+
+  web:
+    name: Web regression tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: frontend/react/package-lock.json
+      - name: Install dependencies
+        working-directory: frontend/react
+        run: npm ci
+      - name: Run web regressions
+        working-directory: frontend/react
+        run: npm run test:regression
+
+  mobile:
+    name: Mobile regression tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+      - name: Run mobile regressions
+        working-directory: frontend/mobile
+        run: npm run test:regression

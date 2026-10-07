@@ -1,13 +1,13 @@
-import { Box } from "@mui/material";
+import { Alert, Box } from "@mui/material";
 import {PageWrapper} from "../components/PageWrapper.tsx";
 import {MonthCalendar} from "../components/MonthCalendar.tsx";
 import {useGlobalTasks} from "../hooks/useGlobalTasks";
-import {useEffect, useState} from "react";
-import {dayService, dayTemplateService, eventService, taskGroupService, taskService} from "../services/api";
+import {useEffect, useRef, useState} from "react";
+import {calendarService, dayService, dayTemplateService, eventService, taskGroupService, taskService} from "../services/api";
 import {TaskToCreate} from "../types/TaskToCreate.tsx";
 import {StatDefinition} from "../types/Stats.ts";
 import {statService} from "../services/api/statService.ts";
-import {Task} from "../types/Task.tsx";
+import {Task, TaskUpdate} from "../types/Task.tsx";
 import {TaskGroup} from "../types/TaskGroup.ts";
 import {
     CalendarEvent,
@@ -18,6 +18,8 @@ import {
 import {DayTemplate, DayTemplateApplication, DayTemplateRequest} from "../types/DayTemplate.ts";
 import { playAudioFeedback } from '../services/audioFeedback';
 import { useNavigate } from 'react-router-dom';
+import { Calendar, CalendarColor, CalendarUpdate } from '../types/Calendar';
+import { CalendarManager } from '../components/calendar/CalendarManager';
 
 const RECURRING_TASK_LOOKBACK_DAYS = 365;
 const RECURRING_TASK_HORIZON_DAYS = 90;
@@ -85,7 +87,7 @@ function optimisticOccurrenceDateTimes(task: TaskToCreate): string[] {
     return dates;
 }
 
-function createOptimisticTasks(task: TaskToCreate): Task[] {
+function createOptimisticTasks(task: TaskToCreate, defaultCalendarId: string): Task[] {
     const optimisticSeriesId = task.recurrenceFrequency
         ? `optimistic-series-${Date.now()}-${Math.random().toString(36).slice(2)}`
         : null;
@@ -109,6 +111,7 @@ function createOptimisticTasks(task: TaskToCreate): Task[] {
         mentalThreadId: task.mentalThreadId ?? null,
         projectId: task.projectId ?? null,
         taskSeriesId: optimisticSeriesId,
+        calendarId: task.calendarId || defaultCalendarId,
         seriesOccurrenceAt: optimisticSeriesId ? scheduledPerformDateTime : null,
         skipped: false,
         optimisticRecurrence: task.recurrenceFrequency ? {
@@ -138,9 +141,21 @@ export function CalendarPage() {
     const [groups, setGroups] = useState<TaskGroup[]>([]);
     const [dayTemplates, setDayTemplates] = useState<DayTemplate[]>([]);
     const [calendarDataLoading, setCalendarDataLoading] = useState(true);
+    const [calendars, setCalendars] = useState<Calendar[]>([]);
+    const [calendarSettingsLoading, setCalendarSettingsLoading] = useState(true);
+    const [calendarSettingsError, setCalendarSettingsError] = useState<string | null>(null);
+    const calendarMutationVersions = useRef(new Map<string, number>());
+    const defaultCalendarId = calendars.find(calendar => calendar.defaultCalendar)?.id ?? '';
 
     useEffect(() => {
         let cancelled = false;
+        calendarService.getCalendars()
+            .then(accountCalendars => { if (!cancelled) setCalendars(accountCalendars); })
+            .catch(error => {
+                console.error('Failed to load calendars:', error);
+                if (!cancelled) setCalendarSettingsError('Could not load calendars. Refresh to try again.');
+            })
+            .finally(() => { if (!cancelled) setCalendarSettingsLoading(false); });
         Promise.all([
             statService.getDefinitions()
                 .then(definitions => { if (!cancelled) setStatDefinitions(definitions); })
@@ -160,6 +175,35 @@ export function CalendarPage() {
 
         return () => { cancelled = true; };
     }, []);
+
+    const handleUpdateCalendar = async (calendarId: string, updates: CalendarUpdate) => {
+        const previous = calendars.find(calendar => calendar.id === calendarId);
+        if (!previous) return;
+        const version = (calendarMutationVersions.current.get(calendarId) ?? 0) + 1;
+        calendarMutationVersions.current.set(calendarId, version);
+        setCalendars(current => current.map(calendar => calendar.id === calendarId ? { ...calendar, ...updates } : calendar));
+        try {
+            const updated = await calendarService.updateCalendar(calendarId, updates);
+            if (calendarMutationVersions.current.get(calendarId) === version) {
+                setCalendars(current => current.map(calendar => calendar.id === calendarId ? updated : calendar));
+            }
+        } catch (error) {
+            if (calendarMutationVersions.current.get(calendarId) === version) {
+                setCalendars(current => current.map(calendar => calendar.id === calendarId ? previous : calendar));
+            }
+            throw error;
+        }
+    };
+
+    const handleCreateCalendar = async (name: string, color: CalendarColor) => {
+        const created = await calendarService.createCalendar(name, color);
+        setCalendars(current => [...current, created].sort((first, second) => first.displayOrder - second.displayOrder));
+    };
+
+    const handleDeleteCalendar = async (calendarId: string) => {
+        await calendarService.deleteCalendar(calendarId);
+        setCalendars(current => current.filter(calendar => calendar.id !== calendarId));
+    };
 
     const handleCreateEvent = async (input: CalendarEventInput) => {
         const created = await eventService.createEvent(input);
@@ -264,12 +308,19 @@ export function CalendarPage() {
     };
 
     const handleCreateTask = async (taskToCreate: TaskToCreate) => {
-        const optimisticTasks = createOptimisticTasks(taskToCreate);
+        const visibleCalendars = calendars.filter(calendar => calendar.visible);
+        const selectedCalendarId = visibleCalendars.length === 1
+            ? visibleCalendars[0].id
+            : visibleCalendars.some(calendar => calendar.id === taskToCreate.calendarId)
+                ? taskToCreate.calendarId
+                : undefined;
+        const taskWithResolvedCalendar = { ...taskToCreate, calendarId: selectedCalendarId };
+        const optimisticTasks = createOptimisticTasks(taskWithResolvedCalendar, defaultCalendarId);
         const optimisticTaskIds = optimisticTasks.map(task => task.taskId);
         appendTasksToState(optimisticTasks);
 
         try {
-            const createdTask = await taskService.createTask(taskToCreate);
+            const createdTask = await taskService.createTask(taskWithResolvedCalendar);
             try {
                 await fetchAllTasks(true);
             } catch (refreshError) {
@@ -311,11 +362,24 @@ export function CalendarPage() {
         }
     };
 
-    const handleUpdateTask = async (taskId: string, updates: Partial<Task>) => {
+    const handleUpdateTask = async (taskId: string, updates: TaskUpdate) => {
         const originalTask = allTasks.find(task => task.taskId === taskId);
         if (!originalTask) return;
 
-        updateTaskInState(taskId, updates);
+        const optimisticUpdates = Object.fromEntries(
+            Object.entries(updates).filter(([field]) => field !== 'calendarScope'),
+        ) as Partial<Task>;
+        const relatedCalendarSnapshots = updates.calendarScope === 'series'
+            && updates.calendarId !== undefined
+            && originalTask.taskSeriesId
+            ? allTasks
+                .filter(task => task.taskSeriesId === originalTask.taskSeriesId && task.taskId !== taskId)
+                .map(task => ({ taskId: task.taskId, calendarId: task.calendarId }))
+            : [];
+        updateTaskInState(taskId, optimisticUpdates);
+        relatedCalendarSnapshots.forEach(snapshot => {
+            updateTaskInState(snapshot.taskId, { calendarId: updates.calendarId });
+        });
 
         try {
             const updatedTask = await taskService.updateTask(taskId, updates);
@@ -325,6 +389,9 @@ export function CalendarPage() {
         } catch (err) {
             console.error('Error updating task from calendar:', err);
             updateTaskInState(taskId, originalTask);
+            relatedCalendarSnapshots.forEach(snapshot => {
+                updateTaskInState(snapshot.taskId, { calendarId: snapshot.calendarId });
+            });
             throw err;
         }
     };
@@ -339,10 +406,20 @@ export function CalendarPage() {
                 minWidth: 0,
                 width: '100%',
             }}>
+                {calendarSettingsError && <Alert severity="error" sx={{ mb: 1 }}>{calendarSettingsError}</Alert>}
                 <MonthCalendar
                     tasks={allTasks}
                     groups={groups}
                     events={events}
+                    calendars={calendars}
+                    calendarManager={(
+                        <CalendarManager
+                            calendars={calendars}
+                            onUpdate={handleUpdateCalendar}
+                            onCreate={handleCreateCalendar}
+                            onDelete={handleDeleteCalendar}
+                        />
+                    )}
                     onCreateTask={handleCreateTask}
                     onDeleteTask={handleDeleteTask}
                     onDeleteTaskOccurrence={handleDeleteTaskOccurrence}
@@ -362,7 +439,7 @@ export function CalendarPage() {
                     onApplyDayTemplate={handleApplyDayTemplate}
                     onUndoDayTemplate={handleUndoDayTemplate}
                     statDefinitions={statDefinitions}
-                    loading={calendarDataLoading || tasksLoading}
+                    loading={calendarDataLoading || tasksLoading || calendarSettingsLoading}
                     onRefreshTasks={() => fetchAllTasks(true)}
                     onOpenDay={date => navigate(`/day/${date}`, { state: { returnTo: '/calendar' } })}
                 />

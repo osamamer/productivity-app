@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.osama.task.Task;
 import org.osama.task.TaskRepository;
 import org.osama.task.TaskSkipReason;
+import org.osama.task.recurrence.TaskSeriesRepository;
 import org.osama.task.recurrence.events.TaskSeriesOccurrencesChangedEvent;
 import org.osama.user.User;
 import org.osama.user.UserRepository;
@@ -33,17 +34,20 @@ public class StatTaskLinkService {
     private final StatEntryRepository entryRepository;
     private final StatFocusTaskLinkRepository focusTaskLinkRepository;
     private final TaskRepository taskRepository;
+    private final TaskSeriesRepository taskSeriesRepository;
     private final UserRepository userRepository;
 
     public StatTaskLinkService(StatDefinitionRepository definitionRepository,
                                StatEntryRepository entryRepository,
                                StatFocusTaskLinkRepository focusTaskLinkRepository,
                                TaskRepository taskRepository,
+                               TaskSeriesRepository taskSeriesRepository,
                                UserRepository userRepository) {
         this.definitionRepository = definitionRepository;
         this.entryRepository = entryRepository;
         this.focusTaskLinkRepository = focusTaskLinkRepository;
         this.taskRepository = taskRepository;
+        this.taskSeriesRepository = taskSeriesRepository;
         this.userRepository = userRepository;
     }
 
@@ -188,7 +192,34 @@ public class StatTaskLinkService {
                 .ifPresent(definition -> {
                     definition.setRecurringTaskSeriesId(null);
                     definitionRepository.save(definition);
+                    log.info("Recurring stat task link cleared: userId={} seriesId={} statDefinitionId={}",
+                            userId, seriesId, definition.getId());
                 });
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<String> getRecurringSeriesLink(String seriesId, String userId) {
+        return definitionRepository.findByRecurringTaskSeriesIdAndUserId(seriesId, userId)
+                .map(StatDefinition::getId);
+    }
+
+    @Transactional
+    public void restoreRecurringSeriesLink(String seriesId, String definitionId, String userId) {
+        if (taskSeriesRepository.findBySeriesIdAndUserId(seriesId, userId).isEmpty()) {
+            throw new IllegalArgumentException("Task series not found for current user.");
+        }
+        StatDefinition definition = definitionRepository.findByIdAndUserId(definitionId, userId)
+                .orElseThrow(() -> new IllegalArgumentException("Stat definition not found for current user."));
+        if (definition.getRecurringTaskSeriesId() != null
+                && !definition.getRecurringTaskSeriesId().equals(seriesId)) {
+            throw new IllegalStateException("Stat definition has been linked to another task series.");
+        }
+        if (seriesId.equals(definition.getRecurringTaskSeriesId())) return;
+
+        definition.setRecurringTaskSeriesId(seriesId);
+        definitionRepository.save(definition);
+        log.info("Recurring stat task link restored: userId={} seriesId={} statDefinitionId={}",
+                userId, seriesId, definitionId);
     }
 
     private boolean isLinkedBoolean(StatDefinition definition) {

@@ -1,4 +1,5 @@
 import { Project } from '../../types/Project';
+import { Task } from '../../types/Task';
 
 export function projectProgressPercent(project: Pick<Project, 'taskCount' | 'completedTaskCount'>): number {
     if (project.taskCount <= 0) return 0;
@@ -32,4 +33,28 @@ export function formatScheduledDate(dateTime: string | null): string {
     }
 
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+export interface ProjectTaskSummary {
+    openCount: number;
+    overdueCount: number;
+    nextDueTask: Task | null;
+}
+
+export function summarizeProjectTasks(tasks: readonly Task[], now = new Date()): ProjectTaskSummary {
+    const openTasks = tasks.filter(task => !task.completed);
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const datedOpenTasks = openTasks.flatMap(task => {
+        if (!task.scheduledPerformDateTime) return [];
+        const scheduledAt = new Date(task.scheduledPerformDateTime).getTime();
+        return Number.isNaN(scheduledAt) ? [] : [{ task, scheduledAt }];
+    });
+
+    return {
+        openCount: openTasks.length,
+        overdueCount: datedOpenTasks.filter(({ scheduledAt }) => scheduledAt < todayStart).length,
+        nextDueTask: datedOpenTasks
+            .filter(({ scheduledAt }) => scheduledAt >= todayStart)
+            .sort((first, second) => first.scheduledAt - second.scheduledAt)[0]?.task ?? null,
+    };
 }

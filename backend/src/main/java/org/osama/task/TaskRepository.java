@@ -2,6 +2,9 @@ package org.osama.task;
 
 import org.jetbrains.annotations.NotNull;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -49,10 +52,23 @@ public interface TaskRepository extends JpaRepository<Task, String>,
 
     List<Task> findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(String taskSeriesId);
 
+    List<Task> findAllByTaskSeriesIdAndUserIdOrderBySeriesOccurrenceAtAsc(String taskSeriesId, String userId);
+
+    @Modifying
+    @Query(value = "UPDATE task SET calendar_id = :calendarId WHERE task_series_id = :seriesId AND user_id = :userId",
+            nativeQuery = true)
+    int updateCalendarForSeries(@Param("seriesId") String seriesId, @Param("userId") String userId,
+                                @Param("calendarId") String calendarId);
+
     List<Task> findAllByTaskSeriesIdAndUserIdAndSeriesOccurrenceAtGreaterThanEqualAndSeriesOccurrenceAtLessThanOrderBySeriesOccurrenceAtAsc(
             String taskSeriesId, String userId, LocalDateTime from, LocalDateTime toExclusive);
 
     Optional<Task> findByTaskSeriesIdAndSeriesOccurrenceAt(String taskSeriesId, LocalDateTime seriesOccurrenceAt);
+
+    @Query(value = "select exists(select 1 from task where task_series_id = :seriesId "
+            + "and series_occurrence_at = :occurrenceAt)", nativeQuery = true)
+    boolean existsAnyByTaskSeriesIdAndSeriesOccurrenceAt(@Param("seriesId") String seriesId,
+                                                         @Param("occurrenceAt") LocalDateTime occurrenceAt);
 
     List<Task> findAllByTaskSeriesIdAndSeriesOccurrenceAtAfter(String taskSeriesId, LocalDateTime seriesOccurrenceAt);
 

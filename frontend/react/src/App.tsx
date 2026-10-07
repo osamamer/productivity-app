@@ -18,7 +18,6 @@ import {rememberMentalDestination, type MentalDestinationPath} from "./services/
 import {AppShell} from "./components/AppShell.tsx";
 import {
     loadHomePageModule,
-    loadProjectsPageModule,
     loadTaskPageModule,
     preloadInactivePrimaryRoutes,
 } from './services/routePreload';
@@ -26,7 +25,6 @@ import {
 const HomePage = lazy(() => loadHomePageModule().then(module => ({ default: module.HomePage })));
 const CalendarPage = lazy(() => import('./pages/CalendarPage').then(module => ({ default: module.CalendarPage })));
 const TaskPage = lazy(() => loadTaskPageModule().then(module => ({ default: module.TaskPage })));
-const ProjectsPage = lazy(() => loadProjectsPageModule().then(module => ({ default: module.ProjectsPage })));
 const MeditationPage = lazy(() => import('./pages/MeditationPage').then(module => ({ default: module.MeditationPage })));
 const LoginPage = lazy(() => import('./pages/LoginPage').then(module => ({ default: module.LoginPage })));
 const StatsPage = lazy(() => import('./pages/StatsPage').then(module => ({ default: module.StatsPage })));
@@ -101,7 +99,8 @@ const routes = [
                         ),
                     },
                     { path: "/tasks", element: <RouteSuspense><TaskPage/></RouteSuspense> },
-                    { path: "/projects", element: <RouteSuspense><ProjectsPage/></RouteSuspense> },
+                    // Keep old bookmarks from reopening the unfinished Projects UI.
+                    { path: "/projects", element: <Navigate to="/tasks" replace /> },
                     { path: "/stats", element: <RouteSuspense><StatsPage/></RouteSuspense> },
                     { path: "/day/:date", element: <RouteSuspense><DayPage/></RouteSuspense> },
                     { path: "/notes", element: <RouteSuspense><NotesPage/></RouteSuspense> },

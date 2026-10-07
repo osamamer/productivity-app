@@ -277,6 +277,7 @@ class ProjectServiceTest {
         series.setRecurrenceFrequency(TaskRecurrenceFrequency.WEEKLY);
         series.setTimeZone("UTC");
         series.setProjectId(project.projectId());
+        series.setCalendarId("default-" + TEST_USER_ID);
         taskSeriesRepository.save(series);
 
         projectService.deleteProject(project.projectId(), TEST_USER_ID);
@@ -317,6 +318,7 @@ class ProjectServiceTest {
         task.setCreationDateTime(LocalDateTime.now());
         task.setDisplayOrder(0);
         task.setProjectId(projectId);
+        task.setCalendarId("default-" + userId);
         task.setParentId(parentId);
         task.setCompleted(completed);
         task.setSkipped(skipped);

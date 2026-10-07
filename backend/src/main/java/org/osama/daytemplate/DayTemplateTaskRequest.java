@@ -7,6 +7,10 @@ public record DayTemplateTaskRequest(
         String description,
         LocalTime scheduledTime,
         String tag,
-        int importance
+        int importance,
+        String calendarId
 ) {
+    public DayTemplateTaskRequest(String name, String description, LocalTime scheduledTime, String tag, int importance) {
+        this(name, description, scheduledTime, tag, importance, null);
+    }
 }

@@ -5,6 +5,8 @@ import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import { AppTimeField } from '../input/AppPickerFields';
 import { DayTemplateEventRequest, DayTemplateTaskRequest } from '../../types/DayTemplate';
+import { Calendar } from '../../types/Calendar';
+import { CalendarSelect } from './CalendarSelect';
 
 const TEMPLATE_MAX_REMINDER_MINUTES = 8 * 7 * 24 * 60;
 
@@ -27,6 +29,7 @@ function priorityValue(importance: number): number {
 }
 
 type Props = {
+    calendars: Calendar[];
     events: DayTemplateEventRequest[];
     tasks: DayTemplateTaskRequest[];
     onAddEvent: () => void;
@@ -38,6 +41,7 @@ type Props = {
 };
 
 export function DayTemplateEditor({
+    calendars,
     events,
     tasks,
     onAddEvent,
@@ -77,6 +81,11 @@ export function DayTemplateEditor({
                         </IconButton>
                     </Stack>
                     <Stack spacing={1.25}>
+                        <CalendarSelect
+                            calendars={calendars}
+                            value={event.calendarId}
+                            onChange={calendarId => onUpdateEvent(index, { calendarId })}
+                        />
                         <TextField
                             label="Event title"
                             value={event.title}
@@ -205,6 +214,11 @@ export function DayTemplateEditor({
                             onChange={inputEvent => onUpdateTask(index, { name: inputEvent.target.value })}
                             fullWidth
                             size="small"
+                        />
+                        <CalendarSelect
+                            calendars={calendars}
+                            value={task.calendarId}
+                            onChange={calendarId => onUpdateTask(index, { calendarId })}
                         />
                         <Box>
                             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>

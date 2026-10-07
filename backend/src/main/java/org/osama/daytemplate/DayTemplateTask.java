@@ -33,6 +33,9 @@ public class DayTemplateTask {
     @JoinColumn(name = "template_id", nullable = false)
     private DayTemplate template;
 
+    @Column(name = "calendar_id", nullable = false)
+    private String calendarId;
+
     @Column(name = "display_order", nullable = false)
     private int displayOrder;
 

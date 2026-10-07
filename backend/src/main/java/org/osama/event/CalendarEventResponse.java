@@ -23,6 +23,7 @@ public record CalendarEventResponse(
         List<CalendarEventOccurrenceResponse> occurrenceOverrides,
         Integer reminderMinutesBefore,
         Instant createdAt,
-        Instant updatedAt
+        Instant updatedAt,
+        String calendarId
 ) {
 }

@@ -1,20 +1,10 @@
+import { CompactPopover } from '../CompactPopover';
 import { useEffect, useState } from 'react';
 import {
-    Box,
-    Button,
-    Dialog,
-    DialogActions,
-    DialogContent,
-    DialogTitle,
-    FormControl,
-    FormHelperText,
-    InputLabel,
-    MenuItem,
-    Select,
-    Slider,
-    Stack,
-    TextField,
-    Typography,
+    Box, Button, DialogActions, DialogContent,
+    DialogTitle, FormControl, FormHelperText, InputLabel,
+    MenuItem, Select, Slider, Stack,
+    TextField, Typography,
 } from '@mui/material';
 import { AttentionState, MentalThreadInput } from '../../types/MentalThread.ts';
 import { attentionStateDetails, attentionStates } from './mentalThreadPresentation.ts';
@@ -70,7 +60,7 @@ export function MentalThreadCreateDialog({ open, onClose, onSave }: MentalThread
     const stateDetails = attentionStateDetails[input.attentionState];
 
     return (
-        <Dialog open={open} onClose={saving ? undefined : onClose} fullWidth maxWidth="md">
+        <CompactPopover open={open} onClose={saving ? undefined : onClose} fullWidth maxWidth="md">
             <DialogTitle>Capture a mental thread</DialogTitle>
             <DialogContent dividers>
                 <Stack spacing={2.5} sx={{ pt: 0.5 }}>
@@ -157,6 +147,6 @@ export function MentalThreadCreateDialog({ open, onClose, onSave }: MentalThread
                     {saving ? 'Saving…' : 'Create thread'}
                 </Button>
             </DialogActions>
-        </Dialog>
+        </CompactPopover>
     );
 }

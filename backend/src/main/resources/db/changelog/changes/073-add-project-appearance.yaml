@@ -1,0 +1,21 @@
+databaseChangeLog:
+  - changeSet:
+      id: 073-add-project-appearance
+      author: codex
+      comment: Save each project's accent color and icon
+      changes:
+        - addColumn:
+            tableName: project
+            columns:
+              - column:
+                  name: color
+                  type: varchar(16)
+                  defaultValue: blue
+                  constraints:
+                    nullable: false
+              - column:
+                  name: icon
+                  type: varchar(24)
+                  defaultValue: folder
+                  constraints:
+                    nullable: false

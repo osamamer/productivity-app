@@ -1,66 +1,32 @@
-import { memo } from 'react';
-import { Box, Checkbox, IconButton, Stack, Typography } from '@mui/material';
-import LinkOffRoundedIcon from '@mui/icons-material/LinkOffRounded';
+import { memo, type MouseEvent } from 'react';
+import { Box } from '@mui/material';
 import { Task } from '../../types/Task';
-import { formatScheduledDate } from './projectsPresentation';
+import { TaskPageListRow } from '../task-page/TaskPageListRow';
 
 interface ProjectTaskRowProps {
     task: Task;
-    unassigning: boolean;
+    editRequestId: number | null;
     onToggle: (task: Task) => void;
-    onUnassign: (task: Task) => void;
+    onUpdate: (taskId: string, updates: Partial<Task>) => Promise<void>;
+    onContextMenu: (task: Task, event: MouseEvent<HTMLElement>) => void;
 }
 
 export const ProjectTaskRow = memo(function ProjectTaskRow({
     task,
-    unassigning,
+    editRequestId,
     onToggle,
-    onUnassign,
+    onUpdate,
+    onContextMenu,
 }: ProjectTaskRowProps) {
     return (
-        <Stack
-            direction="row"
-            alignItems="center"
-            spacing={0.5}
-            sx={{
-                px: 1,
-                py: 0.5,
-                borderBottom: 1,
-                borderColor: 'divider',
-                '&:last-of-type': { borderBottom: 0 },
-            }}
-        >
-            <Checkbox
-                size="small"
-                checked={task.completed}
-                onChange={() => onToggle(task)}
-                inputProps={{ 'aria-label': `Mark ${task.name} as ${task.completed ? 'not completed' : 'completed'}` }}
+        <Box onContextMenu={event => onContextMenu(task, event)}>
+            <TaskPageListRow
+                task={task}
+                editRequestId={editRequestId}
+                onToggle={() => onToggle(task)}
+                onUpdate={onUpdate}
+                showScheduledDate
             />
-            <Box sx={{ minWidth: 0, flex: 1 }}>
-                <Typography
-                    variant="body2"
-                    noWrap
-                    sx={{
-                        textDecoration: task.completed ? 'line-through' : 'none',
-                        color: task.completed ? 'text.secondary' : 'text.primary',
-                    }}
-                >
-                    {task.name}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                    {formatScheduledDate(task.scheduledPerformDateTime)}
-                </Typography>
-            </Box>
-            <IconButton
-                size="small"
-                title="Remove from this project"
-                aria-label={`Remove ${task.name} from this project`}
-                disabled={unassigning}
-                onClick={() => onUnassign(task)}
-                sx={{ color: 'text.secondary' }}
-            >
-                <LinkOffRoundedIcon fontSize="small" />
-            </IconButton>
-        </Stack>
+        </Box>
     );
 });

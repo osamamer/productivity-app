@@ -35,6 +35,15 @@ public class TaskSeriesController {
                 seriesId, request, currentUserService.getCurrentUserId()));
     }
 
+    @PatchMapping("/{seriesId}/importance")
+    public ResponseEntity<TaskSeriesResponse> updateSeriesImportance(
+            @PathVariable String seriesId,
+            @RequestBody TaskSeriesImportanceRequest request
+    ) {
+        return ResponseEntity.ok(taskSeriesService.updateImportance(
+                seriesId, request.getImportance(), currentUserService.getCurrentUserId()));
+    }
+
     @DeleteMapping("/{seriesId}")
     public ResponseEntity<Void> stopSeries(@PathVariable String seriesId) {
         taskSeriesService.stopSeries(seriesId, currentUserService.getCurrentUserId());

@@ -252,36 +252,42 @@ export const TaskPageSection = React.memo(function TaskPageSection({
                             }}
                         />
                     ) : (
-                        <Box
-                            component="button"
-                            type="button"
-                            aria-expanded={!collapsed}
-                            onClick={event => {
-                                if (event.shiftKey || event.ctrlKey || event.metaKey) {
-                                    onGroupSelection?.(item.group, event);
-                                    return;
-                                }
-                                startGroupNameEditing(item.group, event);
-                            }}
-                            onDoubleClick={event => startGroupNameEditing(item.group, event)}
-                            sx={{
-                                flex: 1,
-                                minWidth: 0,
-                                border: 0,
-                                padding: 0,
-                                background: 'transparent',
-                                color: 'inherit',
-                                textAlign: 'left',
-                                cursor: onRenameGroup ? 'text' : 'default',
-                            }}
-                        >
-                            <Typography component="span" variant="body2" sx={{ fontWeight: 650 }}>
-                                {item.group.name}
-                                <Typography component="span" variant="caption" color="text.disabled" sx={{ ml: 1 }}>
-                                    {item.tasks.length}
+                        <>
+                            <Box
+                                component="button"
+                                type="button"
+                                aria-expanded={!collapsed}
+                                onClick={event => {
+                                    if (event.shiftKey || event.ctrlKey || event.metaKey) {
+                                        onGroupSelection?.(item.group, event);
+                                        return;
+                                    }
+                                    startGroupNameEditing(item.group, event);
+                                }}
+                                onDoubleClick={event => startGroupNameEditing(item.group, event)}
+                                sx={{
+                                    flex: '0 1 auto',
+                                    width: 'max-content',
+                                    maxWidth: 'calc(100% - 8px)',
+                                    minWidth: 0,
+                                    border: 0,
+                                    padding: 0,
+                                    paddingRight: '32px',
+                                    background: 'transparent',
+                                    color: 'inherit',
+                                    textAlign: 'left',
+                                    cursor: onRenameGroup ? 'text' : 'default',
+                                }}
+                            >
+                                <Typography component="span" variant="body2" sx={{ fontWeight: 650, overflowWrap: 'anywhere' }}>
+                                    {item.group.name}
                                 </Typography>
+                            </Box>
+                            <Typography component="span" variant="caption" color="text.disabled" sx={{ ml: '-24px', flexShrink: 0 }}>
+                                {item.tasks.length}
                             </Typography>
-                        </Box>
+                            <Box sx={{ flex: 1, minWidth: 0 }} />
+                        </>
                     )}
                     {onGroupSelection && (
                         <IconButton
@@ -359,7 +365,7 @@ export const TaskPageSection = React.memo(function TaskPageSection({
                             <Fade in={addingGroupId === item.group.groupId} timeout={150}>
                                 <GroupTaskInputRow
                                     key={`${item.group.groupId}:${groupTaskInputGeneration}`}
-                                    groupName={item.group.name}
+                                    contextName={item.group.name}
                                     animate
                                     onSubmit={taskToCreate => {
                                         onCreateTaskInGroup?.(item.group, taskToCreate);

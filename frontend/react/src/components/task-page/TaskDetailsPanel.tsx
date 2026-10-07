@@ -12,26 +12,22 @@ import {
     TextField,
     Typography,
 } from '@mui/material';
-import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
-import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded';
-import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
-import { Project } from '../../types/Project';
 import { Task } from '../../types/Task.tsx';
 import { TaskToCreate } from '../../types/TaskToCreate.tsx';
 import { TaskSeries } from '../../types/TaskSeries';
 import { defaultTaskRecurrence, TaskRecurrenceDraft } from '../../types/TaskRecurrence';
 import { TaskPomodoroStats } from '../../types/TaskPomodoroStats';
 import { taskService } from '../../services/api';
-import { projectService } from '../../services/api/projectService';
 import { AppDateField } from '../input/AppPickerFields';
 import { TaskRecurrenceCustomOptions, TaskRecurrencePicker } from '../task/TaskRecurrencePicker';
 import { TaskReminderPicker } from '../task/TaskReminderPicker';
+import { SubtaskNameField } from '../task/SubtaskNameField';
 import { playAudioFeedback } from '../../services/audioFeedback';
 import {
     getStaleTaskPomodoroStats,
@@ -87,17 +83,6 @@ type SubtaskContextMenuState = {
     left: number;
 };
 
-type ProjectsState = {
-    projects: Project[];
-    loading: boolean;
-    error: boolean;
-};
-
-type ProjectSelection = {
-    taskId: string;
-    projectId: string | null;
-};
-
 const PRIORITY_OPTIONS = [
     { label: 'Low', value: 3, color: '#1976d2' },
     { label: 'Medium', value: 6, color: '#eab308' },
@@ -105,7 +90,6 @@ const PRIORITY_OPTIONS = [
 ];
 
 const EMPTY_SUBTASKS: Task[] = [];
-const EMPTY_PROJECTS: Project[] = [];
 const TASK_NAME_SCALE_START = 48;
 const TASK_NAME_SCALE_END = 240;
 
@@ -411,75 +395,28 @@ const SubtaskList = React.memo(function SubtaskList({
                                 cursor: 'text',
                             }}
                         >
-                            <Box sx={{ position: 'relative' }}>
-                                <Typography
-                                    component="span"
-                                    sx={{
-                                        display: 'block',
-                                        fontSize: '0.875rem',
-                                        textAlign: 'left',
-                                        whiteSpace: 'pre-wrap',
-                                        lineHeight: 1.45,
-                                        maxHeight: '4.35em',
-                                        overflowY: 'auto',
-                                        overflowX: 'hidden',
-                                        color: subtask.completed ? 'text.disabled' : 'text.primary',
-                                        textDecoration: subtask.completed ? 'line-through' : 'none',
-                                        visibility: isEditing ? 'hidden' : 'visible',
-                                    }}
-                                >
-                                    {subtask.name}
-                                </Typography>
-                                {isEditing && (
-                                    <TextField
-                                        value={localSubtaskName}
-                                        inputRef={subtaskNameInputRef}
-                                        autoComplete="off"
-                                        autoFocus
-                                        fullWidth
-                                        multiline
-                                        minRows={1}
-                                        maxRows={3}
-                                        variant="standard"
-                                        onClick={event => event.stopPropagation()}
-                                        onDoubleClick={event => event.stopPropagation()}
-                                        onChange={event => setLocalSubtaskName(event.target.value)}
-                                        onBlur={() => void commitName(subtask)}
-                                        onKeyDown={event => {
-                                            if (event.key === 'Enter' && !event.shiftKey) {
-                                                event.preventDefault();
-                                                void commitName(subtask);
-                                            }
-                                            if (event.key === 'Escape') {
-                                                event.preventDefault();
-                                                cancelNameEdit(subtask);
-                                            }
-                                        }}
-                                        InputProps={{ disableUnderline: true }}
-                                        sx={{
-                                            position: 'absolute',
-                                            inset: 0,
-                                            '& .MuiInputBase-root': { height: '100%', padding: 0 },
-                                            '& .MuiInputBase-input': {
-                                                color: subtask.completed ? 'text.disabled' : 'text.primary',
-                                                textDecoration: subtask.completed ? 'line-through' : 'none',
-                                                fontSize: '0.875rem',
-                                                lineHeight: 1.45,
-                                                whiteSpace: 'pre-wrap',
-                                                overflowWrap: 'anywhere',
-                                                wordBreak: 'break-word',
-                                                textAlign: 'left',
-                                                padding: 0,
-                                            },
-                                        }}
-                                        inputProps={{
-                                            draggable: false,
-                                            'data-subtask-name-input': 'true',
-                                            'aria-label': `Edit subtask ${subtask.name}`,
-                                        }}
-                                    />
-                                )}
-                            </Box>
+                            <SubtaskNameField
+                                value={isEditing ? localSubtaskName : subtask.name}
+                                completed={subtask.completed}
+                                readOnly={!isEditing}
+                                inputRef={isEditing ? subtaskNameInputRef : undefined}
+                                onChange={event => setLocalSubtaskName(event.target.value)}
+                                onBlur={() => {
+                                    if (isEditing) void commitName(subtask);
+                                }}
+                                onKeyDown={event => {
+                                    if (!isEditing) return;
+                                    if (event.key === 'Enter' && !event.shiftKey) {
+                                        event.preventDefault();
+                                        void commitName(subtask);
+                                    }
+                                    if (event.key === 'Escape') {
+                                        event.preventDefault();
+                                        cancelNameEdit(subtask);
+                                    }
+                                }}
+                                ariaLabel={`Edit subtask ${subtask.name}`}
+                            />
                         </Box>
                     </Box>
                 );
@@ -538,19 +475,11 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
     );
     const [recurrenceError, setRecurrenceError] = useState<string | null>(null);
     const [subtaskError, setSubtaskError] = useState<string | null>(null);
-    const [projectsState, setProjectsState] = useState<ProjectsState>(() => {
-        const cachedProjects = projectService.getCachedProjects();
-        return {
-            projects: cachedProjects ?? EMPTY_PROJECTS,
-            loading: !cachedProjects,
-            error: false,
-        };
-    });
-    const [projectMenuAnchorEl, setProjectMenuAnchorEl] = useState<HTMLElement | null>(null);
-    const [projectSelection, setProjectSelection] = useState<ProjectSelection | null>(null);
-    const projectLoadRequestRef = useRef(0);
-    const projectSelectionRequestRef = useRef(0);
-    const projectMutationRef = useRef<Promise<void>>(Promise.resolve());
+    const [priorityError, setPriorityError] = useState<string | null>(null);
+    const [priorityScopeRequest, setPriorityScopeRequest] = useState<{
+        anchorEl: HTMLElement;
+        importance: number;
+    } | null>(null);
     const recurrenceDraftRef = useRef<TaskRecurrenceDraft>(
         recurrenceDraftFromSeries(initialTaskDetails?.taskSeries),
     );
@@ -558,6 +487,11 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
     const recurrenceMutationRef = useRef<Promise<void>>(Promise.resolve());
     const recurrenceRequestIdRef = useRef(0);
     const subtaskNameRequestIdsRef = useRef(new Map<string, number>());
+
+    useEffect(() => {
+        setPriorityError(null);
+        setPriorityScopeRequest(null);
+    }, [task.taskId]);
     const [localTaskName, setLocalTaskName] = useState(task.name ?? '');
     const [editingTaskName, setEditingTaskName] = useState(false);
     const taskNameInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
@@ -579,47 +513,6 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
         input.setSelectionRange(input.value.length, input.value.length);
     }, [editingTaskName]);
 
-    const refreshProjects = useCallback(() => {
-        const requestId = projectLoadRequestRef.current + 1;
-        projectLoadRequestRef.current = requestId;
-
-        const cachedProjects = projectService.getCachedProjects();
-        if (cachedProjects) {
-            setProjectsState(previous => (
-                previous.projects === cachedProjects && !previous.loading && !previous.error
-                    ? previous
-                    : { projects: cachedProjects, loading: false, error: false }
-            ));
-        } else {
-            setProjectsState(previous => (
-                previous.projects.length === 0 && !previous.loading
-                    ? { ...previous, loading: true }
-                    : previous
-            ));
-        }
-
-        void projectService.getProjects()
-            .then(projects => {
-                if (projectLoadRequestRef.current !== requestId) return;
-                setProjectsState({ projects, loading: false, error: false });
-            })
-            .catch(error => {
-                if (projectLoadRequestRef.current !== requestId) return;
-                setProjectsState(previous => ({ ...previous, loading: false, error: true }));
-                console.error('Error fetching projects for task details:', error);
-            });
-    }, []);
-
-    useEffect(() => {
-        refreshProjects();
-        return () => {
-            projectLoadRequestRef.current += 1;
-        };
-    }, [refreshProjects]);
-
-    useEffect(() => {
-        setProjectSelection(null);
-    }, [task.taskId]);
     const [subtaskState, setSubtaskState] = useState<SubtaskState>({
         taskId: task.taskId,
         items: sortSubtasks(initialTaskDetails?.subtasks ?? EMPTY_SUBTASKS),
@@ -812,17 +705,6 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
     }, [task.taskId, task.scheduledPerformDateTime]);
     const displayedSubtasks = visibleSubtaskState.items;
     const displayedPomodoroStats = visiblePomodoroStatsState.stats;
-    const effectiveProjectId = projectSelection?.taskId === task.taskId
-        ? projectSelection.projectId
-        : task.projectId ?? null;
-    const effectiveProject = effectiveProjectId
-        ? projectsState.projects.find(project => project.projectId === effectiveProjectId) ?? null
-        : null;
-    const projectLabel = effectiveProjectId === null
-        ? 'No project'
-        : effectiveProject?.name
-            ?? (projectsState.loading ? 'Loading project…' : 'Project unavailable');
-
     useLayoutEffect(() => {
         if (!revealSubtaskComposerRef.current || !subtaskComposerRef.current) return;
 
@@ -834,37 +716,37 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
         option => option.label === getPriorityLabel(task.importance),
     )?.color ?? PRIORITY_OPTIONS[0].color;
 
-    const openProjectMenu = (event: React.MouseEvent<HTMLElement>) => {
-        setProjectMenuAnchorEl(event.currentTarget);
-        refreshProjects();
+    const handlePriorityChipClick = (event: React.MouseEvent<HTMLElement>, importance: number) => {
+        event.stopPropagation();
+        setPriorityError(null);
+        if (task.taskSeriesId) {
+            setPriorityScopeRequest({ anchorEl: event.currentTarget, importance });
+            return;
+        }
+        void onUpdate(task.taskId, { importance });
     };
 
-    const closeProjectMenu = () => {
-        setProjectMenuAnchorEl(null);
-    };
+    const applyPriorityScope = async (scope: 'occurrence' | 'series') => {
+        const request = priorityScopeRequest;
+        setPriorityScopeRequest(null);
+        if (!request) return;
+        if (scope === 'occurrence' || !task.taskSeriesId) {
+            void onUpdate(task.taskId, { importance: request.importance });
+            return;
+        }
 
-    const selectProject = (projectId: string | null) => {
-        closeProjectMenu();
-        if (projectId === effectiveProjectId) return;
-
-        const requestId = projectSelectionRequestRef.current + 1;
-        projectSelectionRequestRef.current = requestId;
-        setProjectSelection({ taskId: task.taskId, projectId });
-        // Serialize patches so an older failure cannot roll back a newer selection.
-        projectMutationRef.current = projectMutationRef.current
-            .catch(() => undefined)
-            .then(() => onUpdate(task.taskId, { projectId }))
-            .catch(error => {
-                console.error('Error updating task project:', error);
-            })
-            .finally(() => {
-                if (projectSelectionRequestRef.current !== requestId) return;
-                setProjectSelection(current => (
-                    current?.taskId === task.taskId && current.projectId === projectId
-                        ? null
-                        : current
-                ));
-            });
+        setPriorityError(null);
+        try {
+            const updatedSeries = await taskService.updateTaskSeriesImportance(
+                task.taskSeriesId,
+                request.importance,
+            );
+            taskSeriesRef.current = updatedSeries;
+            await onRefreshTasks?.();
+        } catch (error) {
+            console.error('Error updating priority for all task occurrences:', error);
+            setPriorityError('Could not update priority for all occurrences.');
+        }
     };
 
     const handleDescriptionBlur = () => {
@@ -1242,7 +1124,7 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
                                         data-task-details-first-focus={option === PRIORITY_OPTIONS[0] ? 'true' : undefined}
                                         label={option.label}
                                         size="small"
-                                        onClick={() => void onUpdate(task.taskId, { importance: option.value })}
+                                        onClick={event => handlePriorityChipClick(event, option.value)}
                                         sx={{
                                             border: `1px solid ${option.color}`,
                                             color: selected ? '#fff' : option.color,
@@ -1254,6 +1136,11 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
                                 );
                             })}
                         </Box>
+                        {priorityError && (
+                            <Typography variant="caption" color="error" sx={{ display: 'block', mt: 0.75 }}>
+                                {priorityError}
+                            </Typography>
+                        )}
                     </Box>
 
                     <LocalizationProvider dateAdapter={AdapterDateFns}>
@@ -1344,6 +1231,7 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
                             )}
                             <TaskReminderPicker
                                 value={task.reminderMinutesBefore}
+                                scheduledAt={scheduledPerformDateTime}
                                 disabled={!scheduledPerformDateTime}
                                 onChange={reminderMinutesBefore => void onUpdate(task.taskId, { reminderMinutesBefore })}
                             />
@@ -1378,76 +1266,6 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
                             </Typography>
                         </Box>
                     )}
-
-                    <Box>
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-                            Project
-                        </Typography>
-                        <Chip
-                            icon={<FolderOpenRoundedIcon />}
-                            label={projectLabel}
-                            size="small"
-                            variant="outlined"
-                            clickable
-                            onClick={openProjectMenu}
-                            aria-haspopup="menu"
-                            aria-expanded={projectMenuAnchorEl !== null}
-                            sx={{
-                                maxWidth: '100%',
-                                '& .MuiChip-icon': { color: 'text.secondary' },
-                            }}
-                        />
-                        <Menu
-                            open={projectMenuAnchorEl !== null}
-                            anchorEl={projectMenuAnchorEl}
-                            onClose={closeProjectMenu}
-                            MenuListProps={{
-                                dense: true,
-                                onClick: event => event.stopPropagation(),
-                            }}
-                            slotProps={{
-                                paper: { sx: { minWidth: 216, maxWidth: 300 } },
-                            }}
-                        >
-                            <MenuItem
-                                selected={effectiveProjectId === null}
-                                onClick={() => selectProject(null)}
-                            >
-                                <ListItemIcon sx={{ minWidth: 30 }}>
-                                    {effectiveProjectId === null && <CheckRoundedIcon fontSize="small" />}
-                                </ListItemIcon>
-                                <ListItemText>No project</ListItemText>
-                            </MenuItem>
-                            {projectsState.projects.map(project => (
-                                <MenuItem
-                                    key={project.projectId}
-                                    selected={effectiveProjectId === project.projectId}
-                                    onClick={() => selectProject(project.projectId)}
-                                >
-                                    <ListItemIcon sx={{ minWidth: 30 }}>
-                                        {effectiveProjectId === project.projectId
-                                            && <CheckRoundedIcon fontSize="small" />}
-                                    </ListItemIcon>
-                                    <ListItemText slotProps={{ primary: { noWrap: true } }}>
-                                        {project.name}
-                                    </ListItemText>
-                                </MenuItem>
-                            ))}
-                            {projectsState.loading && projectsState.projects.length === 0 && (
-                                <MenuItem disabled>
-                                    <ListItemText>Loading projects…</ListItemText>
-                                </MenuItem>
-                            )}
-                            {projectsState.error && (
-                                <MenuItem onClick={refreshProjects}>
-                                    <ListItemIcon sx={{ minWidth: 30 }}>
-                                        <RefreshRoundedIcon fontSize="small" />
-                                    </ListItemIcon>
-                                    <ListItemText>Retry loading projects</ListItemText>
-                                </MenuItem>
-                            )}
-                        </Menu>
-                    </Box>
 
                     <Box sx={{ pt: 2.5, borderTop: '1px solid', borderColor: 'divider' }}>
                         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
@@ -1539,6 +1357,19 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
 
                 </Box>
             </Box>
+            <Menu
+                open={priorityScopeRequest !== null}
+                anchorEl={priorityScopeRequest?.anchorEl}
+                onClose={() => setPriorityScopeRequest(null)}
+                MenuListProps={{ dense: true, onClick: event => event.stopPropagation() }}
+            >
+                <MenuItem onClick={() => void applyPriorityScope('occurrence')}>
+                    This occurrence
+                </MenuItem>
+                <MenuItem onClick={() => void applyPriorityScope('series')}>
+                    All occurrences
+                </MenuItem>
+            </Menu>
         </Box>
     );
 });

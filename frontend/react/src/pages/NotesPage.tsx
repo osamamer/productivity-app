@@ -1,5 +1,12 @@
+import { CompactPopover } from '../components/CompactPopover';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Box, Button, CircularProgress, ClickAwayListener, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Divider, ListItemIcon, ListItemText, Menu, MenuItem, Popover, Snackbar, Typography } from '@mui/material';
+import {
+    Alert, Box, Button, CircularProgress,
+    ClickAwayListener, DialogActions, DialogContent, DialogContentText,
+    DialogTitle, Divider, ListItemIcon, ListItemText,
+    Menu, MenuItem, Popover, Snackbar,
+    Typography,
+} from '@mui/material';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import EditNoteRoundedIcon from '@mui/icons-material/EditNoteRounded';
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
@@ -59,6 +66,7 @@ export function NotesPage() {
     const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
     const [editingCategory, setEditingCategory] = useState<NoteCategory | null>(null);
     const [categoryToDelete, setCategoryToDelete] = useState<NoteCategory | null>(null);
+    const [categoryDeleteAnchorPosition, setCategoryDeleteAnchorPosition] = useState<{ top: number; left: number } | null>(null);
     const [noteDeleteTarget, setNoteDeleteTarget] = useState<Note | null>(null);
     const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
     const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
@@ -402,7 +410,10 @@ export function NotesPage() {
                             setEditingCategory(category);
                             setCategoryDialogOpen(true);
                         }}
-                        onDeleteCategory={setCategoryToDelete}
+                        onDeleteCategory={(category, anchorPosition) => {
+                            setCategoryToDelete(category);
+                            setCategoryDeleteAnchorPosition(anchorPosition ?? null);
+                        }}
                     />}
                     {!focusMode && <ClickAwayListener onClickAway={handleNotesListClickAway}>
                         <Box sx={{ display: 'contents' }}>
@@ -600,7 +611,11 @@ export function NotesPage() {
                 )}
             </Popover>
 
-            <Dialog open={bulkDeleteDialogOpen} onClose={() => setBulkDeleteDialogOpen(false)}>
+            <CompactPopover
+                open={bulkDeleteDialogOpen}
+                onClose={() => setBulkDeleteDialogOpen(false)}
+                compactConfirmation
+            >
                 <DialogTitle>Delete {selectedNoteIds.length} notes?</DialogTitle>
                 <DialogContent>
                     <DialogContentText>This cannot be undone.</DialogContentText>
@@ -611,9 +626,15 @@ export function NotesPage() {
                         Delete notes
                     </Button>
                 </DialogActions>
-            </Dialog>
+            </CompactPopover>
 
-            <Dialog open={Boolean(categoryToDelete)} onClose={() => setCategoryToDelete(null)}>
+            <CompactPopover
+                open={Boolean(categoryToDelete)}
+                onClose={() => setCategoryToDelete(null)}
+                anchorPosition={categoryDeleteAnchorPosition ?? undefined}
+                maxWidth="xs"
+                compactConfirmation
+            >
                 <DialogTitle>Delete “{categoryToDelete?.name}”?</DialogTitle>
                 <DialogContent>
                     <DialogContentText>
@@ -635,7 +656,7 @@ export function NotesPage() {
                         Delete category
                     </Button>
                 </DialogActions>
-            </Dialog>
+            </CompactPopover>
 
             <Snackbar open={Boolean(operationError)} autoHideDuration={5000} onClose={clearOperationError}>
                 <Alert severity="error" onClose={clearOperationError} variant="filled">

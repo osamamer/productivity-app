@@ -1,5 +1,10 @@
+import { CompactPopover } from '../CompactPopover';
 import { useEffect, useState } from 'react';
-import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, TextField, Typography } from '@mui/material';
+import {
+    Alert, Box, Button, CircularProgress,
+    DialogActions, DialogContent, DialogTitle, TextField,
+    Typography,
+} from '@mui/material';
 import { NoteCategory } from '../../types/Note.ts';
 
 const CATEGORY_COLORS = ['#8B7CF6', '#2BAE9B', '#E5A83B', '#E56B6F', '#4D91E3', '#D66BC1', '#7D9B48'];
@@ -38,7 +43,7 @@ export function CategoryDialog({ open, category, onClose, onSave }: CategoryDial
     }
 
     return (
-        <Dialog open={open} onClose={onClose} fullWidth maxWidth="xs">
+        <CompactPopover open={open} onClose={onClose} fullWidth maxWidth="xs">
             <DialogTitle>{category ? 'Edit category' : 'New category'}</DialogTitle>
             <DialogContent>
                 <TextField
@@ -86,6 +91,6 @@ export function CategoryDialog({ open, category, onClose, onSave }: CategoryDial
                     {saving ? <CircularProgress size={18} color="inherit" /> : category ? 'Save' : 'Create'}
                 </Button>
             </DialogActions>
-        </Dialog>
+        </CompactPopover>
     );
 }

@@ -158,7 +158,7 @@ public class DayOverviewService {
     private boolean isTaskPartOfDay(Task task, LocalDate date, DayWindow window, LocalDate today) {
         if (date.isBefore(today)) {
             return task.isCompleted()
-                    ? isOnDate(task.getCompletionDateTime(), date)
+                    ? isWithin(task.getCompletionDateTime(), window)
                     : isOnDate(task.getScheduledPerformDateTime(), date);
         }
         if (date.isAfter(today)) {
@@ -168,9 +168,7 @@ public class DayOverviewService {
         LocalDateTime activityTime = task.getCompletionDateTime() != null
                 ? task.getCompletionDateTime()
                 : task.getScheduledPerformDateTime();
-        return activityTime != null
-                && date.equals(activityTime.toLocalDate())
-                && isWithin(activityTime, window);
+        return isWithin(activityTime, window);
     }
 
     private boolean isOnDate(LocalDateTime time, LocalDate date) {

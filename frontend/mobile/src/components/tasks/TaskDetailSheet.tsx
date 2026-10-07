@@ -7,7 +7,7 @@ import { TASK_PRIORITY_OPTIONS, taskPriorityValue } from '@/lib/taskPriority';
 import { useAppPopup } from '@/providers/PopupProvider';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
-import type { Project, Task, TaskRecurrenceFrequency, TaskSeries } from '@/types/models';
+import type { Calendar, Project, Task, TaskRecurrenceFrequency, TaskSeries } from '@/types/models';
 import { AppButton } from '../ui/AppButton';
 import { AppInput } from '../ui/AppInput';
 import { AppPopup } from '../ui/AppPopup';
@@ -17,8 +17,9 @@ import { ModalSheet } from '../ui/ModalSheet';
 import { SilentPressable } from '../ui/SilentPressable';
 import { TaskScheduleField } from './TaskScheduleField';
 import { TaskReminderField } from './TaskReminderField';
+import { CalendarDestinationField } from '../calendar/CalendarControls';
 
-export function TaskDetailSheet({ task, onClose, onUpdated, onStartFocus, onDeleted, onDeletedOccurrence, onSubtaskCreated }: {
+export function TaskDetailSheet({ task, onClose, onUpdated, onStartFocus, onDeleted, onDeletedOccurrence, onSubtaskCreated, availableCalendars }: {
   task: Task | null;
   onClose: () => void;
   onUpdated: (task: Task) => void;
@@ -26,6 +27,7 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onStartFocus, onDele
   onDeleted: (taskId: string) => void;
   onDeletedOccurrence?: (taskId: string) => Promise<void>;
   onSubtaskCreated?: (task: Task) => void;
+  availableCalendars?: Calendar[];
 }) {
   const { confirm, showError } = useAppPopup();
   const { colors } = useAppTheme();
@@ -33,7 +35,11 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onStartFocus, onDele
   const [scheduledPerformDateTime, setScheduledPerformDateTime] = useState(task?.scheduledPerformDateTime ?? '');
   const [reminderMinutesBefore, setReminderMinutesBefore] = useState<number | null>(task?.reminderMinutesBefore ?? null);
   const [importance, setImportance] = useState(taskPriorityValue(task?.importance ?? 0));
+  const [priorityScopeOpen, setPriorityScopeOpen] = useState(false);
+  const [priorityScope, setPriorityScope] = useState<'occurrence' | 'series' | null>(null);
+  const [pendingImportance, setPendingImportance] = useState<number | null>(null);
   const [completed, setCompleted] = useState(task?.completed ?? false);
+  const [calendarId, setCalendarId] = useState(task?.calendarId ?? '');
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -144,23 +150,48 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onStartFocus, onDele
 
   async function save() {
     if (!task || !name.trim()) return;
+    const updatePriorityForSeries = priorityScope === 'series' && Boolean(task.taskSeriesId);
     setSaving(true);
     setError(null);
     try {
       const updated = await api.tasks.update(task.taskId, {
         name: name.trim(),
         scheduledPerformDateTime,
-        importance,
+        importance: updatePriorityForSeries ? task.importance : importance,
         completed,
         reminderMinutesBefore,
+        ...(availableCalendars?.length && calendarId ? { calendarId } : {}),
       });
-      onUpdated(updated);
+      if (updatePriorityForSeries && task.taskSeriesId) {
+        await api.tasks.updateRecurrenceImportance(task.taskSeriesId, importance);
+        onUpdated({ ...updated, importance });
+      } else {
+        onUpdated(updated);
+      }
       onClose();
     } catch (cause) {
       setError(reportError('Could not save task', cause));
     } finally {
       setSaving(false);
     }
+  }
+
+  function handlePriorityChange(nextImportance: number) {
+    if (!task?.taskSeriesId) {
+      setImportance(nextImportance);
+      setPriorityScope('occurrence');
+      return;
+    }
+    setPendingImportance(nextImportance);
+    setPriorityScopeOpen(true);
+  }
+
+  function choosePriorityScope(scope: 'occurrence' | 'series') {
+    if (pendingImportance === null) return;
+    setImportance(pendingImportance);
+    setPendingImportance(null);
+    setPriorityScope(scope);
+    setPriorityScopeOpen(false);
   }
 
   async function submitSubtask() {
@@ -330,6 +361,7 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onStartFocus, onDele
       title="Task details"
       footer={<AppButton label="Save changes" loading={saving} onPress={() => void save()} />}>
       <AppInput ref={taskNameInputRef} label="Task" value={name} onChangeText={setName} autoFocus />
+      {availableCalendars && <CalendarDestinationField calendars={availableCalendars} value={calendarId} onChange={setCalendarId} />}
       {!task?.parentId && (
         <View style={styles.subtasks}>
           <View style={styles.subtasksHeading}>
@@ -409,12 +441,36 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onStartFocus, onDele
         </SilentPressable>
       </View>
       <AppText variant="label">Priority</AppText>
-      <ChoiceChips value={importance} onChange={setImportance} options={[...TASK_PRIORITY_OPTIONS]} />
+      <ChoiceChips value={importance} onChange={handlePriorityChange} options={[...TASK_PRIORITY_OPTIONS]} />
       {error && <AppText color="danger">{error}</AppText>}
       <View style={styles.actions}>
         {onStartFocus && task && <AppButton label="Focus options" icon="timer-outline" variant="secondary" onPress={() => { onClose(); onStartFocus(task); }} style={styles.grow} />}
         <AppButton label="Delete" icon="trash-outline" variant="danger" onPress={requestDelete} disabled={deleting} style={styles.grow} />
       </View>
+      <AppPopup
+        visible={priorityScopeOpen}
+        showIcon={false}
+        title="Change priority?"
+        message="Choose whether to change this occurrence or every occurrence in its series."
+        onClose={() => {
+          setPriorityScopeOpen(false);
+          setPendingImportance(null);
+        }}
+        dismissOnBackdrop={false}
+        footer={(
+          <View style={styles.deleteChoices}>
+            <AppButton
+              style={styles.deleteChoice}
+              label="This occurrence"
+              variant="secondary"
+              onPress={() => choosePriorityScope('occurrence')} />
+            <AppButton
+              style={styles.deleteChoice}
+              label="All occurrences"
+              variant="secondary"
+              onPress={() => choosePriorityScope('series')} />
+          </View>
+        )} />
       <AppPopup
         visible={deletePromptOpen}
         showIcon={false}

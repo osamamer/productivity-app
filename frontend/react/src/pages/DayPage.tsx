@@ -81,17 +81,12 @@ function dayViewMode(date: string): DayViewMode {
     return 'today';
 }
 
-function isOnCalendarDate(value: string | null | undefined, date: string): boolean {
-    if (!value) return false;
-    const parsed = parseISO(value);
-    return isValid(parsed) && format(parsed, 'yyyy-MM-dd') === date;
-}
-
-function taskCompletionTime(task: DayTask, date: string): Date | null {
-    if (!task.completed || !isOnCalendarDate(task.completedAt, date)) return null;
-
-    const completionTime = parseISO(task.completedAt!);
-    return isValid(completionTime) ? completionTime : null;
+function taskCompletionTime(task: DayTask, dayStart: Date, dayEnd: Date): Date | null {
+    if (!task.completed || !task.completedAt) return null;
+    const completionTime = parseISO(task.completedAt);
+    return isValid(completionTime) && completionTime >= dayStart && completionTime < dayEnd
+        ? completionTime
+        : null;
 }
 
 function buildTimeline(overview: DayOverview, mode: DayViewMode): TimelineItem[] {
@@ -100,7 +95,7 @@ function buildTimeline(overview: DayOverview, mode: DayViewMode): TimelineItem[]
     const calendarDayStart = parseISO(`${overview.date}T00:00:00`);
     const calendarDayEnd = addDays(calendarDayStart, 1);
     const items: TimelineItem[] = overview.tasks.flatMap(task => {
-        const completionTime = taskCompletionTime(task, overview.date);
+        const completionTime = taskCompletionTime(task, dayStart, dayEnd);
         if (!completionTime) return [];
 
         return [{
@@ -179,8 +174,7 @@ function buildTimeline(overview: DayOverview, mode: DayViewMode): TimelineItem[]
                 }
                 const start = parseISO(occurrence.start);
                 const end = parseISO(occurrence.end);
-                return start < dayEnd && end > dayStart
-                    && start < calendarDayEnd && end > calendarDayStart;
+                return start < dayEnd && end > dayStart;
             })
             .forEach(occurrence => {
                 const rawStart = occurrence.allDay ? dayStart : parseISO(occurrence.start);
@@ -223,8 +217,7 @@ function buildTimeline(overview: DayOverview, mode: DayViewMode): TimelineItem[]
     });
 
     return items
-        .filter(item => (mode === 'past' && item.kind === 'task')
-            || (isValid(item.start) && item.start >= dayStart && item.start < dayEnd))
+        .filter(item => isValid(item.start) && item.start >= dayStart && item.start < dayEnd)
         .sort((first, second) => {
             return first.start.getTime() - second.start.getTime();
         });

@@ -12,6 +12,7 @@ import {
 import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded';
 import { Project } from '../../types/Project';
 import { projectProgressPercent } from './projectsPresentation';
+import { ProjectIdentityIcon, projectAccent } from './projectAppearance';
 
 interface ProjectListProps {
     projects: Project[];
@@ -44,18 +45,23 @@ const ProjectRow = memo(function ProjectRow({
                 event.preventDefault();
                 onOpenMenu(project, event.currentTarget);
             }}
-            sx={theme => ({
-                display: 'block',
-                px: 2,
-                py: 1.25,
-                borderBottom: isLast ? 0 : 1,
-                borderColor: 'divider',
-                borderLeft: `3px solid ${isSelected ? theme.palette.primary.main : 'transparent'}`,
-                '&.Mui-selected': { bgcolor: alpha(theme.palette.primary.main, 0.08) },
-                '&.Mui-selected:hover': { bgcolor: alpha(theme.palette.primary.main, 0.12) },
-            })}
+            sx={theme => {
+                const accent = projectAccent(theme, project.color);
+                return {
+                    display: 'block',
+                    px: 2,
+                    py: 1.25,
+                    borderBottom: isLast ? 0 : 1,
+                    borderColor: 'divider',
+                    borderLeft: `3px solid ${isSelected ? accent : 'transparent'}`,
+                    textAlign: 'left',
+                    '&.Mui-selected': { bgcolor: alpha(accent, 0.08) },
+                    '&.Mui-selected:hover': { bgcolor: alpha(accent, 0.12) },
+                };
+            }}
         >
-            <Stack direction="row" alignItems="flex-start" spacing={1}>
+            <Stack direction="row" alignItems="flex-start" spacing={1.25}>
+                <ProjectIdentityIcon color={project.color} icon={project.icon} size={34} />
                 <Box sx={{ minWidth: 0, flex: 1 }}>
                     <Typography variant="subtitle2" fontWeight={700} noWrap>
                         {project.name}
@@ -70,7 +76,13 @@ const ProjectRow = memo(function ProjectRow({
                             variant="determinate"
                             value={projectProgressPercent(project)}
                             aria-label={`${project.completedTaskCount} of ${project.taskCount} tasks completed`}
-                            sx={{ flex: 1, height: 4, borderRadius: 2, bgcolor: 'action.hover' }}
+                            sx={theme => ({
+                                flex: 1,
+                                height: 4,
+                                borderRadius: 2,
+                                bgcolor: 'action.hover',
+                                '& .MuiLinearProgress-bar': { bgcolor: projectAccent(theme, project.color) },
+                            })}
                         />
                         <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
                             {project.completedTaskCount}/{project.taskCount}

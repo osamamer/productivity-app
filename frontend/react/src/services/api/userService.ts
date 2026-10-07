@@ -7,6 +7,7 @@ import {
     clearLegacyUserPreferences,
     readLegacyUserPreferenceUpdates,
 } from '../userPreferenceStore';
+import { PendingPreferenceUpdates } from './pendingPreferenceUpdates';
 
 const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:8080'}/api/v1`;
 
@@ -41,6 +42,7 @@ export interface UserPreferences {
 const USER_PREFERENCES_TTL_MS = 5 * 60 * 1000;
 const preferencesCache = new CachedResource<UserPreferences>({ ttlMs: USER_PREFERENCES_TTL_MS, maxEntries: 4 });
 const preferenceUpdateQueues = new Map<string, Promise<unknown>>();
+const pendingPreferenceUpdates = new PendingPreferenceUpdates<UserPreferences>();
 let preferenceCacheGeneration = 0;
 let preferenceMutationVersion = 0;
 
@@ -154,7 +156,9 @@ export const userService = {
     async updatePreferences(preferences: Partial<UserPreferences>): Promise<UserPreferences> {
         const cacheKey = preferencesCacheKey();
         const scope = getAuthCacheScope();
-        preferenceMutationVersion += 1;
+        const mutationVersion = ++preferenceMutationVersion;
+        pendingPreferenceUpdates.record(cacheKey, mutationVersion, preferences);
+
         const previousUpdate = preferenceUpdateQueues.get(cacheKey) ?? Promise.resolve();
         const generation = preferenceCacheGeneration;
         const request = previousUpdate
@@ -165,14 +169,29 @@ export const userService = {
                     preferencesCache.set(cacheKey, response.data);
                 }
                 if (getAuthCacheScope() === scope) {
-                    applyUserPreferences(scope, response.data);
+                    applyUserPreferences(
+                        scope,
+                        pendingPreferenceUpdates.mergeNewer(cacheKey, response.data, mutationVersion),
+                    );
                 }
+                pendingPreferenceUpdates.removeThrough(cacheKey, mutationVersion);
                 return response.data;
             });
 
         preferenceUpdateQueues.set(cacheKey, request);
         try {
             return await request;
+        } catch (error) {
+            pendingPreferenceUpdates.removeThrough(cacheKey, mutationVersion);
+            const savedPreferences = preferencesCache.getCached(cacheKey)
+                ?? preferencesCache.getStale(cacheKey);
+            if (savedPreferences && getAuthCacheScope() === scope) {
+                applyUserPreferences(
+                    scope,
+                    pendingPreferenceUpdates.mergeNewer(cacheKey, savedPreferences, 0),
+                );
+            }
+            throw error;
         } finally {
             if (preferenceUpdateQueues.get(cacheKey) === request) {
                 preferenceUpdateQueues.delete(cacheKey);
@@ -184,5 +203,6 @@ export const userService = {
         preferenceCacheGeneration += 1;
         preferencesCache.clear();
         preferenceUpdateQueues.clear();
+        pendingPreferenceUpdates.clear();
     },
 };

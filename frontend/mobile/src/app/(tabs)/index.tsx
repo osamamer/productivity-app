@@ -290,7 +290,12 @@ export default function TodayScreen() {
     reorderTasks,
     replaceGroupTasks,
   } = useTaskWorkspace();
-  const { showCompletedTasks } = usePreferences();
+  const {
+    showCompletedTasks,
+    showTodaySnapshot,
+    showTodayEvents,
+    homeDisplayPreferencesReady,
+  } = usePreferences();
   const [composerOpen, setComposerOpen] = useState(false);
   const [selected, setSelected] = useState<Task | null>(null);
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
@@ -717,46 +722,48 @@ export default function TodayScreen() {
           onDismiss={clearSelection}
         />
       )}>
-      {resource.loading && <LoadingView label="Gathering your day…" />}
-      {resource.error && !resource.data && <ErrorView message={resource.error} retry={() => void resource.reload()} />}
-      {resource.data && (
+      {(resource.loading || !homeDisplayPreferencesReady) && <LoadingView label="Gathering your day…" />}
+      {homeDisplayPreferencesReady && resource.error && !resource.data && <ErrorView message={resource.error} retry={() => void resource.reload()} />}
+      {homeDisplayPreferencesReady && resource.data && (
         <>
-          <TodaySnapshotCard snapshot={snapshotResource.data} />
+          {showTodaySnapshot && <TodaySnapshotCard snapshot={snapshotResource.data} />}
 
-          <Card style={styles.eventsCard}>
-            <View style={styles.spaceBetween}>
-              <AppText variant="heading">Today’s events</AppText>
-              <AppButton compact variant="ghost" label="Calendar" icon="calendar-outline" onPress={() => router.push('/calendar')} />
-            </View>
-            {eventsResource.loading && !eventsResource.data ? (
-              <AppText color="muted">Loading events…</AppText>
-            ) : eventsResource.error && !eventsResource.data ? (
-              <AppText color="danger">Events are unavailable right now.</AppText>
-            ) : todayEvents.length === 0 ? (
-              <AppText color="muted">No events scheduled for today.</AppText>
-            ) : (
-              <View style={styles.eventsList}>
-                {todayEvents.map(({ event, occurrence }) => (
-                  <SilentPressable
-                    key={`${event.id}-${occurrence.occurrenceKey}`}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${event.title}, ${occurrence.allDay ? 'all day' : formatCalendarTime(occurrence.start, event.timeZone)}`}
-                    onPress={() => router.push('/calendar')}
-                    style={({ pressed }) => [styles.eventRow, pressed && styles.pressed]}>
-                    <View style={[styles.eventDot, { backgroundColor: colors.accent }]} />
-                    <View style={styles.eventCopy}>
-                      <AppText variant="label" numberOfLines={2} style={occurrence.status === 'CANCELLED' && styles.cancelled}>{event.title}</AppText>
-                      <AppText variant="caption" color="muted">
-                        {occurrence.allDay ? 'All day' : formatCalendarTime(occurrence.start, event.timeZone)}
-                        {occurrence.status === 'CANCELLED' ? ' · Cancelled' : ''}
-                      </AppText>
-                    </View>
-                    <Ionicons name="chevron-forward" size={17} color={colors.textMuted} />
-                  </SilentPressable>
-                ))}
+          {showTodayEvents && (
+            <Card style={styles.eventsCard}>
+              <View style={styles.spaceBetween}>
+                <AppText variant="heading">Today’s events</AppText>
+                <AppButton compact variant="ghost" label="Calendar" icon="calendar-outline" onPress={() => router.push('/calendar')} />
               </View>
-            )}
-          </Card>
+              {eventsResource.loading && !eventsResource.data ? (
+                <AppText color="muted">Loading events…</AppText>
+              ) : eventsResource.error && !eventsResource.data ? (
+                <AppText color="danger">Events are unavailable right now.</AppText>
+              ) : todayEvents.length === 0 ? (
+                <AppText color="muted">No events scheduled for today.</AppText>
+              ) : (
+                <View style={styles.eventsList}>
+                  {todayEvents.map(({ event, occurrence }) => (
+                    <SilentPressable
+                      key={`${event.id}-${occurrence.occurrenceKey}`}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${event.title}, ${occurrence.allDay ? 'all day' : formatCalendarTime(occurrence.start, event.timeZone)}`}
+                      onPress={() => router.push('/calendar')}
+                      style={({ pressed }) => [styles.eventRow, pressed && styles.pressed]}>
+                      <View style={[styles.eventDot, { backgroundColor: colors.accent }]} />
+                      <View style={styles.eventCopy}>
+                        <AppText variant="label" numberOfLines={2} style={occurrence.status === 'CANCELLED' && styles.cancelled}>{event.title}</AppText>
+                        <AppText variant="caption" color="muted">
+                          {occurrence.allDay ? 'All day' : formatCalendarTime(occurrence.start, event.timeZone)}
+                          {occurrence.status === 'CANCELLED' ? ' · Cancelled' : ''}
+                        </AppText>
+                      </View>
+                      <Ionicons name="chevron-forward" size={17} color={colors.textMuted} />
+                    </SilentPressable>
+                  ))}
+                </View>
+              )}
+            </Card>
+          )}
 
           <View style={styles.spaceBetween}>
             <AppText variant="heading">Today’s tasks</AppText>

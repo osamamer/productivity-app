@@ -12,12 +12,19 @@ public record DayTemplateEventRequest(
         LocalTime endTime,
         String timeZone,
         Integer reminderMinutesBefore,
-        CalendarEventStatus status
+        CalendarEventStatus status,
+        String calendarId
 ) {
     public DayTemplateEventRequest(String title, String description, boolean allDay,
                                    LocalTime startTime, LocalTime endTime, String timeZone,
                                    Integer reminderMinutesBefore) {
         this(title, description, allDay, startTime, endTime, timeZone, reminderMinutesBefore,
-                CalendarEventStatus.CONFIRMED);
+                CalendarEventStatus.CONFIRMED, null);
+    }
+
+    public DayTemplateEventRequest(String title, String description, boolean allDay,
+                                   LocalTime startTime, LocalTime endTime, String timeZone,
+                                   Integer reminderMinutesBefore, CalendarEventStatus status) {
+        this(title, description, allDay, startTime, endTime, timeZone, reminderMinutesBefore, status, null);
     }
 }

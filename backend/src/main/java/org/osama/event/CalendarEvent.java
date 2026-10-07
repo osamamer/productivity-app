@@ -29,6 +29,9 @@ public class CalendarEvent {
     @Column(name = "user_id", insertable = false, updatable = false)
     private String userId;
 
+    @Column(name = "calendar_id", nullable = false)
+    private String calendarId;
+
     @Column(nullable = false, length = 200)
     private String title;
 

@@ -10,7 +10,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -20,6 +22,10 @@ import java.util.stream.Collectors;
 public class ProjectService {
     public static final int MAX_NAME_LENGTH = 120;
     public static final int MAX_DESCRIPTION_LENGTH = 2000;
+    private static final String DEFAULT_COLOR = "blue";
+    private static final String DEFAULT_ICON = "folder";
+    private static final Set<String> ALLOWED_COLORS = Set.of("blue", "violet", "teal", "amber", "rose");
+    private static final Set<String> ALLOWED_ICONS = Set.of("folder", "rocket", "lightbulb", "book", "home", "leaf");
 
     private final ProjectRepository projectRepository;
     private final TaskRepository taskRepository;
@@ -67,6 +73,8 @@ public class ProjectService {
     public ProjectResponse createProject(CreateProjectRequest request, String userId) {
         String name = validateName(request.name());
         String description = normalizeDescription(request.description());
+        String color = validateChoice(request.color(), DEFAULT_COLOR, ALLOWED_COLORS, "color");
+        String icon = validateChoice(request.icon(), DEFAULT_ICON, ALLOWED_ICONS, "icon");
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
 
@@ -75,11 +83,14 @@ public class ProjectService {
                 .user(user)
                 .name(name)
                 .description(description)
+                .color(color)
+                .icon(icon)
                 .build();
         // Assigned ids make Spring Data merge, so only the managed copy receives the
         // @PrePersist timestamps.
         Project saved = projectRepository.save(project);
-        log.info("Project created: userId={} projectId={}", userId, saved.getProjectId());
+        log.info("Project created: userId={} projectId={} color={} icon={}",
+                userId, saved.getProjectId(), saved.getColor(), saved.getIcon());
         return ProjectResponse.from(saved, 0, 0);
     }
 
@@ -96,12 +107,21 @@ public class ProjectService {
             project.setDescription(normalizeDescription(request.getDescription()));
             changed = true;
         }
+        if (request.isColorPresent()) {
+            project.setColor(validateChoice(request.getColor(), null, ALLOWED_COLORS, "color"));
+            changed = true;
+        }
+        if (request.isIconPresent()) {
+            project.setIcon(validateChoice(request.getIcon(), null, ALLOWED_ICONS, "icon"));
+            changed = true;
+        }
 
         if (changed) {
             // Flush here so the response carries the @PreUpdate timestamp; the
             // Task count query below does not auto-flush a pending Project change.
             projectRepository.saveAndFlush(project);
-            log.info("Project updated: userId={} projectId={}", userId, projectId);
+            log.info("Project updated: userId={} projectId={} color={} icon={}",
+                    userId, projectId, project.getColor(), project.getIcon());
         }
         return toResponse(project, userId);
     }
@@ -159,6 +179,15 @@ public class ProjectService {
         }
         if (normalized.length() > MAX_DESCRIPTION_LENGTH) {
             throw new IllegalArgumentException("Project description must be 2000 characters or fewer");
+        }
+        return normalized;
+    }
+
+    private String validateChoice(String value, String defaultValue, Set<String> allowedValues, String fieldName) {
+        if (value == null && defaultValue != null) return defaultValue;
+        String normalized = value == null ? null : value.trim().toLowerCase(Locale.ROOT);
+        if (normalized == null || !allowedValues.contains(normalized)) {
+            throw new IllegalArgumentException("Project " + fieldName + " is invalid");
         }
         return normalized;
     }

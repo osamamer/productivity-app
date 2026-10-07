@@ -1,6 +1,7 @@
 export type InvalidatedResource = 'tasks' | 'stats' | 'projects';
+export type ResourceInvalidationOrigin = 'task' | 'stat';
 
-type ResourceInvalidationListener = () => void;
+type ResourceInvalidationListener = (origin?: ResourceInvalidationOrigin) => void;
 
 const listeners: Record<InvalidatedResource, Set<ResourceInvalidationListener>> = {
     tasks: new Set(),
@@ -16,6 +17,6 @@ export function subscribeToResourceInvalidation(
     return () => listeners[resource].delete(listener);
 }
 
-export function invalidateResource(resource: InvalidatedResource): void {
-    listeners[resource].forEach(listener => listener());
+export function invalidateResource(resource: InvalidatedResource, origin?: ResourceInvalidationOrigin): void {
+    listeners[resource].forEach(listener => listener(origin));
 }

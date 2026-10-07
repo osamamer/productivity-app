@@ -9,8 +9,12 @@ import lombok.Setter;
 public class UpdateProjectRequest {
     private String name;
     private String description;
+    private String color;
+    private String icon;
     private boolean namePresent;
     private boolean descriptionPresent;
+    private boolean colorPresent;
+    private boolean iconPresent;
 
     @JsonSetter("name")
     public void setName(String name) {
@@ -22,5 +26,17 @@ public class UpdateProjectRequest {
     public void setDescription(String description) {
         this.description = description;
         this.descriptionPresent = true;
+    }
+
+    @JsonSetter("color")
+    public void setColor(String color) {
+        this.color = color;
+        this.colorPresent = true;
+    }
+
+    @JsonSetter("icon")
+    public void setIcon(String icon) {
+        this.icon = icon;
+        this.iconPresent = true;
     }
 }

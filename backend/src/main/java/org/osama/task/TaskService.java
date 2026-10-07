@@ -22,8 +22,13 @@ import org.osama.stat.StatTaskLinkService;
 import org.osama.taskgroup.TaskGroupService;
 import org.osama.task.events.TasksDeletedEvent;
 import org.osama.task.recurrence.TaskSeriesRepository;
+import org.osama.calendar.CalendarService;
 import org.osama.user.User;
 import org.osama.user.UserRepository;
+import org.osama.task.events.TasksRestoredEvent;
+import jakarta.persistence.EntityManager;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -59,13 +64,18 @@ public class TaskService {
     private final ScheduledJobRepository scheduledJobRepository;
     private final ProjectService projectService;
     private final ApplicationEventPublisher eventPublisher;
+    private final NamedParameterJdbcTemplate jdbcTemplate;
+    private final EntityManager entityManager;
+    private final CalendarService calendarService;
 
     public TaskService(TaskRepository taskRepository, TaskSessionRepository taskSessionRepository,
                        UserRepository userRepository, MentalThreadRepository mentalThreadRepository,
                        TaskGroupService taskGroupService, StatTaskLinkService statTaskLinkService,
                        TaskSeriesRepository taskSeriesRepository, ReminderRepository reminderRepository,
                        PomodoroRepository pomodoroRepository, ScheduledJobRepository scheduledJobRepository,
-                       ProjectService projectService, ApplicationEventPublisher eventPublisher) {
+                       ProjectService projectService, ApplicationEventPublisher eventPublisher,
+                       NamedParameterJdbcTemplate jdbcTemplate, EntityManager entityManager,
+                       CalendarService calendarService) {
         this.taskRepository = taskRepository;
         this.taskSessionRepository = taskSessionRepository;
         this.userRepository = userRepository;
@@ -78,6 +88,9 @@ public class TaskService {
         this.scheduledJobRepository = scheduledJobRepository;
         this.projectService = projectService;
         this.eventPublisher = eventPublisher;
+        this.jdbcTemplate = jdbcTemplate;
+        this.entityManager = entityManager;
+        this.calendarService = calendarService;
     }
 
     public List<Task> findTasks(TaskQuery query) {
@@ -439,15 +452,16 @@ public class TaskService {
         task.setSkipReason(null);
         task.setCreationDateTime(LocalDateTime.now());
         task.setUser(user);
+        task.setCalendarId(calendarService.resolveCalendarId(request.getCalendarId(), userId));
 
         Task savedTask = taskRepository.save(task);
         replaceTaskReminder(savedTask, requestedReminderMinutes(request), user);
         if (mentalThread != null) {
             taskGroupService.addTaskToDefaultMentalThreadGroup(savedTask, mentalThread, userId);
         }
-        log.info("Task created: userId={} taskId={} parentTaskId={} mentalThreadId={} projectId={}",
+        log.info("Task created: userId={} taskId={} parentTaskId={} mentalThreadId={} projectId={} calendarId={}",
                 userId, savedTask.getTaskId(), savedTask.getParentId(), savedTask.getMentalThreadId(),
-                savedTask.getProjectId());
+                savedTask.getProjectId(), savedTask.getCalendarId());
         return savedTask;
     }
 
@@ -467,6 +481,31 @@ public class TaskService {
         boolean scheduleChanged = request.getScheduledPerformDateTime() != null;
         boolean timeZoneChanged = request.getTimeZone() != null;
         List<String> changedFields = new ArrayList<>();
+        if (request.isCalendarIdPresent() && request.getCalendarId() != null
+                && !request.getCalendarId().isBlank()) {
+            String calendarId = calendarService.resolveCalendarId(request.getCalendarId(), userId);
+            String calendarScope = request.getCalendarScope();
+            if (calendarScope != null && !calendarScope.isBlank()
+                    && !calendarScope.equalsIgnoreCase("occurrence")
+                    && !calendarScope.equalsIgnoreCase("series")) {
+                throw new IllegalArgumentException("Calendar scope must be occurrence or series.");
+            }
+            if (task.getTaskSeriesId() != null && !"occurrence".equalsIgnoreCase(calendarScope)) {
+                taskSeriesRepository.findBySeriesIdAndUserId(task.getTaskSeriesId(), userId).ifPresent(series -> {
+                    series.setCalendarId(calendarId);
+                    taskSeriesRepository.save(series);
+                });
+                taskRepository.updateCalendarForSeries(task.getTaskSeriesId(), userId, calendarId);
+                taskRepository.findAllByTaskSeriesIdAndUserIdOrderBySeriesOccurrenceAtAsc(
+                                task.getTaskSeriesId(), userId)
+                        .forEach(occurrence -> occurrence.setCalendarId(calendarId));
+            } else {
+                task.setCalendarId(calendarId);
+            }
+            changedFields.add("calendarId");
+            changedFields.add("calendarScope:" + (task.getTaskSeriesId() != null
+                    && !"occurrence".equalsIgnoreCase(calendarScope) ? "series" : "occurrence"));
+        }
         if (request.getName() != null) {
             task.setName(request.getName());
             changedFields.add("name");
@@ -565,7 +604,8 @@ public class TaskService {
     private void replaceTaskReminder(Task task, Integer minutesBefore, User user) {
         reminderRepository.findByTaskIdAndNotificationType(task.getTaskId(), NotificationType.TASK_REMINDER)
                 .ifPresent(reminder -> {
-                    reminderRepository.delete(reminder);
+                    reminderRepository.softDeleteByTaskIdAndNotificationType(
+                            reminder.getTaskId(), NotificationType.TASK_REMINDER, user.getId());
                     reminderRepository.flush();
                 });
 
@@ -655,81 +695,172 @@ public class TaskService {
     }
 
     @Transactional
-    public void deleteTask(String taskId, String userId) {
-        Optional<Task> taskToDelete = taskRepository.findTaskByTaskIdAndUserId(taskId, userId);
-        if (taskToDelete.isEmpty()) {
-            log.warn("Task deletion ignored: taskId={} was not found", taskId);
-            return;
+    public TaskDeletionReceipt deleteTask(String taskId, String userId) {
+        Task task = taskRepository.findTaskByTaskIdAndUserId(taskId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("Task not found: " + taskId));
+
+        if (task.getTaskSeriesId() != null) {
+            return deleteRecurringSeriesCompletely(task.getTaskSeriesId(), userId);
         }
 
-        if (taskToDelete.get().getTaskSeriesId() != null) {
-            deleteRecurringSeriesCompletely(taskToDelete.get().getTaskSeriesId(), userId);
-            return;
-        }
+        List<Task> subtasks = findTaskDescendants(List.of(taskId), userId);
+        List<Task> tasks = new ArrayList<>(subtasks);
+        tasks.add(task);
+        List<String> taskIds = tasks.stream().map(Task::getTaskId).toList();
+        TaskGroupService.TaskGroupDeletionState groups = taskGroupService.snapshotDeletionState(taskIds, userId);
+        List<String> reminderIds = reminderIdsForTasks(taskIds, userId);
 
-        // Delete subtasks first
-        TaskQuery subtaskQuery = TaskQuery.builder()
-                .parentId(taskId)
-                .userId(userId)
-                .build();
-        List<Task> subtasks = findTasks(subtaskQuery);
-        List<String> deletedTaskIds = new ArrayList<>(subtasks.stream().map(Task::getTaskId).toList());
-        deletedTaskIds.add(taskId);
-        taskGroupService.removeTasksFromGroups(deletedTaskIds, userId);
-        deleteTaskReminders(deletedTaskIds);
-        deleteTaskRuntimeState(deletedTaskIds);
+        taskGroupService.removeTasksFromGroups(taskIds, userId);
+        deleteTaskReminders(taskIds, userId);
+        RuntimeDeletionState runtime = deleteTaskRuntimeState(taskIds);
         taskRepository.deleteAll(subtasks);
-
-        // Delete main task
-        taskRepository.delete(taskToDelete.get());
-        log.info("Task deleted: userId={} taskId={} deletedSubtaskCount={}",
+        taskRepository.delete(task);
+        log.info("Task soft-deleted: userId={} taskId={} deletedSubtaskCount={}",
                 userId, taskId, subtasks.size());
+        return deletionReceipt(tasks, List.of(), groups, reminderIds, runtime, Map.of());
     }
 
     @Transactional
-    public void deleteTaskOccurrence(String taskId, String userId) {
+    public TaskDeletionReceipt deleteTaskOccurrence(String taskId, String userId) {
         Task task = taskRepository.findTaskByTaskIdAndUserId(taskId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Task not found: " + taskId));
         if (task.getTaskSeriesId() == null) {
             throw new IllegalArgumentException("Only a recurring task has individual occurrences.");
         }
 
-        List<Task> subtasks = taskRepository.findAllByUserIdAndParentIdOrderByDisplayOrderAsc(userId, taskId);
-        List<String> deletedTaskIds = new ArrayList<>(subtasks.stream().map(Task::getTaskId).toList());
-        deletedTaskIds.add(taskId);
-        taskGroupService.removeTasksFromGroups(deletedTaskIds, userId);
-        deleteTaskReminders(deletedTaskIds);
-        deleteTaskRuntimeState(subtasks.stream().map(Task::getTaskId).toList());
-        clearActiveTaskRuntimeState(List.of(taskId));
-        taskRepository.deleteAll(subtasks);
+        List<Task> subtasks = findTaskDescendants(List.of(taskId), userId);
+        List<Task> tasks = new ArrayList<>(subtasks);
+        tasks.add(task);
+        List<String> taskIds = tasks.stream().map(Task::getTaskId).toList();
+        TaskGroupService.TaskGroupDeletionState groups = taskGroupService.snapshotDeletionState(taskIds, userId);
+        List<String> reminderIds = reminderIdsForTasks(taskIds, userId);
 
-        task.setSkipped(true);
-        task.setSkipReason(TaskSkipReason.USER);
-        taskRepository.save(task);
-        log.info("Recurring task occurrence deleted: userId={} taskId={} seriesId={} deletedSubtaskCount={}",
+        taskGroupService.removeTasksFromGroups(taskIds, userId);
+        deleteTaskReminders(taskIds, userId);
+        RuntimeDeletionState subtaskRuntime = deleteTaskRuntimeState(
+                subtasks.stream().map(Task::getTaskId).toList());
+        RuntimeDeletionState occurrenceRuntime = clearActiveTaskRuntimeState(List.of(taskId));
+        taskRepository.deleteAll(subtasks);
+        taskRepository.delete(task);
+        log.info("Recurring task occurrence soft-deleted: userId={} taskId={} seriesId={} deletedSubtaskCount={}",
                 userId, taskId, task.getTaskSeriesId(), subtasks.size());
+        return deletionReceipt(tasks, List.of(), groups, reminderIds,
+                subtaskRuntime.merge(occurrenceRuntime), Map.of());
     }
 
     @Transactional
-    public void deleteRecurringSeriesCompletely(String seriesId, String userId) {
-        taskSeriesRepository.findBySeriesIdAndUserId(seriesId, userId)
+    public TaskDeletionReceipt deleteRecurringSeriesCompletely(String seriesId, String userId) {
+        var series = taskSeriesRepository.findBySeriesIdAndUserId(seriesId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Task series not found: " + seriesId));
-        List<Task> occurrences = taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(seriesId);
-        List<String> deletedTaskIds = new ArrayList<>(occurrences.stream().map(Task::getTaskId).toList());
-        List<Task> subtasks = occurrences.stream()
-                .flatMap(task -> taskRepository.findAllByUserIdAndParentIdOrderByDisplayOrderAsc(userId, task.getTaskId()).stream())
-                .toList();
-        deletedTaskIds.addAll(subtasks.stream().map(Task::getTaskId).toList());
+        List<Task> occurrences = taskRepository
+                .findAllByTaskSeriesIdAndUserIdOrderBySeriesOccurrenceAtAsc(seriesId, userId);
+        List<Task> subtasks = findTaskDescendants(
+                occurrences.stream().map(Task::getTaskId).toList(), userId);
+        List<Task> tasks = new ArrayList<>(occurrences);
+        tasks.addAll(subtasks);
+        List<String> taskIds = tasks.stream().map(Task::getTaskId).toList();
+        TaskGroupService.TaskGroupDeletionState groups = taskGroupService.snapshotDeletionState(taskIds, userId);
+        List<String> reminderIds = reminderIdsForTasks(taskIds, userId);
+        Map<String, String> linkedDefinitions = statTaskLinkService
+                .getRecurringSeriesLink(seriesId, userId)
+                .map(definitionId -> Map.of(seriesId, definitionId))
+                .orElseGet(Map::of);
 
-        taskGroupService.removeTasksFromGroups(deletedTaskIds, userId);
-        deleteTaskReminders(deletedTaskIds);
-        deleteTaskRuntimeState(deletedTaskIds);
+        taskGroupService.removeTasksFromGroups(taskIds, userId);
+        deleteTaskReminders(taskIds, userId);
+        RuntimeDeletionState runtime = deleteTaskRuntimeState(taskIds);
         statTaskLinkService.clearRecurringSeriesLink(seriesId, userId);
         taskRepository.deleteAll(subtasks);
         taskRepository.deleteAll(occurrences);
-        taskSeriesRepository.deleteById(seriesId);
-        log.info("Recurring task series permanently deleted: userId={} seriesId={} occurrenceCount={}",
+        taskSeriesRepository.delete(series);
+        log.info("Recurring task series soft-deleted: userId={} seriesId={} occurrenceCount={}",
                 userId, seriesId, occurrences.size());
+        return deletionReceipt(tasks, List.of(seriesId), groups, reminderIds, runtime, linkedDefinitions);
+    }
+
+    @Transactional
+    public void restoreTaskDeletion(TaskDeletionReceipt receipt, String userId) {
+        restoreSoftDeletedRows("task_series", "series_id", receipt.taskSeriesIds(), userId);
+        restoreSoftDeletedRows("task", "task_id", receipt.taskIds(), userId);
+        restoreTaskSessions(receipt.taskSessionIds(), userId);
+        restoreSoftDeletedRows("scheduled_job", "job_id", receipt.scheduledJobIds(), userId);
+        restoreSoftDeletedRows("pomodoro", "pomodoro_id", receipt.pomodoroIds(), userId);
+        restoreSoftDeletedRows("reminder", "reminder_id", receipt.reminderIds(), userId);
+        restoreSoftDeletedRows("task_group", "group_id", receipt.taskGroupIds(), userId);
+        restoreGroupMemberships(receipt.taskGroupMembershipIds(), userId);
+        entityManager.clear();
+
+        receipt.linkedStatDefinitionsBySeries().forEach((seriesId, definitionId) ->
+                statTaskLinkService.restoreRecurringSeriesLink(seriesId, definitionId, userId));
+        if (!receipt.taskIds().isEmpty()) {
+            eventPublisher.publishEvent(new TasksRestoredEvent(receipt.taskIds()));
+        }
+        log.info("Task deletion restored: userId={} taskCount={} seriesCount={}",
+                userId, receipt.taskIds().size(), receipt.taskSeriesIds().size());
+    }
+
+    private void restoreSoftDeletedRows(String table, String idColumn, List<String> ids, String userId) {
+        if (ids.isEmpty()) return;
+        jdbcTemplate.update("UPDATE " + table + " SET soft_deleted = false WHERE " + idColumn
+                        + " IN (:ids) AND user_id = :userId AND soft_deleted = true",
+                new MapSqlParameterSource("ids", ids).addValue("userId", userId));
+    }
+
+    private void restoreGroupMemberships(List<String> membershipIds, String userId) {
+        if (membershipIds.isEmpty()) return;
+        jdbcTemplate.update("""
+                        UPDATE task_group_task SET soft_deleted = false
+                        WHERE membership_id IN (:ids)
+                          AND soft_deleted = true
+                          AND group_id IN (SELECT group_id FROM task_group WHERE user_id = :userId AND soft_deleted = false)
+                          AND task_id IN (SELECT task_id FROM task WHERE user_id = :userId AND soft_deleted = false)
+                        """,
+                new MapSqlParameterSource("ids", membershipIds).addValue("userId", userId));
+    }
+
+    private void restoreTaskSessions(List<String> sessionIds, String userId) {
+        if (sessionIds.isEmpty()) return;
+        jdbcTemplate.update("""
+                        UPDATE task_session SET soft_deleted = false
+                        WHERE session_id IN (:ids)
+                          AND soft_deleted = true
+                          AND associated_task_id IN (SELECT task_id FROM task WHERE user_id = :userId AND soft_deleted = false)
+                        """,
+                new MapSqlParameterSource("ids", sessionIds).addValue("userId", userId));
+    }
+
+    private TaskDeletionReceipt deletionReceipt(List<Task> tasks, List<String> seriesIds,
+                                                TaskGroupService.TaskGroupDeletionState groups,
+                                                List<String> reminderIds, RuntimeDeletionState runtime,
+                                                Map<String, String> linkedDefinitions) {
+        return new TaskDeletionReceipt(
+                tasks.stream().map(Task::getTaskId).distinct().toList(), seriesIds,
+                runtime.sessionIds(), runtime.scheduledJobIds(), runtime.pomodoroIds(), reminderIds,
+                groups.groupIds(), groups.membershipIds(), linkedDefinitions);
+    }
+
+    private List<String> reminderIdsForTasks(Collection<String> taskIds, String userId) {
+        if (taskIds.isEmpty()) return List.of();
+        return reminderRepository.findAllByTaskIdInAndUserId(taskIds, userId).stream()
+                .map(Reminder::getReminderId).toList();
+    }
+
+    private List<Task> findTaskDescendants(Collection<String> rootTaskIds, String userId) {
+        ArrayDeque<String> parentIds = new ArrayDeque<>(rootTaskIds);
+        Set<String> visitedParents = new HashSet<>();
+        Map<String, Task> descendants = new LinkedHashMap<>();
+        while (!parentIds.isEmpty()) {
+            String parentId = parentIds.removeFirst();
+            if (!visitedParents.add(parentId)) continue;
+            taskRepository.findAllByUserIdAndParentIdOrderByDisplayOrderAscCreationDateTimeAscTaskIdAsc(
+                            userId, parentId)
+                    .forEach(task -> {
+                        if (descendants.putIfAbsent(task.getTaskId(), task) == null) {
+                            parentIds.addLast(task.getTaskId());
+                        }
+                    });
+        }
+        return List.copyOf(descendants.values());
     }
 
     /**
@@ -764,7 +895,7 @@ public class TaskService {
         }
 
         taskGroupService.removeTasksFromGroups(tasksToDelete.keySet(), userId);
-        deleteTaskReminders(tasksToDelete.keySet());
+        deleteTaskReminders(tasksToDelete.keySet(), userId);
         deleteTaskRuntimeState(tasksToDelete.keySet());
 
         tasksToDelete.values().stream()
@@ -786,17 +917,18 @@ public class TaskService {
         return deletionOrder.size();
     }
 
-    private void deleteTaskReminders(Collection<String> taskIds) {
-        taskIds.forEach(reminderRepository::deleteByTaskId);
+    private void deleteTaskReminders(Collection<String> taskIds, String userId) {
+        if (taskIds.isEmpty()) return;
+        reminderRepository.softDeleteByTaskIdInAndUserId(taskIds, userId);
         reminderRepository.flush();
     }
 
-    private void deleteTaskRuntimeState(Collection<String> taskIds) {
+    private RuntimeDeletionState deleteTaskRuntimeState(Collection<String> taskIds) {
         List<String> distinctTaskIds = taskIds.stream()
                 .filter(Objects::nonNull)
                 .distinct()
                 .toList();
-        if (distinctTaskIds.isEmpty()) return;
+        if (distinctTaskIds.isEmpty()) return RuntimeDeletionState.empty();
 
         List<TaskSession> taskSessions = taskSessionRepository.findAllByAssociatedTaskIdIn(distinctTaskIds);
         taskSessionRepository.deleteAll(taskSessions);
@@ -813,14 +945,15 @@ public class TaskService {
         eventPublisher.publishEvent(new TasksDeletedEvent(distinctTaskIds));
         log.info("Task runtime state deleted: taskCount={} sessionCount={} scheduledJobCount={} pomodoroCount={}",
                 distinctTaskIds.size(), taskSessions.size(), scheduledJobs.size(), pomodoros.size());
+        return runtimeDeletionState(taskSessions, scheduledJobs, pomodoros);
     }
 
-    private void clearActiveTaskRuntimeState(Collection<String> taskIds) {
+    private RuntimeDeletionState clearActiveTaskRuntimeState(Collection<String> taskIds) {
         List<String> distinctTaskIds = taskIds.stream()
                 .filter(Objects::nonNull)
                 .distinct()
                 .toList();
-        if (distinctTaskIds.isEmpty()) return;
+        if (distinctTaskIds.isEmpty()) return RuntimeDeletionState.empty();
 
         List<TaskSession> activeTaskSessions = taskSessionRepository
                 .findAllByAssociatedTaskIdInAndActiveIsTrue(distinctTaskIds);
@@ -839,6 +972,36 @@ public class TaskService {
         eventPublisher.publishEvent(new TasksDeletedEvent(distinctTaskIds));
         log.info("Active task runtime state cleared: taskCount={} sessionCount={} scheduledJobCount={} pomodoroCount={}",
                 distinctTaskIds.size(), activeTaskSessions.size(), scheduledJobs.size(), activePomodoros.size());
+        return runtimeDeletionState(activeTaskSessions, scheduledJobs, activePomodoros);
+    }
+
+    private RuntimeDeletionState runtimeDeletionState(List<TaskSession> sessions,
+                                                     List<ScheduledJob> scheduledJobs,
+                                                     List<Pomodoro> pomodoros) {
+        return new RuntimeDeletionState(
+                sessions.stream().map(TaskSession::getSessionId).toList(),
+                scheduledJobs.stream().map(ScheduledJob::getJobId).toList(),
+                pomodoros.stream().map(Pomodoro::getPomodoroId).toList());
+    }
+
+    private record RuntimeDeletionState(List<String> sessionIds, List<String> scheduledJobIds,
+                                        List<String> pomodoroIds) {
+        private RuntimeDeletionState {
+            sessionIds = List.copyOf(sessionIds);
+            scheduledJobIds = List.copyOf(scheduledJobIds);
+            pomodoroIds = List.copyOf(pomodoroIds);
+        }
+
+        private static RuntimeDeletionState empty() {
+            return new RuntimeDeletionState(List.of(), List.of(), List.of());
+        }
+
+        private RuntimeDeletionState merge(RuntimeDeletionState other) {
+            return new RuntimeDeletionState(
+                    java.util.stream.Stream.concat(sessionIds.stream(), other.sessionIds.stream()).distinct().toList(),
+                    java.util.stream.Stream.concat(scheduledJobIds.stream(), other.scheduledJobIds.stream()).distinct().toList(),
+                    java.util.stream.Stream.concat(pomodoroIds.stream(), other.pomodoroIds.stream()).distinct().toList());
+        }
     }
 
     // Convenience methods for common queries

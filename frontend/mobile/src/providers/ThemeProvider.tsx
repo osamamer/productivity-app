@@ -3,7 +3,7 @@ import { createContext, PropsWithChildren, useCallback, useContext, useEffect, u
 import { Appearance, ColorSchemeName } from 'react-native';
 
 export type ThemeMode = 'system' | 'light' | 'dark';
-export type AccentColor = 'violet' | 'teal' | 'coral' | 'amber';
+export type AccentColor = 'violet' | 'teal' | 'coral' | 'sage';
 
 export interface AppColors {
   background: string;
@@ -38,7 +38,7 @@ const accents: Record<AccentColor, {
   violet: { light: '#946AF5', dark: '#A395F2', secondary: { light: '#C9A227', dark: '#F0D264' } },
   teal: { light: '#0F9D8A', dark: '#52CDBD', secondary: { light: '#E56B6F', dark: '#F08E84' } },
   coral: { light: '#E56B6F', dark: '#F08E84', secondary: { light: '#0F9D8A', dark: '#52CDBD' } },
-  amber: { light: '#D18B00', dark: '#F1B93A', secondary: { light: '#5D63C7', dark: '#A7ADF5' } },
+  sage: { light: '#789B78', dark: '#A8CBA2', secondary: { light: '#8A8ED8', dark: '#B7B9F0' } },
 };
 
 function palette(dark: boolean, accentColor: AccentColor): AppColors {
@@ -119,7 +119,12 @@ export function AppThemeProvider({ children }: PropsWithChildren) {
         if (storedMode === 'system' || storedMode === 'light' || storedMode === 'dark') {
           setModeState(storedMode);
         }
-        if (storedAccent && storedAccent in accents) setAccentState(storedAccent as AccentColor);
+        if (storedAccent === 'amber') {
+          setAccentState('sage');
+          void AsyncStorage.setItem(ACCENT_KEY, 'sage');
+        } else if (storedAccent && storedAccent in accents) {
+          setAccentState(storedAccent as AccentColor);
+        }
       },
     );
     return () => subscription.remove();

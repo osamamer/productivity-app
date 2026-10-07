@@ -62,12 +62,18 @@ function WeekItem({ item, onPress }: { item: CalendarGridItem; onPress: () => vo
         {
           backgroundColor: item.kind === 'calendarEvent' ? accent : `${accent}20`,
           borderColor: item.kind === 'calendarEvent' ? accent : `${accent}70`,
+          borderLeftWidth: item.calendarColor && item.kind !== 'calendarEvent' ? 4 : 1,
+          borderLeftColor: item.calendarColor ?? (item.kind === 'calendarEvent' ? accent : `${accent}70`),
+          borderTopLeftRadius: item.calendarColor && item.kind !== 'calendarEvent' ? 0 : undefined,
+          borderBottomLeftRadius: item.calendarColor && item.kind !== 'calendarEvent' ? 0 : undefined,
           borderStyle: item.eventStatus === 'TENTATIVE' ? 'dashed' : 'solid',
           opacity: item.eventStatus === 'CANCELLED' ? 0.65 : 1,
         },
         pressed && styles.pressed,
       ]}>
-      {item.completed ? <Ionicons name="checkmark" size={13} color={colors.success} /> : <View style={[styles.itemDot, { backgroundColor: accent }]} />}
+      {item.completed
+        ? <Ionicons name="checkmark" size={13} color={colors.success} />
+        : item.kind !== 'task' && <View style={[styles.itemDot, { backgroundColor: accent }]} />}
       <AppText
         variant="body"
         numberOfLines={2}

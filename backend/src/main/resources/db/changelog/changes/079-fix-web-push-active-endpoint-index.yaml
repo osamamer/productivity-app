@@ -1,0 +1,54 @@
+databaseChangeLog:
+  - changeSet:
+      id: 079-fix-web-push-active-endpoint-index
+      author: codex
+      comment: Allow a soft-deleted browser subscription endpoint to be registered again
+      preConditions:
+        - onFail: MARK_RAN
+        - sqlCheck:
+            expectedResult: "1"
+            sql: |
+              SELECT CASE WHEN EXISTS (
+                SELECT 1
+                FROM pg_index i
+                JOIN pg_class idx ON idx.oid = i.indexrelid
+                JOIN pg_class tbl ON tbl.oid = i.indrelid
+                JOIN pg_namespace ns ON ns.oid = tbl.relnamespace
+                WHERE ns.nspname = 'public'
+                  AND tbl.relname = 'web_push_subscription'
+                  AND idx.relname = 'idx_app_web_push_subscription_active_endpoint'
+                  AND i.indisunique
+                  AND i.indisvalid
+                  AND i.indnatts = 1
+                  AND i.indkey[0] = (
+                    SELECT attnum
+                    FROM pg_attribute
+                    WHERE attrelid = tbl.oid
+                      AND attname = 'endpoint'
+                      AND NOT attisdropped
+                  )
+                  AND replace(replace(lower(pg_get_expr(i.indpred, i.indrelid)), '(', ''), ')', '') = 'soft_deleted = false'
+              ) THEN 0 ELSE 1 END;
+      changes:
+        - sql:
+            sql: DROP INDEX IF EXISTS public.idx_app_web_push_subscription_active_endpoint
+        - createIndex:
+            tableName: web_push_subscription
+            indexName: idx_app_web_push_subscription_active_endpoint
+            unique: true
+            ifNotExists: true
+            where: soft_deleted = false
+            columns:
+              - column:
+                  name: endpoint
+      rollback:
+        - sql:
+            sql: DROP INDEX IF EXISTS public.idx_app_web_push_subscription_active_endpoint
+        - createIndex:
+            tableName: web_push_subscription
+            indexName: idx_app_web_push_subscription_active_endpoint
+            unique: true
+            ifNotExists: true
+            columns:
+              - column:
+                  name: endpoint

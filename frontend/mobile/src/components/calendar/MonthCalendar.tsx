@@ -6,6 +6,7 @@ import { ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { CalendarDayActionSheet, type CalendarCreateTab } from '@/components/calendar/CalendarDayActionSheet';
 import { CalendarStatCheckInSheet } from '@/components/calendar/CalendarStatCheckInSheet';
 import { CalendarTaskGroupSheet } from '@/components/calendar/CalendarTaskGroupSheet';
+import { calendarColorHex, calendarTextColor } from '@/components/calendar/CalendarControls';
 import { EventComposerSheet } from '@/components/calendar/EventComposerSheet';
 import { MonthCalendarGrid, type CalendarGridItem } from '@/components/calendar/MonthCalendarGrid';
 import { WeekCalendarGrid } from '@/components/calendar/WeekCalendarGrid';
@@ -14,11 +15,12 @@ import { TaskDetailSheet } from '@/components/tasks/TaskDetailSheet';
 import { formatCalendarTime, localDate } from '@/lib/date';
 import { formatDurationValue, formatTimeValue } from '@/lib/statValues';
 import { datesCoveredByOccurrence, expandCalendarEvent } from '@/lib/calendarRecurrence';
+import { createCalendarOptions as getCreateCalendarOptions, filterByVisibleCalendar, initialCalendarId as getInitialCalendarId } from '@/lib/calendarSelection';
 import { reportError } from '@/lib/errors';
 import { taskPriorityColor } from '@/lib/taskPriority';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
-import type { CalendarEvent, StatDefinition, StatEntry, Task, TaskGroup } from '@/types/models';
+import type { Calendar, CalendarEvent, StatDefinition, StatEntry, Task, TaskGroup } from '@/types/models';
 import { AppButton } from '../ui/AppButton';
 import { AppPopup } from '../ui/AppPopup';
 import { AppText } from '../ui/AppText';
@@ -132,14 +134,14 @@ function addCalendarItem(items: Map<string, CalendarGridItem[]>, item: CalendarG
 
 export function CalendarDisplayButton({ onPress, disabled = false }: { onPress: () => void; disabled?: boolean }) {
   const { colors } = useAppTheme();
-  return (
+    return (
     <SilentPressable
       accessibilityRole="button"
       accessibilityLabel="Calendar display options"
       disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => [
-        styles.floatingDisplayButton,
+        styles.floatingActionButton,
         { backgroundColor: colors.accent, shadowColor: colors.accent },
         disabled && styles.disabled,
         pressed && styles.pressed,
@@ -150,12 +152,34 @@ export function CalendarDisplayButton({ onPress, disabled = false }: { onPress: 
   );
 }
 
+export function CalendarManagementButton({ onPress, disabled = false }: { onPress: () => void; disabled?: boolean }) {
+  const { colors } = useAppTheme();
+  return (
+    <SilentPressable
+      accessibilityRole="button"
+      accessibilityLabel="Manage calendars"
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.floatingActionButton,
+        { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, shadowColor: colors.text },
+        disabled && styles.disabled,
+        pressed && styles.pressed,
+      ]}>
+      <Ionicons name="calendar-outline" size={18} color={colors.accent} />
+      <AppText variant="label" color="accent">Calendars</AppText>
+    </SilentPressable>
+  );
+}
+
 export function MonthCalendar({
   tasks,
   groups,
   events,
+  calendars,
   statDefinitions,
   eventsLoading = false,
+  calendarsLoading = false,
   tasksLoading = false,
   definitionsLoading = false,
   onEventSaved,
@@ -174,8 +198,10 @@ export function MonthCalendar({
   tasks: Task[];
   groups: TaskGroup[];
   events: CalendarEvent[];
+  calendars: Calendar[];
   statDefinitions: StatDefinition[];
   eventsLoading?: boolean;
+  calendarsLoading?: boolean;
   tasksLoading?: boolean;
   definitionsLoading?: boolean;
   onEventSaved: (event: CalendarEvent) => void;
@@ -266,6 +292,13 @@ export function MonthCalendar({
     [selectedStatIds, statDefinitions],
   );
   const hasVisibleStats = preferences.showStats && selectedStatDefinitions.length > 0;
+  const calendarsById = useMemo(() => new Map(calendars.map(calendar => [calendar.id, calendar])), [calendars]);
+  const createCalendarId = getInitialCalendarId(calendars);
+  const createCalendarOptions = useMemo(() => getCreateCalendarOptions(calendars), [calendars]);
+  const visibleEvents = useMemo(
+    () => calendarsLoading ? [] : filterByVisibleCalendar(events, calendars),
+    [calendars, calendarsLoading, events],
+  );
 
   useEffect(() => {
     if (!hasVisibleStats) {
@@ -290,12 +323,12 @@ export function MonthCalendar({
     return () => { active = false; };
   }, [hasVisibleStats, range.end, range.start, selectedStatDefinitions, statRefreshKey]);
 
-  const calendarTasks = useMemo(() => tasks.filter(task => {
+  const calendarTasks = useMemo(() => (calendarsLoading ? [] : filterByVisibleCalendar(tasks, calendars)).filter(task => {
     if (!task.scheduledPerformDateTime) return false;
     if (preferences.taskStatus === 'open' && task.completed) return false;
     if (preferences.taskStatus === 'completed' && !task.completed) return false;
     return preferences.priorityFilters.includes(priorityBucket(task.importance));
-  }), [preferences.priorityFilters, preferences.taskStatus, tasks]);
+  }), [calendars, calendarsLoading, preferences.priorityFilters, preferences.taskStatus, tasks]);
 
   const taskGroupByTaskId = useMemo(() => {
     const result = new Map<string, TaskGroup>();
@@ -309,26 +342,32 @@ export function MonthCalendar({
 
   const itemsByDate = useMemo(() => {
     const items = new Map<string, CalendarGridItem[]>();
-    if (!eventsLoading) {
-      events.forEach(event => expandCalendarEvent(event, range.start, range.end).forEach(occurrence => {
-        datesCoveredByOccurrence(occurrence).forEach(date => addCalendarItem(items, {
-          id: `${occurrence.id}-${date}`,
-          sourceId: event.id,
-          date,
-          title: event.title,
-          kind: 'calendarEvent',
-          occurrenceKey: occurrence.occurrenceKey,
-          occurrenceDate: occurrence.occurrenceDate,
-          timeLabel: occurrence.allDay ? undefined : formatCalendarTime(occurrence.start, event.timeZone),
-          color: colors.accent,
-          textColor: colors.onAccent,
-          eventStatus: occurrence.status,
-        }));
-      }));
+    if (!eventsLoading && !calendarsLoading) {
+      visibleEvents.forEach(event => {
+        const calendar = calendarsById.get(event.calendarId);
+        if (!calendar?.visible) return;
+        const eventCalendarColor = calendarColorHex(calendar.color, colors.accent);
+        expandCalendarEvent(event, range.start, range.end).forEach(occurrence => {
+          datesCoveredByOccurrence(occurrence).forEach(date => addCalendarItem(items, {
+            id: `${occurrence.id}-${date}`,
+            sourceId: event.id,
+            date,
+            title: event.title,
+            kind: 'calendarEvent',
+            occurrenceKey: occurrence.occurrenceKey,
+            occurrenceDate: occurrence.occurrenceDate,
+            timeLabel: occurrence.allDay ? undefined : formatCalendarTime(occurrence.start, event.timeZone),
+            color: eventCalendarColor,
+            textColor: calendarTextColor(eventCalendarColor),
+            eventStatus: occurrence.status,
+          }));
+        });
+      });
     }
 
     if (preferences.showTasks && !tasksLoading) {
       const taskById = new Map(tasks.map(task => [task.taskId, task]));
+      const visibleTaskIds = new Set(calendarTasks.map(task => task.taskId));
       const groupDates = new Set<string>();
       calendarTasks.forEach(task => {
         const date = localDate(new Date(task.scheduledPerformDateTime));
@@ -337,14 +376,21 @@ export function MonthCalendar({
           const groupDateKey = `${group.groupId}-${date}`;
           if (groupDates.has(groupDateKey)) return;
           groupDates.add(groupDateKey);
+          const visibleGroupTasks = group.taskIds
+            .map(taskId => taskById.get(taskId))
+            .filter((candidate): candidate is Task => candidate !== undefined
+              && visibleTaskIds.has(candidate.taskId)
+              && localDate(new Date(candidate.scheduledPerformDateTime)) === date);
+          const groupCalendarColor = calendarsById.get(visibleGroupTasks[0]?.calendarId ?? '')?.color;
           addCalendarItem(items, {
             id: groupDateKey,
             sourceId: group.groupId,
             date,
             title: group.name,
             kind: 'taskGroup',
-            completed: group.taskIds.length > 0 && group.taskIds.every(taskId => taskById.get(taskId)?.completed === true),
+            completed: visibleGroupTasks.length > 0 && visibleGroupTasks.every(groupTask => groupTask.completed),
             color: colors.accent,
+            calendarColor: groupCalendarColor ? calendarColorHex(groupCalendarColor, colors.accent) : undefined,
           });
           return;
         }
@@ -356,6 +402,7 @@ export function MonthCalendar({
           kind: 'task',
           completed: task.completed,
           color: taskPriorityColor(task.importance),
+          calendarColor: calendarColorHex(calendarsById.get(task.calendarId)?.color, colors.accent),
         });
       });
     }
@@ -382,7 +429,7 @@ export function MonthCalendar({
       return order[first.kind] - order[second.kind] || first.title.localeCompare(second.title);
     }));
     return items;
-  }, [calendarTasks, colors, events, eventsLoading, hasVisibleStats, preferences.showTasks, range.end, range.start, selectedStatDefinitions, statEntries, taskGroupByTaskId, tasks, tasksLoading]);
+  }, [calendarTasks, calendarsById, calendarsLoading, colors, eventsLoading, hasVisibleStats, preferences.showTasks, range.end, range.start, selectedStatDefinitions, statEntries, taskGroupByTaskId, tasks, tasksLoading, visibleEvents]);
 
   const selectedGroupTasks = useMemo(() => {
     if (!selectedGroup) return [];
@@ -496,7 +543,7 @@ export function MonthCalendar({
         <WeekCalendarGrid
           weekStart={range.start}
           itemsByDate={itemsByDate}
-          loading={eventsLoading || tasksLoading || definitionsLoading}
+          loading={eventsLoading || calendarsLoading || tasksLoading || definitionsLoading}
           onWeekChange={changeCalendarPeriod}
           onToday={goToToday}
           onDayPress={openDay}
@@ -505,7 +552,7 @@ export function MonthCalendar({
         <MonthCalendarGrid
           month={month}
           itemsByDate={itemsByDate}
-          loading={eventsLoading || tasksLoading || definitionsLoading}
+          loading={eventsLoading || calendarsLoading || tasksLoading || definitionsLoading}
           onMonthChange={changeCalendarPeriod}
           onToday={goToToday}
           onDayPress={openDay}
@@ -580,12 +627,16 @@ export function MonthCalendar({
         key={`create-event-${createTarget?.date ?? 'closed'}`}
         visible={createTarget?.tab === 'event'}
         initialDate={createTarget?.date}
+        calendarOptions={createCalendarOptions}
+        initialCalendarId={createCalendarId}
         onClose={() => setCreateTarget(null)}
         onSaved={event => { onEventSaved(event); setCreateTarget(null); }} />
       <TaskComposerSheet
-        key={`create-task-${createTarget?.date ?? 'closed'}`}
+        key={`create-task-${createTarget?.date ?? 'closed'}-${createCalendarId}`}
         visible={createTarget?.tab === 'task'}
         initialDate={createTarget?.date}
+        calendarOptions={createCalendarOptions}
+        initialCalendarId={createCalendarId}
         onClose={() => setCreateTarget(null)}
         onCreated={task => { onTaskCreated(task); setCreateTarget(null); }} />
       <CalendarStatCheckInSheet
@@ -598,6 +649,8 @@ export function MonthCalendar({
         key={`edit-event-${editingEvent?.id ?? 'closed'}-${editingOccurrence?.occurrenceKey ?? 'series'}`}
         visible={Boolean(editingEvent)}
         event={editingEvent}
+        calendarOptions={calendars}
+        initialCalendarId={editingEvent?.calendarId ?? createCalendarId}
         occurrenceKey={editingOccurrence?.occurrenceKey}
         occurrenceDate={editingOccurrence?.occurrenceDate}
         occurrenceStatus={editingOccurrence?.status}
@@ -647,6 +700,7 @@ export function MonthCalendar({
       <TaskDetailSheet
         key={`task-${selectedTask?.taskId ?? 'closed'}`}
         task={selectedTask}
+        availableCalendars={calendars}
         onClose={() => setSelectedTask(null)}
         onUpdated={task => { onTaskUpdated(task); setSelectedTask(null); }}
         onDeleted={taskId => { onTaskDeleted(taskId); setSelectedTask(null); }}
@@ -659,7 +713,7 @@ export function MonthCalendar({
 }
 
 const styles = StyleSheet.create({
-  floatingDisplayButton: { position: 'absolute', right: 18, bottom: 24, minHeight: 48, borderRadius: 24, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 7, shadowOffset: { width: 0, height: 5 }, shadowRadius: 12, shadowOpacity: 0.28, elevation: 6 },
+  floatingActionButton: { minHeight: 48, borderRadius: 24, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 7, shadowOffset: { width: 0, height: 5 }, shadowRadius: 12, shadowOpacity: 0.28, elevation: 6 },
   viewToggle: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   filterScroll: { maxHeight: 460 },
   filterContent: { gap: 14, paddingBottom: 2 },

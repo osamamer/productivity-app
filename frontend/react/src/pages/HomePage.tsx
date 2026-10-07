@@ -37,7 +37,8 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import ReplayIcon from '@mui/icons-material/Replay';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import NotificationsNoneIcon from '@mui/icons-material/NotificationsNone';
-import { taskGroupService, taskService } from '../services/api';
+import { mergeTaskDeletionReceipts, taskGroupService, taskService } from '../services/api';
+import type { TaskDeletionReceipt } from '../services/api';
 import { invalidateResource } from '../services/cache/resourceInvalidation';
 import { Task } from '../types/Task';
 import { TaskGroup } from '../types/TaskGroup';
@@ -61,6 +62,7 @@ import { BulkTaskDatePopover } from '../components/task/BulkTaskDatePopover';
 import { findKeyboardDeleteAnchor, useKeyboardDelete } from '../hooks/useKeyboardDelete';
 import { TaskReminderPicker } from '../components/task/TaskReminderPicker';
 import { usePomodoro } from '../hooks/usePomodoro';
+import { TodayEventsSection } from '../components/home/TodayEventsSection';
 
 type ActiveExpansion = { taskId: string; panel: 'pomodoro' | 'details' } | null;
 type FocusVisibility = 'all' | 'fading' | 'sliding' | 'hidden' | 'revealing' | 'returning';
@@ -128,20 +130,40 @@ function tasksForDeleteScope(request: DeleteRequest, scope: DeleteScope, allTask
     ));
 }
 
-async function deleteTasksForScope(tasks: Task[], scope: DeleteScope): Promise<void> {
+async function deleteTasksForScope(tasks: Task[], scope: DeleteScope): Promise<TaskDeletionReceipt | null> {
     const deletedSeriesIds = new Set<string>();
     const options = { notifyResource: false };
-    await Promise.all(tasks.flatMap(task => {
+    const operations = tasks.flatMap(task => {
         if (scope === 'series' && task.taskSeriesId) {
             if (deletedSeriesIds.has(task.taskSeriesId)) return [];
             deletedSeriesIds.add(task.taskSeriesId);
-            return [taskService.deleteTask(task.taskId, options)];
+            return [() => taskService.deleteTask(task.taskId, options)];
         }
 
-        return [scope === 'occurrence'
+        return [() => scope === 'occurrence'
             ? taskService.deleteTaskInstance(task, options)
             : taskService.deleteTask(task.taskId, options)];
-    }));
+    });
+    const receipts: Array<TaskDeletionReceipt | null> = [];
+    try {
+        for (const operation of operations) receipts.push(await operation());
+    } catch (error) {
+        const restorableReceipts = receipts.filter(
+            (receipt): receipt is TaskDeletionReceipt => receipt !== null,
+        );
+        if (restorableReceipts.length > 0) {
+            try {
+                const restorableReceipt = mergeTaskDeletionReceipts(restorableReceipts);
+                if (restorableReceipt) {
+                    await taskService.restoreTaskDeletion(restorableReceipt, { notifyResource: false });
+                }
+            } catch (restoreError) {
+                console.error('Could not roll back the completed part of a task deletion:', restoreError);
+            }
+        }
+        throw error;
+    }
+    return mergeTaskDeletionReceipts(receipts);
 }
 
 const HOME_ACTIVE_EXPANSION_STORAGE_KEY = 'home-active-expansion';
@@ -347,7 +369,7 @@ type AnimatedTaskListProps = {
     immediateRemovalTaskIds?: Set<string>;
 };
 
-const TASK_EXIT_DURATION_MS = 180;
+const TASK_EXIT_DURATION_MS = 240;
 const EDGE_DROP_ZONE_OUTSIDE_REACH = 72;
 const EDGE_DROP_ZONE_LIST_OVERLAP = 16;
 
@@ -363,12 +385,9 @@ function AnimatedTaskList({
     const displayedItemsRef = useRef(items);
     const currentItemIdsRef = useRef(new Set(items.map(taskListItemId)));
     const exitingItemIdsRef = useRef(new Set<string>());
-    const exitTimersRef = useRef(new Map<string, number>());
 
     useEffect(() => {
         if (!animateRemovals) {
-            exitTimersRef.current.forEach(timerId => window.clearTimeout(timerId));
-            exitTimersRef.current.clear();
             exitingItemIdsRef.current.clear();
             currentItemIdsRef.current = new Set(items.map(taskListItemId));
             displayedItemsRef.current = items;
@@ -402,9 +421,6 @@ function AnimatedTaskList({
                 .map(taskListItemId),
         );
         immediateRemovalItemIds.forEach(itemId => {
-            const timerId = exitTimersRef.current.get(itemId);
-            if (timerId !== undefined) window.clearTimeout(timerId);
-            exitTimersRef.current.delete(itemId);
             exitingItemIdsRef.current.delete(itemId);
         });
         const reappearedItemIds = items
@@ -413,9 +429,6 @@ function AnimatedTaskList({
 
         currentItemIdsRef.current = nextItemIds;
         reappearedItemIds.forEach(itemId => {
-            const timerId = exitTimersRef.current.get(itemId);
-            if (timerId !== undefined) window.clearTimeout(timerId);
-            exitTimersRef.current.delete(itemId);
             exitingItemIdsRef.current.delete(itemId);
         });
         if (reappearedItemIds.length > 0) {
@@ -449,32 +462,11 @@ function AnimatedTaskList({
 
         const newlyRemovedItems = animatedRemovedItems.filter(item => !exitingItemIdsRef.current.has(taskListItemId(item)));
         if (newlyRemovedItems.length > 0) {
-            newlyRemovedItems.forEach(item => {
-                const itemId = taskListItemId(item);
-                exitingItemIdsRef.current.add(itemId);
-                const timerId = window.setTimeout(() => {
-                    exitTimersRef.current.delete(itemId);
-                    if (currentItemIdsRef.current.has(itemId)) return;
-
-                    exitingItemIdsRef.current.delete(itemId);
-                    setExitingItemIds(new Set(exitingItemIdsRef.current));
-                    const remainingItems = displayedItemsRef.current.filter(
-                        displayedItem => taskListItemId(displayedItem) !== itemId,
-                    );
-                    displayedItemsRef.current = remainingItems;
-                    setDisplayedItems(remainingItems);
-                    if (exitingItemIdsRef.current.size === 0) onAnimatingChange?.(false);
-                }, TASK_EXIT_DURATION_MS);
-                exitTimersRef.current.set(itemId, timerId);
-            });
+            newlyRemovedItems.forEach(item => exitingItemIdsRef.current.add(taskListItemId(item)));
             setExitingItemIds(new Set(exitingItemIdsRef.current));
             onAnimatingChange?.(true);
         }
     }, [animateRemovals, immediateRemovalTaskIds, items, onAnimatingChange]);
-
-    useEffect(() => () => {
-        exitTimersRef.current.forEach(timerId => window.clearTimeout(timerId));
-    }, []);
 
     const renderedItems = animateRemovals ? displayedItems : items;
 
@@ -482,14 +474,39 @@ function AnimatedTaskList({
         <>
             {renderedItems.map(item => {
                 const itemId = taskListItemId(item);
+                const exiting = animateRemovals && exitingItemIds.has(itemId);
                 return (
                     <Collapse
                         key={itemId}
-                        in={animateRemovals ? !exitingItemIds.has(itemId) : true}
+                        in={!exiting}
                         timeout={TASK_EXIT_DURATION_MS}
+                        easing={{
+                            enter: 'cubic-bezier(0.22, 1, 0.36, 1)',
+                            exit: 'cubic-bezier(0.4, 0, 0.2, 1)',
+                        }}
                         unmountOnExit
+                        onExited={() => {
+                            if (currentItemIdsRef.current.has(itemId)) return;
+
+                            exitingItemIdsRef.current.delete(itemId);
+                            setExitingItemIds(new Set(exitingItemIdsRef.current));
+                            const remainingItems = displayedItemsRef.current.filter(
+                                displayedItem => taskListItemId(displayedItem) !== itemId,
+                            );
+                            displayedItemsRef.current = remainingItems;
+                            setDisplayedItems(remainingItems);
+                            if (exitingItemIdsRef.current.size === 0) onAnimatingChange?.(false);
+                        }}
                     >
-                        <Box>{renderItem(item)}</Box>
+                        <Box
+                            sx={{
+                                opacity: exiting ? 0 : 1,
+                                transform: exiting ? 'translateY(-4px)' : 'translateY(0)',
+                                transition: `opacity ${TASK_EXIT_DURATION_MS}ms ease-out, transform ${TASK_EXIT_DURATION_MS}ms ease-out`,
+                            }}
+                        >
+                            {renderItem(item)}
+                        </Box>
                     </Collapse>
                 );
             })}
@@ -637,6 +654,7 @@ export function HomePage() {
     const {
         activePomodoro,
         pomodoroStatusResolved,
+        refreshActivePomodoro,
     } = usePomodoro();
     const restoredPomodoro = activePomodoro?.active ? activePomodoro : null;
     const restoredPomodoroTaskId = restoredPomodoro?.associatedTaskId ?? null;
@@ -1350,7 +1368,7 @@ export function HomePage() {
         const previousCollapsedGroupIds = new Set(collapsedGroupIds);
         const previousTaskOrder = allTasks.map(task => task.taskId);
         setDeleteRequest(null);
-        setDeleteSubmitting(false);
+        setDeleteSubmitting(true);
         taskService.markTasksDeleted([...deletedTaskIds]);
         setPendingDeletedTaskIds(previous => [
             ...new Set([...previous, ...deletedTaskIds]),
@@ -1378,37 +1396,87 @@ export function HomePage() {
             setGroups(previousGroups);
             setCollapsedGroupIds(previousCollapsedGroupIds);
         };
-        const commitDelete = async () => {
-            let taskDeletionStarted = false;
+        const message = request.kind === 'group'
+            ? 'Group deleted'
+            : request.kind === 'bulk'
+                ? `${request.tasks.length} tasks deleted`
+                : scope === 'series' ? 'Task series deleted' : 'Task deleted';
+
+        void (async () => {
+            const receipts: Array<TaskDeletionReceipt | null> = [];
             try {
                 if (request.kind === 'group') {
-                    await taskGroupService.deleteGroup(request.group.groupId);
+                    receipts.push(await taskGroupService.deleteGroup(request.group.groupId));
                 }
-                taskDeletionStarted = true;
-                await deleteTasksForScope(tasksToDelete, scope);
-                if (deletedActivePomodoroTaskId) {
-                    handlePomodoroActiveChange(deletedActivePomodoroTaskId, false, { animate: false });
+                receipts.push(await deleteTasksForScope(tasksToDelete, scope));
+                const receipt = mergeTaskDeletionReceipts(receipts);
+                const activeTaskIdToRefresh = activePomodoro?.active
+                    ? activePomodoro.associatedTaskId
+                    : deletedActivePomodoroTaskId;
+                const deletedPomodoroTaskId = activeTaskIdToRefresh
+                    && (receipt?.taskIds.includes(activeTaskIdToRefresh)
+                        || (!receipt && deletedTaskIds.has(activeTaskIdToRefresh)))
+                    ? activeTaskIdToRefresh
+                    : null;
+                if (deletedPomodoroTaskId) {
+                    handlePomodoroActiveChange(deletedPomodoroTaskId, false, { animate: false });
+                    void refreshActivePomodoro(true)
+                        .catch(refreshError => console.error(
+                            'Could not refresh the active Pomodoro after task deletion:', refreshError,
+                        ));
                 }
                 setPendingDeletedTaskIds(previous => previous.filter(taskId => !deletedTaskIds.has(taskId)));
+                taskGroupService.clearCache();
+                void refreshGroups().catch(refreshError => console.error(
+                    'Could not refresh task groups after deletion:', refreshError,
+                ));
                 invalidateResource('tasks');
+                if (receipt) {
+                    showUndoFeedback(message, async () => {
+                        await taskService.restoreTaskDeletion(receipt, { notifyResource: false });
+                        restoreDeletedTasks();
+                        void refreshActivePomodoro(true)
+                            .catch(refreshError => console.error(
+                                'Could not refresh the active Pomodoro after undo:', refreshError,
+                            ));
+                        taskGroupService.clearCache();
+                        void Promise.allSettled([refreshTaskBuckets(true), refreshGroups()]);
+                        invalidateResource('tasks');
+                    }, () => {}, 'success');
+                } else {
+                    showTaskFeedback('success', message);
+                }
             } catch (err) {
                 console.error(`Error deleting ${request.kind === 'group' ? 'group' : request.kind === 'bulk' ? 'selected tasks' : 'task'}:`, err);
-                if (!taskDeletionStarted) taskService.restoreTasks([...deletedTaskIds]);
-                setPendingDeletedTaskIds(previous => previous.filter(taskId => !deletedTaskIds.has(taskId)));
-                await Promise.all([refreshTaskBuckets(true), refreshGroups()]);
+                let rollbackSucceeded = true;
+                const restorableReceipts = receipts.filter(
+                    (receipt): receipt is TaskDeletionReceipt => receipt !== null,
+                );
+                if (restorableReceipts.length > 0) {
+                    try {
+                        const restorableReceipt = mergeTaskDeletionReceipts(restorableReceipts);
+                        if (restorableReceipt) {
+                            await taskService.restoreTaskDeletion(restorableReceipt, { notifyResource: false });
+                        }
+                    } catch (restoreError) {
+                        rollbackSucceeded = false;
+                        console.error('Could not restore task data after a failed deletion:', restoreError);
+                    }
+                } else {
+                    taskService.restoreTasks([...deletedTaskIds]);
+                }
+                if (rollbackSucceeded) {
+                    restoreDeletedTasks();
+                } else {
+                    setPendingDeletedTaskIds(previous => previous.filter(taskId => !deletedTaskIds.has(taskId)));
+                    taskService.markTasksDeleted([...deletedTaskIds]);
+                }
+                void Promise.allSettled([refreshTaskBuckets(true), refreshGroups()]);
+                showTaskFeedback('error', 'Could not delete the selected task data');
+            } finally {
+                setDeleteSubmitting(false);
             }
-        };
-
-        showUndoFeedback(
-            request.kind === 'group'
-                ? 'Group deleted'
-                : request.kind === 'bulk'
-                    ? `${request.tasks.length} tasks deleted`
-                    : scope === 'series' ? 'Task series deleted' : 'Task deleted',
-            restoreDeletedTasks,
-            commitDelete,
-            'error',
-        );
+        })();
     }
 
     async function performBulkAction(action: BulkAction, scheduledDateTime?: string) {
@@ -3158,7 +3226,7 @@ export function HomePage() {
                                 <Fade in={groupAddingTaskId === item.group.groupId} timeout={150}>
                                     <GroupTaskInputRow
                                         key={`${item.group.groupId}:${groupTaskInputGeneration}`}
-                                        groupName={item.group.name}
+                                        contextName={item.group.name}
                                         animate
                                         onSubmit={taskToCreate => {
                                             void createTaskInGroup(item.group, item.tasks[0]?.taskId, taskToCreate);
@@ -3481,6 +3549,8 @@ export function HomePage() {
                         </Typography>
                     ) : null}
 
+                    {focusVisibility === 'all' && <TodayEventsSection />}
+
                     <Collapse
                         in={homeTaskControlsReady && focusVisibility === 'all'
                             && showOlderTasks && olderTasks.length > 0}
@@ -3597,6 +3667,7 @@ export function HomePage() {
                                 </Typography>
                                 <TaskReminderPicker
                                     value={task.reminderMinutesBefore}
+                                    scheduledAt={task.scheduledPerformDateTime}
                                     disabled={!task.scheduledPerformDateTime}
                                     onChange={reminderMinutesBefore => {
                                         void updateTask(task.taskId, { reminderMinutesBefore });
@@ -3653,6 +3724,11 @@ export function HomePage() {
                                 const menu = taskContextMenu;
                                 setTaskContextMenu(null);
                                 deleteTask(menu.task, menu.anchorEl);
+                            }} sx={{
+                                '&:hover': {
+                                    color: 'error.main',
+                                    '& .MuiListItemIcon-root': { color: 'inherit' },
+                                },
                             }}>
                                 <ListItemIcon><DeleteOutlineIcon fontSize="small" /></ListItemIcon>
                                 <ListItemText>Delete task</ListItemText>

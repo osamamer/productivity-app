@@ -155,7 +155,18 @@ PRODUCTION_KNOWN_HOSTS=<verified output of ssh-keyscan -H your-server-hostname>
 EXPO_PUSH_ACCESS_TOKEN=<optional Expo Push Service access token>
 ```
 
-Store the complete private key, including its `BEGIN` and `END` lines. Verify the
+Generate a VAPID key pair once for browser notifications and keep it stable across
+deployments. Add the output as `WEB_PUSH_VAPID_PUBLIC_KEY` and
+`WEB_PUSH_VAPID_PRIVATE_KEY` in the production server's `.env` file. Set
+`WEB_PUSH_VAPID_SUBJECT` to a monitored `mailto:` address. The public key is also
+needed by browsers when they subscribe; changing either key requires users to enable
+browser notifications again.
+
+```sh
+node scripts/generate-web-push-vapid-keys.mjs
+```
+
+Store the complete SSH private key, including its `BEGIN` and `END` lines. Verify the
 server fingerprint independently before adding `PRODUCTION_KNOWN_HOSTS`; strict host
 key checking is intentional. If the repository is private, give the server's Git
 remote a read-only deploy key so `git fetch origin master` can update the checkout.

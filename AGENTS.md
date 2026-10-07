@@ -20,6 +20,7 @@ This reuses healthy Docker services (PostgreSQL and Keycloak) and existing healt
 ```bash
 cd backend && ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev   # Run with dev profile
 cd backend && ./mvnw test                     # All tests
+cd backend && ./mvnw -B -ntp -Dtest=EndToEndTest,TaskProjectAssignmentTest,MentalStateServiceTest,CalendarEventServiceTest,NotificationServiceRepeatTest test # Focused CI regression suite
 cd backend && ./mvnw test -Dtest=EndToEndTest # Single test class
 cd backend && ./mvnw test -Dtest=EndToEndTest#startAndEndSession  # Single test method
 cd backend && ./mvnw clean package            # Build JAR
@@ -30,7 +31,10 @@ cd backend && ./mvnw clean package            # Build JAR
 cd frontend/react && npm run dev      # Dev server (port 5173)
 cd frontend/react && npm run build    # Production build
 cd frontend/react && npm run lint     # ESLint (max-warnings 0)
+cd frontend/react && npm run test:regression
+cd frontend/mobile && npm run test:regression
 ```
+The standalone GitHub Actions workflow `.github/workflows/regression.yml` runs this focused cross-stack regression suite on every push, independently from build/deploy. See [REGRESSION_TESTING.md](REGRESSION_TESTING.md) for its coverage.
 
 ### Dev Coach CLI
 ```bash
@@ -62,7 +66,7 @@ Feature packages follow a consistent pattern — each has an entity, repository,
 
 WebSocket (STOMP) is configured in `WebSocketConfig.java`. The frontend connects via `/ws` (proxied by Vite).
 
-Reminder delivery is database-first. `ScheduledJobExecutor` locks and runs each due Pomodoro job in one transaction with creation of its notification, while `NotificationService` sends each due record once to the WebSocket and Expo Push Service. The app-wide frontend `NotificationCenter` owns the single authenticated socket, synchronizes `/api/v1/notifications/due` on startup/reconnect/focus/visibility/online changes and on a recovery interval, presents either an OS notification or a queued in-app fallback, then acknowledges it. Never add feature-specific ephemeral notification sockets; create another typed durable notification instead.
+Reminder delivery is database-first. `ScheduledJobExecutor` locks and runs each due Pomodoro job in one transaction with creation of its notification, while `NotificationService` sends each due record once to the WebSocket, Expo Push Service, and any registered browser subscriptions. Web notifications use VAPID Web Push and the root service worker so delivery does not depend on an open tab; browser subscription endpoints are secret capabilities and must not be logged. The app-wide frontend `NotificationCenter` owns the single authenticated socket, synchronizes `/api/v1/notifications/due` on startup/reconnect/focus/visibility/online changes and on a recovery interval, presents either an OS notification or a queued in-app fallback, then acknowledges it. Never add feature-specific ephemeral notification sockets; create another typed durable notification instead.
 
 The mobile client uses Expo remote push for every application notification, including calendar, task, check-up, Pomodoro, and meditation notifications. It syncs the device time zone for check-up schedules on startup and foreground, suppresses a check-up when a check-in is recorded within thirty minutes of its scheduled time, and expires check-up pushes after thirty minutes. It must not schedule local copies or re-present the durable inbox; startup cleanup only removes schedules left by older mobile builds. The backend records the first dispatch attempt so an unacknowledged remote push is not sent repeatedly.
 
@@ -70,7 +74,7 @@ The mobile client uses Expo remote push for every application notification, incl
 
 - **Production**: PostgreSQL on port 5432 (via Docker)
 - **Tests**: H2 in-memory; Liquibase disabled; `spring.jpa.hibernate.ddl-auto=create-drop`
-- **Migrations**: Liquibase YAML files in `backend/src/main/resources/db/changelog/changes/`; master file is `db.changelog-master.yaml`. Mental threads, load history, daily capacity check-ins, task connections, individual repeating-calendar-event cancellations, and the Sleep system stat are persisted by the latest migrations. Projects (including recurring-series project assignment) are persisted by migration 069; check-up time zones by 070; soft deletion for application records and association rows by 071.
+- **Migrations**: Liquibase YAML files in `backend/src/main/resources/db/changelog/changes/`; master file is `db.changelog-master.yaml`. Mental threads, load history, daily capacity check-ins, task connections, individual repeating-calendar-event cancellations, and the Sleep system stat are persisted by the latest migrations. Projects (including recurring-series project assignment) are persisted by migration 069; check-up time zones by 070; soft deletion for application records and association rows by 071; project colors and icons by 073; user-owned calendars and item assignments by 074–075; default calendar accent color by 076; browser push subscriptions by 078.
 - **Soft deletion**: All JPA entities, including relationship rows, use `soft_deleted`; entity deletion is an update and normal ORM queries filter deleted rows. New entities and relationship tables must follow the same mapping and receive a forward migration. Bulk mutations must explicitly exclude or mark soft-deleted rows; preserve the previous cascade/unlink behavior in services because database foreign-key delete actions do not run on soft deletes. Keep uniqueness constraints scoped to active rows so a deleted value can be reused.
 - Dev applies Liquibase migrations incrementally with `spring.liquibase.drop-first=false`; PostgreSQL data persists in the named `postgres_data` Docker volume across normal app restarts
 - The `dev` profile fills missing `sleep_time` entries across the latest year with deterministic demo values after startup, while preserving any dates the user already recorded; test and production profiles never seed this data
@@ -108,7 +112,7 @@ All user-scoped entities (Task, DayEntity, MeditationSession, TaskSession, Pomod
 - **Notes**: `pages/NotesPage.tsx` and `components/notes/`; the frontend calls the planned authenticated API through `services/api/notesService.ts`, with its backend contract tracked in `backend/NOTES_BACKEND_TODO.md`
 - **Mental threads**: `pages/MentalThreadsPage.tsx` and `components/mental-threads/`; the dashboard keeps total subjective load separate from the user's daily capacity check-in
 - **Mental state**: `pages/MentalStatePage.tsx` and `components/mental-state/`; each check-in records six signals together, calculates private derived scores on the backend, returns only state and suggested actions, and supports multiple entries per day
-- **Projects**: `pages/ProjectsPage.tsx` and `components/projects/`; master/detail view with inline task quick-add, complete/unassign, and project assignment in the task details panel
+- **Projects**: `pages/ProjectsPage.tsx` and `components/projects/`; master/detail view with saved project colors/icons, task progress and due-date overview, inline quick-add, collapsible completed tasks, and project assignment in the task details panel
 
 ### Services / Ports
 

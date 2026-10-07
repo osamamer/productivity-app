@@ -11,6 +11,7 @@ import org.osama.scheduling.ScheduledJob;
 import org.osama.task.Task;
 import org.osama.user.User;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -47,17 +48,30 @@ public class NotificationService {
     private final MentalStateCheckInRepository checkInRepository;
     private final SimpMessagingTemplate messagingTemplate;
     private final ExpoPushNotificationService expoPushNotificationService;
+    private final WebPushNotificationService webPushNotificationService;
+
+    @Autowired
+    public NotificationService(ReminderRepository reminderRepository,
+                               CalendarEventCancellationRepository cancellationRepository,
+                               MentalStateCheckInRepository checkInRepository,
+                               SimpMessagingTemplate messagingTemplate,
+                               ExpoPushNotificationService expoPushNotificationService,
+                               WebPushNotificationService webPushNotificationService) {
+        this.reminderRepository = reminderRepository;
+        this.cancellationRepository = cancellationRepository;
+        this.checkInRepository = checkInRepository;
+        this.messagingTemplate = messagingTemplate;
+        this.expoPushNotificationService = expoPushNotificationService;
+        this.webPushNotificationService = webPushNotificationService;
+    }
 
     public NotificationService(ReminderRepository reminderRepository,
                                CalendarEventCancellationRepository cancellationRepository,
                                MentalStateCheckInRepository checkInRepository,
                                SimpMessagingTemplate messagingTemplate,
                                ExpoPushNotificationService expoPushNotificationService) {
-        this.reminderRepository = reminderRepository;
-        this.cancellationRepository = cancellationRepository;
-        this.checkInRepository = checkInRepository;
-        this.messagingTemplate = messagingTemplate;
-        this.expoPushNotificationService = expoPushNotificationService;
+        this(reminderRepository, cancellationRepository, checkInRepository,
+                messagingTemplate, expoPushNotificationService, null);
     }
 
     @Scheduled(fixedDelayString = "${app.notifications.dispatch-delay-ms:5000}")
@@ -109,17 +123,20 @@ public class NotificationService {
                 log.warn("WebSocket notification skipped because user has no Keycloak identity: userId={} notificationId={}",
                         reminder.getUserId(), reminder.getReminderId());
             }
-            boolean remotePushAccepted = expoPushNotificationService.send(reminder);
-            // A reminder is claimed permanently after its first delivery attempt. Expo
-            // can accept a request even when the response is lost, so retrying an
-            // unacknowledged request would create duplicate native notifications.
+            boolean mobilePushAccepted = expoPushNotificationService.send(reminder);
+            boolean browserPushAccepted = webPushNotificationService == null
+                    || webPushNotificationService.send(reminder);
+            // A reminder is claimed permanently after its first delivery attempt. A
+            // push service can accept a request even when the response is lost, so
+            // retrying an unacknowledged request would create duplicate notifications.
             reminder.setDispatchedAt(deliveryTime);
-            if (!remotePushAccepted) {
+            if (!mobilePushAccepted || !browserPushAccepted) {
                 log.warn("Remote notification delivery was not accepted: userId={} notificationId={} type={}",
                         reminder.getUserId(), reminder.getReminderId(), reminder.getNotificationType());
             }
-            log.debug("Notification push attempted: userId={} notificationId={} type={} remotePushAccepted={}",
-                    reminder.getUserId(), reminder.getReminderId(), reminder.getNotificationType(), remotePushAccepted);
+            log.debug("Notification push attempted: userId={} notificationId={} type={} mobilePushAccepted={} browserPushAccepted={}",
+                    reminder.getUserId(), reminder.getReminderId(), reminder.getNotificationType(),
+                    mobilePushAccepted, browserPushAccepted);
         }
     }
 

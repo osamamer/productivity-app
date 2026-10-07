@@ -1,10 +1,12 @@
+import { CompactPopover } from '../components/CompactPopover';
 import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-    Box, Button, Typography, Alert, Stack, Skeleton,
-    IconButton, Dialog, DialogTitle, DialogContent,
-    DialogContentText, DialogActions, TextField, Collapse,
-    ListItemIcon, ListItemText, Menu, MenuItem, Snackbar,
+    Box, Button, Typography, Alert,
+    Stack, Skeleton, IconButton, DialogTitle,
+    DialogContent, DialogContentText, DialogActions, TextField,
+    Collapse, ListItemIcon, ListItemText, Menu,
+    MenuItem, Snackbar,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { keyframes } from '@mui/system';
@@ -197,6 +199,7 @@ export function StatsPage() {
     const [entryRefreshKeys, setEntryRefreshKeys] = useState<Record<string, number>>({});
     const [resourceRefreshKey, setResourceRefreshKey] = useState(0);
     const [deleteTarget, setDeleteTarget] = useState<StatDefinition | null>(null);
+    const [deleteAnchorPosition, setDeleteAnchorPosition] = useState<PopupPosition | null>(null);
     const [draggedId, setDraggedId] = useState<string | null>(null);
     const [orderError, setOrderError] = useState<string | null>(null);
     const [groups, setGroups] = useState<StatGroup[]>([]);
@@ -206,12 +209,14 @@ export function StatsPage() {
     const [groupName, setGroupName] = useState('');
     const [groupSaving, setGroupSaving] = useState(false);
     const [deleteGroupTarget, setDeleteGroupTarget] = useState<StatGroup | null>(null);
+    const [deleteGroupAnchorPosition, setDeleteGroupAnchorPosition] = useState<PopupPosition | null>(null);
     const [groupCreateDefinitionIds, setGroupCreateDefinitionIds] = useState<string[]>([]);
     const [groupOrderError, setGroupOrderError] = useState<string | null>(null);
     const [draggedGroupId, setDraggedGroupId] = useState<string | null>(null);
     const [dragTargetGroupId, setDragTargetGroupId] = useState<string | null>(null);
     const [dragTargetGroupPosition, setDragTargetGroupPosition] = useState<GroupDropPosition | null>(null);
     const [bulkDeleteTargets, setBulkDeleteTargets] = useState<StatDefinition[] | null>(null);
+    const [bulkDeleteAnchorPosition, setBulkDeleteAnchorPosition] = useState<PopupPosition | null>(null);
     const [deleteSubmitting, setDeleteSubmitting] = useState(false);
     const [openGroupIds, setOpenGroupIds] = useState<Set<string>>(() => readOpenStatGroupIds(groupPreferencesKey));
     // Preserve each opened group's row state so collapsing it does not restart dot loading.
@@ -995,13 +1000,17 @@ export function StatsPage() {
         onDelete: () => {
             if (keyboardSelectedDefinitions.length > 1) {
                 if (selectedDeletableDefinitions.length === keyboardSelectedDefinitions.length) {
+                    setBulkDeleteAnchorPosition(null);
                     setBulkDeleteTargets(selectedDeletableDefinitions);
                 }
                 return;
             }
 
             const definition = keyboardSelectedDefinitions[0];
-            if (definition && !definition.systemKey) setDeleteTarget(definition);
+            if (definition && !definition.systemKey) {
+                setDeleteAnchorPosition(null);
+                setDeleteTarget(definition);
+            }
         },
     });
 
@@ -1426,7 +1435,7 @@ export function StatsPage() {
                     </Stack>
                 </Stack>
 
-                <Dialog
+                <CompactPopover
                     open={showCreateForm}
                     onClose={closeCreateStatDialog}
                     fullWidth
@@ -1444,9 +1453,9 @@ export function StatsPage() {
                             onCancel={closeCreateStatDialog}
                         />
                     </DialogContent>
-                </Dialog>
+                </CompactPopover>
 
-                <Dialog
+                <CompactPopover
                     open={Boolean(editTarget)}
                     onClose={() => setEditTarget(null)}
                     fullWidth
@@ -1478,12 +1487,15 @@ export function StatsPage() {
                                     setEditTarget(null);
                                     openRecurringTaskEditor(definition, anchorPosition);
                                 }}
-                                onDelete={() => setDeleteTarget(editTarget)}
+                                onDelete={anchor => {
+                                    setDeleteAnchorPosition(anchor ? popupPositionForElement(anchor) : null);
+                                    setDeleteTarget(editTarget);
+                                }}
                                 onCancel={() => setEditTarget(null)}
                             />
                         )}
                     </DialogContent>
-                </Dialog>
+                </CompactPopover>
 
                 <StatCreateLinkedTaskDialog
                     open={Boolean(createLinkedTaskTarget)}
@@ -1561,7 +1573,7 @@ export function StatsPage() {
                     }}
                 />
 
-                <Dialog
+                <CompactPopover
                     open={groupDialogOpen}
                     onClose={closeGroupDialog}
                     fullWidth
@@ -1592,7 +1604,7 @@ export function StatsPage() {
                             {groupEditTarget ? 'Save' : 'Create'}
                         </Button>
                     </DialogActions>
-                </Dialog>
+                </CompactPopover>
 
                 {loading && <StatsLoadingState />}
                 {error && <Alert severity="error">{error}</Alert>}
@@ -1881,7 +1893,10 @@ export function StatsPage() {
                         color="error"
                         aria-label="Delete selected stats"
                         title="Delete selected stats"
-                        onClick={() => setBulkDeleteTargets(selectedDeletableDefinitions)}
+                        onClick={event => {
+                            setBulkDeleteAnchorPosition(popupPositionForElement(event.currentTarget));
+                            setBulkDeleteTargets(selectedDeletableDefinitions);
+                        }}
                         disabled={groupSaving || deleteSubmitting || selectedDefinitions.length === 0
                             || selectedDeletableDefinitions.length !== selectedDefinitions.length}
                     >
@@ -1944,6 +1959,7 @@ export function StatsPage() {
                 {contextMenu?.kind === 'stat' && !contextMenu.definition.systemKey && (
                     <MenuItem
                         onClick={() => {
+                            setDeleteAnchorPosition({ top: contextMenu.top, left: contextMenu.left });
                             setDeleteTarget(contextMenu.definition);
                             closeContextMenu();
                         }}
@@ -1977,6 +1993,7 @@ export function StatsPage() {
                             <ListItemText>Rename group</ListItemText>
                         </MenuItem>
                         <MenuItem onClick={() => {
+                            setDeleteGroupAnchorPosition({ top: contextMenu.top, left: contextMenu.left });
                             setDeleteGroupTarget(contextMenu.group);
                             closeContextMenu();
                         }}>
@@ -2006,7 +2023,13 @@ export function StatsPage() {
             </Menu>
 
             {/* Deleting a group only removes its organization metadata. */}
-            <Dialog open={Boolean(deleteGroupTarget)} onClose={() => setDeleteGroupTarget(null)}>
+            <CompactPopover
+                open={Boolean(deleteGroupTarget)}
+                onClose={() => setDeleteGroupTarget(null)}
+                anchorPosition={deleteGroupAnchorPosition ?? undefined}
+                maxWidth="xs"
+                compactConfirmation
+            >
                 <DialogTitle>Delete "{deleteGroupTarget?.name}"?</DialogTitle>
                 <DialogContent>
                     <DialogContentText>
@@ -2017,11 +2040,14 @@ export function StatsPage() {
                     <Button onClick={() => setDeleteGroupTarget(null)}>Cancel</Button>
                     <Button color="error" onClick={() => { void deleteGroup(); }}>Delete group</Button>
                 </DialogActions>
-            </Dialog>
+            </CompactPopover>
 
-            <Dialog
+            <CompactPopover
                 open={Boolean(bulkDeleteTargets)}
                 onClose={() => { if (!deleteSubmitting) setBulkDeleteTargets(null); }}
+                anchorPosition={bulkDeleteAnchorPosition ?? undefined}
+                maxWidth="xs"
+                compactConfirmation
             >
                 <DialogTitle>Delete {bulkDeleteTargets?.length ?? 0} statistics?</DialogTitle>
                 <DialogContent>
@@ -2035,10 +2061,16 @@ export function StatsPage() {
                         Delete
                     </Button>
                 </DialogActions>
-            </Dialog>
+            </CompactPopover>
 
             {/* Delete confirmation dialog */}
-            <Dialog open={Boolean(deleteTarget)} onClose={() => setDeleteTarget(null)}>
+            <CompactPopover
+                open={Boolean(deleteTarget)}
+                onClose={() => setDeleteTarget(null)}
+                anchorPosition={deleteAnchorPosition ?? undefined}
+                maxWidth="xs"
+                compactConfirmation
+            >
                 <DialogTitle>Delete "{deleteTarget?.name}"?</DialogTitle>
                 <DialogContent>
                     <DialogContentText>
@@ -2049,7 +2081,7 @@ export function StatsPage() {
                     <Button onClick={() => setDeleteTarget(null)}>Cancel</Button>
                     <Button color="error" onClick={handleDeleteConfirm}>Delete</Button>
                 </DialogActions>
-            </Dialog>
+            </CompactPopover>
 
             <Snackbar
                 open={Boolean(errorSnackbar)}

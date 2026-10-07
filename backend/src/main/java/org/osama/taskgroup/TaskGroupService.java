@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.osama.exceptions.ResourceNotFoundException;
 import org.osama.mentalthread.MentalThread;
 import org.osama.task.Task;
+import org.osama.task.TaskDeletionReceipt;
 import org.osama.task.TaskRepository;
 import org.osama.user.User;
 import org.osama.user.UserRepository;
@@ -136,11 +137,44 @@ public class TaskGroupService {
     }
 
     @Transactional
-    public void deleteGroup(String groupId, String userId) {
+    public TaskDeletionReceipt deleteGroup(String groupId, String userId) {
         TaskGroup group = getGroupOrThrow(groupId, userId);
+        List<String> membershipIds = group.getTaskMemberships().stream()
+                .map(TaskGroupTask::getId)
+                .toList();
+        TaskDeletionReceipt receipt = new TaskDeletionReceipt(
+                List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
+                List.of(group.getGroupId()), membershipIds, java.util.Map.of());
         group.clearTasks();
         groupRepository.delete(group);
         log.info("Task group deleted: userId={} groupId={}", userId, groupId);
+        return receipt;
+    }
+
+    public TaskGroupDeletionState snapshotDeletionState(Collection<String> taskIds, String userId) {
+        if (taskIds == null || taskIds.isEmpty()) {
+            return new TaskGroupDeletionState(List.of(), List.of());
+        }
+
+        var taskIdSet = new LinkedHashSet<>(taskIds);
+        List<TaskGroup> affectedGroups = groupRepository.findAllByUserIdOrderByDisplayOrderAsc(userId).stream()
+                .filter(group -> group.getTaskMemberships().stream()
+                        .anyMatch(membership -> taskIdSet.contains(membership.getTask().getTaskId())))
+                .toList();
+        return new TaskGroupDeletionState(
+                affectedGroups.stream().map(TaskGroup::getGroupId).toList(),
+                affectedGroups.stream()
+                        .flatMap(group -> group.getTaskMemberships().stream())
+                        .map(TaskGroupTask::getId)
+                        .distinct()
+                        .toList());
+    }
+
+    public record TaskGroupDeletionState(List<String> groupIds, List<String> membershipIds) {
+        public TaskGroupDeletionState {
+            groupIds = List.copyOf(groupIds);
+            membershipIds = List.copyOf(membershipIds);
+        }
     }
 
     @Transactional

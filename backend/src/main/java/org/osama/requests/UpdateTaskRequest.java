@@ -18,6 +18,9 @@ public class UpdateTaskRequest {
 
     private String projectId;
     private boolean projectIdPresent;
+    private String calendarId;
+    private boolean calendarIdPresent;
+    private String calendarScope;
 
     public void setReminderMinutesBefore(Integer reminderMinutesBefore) {
         this.reminderMinutesBefore = reminderMinutesBefore;
@@ -32,5 +35,11 @@ public class UpdateTaskRequest {
     public void setProjectId(String projectId) {
         this.projectId = projectId;
         this.projectIdPresent = true;
+    }
+
+    @JsonSetter("calendarId")
+    public void setCalendarId(String calendarId) {
+        this.calendarId = calendarId;
+        this.calendarIdPresent = true;
     }
 }

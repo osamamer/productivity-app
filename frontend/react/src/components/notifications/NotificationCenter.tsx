@@ -58,6 +58,7 @@ export function NotificationCenter() {
     const navigate = useNavigate();
     const inFlight = useRef(new Set<string>());
     const queuedFallbacks = useRef(new Set<string>());
+    const openedPushAcknowledgement = useRef<string | null>(null);
     const [fallbackQueue, setFallbackQueue] = useState<ApplicationNotification[]>([]);
 
     const deliver = useCallback(async (notification: ApplicationNotification) => {
@@ -68,16 +69,12 @@ export function NotificationCenter() {
             await withNotificationLock(notification.notificationId, async () => {
                 if (!readDeliveryLedger().includes(notification.notificationId)) {
                     const body = notificationBody(notification);
-                    const systemNotification = showSystemNotification(notification.title, {
+                    const systemNotificationShown = await showSystemNotification(notification.title, {
                         body,
                         tag: `productivity-${notification.notificationId}`,
+                        data: { targetUrl: notification.targetUrl },
                     });
-                    if (systemNotification) {
-                        systemNotification.onclick = () => {
-                            window.focus();
-                            if (notification.targetUrl) navigate(notification.targetUrl);
-                            systemNotification.close();
-                        };
+                    if (systemNotificationShown) {
                         rememberPresentation(notification.notificationId);
                         try {
                             await notificationService.acknowledge(notification.notificationId);
@@ -111,14 +108,40 @@ export function NotificationCenter() {
         });
     }, [fallbackQueue]);
 
+    const acknowledgeOpenedPush = useCallback(async (notificationId: string) => {
+        if (openedPushAcknowledgement.current === notificationId) return;
+        openedPushAcknowledgement.current = notificationId;
+        try {
+            await notificationService.acknowledge(notificationId);
+            const url = new URL(window.location.href);
+            if (url.searchParams.get('_notificationId') === notificationId) {
+                url.searchParams.delete('_notificationId');
+                window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+            }
+        } catch (error) {
+            openedPushAcknowledgement.current = null;
+            console.error('Failed to acknowledge opened browser notification:', error);
+        }
+    }, []);
+
     useEffect(() => {
         if (userLoading || !isAuthenticated) return;
 
         let active = true;
         const synchronize = async () => {
             try {
+                const openedNotificationId = new URLSearchParams(window.location.search).get('_notificationId');
+                if (openedNotificationId) void acknowledgeOpenedPush(openedNotificationId);
                 const notifications = await notificationService.getDue();
-                if (active) notifications.forEach(notification => void deliver(notification));
+                if (active) {
+                    notifications.forEach(notification => {
+                        if (notification.notificationId === openedNotificationId) {
+                            void acknowledgeOpenedPush(notification.notificationId);
+                        } else {
+                            void deliver(notification);
+                        }
+                    });
+                }
             } catch (error) {
                 console.error('Failed to synchronize notifications:', error);
             }
@@ -157,7 +180,7 @@ export function NotificationCenter() {
             window.removeEventListener('online', recoverWhenFocused);
             void client.deactivate();
         };
-    }, [deliver, isAuthenticated, userLoading]);
+    }, [acknowledgeOpenedPush, deliver, isAuthenticated, userLoading]);
 
     const currentFallback = fallbackQueue[0] || null;
     const closeFallback = () => setFallbackQueue(current => {

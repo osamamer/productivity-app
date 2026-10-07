@@ -1,0 +1,13 @@
+databaseChangeLog:
+  - changeSet:
+      id: 076-default-calendar-accent-color
+      author: codex
+      comment: Give untouched default calendars the application accent color
+      changes:
+        - update:
+            tableName: app_calendar
+            columns:
+              - column:
+                  name: color
+                  value: accent
+            where: is_default = TRUE AND color = 'blue'

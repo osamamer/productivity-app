@@ -17,5 +17,6 @@ public class TaskSeriesUpdateRequest {
     private List<DayOfWeek> recurrenceDaysOfWeek;
     private LocalDateTime startDateTime;
     private String timeZone;
+    private String calendarId;
     private Boolean active;
 }

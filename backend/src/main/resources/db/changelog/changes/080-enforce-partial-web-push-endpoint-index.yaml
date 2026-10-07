@@ -1,0 +1,18 @@
+databaseChangeLog:
+  - changeSet:
+      id: 080-enforce-partial-web-push-endpoint-index
+      author: codex
+      comment: Enforce endpoint uniqueness only for active browser subscriptions
+      changes:
+        - sql:
+            sql: |
+              DROP INDEX IF EXISTS public.idx_app_web_push_subscription_active_endpoint;
+              CREATE UNIQUE INDEX IF NOT EXISTS idx_app_web_push_subscription_active_endpoint
+                ON public.web_push_subscription (endpoint)
+                WHERE soft_deleted = false;
+      rollback:
+        - sql:
+            sql: |
+              DROP INDEX IF EXISTS public.idx_app_web_push_subscription_active_endpoint;
+              CREATE UNIQUE INDEX IF NOT EXISTS idx_app_web_push_subscription_active_endpoint
+                ON public.web_push_subscription (endpoint);

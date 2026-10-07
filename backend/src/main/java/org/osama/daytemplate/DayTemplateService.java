@@ -1,6 +1,7 @@
 package org.osama.daytemplate;
 
 import lombok.extern.slf4j.Slf4j;
+import org.osama.calendar.CalendarService;
 import org.osama.day.DayService;
 import org.osama.event.CalendarEventRequest;
 import org.osama.event.CalendarEventResponse;
@@ -32,17 +33,20 @@ public class DayTemplateService {
     private final DayService dayService;
     private final CalendarEventService calendarEventService;
     private final TaskService taskService;
+    private final CalendarService calendarService;
 
     public DayTemplateService(DayTemplateRepository templateRepository,
                               UserRepository userRepository,
                               DayService dayService,
                               CalendarEventService calendarEventService,
-                              TaskService taskService) {
+                              TaskService taskService,
+                              CalendarService calendarService) {
         this.templateRepository = templateRepository;
         this.userRepository = userRepository;
         this.dayService = dayService;
         this.calendarEventService = calendarEventService;
         this.taskService = taskService;
+        this.calendarService = calendarService;
     }
 
     @Transactional(readOnly = true)
@@ -60,7 +64,7 @@ public class DayTemplateService {
     @Transactional
     public DayTemplateResponse createTemplate(DayTemplateRequest request, String userId) {
         User user = findUser(userId);
-        ValidatedTemplateItems items = validateAndBuildItems(request);
+        ValidatedTemplateItems items = validateAndBuildItems(request, userId);
 
         DayTemplate template = new DayTemplate();
         template.initializeId();
@@ -76,7 +80,7 @@ public class DayTemplateService {
     @Transactional
     public DayTemplateResponse updateTemplate(String templateId, DayTemplateRequest request, String userId) {
         DayTemplate template = findTemplate(templateId, userId);
-        ValidatedTemplateItems items = validateAndBuildItems(request);
+        ValidatedTemplateItems items = validateAndBuildItems(request, userId);
         template.setName(normalizeTemplateName(request.name()));
         template.replaceItems(items.events(), items.tasks());
         DayTemplate saved = templateRepository.save(template);
@@ -104,13 +108,13 @@ public class DayTemplateService {
 
         List<CalendarEventResponse> events = new ArrayList<>();
         for (DayTemplateEvent templateEvent : template.getEvents()) {
-            events.add(calendarEventService.createEvent(toEventRequest(templateEvent, date), userId));
+            events.add(calendarEventService.createEvent(toEventRequest(templateEvent, date, userId), userId));
         }
 
         List<Task> tasks = new ArrayList<>(template.getTasks().size());
         for (int index = template.getTasks().size() - 1; index >= 0; index--) {
             DayTemplateTask templateTask = template.getTasks().get(index);
-            tasks.add(0, taskService.createTask(toTaskRequest(templateTask, date), userId));
+            tasks.add(0, taskService.createTask(toTaskRequest(templateTask, date, userId), userId));
         }
 
         log.info("Day template applied: userId={} templateId={} date={} eventCount={} taskCount={}",
@@ -128,7 +132,7 @@ public class DayTemplateService {
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
     }
 
-    private ValidatedTemplateItems validateAndBuildItems(DayTemplateRequest request) {
+    private ValidatedTemplateItems validateAndBuildItems(DayTemplateRequest request, String userId) {
         if (request == null) {
             throw new IllegalArgumentException("Template details are required.");
         }
@@ -140,13 +144,13 @@ public class DayTemplateService {
         List<DayTemplateEvent> events = new ArrayList<>();
         List<DayTemplateEventRequest> eventRequests = request.events() == null ? List.of() : request.events();
         for (int index = 0; index < eventRequests.size(); index++) {
-            events.add(toEventEntity(eventRequests.get(index), index));
+            events.add(toEventEntity(eventRequests.get(index), index, userId));
         }
 
         List<DayTemplateTask> tasks = new ArrayList<>();
         List<DayTemplateTaskRequest> taskRequests = request.tasks() == null ? List.of() : request.tasks();
         for (int index = 0; index < taskRequests.size(); index++) {
-            tasks.add(toTaskEntity(taskRequests.get(index), index));
+            tasks.add(toTaskEntity(taskRequests.get(index), index, userId));
         }
         if (events.isEmpty() && tasks.isEmpty()) {
             throw new IllegalArgumentException("A day template must contain at least one event or task.");
@@ -154,7 +158,7 @@ public class DayTemplateService {
         return new ValidatedTemplateItems(events, tasks);
     }
 
-    private DayTemplateEvent toEventEntity(DayTemplateEventRequest request, int displayOrder) {
+    private DayTemplateEvent toEventEntity(DayTemplateEventRequest request, int displayOrder, String userId) {
         if (request == null) {
             throw new IllegalArgumentException("Template events cannot be null.");
         }
@@ -190,10 +194,11 @@ public class DayTemplateService {
         event.setTimeZone(timeZone);
         event.setReminderMinutesBefore(request.reminderMinutesBefore());
         event.setStatus(request.status() == null ? CalendarEventStatus.CONFIRMED : request.status());
+        event.setCalendarId(calendarService.resolveStoredTemplateCalendarId(request.calendarId(), userId));
         return event;
     }
 
-    private DayTemplateTask toTaskEntity(DayTemplateTaskRequest request, int displayOrder) {
+    private DayTemplateTask toTaskEntity(DayTemplateTaskRequest request, int displayOrder, String userId) {
         if (request == null) {
             throw new IllegalArgumentException("Template tasks cannot be null.");
         }
@@ -217,10 +222,11 @@ public class DayTemplateService {
         task.setScheduledTime(request.scheduledTime());
         task.setTag(tag.isEmpty() ? null : tag);
         task.setImportance(request.importance());
+        task.setCalendarId(calendarService.resolveStoredTemplateCalendarId(request.calendarId(), userId));
         return task;
     }
 
-    private CalendarEventRequest toEventRequest(DayTemplateEvent templateEvent, LocalDate date) {
+    private CalendarEventRequest toEventRequest(DayTemplateEvent templateEvent, LocalDate date, String userId) {
         CalendarEventRequest request = new CalendarEventRequest();
         request.setTitle(templateEvent.getTitle());
         request.setDescription(templateEvent.getDescription());
@@ -228,6 +234,7 @@ public class DayTemplateService {
         request.setTimeZone(templateEvent.getTimeZone());
         request.setReminderMinutesBefore(templateEvent.getReminderMinutesBefore());
         request.setStatus(templateEvent.getStatus());
+        request.setCalendarId(calendarService.resolveTemplateCalendarId(templateEvent.getCalendarId(), userId));
         if (templateEvent.isAllDay()) {
             request.setStartDate(date);
             request.setEndDate(date);
@@ -239,7 +246,7 @@ public class DayTemplateService {
         return request;
     }
 
-    private NewTaskRequest toTaskRequest(DayTemplateTask templateTask, LocalDate date) {
+    private NewTaskRequest toTaskRequest(DayTemplateTask templateTask, LocalDate date, String userId) {
         NewTaskRequest request = new NewTaskRequest();
         request.setName(templateTask.getName());
         request.setDescription(templateTask.getDescription());
@@ -248,6 +255,7 @@ public class DayTemplateService {
         ).toString());
         request.setTag(templateTask.getTag());
         request.setImportance(templateTask.getImportance());
+        request.setCalendarId(calendarService.resolveTemplateCalendarId(templateTask.getCalendarId(), userId));
         return request;
     }
 
@@ -255,11 +263,12 @@ public class DayTemplateService {
         List<DayTemplateEventResponse> events = template.getEvents().stream()
                 .map(event -> new DayTemplateEventResponse(event.getId(), event.getDisplayOrder(), event.getTitle(),
                         event.getDescription(), event.isAllDay(), event.getStartTime(), event.getEndTime(),
-                        event.getTimeZone(), event.getReminderMinutesBefore(), event.getStatus()))
+                        event.getTimeZone(), event.getReminderMinutesBefore(), event.getStatus(), event.getCalendarId()))
                 .toList();
         List<DayTemplateTaskResponse> tasks = template.getTasks().stream()
                 .map(task -> new DayTemplateTaskResponse(task.getId(), task.getDisplayOrder(), task.getName(),
-                        task.getDescription(), task.getScheduledTime(), task.getTag(), task.getImportance()))
+                        task.getDescription(), task.getScheduledTime(), task.getTag(), task.getImportance(),
+                        task.getCalendarId()))
                 .toList();
         return new DayTemplateResponse(template.getId(), template.getName(), events, tasks,
                 template.getCreatedAt(), template.getUpdatedAt());

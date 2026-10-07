@@ -5,6 +5,7 @@ import java.time.LocalDate;
 
 public class CalendarEventRequest {
     private String title;
+    private String calendarId;
     private String description;
     private boolean allDay;
     private LocalDate startDate;
@@ -22,6 +23,8 @@ public class CalendarEventRequest {
 
     public String getTitle() { return title; }
     public void setTitle(String title) { this.title = title; }
+    public String getCalendarId() { return calendarId; }
+    public void setCalendarId(String calendarId) { this.calendarId = calendarId; }
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
     public boolean isAllDay() { return allDay; }

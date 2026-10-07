@@ -1,18 +1,9 @@
+import { CompactPopover } from '../CompactPopover';
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
-    Alert,
-    Box,
-    Button,
-    CircularProgress,
-    Dialog,
-    DialogActions,
-    DialogContent,
-    DialogTitle,
-    MenuItem,
-    Slider,
-    Skeleton,
-    Stack,
-    TextField,
+    Alert, Box, Button, CircularProgress,
+    DialogActions, DialogContent, DialogTitle, MenuItem,
+    Slider, Skeleton, Stack, TextField,
     Typography,
 } from '@mui/material';
 import SelfImprovementIcon from '@mui/icons-material/SelfImprovement';
@@ -644,7 +635,7 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
                 )}
             </Stack>
 
-            <Dialog open={finishDialogOpen} onClose={() => !actionLoading && setFinishDialogOpen(false)} fullWidth maxWidth="xs">
+            <CompactPopover open={finishDialogOpen} onClose={() => !actionLoading && setFinishDialogOpen(false)} fullWidth maxWidth="xs">
                 <DialogTitle>How do you feel now?</DialogTitle>
                 <DialogContent>
                     <Typography color="text.secondary" sx={{ mb: 3 }}>
@@ -670,7 +661,7 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
                         {actionLoading ? <CircularProgress size={18} color="inherit" /> : 'Save session'}
                     </Button>
                 </DialogActions>
-            </Dialog>
+            </CompactPopover>
 
             <MeditationNavigationGuard
                 session={startPending ? null : session}

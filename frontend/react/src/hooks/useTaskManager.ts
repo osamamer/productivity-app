@@ -285,17 +285,10 @@ export function useTaskManager() {
         setAllTasksSynchronized(false);
     }, []);
 
-    useEffect(() => subscribeToResourceInvalidation('stats', () => {
-        invalidatePendingTaskLoads();
-        void fetchTodayTasks();
-        void refreshTaskBuckets(false, allTasksLoadModeRef.current);
-    }), [fetchTodayTasks, invalidatePendingTaskLoads, refreshTaskBuckets]);
-
     useEffect(() => subscribeToResourceInvalidation('tasks', () => {
         // Mutations invalidate the task-service cache before emitting this
-        // signal. Session/stat events may emit the same signal without
-        // changing task rows, so let the shared cache decide whether a GET is
-        // needed instead of forcing one for every event.
+        // signal. Linked stat updates are forwarded here after their write has
+        // completed so task views and project counts refresh together.
         invalidatePendingTaskLoads();
         void fetchTodayTasks();
         void refreshTaskBuckets(false, allTasksLoadModeRef.current);

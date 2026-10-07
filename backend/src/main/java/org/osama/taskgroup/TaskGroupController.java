@@ -2,6 +2,7 @@ package org.osama.taskgroup;
 
 import org.osama.user.CurrentUserService;
 import org.osama.task.Task;
+import org.osama.task.TaskDeletionReceipt;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -59,8 +60,7 @@ public class TaskGroupController {
     }
 
     @DeleteMapping("/{groupId}")
-    public ResponseEntity<Void> deleteGroup(@PathVariable String groupId) {
-        groupService.deleteGroup(groupId, currentUserService.getCurrentUserId());
-        return ResponseEntity.noContent().build();
+    public ResponseEntity<TaskDeletionReceipt> deleteGroup(@PathVariable String groupId) {
+        return ResponseEntity.ok(groupService.deleteGroup(groupId, currentUserService.getCurrentUserId()));
     }
 }

@@ -1,0 +1,74 @@
+databaseChangeLog:
+  - changeSet:
+      id: 078-add-web-push-subscriptions
+      author: codex
+      comment: Store browser push subscriptions for notifications delivered while the app is closed
+      changes:
+        - createTable:
+            tableName: web_push_subscription
+            columns:
+              - column:
+                  name: subscription_id
+                  type: varchar(36)
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: endpoint
+                  type: varchar(2048)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: p256dh_key
+                  type: varchar(128)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: auth_secret
+                  type: varchar(64)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: soft_deleted
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+              - column:
+                  name: modified_at
+                  type: timestamp
+        - addForeignKeyConstraint:
+            baseTableName: web_push_subscription
+            baseColumnNames: user_id
+            referencedTableName: app_user
+            referencedColumnNames: id
+            constraintName: fk_app_web_push_subscription_user
+        - createIndex:
+            tableName: web_push_subscription
+            indexName: idx_app_web_push_subscription_user
+            ifNotExists: true
+            columns:
+              - column:
+                  name: user_id
+        - createIndex:
+            tableName: web_push_subscription
+            indexName: idx_app_web_push_subscription_active_endpoint
+            unique: true
+            ifNotExists: true
+            where: soft_deleted = false
+            columns:
+              - column:
+                  name: endpoint
+      rollback:
+        - dropTable:
+            tableName: web_push_subscription

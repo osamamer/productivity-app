@@ -33,6 +33,12 @@ const PRIORITY_OPTIONS = [
     { label: 'High', value: 9, color: '#ef4444' },
 ];
 
+function scheduledAtToday(timeOfDay: string): string {
+    const today = new Date();
+    const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    return /^\d{2}:\d{2}$/.test(timeOfDay) ? `${date}T${timeOfDay}:00` : '';
+}
+
 export function StatCreateLinkedTaskDialog({
     open,
     definition,
@@ -163,7 +169,8 @@ export function StatCreateLinkedTaskDialog({
                             />
                             <TaskReminderPicker
                                 value={reminderMinutesBefore}
-                                disabled={saving}
+                                scheduledAt={scheduledAtToday(timeOfDay)}
+                                disabled={saving || oneTimeMissing}
                                 onChange={setReminderMinutesBefore}
                             />
                         </>

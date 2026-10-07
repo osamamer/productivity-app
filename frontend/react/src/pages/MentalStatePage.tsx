@@ -1,5 +1,10 @@
+import { CompactPopover } from '../components/CompactPopover';
 import { useEffect, useState } from 'react';
-import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Stack, Typography } from '@mui/material';
+import {
+    Alert, Box, Button, CircularProgress,
+    DialogActions, DialogContent, DialogContentText, DialogTitle,
+    Stack, Typography,
+} from '@mui/material';
 import { PageWrapper } from '../components/PageWrapper';
 import { MentalStateCard } from '../components/mental-state/MentalStateCard';
 import { MentalStateHistory } from '../components/mental-state/MentalStateHistory';
@@ -23,6 +28,7 @@ export function MentalStatePage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [deleteTarget, setDeleteTarget] = useState<MentalStateCheckIn | null>(null);
+    const [deleteAnchorPosition, setDeleteAnchorPosition] = useState<{ top: number; left: number } | null>(null);
     const [deleting, setDeleting] = useState(false);
     const [now, setNow] = useState(() => Date.now());
 
@@ -118,14 +124,20 @@ export function MentalStatePage() {
                             checkIns={history}
                             selectedId={selected?.id ?? currentCheckIn?.id ?? null}
                             onSelect={setSelected}
-                            onDelete={setDeleteTarget}
+                            onDelete={(checkIn, anchorPosition) => {
+                                setDeleteTarget(checkIn);
+                                setDeleteAnchorPosition(anchorPosition);
+                            }}
                         />
                     </Box>
                 </Box>
             </Box>
-            <Dialog
+            <CompactPopover
                 open={deleteTarget !== null}
                 onClose={() => { if (!deleting) setDeleteTarget(null); }}
+                anchorPosition={deleteAnchorPosition ?? undefined}
+                maxWidth="xs"
+                compactConfirmation
             >
                 <DialogTitle>Delete this check-in?</DialogTitle>
                 <DialogContent>
@@ -139,7 +151,7 @@ export function MentalStatePage() {
                         {deleting ? <CircularProgress size={18} color="inherit" /> : 'Delete'}
                     </Button>
                 </DialogActions>
-            </Dialog>
+            </CompactPopover>
         </PageWrapper>
     );
 }

@@ -1,4 +1,4 @@
-import { Task } from '../../types/Task';
+import { Task, TaskUpdate } from '../../types/Task';
 import { TaskToCreate } from '../../types/TaskToCreate';
 import { getAuthHeaders } from '../utils/authHeaders';
 import { PomodoroStatus } from '../../types/PomodoroStatus';
@@ -43,6 +43,84 @@ export type TaskPageInitialSnapshot = {
 type DeleteTaskOptions = {
     notifyResource?: boolean;
 };
+
+export type TaskDeletionReceipt = {
+    taskIds: string[];
+    taskSeriesIds: string[];
+    taskSessionIds: string[];
+    scheduledJobIds: string[];
+    pomodoroIds: string[];
+    reminderIds: string[];
+    taskGroupIds: string[];
+    taskGroupMembershipIds: string[];
+    linkedStatDefinitionsBySeries: Record<string, string>;
+};
+
+export async function readTaskDeletionReceipt(response: Response): Promise<TaskDeletionReceipt | null> {
+    if (response.status === 204) {
+        console.warn('Delete succeeded without an undo receipt; Undo is unavailable until the backend is updated.');
+        return null;
+    }
+    try {
+        const value: unknown = await response.json();
+        if (!value || typeof value !== 'object') return null;
+        const receipt = value as Partial<TaskDeletionReceipt>;
+        const listFields: Array<keyof Pick<
+            TaskDeletionReceipt,
+            'taskIds' | 'taskSeriesIds' | 'taskSessionIds' | 'scheduledJobIds' | 'pomodoroIds'
+            | 'reminderIds' | 'taskGroupIds' | 'taskGroupMembershipIds'
+        >> = [
+            'taskIds', 'taskSeriesIds', 'taskSessionIds', 'scheduledJobIds', 'pomodoroIds',
+            'reminderIds', 'taskGroupIds', 'taskGroupMembershipIds',
+        ];
+        if (listFields.some(field => !Array.isArray(receipt[field]))
+            || !receipt.linkedStatDefinitionsBySeries
+            || typeof receipt.linkedStatDefinitionsBySeries !== 'object') {
+            console.warn('Delete succeeded but returned no usable undo receipt.');
+            return null;
+        }
+        return receipt as TaskDeletionReceipt;
+    } catch (error) {
+        console.error('Task deletion succeeded but its undo receipt could not be read:', error);
+        return null;
+    }
+}
+
+type RestoreTaskDeletionOptions = {
+    notifyResource?: boolean;
+};
+
+function emptyTaskDeletionReceipt(): TaskDeletionReceipt {
+    return {
+        taskIds: [],
+        taskSeriesIds: [],
+        taskSessionIds: [],
+        scheduledJobIds: [],
+        pomodoroIds: [],
+        reminderIds: [],
+        taskGroupIds: [],
+        taskGroupMembershipIds: [],
+        linkedStatDefinitionsBySeries: {},
+    };
+}
+
+export function mergeTaskDeletionReceipts(
+    receipts: Array<TaskDeletionReceipt | null | undefined>,
+): TaskDeletionReceipt | null {
+    if (receipts.some(receipt => receipt == null)) return null;
+    const merged = emptyTaskDeletionReceipt();
+    const listKeys = [
+        'taskIds', 'taskSeriesIds', 'taskSessionIds', 'scheduledJobIds', 'pomodoroIds',
+        'reminderIds', 'taskGroupIds', 'taskGroupMembershipIds',
+    ] as const;
+    receipts.filter((receipt): receipt is TaskDeletionReceipt => Boolean(receipt)).forEach(receipt => {
+        listKeys.forEach(key => {
+            merged[key] = [...new Set([...merged[key], ...receipt[key]])];
+        });
+        Object.assign(merged.linkedStatDefinitionsBySeries, receipt.linkedStatDefinitionsBySeries);
+    });
+    return merged;
+}
 const mainTasksCache = new CachedResource<Task[]>({ ttlMs: TASK_CACHE_TTL_MS, maxEntries: 4 });
 const todayTasksCache = new CachedResource<Task[]>({ ttlMs: TASK_CACHE_TTL_MS, maxEntries: 4 });
 const taskPageInitialCache = new CachedResource<TaskPageInitialSnapshot>({ ttlMs: TASK_CACHE_TTL_MS, maxEntries: 4 });
@@ -221,7 +299,12 @@ function cacheMainTasks(tasks: Task[]): void {
     setMainTasksSnapshot(nextTasks);
 }
 
-subscribeToResourceInvalidation('stats', clearTaskDataCaches);
+subscribeToResourceInvalidation('stats', origin => {
+    if (origin === 'task') return;
+    clearTaskDataCaches();
+    // Stat writes can change linked task state, so fan them into task views and derived task caches.
+    invalidateResource('tasks', 'stat');
+});
 
 function taskPageBatchCacheKey(
     period: 'PAST' | 'FUTURE',
@@ -502,6 +585,7 @@ export const taskService = {
                 parentId: task.parentId,
                 mentalThreadId: task.mentalThreadId,
                 projectId: task.projectId,
+                calendarId: task.calendarId,
                 recurrenceFrequency: task.recurrenceFrequency,
                 recurrenceEndDate: task.recurrenceEndDate,
                 recurrenceInterval: task.recurrenceInterval,
@@ -558,7 +642,7 @@ export const taskService = {
         return movedTasks;
     },
 
-    async updateTask(taskId: string, updates: Partial<Task>): Promise<Task> {
+    async updateTask(taskId: string, updates: TaskUpdate): Promise<Task> {
         const response = await fetch(`${TASK_URL}/${taskId}`, {
             method: 'PATCH',
             body: JSON.stringify(updates),
@@ -579,7 +663,7 @@ export const taskService = {
         invalidateTaskViewCaches();
         if (updates.completed !== undefined || updates.scheduledPerformDateTime !== undefined) {
             invalidateResource('tasks');
-            if (updatedTask.statLinked) invalidateResource('stats');
+            if (updatedTask.statLinked) invalidateResource('stats', 'task');
         }
         if ('projectId' in updates) invalidateResource('projects');
         return updatedTask;
@@ -631,7 +715,7 @@ export const taskService = {
         if (cachedDetails) setCachedTaskDetails(taskId, { ...cachedDetails, taskSeries: series });
         invalidateTaskListCaches();
         invalidateResource('tasks');
-        if (series.statLinked) invalidateResource('stats');
+        if (series.statLinked) invalidateResource('stats', 'task');
         return series;
     },
 
@@ -652,7 +736,27 @@ export const taskService = {
         invalidateTaskListCaches();
         invalidateResource('tasks');
         const updatedSeries = await response.json() as TaskSeries;
-        if (updatedSeries.statLinked) invalidateResource('stats');
+        if (updatedSeries.statLinked) invalidateResource('stats', 'task');
+        return updatedSeries;
+    },
+
+    async updateTaskSeriesImportance(seriesId: string, importance: number): Promise<TaskSeries> {
+        const response = await fetch(`${TASK_SERIES_URL}/${seriesId}/importance`, {
+            method: 'PATCH',
+            body: JSON.stringify({ importance }),
+            headers: {
+                'Content-Type': 'application/json; charset=UTF-8',
+                ...getAuthHeaders(),
+            },
+        });
+        if (!response.ok) {
+            throw new Error('Failed to update task series priority');
+        }
+        const updatedSeries = await response.json() as TaskSeries;
+        clearTaskSeriesCache();
+        clearTaskDetailsCache();
+        invalidateTaskListCaches();
+        invalidateResource('tasks');
         return updatedSeries;
     },
 
@@ -679,53 +783,100 @@ export const taskService = {
         return this.updateTask(taskId, { description });
     },
 
-    async deleteTask(taskId: string, { notifyResource = true }: DeleteTaskOptions = {}): Promise<void> {
+    async deleteTask(taskId: string, { notifyResource = true }: DeleteTaskOptions = {}): Promise<TaskDeletionReceipt | null> {
         markTasksDeleted([taskId]);
+        let response: Response;
         try {
-            const response = await fetch(`${TASK_URL}/${taskId}`, {
+            response = await fetch(`${TASK_URL}/${taskId}`, {
                 method: 'DELETE',
                 headers: getAuthHeaders(),
             });
             if (!response.ok) {
                 throw new Error('Failed to delete task');
             }
-            invalidateTaskPomodoroStats(taskId);
-            invalidateTaskListCaches();
-            if (notifyResource) invalidateResource('tasks');
         } catch (error) {
             restoreTasks([taskId]);
             throw error;
         }
+
+        const receipt = await readTaskDeletionReceipt(response);
+        try {
+            if (receipt) markTasksDeleted(receipt.taskIds);
+            invalidateTaskPomodoroStats(taskId);
+            invalidateTaskListCaches();
+            if (receipt && Object.keys(receipt.linkedStatDefinitionsBySeries).length > 0) {
+                invalidateResource('stats', 'task');
+            }
+            if (notifyResource) invalidateResource('tasks');
+        } catch (error) {
+            console.error('Task was deleted but local task caches could not be refreshed:', error);
+        }
+        return receipt;
     },
 
-    async deleteTaskOccurrence(taskId: string, { notifyResource = true }: DeleteTaskOptions = {}): Promise<void> {
+    async deleteTaskOccurrence(taskId: string, { notifyResource = true }: DeleteTaskOptions = {}): Promise<TaskDeletionReceipt | null> {
         markTasksDeleted([taskId]);
+        let response: Response;
         try {
-            const response = await fetch(`${TASK_URL}/${taskId}/occurrence`, {
+            response = await fetch(`${TASK_URL}/${taskId}/occurrence`, {
                 method: 'DELETE',
                 headers: getAuthHeaders(),
             });
             if (!response.ok) {
                 throw new Error('Failed to delete task occurrence');
             }
-            invalidateTaskPomodoroStats(taskId);
-            invalidateTaskListCaches();
-            if (notifyResource) invalidateResource('tasks');
         } catch (error) {
             restoreTasks([taskId]);
             throw error;
         }
+
+        const receipt = await readTaskDeletionReceipt(response);
+        try {
+            if (receipt) markTasksDeleted(receipt.taskIds);
+            invalidateTaskPomodoroStats(taskId);
+            invalidateTaskListCaches();
+            if (notifyResource) invalidateResource('tasks');
+        } catch (error) {
+            console.error('Task occurrence was deleted but local task caches could not be refreshed:', error);
+        }
+        return receipt;
     },
 
     async deleteTaskInstance(
         task: Pick<Task, 'taskId' | 'taskSeriesId'>,
         options: DeleteTaskOptions = {},
-    ): Promise<void> {
+    ): Promise<TaskDeletionReceipt | null> {
         if (task.taskSeriesId) {
-            await this.deleteTaskOccurrence(task.taskId, options);
-            return;
+            return this.deleteTaskOccurrence(task.taskId, options);
         }
-        await this.deleteTask(task.taskId, options);
+        return this.deleteTask(task.taskId, options);
+    },
+
+    async restoreTaskDeletion(
+        receipt: TaskDeletionReceipt,
+        { notifyResource = true }: RestoreTaskDeletionOptions = {},
+    ): Promise<void> {
+        const response = await fetch(`${TASK_URL}/deletions/restore`, {
+            method: 'POST',
+            body: JSON.stringify(receipt),
+            headers: {
+                'Content-Type': 'application/json; charset=UTF-8',
+                ...getAuthHeaders(),
+            },
+        });
+        if (!response.ok) {
+            throw new Error('Failed to undo task deletion');
+        }
+
+        restoreTasks(receipt.taskIds);
+        receipt.taskIds.forEach(invalidateTaskPomodoroStats);
+        invalidateTaskListCaches();
+        clearTaskSeriesCache();
+        clearTaskDetailsCache();
+        if (Object.keys(receipt.linkedStatDefinitionsBySeries).length > 0) {
+            invalidateResource('stats', 'task');
+        }
+        if (notifyResource) invalidateResource('tasks');
     },
 
     clearCache(): void {

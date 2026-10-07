@@ -1,6 +1,7 @@
 package org.osama.event;
 
 import lombok.extern.slf4j.Slf4j;
+import org.osama.calendar.CalendarService;
 import org.osama.exceptions.ResourceNotFoundException;
 import org.osama.reminder.Reminder;
 import org.osama.reminder.ReminderRepository;
@@ -28,15 +29,18 @@ public class CalendarEventService {
     private final CalendarEventCancellationRepository cancellationRepository;
     private final ReminderRepository reminderRepository;
     private final UserRepository userRepository;
+    private final CalendarService calendarService;
 
     public CalendarEventService(CalendarEventRepository eventRepository,
                                 CalendarEventCancellationRepository cancellationRepository,
                                 ReminderRepository reminderRepository,
-                                UserRepository userRepository) {
+                                UserRepository userRepository,
+                                CalendarService calendarService) {
         this.eventRepository = eventRepository;
         this.cancellationRepository = cancellationRepository;
         this.reminderRepository = reminderRepository;
         this.userRepository = userRepository;
+        this.calendarService = calendarService;
     }
 
     @Transactional(readOnly = true)
@@ -53,6 +57,7 @@ public class CalendarEventService {
         CalendarEvent event = new CalendarEvent();
         event.setId(UUID.randomUUID().toString());
         event.setUser(user);
+        event.setCalendarId(calendarService.resolveCalendarId(request.getCalendarId(), userId));
         applyRequest(event, request);
         CalendarEvent saved = eventRepository.save(event);
         Integer reminderMinutes = reminderMinutesForEvent(request, saved);
@@ -66,6 +71,9 @@ public class CalendarEventService {
     public CalendarEventResponse updateEvent(String eventId, CalendarEventRequest request, String userId) {
         CalendarEvent event = eventRepository.findByIdAndUserId(eventId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Calendar event not found: " + eventId));
+        if (request.getCalendarId() != null && !request.getCalendarId().isBlank()) {
+            event.setCalendarId(calendarService.resolveCalendarId(request.getCalendarId(), userId));
+        }
         applyRequest(event, request);
         CalendarEvent saved = eventRepository.save(event);
         Integer reminderMinutes = reminderMinutesForEvent(request, saved);
@@ -422,6 +430,6 @@ public class CalendarEventService {
                                 override.getOverrideStartTime(), override.getOverrideEndTime()))
                         .toList(),
                 reminderMinutes,
-                event.getCreatedAt(), event.getUpdatedAt());
+                event.getCreatedAt(), event.getUpdatedAt(), event.getCalendarId());
     }
 }

@@ -9,6 +9,7 @@ public record DayTemplateTaskResponse(
         String description,
         LocalTime scheduledTime,
         String tag,
-        int importance
+        int importance,
+        String calendarId
 ) {
 }

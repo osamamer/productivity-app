@@ -50,7 +50,7 @@ export function TaskParentPopover({
                     fullWidth
                     size="small"
                     label="Parent task name"
-                    placeholder="Plan the project"
+                    placeholder="Plan the next step"
                     value={name}
                     onChange={event => setName(event.target.value)}
                     inputProps={{ maxLength: 255, 'aria-label': 'New parent task name' }}

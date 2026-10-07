@@ -42,6 +42,14 @@ public class Project {
     @Column
     private String description;
 
+    @Builder.Default
+    @Column(nullable = false, length = 16)
+    private String color = "blue";
+
+    @Builder.Default
+    @Column(nullable = false, length = 24)
+    private String icon = "folder";
+
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 

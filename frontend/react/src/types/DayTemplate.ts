@@ -2,6 +2,7 @@ import { CalendarEvent, CalendarEventStatus } from './CalendarEvent';
 import { Task } from './Task';
 
 export type DayTemplateEventRequest = {
+    calendarId: string;
     title: string;
     description: string;
     allDay: boolean;
@@ -13,6 +14,7 @@ export type DayTemplateEventRequest = {
 };
 
 export type DayTemplateTaskRequest = {
+    calendarId: string;
     name: string;
     description: string;
     scheduledTime: string | null;

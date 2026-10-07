@@ -270,3 +270,19 @@ databaseChangeLog:
       file: db/changelog/changes/071-soft-delete-app-rows.yaml
   - include:
       file: db/changelog/changes/072-soft-delete-stat-definition-indexes.yaml
+  - include:
+      file: db/changelog/changes/073-add-project-appearance.yaml
+  - include:
+      file: db/changelog/changes/074-create-user-calendars.yaml
+  - include:
+      file: db/changelog/changes/075-assign-items-to-calendars.yaml
+  - include:
+      file: db/changelog/changes/076-default-calendar-accent-color.yaml
+  - include:
+      file: db/changelog/changes/077-replace-amber-theme-accent.yaml
+  - include:
+      file: db/changelog/changes/078-add-web-push-subscriptions.yaml
+  - include:
+      file: db/changelog/changes/079-fix-web-push-active-endpoint-index.yaml
+  - include:
+      file: db/changelog/changes/080-enforce-partial-web-push-endpoint-index.yaml

@@ -59,7 +59,9 @@ export const AppThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => 
     });
     const [accentColor, setAccentColorState] = useState<AccentColor>(() => {
         const savedAccentColor = getRuntimeUserPreferences().accentColor;
-        return savedAccentColor === 'teal' || savedAccentColor === 'coral' || savedAccentColor === 'amber' || savedAccentColor === 'violet'
+        if (savedAccentColor === 'amber') return 'sage';
+        return savedAccentColor === 'teal' || savedAccentColor === 'coral'
+            || savedAccentColor === 'sage' || savedAccentColor === 'violet'
             ? savedAccentColor : 'violet';
     });
     const darkMode = mode === 'dark';
@@ -70,8 +72,10 @@ export const AppThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => 
         const syncRuntimePreferences = () => {
             const preferences = getRuntimeUserPreferences();
             if (preferences.themeMode) setMode(preferences.themeMode);
-            if (preferences.accentColor === 'teal' || preferences.accentColor === 'coral'
-                || preferences.accentColor === 'amber' || preferences.accentColor === 'violet') {
+            if (preferences.accentColor === 'amber') {
+                setAccentColorState('sage');
+            } else if (preferences.accentColor === 'teal' || preferences.accentColor === 'coral'
+                || preferences.accentColor === 'sage' || preferences.accentColor === 'violet') {
                 setAccentColorState(preferences.accentColor);
             }
         };

@@ -18,8 +18,13 @@ export interface Task   {
     mentalThreadId: string | null;
     projectId: string | null;
     taskSeriesId: string | null;
+    calendarId?: string;
     seriesOccurrenceAt: string | null;
     skipped: boolean;
     statLinked?: boolean;
     optimisticRecurrence?: TaskRecurrenceDraft;
 }
+
+export type TaskUpdate = Partial<Task> & {
+    calendarScope?: 'occurrence' | 'series';
+};

@@ -24,6 +24,7 @@ public record TaskSeriesResponse(
         boolean active,
         LocalDateTime createdAt,
         LocalDateTime updatedAt,
-        boolean statLinked
+        boolean statLinked,
+        String calendarId
 ) {
 }

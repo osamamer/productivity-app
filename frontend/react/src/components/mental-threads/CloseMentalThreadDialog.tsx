@@ -1,16 +1,9 @@
+import { CompactPopover } from '../CompactPopover';
 import { useEffect, useState } from 'react';
 import {
-    Button,
-    Dialog,
-    DialogActions,
-    DialogContent,
-    DialogTitle,
-    FormControl,
-    InputLabel,
-    MenuItem,
-    Select,
-    Stack,
-    TextField,
+    Button, DialogActions, DialogContent, DialogTitle,
+    FormControl, InputLabel, MenuItem, Select,
+    Stack, TextField,
 } from '@mui/material';
 import { CloseMentalThreadInput, ClosureType, MentalThread } from '../../types/MentalThread.ts';
 import { closureTypeLabels } from './mentalThreadPresentation.ts';
@@ -47,7 +40,7 @@ export function CloseMentalThreadDialog({ thread, onClose, onConfirm }: CloseMen
     };
 
     return (
-        <Dialog open={Boolean(thread)} onClose={saving ? undefined : onClose} fullWidth maxWidth="sm">
+        <CompactPopover open={Boolean(thread)} onClose={saving ? undefined : onClose} fullWidth maxWidth="sm">
             <DialogTitle>Close “{thread?.title}”</DialogTitle>
             <DialogContent dividers>
                 <Stack spacing={2} sx={{ pt: 0.5 }}>
@@ -85,6 +78,6 @@ export function CloseMentalThreadDialog({ thread, onClose, onConfirm }: CloseMen
                     {saving ? 'Closing…' : 'Close thread'}
                 </Button>
             </DialogActions>
-        </Dialog>
+        </CompactPopover>
     );
 }

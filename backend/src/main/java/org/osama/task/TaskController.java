@@ -176,14 +176,18 @@ public class TaskController {
     }
 
     @DeleteMapping("/{taskId}")
-    public ResponseEntity<Void> deleteTask(@PathVariable String taskId) {
-        taskService.deleteTask(taskId, currentUserService.getCurrentUserId());
-        return ResponseEntity.noContent().build();
+    public ResponseEntity<TaskDeletionReceipt> deleteTask(@PathVariable String taskId) {
+        return ResponseEntity.ok(taskService.deleteTask(taskId, currentUserService.getCurrentUserId()));
     }
 
     @DeleteMapping("/{taskId}/occurrence")
-    public ResponseEntity<Void> deleteTaskOccurrence(@PathVariable String taskId) {
-        taskService.deleteTaskOccurrence(taskId, currentUserService.getCurrentUserId());
+    public ResponseEntity<TaskDeletionReceipt> deleteTaskOccurrence(@PathVariable String taskId) {
+        return ResponseEntity.ok(taskService.deleteTaskOccurrence(taskId, currentUserService.getCurrentUserId()));
+    }
+
+    @PostMapping("/deletions/restore")
+    public ResponseEntity<Void> restoreTaskDeletion(@RequestBody TaskDeletionReceipt receipt) {
+        taskService.restoreTaskDeletion(receipt, currentUserService.getCurrentUserId());
         return ResponseEntity.noContent().build();
     }
 

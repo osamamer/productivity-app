@@ -10,6 +10,7 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
+      '/api': 'http://localhost:8080',
       '/auth': {
         target: 'http://localhost:7070',
         // Keycloak serves its endpoints under the same /auth context path.

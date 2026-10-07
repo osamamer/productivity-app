@@ -4,7 +4,7 @@ import { CachedResource } from '../cache/ttlCache';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 const EVENT_URL = `${API_BASE_URL}/api/v1/events`;
-const EVENTS_TTL_MS = 60 * 1000;
+const EVENTS_TTL_MS = 60 * 60 * 1000;
 const eventsCache = new CachedResource<CalendarEvent[]>({ ttlMs: EVENTS_TTL_MS, maxEntries: 4 });
 
 function eventsCacheKey(): string {
@@ -23,6 +23,10 @@ export const eventService = {
             if (!response.ok) throw await parseError(response, 'Failed to load events');
             return response.json();
         });
+    },
+
+    getLastKnownEvents(): CalendarEvent[] | undefined {
+        return eventsCache.getStale(eventsCacheKey());
     },
 
     async createEvent(event: CalendarEventInput): Promise<CalendarEvent> {

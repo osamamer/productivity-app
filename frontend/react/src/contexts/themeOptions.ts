@@ -1,4 +1,4 @@
-export type AccentColor = 'violet' | 'teal' | 'coral' | 'amber';
+export type AccentColor = 'violet' | 'teal' | 'coral' | 'sage';
 
 type ColorPalette = { main: string; light: string; dark: string; contrastText: string };
 
@@ -38,13 +38,13 @@ export const accentPalettes: Record<AccentColor, {
             dark: { main: '#52CDBD', light: '#8DE2D6', dark: '#289A8C', contrastText: '#0F172A' },
         },
     },
-    amber: {
-        label: 'Amber',
-        light: { main: '#D18B00', light: '#E6B54D', dark: '#9E6700', contrastText: '#FFFFFF' },
-        dark: { main: '#F1B93A', light: '#F6D27D', dark: '#D99912', contrastText: '#111827' },
+    sage: {
+        label: 'Sage',
+        light: { main: '#789B78', light: '#A5C5A0', dark: '#557A5D', contrastText: '#FFFFFF' },
+        dark: { main: '#A8CBA2', light: '#C7DEBF', dark: '#7FA47A', contrastText: '#172219' },
         secondary: {
-            light: { main: '#5D63C7', light: '#8A8ED8', dark: '#41469A', contrastText: '#FFFFFF' },
-            dark: { main: '#A7ADF5', light: '#C8CCFF', dark: '#777DD4', contrastText: '#111827' },
+            light: { main: '#8A8ED8', light: '#B0B3E8', dark: '#666BB7', contrastText: '#FFFFFF' },
+            dark: { main: '#B7B9F0', light: '#D2D4FA', dark: '#898CD3', contrastText: '#17182C' },
         },
     },
 };

@@ -1,7 +1,9 @@
+import { CompactPopover } from '../CompactPopover';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-    Alert, Box, CircularProgress, Dialog, DialogContent, DialogTitle,
-    Paper, Stack, ToggleButton, ToggleButtonGroup, Typography,
+    Alert, Box, CircularProgress, DialogContent,
+    DialogTitle, Paper, Stack, ToggleButton,
+    ToggleButtonGroup, Typography,
 } from '@mui/material';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import { format, subDays } from 'date-fns';
@@ -105,7 +107,7 @@ export function StatInsightsDialog({ open, onClose, definition }: Props) {
     const meaningfulRelationships = insights?.correlations.filter(correlation => correlation.meaningful) ?? [];
 
     return (
-        <Dialog open={open} onClose={onClose} fullWidth maxWidth="md">
+        <CompactPopover open={open} onClose={onClose} fullWidth maxWidth="md">
             <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 <AutoAwesomeIcon color="primary" fontSize="small" />
                 Insights about {definition.name}
@@ -160,6 +162,6 @@ export function StatInsightsDialog({ open, onClose, definition }: Props) {
                     )}
                 </Stack>
             </DialogContent>
-        </Dialog>
+        </CompactPopover>
     );
 }

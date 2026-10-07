@@ -1,6 +1,7 @@
 package org.osama.task.recurrence;
 
 import lombok.extern.slf4j.Slf4j;
+import org.osama.calendar.CalendarService;
 import org.osama.exceptions.ResourceNotFoundException;
 import org.osama.requests.NewTaskRequest;
 import org.osama.stat.StatTaskLinkService;
@@ -36,17 +37,20 @@ public class TaskSeriesService {
     private final TaskService taskService;
     private final StatTaskLinkService statTaskLinkService;
     private final ApplicationEventPublisher eventPublisher;
+    private final CalendarService calendarService;
 
     public TaskSeriesService(TaskSeriesRepository seriesRepository,
                              TaskRepository taskRepository,
                              TaskService taskService,
                              StatTaskLinkService statTaskLinkService,
-                             ApplicationEventPublisher eventPublisher) {
+                             ApplicationEventPublisher eventPublisher,
+                             CalendarService calendarService) {
         this.seriesRepository = seriesRepository;
         this.taskRepository = taskRepository;
         this.taskService = taskService;
         this.statTaskLinkService = statTaskLinkService;
         this.eventPublisher = eventPublisher;
+        this.calendarService = calendarService;
     }
 
     @Transactional
@@ -152,6 +156,13 @@ public class TaskSeriesService {
         if (request.getImportance() != null) {
             series.setImportance(request.getImportance());
         }
+        if (request.getCalendarId() != null && !request.getCalendarId().isBlank()) {
+            String calendarId = calendarService.resolveCalendarId(request.getCalendarId(), userId);
+            series.setCalendarId(calendarId);
+            taskRepository.updateCalendarForSeries(seriesId, userId, calendarId);
+            taskRepository.findAllByTaskSeriesIdAndUserIdOrderBySeriesOccurrenceAtAsc(seriesId, userId)
+                    .forEach(occurrence -> occurrence.setCalendarId(calendarId));
+        }
         series.setRecurrenceEndDate(request.getRecurrenceEndDate());
         series.setRecurrenceInterval(frequency == TaskRecurrenceFrequency.CUSTOM
                 ? request.getRecurrenceInterval() : null);
@@ -166,7 +177,7 @@ public class TaskSeriesService {
         }
         TaskSeries saved = seriesRepository.save(series);
         if (request.getImportance() != null) {
-            updateOccurrenceImportance(saved.getSeriesId(), request.getImportance());
+            updateOccurrenceImportance(saved.getSeriesId(), userId, request.getImportance());
         }
         if (saved.isActive()) {
             materializeOccurrences(saved, userId);
@@ -177,8 +188,26 @@ public class TaskSeriesService {
         return toResponse(saved, userId);
     }
 
-    private void updateOccurrenceImportance(String seriesId, int importance) {
-        List<Task> occurrences = taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(seriesId);
+    @Transactional
+    public TaskSeriesResponse updateImportance(String seriesId, Integer importance, String userId) {
+        TaskSeries series = seriesRepository.lockBySeriesIdAndUserId(seriesId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("Task series not found: " + seriesId));
+        if (importance == null) {
+            throw new IllegalArgumentException("Task priority is required.");
+        }
+        validateImportance(importance);
+
+        series.setImportance(importance);
+        TaskSeries saved = seriesRepository.save(series);
+        updateOccurrenceImportance(seriesId, userId, importance);
+        log.info("Task series priority updated: userId={} seriesId={} importance={}",
+                userId, seriesId, importance);
+        return toResponse(saved, userId);
+    }
+
+    private void updateOccurrenceImportance(String seriesId, String userId, int importance) {
+        List<Task> occurrences = taskRepository.findAllByTaskSeriesIdAndUserIdOrderBySeriesOccurrenceAtAsc(
+                seriesId, userId);
         occurrences.forEach(task -> task.setImportance(importance));
         taskRepository.saveAll(occurrences);
     }
@@ -230,6 +259,7 @@ public class TaskSeriesService {
         series.setImportance(task.getImportance());
         series.setMentalThreadId(task.getMentalThreadId());
         series.setProjectId(task.getProjectId());
+        series.setCalendarId(task.getCalendarId());
         series.setStartDateTime(task.getScheduledPerformDateTime());
         series.setRecurrenceFrequency(frequency);
         series.setRecurrenceEndDate(endDate);
@@ -265,6 +295,12 @@ public class TaskSeriesService {
                 }
                 continue;
             }
+            // A user-deleted occurrence remains in the table as a tombstone.
+            // The active-row lookup hides it, but its unique series/date slot
+            // must stay reserved so expansion cannot recreate the occurrence.
+            if (taskRepository.existsAnyByTaskSeriesIdAndSeriesOccurrenceAt(series.getSeriesId(), occurrenceDate)) {
+                continue;
+            }
             NewTaskRequest occurrenceRequest = new NewTaskRequest();
             occurrenceRequest.setName(series.getName());
             occurrenceRequest.setDescription(series.getDescription());
@@ -273,6 +309,7 @@ public class TaskSeriesService {
             occurrenceRequest.setImportance(series.getImportance());
             occurrenceRequest.setMentalThreadId(series.getMentalThreadId());
             occurrenceRequest.setProjectId(series.getProjectId());
+            occurrenceRequest.setCalendarId(series.getCalendarId());
             occurrenceRequest.setTimeZone(series.getTimeZone());
             occurrenceRequest.setReminderMinutesBefore(series.getReminderMinutesBefore());
 
@@ -376,6 +413,7 @@ public class TaskSeriesService {
                 series.getRecurrenceUnit(), TaskRecurrenceDays.decode(series.getRecurrenceDaysOfWeek()),
                 series.getTimeZone(), series.getReminderMinutesBefore(), series.isActive(),
                 series.getCreatedAt(), series.getUpdatedAt(),
-                statTaskLinkService.isStatLinkedSeries(series.getSeriesId(), series.getName(), userId));
+                statTaskLinkService.isStatLinkedSeries(series.getSeriesId(), series.getName(), userId),
+                series.getCalendarId());
     }
 }

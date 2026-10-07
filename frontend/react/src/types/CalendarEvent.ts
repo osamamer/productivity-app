@@ -14,6 +14,7 @@ export type CalendarEventOccurrenceOverride = {
 
 export type CalendarEvent = {
     id: string;
+    calendarId: string;
     title: string;
     description: string;
     allDay: boolean;
@@ -35,6 +36,7 @@ export type CalendarEvent = {
 };
 
 export type CalendarEventInput = {
+    calendarId?: string;
     title: string;
     description: string;
     allDay: boolean;

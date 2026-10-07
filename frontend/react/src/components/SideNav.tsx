@@ -1,27 +1,16 @@
+import { CompactPopover } from './CompactPopover';
 import {
-    Box,
-    Button,
-    Dialog,
-    DialogActions,
-    DialogContent,
-    DialogContentText,
-    DialogTitle,
-    Divider,
-    Drawer,
-    IconButton,
-    List,
-    ListItemButton,
-    Typography,
-    useMediaQuery,
-    useTheme,
+    Box, Button, DialogActions, DialogContent,
+    DialogContentText, DialogTitle, Divider, Drawer,
+    IconButton, List, ListItemButton, Typography,
+    useMediaQuery, useTheme,
 } from '@mui/material';
 import { type Theme } from '@mui/material/styles';
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type MouseEvent, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import type { SvgIconComponent } from '@mui/icons-material';
 import DashboardRoundedIcon from '@mui/icons-material/DashboardRounded';
 import AssignmentIcon from '@mui/icons-material/Assignment';
-import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import SettingsIcon from '@mui/icons-material/Settings';
@@ -91,7 +80,7 @@ function readInitialOpen(): boolean {
 type SideNavActionProps = {
     Icon: SvgIconComponent;
     text: string;
-    onClick: () => void;
+    onClick: (event: MouseEvent<HTMLElement>) => void;
     selected?: boolean;
     expanded: boolean;
 };
@@ -342,6 +331,7 @@ export function SideNav() {
     const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
     const [open, setOpen] = useState(readInitialOpen);
     const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
+    const [logoutAnchorPosition, setLogoutAnchorPosition] = useState<{ top: number; left: number } | null>(null);
     const [todaySnapshot, setTodaySnapshot] = useState<TodaySnapshot | null>(
         () => sideNavSnapshotCache.getCached() ?? null,
     );
@@ -521,13 +511,6 @@ export function SideNav() {
                                 onNavigate={navigateFromDrawer}
                             />
                             <SideMenuButton
-                                Icon={FolderOpenRoundedIcon}
-                                text="Projects"
-                                targetPage="/projects"
-                                expanded={open}
-                                onNavigate={navigateFromDrawer}
-                            />
-                            <SideMenuButton
                                 Icon={PsychologyIcon}
                                 text="Mental"
                                 targetPage="/mental"
@@ -618,14 +601,23 @@ export function SideNav() {
                                 Icon={LogoutIcon}
                                 text="Log out"
                                 expanded={open}
-                                onClick={() => setLogoutDialogOpen(true)}
+                                onClick={event => {
+                                    const bounds = event.currentTarget.getBoundingClientRect();
+                                    setLogoutAnchorPosition({ top: bounds.bottom, left: bounds.left });
+                                    setLogoutDialogOpen(true);
+                                }}
                             />
                         )}
                     </Box>
                 </Box>
             </Drawer>
 
-            <Dialog open={logoutDialogOpen} onClose={() => setLogoutDialogOpen(false)}>
+            <CompactPopover
+                open={logoutDialogOpen}
+                onClose={() => setLogoutDialogOpen(false)}
+                anchorPosition={logoutAnchorPosition ?? undefined}
+                maxWidth="xs"
+            >
                 <DialogTitle>Log out?</DialogTitle>
                 <DialogContent>
                     <DialogContentText>
@@ -644,7 +636,7 @@ export function SideNav() {
                         Log out
                     </Button>
                 </DialogActions>
-            </Dialog>
+            </CompactPopover>
         </>
     );
 }

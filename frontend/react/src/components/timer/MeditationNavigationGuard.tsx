@@ -1,12 +1,8 @@
+import { CompactPopover } from '../CompactPopover';
 import { useEffect, useRef, useState } from 'react';
 import {
-    Button,
-    CircularProgress,
-    Dialog,
-    DialogActions,
-    DialogContent,
-    DialogTitle,
-    Typography,
+    Button, CircularProgress, DialogActions, DialogContent,
+    DialogTitle, Typography,
 } from '@mui/material';
 import { useBlocker } from 'react-router-dom';
 import { meditationService } from '../../services/api/meditationService.ts';
@@ -108,7 +104,7 @@ export function MeditationNavigationGuard({
     };
 
     return (
-        <Dialog open={blocker.state === 'blocked'} onClose={() => !isEnding && stayOnPage()} fullWidth maxWidth="xs">
+        <CompactPopover open={blocker.state === 'blocked'} onClose={() => !isEnding && stayOnPage()} fullWidth maxWidth="xs">
             <DialogTitle>End meditation and leave?</DialogTitle>
             <DialogContent>
                 <Typography color="text.secondary">
@@ -121,6 +117,6 @@ export function MeditationNavigationGuard({
                     {isEnding || isCheckingSession ? <CircularProgress size={18} color="inherit" /> : 'End session and leave'}
                 </Button>
             </DialogActions>
-        </Dialog>
+        </CompactPopover>
     );
 }

@@ -3,6 +3,9 @@ import { GENERIC_ERROR_MESSAGE } from '@/lib/errors';
 import type {
   CalendarEvent,
   CalendarEventInput,
+  Calendar,
+  CalendarInput,
+  CalendarUpdate,
   Day,
   MeditationSession,
   MentalStateCheckIn,
@@ -78,6 +81,16 @@ const json = <T>(path: string, method: string, body?: unknown) =>
 
 export const TASK_PAGE_BATCH_SIZE = 30;
 
+type CalendarResponsePayload = Omit<Calendar, 'isDefault'> & {
+  isDefault?: boolean;
+  defaultCalendar?: boolean;
+};
+
+function normalizeCalendar(calendar: CalendarResponsePayload): Calendar {
+  const { defaultCalendar, isDefault, ...rest } = calendar;
+  return { ...rest, isDefault: isDefault ?? defaultCalendar ?? false };
+}
+
 function taskPeriodPath(period: 'PAST' | 'FUTURE', limit?: number, offset = 0, completed?: boolean): string {
   const params = new URLSearchParams({ period });
   if (limit !== undefined) {
@@ -89,6 +102,12 @@ function taskPeriodPath(period: 'PAST' | 'FUTURE', limit?: number, offset = 0, c
 }
 
 export const api = {
+  calendars: {
+    all: async () => (await apiRequest<CalendarResponsePayload[]>('/api/v1/calendars')).map(normalizeCalendar),
+    create: async (input: CalendarInput) => normalizeCalendar(await json<CalendarResponsePayload>('/api/v1/calendars', 'POST', input)),
+    update: async (id: string, input: CalendarUpdate) => normalizeCalendar(await json<CalendarResponsePayload>(`/api/v1/calendars/${id}`, 'PATCH', input)),
+    remove: (id: string) => apiRequest<void>(`/api/v1/calendars/${id}`, { method: 'DELETE' }),
+  },
   tasks: {
     all: () => apiRequest<Task[]>('/api/v1/tasks/main'),
     scheduled: () => apiRequest<Task[]>('/api/v1/tasks?scheduled=true'),
@@ -123,6 +142,11 @@ export const api = {
     }) => {
       const updated = await json<TaskSeries>(`/api/v1/task-series/${seriesId}`, 'PATCH', recurrence);
       if (updated.statLinked) invalidateResource('stats');
+      return updated;
+    },
+    updateRecurrenceImportance: async (seriesId: string, importance: number) => {
+      const updated = await json<TaskSeries>(`/api/v1/task-series/${seriesId}/importance`, 'PATCH', { importance });
+      invalidateResource('tasks');
       return updated;
     },
     stopRecurrence: (seriesId: string) => apiRequest<void>(`/api/v1/task-series/${seriesId}`, { method: 'DELETE' }),

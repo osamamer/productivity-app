@@ -1,15 +1,18 @@
+import { CompactPopover } from './CompactPopover';
 import {
-    Alert, Box, Button, Checkbox, Chip, Collapse, Dialog, DialogActions, DialogContent,
+    Alert, Box, Button, Checkbox, Chip, Collapse, DialogActions, DialogContent,
     DialogContentText, DialogTitle, Divider, FormControlLabel, FormGroup, List, ListItem,
-    ListItemButton, ListItemText, Popover, Snackbar, IconButton,
-    Fade, Skeleton, Stack, Switch, Tabs, Tab, TextField, ToggleButton, ToggleButtonGroup, Typography, Menu, MenuItem, ListItemIcon,
+    ListItemButton, ListItemText, Popover, Snackbar, IconButton, Fade, Skeleton, Stack,
+    Switch, Tabs, Tab, TextField, InputBase, ToggleButton, ToggleButtonGroup, Typography, Menu,
+    MenuItem, ListItemIcon,
 } from "@mui/material";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin, { DateClickArg } from "@fullcalendar/interaction";
 import FullCalendar from "@fullcalendar/react";
 import React, { useMemo, useState, useCallback, useRef } from "react";
 import { keyframes } from '@mui/system';
-import { Task } from "../types/Task.tsx";
+import { alpha } from '@mui/material/styles';
+import { Task, TaskUpdate } from "../types/Task.tsx";
 import { useTheme } from "@mui/material";
 import { DayCellContentArg, DayCellMountArg, DatesSetArg, EventClickArg, EventContentArg, EventDropArg, EventMountArg } from '@fullcalendar/core';
 import { TaskToCreate } from "../types/TaskToCreate.tsx";
@@ -53,15 +56,19 @@ import { defaultTaskRecurrence, TaskRecurrenceDraft } from "../types/TaskRecurre
 import { TaskSeries } from "../types/TaskSeries";
 import { DayCalendarEntry } from "../types/DayEntity";
 import { taskDateKey } from "../services/utils/taskDate";
+import { CALENDAR_COLORS, Calendar, calendarColorHex } from '../types/Calendar';
+import { CalendarChipSelect } from './calendar/CalendarSelect';
 
 type MonthCalenderProps = {
     tasks: Task[],
     groups: TaskGroup[],
     events: CalendarEvent[],
+    calendars: Calendar[],
+    calendarManager?: React.ReactNode,
     onCreateTask: (task: TaskToCreate) => Promise<void>,
     onDeleteTask: (taskId: string) => Promise<void>,
     onDeleteTaskOccurrence: (taskId: string) => Promise<void>,
-    onUpdateTask: (taskId: string, updates: Partial<Task>) => Promise<void>,
+    onUpdateTask: (taskId: string, updates: TaskUpdate) => Promise<void>,
     onCreateEvent: (event: CalendarEventInput) => Promise<void>,
     onUpdateEvent: (eventId: string, event: CalendarEventInput) => Promise<void>,
     onMoveEventOccurrence: (eventId: string, occurrenceKey: string, move: CalendarEventOccurrenceMoveInput) => Promise<void>,
@@ -192,6 +199,19 @@ function priorityBucket(importance: number): number {
     if (importance > 7) return 9;
     if (importance > 4) return 6;
     return 3;
+}
+
+function calendarEventTextColor(hexColor: string): string {
+    const normalized = hexColor.replace('#', '');
+    if (!/^[0-9a-f]{6}$/i.test(normalized)) return '#ffffff';
+    const channels = [0, 2, 4].map(offset => parseInt(normalized.slice(offset, offset + 2), 16) / 255);
+    const linear = channels.map(channel => channel <= 0.04045
+        ? channel / 12.92
+        : ((channel + 0.055) / 1.055) ** 2.4);
+    const luminance = linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
+    const whiteContrast = 1.05 / (luminance + 0.05);
+    const darkContrast = (luminance + 0.05) / (0.014 + 0.05);
+    return darkContrast > whiteContrast ? '#18202a' : '#ffffff';
 }
 
 function statEventValue(definition: StatDefinition, value: number, status?: StatEntry['status']): string {
@@ -358,17 +378,55 @@ function CalendarLoadingState() {
 }
 
 export function MonthCalendar({
-    tasks, groups, events, onCreateTask, onDeleteTask, onDeleteTaskOccurrence, onUpdateTask, onCreateEvent, onUpdateEvent, onDeleteEvent,
+    tasks, groups, events, calendars, calendarManager, onCreateTask, onDeleteTask, onDeleteTaskOccurrence, onUpdateTask, onCreateEvent, onUpdateEvent, onDeleteEvent,
     onMoveEventOccurrence,
     onCancelEventOccurrence, onRestoreEventOccurrence, onUpdateEventOccurrenceStatus, onDeleteEventOccurrence,
     dayTemplates, onCreateDayTemplate, onUpdateDayTemplate, onDeleteDayTemplate, onApplyDayTemplate, onUndoDayTemplate,
     statDefinitions, loading = false, onRefreshTasks, onOpenDay,
 }: MonthCalenderProps) {
     const theme = useTheme();
+    const calendarEventFillStyles = useMemo(() => {
+        const fills = CALENDAR_COLORS.map(option => ({
+            className: `calendar-event-fill-${option.value}`,
+            taskClassName: `calendar-task-color-${option.value}`,
+            color: calendarColorHex(option.value, theme.palette.primary.main),
+            textColor: calendarEventTextColor(calendarColorHex(option.value, theme.palette.primary.main)),
+        }));
+        const rules = fills.flatMap(({ className, taskClassName, color, textColor }) => [
+            [`& .fc .${className}`, {
+                backgroundColor: `${color} !important`,
+                borderColor: `${color} !important`,
+                color: `${textColor} !important`,
+            }],
+            [`& .fc .${className} .fc-event-main`, { color: `${textColor} !important` }],
+            [`& .fc .${taskClassName}`, { borderLeftColor: `${color} !important` }],
+            [`& .fc .${className}.calendar-tentative-event`, {
+                backgroundColor: `${color}70 !important`,
+            }],
+            [`& .fc .${className}.calendar-cancelled-event`, {
+                backgroundColor: `${alpha(theme.palette.text.disabled, 0.2)} !important`,
+                borderColor: `${theme.palette.error.main} !important`,
+                borderStyle: 'dotted !important',
+                color: `${theme.palette.text.secondary} !important`,
+            }],
+            [`& .fc .${className}.calendar-cancelled-event .fc-event-main`, {
+                color: `${theme.palette.text.secondary} !important`,
+            }],
+        ]);
+        return Object.fromEntries(rules);
+    }, [
+        theme.palette.error.main,
+        theme.palette.primary.main,
+        theme.palette.text.disabled,
+        theme.palette.text.secondary,
+    ]);
+    const visibleCalendars = useMemo(() => calendars.filter(calendar => calendar.visible), [calendars]);
+    const visibleCalendarIds = useMemo(() => new Set(visibleCalendars.map(calendar => calendar.id)), [visibleCalendars]);
     const availableStatDefinitions = useMemo(() => statDefinitions ?? [], [statDefinitions]);
     const [initialDisplayPreferences] = useState(readCalendarDisplayPreferences);
     const [editingDate, setEditingDate] = useState<string | null>(null);
     const [editingDialogOpen, setEditingDialogOpen] = useState(false);
+    const [calendarPopupAnchorPosition, setCalendarPopupAnchorPosition] = useState<{ top: number; left: number } | null>(null);
     const [taskCreationError, setTaskCreationError] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<CreateTab>('event');
     const [selectedEventSelection, setSelectedEventSelection] = useState<{
@@ -382,9 +440,20 @@ export function MonthCalendar({
     const [selectedTaskSnapshot, setSelectedTaskSnapshot] = useState<Task | null>(null);
     const [taskDialogOpen, setTaskDialogOpen] = useState(false);
     const [taskDraft, setTaskDraft] = useState<Partial<Task> | null>(null);
+    const [taskPriorityScopeRequest, setTaskPriorityScopeRequest] = useState<{
+        anchorEl: HTMLElement;
+        importance: number;
+    } | null>(null);
+    const [taskPriorityScope, setTaskPriorityScope] = useState<'occurrence' | 'series' | null>(null);
+    const [taskCalendarScopeRequest, setTaskCalendarScopeRequest] = useState<{
+        anchorEl: HTMLElement;
+        calendarId: string;
+    } | null>(null);
+    const [taskCalendarScope, setTaskCalendarScope] = useState<'occurrence' | 'series' | null>(null);
     const [taskSaveError, setTaskSaveError] = useState<string | null>(null);
     const [taskSaving, setTaskSaving] = useState(false);
     const [taskDeleteConfirmationOpen, setTaskDeleteConfirmationOpen] = useState(false);
+    const [taskDeleteAnchorPosition, setTaskDeleteAnchorPosition] = useState<{ top: number; left: number } | null>(null);
     const [taskDeleteMenuAnchor, setTaskDeleteMenuAnchor] = useState<HTMLElement | null>(null);
     const [taskDeleteScope, setTaskDeleteScope] = useState<'occurrence' | 'series' | null>(null);
     const [taskDeleteError, setTaskDeleteError] = useState<string | null>(null);
@@ -396,6 +465,7 @@ export function MonthCalendar({
     const recurrenceOriginalDraftRef = useRef<TaskRecurrenceDraft>(defaultTaskRecurrence());
     const recurrenceDraftDirtyRef = useRef(false);
     const taskSeriesRef = useRef<TaskSeries | null>(null);
+    const taskCompletionMutationRef = useRef(0);
     const [displayPreferencesByView, setDisplayPreferencesByView] = useState<CalendarDisplayPreferences>(initialDisplayPreferences);
     const displayPreferencesRef = useRef(initialDisplayPreferences);
     const [filterAnchor, setFilterAnchor] = useState<HTMLElement | null>(null);
@@ -618,12 +688,13 @@ export function MonthCalendar({
     }, [calendarRange.end, calendarRange.start]);
 
     const calendarTasks = useMemo(() => tasks.filter(task => {
+        if (!visibleCalendarIds.has(task.calendarId ?? '')) return false;
         if (!task.scheduledPerformDateTime) return false;
         if (!showCompletedTasks && task.completed) return false;
         if (taskStatus === 'open' && task.completed) return false;
         if (taskStatus === 'completed' && !task.completed) return false;
         return priorityFilters.includes(priorityBucket(task.importance));
-    }), [priorityFilters, showCompletedTasks, taskStatus, tasks]);
+    }), [priorityFilters, showCompletedTasks, taskStatus, tasks, visibleCalendarIds]);
 
     const selectedTaskGroupTasks = useMemo(() => {
         if (!selectedTaskGroup) return [];
@@ -635,34 +706,37 @@ export function MonthCalendar({
     }, [calendarTasks, selectedTaskGroup]);
 
     const calendarEvents = useMemo(() => {
-        const taskById = new Map(tasks.map(task => [task.taskId, task]));
-        const eventEntries = events.flatMap(event => expandCalendarEvent(
-            event,
-            calendarRange.start,
-            calendarRange.end,
-        ).map(occurrence => ({
+        const taskById = new Map(calendarTasks.map(task => [task.taskId, task]));
+        const eventEntries = events.filter(event => visibleCalendarIds.has(event.calendarId)).flatMap(event => {
+            const calendar = calendars.find(candidate => candidate.id === event.calendarId);
+            const calendarColor = calendarColorHex(calendar?.color, theme.palette.primary.main);
+            const calendarFillClass = `calendar-event-fill-${calendar?.color ?? 'accent'}`;
+            return expandCalendarEvent(event, calendarRange.start, calendarRange.end).map(occurrence => ({
             id: occurrence.id,
             title: event.title,
             start: occurrence.start,
             end: occurrence.end,
             allDay: occurrence.allDay,
             backgroundColor: occurrence.status === 'CANCELLED'
-                ? `${theme.palette.text.disabled}30`
+                ? alpha(theme.palette.text.disabled, 0.2)
                 : occurrence.status === 'TENTATIVE'
-                    ? `${theme.palette.primary.main}70`
-                    : theme.palette.primary.main,
-            borderColor: theme.palette.primary.main,
+                    ? `${calendarColor}70`
+                    : calendarColor,
+            borderColor: occurrence.status === 'CANCELLED' ? theme.palette.error.main : calendarColor,
             textColor: occurrence.status === 'CANCELLED'
                 ? theme.palette.text.secondary
                 : theme.palette.primary.contrastText,
             editable: true,
             startEditable: true,
             durationEditable: false,
-            classNames: [occurrence.status === 'CANCELLED'
-                ? 'calendar-cancelled-event'
-                : occurrence.status === 'TENTATIVE'
-                    ? 'calendar-tentative-event'
-                    : 'calendar-accent-event'],
+            classNames: [
+                calendarFillClass,
+                occurrence.status === 'CANCELLED'
+                    ? 'calendar-cancelled-event'
+                    : occurrence.status === 'TENTATIVE'
+                        ? 'calendar-tentative-event'
+                        : 'calendar-accent-event',
+            ],
             extendedProps: {
                 eventType: 'calendarEvent',
                 eventTypeOrder: 0,
@@ -673,7 +747,8 @@ export function MonthCalendar({
                 status: occurrence.status,
                 fullDescription: `${event.description || event.title} · ${occurrence.status.toLowerCase()}`,
             },
-        })));
+            }));
+        });
 
         const groupEvents = showTasks
             ? Array.from(new Map(
@@ -702,7 +777,9 @@ export function MonthCalendar({
                     groupOrder: group.displayOrder,
                     fullDescription: group.name,
                     completed: group.taskIds.length > 0
-                        && group.taskIds.every(taskId => taskById.get(taskId)?.completed === true),
+                        && group.taskIds.map(taskId => taskById.get(taskId)).filter(Boolean).length > 0
+                        && group.taskIds.map(taskId => taskById.get(taskId)).filter((task): task is Task => Boolean(task))
+                            .every(task => task.completed),
                 },
             }))
             : [];
@@ -712,6 +789,11 @@ export function MonthCalendar({
                 .filter(task => !taskGroupByTaskId.has(task.taskId))
                 .map(task => {
                     const taskName = task.name || 'Untitled Task';
+                    const taskCalendar = calendars.find(calendar => calendar.id === task.calendarId);
+                    const calendarColor = calendarColorHex(
+                        taskCalendar?.color,
+                        theme.palette.primary.main
+                    );
                     return {
                         id: task.taskId,
                         title: taskName,
@@ -721,12 +803,16 @@ export function MonthCalendar({
                         // one-hour duration can turn a late-night task into a multi-day bar.
                         display: 'list-item',
                         backgroundColor: 'transparent',
-                        borderColor: theme.palette.divider,
+                        borderColor: calendarColor,
                         textColor: theme.palette.text.primary,
                         editable: true,
                         startEditable: true,
                         durationEditable: false,
-                        classNames: ['calendar-neutral-event', 'calendar-task-event'],
+                        classNames: [
+                            'calendar-neutral-event',
+                            'calendar-task-event',
+                            `calendar-task-color-${taskCalendar?.color ?? 'accent'}`,
+                        ],
                         extendedProps: {
                             eventType: 'task',
                             eventTypeOrder: 1,
@@ -765,7 +851,7 @@ export function MonthCalendar({
             : [];
 
         return [...eventEntries, ...groupEvents, ...taskEvents, ...statEvents];
-    }, [availableStatDefinitions, calendarRange.end, calendarRange.start, calendarTasks, events, hasVisibleStats, selectedStatIdsForDisplay, showTasks, statEntries, tasks, taskGroupByTaskId, theme.palette]);
+    }, [availableStatDefinitions, calendarRange.end, calendarRange.start, calendarTasks, calendars, events, hasVisibleStats, selectedStatIdsForDisplay, showTasks, statEntries, taskGroupByTaskId, theme.palette, visibleCalendarIds]);
 
     const dayTemplateByDate = useMemo(
         () => new Map(
@@ -858,6 +944,7 @@ export function MonthCalendar({
             return;
         }
         setEditingDate(arg.dateStr);
+        setCalendarPopupAnchorPosition({ top: arg.jsEvent.clientY, left: arg.jsEvent.clientX });
         setActiveTab('event');
         setEditingDialogOpen(true);
     }, []);
@@ -867,19 +954,21 @@ export function MonthCalendar({
         setActiveTab('event');
     }, []);
 
-    const openTemplateCreation = useCallback((sourceDate?: string) => {
+    const openTemplateCreation = useCallback((sourceDate?: string, anchorPosition?: { top: number; left: number }) => {
         setTemplateEditTarget(null);
         setTemplateSourceDate(sourceDate ?? (editingDialogOpen ? editingDate : null) ?? format(new Date(), 'yyyy-MM-dd'));
         setTemplateActionError(null);
+        setCalendarPopupAnchorPosition(anchorPosition ?? null);
         setTemplateCreationOpen(true);
         setEditingDialogOpen(false);
     }, [editingDate, editingDialogOpen]);
 
-    const openTemplateEdit = useCallback((template: DayTemplate) => {
+    const openTemplateEdit = useCallback((template: DayTemplate, anchorPosition: { top: number; left: number }) => {
         setTemplatePreviewAnchor(null);
         setTemplatePreview(null);
         setTemplateEditTarget(template);
         setTemplateActionError(null);
+        setCalendarPopupAnchorPosition(anchorPosition);
         setTemplateCreationOpen(true);
         setEditingDialogOpen(false);
     }, []);
@@ -1035,9 +1124,15 @@ export function MonthCalendar({
         dayCellListenersRef.current.delete(arg.el);
     }, []);
 
-    const openTaskEditor = useCallback((task: Task) => {
+    const openTaskEditor = useCallback((task: Task, anchorPosition?: { top: number; left: number }) => {
+        taskCompletionMutationRef.current += 1;
         setSelectedTaskGroupDialogOpen(false);
+        if (anchorPosition) setCalendarPopupAnchorPosition(anchorPosition);
         setSelectedTaskSnapshot(task);
+        setTaskPriorityScopeRequest(null);
+        setTaskPriorityScope(null);
+        setTaskCalendarScopeRequest(null);
+        setTaskCalendarScope(null);
         setRecurrenceLoading(Boolean(task.taskSeriesId) && !task.optimisticRecurrence);
         if (task.optimisticRecurrence) {
             recurrenceDraftRef.current = task.optimisticRecurrence;
@@ -1064,7 +1159,8 @@ export function MonthCalendar({
         setTaskDialogOpen(true);
     }, []);
 
-    const openCalendarEventEditor = useCallback((eventId: string, occurrenceKey: string) => {
+    const openCalendarEventEditor = useCallback((eventId: string, occurrenceKey: string, anchorPosition?: { top: number; left: number }) => {
+        if (anchorPosition) setCalendarPopupAnchorPosition(anchorPosition);
         setSelectedEventSelection({ eventId, occurrenceKey });
         setSelectedEventDialogOpen(true);
     }, []);
@@ -1101,12 +1197,12 @@ export function MonthCalendar({
         setCalendarItemContextMenu(null);
         if (target.eventType === 'task') {
             const task = tasks.find(item => item.taskId === target.taskId);
-            if (task) openTaskEditor(task);
+            if (task) openTaskEditor(task, { top: target.top, left: target.left });
             return;
         }
 
         if (!events.some(event => event.id === target.eventId)) return;
-        openCalendarEventEditor(target.eventId, target.occurrenceKey);
+        openCalendarEventEditor(target.eventId, target.occurrenceKey, { top: target.top, left: target.left });
     }, [events, openCalendarEventEditor, openTaskEditor, tasks]);
 
     const handleCalendarItemContextDelete = useCallback(() => {
@@ -1167,6 +1263,7 @@ export function MonthCalendar({
 
     const handleEventClick = useCallback((arg: EventClickArg) => {
         if (arg.event.extendedProps.eventType === 'taskGroup') {
+            setCalendarPopupAnchorPosition({ top: arg.jsEvent.clientY, left: arg.jsEvent.clientX });
             const groupId = arg.event.extendedProps.groupId;
             if (typeof groupId === 'string') setSelectedTaskGroupId(groupId);
             setSelectedTaskGroupDialogOpen(true);
@@ -1179,10 +1276,12 @@ export function MonthCalendar({
             openCalendarEventEditor(
                 typeof calendarEventId === 'string' ? calendarEventId : arg.event.id,
                 occurrenceKey,
+                { top: arg.jsEvent.clientY, left: arg.jsEvent.clientX },
             );
             return;
         }
         if (arg.event.extendedProps.eventType === 'stat') {
+            setCalendarPopupAnchorPosition({ top: arg.jsEvent.clientY, left: arg.jsEvent.clientX });
             setEditingDate(arg.event.extendedProps.date ?? arg.event.startStr);
             setActiveTab('stats');
             setEditingDialogOpen(true);
@@ -1192,7 +1291,7 @@ export function MonthCalendar({
         const task = tasks.find(item => item.taskId === arg.event.id);
         if (!task) return;
 
-        openTaskEditor(task);
+        openTaskEditor(task, { top: arg.jsEvent.clientY, left: arg.jsEvent.clientX });
     }, [openCalendarEventEditor, openTaskEditor, tasks]);
 
     const handleEventDrop = useCallback((arg: EventDropArg) => {
@@ -1291,7 +1390,12 @@ export function MonthCalendar({
     }, [onCreateTask]);
 
     const closeTaskDialog = useCallback(() => {
+        taskCompletionMutationRef.current += 1;
         setTaskDialogOpen(false);
+        setTaskPriorityScopeRequest(null);
+        setTaskPriorityScope(null);
+        setTaskCalendarScopeRequest(null);
+        setTaskCalendarScope(null);
         setTaskDeleteConfirmationOpen(false);
         setTaskDeleteMenuAnchor(null);
         setTaskDeleteScope(null);
@@ -1303,10 +1407,36 @@ export function MonthCalendar({
         setTaskDeleteError(null);
     }, []);
 
-    const openTaskDeleteConfirmation = useCallback((scope: 'occurrence' | 'series') => {
+    const openTaskDeleteConfirmation = useCallback((scope: 'occurrence' | 'series', anchor?: HTMLElement | null) => {
+        const bounds = anchor?.getBoundingClientRect();
+        setTaskDeleteAnchorPosition(bounds ? { top: bounds.bottom, left: bounds.left } : null);
         setTaskDeleteScope(scope);
         setTaskDeleteConfirmationOpen(true);
     }, []);
+
+    const handleTaskPriorityChipClick = (event: React.MouseEvent<HTMLElement>, importance: number) => {
+        if (!selectedTask?.taskSeriesId) {
+            setTaskDraft(previous => previous ? { ...previous, importance } : previous);
+            return;
+        }
+        setTaskPriorityScopeRequest({ anchorEl: event.currentTarget, importance });
+    };
+
+    const chooseTaskPriorityScope = (scope: 'occurrence' | 'series') => {
+        const request = taskPriorityScopeRequest;
+        setTaskPriorityScopeRequest(null);
+        if (!request) return;
+        setTaskDraft(previous => previous ? { ...previous, importance: request.importance } : previous);
+        setTaskPriorityScope(scope);
+    };
+
+    const chooseTaskCalendarScope = (scope: 'occurrence' | 'series') => {
+        const request = taskCalendarScopeRequest;
+        setTaskCalendarScopeRequest(null);
+        if (!request) return;
+        setTaskDraft(previous => previous ? { ...previous, calendarId: request.calendarId } : previous);
+        setTaskCalendarScope(scope);
+    };
 
     const handleTaskDelete = useCallback(async () => {
         if (!selectedTask || taskDeleting || !taskDeleteScope) return;
@@ -1349,6 +1479,20 @@ export function MonthCalendar({
         setRecurrenceError(null);
     };
 
+    const handleTaskCompletionChange = (completed: boolean) => {
+        if (!selectedTask || Boolean(taskDraft?.completed) === completed) return;
+        const previousCompleted = Boolean(taskDraft?.completed);
+        const mutationId = ++taskCompletionMutationRef.current;
+        setTaskDraft(previous => previous ? { ...previous, completed } : previous);
+        setTaskSaveError(null);
+        void onUpdateTask(selectedTask.taskId, { completed }).catch(error => {
+            console.error('Failed to update task completion from month calendar:', error);
+            if (taskCompletionMutationRef.current !== mutationId) return;
+            setTaskDraft(previous => previous ? { ...previous, completed: previousCompleted } : previous);
+            setTaskSaveError('Failed to update task completion. Please try again.');
+        });
+    };
+
     const saveTaskRecurrence = useCallback(async (
         taskId: string,
         draft: TaskRecurrenceDraft,
@@ -1378,6 +1522,7 @@ export function MonthCalendar({
         if (!selectedTask || !taskDraft) return;
 
         const recurrenceToSave = recurrenceDraftRef.current;
+        const updatePriorityForSeries = taskPriorityScope === 'series' && Boolean(selectedTask.taskSeriesId);
         const recurrenceChanged = !recurrenceDraftsEqual(
             recurrenceToSave,
             recurrenceOriginalDraftRef.current,
@@ -1395,16 +1540,26 @@ export function MonthCalendar({
             await onUpdateTask(selectedTask.taskId, {
                 name: taskDraft.name ?? '',
                 description: taskDraft.description ?? '',
-                importance: taskDraft.importance ?? selectedTask.importance,
+                importance: updatePriorityForSeries
+                    ? selectedTask.importance
+                    : taskDraft.importance ?? selectedTask.importance,
                 scheduledPerformDateTime: taskDraft.scheduledPerformDateTime ?? selectedTask.scheduledPerformDateTime,
                 completed: taskDraft.completed ?? selectedTask.completed,
                 reminderMinutesBefore: taskDraft.reminderMinutesBefore ?? null,
+                calendarId: taskDraft.calendarId ?? selectedTask.calendarId,
+                calendarScope: taskCalendarScope ?? undefined,
             });
             if (recurrenceChanged) {
                 await saveTaskRecurrence(
                     selectedTask.taskId,
                     recurrenceToSave,
                     taskDraft.scheduledPerformDateTime ?? '',
+                );
+            }
+            if (updatePriorityForSeries && selectedTask.taskSeriesId) {
+                taskSeriesRef.current = await taskService.updateTaskSeriesImportance(
+                    selectedTask.taskSeriesId,
+                    taskDraft.importance ?? selectedTask.importance,
                 );
             }
             closeTaskDialog();
@@ -1415,7 +1570,7 @@ export function MonthCalendar({
         } finally {
             setTaskSaving(false);
         }
-    }, [closeTaskDialog, onRefreshTasks, onUpdateTask, saveTaskRecurrence, selectedTask, taskDraft]);
+    }, [closeTaskDialog, onRefreshTasks, onUpdateTask, saveTaskRecurrence, selectedTask, taskDraft, taskPriorityScope, taskCalendarScope]);
 
     return (
         <>
@@ -1467,6 +1622,7 @@ export function MonthCalendar({
                             >
                                 Display
                             </Button>
+                            {calendarManager}
                         </Stack>
                     </Stack>
 
@@ -1475,7 +1631,7 @@ export function MonthCalendar({
                             templates={dayTemplates}
                             applyingTemplateId={applyingTemplateId}
                             error={templateActionError}
-                            onCreate={() => openTemplateCreation()}
+                            onCreate={anchorPosition => openTemplateCreation(undefined, anchorPosition)}
                             onEdit={openTemplateEdit}
                             onDelete={onDeleteDayTemplate}
                             onDragStart={() => setTemplateActionError(null)}
@@ -1592,7 +1748,7 @@ export function MonthCalendar({
                     if (!dayContextMenu) return;
                     const { date } = dayContextMenu;
                     setDayContextMenu(null);
-                    openTemplateCreation(date);
+                    openTemplateCreation(date, { top: dayContextMenu.top, left: dayContextMenu.left });
                 }}>
                     <ListItemIcon><SaveAsIcon fontSize="small" /></ListItemIcon>
                     Save day as template
@@ -1722,12 +1878,14 @@ export function MonthCalendar({
                             padding: '6px 4px 8px',
                         },
                         '& .fc-dayGridWeek-view .fc-col-header-cell.fc-day-today': {
-                            backgroundColor: `${theme.palette.primary.main}18 !important`,
-                            boxShadow: `inset 0 -3px 0 ${theme.palette.primary.main}`,
+                            backgroundColor: `${theme.palette.mode === 'dark'
+                                ? 'rgba(255, 255, 255, 0.06)'
+                                : 'rgba(0, 0, 0, 0.04)'} !important`,
+                            boxShadow: `inset 0 -3px 0 ${theme.palette.text.primary}`,
                             opacity: 1,
                         },
                         '& .fc-dayGridWeek-view .fc-col-header-cell.fc-day-today .fc-col-header-cell-cushion': {
-                            color: `${theme.palette.primary.main} !important`,
+                            color: `${theme.palette.text.primary} !important`,
                             fontWeight: 800,
                         },
                         '& .fc-dayGridWeek-view .fc-daygrid-event': {
@@ -1782,20 +1940,22 @@ export function MonthCalendar({
                             padding: '0 4px',
                         },
                         '& .fc-daygrid-day.fc-day-today': {
-                            background: `${theme.palette.primary.main}20 !important`,
+                            background: theme.palette.mode === 'dark'
+                                ? 'rgba(255, 255, 255, 0.04) !important'
+                                : 'rgba(0, 0, 0, 0.03) !important',
                             borderRadius: '0px',
-                            outline: `2px solid ${theme.palette.primary.main}`,
+                            outline: `2px solid ${theme.palette.text.primary}`,
                             outlineOffset: '-2px',
                         },
                         '& .fc-daygrid-day.fc-day-today .fc-daygrid-day-number': {
-                            color: theme.palette.primary.main,
+                            color: theme.palette.text.primary,
                             fontWeight: 800,
                         },
                         '& .fc-dayGridWeek-view .fc-daygrid-day.fc-day-today': {
                             background: theme.palette.mode === 'dark'
                                 ? 'rgba(255, 255, 255, 0.03) !important'
                                 : 'rgba(0, 0, 0, 0.02) !important',
-                            outline: `1px solid ${theme.palette.divider}`,
+                            outline: `1px solid ${theme.palette.text.primary}`,
                             outlineOffset: '-1px',
                         },
                         '& .fc-dayGridWeek-view .fc-daygrid-day.fc-day-today .fc-daygrid-day-number': {
@@ -1833,25 +1993,12 @@ export function MonthCalendar({
                         '& .fc-daygrid-event-dot': {
                             display: 'none',
                         },
-                        '& .fc .calendar-accent-event': {
-                            backgroundColor: `${theme.palette.primary.main} !important`,
-                            borderColor: `${theme.palette.primary.main} !important`,
-                            color: `${theme.palette.primary.contrastText} !important`,
-                        },
-                        '& .fc .calendar-accent-event .fc-event-main': {
-                            color: `${theme.palette.primary.contrastText} !important`,
-                        },
                         '& .fc .calendar-tentative-event': {
-                            backgroundColor: `${theme.palette.primary.main}70 !important`,
-                            border: `1px dashed ${theme.palette.primary.main} !important`,
-                            color: `${theme.palette.primary.contrastText} !important`,
-                        },
-                        '& .fc .calendar-tentative-event .fc-event-main': {
-                            color: `${theme.palette.primary.contrastText} !important`,
+                            borderStyle: 'dashed !important',
                         },
                         '& .fc .calendar-cancelled-event': {
-                            backgroundColor: `${theme.palette.text.disabled}30 !important`,
-                            borderColor: `${theme.palette.primary.main} !important`,
+                            borderColor: `${theme.palette.error.main} !important`,
+                            borderStyle: 'dotted !important',
                             color: `${theme.palette.text.secondary} !important`,
                             opacity: 0.75,
                         },
@@ -1860,15 +2007,23 @@ export function MonthCalendar({
                         },
                         '& .fc .calendar-cancelled-event .calendar-event-title': {
                             textDecoration: 'line-through',
-                            textDecorationColor: theme.palette.primary.main,
+                            textDecorationColor: theme.palette.text.secondary,
                         },
-                        '& .fc .calendar-neutral-event': {
+                        '& .fc .calendar-neutral-event:not(.calendar-task-event)': {
                             backgroundColor: 'transparent !important',
                             borderColor: `${theme.palette.divider} !important`,
                             color: `${theme.palette.text.primary} !important`,
                         },
                         '& .fc .calendar-task-event:hover': {
                             backgroundColor: `${theme.palette.action.hover} !important`,
+                        },
+                        '& .fc .calendar-task-event': {
+                            borderTopColor: `${theme.palette.divider} !important`,
+                            borderRightColor: `${theme.palette.divider} !important`,
+                            borderBottomColor: `${theme.palette.divider} !important`,
+                            borderLeftWidth: '3px !important',
+                            borderTopLeftRadius: '0 !important',
+                            borderBottomLeftRadius: '0 !important',
                         },
                         '& .fc-daygrid-event .fc-event-main': {
                             display: 'flex',
@@ -2010,6 +2165,7 @@ export function MonthCalendar({
                         '& .fc-popover-close': {
                             color: `${theme.palette.text.secondary} !important`,
                         },
+                        ...calendarEventFillStyles,
                         }}
                     >
                         <FullCalendar
@@ -2046,14 +2202,14 @@ export function MonthCalendar({
                     )}
             </Box>
 
-            <Dialog
+            <CompactPopover
                 open={editingDialogOpen}
                 onClose={closeEditingDialog}
+                anchorPosition={calendarPopupAnchorPosition ?? undefined}
                 TransitionComponent={Fade}
                 transitionDuration={{ enter: 180, exit: 140 }}
                 fullWidth
                 maxWidth="sm"
-                scroll="paper"
                 slotProps={{
                     paper: {
                         sx: {
@@ -2061,7 +2217,6 @@ export function MonthCalendar({
                                 ? 'rgba(30, 30, 30, 0.98)'
                                 : 'rgba(250, 250, 250, 0.98)',
                             boxShadow: theme.shadows[8],
-                            width: '100%',
                             maxHeight: '80vh',
                         },
                     },
@@ -2073,7 +2228,7 @@ export function MonthCalendar({
                             <Typography variant="caption" color="text.secondary">
                                 {format(new Date(editingDate + 'T12:00:00'), 'MMMM d, yyyy')}
                             </Typography>
-                            <Button size="small" onClick={() => openTemplateCreation(editingDate)}>
+                            <Button size="small" onClick={event => openTemplateCreation(editingDate, { top: event.clientY, left: event.clientX })}>
                                 Save day as template
                             </Button>
                         </Stack>
@@ -2094,6 +2249,8 @@ export function MonthCalendar({
                     {activeTab === 'event' && editingDate && (
                         <CalendarEventForm
                             initialDate={editingDate}
+                            calendars={calendars}
+                            visibleCalendars={visibleCalendars}
                             onSave={async event => {
                                 await onCreateEvent(event);
                                 setEditingDialogOpen(false);
@@ -2106,6 +2263,7 @@ export function MonthCalendar({
                             <CalendarTaskForm
                                 key={editingDate}
                                 initialDate={editingDate}
+                                visibleCalendars={visibleCalendars}
                                 onSave={handleTaskSubmit}
                                 onCancel={closeEditingDialog}
                             />
@@ -2122,7 +2280,7 @@ export function MonthCalendar({
                         />
                     )}
                 </DialogContent>
-            </Dialog>
+            </CompactPopover>
 
             <Popover
                 open={calendarDeleteConfirmationOpen}
@@ -2136,16 +2294,17 @@ export function MonthCalendar({
                 slotProps={{
                     paper: {
                         sx: {
-                            p: 1.75,
-                            width: 320,
-                            maxWidth: 'calc(100vw - 32px)',
-                            borderRadius: 2.5,
+                            boxSizing: 'border-box',
+                            p: 1.25,
+                            width: 'min(calc(100vw - 24px), 280px)',
+                            maxWidth: 'min(calc(100vw - 24px), 280px)',
+                            borderRadius: 1.5,
                         },
                     },
                 }}
             >
                 <Box>
-                    <Typography variant="subtitle1" fontWeight={600}>
+                    <Typography variant="subtitle1" fontWeight={600} sx={{ fontSize: '0.9rem', lineHeight: 1.3 }}>
                         {calendarDeleteScope === 'occurrence'
                             ? 'Delete this occurrence?'
                             : calendarDeleteTarget?.eventType === 'calendarEvent'
@@ -2154,7 +2313,7 @@ export function MonthCalendar({
                                     ? 'Delete task series?'
                                     : 'Delete task?'}
                     </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, fontSize: '0.8rem', lineHeight: 1.4 }}>
                         {calendarDeleteTarget?.eventType === 'task'
                             ? calendarDeleteScope === 'occurrence'
                                 ? `Delete “${calendarDeleteTask?.name ?? 'this task'}” from this date? This occurrence will be removed from your calendar.`
@@ -2167,8 +2326,8 @@ export function MonthCalendar({
                                     ? 'All occurrences of this event will be removed from your calendar. This cannot be undone.'
                                     : 'This event will be removed from your calendar. This cannot be undone.'}
                     </Typography>
-                    {calendarDeleteError && <Alert severity="error" sx={{ mt: 1.5 }}>{calendarDeleteError}</Alert>}
-                    <Stack direction="row" justifyContent="flex-end" spacing={1} sx={{ mt: 1.5 }}>
+                    {calendarDeleteError && <Alert severity="error" sx={{ mt: 1 }}>{calendarDeleteError}</Alert>}
+                    <Stack direction="row" justifyContent="flex-end" spacing={0.5} sx={{ mt: 1 }}>
                         <Button size="small" onClick={closeCalendarDeleteConfirmation} disabled={calendarDeleting}>
                             Keep {calendarDeleteTarget?.eventType === 'task' ? 'task' : 'event'}
                         </Button>
@@ -2181,9 +2340,12 @@ export function MonthCalendar({
 
             <DayTemplateCreationDialog
                 open={templateCreationOpen}
+                anchorPosition={calendarPopupAnchorPosition ?? undefined}
                 initialDate={templateSourceDate}
-                events={events}
-                tasks={tasks}
+                events={events.filter(event => visibleCalendarIds.has(event.calendarId))}
+                tasks={tasks.filter(task => visibleCalendarIds.has(task.calendarId ?? ''))}
+                calendars={calendars}
+                defaultCalendarId={calendars.find(calendar => calendar.defaultCalendar)?.id ?? ''}
                 template={templateEditTarget}
                 onSave={handleSaveTemplate}
                 onClose={() => {
@@ -2201,81 +2363,80 @@ export function MonthCalendar({
                 }}
             />
 
-            <Dialog
+            <CompactPopover
                 open={selectedEventDialogOpen}
                 onClose={() => setSelectedEventDialogOpen(false)}
+                anchorPosition={calendarPopupAnchorPosition ?? undefined}
                 TransitionComponent={Fade}
                 transitionDuration={{ enter: 180, exit: 140 }}
                 fullWidth
                 maxWidth="sm"
+                slotProps={{ paper: { sx: { borderRadius: '8px' } } }}
             >
-                <DialogTitle>
-                    {selectedCalendarEvent?.title || 'Event details'}
-                    {selectedCalendarEventOccurrence && ` · ${selectedCalendarEventOccurrence.occurrenceDate}`}
-                </DialogTitle>
-                <DialogContent sx={{ p: 0 }}>
-                    {selectedCalendarEvent && (
-                        <CalendarEventForm
-                            key={`${selectedCalendarEvent.id}-${selectedCalendarEventOccurrence?.occurrenceKey ?? 'series'}`}
-                            initialDate={selectedCalendarEvent.startDate
-                                ?? format(new Date(selectedCalendarEvent.startTime!), 'yyyy-MM-dd')}
-                            event={selectedCalendarEvent}
-                            occurrenceKey={selectedCalendarEventOccurrence?.occurrenceKey}
-                            occurrenceDate={selectedCalendarEventOccurrence?.occurrenceDate}
-                            occurrenceStatus={selectedCalendarEventOccurrence?.status}
-                            onSave={async event => {
-                                await onUpdateEvent(selectedCalendarEvent.id, event);
+                {selectedCalendarEvent && (
+                    <CalendarEventForm
+                        key={`${selectedCalendarEvent.id}-${selectedCalendarEventOccurrence?.occurrenceKey ?? 'series'}`}
+                        initialDate={selectedCalendarEvent.startDate
+                            ?? format(new Date(selectedCalendarEvent.startTime!), 'yyyy-MM-dd')}
+                        event={selectedCalendarEvent}
+                        calendars={calendars}
+                        visibleCalendars={visibleCalendars}
+                        occurrenceKey={selectedCalendarEventOccurrence?.occurrenceKey}
+                        occurrenceDate={selectedCalendarEventOccurrence?.occurrenceDate}
+                        occurrenceStatus={selectedCalendarEventOccurrence?.status}
+                        onSave={async event => {
+                            await onUpdateEvent(selectedCalendarEvent.id, event);
+                            setSelectedEventDialogOpen(false);
+                        }}
+                        onCancelOccurrence={selectedEventSelection
+                            ? async () => {
+                                await onCancelEventOccurrence(
+                                    selectedCalendarEvent.id,
+                                    selectedEventSelection.occurrenceKey,
+                                );
                                 setSelectedEventDialogOpen(false);
-                            }}
-                            onCancelOccurrence={selectedEventSelection
-                                ? async () => {
-                                    await onCancelEventOccurrence(
-                                        selectedCalendarEvent.id,
-                                        selectedEventSelection.occurrenceKey,
-                                    );
-                                    setSelectedEventDialogOpen(false);
-                                }
-                                : undefined}
-                            onRestoreOccurrence={selectedEventSelection
-                                ? async () => {
-                                    await onRestoreEventOccurrence(
-                                        selectedCalendarEvent.id,
-                                        selectedEventSelection.occurrenceKey,
-                                    );
-                                    setSelectedEventDialogOpen(false);
-                                }
-                                : undefined}
-                            onUpdateOccurrenceStatus={selectedEventSelection
-                                ? async status => {
-                                    await onUpdateEventOccurrenceStatus(
-                                        selectedCalendarEvent.id,
-                                        selectedEventSelection.occurrenceKey,
-                                        status,
-                                    );
-                                }
-                                : undefined}
-                            onDeleteOccurrence={selectedEventSelection
-                                ? async () => {
-                                    await onDeleteEventOccurrence(
-                                        selectedCalendarEvent.id,
-                                        selectedEventSelection.occurrenceKey,
-                                    );
-                                    setSelectedEventDialogOpen(false);
-                                }
-                                : undefined}
-                            onDelete={async () => {
-                                await onDeleteEvent(selectedCalendarEvent.id);
+                            }
+                            : undefined}
+                        onRestoreOccurrence={selectedEventSelection
+                            ? async () => {
+                                await onRestoreEventOccurrence(
+                                    selectedCalendarEvent.id,
+                                    selectedEventSelection.occurrenceKey,
+                                );
                                 setSelectedEventDialogOpen(false);
-                            }}
-                            onCancel={() => setSelectedEventDialogOpen(false)}
-                        />
-                    )}
-                </DialogContent>
-            </Dialog>
+                            }
+                            : undefined}
+                        onUpdateOccurrenceStatus={selectedEventSelection
+                            ? async status => {
+                                await onUpdateEventOccurrenceStatus(
+                                    selectedCalendarEvent.id,
+                                    selectedEventSelection.occurrenceKey,
+                                    status,
+                                );
+                            }
+                            : undefined}
+                        onDeleteOccurrence={selectedEventSelection
+                            ? async () => {
+                                await onDeleteEventOccurrence(
+                                    selectedCalendarEvent.id,
+                                    selectedEventSelection.occurrenceKey,
+                                );
+                                setSelectedEventDialogOpen(false);
+                            }
+                            : undefined}
+                        onDelete={async () => {
+                            await onDeleteEvent(selectedCalendarEvent.id);
+                            setSelectedEventDialogOpen(false);
+                        }}
+                        onCancel={() => setSelectedEventDialogOpen(false)}
+                    />
+                )}
+            </CompactPopover>
 
-            <Dialog
+            <CompactPopover
                 open={selectedTaskGroupDialogOpen}
                 onClose={() => setSelectedTaskGroupDialogOpen(false)}
+                anchorPosition={calendarPopupAnchorPosition ?? undefined}
                 TransitionComponent={Fade}
                 transitionDuration={{ enter: 180, exit: 140 }}
                 fullWidth
@@ -2287,7 +2448,7 @@ export function MonthCalendar({
                         <List disablePadding>
                             {selectedTaskGroupTasks.map(task => (
                                 <ListItem key={task.taskId} disablePadding divider>
-                                    <ListItemButton onClick={() => openTaskEditor(task)}>
+                                    <ListItemButton onClick={event => openTaskEditor(task, { top: event.clientY, left: event.clientX })}>
                                         <ListItemText
                                             primary={task.name || 'Untitled Task'}
                                             secondary={`${format(new Date(task.scheduledPerformDateTime!), 'MMM d, yyyy, HH:mm')} · ${task.completed ? 'Completed' : 'Open'}`}
@@ -2313,40 +2474,71 @@ export function MonthCalendar({
                 <DialogActions>
                     <Button onClick={() => setSelectedTaskGroupDialogOpen(false)}>Close</Button>
                 </DialogActions>
-            </Dialog>
+            </CompactPopover>
 
-            <Dialog
+            <CompactPopover
                 open={taskDialogOpen}
                 onClose={() => !taskDeleting && closeTaskDialog()}
+                anchorPosition={calendarPopupAnchorPosition ?? undefined}
                 TransitionComponent={Fade}
                 transitionDuration={{ enter: 180, exit: 140 }}
                 fullWidth
                 maxWidth="sm"
+                slotProps={{ paper: { sx: { borderRadius: '8px' } } }}
             >
-                <DialogTitle>{selectedTask?.name || 'Task details'}</DialogTitle>
+                <DialogTitle component="div" sx={{ pl: 1, pr: 1.5, pt: 1.25, pb: 0.5 }}>
+                    <Stack direction="row" alignItems="center" spacing={1}>
+                        <Checkbox
+                            size="small"
+                            checked={Boolean(taskDraft?.completed)}
+                            onChange={event => handleTaskCompletionChange(event.target.checked)}
+                            inputProps={{ 'aria-label': `Mark ${selectedTask?.name ?? 'task'} as ${taskDraft?.completed ? 'incomplete' : 'complete'}` }}
+                            sx={{ p: 0.5, ml: -0.5 }}
+                        />
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                            <InputBase
+                                value={taskDraft?.name ?? selectedTask?.name ?? ''}
+                                onChange={event => setTaskDraft(prev => prev
+                                    ? { ...prev, name: event.target.value }
+                                    : prev)}
+                                onKeyDown={event => {
+                                    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return;
+                                    event.preventDefault();
+                                    if (!taskSaving && !taskDeleting && !selectedTask?.optimisticRecurrence
+                                        && (taskDraft?.name ?? '').trim()) void handleTaskSave();
+                                }}
+                                inputProps={{ 'aria-label': 'Task title' }}
+                                fullWidth
+                                sx={{
+                                    fontSize: '1.25rem',
+                                    fontWeight: 500,
+                                    lineHeight: 1.6,
+                                    '& input': {
+                                        p: 0,
+                                        borderBottom: '1px solid transparent',
+                                        '&:hover': { borderBottomColor: 'divider' },
+                                        '&:focus': { borderBottomColor: 'primary.main' },
+                                    },
+                                }}
+                            />
+                        </Box>
+                        <CalendarChipSelect
+                            calendars={calendars}
+                            value={taskDraft?.calendarId ?? selectedTask?.calendarId ?? ''}
+                            onChange={(calendarId, anchorEl) => {
+                                if (calendarId === (taskDraft?.calendarId ?? selectedTask?.calendarId ?? '')) return;
+                                if (selectedTask?.taskSeriesId && anchorEl) {
+                                    setTaskCalendarScopeRequest({ anchorEl, calendarId });
+                                    return;
+                                }
+                                setTaskDraft(previous => previous ? { ...previous, calendarId } : previous);
+                            }}
+                        />
+                    </Stack>
+                </DialogTitle>
                 <DialogContent sx={{ pt: 1 }}>
                     {taskDraft && selectedTask && (
                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
-                            <FormControlLabel
-                                control={
-                                    <Checkbox
-                                        checked={Boolean(taskDraft.completed)}
-                                        onChange={event => setTaskDraft(prev => prev
-                                            ? { ...prev, completed: event.target.checked }
-                                            : prev)}
-                                        inputProps={{ 'aria-label': `Mark ${selectedTask.name} as ${taskDraft.completed ? 'incomplete' : 'complete'}` }}
-                                    />
-                                }
-                                label={taskDraft.completed ? 'Completed' : 'Mark as complete'}
-                            />
-                            <TextField
-                                label="Name"
-                                autoComplete="off"
-                                value={taskDraft.name ?? ''}
-                                onChange={(event) => setTaskDraft(prev => prev ? { ...prev, name: event.target.value } : prev)}
-                                fullWidth
-                            />
-
                             <Box>
                                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75, textAlign: 'left' }}>
                                     Priority
@@ -2358,7 +2550,7 @@ export function MonthCalendar({
                                             <Chip
                                                 key={option.label}
                                                 label={option.label}
-                                                onClick={() => setTaskDraft(prev => prev ? { ...prev, importance: option.value } : prev)}
+                                                onClick={event => handleTaskPriorityChipClick(event, option.value)}
                                                 sx={{
                                                     borderColor: option.color,
                                                     color: selected ? '#fff' : option.color,
@@ -2478,21 +2670,11 @@ export function MonthCalendar({
 
                             <TaskReminderPicker
                                 value={taskDraft.reminderMinutesBefore}
+                                scheduledAt={taskDraft.scheduledPerformDateTime}
                                 disabled={!taskDraft.scheduledPerformDateTime}
                                 onChange={reminderMinutesBefore => setTaskDraft(prev => prev
                                     ? { ...prev, reminderMinutesBefore }
                                     : prev)}
-                            />
-
-                            <TextField
-                                label="Description"
-                                autoComplete="off"
-                                value={taskDraft.description ?? ''}
-                                onChange={(event) => setTaskDraft(prev => prev ? { ...prev, description: event.target.value } : prev)}
-                                multiline
-                                minRows={3}
-                                maxRows={8}
-                                fullWidth
                             />
 
                             {selectedTask.tag && (
@@ -2513,7 +2695,7 @@ export function MonthCalendar({
                             if (selectedTask?.taskSeriesId) {
                                 setTaskDeleteMenuAnchor(event.currentTarget);
                             } else {
-                                openTaskDeleteConfirmation('series');
+                                openTaskDeleteConfirmation('series', event.currentTarget);
                             }
                         }}
                         disabled={taskSaving || taskDeleting || Boolean(selectedTask?.optimisticRecurrence)}
@@ -2532,7 +2714,7 @@ export function MonthCalendar({
                         </Button>
                     </Stack>
                 </DialogActions>
-            </Dialog>
+            </CompactPopover>
 
             <Menu
                 anchorEl={taskDeleteMenuAnchor}
@@ -2542,7 +2724,7 @@ export function MonthCalendar({
                 <MenuItem
                     onClick={() => {
                         setTaskDeleteMenuAnchor(null);
-                        openTaskDeleteConfirmation('occurrence');
+                        openTaskDeleteConfirmation('occurrence', taskDeleteMenuAnchor);
                     }}
                 >
                     This occurrence
@@ -2550,43 +2732,82 @@ export function MonthCalendar({
                 <MenuItem
                     onClick={() => {
                         setTaskDeleteMenuAnchor(null);
-                        openTaskDeleteConfirmation('series');
+                        openTaskDeleteConfirmation('series', taskDeleteMenuAnchor);
                     }}
                 >
                     All occurrences
                 </MenuItem>
             </Menu>
 
-            <Dialog
+            <Menu
+                anchorEl={taskPriorityScopeRequest?.anchorEl}
+                open={Boolean(taskPriorityScopeRequest)}
+                onClose={() => setTaskPriorityScopeRequest(null)}
+                MenuListProps={{ dense: true }}
+            >
+                <MenuItem onClick={() => chooseTaskPriorityScope('occurrence')}>
+                    This occurrence
+                </MenuItem>
+                <MenuItem onClick={() => chooseTaskPriorityScope('series')}>
+                    All occurrences
+                </MenuItem>
+            </Menu>
+
+            <Menu
+                anchorEl={taskCalendarScopeRequest?.anchorEl}
+                open={Boolean(taskCalendarScopeRequest)}
+                onClose={() => setTaskCalendarScopeRequest(null)}
+                MenuListProps={{ dense: true, disablePadding: true }}
+            >
+                <MenuItem onClick={() => chooseTaskCalendarScope('occurrence')}>
+                    This occurrence
+                </MenuItem>
+                <MenuItem onClick={() => chooseTaskCalendarScope('series')}>
+                    All occurrences
+                </MenuItem>
+            </Menu>
+
+            <CompactPopover
                 open={taskDeleteConfirmationOpen}
                 onClose={() => !taskDeleting && setTaskDeleteConfirmationOpen(false)}
-                fullWidth
-                maxWidth="xs"
+                anchorPosition={taskDeleteAnchorPosition ?? undefined}
+                fullWidth={false}
+                maxWidth={false}
+                compactConfirmation
+                slotProps={{
+                    paper: {
+                        sx: {
+                            width: 'min(calc(100vw - 24px), 280px)',
+                            maxWidth: 'min(calc(100vw - 24px), 280px)',
+                            borderRadius: 1.5,
+                        },
+                    },
+                }}
             >
-                <DialogTitle>
+                <DialogTitle sx={{ px: 1.5, pt: 1.25, pb: 0.5, fontSize: '0.9rem', lineHeight: 1.3 }}>
                     {taskDeleteScope === 'occurrence'
                         ? 'Delete this occurrence?'
                         : selectedTask?.taskSeriesId ? 'Delete task series?' : 'Delete task?'}
                 </DialogTitle>
-                <DialogContent>
-                    <DialogContentText>
+                <DialogContent sx={{ px: 1.5, py: 0.5 }}>
+                    <DialogContentText sx={{ fontSize: '0.8rem', lineHeight: 1.4 }}>
                         {taskDeleteScope === 'occurrence'
                             ? `Delete “${selectedTask?.name ?? 'this task'}” from this date? This occurrence will be removed from your calendar.`
                             : selectedTask?.taskSeriesId
                             ? `Delete “${selectedTask.name}” and all occurrences in its series?`
                             : `Delete “${selectedTask?.name ?? 'this task'}” and its subtasks?`}
                     </DialogContentText>
-                    {taskDeleteError && <Alert severity="error" sx={{ mt: 2 }}>{taskDeleteError}</Alert>}
+                    {taskDeleteError && <Alert severity="error" sx={{ mt: 1 }}>{taskDeleteError}</Alert>}
                 </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setTaskDeleteConfirmationOpen(false)} disabled={taskDeleting}>
+                <DialogActions sx={{ px: 1.25, pt: 0.5, pb: 1, gap: 0.5 }}>
+                    <Button size="small" onClick={() => setTaskDeleteConfirmationOpen(false)} disabled={taskDeleting}>
                         Keep task
                     </Button>
-                    <Button color="error" variant="contained" onClick={() => void handleTaskDelete()} disabled={taskDeleting}>
+                    <Button size="small" color="error" variant="contained" onClick={() => void handleTaskDelete()} disabled={taskDeleting}>
                         {taskDeleting ? 'Deleting…' : 'Delete'}
                     </Button>
                 </DialogActions>
-            </Dialog>
+            </CompactPopover>
 
             <Snackbar
                 key={templateFeedback?.id}

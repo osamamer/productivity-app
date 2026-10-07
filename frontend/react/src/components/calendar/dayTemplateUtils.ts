@@ -50,6 +50,7 @@ function eventsForDate(events: CalendarEvent[], sourceDate: string) {
             timeZone: event.timeZone || 'UTC',
             reminderMinutesBefore: event.reminderMinutesBefore,
             status: event.status,
+            calendarId: event.calendarId,
         })));
 }
 
@@ -70,6 +71,7 @@ export function buildDayTemplateRequest(
                 scheduledTime: task.scheduledPerformDateTime ? taskTime(task.scheduledPerformDateTime) : null,
                 tag: task.tag || null,
                 importance: task.importance,
+                calendarId: task.calendarId ?? '',
             })),
     };
 }

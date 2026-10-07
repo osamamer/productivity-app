@@ -66,6 +66,7 @@ import {
     type TaskDetailsCacheEntry,
 } from '../services/cache/taskDetailsCache';
 import { PomodoroNumberField } from './timer/PomodoroNumberField';
+import { SubtaskNameField } from './task/SubtaskNameField';
 import { AppDateField } from './input/AppPickerFields';
 import { TaskRecurrenceCustomOptions, TaskRecurrencePicker } from './task/TaskRecurrencePicker';
 import { WhiteNoiseControl } from './timer/WhiteNoiseControl';
@@ -344,6 +345,11 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         recurrenceDraftFromSeries(initialTaskSeries),
     );
     const [recurrenceError, setRecurrenceError] = useState<string | null>(null);
+    const [priorityError, setPriorityError] = useState<string | null>(null);
+    const [priorityScopeRequest, setPriorityScopeRequest] = useState<{
+        anchorEl: HTMLElement;
+        importance: number;
+    } | null>(null);
     const recurrenceDraftRef = useRef<TaskRecurrenceDraft>(recurrenceDraftFromSeries(initialTaskSeries));
     const taskSeriesRef = useRef<TaskSeries | null>(initialTaskSeries ?? null);
     const recurrenceMutationRef = useRef<Promise<void>>(Promise.resolve());
@@ -401,6 +407,11 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         });
     }, []);
     useEffect(() => { setLocalName(task.name ?? ''); }, [task.name]);
+
+    useEffect(() => {
+        setPriorityError(null);
+        setPriorityScopeRequest(null);
+    }, [task.taskId]);
 
     const applyTaskDetails = useCallback((details: TaskDetailsCacheEntry) => {
         setSubtasks(sortSubtasks(details.subtasks));
@@ -846,8 +857,19 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         });
     };
 
+    const canStartBreakEarly = Boolean(pomodoroStatus?.active
+        && (pomodoroStatus.phase ? pomodoroStatus.phase === 'FOCUS' : pomodoroStatus.sessionActive)
+        && pomodoroStatus.sessionRunning
+        && pomodoroStatus.currentFocusNumber < pomodoroStatus.numFocuses);
+
     const toggleEndOptions = (event: React.MouseEvent<HTMLButtonElement>) => {
         event.stopPropagation();
+        if (!canStartBreakEarly) {
+            setEndOptionsAnchor(null);
+            handleStop();
+            return;
+        }
+
         const anchor = event.currentTarget;
         setEndOptionsAnchor(current => current === anchor ? null : anchor);
     };
@@ -1090,6 +1112,39 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         if (!newDate) commitDateChange(null);
     };
 
+    const handlePriorityChipClick = (event: React.MouseEvent<HTMLElement>, importance: number) => {
+        event.stopPropagation();
+        if (readOnly) return;
+        setPriorityError(null);
+        if (task.taskSeriesId) {
+            setPriorityScopeRequest({ anchorEl: event.currentTarget, importance });
+            return;
+        }
+        void onUpdate(task.taskId, { importance });
+    };
+
+    const applyPriorityScope = async (scope: 'occurrence' | 'series') => {
+        const request = priorityScopeRequest;
+        setPriorityScopeRequest(null);
+        if (!request) return;
+        if (scope === 'occurrence' || !task.taskSeriesId) {
+            void onUpdate(task.taskId, { importance: request.importance });
+            return;
+        }
+
+        setPriorityError(null);
+        try {
+            taskSeriesRef.current = await taskService.updateTaskSeriesImportance(
+                task.taskSeriesId,
+                request.importance,
+            );
+            await onRefreshTasks?.();
+        } catch (error) {
+            console.error('Error updating priority for all task occurrences:', error);
+            setPriorityError('Could not update priority for all occurrences.');
+        }
+    };
+
     const handleRecurrenceChange = (
         nextDraft: TaskRecurrenceDraft,
         scheduledPerformDateTime = formatTaskDateTime(scheduledDraft),
@@ -1175,10 +1230,6 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     // Break: pomodoro started but not in a focus session
     const waitingForPhase = isWaitingForPhase(pomodoroStatus);
     const isBreak   = isActive && pomodoroStatus !== null && isBreakPhase(pomodoroStatus);
-    const canStartBreakEarly = Boolean(pomodoroStatus?.active
-        && (pomodoroStatus.phase ? pomodoroStatus.phase === 'FOCUS' : pomodoroStatus.sessionActive)
-        && pomodoroStatus.sessionRunning
-        && pomodoroStatus.currentFocusNumber < pomodoroStatus.numFocuses);
     const playPauseLabel = waitingForPhase
         ? pomodoroStatus?.phase === 'WAITING_FOR_BREAK' ? 'Start break' : 'Start focus session'
         : pomodoroStatus?.sessionRunning ? 'Pause focus session' : 'Resume focus session';
@@ -1221,7 +1272,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
             sx={{
                 position: 'relative',
                 borderRadius: 1.5,
-                border: '1.5px solid transparent',
+                border: '2px solid transparent',
                 borderColor: rowBorderColor,
                 // Keep the border width stable while the progress bar sits
                 // over the bottom edge; changing border geometry interrupts
@@ -1310,6 +1361,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                     size="small"
                     checked={task.completed}
                     disabled={readOnly}
+                    onClick={event => event.stopPropagation()}
                     onChange={event => onToggle(task.taskId, event.currentTarget.parentElement ?? event.currentTarget)}
                     sx={{ color: cbColor, '&.Mui-checked': { color: cbColor }, mr: 0.5 }}
                 />
@@ -1673,15 +1725,15 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                         </span>
                                     </Tooltip>
                                 )}
-                                <Tooltip title="End session options">
+                                <Tooltip title={canStartBreakEarly ? 'End session options' : 'End Pomodoro session'}>
                                     <span>
                                         <IconButton
                                             size="small"
                                             onClick={toggleEndOptions}
                                             color="inherit"
-                                            aria-label="Open end session options"
-                                            aria-haspopup="true"
-                                            aria-expanded={Boolean(endOptionsAnchor)}
+                                            aria-label={canStartBreakEarly ? 'Open end session options' : 'End Pomodoro session'}
+                                            aria-haspopup={canStartBreakEarly ? 'true' : undefined}
+                                            aria-expanded={canStartBreakEarly ? Boolean(endOptionsAnchor) : undefined}
                                             sx={{
                                                 color: 'error.light',
                                                 '&:hover': {
@@ -1728,7 +1780,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                         data-task-details-first-focus={opt === PRIORITY_OPTIONS[0] ? 'true' : undefined}
                                         label={opt.label}
                                         size="small"
-                                        onClick={() => onUpdate(task.taskId, { importance: opt.value })}
+                                        onClick={event => handlePriorityChipClick(event, opt.value)}
                                         sx={{
                                             borderColor: opt.color,
                                             color: selected ? '#fff' : opt.color,
@@ -1742,6 +1794,11 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                 );
                             })}
                         </Box>
+                        {priorityError && (
+                            <Typography variant="caption" color="error" sx={{ display: 'block', mt: 0.75, textAlign: 'left' }}>
+                                {priorityError}
+                            </Typography>
+                        )}
                     </Box>
 
                     {/* Scheduled date/time */}
@@ -1870,6 +1927,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                     <Checkbox
                                         size="small"
                                         checked={subtask.completed}
+                                        onClick={event => event.stopPropagation()}
                                         onChange={() => void handleSubtaskToggle(subtask)}
                                         sx={{ p: 0.75, mr: 1 }}
                                     />
@@ -1905,71 +1963,28 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                             cursor: 'text',
                                         }}
                                     >
-                                        {isEditingSubtask ? (
-                                            <TextField
-                                                value={localSubtaskName}
-                                                inputRef={subtaskNameInputRef}
-                                                autoComplete="off"
-                                                autoFocus
-                                                fullWidth
-                                                multiline
-                                                minRows={1}
-                                                maxRows={3}
-                                                variant="standard"
-                                                onClick={event => event.stopPropagation()}
-                                                onDoubleClick={event => event.stopPropagation()}
-                                                onChange={event => setLocalSubtaskName(event.target.value)}
-                                                onBlur={() => void commitSubtaskName(subtask)}
-                                                onKeyDown={event => {
-                                                    if (event.key === 'Enter' && !event.shiftKey) {
-                                                        event.preventDefault();
-                                                        void commitSubtaskName(subtask);
-                                                    }
-                                                    if (event.key === 'Escape') {
-                                                        event.preventDefault();
-                                                        cancelSubtaskEditing(subtask);
-                                                    }
-                                                }}
-                                                InputProps={{ disableUnderline: true }}
-                                                inputProps={{
-                                                    draggable: false,
-                                                    'data-subtask-name-input': 'true',
-                                                    'aria-label': `Edit subtask ${subtask.name}`,
-                                                }}
-                                                sx={{
-                                                    '& .MuiInputBase-root': { padding: 0 },
-                                                    '& .MuiInputBase-input': {
-                                                        color: subtask.completed ? 'text.disabled' : 'text.primary',
-                                                        textDecoration: subtask.completed ? 'line-through' : 'none',
-                                                        fontSize: '1rem',
-                                                        lineHeight: 1.45,
-                                                        whiteSpace: 'pre-wrap',
-                                                        overflowWrap: 'anywhere',
-                                                        wordBreak: 'break-word',
-                                                        textAlign: 'left',
-                                                        padding: 0,
-                                                    },
-                                                }}
-                                            />
-                                        ) : (
-                                            <Typography
-                                                component="span"
-                                                sx={{
-                                                    display: 'block',
-                                                    fontSize: '1rem',
-                                                    lineHeight: 1.45,
-                                                    whiteSpace: 'pre-wrap',
-                                                    maxHeight: '4.35em',
-                                                    overflowY: 'auto',
-                                                    overflowX: 'hidden',
-                                                    color: subtask.completed ? 'text.disabled' : 'text.primary',
-                                                    textDecoration: subtask.completed ? 'line-through' : 'none',
-                                                    userSelect: 'text',
-                                                }}
-                                            >
-                                                {subtask.name}
-                                            </Typography>
-                                        )}
+                                        <SubtaskNameField
+                                            value={isEditingSubtask ? localSubtaskName : subtask.name}
+                                            completed={subtask.completed}
+                                            readOnly={!isEditingSubtask}
+                                            inputRef={isEditingSubtask ? subtaskNameInputRef : undefined}
+                                            onChange={event => setLocalSubtaskName(event.target.value)}
+                                            onBlur={() => {
+                                                if (isEditingSubtask) void commitSubtaskName(subtask);
+                                            }}
+                                            onKeyDown={event => {
+                                                if (!isEditingSubtask) return;
+                                                if (event.key === 'Enter' && !event.shiftKey) {
+                                                    event.preventDefault();
+                                                    void commitSubtaskName(subtask);
+                                                }
+                                                if (event.key === 'Escape') {
+                                                    event.preventDefault();
+                                                    cancelSubtaskEditing(subtask);
+                                                }
+                                            }}
+                                            ariaLabel={`Edit subtask ${subtask.name}`}
+                                        />
                                     </Box>
                                 </Box>
                             );
@@ -2034,6 +2049,20 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                 </Box>
             </Collapse>
 
+            <Menu
+                open={priorityScopeRequest !== null}
+                anchorEl={priorityScopeRequest?.anchorEl}
+                onClose={() => setPriorityScopeRequest(null)}
+                MenuListProps={{ dense: true, onClick: event => event.stopPropagation() }}
+            >
+                <MenuItem onClick={() => void applyPriorityScope('occurrence')}>
+                    This occurrence
+                </MenuItem>
+                <MenuItem onClick={() => void applyPriorityScope('series')}>
+                    All occurrences
+                </MenuItem>
+            </Menu>
+
             {/* ── Progress bar as bottom border when pomodoro is running ── */}
             {isActive && (
                 <LinearProgress
@@ -2043,7 +2072,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                         position: 'absolute',
                         bottom: 0, left: 0, right: 0,
                         height: 2,
-                        borderRadius: 0,
+                        borderRadius: '0 0 6px 6px',
                         backgroundColor: alpha(useGreenBar ? pomodoroGreen : activeAccent, 0.15),
                         transition: 'background-color 0.32s ease',
                         '& .MuiLinearProgress-bar': {
@@ -2055,7 +2084,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                 />
             )}
             <Popover
-                open={Boolean(endOptionsAnchor)}
+                open={Boolean(endOptionsAnchor && canStartBreakEarly)}
                 anchorEl={endOptionsAnchor}
                 onClose={() => setEndOptionsAnchor(null)}
                 anchorOrigin={{ vertical: 'top', horizontal: 'center' }}

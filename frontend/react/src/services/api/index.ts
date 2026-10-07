@@ -1,4 +1,5 @@
-export { taskService, TASK_PAGE_BATCH_SIZE } from './taskService';
+export { taskService, mergeTaskDeletionReceipts, TASK_PAGE_BATCH_SIZE } from './taskService';
+export type { TaskDeletionReceipt } from './taskService';
 export { dayService } from './dayService';
 export { userService } from './userService.ts';
 export { statService } from './statService';
@@ -9,6 +10,7 @@ export { notesService } from './notesService';
 export { taskGroupService } from './taskGroupService';
 export { projectService } from './projectService';
 export { eventService } from './eventService';
+export { calendarService } from './calendarService';
 export { dayTemplateService } from './dayTemplateService';
 export { notificationService } from './notificationService';
 export {

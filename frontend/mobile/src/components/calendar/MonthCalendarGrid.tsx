@@ -22,6 +22,7 @@ export interface CalendarGridItem {
   completed?: boolean;
   timeLabel?: string;
   color?: string;
+  calendarColor?: string;
   textColor?: string;
   eventStatus?: CalendarEventStatus;
 }
@@ -148,12 +149,18 @@ export function MonthCalendarGrid({
                           {
                             backgroundColor: item.kind === 'calendarEvent' ? accent : `${accent}20`,
                             borderColor: item.kind === 'calendarEvent' ? accent : `${accent}70`,
+                            borderLeftWidth: item.calendarColor && item.kind !== 'calendarEvent' ? 3 : 1,
+                            borderLeftColor: item.calendarColor ?? (item.kind === 'calendarEvent' ? accent : `${accent}70`),
+                            borderTopLeftRadius: item.calendarColor && item.kind !== 'calendarEvent' ? 0 : undefined,
+                            borderBottomLeftRadius: item.calendarColor && item.kind !== 'calendarEvent' ? 0 : undefined,
                             borderStyle: item.eventStatus === 'TENTATIVE' ? 'dashed' : 'solid',
                             opacity: item.eventStatus === 'CANCELLED' ? 0.65 : 1,
                           },
                           pressed && styles.pressed,
                         ]}>
-                        {item.completed ? <Ionicons name="checkmark" size={9} color={colors.success} /> : <View style={[styles.itemDot, { backgroundColor: accent }]} />}
+                        {item.completed
+                          ? <Ionicons name="checkmark" size={9} color={colors.success} />
+                          : item.kind !== 'task' && <View style={[styles.itemDot, { backgroundColor: accent }]} />}
                         <AppText variant="caption" numberOfLines={1} style={[styles.itemText, { color: item.kind === 'calendarEvent' ? foreground : colors.text, fontSize: 9, lineHeight: 12 }, item.eventStatus === 'CANCELLED' && styles.cancelledText]}>
                           {item.title}{item.timeLabel ? ` · ${item.timeLabel}` : ''}
                         </AppText>

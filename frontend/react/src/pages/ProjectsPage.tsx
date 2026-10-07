@@ -1,9 +1,11 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, type MouseEvent } from 'react';
 import {
     Alert,
     Box,
     Button,
     CircularProgress,
+    ListItemIcon,
+    ListItemText,
     Menu,
     MenuItem,
     Popover,
@@ -13,7 +15,9 @@ import {
 } from '@mui/material';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
+import EditRoundedIcon from '@mui/icons-material/EditRounded';
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded';
+import LinkOffRoundedIcon from '@mui/icons-material/LinkOffRounded';
 import { PageWrapper } from '../components/PageWrapper';
 import { ProjectDetail } from '../components/projects/ProjectDetail';
 import { ProjectFormDialog } from '../components/projects/ProjectFormDialog';
@@ -24,8 +28,11 @@ import { taskService } from '../services/api/taskService';
 import { playAudioFeedback } from '../services/audioFeedback';
 import { Project, ProjectInput } from '../types/Project';
 import { Task } from '../types/Task';
+import { TaskToCreate } from '../types/TaskToCreate';
 
 type ProjectMenuRequest = { project: Project; anchorEl: HTMLElement };
+type TaskMenuRequest = { task: Task; top: number; left: number };
+type TaskEditRequest = { taskId: string; requestId: number };
 
 export function ProjectsPage() {
     const { allTasks, addTaskToState, updateTaskInState } = useGlobalTasks();
@@ -56,9 +63,13 @@ export function ProjectsPage() {
     const [editingProject, setEditingProject] = useState<Project | null>(null);
     const [menuRequest, setMenuRequest] = useState<ProjectMenuRequest | null>(null);
     const [deleteRequest, setDeleteRequest] = useState<ProjectMenuRequest | null>(null);
+    const [taskMenuRequest, setTaskMenuRequest] = useState<TaskMenuRequest | null>(null);
+    const [taskEditRequest, setTaskEditRequest] = useState<TaskEditRequest | null>(null);
     const [deleteSubmitting, setDeleteSubmitting] = useState(false);
     const [pendingUnassignIds, setPendingUnassignIds] = useState<ReadonlySet<string>>(new Set());
     const toggleVersionsRef = useRef(new Map<string, number>());
+    const updateVersionsRef = useRef(new Map<string, number>());
+    const taskEditRequestIdRef = useRef(0);
     const unassignInFlightRef = useRef(new Set<string>());
 
     const openCreateForm = () => {
@@ -77,17 +88,14 @@ export function ProjectsPage() {
         return Boolean(await createProject(input));
     };
 
-    const handleAddTask = async (name: string): Promise<boolean> => {
-        if (!selectedProject) return false;
+    const handleAddTask = async (taskToCreate: TaskToCreate): Promise<boolean> => {
+        if (!selectedProject || !taskToCreate.name.trim()) return false;
         const projectId = selectedProject.projectId;
         const sequence = beginQuickAdd();
         try {
             const createdTask = await taskService.createTask({
-                name,
-                description: '',
-                scheduledPerformDateTime: '',
-                tag: '',
-                importance: 0,
+                ...taskToCreate,
+                name: taskToCreate.name.trim(),
                 projectId,
             });
             addTaskToState(createdTask);
@@ -129,6 +137,54 @@ export function ProjectsPage() {
             adjustProjectCounts(projectId, 0, nextCompleted ? -1 : 1);
             showOperationError('Could not update the task.');
         }
+    };
+
+    const handleUpdateTask = async (taskId: string, updates: Partial<Task>) => {
+        const originalTask = allTasks.find(task => task.taskId === taskId)
+            ?? selectedProjectTasks.find(task => task.taskId === taskId);
+        if (!originalTask) return;
+
+        const version = (updateVersionsRef.current.get(taskId) ?? 0) + 1;
+        updateVersionsRef.current.set(taskId, version);
+        const optimisticTask = { ...originalTask, ...updates };
+        updateTaskInState(taskId, updates);
+        if (originalTask.projectId) replaceProjectTask(originalTask.projectId, optimisticTask);
+
+        try {
+            const updatedTask = await taskService.updateTask(taskId, updates);
+            if (updateVersionsRef.current.get(taskId) !== version) return;
+            updateTaskInState(taskId, updatedTask);
+            if (updatedTask.projectId) replaceProjectTask(updatedTask.projectId, updatedTask);
+        } catch (error) {
+            console.error(`Could not update task ${taskId}.`, error);
+            if (updateVersionsRef.current.get(taskId) !== version) return;
+            updateTaskInState(taskId, originalTask);
+            if (originalTask.projectId) replaceProjectTask(originalTask.projectId, originalTask);
+            showOperationError('Could not update the task.');
+        }
+    };
+
+    const handleTaskContextMenu = (task: Task, event: MouseEvent<HTMLElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setTaskMenuRequest({ task, top: event.clientY, left: event.clientX });
+    };
+
+    const requestTaskEdit = () => {
+        if (!taskMenuRequest) return;
+        taskEditRequestIdRef.current += 1;
+        setTaskEditRequest({
+            taskId: taskMenuRequest.task.taskId,
+            requestId: taskEditRequestIdRef.current,
+        });
+        setTaskMenuRequest(null);
+    };
+
+    const requestTaskUnassign = () => {
+        if (!taskMenuRequest) return;
+        const { task } = taskMenuRequest;
+        setTaskMenuRequest(null);
+        void handleUnassignTask(task);
     };
 
     const handleUnassignTask = async (task: Task) => {
@@ -308,11 +364,12 @@ export function ProjectsPage() {
                                         project={selectedProject}
                                         tasks={selectedProjectTasks}
                                         tasksLoading={tasksLoading}
-                                        pendingUnassignIds={pendingUnassignIds}
+                                        editRequest={taskEditRequest}
                                         onEdit={openEditForm}
                                         onAddTask={handleAddTask}
                                         onToggleTask={task => void handleToggleTask(task)}
-                                        onUnassignTask={task => void handleUnassignTask(task)}
+                                        onUpdateTask={handleUpdateTask}
+                                        onTaskContextMenu={handleTaskContextMenu}
                                     />
                                 </Box>
                             ) : (
@@ -344,6 +401,28 @@ export function ProjectsPage() {
                 <MenuItem onClick={requestProjectDelete}>
                     <DeleteOutlineRoundedIcon fontSize="small" sx={{ mr: 1 }} />
                     Delete
+                </MenuItem>
+            </Menu>
+
+            <Menu
+                open={taskMenuRequest !== null}
+                onClose={() => setTaskMenuRequest(null)}
+                anchorReference="anchorPosition"
+                anchorPosition={taskMenuRequest
+                    ? { top: taskMenuRequest.top, left: taskMenuRequest.left }
+                    : undefined}
+                MenuListProps={{ dense: true }}
+            >
+                <MenuItem onClick={requestTaskEdit}>
+                    <ListItemIcon><EditRoundedIcon fontSize="small" /></ListItemIcon>
+                    <ListItemText>Edit task</ListItemText>
+                </MenuItem>
+                <MenuItem
+                    onClick={requestTaskUnassign}
+                    disabled={taskMenuRequest !== null && pendingUnassignIds.has(taskMenuRequest.task.taskId)}
+                >
+                    <ListItemIcon><LinkOffRoundedIcon fontSize="small" /></ListItemIcon>
+                    <ListItemText>Remove from project</ListItemText>
                 </MenuItem>
             </Menu>
 

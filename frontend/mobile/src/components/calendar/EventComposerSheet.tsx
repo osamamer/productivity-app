@@ -8,7 +8,7 @@ import { readEventTimePreferences, saveEventTimePreferences } from '@/lib/inputP
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { useAuth } from '@/providers/AuthProvider';
 import { api } from '@/services/api';
-import type { CalendarEvent, CalendarEventInput, CalendarEventStatus, RecurrenceFrequency, RecurrenceUnit } from '@/types/models';
+import type { Calendar, CalendarEvent, CalendarEventInput, CalendarEventStatus, RecurrenceFrequency, RecurrenceUnit } from '@/types/models';
 import { AppButton } from '../ui/AppButton';
 import { CalendarDatePicker } from '../ui/CalendarDatePicker';
 import { AppInput } from '../ui/AppInput';
@@ -17,6 +17,7 @@ import { AppText } from '../ui/AppText';
 import { ChoiceChips } from '../ui/ChoiceChips';
 import { ModalSheet } from '../ui/ModalSheet';
 import { SilentPressable } from '../ui/SilentPressable';
+import { CalendarDestinationField } from './CalendarControls';
 
 type ReminderValue = string;
 
@@ -228,6 +229,8 @@ export function EventComposerSheet({
   occurrenceKey,
   occurrenceDate,
   occurrenceStatus,
+  calendarOptions = [],
+  initialCalendarId,
   onSaved,
   onDelete,
   onDeleteOccurrence,
@@ -242,6 +245,8 @@ export function EventComposerSheet({
   occurrenceKey?: string;
   occurrenceDate?: string;
   occurrenceStatus?: CalendarEventStatus;
+  calendarOptions?: Calendar[];
+  initialCalendarId?: string;
   onSaved: (event: CalendarEvent) => void;
   onDelete?: () => Promise<boolean>;
   onDeleteOccurrence?: () => Promise<boolean>;
@@ -264,6 +269,7 @@ export function EventComposerSheet({
   const [recurrenceUnit, setRecurrenceUnit] = useState<RecurrenceUnit>(defaults.recurrenceUnit);
   const [status, setStatus] = useState<CalendarEventStatus>(defaults.status);
   const [reminder, setReminder] = useState<ReminderValue>(defaults.reminder);
+  const [calendarId, setCalendarId] = useState(event?.calendarId ?? initialCalendarId ?? '');
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [cancelPromptOpen, setCancelPromptOpen] = useState(false);
@@ -304,6 +310,7 @@ export function EventComposerSheet({
     setRecurrenceUnit(next.recurrenceUnit);
     setStatus(next.status);
     setReminder(next.reminder);
+    setCalendarId(event?.calendarId ?? initialCalendarId ?? '');
     setCancelPromptOpen(false);
     setDeletePromptOpen(false);
     setDeleteConfirmationOpen(false);
@@ -341,6 +348,7 @@ export function EventComposerSheet({
 
   async function submit(statusOverride?: CalendarEventStatus) {
     if (!title.trim()) return setError('Give the event a title.');
+    if (!calendarId) return setError('Your calendars are still loading. Refresh and try again.');
     if (!isCalendarDate(date)) return setError('Choose a valid start date.');
     if (allDay === 'yes' && (!isCalendarDate(endDate) || endDate < date)) {
       return setError('The finish date must be on or after the start date.');
@@ -379,6 +387,7 @@ export function EventComposerSheet({
       recurrenceInterval: recurrence === 'CUSTOM' ? recurrenceInterval : null,
       recurrenceUnit: recurrence === 'CUSTOM' ? recurrenceUnit : null,
       reminderMinutesBefore: reminder === 'none' ? null : Number(reminder),
+      calendarId,
     };
 
     try {
@@ -493,6 +502,7 @@ export function EventComposerSheet({
       )}>
       <AppInput autoFocus label="Event" value={title} onChangeText={setTitle} error={error ?? undefined} />
       <AppInput label="Details (optional)" multiline value={description} onChangeText={setDescription} />
+      <CalendarDestinationField calendars={calendarOptions} value={calendarId} onChange={setCalendarId} />
       <AppText variant="label">{event && recurrence !== 'NONE' && !occurrenceKey ? 'Series status' : 'Status'}</AppText>
       <ChoiceChips value={status} onChange={setStatus} options={[
         { value: 'CONFIRMED' as const, label: 'Confirmed' },

@@ -252,6 +252,17 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
         setEndOptionsAnchor(current => current === anchor ? null : anchor);
     };
 
+    const handleStopClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+        if (canStartBreakEarly) {
+            toggleEndOptions(event);
+            return;
+        }
+
+        event.stopPropagation();
+        setEndOptionsAnchor(null);
+        handleEndSession();
+    };
+
     const handleEndFromOptions = () => {
         setEndOptionsAnchor(null);
         handleEndSession();
@@ -696,13 +707,13 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
                                         </span>
                                     </Tooltip>
                                 )}
-                                <Tooltip title="End session options">
+                                <Tooltip title={canStartBreakEarly ? 'End session options' : 'End Pomodoro session'}>
                                     <span>
                                         <IconButton
-                                            onClick={toggleEndOptions}
-                                            aria-label="Open end session options"
-                                            aria-haspopup="true"
-                                            aria-expanded={Boolean(endOptionsAnchor)}
+                                            onClick={handleStopClick}
+                                            aria-label={canStartBreakEarly ? 'Open end session options' : 'End Pomodoro session'}
+                                            aria-haspopup={canStartBreakEarly ? 'true' : undefined}
+                                            aria-expanded={canStartBreakEarly ? Boolean(endOptionsAnchor) : undefined}
                                             color="inherit"
                                             size="large"
                                             sx={{
@@ -724,7 +735,7 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
                 )}
             </Stack>
             <Popover
-                open={Boolean(endOptionsAnchor)}
+                open={Boolean(endOptionsAnchor && canStartBreakEarly)}
                 anchorEl={endOptionsAnchor}
                 onClose={() => setEndOptionsAnchor(null)}
                 anchorOrigin={{ vertical: 'top', horizontal: 'center' }}

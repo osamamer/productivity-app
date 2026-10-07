@@ -10,6 +10,7 @@ export interface TaskToCreate   {
     parentId?: string;
     mentalThreadId?: string;
     projectId?: string | null;
+    calendarId?: string;
     recurrenceFrequency?: 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'CUSTOM';
     recurrenceEndDate?: string | null;
     recurrenceInterval?: number | null;

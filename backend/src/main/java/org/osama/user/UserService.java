@@ -6,6 +6,7 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import org.osama.pomodoro.PomodoroSoundIds;
 import org.osama.pomodoro.PomodoroSoundRepository;
+import org.osama.calendar.CalendarService;
 import org.osama.reminder.NotificationService;
 import org.osama.stat.SystemStatProvisioningService;
 import org.springframework.stereotype.Service;
@@ -30,7 +31,7 @@ public class UserService {
     private static final List<String> USER_OWNED_TABLES = List.of(
             "day_entity", "day_template", "pomodoro", "pomodoro_sound", "project", "reminder",
             "scheduled_job", "meditation_session", "stat_definition", "stat_entry", "note",
-            "note_category", "task", "task_series", "task_group", "stat_group", "mental_thread",
+            "note_category", "task", "task_series", "task_group", "stat_group", "mental_thread", "app_calendar",
             "mental_capacity_check_in", "mental_state_check_in", "calendar_event", "mobile_push_token");
 
     private final UserRepository userRepository;
@@ -38,6 +39,7 @@ public class UserService {
     private final SystemStatProvisioningService systemStatProvisioningService;
     private final NotificationService notificationService;
     private final PomodoroSoundRepository pomodoroSoundRepository;
+    private final CalendarService calendarService;
     @PersistenceContext
     private EntityManager entityManager;
 
@@ -89,6 +91,7 @@ public class UserService {
 
         user = userRepository.save(user);
         systemStatProvisioningService.createMissingSystemStatsFor(user);
+        calendarService.defaultCalendarId(user.getId());
         log.info("Created user: {} with id: {}", username, user.getId());
         return user;
     }
@@ -278,7 +281,7 @@ public class UserService {
             throw new IllegalArgumentException("Theme mode must be light or dark.");
         }
         if (updates.accentColor() != null
-                && !List.of("teal", "coral", "amber", "violet").contains(updates.accentColor())) {
+                && !List.of("teal", "coral", "sage", "violet").contains(updates.accentColor())) {
             throw new IllegalArgumentException("That accent color is not available.");
         }
         if (updates.meditationDurationMinutes() != null

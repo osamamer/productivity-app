@@ -1,7 +1,7 @@
 import {
     Alert, Box, Button, Chip, Collapse, Stack, TextField, Typography,
 } from '@mui/material';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -10,9 +10,12 @@ import { defaultTaskRecurrence, TaskRecurrenceDraft } from '../../types/TaskRecu
 import { AppDateField } from '../input/AppPickerFields';
 import { TaskRecurrenceCustomOptions, TaskRecurrencePicker } from '../task/TaskRecurrencePicker';
 import { TaskReminderPicker } from '../task/TaskReminderPicker';
+import { Calendar } from '../../types/Calendar';
+import { CalendarSelect } from './CalendarSelect';
 
 type Props = {
     initialDate: string;
+    visibleCalendars: Calendar[];
     onSave: (task: TaskToCreate) => Promise<void>;
     onCancel: () => void;
 };
@@ -36,17 +39,19 @@ function defaultScheduledDateTime(date: string): string {
     return `${date}T${pad(now.getHours())}:${pad(now.getMinutes())}:00`;
 }
 
-export function CalendarTaskForm({ initialDate, onSave, onCancel }: Props) {
+export function CalendarTaskForm({ initialDate, visibleCalendars, onSave, onCancel }: Props) {
     const [name, setName] = useState('');
-    const [description, setDescription] = useState('');
     const [importance, setImportance] = useState(0);
+    const [calendarId, setCalendarId] = useState(visibleCalendars.length === 1 ? visibleCalendars[0].id : '');
     const [scheduledPerformDateTime, setScheduledPerformDateTime] = useState(defaultScheduledDateTime(initialDate));
     const [reminderMinutesBefore, setReminderMinutesBefore] = useState<number | null>(null);
     const [recurrenceDraft, setRecurrenceDraft] = useState<TaskRecurrenceDraft>(defaultTaskRecurrence);
     const [saving, setSaving] = useState(false);
+    const savingRef = useRef(false);
     const [error, setError] = useState<string | null>(null);
 
     const submit = async () => {
+        if (savingRef.current) return;
         if (!name.trim()) {
             setError('Add a name for the task.');
             return;
@@ -56,13 +61,17 @@ export function CalendarTaskForm({ initialDate, onSave, onCancel }: Props) {
             return;
         }
 
+        const destinationCalendarId = visibleCalendars.length === 1
+            ? visibleCalendars[0].id
+            : visibleCalendars.some(calendar => calendar.id === calendarId) ? calendarId : '';
         const task: TaskToCreate = {
             name: name.trim(),
-            description: description.trim(),
+            description: '',
             scheduledPerformDateTime,
             reminderMinutesBefore: scheduledPerformDateTime ? reminderMinutesBefore : null,
             tag: '',
             importance,
+            ...(destinationCalendarId ? { calendarId: destinationCalendarId } : {}),
         };
         if (recurrenceDraft.recurrenceFrequency !== 'NONE') {
             task.recurrenceFrequency = recurrenceDraft.recurrenceFrequency;
@@ -72,6 +81,7 @@ export function CalendarTaskForm({ initialDate, onSave, onCancel }: Props) {
             task.timeZone = recurrenceDraft.timeZone;
         }
 
+        savingRef.current = true;
         setSaving(true);
         setError(null);
         try {
@@ -80,6 +90,7 @@ export function CalendarTaskForm({ initialDate, onSave, onCancel }: Props) {
             console.error('Failed to save calendar task:', saveError);
             setError('Failed to save the task. Please try again.');
         } finally {
+            savingRef.current = false;
             setSaving(false);
         }
     };
@@ -101,10 +112,23 @@ export function CalendarTaskForm({ initialDate, onSave, onCancel }: Props) {
                 label="Name"
                 value={name}
                 onChange={event => setName(event.target.value)}
+                onKeyDown={event => {
+                    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return;
+                    event.preventDefault();
+                    void submit();
+                }}
                 autoFocus
                 autoComplete="off"
                 fullWidth
             />
+
+            {visibleCalendars.length > 1 && (
+                <CalendarSelect
+                    calendars={visibleCalendars}
+                    value={calendarId}
+                    onChange={setCalendarId}
+                />
+            )}
 
             <Box>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>
@@ -192,20 +216,9 @@ export function CalendarTaskForm({ initialDate, onSave, onCancel }: Props) {
 
             <TaskReminderPicker
                 value={reminderMinutesBefore}
+                scheduledAt={scheduledPerformDateTime}
                 disabled={!scheduledPerformDateTime}
                 onChange={setReminderMinutesBefore}
-            />
-
-            <TextField
-                label="Description"
-                value={description}
-                onChange={event => setDescription(event.target.value)}
-                autoComplete="off"
-                multiline
-                minRows={3}
-                maxRows={8}
-                fullWidth
-                placeholder="Add a note"
             />
 
             {error && <Alert severity="error">{error}</Alert>}

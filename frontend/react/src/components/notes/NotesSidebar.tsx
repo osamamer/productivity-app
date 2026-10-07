@@ -18,7 +18,7 @@ interface NotesSidebarProps {
     onAddCategory: () => void;
     onCreateNote: (category: NoteCategory) => void;
     onEditCategory: (category: NoteCategory) => void;
-    onDeleteCategory: (category: NoteCategory) => void;
+    onDeleteCategory: (category: NoteCategory, anchorPosition?: { top: number; left: number }) => void;
 }
 
 interface SidebarRowProps {
@@ -200,7 +200,12 @@ export function NotesSidebar({
                 </MenuItem>
                 <MenuItem
                     onClick={() => {
-                        if (categoryContextMenu) onDeleteCategory(categoryContextMenu.category);
+                        if (categoryContextMenu) {
+                            onDeleteCategory(categoryContextMenu.category, {
+                                top: categoryContextMenu.mouseY,
+                                left: categoryContextMenu.mouseX,
+                            });
+                        }
                         closeCategoryContextMenu();
                     }}
                     sx={{ color: 'error.main' }}

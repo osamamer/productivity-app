@@ -16,6 +16,7 @@ import org.osama.session.task.TaskSessionService;
 import org.osama.task.Task;
 import org.osama.task.TaskService;
 import org.osama.task.events.TasksDeletedEvent;
+import org.osama.task.events.TasksRestoredEvent;
 import org.osama.user.User;
 import org.osama.user.UserRepository;
 import org.springframework.context.event.EventListener;
@@ -195,6 +196,15 @@ public class PomodoroService {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void handleTasksDeleted(TasksDeletedEvent event) {
         event.taskIds().forEach(this::pausePomodoroUpdates);
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void handleTasksRestored(TasksRestoredEvent event) {
+        event.taskIds().forEach(taskId -> {
+            if (pomodoroRepository.findPomodoroByAssociatedTaskIdAndIsActiveIsTrue(taskId).isPresent()) {
+                startPomodoroUpdates(taskId);
+            }
+        });
     }
 
     // ============ Pomodoro-Specific Logic ============

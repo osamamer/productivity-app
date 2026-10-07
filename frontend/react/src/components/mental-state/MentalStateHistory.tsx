@@ -8,7 +8,7 @@ interface MentalStateHistoryProps {
     checkIns: MentalStateCheckIn[];
     selectedId: string | null;
     onSelect: (checkIn: MentalStateCheckIn) => void;
-    onDelete: (checkIn: MentalStateCheckIn) => void;
+    onDelete: (checkIn: MentalStateCheckIn, anchorPosition: { top: number; left: number }) => void;
 }
 
 function formatRecordedAt(recordedAt: string): string {
@@ -68,7 +68,7 @@ export function MentalStateHistory({ checkIns, selectedId, onSelect, onDelete }:
                         if (!contextMenu) return;
                         const checkIn = contextMenu.checkIn;
                         setContextMenu(null);
-                        onDelete(checkIn);
+                        onDelete(checkIn, { top: contextMenu.top, left: contextMenu.left });
                     }}
                     sx={{ color: 'error.main' }}
                 >

@@ -1,10 +1,12 @@
+import { CompactPopover } from '../CompactPopover';
 import React from 'react';
 import { useFormik } from 'formik';
 import * as Yup from 'yup';
 import {
-    Box, TextField, Button, Select, MenuItem, FormControl,
-    InputLabel, Typography, Stack, Collapse, FormHelperText, Checkbox, FormControlLabel,
-    Dialog, DialogActions, DialogContent, DialogTitle,
+    Box, TextField, Button, Select,
+    MenuItem, FormControl, InputLabel, Typography,
+    Stack, Collapse, FormHelperText, Checkbox,
+    FormControlLabel, DialogActions, DialogContent, DialogTitle,
 } from '@mui/material';
 import {
     CreateDefinitionRequest, StatDefinition, StatMorality, StatRecurrenceDay,
@@ -115,7 +117,7 @@ interface Props {
     onUpdateFailed?: (operationId: string, previous: StatDefinition) => void;
     onCreateRecurringTask?: (event: React.MouseEvent<HTMLButtonElement>) => void;
     onEditRecurringTask?: (event: React.MouseEvent<HTMLButtonElement>) => void;
-    onDelete?: () => void;
+    onDelete?: (anchor?: HTMLElement) => void;
     onCancel: () => void;
     initialDefinition?: StatDefinition;
     existingDefinitions?: StatDefinition[];
@@ -605,7 +607,7 @@ export function CreateStatForm({
                     sx={hasRecurringTask ? { borderTop: 1, borderColor: 'divider', pt: 1.5 } : undefined}
                 >
                     {isEditing && !initialDefinition?.systemKey && (
-                        <Button type="button" onClick={onDelete} color="error" size="small">
+                        <Button type="button" onClick={event => onDelete?.(event.currentTarget)} color="error" size="small">
                             Delete statistic
                         </Button>
                     )}
@@ -617,7 +619,7 @@ export function CreateStatForm({
                     </Stack>
                 </Stack>
             </Stack>
-            <Dialog
+            <CompactPopover
                 open={deleteRecurringTaskOpen}
                 onClose={() => {
                     if (!deletingRecurringTask && !disconnecting) setDeleteRecurringTaskOpen(false);
@@ -649,7 +651,7 @@ export function CreateStatForm({
                         {deletingRecurringTask ? 'Deleting…' : 'Delete series'}
                     </Button>
                 </DialogActions>
-            </Dialog>
+            </CompactPopover>
         </Box>
     );
 }

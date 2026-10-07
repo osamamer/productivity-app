@@ -1,0 +1,100 @@
+databaseChangeLog:
+  - changeSet:
+      id: 074-create-user-calendars
+      author: codex
+      comment: Store user-owned calendars independently from any future provider connection
+      changes:
+        - createTable:
+            tableName: app_calendar
+            columns:
+              - column:
+                  name: calendar_id
+                  type: varchar(255)
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: name
+                  type: varchar(120)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: color
+                  type: varchar(16)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: display_order
+                  type: int
+                  constraints:
+                    nullable: false
+              - column:
+                  name: is_default
+                  type: boolean
+                  constraints:
+                    nullable: false
+              - column:
+                  name: visible
+                  type: boolean
+                  constraints:
+                    nullable: false
+              - column:
+                  name: soft_deleted
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: app_calendar
+            baseColumnNames: user_id
+            referencedTableName: app_user
+            referencedColumnNames: id
+            constraintName: fk_app_calendar_user
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - createIndex:
+            tableName: app_calendar
+            indexName: idx_app_calendar_user_order
+            ifNotExists: true
+            columns:
+              - column:
+                  name: user_id
+              - column:
+                  name: display_order
+      rollback:
+        - dropTable:
+            tableName: app_calendar
+
+  - changeSet:
+      id: 074-seed-default-calendars
+      author: codex
+      comment: Give every existing account a default calendar before items are assigned
+      changes:
+        - sql:
+            sql: >-
+              INSERT INTO app_calendar (calendar_id, user_id, name, color, display_order, is_default, visible, soft_deleted)
+              SELECT 'default-' || u.id, u.id, 'Default', 'blue', 0, TRUE, TRUE, u.soft_deleted
+              FROM app_user u
+              WHERE NOT EXISTS (
+                SELECT 1 FROM app_calendar c WHERE c.user_id = u.id AND c.is_default = TRUE
+              )
+      rollback:
+        - delete:
+            tableName: app_calendar
+            where: is_default = true AND calendar_id LIKE 'default-%'
+
+  - changeSet:
+      id: 074-enforce-one-active-default-calendar
+      author: codex
+      comment: Keep exactly one active default calendar per account
+      changes:
+        - sql:
+            sql: CREATE UNIQUE INDEX IF NOT EXISTS idx_app_calendar_one_default_per_user ON app_calendar (user_id) WHERE is_default = TRUE AND soft_deleted = FALSE
+      rollback:
+        - sql:
+            sql: DROP INDEX IF EXISTS idx_app_calendar_one_default_per_user

@@ -34,6 +34,7 @@ full_backup="${backup_dir}/${POSTGRES_DB}-before-keycloak-split-${timestamp}.dum
 keycloak_dump="${backup_dir}/keycloak-tables-${timestamp}.dump"
 app_tables=(
   app_user
+  app_calendar
   calendar_event
   day_entity
   meditation_session

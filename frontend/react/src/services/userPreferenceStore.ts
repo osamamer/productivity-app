@@ -77,7 +77,9 @@ export function applyUserPreferences(scope: string, preferences: UserPreferences
         pomodoroLongBreakDuration: preferences.pomodoroLongBreakDuration ?? DEFAULT_RUNTIME_PREFERENCES.pomodoroLongBreakDuration,
         pomodoroNumFocuses: preferences.pomodoroNumFocuses ?? DEFAULT_RUNTIME_PREFERENCES.pomodoroNumFocuses,
         themeMode: preferences.themeMode ?? DEFAULT_RUNTIME_PREFERENCES.themeMode,
-        accentColor: preferences.accentColor ?? DEFAULT_RUNTIME_PREFERENCES.accentColor,
+        accentColor: preferences.accentColor === 'amber'
+            ? 'sage'
+            : preferences.accentColor ?? DEFAULT_RUNTIME_PREFERENCES.accentColor,
         meditationDurationMinutes: preferences.meditationDurationMinutes ?? DEFAULT_RUNTIME_PREFERENCES.meditationDurationMinutes,
         meditationIntervalBells: preferences.meditationIntervalBells ?? DEFAULT_RUNTIME_PREFERENCES.meditationIntervalBells,
         meditationSound: preferences.meditationSound ?? DEFAULT_RUNTIME_PREFERENCES.meditationSound,
@@ -126,7 +128,9 @@ export function readLegacyUserPreferenceUpdates(): Partial<UserPreferences> {
         }
 
         const accentColor = window.localStorage.getItem('accentColor');
-        if (accentColor === 'teal' || accentColor === 'coral' || accentColor === 'amber' || accentColor === 'violet') {
+        if (accentColor === 'amber') {
+            updates.accentColor = 'sage';
+        } else if (accentColor === 'teal' || accentColor === 'coral' || accentColor === 'sage' || accentColor === 'violet') {
             updates.accentColor = accentColor;
         }
 

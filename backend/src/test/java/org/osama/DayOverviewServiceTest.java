@@ -100,6 +100,7 @@ class DayOverviewServiceTest {
         task.setSkipped(false);
         task.setDisplayOrder(0);
         task.setImportance(0);
+        task.setCalendarId("default-" + USER_ID);
         task.setUser(user);
         return taskRepository.save(task);
     }

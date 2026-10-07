@@ -26,6 +26,8 @@ public class NewTaskRequest {
 
     private String projectId;
 
+    private String calendarId;
+
     @Size(max = 50, message = "Tag must not exceed 50 characters")
     private String tag;
 

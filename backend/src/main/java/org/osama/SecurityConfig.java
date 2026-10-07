@@ -36,6 +36,8 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(new AntPathRequestMatcher("/actuator/health")).permitAll()
                 .requestMatchers(new AntPathRequestMatcher("/api/v1/auth/register", "POST")).permitAll()
+                // The browser push endpoint is itself a per-device capability used to identify the owner.
+                .requestMatchers(new AntPathRequestMatcher("/api/v1/notifications/web-push/acknowledge", "POST")).permitAll()
                 // WebSocket upgrade is an HTTP request but the JWT cannot be sent as a
                 // standard Bearer header by the browser WebSocket API; token auth is handled
                 // via STOMP connectHeaders instead.

@@ -14,6 +14,7 @@ public record DayTemplateEventResponse(
         LocalTime endTime,
         String timeZone,
         Integer reminderMinutesBefore,
-        CalendarEventStatus status
+        CalendarEventStatus status,
+        String calendarId
 ) {
 }

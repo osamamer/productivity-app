@@ -76,6 +76,9 @@ public class Task {
     @Column(name = "task_series_id")
     private String taskSeriesId;
 
+    @Column(name = "calendar_id", nullable = false)
+    private String calendarId;
+
     @Column(name = "series_occurrence_at")
     @JsonSerialize(using = LocalDateTimeSerializer.class)
     @JsonDeserialize(using = LocalDateTimeDeserializer.class)

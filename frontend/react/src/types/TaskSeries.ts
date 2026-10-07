@@ -7,6 +7,7 @@ export type TaskSeries = {
     tag: string | null;
     importance: number;
     mentalThreadId: string | null;
+    calendarId: string;
     startDateTime: string;
     recurrenceFrequency: Exclude<TaskRecurrenceFrequency, 'NONE'>;
     recurrenceEndDate: string | null;

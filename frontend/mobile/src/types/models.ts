@@ -8,6 +8,7 @@ export interface UserInfo {
 
 export interface Task {
   taskId: string;
+  calendarId: string;
   name: string;
   description: string;
   completed: boolean;
@@ -34,6 +35,7 @@ export type TaskRecurrenceUnit = 'DAYS' | 'WEEKS' | 'MONTHS';
 
 export interface TaskSeries {
   seriesId: string;
+  calendarId: string;
   name: string;
   description: string | null;
   tag: string | null;
@@ -66,7 +68,22 @@ export interface TaskInput {
   recurrenceUnit?: TaskRecurrenceUnit | null;
   timeZone?: string;
   reminderMinutesBefore?: number | null;
+  calendarId?: string;
 }
+
+export type CalendarColor = 'accent' | 'blue' | 'purple' | 'green' | 'orange' | 'red' | 'teal' | 'pink' | 'indigo';
+
+export interface Calendar {
+  id: string;
+  name: string;
+  color: CalendarColor;
+  displayOrder: number;
+  isDefault: boolean;
+  visible: boolean;
+}
+
+export type CalendarInput = Pick<Calendar, 'name' | 'color'>;
+export type CalendarUpdate = Partial<Pick<Calendar, 'name' | 'color' | 'displayOrder' | 'visible'>>;
 
 export interface TaskGroup {
   groupId: string;
@@ -237,6 +254,7 @@ export interface CalendarEventOccurrenceOverride {
 
 export interface CalendarEvent {
   id: string;
+  calendarId: string;
   title: string;
   description: string;
   allDay: boolean;

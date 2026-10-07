@@ -9,6 +9,11 @@ type PreferencesValue = {
   setShowCompletedTasks: (value: boolean) => void;
   showClosedMentalThreads: boolean;
   setShowClosedMentalThreads: (value: boolean) => void;
+  showTodaySnapshot: boolean;
+  setShowTodaySnapshot: (value: boolean) => void;
+  showTodayEvents: boolean;
+  setShowTodayEvents: (value: boolean) => void;
+  homeDisplayPreferencesReady: boolean;
   soundEffectsEnabled: boolean;
   setSoundEffectsEnabled: (value: boolean) => void;
 };
@@ -27,11 +32,41 @@ function showClosedMentalThreadsStorageKey(userId: string | undefined): string {
   return `solife.${userId ?? 'signed-out'}.show-closed-mental-threads`;
 }
 
+function showTodaySnapshotStorageKey(userId: string | undefined): string {
+  return `solife.${userId ?? 'signed-out'}.show-today-snapshot`;
+}
+
+function showTodayEventsStorageKey(userId: string | undefined): string {
+  return `solife.${userId ?? 'signed-out'}.show-today-events`;
+}
+
 export function PreferencesProvider({ children }: PropsWithChildren) {
   const { user } = useAuth();
+  const todaySnapshotKey = showTodaySnapshotStorageKey(user?.id);
+  const todayEventsKey = showTodayEventsStorageKey(user?.id);
   const [showCompletedTasks, setShowCompletedTasksState] = useState(true);
   const [showClosedMentalThreads, setShowClosedMentalThreadsState] = useState(false);
+  const [showTodaySnapshot, setShowTodaySnapshotState] = useState(true);
+  const [showTodayEvents, setShowTodayEventsState] = useState(true);
+  const [loadedHomeDisplayPreferencesKey, setLoadedHomeDisplayPreferencesKey] = useState<string | null>(null);
   const [soundEffectsEnabled, setSoundEffectsEnabledState] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    void AsyncStorage.multiGet([todaySnapshotKey, todayEventsKey]).then(values => {
+      if (!active) return;
+      setShowTodaySnapshotState(values[0]?.[1] !== 'false');
+      setShowTodayEventsState(values[1]?.[1] !== 'false');
+      setLoadedHomeDisplayPreferencesKey(todaySnapshotKey);
+    }).catch(cause => {
+      console.warn('Could not load mobile home display preferences:', cause);
+      if (!active) return;
+      setShowTodaySnapshotState(true);
+      setShowTodayEventsState(true);
+      setLoadedHomeDisplayPreferencesKey(todaySnapshotKey);
+    });
+    return () => { active = false; };
+  }, [todayEventsKey, todaySnapshotKey]);
 
   useEffect(() => {
     let active = true;
@@ -75,6 +110,20 @@ export function PreferencesProvider({ children }: PropsWithChildren) {
     });
   }, [user?.id]);
 
+  const setShowTodaySnapshot = useCallback((value: boolean) => {
+    setShowTodaySnapshotState(value);
+    void AsyncStorage.setItem(todaySnapshotKey, String(value)).catch(cause => {
+      console.warn('Could not save mobile Today at a glance preference:', cause);
+    });
+  }, [todaySnapshotKey]);
+
+  const setShowTodayEvents = useCallback((value: boolean) => {
+    setShowTodayEventsState(value);
+    void AsyncStorage.setItem(todayEventsKey, String(value)).catch(cause => {
+      console.warn('Could not save mobile Today events preference:', cause);
+    });
+  }, [todayEventsKey]);
+
   const setSoundEffectsEnabled = useCallback((value: boolean) => {
     setSoundEffectsEnabledState(value);
     setAudioFeedbackEnabled(value);
@@ -88,9 +137,14 @@ export function PreferencesProvider({ children }: PropsWithChildren) {
     setShowCompletedTasks,
     showClosedMentalThreads,
     setShowClosedMentalThreads,
+    showTodaySnapshot,
+    setShowTodaySnapshot,
+    showTodayEvents,
+    setShowTodayEvents,
+    homeDisplayPreferencesReady: loadedHomeDisplayPreferencesKey === todaySnapshotKey,
     soundEffectsEnabled,
     setSoundEffectsEnabled,
-  }), [setShowClosedMentalThreads, setShowCompletedTasks, setSoundEffectsEnabled, showClosedMentalThreads, showCompletedTasks, soundEffectsEnabled]);
+  }), [loadedHomeDisplayPreferencesKey, setShowClosedMentalThreads, setShowCompletedTasks, setSoundEffectsEnabled, setShowTodayEvents, setShowTodaySnapshot, showClosedMentalThreads, showCompletedTasks, showTodayEvents, showTodaySnapshot, soundEffectsEnabled, todaySnapshotKey]);
   return <PreferencesContext.Provider value={value}>{children}</PreferencesContext.Provider>;
 }
 

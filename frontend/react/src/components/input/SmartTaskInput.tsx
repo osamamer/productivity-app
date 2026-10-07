@@ -23,6 +23,7 @@ import LabelIcon from '@mui/icons-material/Label';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import NotificationsNoneIcon from '@mui/icons-material/NotificationsNone';
 import { TaskToCreate } from '../../types/TaskToCreate';
+import { formatReminderDateTime } from '../task/taskReminderFormatting';
 
 type SmartTaskInputProps = {
     onSubmit: (taskToCreate: TaskToCreate) => void;
@@ -201,8 +202,6 @@ export function SmartTaskInput({
         };
         if (parentId) taskToCreate.parentId = parentId;
 
-        console.log('Creating task:', taskToCreate);
-
         onSubmit(taskToCreate);
         setInput('');
         // CRITICAL FIX: When resetting, preserve initialDate
@@ -320,7 +319,10 @@ export function SmartTaskInput({
     };
 
     const formatReminderLabel = (minutesBefore: number, reminderDateTime: string | null) => {
-        if (reminderDateTime) return 'Custom reminder';
+        if (reminderDateTime) {
+            const reminderLabel = formatReminderDateTime(reminderDateTime);
+            return reminderLabel ? `Custom · ${reminderLabel}` : 'Custom reminder';
+        }
         if (minutesBefore === 60) return '1h before';
         if (minutesBefore === 1440) return '1 day before';
         return `${minutesBefore} minutes before`;

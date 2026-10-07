@@ -1,20 +1,33 @@
+import { CompactPopover } from '../CompactPopover';
 import {
-    Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle,
-    FormControlLabel, Menu, MenuItem, Stack, Switch, TextField, Typography,
+    Alert, Box, Button, Checkbox, Chip, DialogActions, InputBase, ListItemIcon,
+    DialogContent, DialogContentText, DialogTitle, FormControlLabel,
+    Menu, MenuItem, Stack, Switch,
+    TextField, Typography,
 } from '@mui/material';
-import { useMemo, useState } from 'react';
+import { alpha, useTheme } from '@mui/material/styles';
+import { useRef, useState } from 'react';
 import { CalendarEvent, CalendarEventInput, CalendarEventStatus, RecurrenceFrequency, RecurrenceUnit } from '../../types/CalendarEvent';
+import { Calendar } from '../../types/Calendar';
 import { readEventTimePreferences, saveEventTimePreferences } from '../../services/utils/inputPreferences';
 import { AppDateField, AppTimeField } from '../input/AppPickerFields';
 import { AppNumberField } from '../input/AppNumberField';
 import { useKeyboardDelete } from '../../hooks/useKeyboardDelete';
+import { TaskReminderPicker } from '../task/TaskReminderPicker';
+import { CalendarChipSelect, CalendarSelect } from './CalendarSelect';
 
 type Props = {
     initialDate: string;
     event?: CalendarEvent | null;
+    calendars: Calendar[];
+    visibleCalendars: Calendar[];
     occurrenceKey?: string;
     occurrenceDate?: string;
     occurrenceStatus?: CalendarEventStatus;
+    autoFocusTitle?: boolean;
+    hideTitleField?: boolean;
+    hideRecurrenceFields?: boolean;
+    autoSaveOnBlur?: boolean;
     onSave: (event: CalendarEventInput) => Promise<void>;
     onCancel: () => void;
     onDelete?: () => Promise<void>;
@@ -25,15 +38,6 @@ type Props = {
 };
 
 type DeleteScope = 'occurrence' | 'all';
-
-const REMINDER_OPTIONS = [
-    { value: 5, label: '5 minutes before' },
-    { value: 15, label: '15 minutes before' },
-    { value: 30, label: '30 minutes before' },
-    { value: 60, label: '1 hour before' },
-    { value: 1440, label: '1 day before' },
-    { value: 10080, label: '1 week before' },
-];
 
 const RECURRENCE_OPTIONS: { value: RecurrenceFrequency; label: string }[] = [
     { value: 'NONE', label: 'Does not repeat' },
@@ -54,6 +58,18 @@ const STATUS_OPTIONS: { value: CalendarEventStatus; label: string }[] = [
     { value: 'TENTATIVE', label: 'Tentative' },
     { value: 'CANCELLED', label: 'Cancelled' },
 ];
+
+function eventStatusLabel(status: CalendarEventStatus): string {
+    if (status === 'TENTATIVE') return 'Tentative';
+    if (status === 'CANCELLED') return 'Cancelled';
+    return 'Confirmed';
+}
+
+function eventStatusColor(status: CalendarEventStatus, theme: ReturnType<typeof useTheme>): string {
+    if (status === 'TENTATIVE') return theme.palette.mode === 'dark' ? '#d9bc72' : '#ad7c2e';
+    if (status === 'CANCELLED') return theme.palette.error.main;
+    return theme.palette.primary.main;
+}
 
 function localDatePart(value: string | null | undefined, fallback: string): string {
     if (!value) return fallback;
@@ -87,9 +103,15 @@ function addDay(date: string): string {
 export function CalendarEventForm({
     initialDate,
     event,
+    calendars,
+    visibleCalendars,
     occurrenceKey,
     occurrenceDate,
     occurrenceStatus,
+    autoFocusTitle = true,
+    hideTitleField = false,
+    hideRecurrenceFields = false,
+    autoSaveOnBlur = false,
     onSave,
     onCancel,
     onDelete,
@@ -98,8 +120,11 @@ export function CalendarEventForm({
     onRestoreOccurrence,
     onUpdateOccurrenceStatus,
 }: Props) {
+    const theme = useTheme();
     const [rememberedTimes] = useState(() => event ? {} : readEventTimePreferences());
     const [title, setTitle] = useState(event?.title ?? '');
+    const [calendarId, setCalendarId] = useState(event?.calendarId
+        ?? (visibleCalendars.length === 1 ? visibleCalendars[0].id : ''));
     const [description, setDescription] = useState(event?.description ?? '');
     const [allDay, setAllDay] = useState(event?.allDay ?? false);
     const [startDate, setStartDate] = useState(event?.startDate ?? localDatePart(event?.startTime, initialDate));
@@ -118,21 +143,22 @@ export function CalendarEventForm({
     const [deleting, setDeleting] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [cancelMenuAnchor, setCancelMenuAnchor] = useState<HTMLElement | null>(null);
+    const [statusMenuAnchor, setStatusMenuAnchor] = useState<HTMLElement | null>(null);
     const [deleteMenuAnchor, setDeleteMenuAnchor] = useState<HTMLElement | null>(null);
     const [deleteScope, setDeleteScope] = useState<DeleteScope | null>(null);
     const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
+    const [deleteConfirmationAnchor, setDeleteConfirmationAnchor] = useState<{ top: number; left: number } | null>(null);
+    const formRef = useRef<HTMLDivElement | null>(null);
+    const autoSaveDirtyRef = useRef(false);
+    const savingRef = useRef(false);
     const isRepeatingOccurrence = Boolean(
         event
         && (event.recurrenceFrequency ?? 'NONE') !== 'NONE'
         && occurrenceKey
     );
 
-    const customReminderOption = useMemo(
-        () => REMINDER_OPTIONS.some(option => option.value === reminderMinutes) ? null : reminderMinutes,
-        [reminderMinutes]
-    );
-
     const handleStartTimeChange = (nextStartTime: string) => {
+        autoSaveDirtyRef.current = true;
         setStartTime(nextStartTime);
         if (!nextStartTime) return;
 
@@ -142,6 +168,7 @@ export function CalendarEventForm({
     };
 
     const handleStartDateChange = (nextStartDate: string) => {
+        autoSaveDirtyRef.current = true;
         setStartDate(nextStartDate);
         if (!nextStartDate) return;
 
@@ -183,7 +210,8 @@ export function CalendarEventForm({
         }
 
         return {
-            title: title.trim(),
+            title: (hideTitleField && event ? event.title : title).trim(),
+            calendarId,
             description: description.trim(),
             allDay,
             startDate: allDay ? startDate : null,
@@ -201,9 +229,11 @@ export function CalendarEventForm({
     };
 
     const submit = async (statusOverride?: CalendarEventStatus) => {
+        if (savingRef.current) return;
         const input = buildInput();
         if (!input) return;
 
+        savingRef.current = true;
         setSaving(true);
         setError(null);
         try {
@@ -213,11 +243,30 @@ export function CalendarEventForm({
             }
             await onSave(statusOverride === undefined ? input : { ...input, status: statusOverride });
             if (!allDay) saveEventTimePreferences(startTime, endTime);
+            autoSaveDirtyRef.current = false;
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Failed to save the event.');
         } finally {
+            savingRef.current = false;
             setSaving(false);
         }
+    };
+
+    const saveWhenFocusLeavesForm = () => {
+        if (!autoSaveOnBlur) return;
+        window.setTimeout(() => {
+            const activeElement = document.activeElement;
+            if (formRef.current?.contains(activeElement)) return;
+            if (activeElement instanceof HTMLElement
+                && activeElement.closest('.MuiPickersPopper-root, .MuiPickersLayout-root, .MuiMenu-root, .MuiPopover-root, .MuiDialog-root')) {
+                return;
+            }
+            if (autoSaveDirtyRef.current) void submit();
+        }, 0);
+    };
+
+    const markAutoSaveDirty = () => {
+        if (autoSaveOnBlur) autoSaveDirtyRef.current = true;
     };
 
     const occurrenceCanBeCancelled = Boolean(
@@ -255,8 +304,11 @@ export function CalendarEventForm({
         }
     };
 
-    const openDeleteConfirmation = (scope: DeleteScope) => {
+    const openDeleteConfirmation = (scope: DeleteScope, anchor?: HTMLElement | null) => {
         setDeleteScope(scope);
+        setDeleteConfirmationAnchor(anchor
+            ? { top: anchor.getBoundingClientRect().bottom, left: anchor.getBoundingClientRect().left }
+            : null);
         setDeleteConfirmationOpen(true);
     };
 
@@ -291,17 +343,71 @@ export function CalendarEventForm({
     );
 
     return (
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, p: 2 }}>
-            <TextField label="Event title" value={title} onChange={e => setTitle(e.target.value)} autoFocus autoComplete="off" fullWidth />
-            <TextField label="Description" value={description} onChange={e => setDescription(e.target.value)} autoComplete="off"
-                       multiline minRows={2} maxRows={5} fullWidth />
-
-            <TextField select label={event && recurrenceFrequency !== 'NONE' && !occurrenceKey ? 'Series status' : 'Status'} value={status} autoComplete="off"
-                       onChange={e => setStatus(e.target.value as CalendarEventStatus)} fullWidth>
-                {STATUS_OPTIONS.map(option => (
-                    <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
-                ))}
-            </TextField>
+        <Box
+            ref={formRef}
+            onBlurCapture={saveWhenFocusLeavesForm}
+            onChangeCapture={markAutoSaveDirty}
+            sx={{ display: 'flex', flexDirection: 'column', gap: 2, p: 2 }}
+        >
+            {event && !hideTitleField ? (
+                <DialogTitle component="div" sx={{ p: 0, pb: 0.5 }}>
+                    <Stack direction="row" alignItems="center" spacing={1.5}>
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                            <InputBase
+                                value={title}
+                                onChange={changeEvent => setTitle(changeEvent.target.value)}
+                                onKeyDown={keyboardEvent => {
+                                    if (keyboardEvent.key !== 'Enter' || keyboardEvent.shiftKey
+                                        || keyboardEvent.nativeEvent.isComposing) return;
+                                    keyboardEvent.preventDefault();
+                                    void submit();
+                                }}
+                                inputProps={{ 'aria-label': 'Event title' }}
+                                autoFocus={autoFocusTitle}
+                                fullWidth
+                                sx={{
+                                    fontSize: '1.25rem',
+                                    fontWeight: 500,
+                                    lineHeight: 1.6,
+                                    '& input': {
+                                        p: 0,
+                                        borderBottom: '1px solid transparent',
+                                        '&:hover': { borderBottomColor: 'divider' },
+                                        '&:focus': { borderBottomColor: 'primary.main' },
+                                    },
+                                }}
+                            />
+                        </Box>
+                        <CalendarChipSelect
+                            calendars={calendars}
+                            value={calendarId}
+                            onChange={value => { markAutoSaveDirty(); setCalendarId(value); }}
+                        />
+                    </Stack>
+                </DialogTitle>
+            ) : !hideTitleField ? (
+                <TextField
+                    label="Event title"
+                    value={title}
+                    onChange={e => setTitle(e.target.value)}
+                    onKeyDown={keyboardEvent => {
+                        if (event || keyboardEvent.key !== 'Enter' || keyboardEvent.shiftKey
+                            || keyboardEvent.nativeEvent.isComposing) return;
+                        keyboardEvent.preventDefault();
+                        void submit();
+                    }}
+                    autoFocus={autoFocusTitle}
+                    autoComplete="off"
+                    fullWidth
+                />
+            ) : null}
+            {!event && visibleCalendars.length > 1 && (
+                <CalendarSelect
+                    calendars={visibleCalendars}
+                    value={calendarId}
+                    onChange={value => { markAutoSaveDirty(); setCalendarId(value); }}
+                />
+            )}
 
             {event && recurrenceFrequency !== 'NONE' && occurrenceDate && (
                 <Typography variant="caption" color="text.secondary">
@@ -309,67 +415,86 @@ export function CalendarEventForm({
                 </Typography>
             )}
 
-            <FormControlLabel
-                control={<Switch checked={allDay} onChange={e => setAllDay(e.target.checked)} />}
-                label="All day"
-            />
+            <Stack direction="row" alignItems="center" justifyContent="space-between">
+                <FormControlLabel
+                    control={<Switch checked={allDay} onChange={e => { markAutoSaveDirty(); setAllDay(e.target.checked); }} />}
+                    label="All day"
+                />
+                <Chip
+                    size="medium"
+                    label={eventStatusLabel(status)}
+                    onClick={clickEvent => setStatusMenuAnchor(clickEvent.currentTarget)}
+                    aria-label={`Change event status, currently ${eventStatusLabel(status)}`}
+                    sx={theme => {
+                        const color = eventStatusColor(status, theme);
+                        return {
+                            height: 30,
+                            borderRadius: '8px',
+                            color,
+                            bgcolor: alpha(color, 0.1),
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            '&:hover': { bgcolor: alpha(color, 0.18) },
+                        };
+                    }}
+                />
+            </Stack>
 
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
                 <AppDateField label="Start date" value={startDate} onChange={handleStartDateChange} />
                 {!allDay && <AppTimeField label="Start time" value={startTime} onChange={handleStartTimeChange} />}
             </Stack>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
-                <AppDateField label="Finish date" value={endDate} onChange={setEndDate} />
-                {!allDay && <AppTimeField label="Finish time" value={endTime} onChange={setEndTime} />}
+                <AppDateField label="Finish date" value={endDate} onChange={value => { markAutoSaveDirty(); setEndDate(value); }} />
+                {!allDay && <AppTimeField label="Finish time" value={endTime} onChange={value => { markAutoSaveDirty(); setEndTime(value); }} />}
             </Stack>
 
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
-                <TextField select label="Repeat" value={recurrenceFrequency} autoComplete="off"
-                           onChange={e => {
-                               const nextFrequency = e.target.value as RecurrenceFrequency;
-                               setRecurrenceFrequency(nextFrequency);
-                               if (nextFrequency === 'NONE') setRecurrenceEndDate('');
-                           }} fullWidth>
-                    {RECURRENCE_OPTIONS.map(option => (
-                        <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
-                    ))}
-                </TextField>
-                {recurrenceFrequency === 'CUSTOM' && (
-                    <>
-                        <AppNumberField label="Every" value={recurrenceInterval} autoComplete="off"
-                                   onChange={e => setRecurrenceInterval(Number(e.target.value))}
-                                   onStepValueChange={setRecurrenceInterval}
-                                   min={1} max={999} step={1} fullWidth />
-                        <TextField select label="Unit" value={recurrenceUnit} autoComplete="off"
-                                   onChange={e => setRecurrenceUnit(e.target.value as RecurrenceUnit)} fullWidth>
-                            {RECURRENCE_UNIT_OPTIONS.map(option => (
-                                <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
-                            ))}
-                        </TextField>
-                    </>
-                )}
-                {recurrenceFrequency !== 'NONE' && (
-                    <AppDateField label="Repeat until (optional)" value={recurrenceEndDate} onChange={setRecurrenceEndDate} />
-                )}
-            </Stack>
-
-            <Box>
-                <TextField select label="Remind me" value={reminderMinutes ?? ''} autoComplete="off"
-                           onChange={e => setReminderMinutes(e.target.value === '' ? null : Number(e.target.value))} fullWidth>
-                    <MenuItem value="">No reminder</MenuItem>
-                    {customReminderOption !== null && (
-                        <MenuItem value={customReminderOption}>{customReminderOption} minutes before</MenuItem>
+            {!hideRecurrenceFields && (
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+                    <TextField select label="Repeat" value={recurrenceFrequency} autoComplete="off"
+                               onChange={e => {
+                                   markAutoSaveDirty();
+                                   const nextFrequency = e.target.value as RecurrenceFrequency;
+                                   setRecurrenceFrequency(nextFrequency);
+                                   if (nextFrequency === 'NONE') setRecurrenceEndDate('');
+                               }} fullWidth>
+                        {RECURRENCE_OPTIONS.map(option => (
+                            <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                        ))}
+                    </TextField>
+                    {recurrenceFrequency === 'CUSTOM' && (
+                        <>
+                            <AppNumberField label="Every" value={recurrenceInterval} autoComplete="off"
+                                       onChange={e => { markAutoSaveDirty(); setRecurrenceInterval(Number(e.target.value)); }}
+                                       onStepValueChange={value => { markAutoSaveDirty(); setRecurrenceInterval(value); }}
+                                       min={1} max={999} step={1} fullWidth />
+                            <TextField select label="Unit" value={recurrenceUnit} autoComplete="off"
+                                       onChange={e => { markAutoSaveDirty(); setRecurrenceUnit(e.target.value as RecurrenceUnit); }} fullWidth>
+                                {RECURRENCE_UNIT_OPTIONS.map(option => (
+                                    <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                                ))}
+                            </TextField>
+                        </>
                     )}
-                    {REMINDER_OPTIONS.map(option => (
-                        <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
-                    ))}
-                </TextField>
-                {reminderMinutes !== null && 'Notification' in window && Notification.permission === 'denied' && (
-                    <Typography variant="caption" color="warning.main" sx={{ display: 'block', mt: 1 }}>
-                        Notifications are blocked in this browser's site settings.
-                    </Typography>
-                )}
-            </Box>
+                    {recurrenceFrequency !== 'NONE' && (
+                        <AppDateField label="Repeat until (optional)" value={recurrenceEndDate} onChange={value => { markAutoSaveDirty(); setRecurrenceEndDate(value); }} />
+                    )}
+                </Stack>
+            )}
+
+            <TaskReminderPicker
+                value={reminderMinutes}
+                targetLabel="event"
+                scheduledAt={startDate
+                    ? `${startDate}T${allDay ? '00:00:00' : `${startTime}:00`}`
+                    : null}
+                disabled={!startDate || (!allDay && !startTime)}
+                onChange={minutes => {
+                    markAutoSaveDirty();
+                    setReminderMinutes(minutes);
+                    if (autoSaveOnBlur) window.setTimeout(() => void submit(), 0);
+                }}
+            />
 
             {error && <Alert severity="error">{error}</Alert>}
             <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent={onDelete ? 'space-between' : 'flex-end'} spacing={1}>
@@ -389,21 +514,63 @@ export function CalendarEventForm({
                             color="error"
                             onClick={buttonEvent => {
                                 if (canDeleteOccurrence) setDeleteMenuAnchor(buttonEvent.currentTarget);
-                                else openDeleteConfirmation('all');
+                                else openDeleteConfirmation('all', buttonEvent.currentTarget);
                             }}
                             disabled={saving || deleting}
                         >
-                            {event && recurrenceFrequency !== 'NONE' ? 'Delete' : 'Delete'}
+                            Delete
                         </Button>
                     )}
                 </Stack>
-                <Stack direction="row" spacing={1}>
-                    <Button onClick={onCancel} disabled={saving || deleting}>Cancel</Button>
-                    <Button variant="contained" onClick={() => void submit()} disabled={saving || deleting}>
-                        {saving ? 'Saving…' : event ? 'Save' : 'Add event'}
-                    </Button>
+                <Stack
+                    direction="row"
+                    alignItems="center"
+                    spacing={1}
+                    sx={{ ml: { sm: 'auto' }, alignSelf: { xs: 'flex-end', sm: 'auto' } }}
+                >
+                    {!autoSaveOnBlur && (
+                        <Button onClick={onCancel} disabled={saving || deleting}>Cancel</Button>
+                    )}
+                    {!autoSaveOnBlur && (
+                        <Button variant="contained" onClick={() => void submit()} disabled={saving || deleting}>
+                            {saving ? 'Saving…' : event ? 'Save' : 'Add event'}
+                        </Button>
+                    )}
                 </Stack>
             </Stack>
+            <Menu
+                anchorEl={statusMenuAnchor}
+                open={Boolean(statusMenuAnchor)}
+                onClose={() => setStatusMenuAnchor(null)}
+                MenuListProps={{ disablePadding: true }}
+                slotProps={{ paper: { sx: { borderRadius: '8px' } } }}
+            >
+                {STATUS_OPTIONS.map(option => {
+                    const color = eventStatusColor(option.value, theme);
+                    return (
+                        <MenuItem
+                            key={option.value}
+                            selected={option.value === status}
+                            onClick={() => {
+                                markAutoSaveDirty();
+                                setStatus(option.value);
+                                setStatusMenuAnchor(null);
+                            }}
+                        >
+                            <ListItemIcon sx={{ minWidth: 28 }}>
+                                <Checkbox
+                                    size="small"
+                                    checked={option.value === status}
+                                    disableRipple
+                                    onChange={() => {}}
+                                    sx={{ p: 0, color, '&.Mui-checked': { color } }}
+                                />
+                            </ListItemIcon>
+                            {option.label}
+                        </MenuItem>
+                    );
+                })}
+            </Menu>
             <Menu
                 anchorEl={cancelMenuAnchor}
                 open={Boolean(cancelMenuAnchor)}
@@ -436,7 +603,7 @@ export function CalendarEventForm({
                     disabled={!canDeleteOccurrence}
                     onClick={() => {
                         setDeleteMenuAnchor(null);
-                        openDeleteConfirmation('occurrence');
+                        openDeleteConfirmation('occurrence', deleteMenuAnchor);
                     }}
                 >
                     This occurrence
@@ -444,23 +611,34 @@ export function CalendarEventForm({
                 <MenuItem
                     onClick={() => {
                         setDeleteMenuAnchor(null);
-                        openDeleteConfirmation('all');
+                        openDeleteConfirmation('all', deleteMenuAnchor);
                     }}
                 >
                     All occurrences
                 </MenuItem>
             </Menu>
-            <Dialog
+            <CompactPopover
                 open={deleteConfirmationOpen}
                 onClose={() => !deleting && setDeleteConfirmationOpen(false)}
-                fullWidth
-                maxWidth="xs"
+                anchorPosition={deleteConfirmationAnchor ?? undefined}
+                fullWidth={false}
+                maxWidth={false}
+                compactConfirmation
+                slotProps={{
+                    paper: {
+                        sx: {
+                            width: 'min(calc(100vw - 24px), 280px)',
+                            maxWidth: 'min(calc(100vw - 24px), 280px)',
+                            borderRadius: 1.5,
+                        },
+                    },
+                }}
             >
-                <DialogTitle>
+                <DialogTitle sx={{ px: 1.5, pt: 1.25, pb: 0.5, fontSize: '0.9rem', lineHeight: 1.3 }}>
                     {deleteScope === 'occurrence' ? 'Delete this occurrence?' : 'Delete event?'}
                 </DialogTitle>
-                <DialogContent>
-                    <DialogContentText>
+                <DialogContent sx={{ px: 1.5, py: 0.5 }}>
+                    <DialogContentText sx={{ fontSize: '0.8rem', lineHeight: 1.4 }}>
                         {deleteScope === 'occurrence'
                             ? 'This occurrence will be removed from your calendar. This cannot be undone.'
                             : event && recurrenceFrequency !== 'NONE'
@@ -468,13 +646,13 @@ export function CalendarEventForm({
                                 : 'This event will be removed from your calendar. This cannot be undone.'}
                     </DialogContentText>
                 </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setDeleteConfirmationOpen(false)} disabled={deleting}>Keep event</Button>
-                    <Button color="error" variant="contained" onClick={() => void remove()} disabled={deleting}>
+                <DialogActions sx={{ px: 1.25, pt: 0.5, pb: 1, gap: 0.5 }}>
+                    <Button size="small" onClick={() => setDeleteConfirmationOpen(false)} disabled={deleting}>Keep</Button>
+                    <Button size="small" color="error" variant="contained" onClick={() => void remove()} disabled={deleting}>
                         {deleting ? 'Deleting…' : 'Delete'}
                     </Button>
                 </DialogActions>
-            </Dialog>
+            </CompactPopover>
         </Box>
     );
 }

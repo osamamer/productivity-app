@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
 
 import { AppButton } from '@/components/ui/AppButton';
@@ -11,7 +11,8 @@ import { localDateTime } from '@/lib/date';
 import { reportError } from '@/lib/errors';
 import { TASK_PRIORITY_OPTIONS } from '@/lib/taskPriority';
 import { api } from '@/services/api';
-import type { Task } from '@/types/models';
+import type { Calendar, Task } from '@/types/models';
+import { CalendarDestinationField } from '@/components/calendar/CalendarControls';
 import { dateFromScheduleValue, TaskDateTimePicker } from './TaskScheduleField';
 import { TaskReminderField } from './TaskReminderField';
 
@@ -30,11 +31,13 @@ function customDateTime(initialDate?: string): string {
   return Number.isNaN(date.getTime()) ? '' : localDateTime(date);
 }
 
-export function TaskComposerSheet({ visible, onClose, onCreated, initialDate }: {
+export function TaskComposerSheet({ visible, onClose, onCreated, initialDate, calendarOptions = [], initialCalendarId }: {
   visible: boolean;
   onClose: () => void;
   onCreated: (task: Task) => void | Promise<void>;
   initialDate?: string;
+  calendarOptions?: Calendar[];
+  initialCalendarId?: string;
 }) {
   const [name, setName] = useState('');
   const [importance, setImportance] = useState<number>(TASK_PRIORITY_OPTIONS[0].value);
@@ -43,10 +46,17 @@ export function TaskComposerSheet({ visible, onClose, onCreated, initialDate }: 
   const [customScheduleOpen, setCustomScheduleOpen] = useState(false);
   const [reminderMinutesBefore, setReminderMinutesBefore] = useState<number | null>(null);
   const [customScheduleDraft, setCustomScheduleDraft] = useState(() => dateFromScheduleValue(null));
+  const [calendarId, setCalendarId] = useState(initialCalendarId ?? '');
   const nameInputRef = useRef<TextInput>(null);
   const previousSchedule = useRef<Exclude<Schedule, 'custom'>>('today');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!visible) return undefined;
+    const focusTimer = setTimeout(() => nameInputRef.current?.focus(), 220);
+    return () => clearTimeout(focusTimer);
+  }, [visible]);
 
   function reset() {
     setName('');
@@ -54,6 +64,7 @@ export function TaskComposerSheet({ visible, onClose, onCreated, initialDate }: 
     setSchedule(initialDate ? 'custom' : 'today');
     setCustomSchedule(customDateTime(initialDate));
     setCustomScheduleOpen(false);
+    setCalendarId(initialCalendarId ?? '');
     setReminderMinutesBefore(null);
     setError(null);
   }
@@ -100,6 +111,7 @@ export function TaskComposerSheet({ visible, onClose, onCreated, initialDate }: 
         tag: '',
         importance,
         reminderMinutesBefore,
+        ...((calendarId || initialCalendarId) ? { calendarId: calendarId || initialCalendarId } : {}),
       });
       await onCreated(task);
       close();
@@ -114,10 +126,10 @@ export function TaskComposerSheet({ visible, onClose, onCreated, initialDate }: 
     <ModalSheet
       visible={visible}
       onClose={close}
-      onShow={() => requestAnimationFrame(() => nameInputRef.current?.focus())}
       title="New task"
       footer={<AppButton label="Add task" icon="add" loading={saving} onPress={() => void submit()} />}>
       <AppInput ref={nameInputRef} label="What needs doing?" value={name} onChangeText={setName} error={error ?? undefined} />
+      <CalendarDestinationField calendars={calendarOptions} value={calendarId} onChange={setCalendarId} />
       <AppText variant="label">When</AppText>
       <ChoiceChips value={schedule} onChange={chooseSchedule} options={[
         { value: 'today', label: 'Today' },

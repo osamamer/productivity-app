@@ -59,6 +59,11 @@ export default function SettingsScreen() {
     setShowCompletedTasks,
     showClosedMentalThreads,
     setShowClosedMentalThreads,
+    showTodaySnapshot,
+    setShowTodaySnapshot,
+    showTodayEvents,
+    setShowTodayEvents,
+    homeDisplayPreferencesReady,
     soundEffectsEnabled,
     setSoundEffectsEnabled,
   } = usePreferences();
@@ -206,6 +211,13 @@ export default function SettingsScreen() {
         <SettingRow label="Show closed threads" detail="Keep closed threads visible in the mental threads list." value={showClosedMentalThreads} onChange={setShowClosedMentalThreads} />
         <View style={[styles.divider, { backgroundColor: colors.border }]} />
         <SettingRow label="Auto-start Pomodoro phases" detail="Move directly into the next focus or break phase." value={resource.data?.autoStartPomodoroSessions ?? true} disabled={!resource.data} onChange={value => void updatePreference('autoStartPomodoroSessions', value)} />
+      </Card>
+
+      <Card style={styles.section}>
+        <View style={styles.sectionHeading}><Ionicons name="home-outline" size={20} color={colors.textMuted} /><AppText variant="heading">Home screen</AppText></View>
+        <SettingRow label="Show “Today at a glance”" detail="Display the focus and mental state summary card on Today." value={showTodaySnapshot} disabled={!homeDisplayPreferencesReady} onChange={setShowTodaySnapshot} />
+        <View style={[styles.divider, { backgroundColor: colors.border }]} />
+        <SettingRow label="Show today’s events" detail="Display the scheduled events card on Today." value={showTodayEvents} disabled={!homeDisplayPreferencesReady} onChange={setShowTodayEvents} />
       </Card>
 
       <Card style={styles.section}>

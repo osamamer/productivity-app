@@ -60,7 +60,12 @@ export function PomodoroNumberField({
             max={max}
             error={Boolean(validationMessage)}
             helperText={validationMessage}
-            inputProps={{ inputMode: 'numeric', style: { textAlign: 'left' } }}
+            inputProps={{
+                inputMode: 'numeric',
+                style: { textAlign: 'left' },
+                onFocus: event => event.currentTarget.select(),
+                onClick: event => event.currentTarget.select(),
+            }}
         />
     );
 }

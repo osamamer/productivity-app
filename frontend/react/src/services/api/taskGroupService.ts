@@ -2,6 +2,9 @@ import { TaskGroup } from '../../types/TaskGroup';
 import { Task } from '../../types/Task';
 import { getAuthCacheScope, getAuthHeaders } from '../utils/authHeaders';
 import { CachedResource } from '../cache/ttlCache';
+import { subscribeToResourceInvalidation } from '../cache/resourceInvalidation';
+import { readTaskDeletionReceipt } from './taskService';
+import type { TaskDeletionReceipt } from './taskService';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 const GROUP_URL = `${API_BASE_URL}/api/v1/task-groups`;
@@ -156,7 +159,7 @@ export const taskGroupService = {
         )));
     },
 
-    async deleteGroup(groupId: string): Promise<void> {
+    async deleteGroup(groupId: string): Promise<TaskDeletionReceipt | null> {
         const response = await fetch(`${GROUP_URL}/${groupId}`, {
             method: 'DELETE',
             headers: getAuthHeaders(),
@@ -164,7 +167,9 @@ export const taskGroupService = {
         if (!response.ok) {
             throw new Error('Failed to delete task group');
         }
+        const receipt = await readTaskDeletionReceipt(response);
         updateGroupsSnapshot(groups => groups.filter(group => group.groupId !== groupId));
+        return receipt;
     },
 
     clearCache(): void {
@@ -178,3 +183,5 @@ export const taskGroupService = {
         }
     },
 };
+
+subscribeToResourceInvalidation('tasks', () => taskGroupService.clearCache());

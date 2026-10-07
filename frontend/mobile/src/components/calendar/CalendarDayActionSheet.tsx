@@ -73,12 +73,12 @@ export function CalendarDayActionSheet({
           accessibilityRole="button"
           accessibilityLabel={`Open ${itemKindLabel(item)} ${item.title}`}
           onPress={() => onItemPress(item)}
-          style={({ pressed }) => [styles.item, { borderColor: colors.border, backgroundColor: colors.background }, pressed && styles.pressed]}>
-          <View style={[styles.itemIcon, { backgroundColor: item.kind === 'calendarEvent' ? colors.accent : colors.accentSoft }]}>
+          style={({ pressed }) => [styles.item, { borderColor: colors.border, borderLeftColor: item.calendarColor ?? colors.border, backgroundColor: colors.background }, item.calendarColor && styles.calendarAccent, pressed && styles.pressed]}>
+          <View style={[styles.itemIcon, { backgroundColor: item.kind === 'calendarEvent' ? `${item.color ?? colors.accent}22` : `${item.color ?? colors.accent}20` }]}>
             <Ionicons
               name={item.kind === 'calendarEvent' ? 'calendar-outline' : item.kind === 'stat' ? 'stats-chart-outline' : item.kind === 'taskGroup' ? 'layers-outline' : item.completed ? 'checkmark' : 'checkmark-outline'}
               size={17}
-              color={item.kind === 'calendarEvent' ? colors.onAccent : colors.accent} />
+              color={item.color ?? colors.accent} />
           </View>
           <View style={styles.itemCopy}>
             <AppText variant="label" numberOfLines={1}>{item.title}</AppText>
@@ -98,6 +98,7 @@ export function CalendarDayActionSheet({
 const styles = StyleSheet.create({
   sectionHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   item: { minHeight: 58, borderWidth: 1, borderRadius: 15, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 11 },
+  calendarAccent: { borderLeftWidth: 3 },
   itemIcon: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   itemCopy: { flex: 1, gap: 3 },
   empty: { minHeight: 62, alignItems: 'center', justifyContent: 'center' },

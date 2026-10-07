@@ -21,7 +21,13 @@ import ReplayIcon from '@mui/icons-material/Replay';
 import { PageWrapper } from '../components/PageWrapper';
 import { useGlobalTasks } from '../hooks/useGlobalTasks';
 import { TaskToCreate } from '../types/TaskToCreate';
-import { TASK_PAGE_BATCH_SIZE, taskGroupService, taskService } from '../services/api';
+import {
+    mergeTaskDeletionReceipts,
+    TASK_PAGE_BATCH_SIZE,
+    taskGroupService,
+    taskService,
+} from '../services/api';
+import type { TaskDeletionReceipt } from '../services/api';
 import { TaskPageComposer } from '../components/task-page/TaskPageComposer';
 import { TaskPageSection } from '../components/task-page/TaskPageSection';
 import { buildTaskListItems } from '../components/task-page/taskPageSectionUtils';
@@ -114,20 +120,40 @@ function tasksForDeleteScope(request: DeleteRequest, scope: DeleteScope, allTask
     ));
 }
 
-async function deleteTasksForScope(tasks: Task[], scope: DeleteScope): Promise<void> {
+async function deleteTasksForScope(tasks: Task[], scope: DeleteScope): Promise<TaskDeletionReceipt | null> {
     const deletedSeriesIds = new Set<string>();
     const options = { notifyResource: false };
-    await Promise.all(tasks.flatMap(task => {
+    const operations = tasks.flatMap(task => {
         if (scope === 'series' && task.taskSeriesId) {
             if (deletedSeriesIds.has(task.taskSeriesId)) return [];
             deletedSeriesIds.add(task.taskSeriesId);
-            return [taskService.deleteTask(task.taskId, options)];
+            return [() => taskService.deleteTask(task.taskId, options)];
         }
 
-        return [scope === 'occurrence'
+        return [() => scope === 'occurrence'
             ? taskService.deleteTaskInstance(task, options)
             : taskService.deleteTask(task.taskId, options)];
-    }));
+    });
+    const receipts: Array<TaskDeletionReceipt | null> = [];
+    try {
+        for (const operation of operations) receipts.push(await operation());
+    } catch (error) {
+        const restorableReceipts = receipts.filter(
+            (receipt): receipt is TaskDeletionReceipt => receipt !== null,
+        );
+        if (restorableReceipts.length > 0) {
+            try {
+                const restorableReceipt = mergeTaskDeletionReceipts(restorableReceipts);
+                if (restorableReceipt) {
+                    await taskService.restoreTaskDeletion(restorableReceipt, { notifyResource: false });
+                }
+            } catch (restoreError) {
+                console.error('Could not roll back the completed part of a task deletion:', restoreError);
+            }
+        }
+        throw error;
+    }
+    return mergeTaskDeletionReceipts(receipts);
 }
 
 export function TaskPage() {
@@ -357,11 +383,12 @@ export function TaskPage() {
         const tasksToDelete = tasksForDeleteScope(request, scope, allTasks);
         setDeleteSubmitting(true);
         setDeleteRequest(null);
+        const receipts: Array<TaskDeletionReceipt | null> = [];
         try {
             if (request.kind === 'group') {
-                await taskGroupService.deleteGroup(request.group.groupId);
+                receipts.push(await taskGroupService.deleteGroup(request.group.groupId));
             }
-            await deleteTasksForScope(tasksToDelete, scope);
+            receipts.push(await deleteTasksForScope(tasksToDelete, scope));
             tasksToDelete.forEach(task => removeTaskFromState(task.taskId));
             const deletedTaskIds = new Set(tasksToDelete.map(task => task.taskId));
             setTaskGroups(previous => previous
@@ -375,6 +402,19 @@ export function TaskPage() {
             invalidateResource('tasks');
         } catch (error) {
             console.error('Error deleting task:', error);
+            const restorableReceipts = receipts.filter(
+                (receipt): receipt is TaskDeletionReceipt => receipt !== null,
+            );
+            if (restorableReceipts.length > 0) {
+                try {
+                    const restorableReceipt = mergeTaskDeletionReceipts(restorableReceipts);
+                    if (restorableReceipt) {
+                        await taskService.restoreTaskDeletion(restorableReceipt, { notifyResource: false });
+                    }
+                } catch (restoreError) {
+                    console.error('Could not restore task data after a failed deletion:', restoreError);
+                }
+            }
             await refreshTaskBuckets(true, 'taskPage');
             try {
                 setTaskGroups(await taskGroupService.getGroups());
@@ -1130,7 +1170,7 @@ export function TaskPage() {
         const target = event.target;
         if (target instanceof Element && (
             target.closest('[data-task-id]') || target.closest('[data-task-details]')
-            || target.closest('[data-task-search]')
+            || target.closest('[data-task-search]') || target.closest('.MuiMenu-root')
         )) {
             return;
         }

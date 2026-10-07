@@ -1,0 +1,13 @@
+databaseChangeLog:
+  - changeSet:
+      id: 077-replace-amber-theme-accent
+      author: codex
+      comment: Migrate saved amber theme accents to sage
+      changes:
+        - update:
+            tableName: app_user
+            columns:
+              - column:
+                  name: accent_color
+                  value: sage
+            where: accent_color = 'amber'

@@ -1,7 +1,10 @@
+import { CompactPopover } from '../CompactPopover';
 import { useEffect, useRef, useState } from 'react';
 import {
-    Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Divider,
-    Fade, List, ListItem, ListItemIcon, ListItemText, Menu, MenuItem, Paper, Popover,
+    Alert, Box, Button, DialogActions,
+    DialogContent, DialogTitle, Divider, Fade,
+    List, ListItem, ListItemIcon, ListItemText,
+    Menu, MenuItem, Paper, Popover,
     Stack, Typography,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
@@ -19,8 +22,8 @@ type Props = {
     templates: DayTemplate[];
     applyingTemplateId?: string | null;
     error?: string | null;
-    onCreate: () => void;
-    onEdit: (template: DayTemplate) => void;
+    onCreate: (anchorPosition: { top: number; left: number }) => void;
+    onEdit: (template: DayTemplate, anchorPosition: { top: number; left: number }) => void;
     onDelete: (templateId: string) => Promise<void>;
     onDragStart: () => void;
     onPreview: (anchorEl: HTMLElement, template: DayTemplate) => void;
@@ -43,6 +46,7 @@ export function DayTemplatePanel({
         mouseY: number;
     } | null>(null);
     const [deleteTarget, setDeleteTarget] = useState<DayTemplate | null>(null);
+    const [deleteAnchorPosition, setDeleteAnchorPosition] = useState<{ top: number; left: number } | null>(null);
     const [deleting, setDeleting] = useState(false);
     const [deleteError, setDeleteError] = useState<string | null>(null);
     const suppressClickRef = useRef(false);
@@ -66,6 +70,7 @@ export function DayTemplatePanel({
     const requestTemplateDelete = () => {
         if (!templateContextMenu) return;
         setDeleteTarget(templateContextMenu.template);
+        setDeleteAnchorPosition({ top: templateContextMenu.mouseY, left: templateContextMenu.mouseX });
         setDeleteError(null);
         closeTemplateContextMenu();
     };
@@ -191,7 +196,13 @@ export function DayTemplatePanel({
                     )}
                 </Stack>
 
-                <Button size="small" variant="outlined" startIcon={<AddIcon />} onClick={onCreate} sx={{ flexShrink: 0 }}>
+                <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={<AddIcon />}
+                    onClick={event => onCreate({ top: event.clientY, left: event.clientX })}
+                    sx={{ flexShrink: 0 }}
+                >
                     New template
                 </Button>
             </Stack>
@@ -211,7 +222,12 @@ export function DayTemplatePanel({
                 MenuListProps={{ dense: true }}
             >
                 <MenuItem onClick={() => {
-                    if (templateContextMenu) onEdit(templateContextMenu.template);
+                    if (templateContextMenu) {
+                        onEdit(templateContextMenu.template, {
+                            top: templateContextMenu.mouseY,
+                            left: templateContextMenu.mouseX,
+                        });
+                    }
                     closeTemplateContextMenu();
                 }}>
                     <ListItemIcon><EditOutlinedIcon fontSize="small" /></ListItemIcon>
@@ -223,11 +239,13 @@ export function DayTemplatePanel({
                 </MenuItem>
             </Menu>
 
-            <Dialog
+            <CompactPopover
                 open={Boolean(deleteTarget)}
                 onClose={() => { if (!deleting) setDeleteTarget(null); }}
+                anchorPosition={deleteAnchorPosition ?? undefined}
                 fullWidth
                 maxWidth="xs"
+                compactConfirmation
             >
                 <DialogTitle>Delete “{deleteTarget?.name}”?</DialogTitle>
                 <DialogContent>
@@ -242,7 +260,7 @@ export function DayTemplatePanel({
                         {deleting ? 'Deleting…' : 'Delete'}
                     </Button>
                 </DialogActions>
-            </Dialog>
+            </CompactPopover>
         </Paper>
     );
 }

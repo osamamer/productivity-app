@@ -30,6 +30,8 @@ export type AppTimeFieldProps = PickerFieldProps & {
     value: string;
     onChange: (value: string) => void;
     minutesStep?: number;
+    onOpen?: () => void;
+    onClose?: () => void;
 };
 
 function parseDateOnly(value: string): Date | null {
@@ -123,7 +125,7 @@ export function AppDateField({ label, value, onChange, ...props }: AppDateFieldP
     );
 }
 
-export function AppTimeField({ label, value, onChange, minutesStep = 1, ...props }: AppTimeFieldProps) {
+export function AppTimeField({ label, value, onChange, minutesStep = 1, onOpen, onClose, ...props }: AppTimeFieldProps) {
     const handleKeyDown: KeyboardEventHandler<HTMLDivElement> = event => {
         props.onKeyDown?.(event);
         if (event.defaultPrevented || event.key !== 'Tab') return;
@@ -152,6 +154,8 @@ export function AppTimeField({ label, value, onChange, minutesStep = 1, ...props
                 ampm={false}
                 format="HH:mm"
                 minutesStep={minutesStep}
+                onOpen={onOpen}
+                onClose={onClose}
                 slotProps={{
                     field: { clearable: true, onKeyDown: handleKeyDown },
                     textField: pickerTextFieldProps(props),

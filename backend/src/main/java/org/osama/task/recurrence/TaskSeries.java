@@ -57,6 +57,9 @@ public class TaskSeries {
     @Column(name = "project_id")
     private String projectId;
 
+    @Column(name = "calendar_id", nullable = false)
+    private String calendarId;
+
     @Column(name = "start_date_time", nullable = false)
     private LocalDateTime startDateTime;
 

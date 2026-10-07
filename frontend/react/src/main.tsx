@@ -52,6 +52,10 @@ function startTokenRefresh() {
 
 async function renderApp() {
     startTokenRefresh();
+    if ('serviceWorker' in navigator) {
+        void navigator.serviceWorker.register('/service-worker.js')
+            .catch(error => console.error('Could not register the notification worker:', error));
+    }
 
     const [
         { default: App },

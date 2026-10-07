@@ -2,7 +2,7 @@ import { StatBootstrapResponse, StatDefinition, StatEntry, StatEntryStatus, Stat
 import { TaskSeries } from '../../types/TaskSeries';
 import { getAuthCacheScope, getAuthHeaders } from '../utils/authHeaders';
 import { CachedResource, TtlCache } from '../cache/ttlCache';
-import { invalidateResource } from '../cache/resourceInvalidation';
+import { invalidateResource, subscribeToResourceInvalidation } from '../cache/resourceInvalidation';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 const STATS_URL = `${API_BASE_URL}/api/v1/stats`;
@@ -50,8 +50,7 @@ let optimisticWriteSequence = 0;
 let statCacheGeneration = 0;
 
 function invalidateRecurringTaskResources(): void {
-    invalidateResource('stats');
-    invalidateResource('tasks');
+    invalidateResource('stats', 'stat');
 }
 
 function definitionsCacheKey(): string {
@@ -291,6 +290,11 @@ function clearDataCaches(): void {
     lastMonthPrefetchRequests.clear();
 }
 
+subscribeToResourceInvalidation('stats', origin => {
+    // Linked task mutations update stat entries on the server without calling recordEntry.
+    if (origin === 'task') clearDataCaches();
+});
+
 export const statService = {
     async getDefinitions(): Promise<StatDefinition[]> {
         const key = definitionsCacheKey();
@@ -468,7 +472,7 @@ export const statService = {
         });
         if (!response.ok) throw new Error('Failed to disconnect recurring task');
         invalidateDefinitionsCache();
-        invalidateResource('stats');
+        invalidateResource('stats', 'stat');
         return response.json();
     },
 
@@ -480,7 +484,7 @@ export const statService = {
         });
         if (!response.ok) throw new Error('Failed to link task focus time');
         invalidateDefinitionsCache();
-        invalidateResource('stats');
+        invalidateResource('stats', 'stat');
         return response.json();
     },
 
@@ -516,7 +520,7 @@ export const statService = {
         });
         if (!response.ok) throw new Error('Failed to unlink task focus time');
         invalidateDefinitionsCache();
-        invalidateResource('stats');
+        invalidateResource('stats', 'stat');
         return response.json();
     },
 
@@ -725,9 +729,9 @@ export const statService = {
 
     async recordEntry(req: RecordEntryRequest): Promise<StatEntry | null> {
         const optimisticWrite = applyOptimisticRecord(req);
-        invalidateResource('stats');
+        let response: Response | undefined;
         try {
-            const response = await fetch(`${STATS_URL}/entries`, {
+            response = await fetch(`${STATS_URL}/entries`, {
                 method: 'POST',
                 body: JSON.stringify(req),
                 headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getAuthHeaders() },
@@ -744,14 +748,15 @@ export const statService = {
             else knownEntries.delete(entryIdentity(req.statDefinitionId, req.date ?? localDateString()));
             // A write can create a derived sleep-duration entry for a different definition and date.
             clearDataCaches();
-            invalidateResource('stats');
+            invalidateResource('stats', 'stat');
             return entry;
         } catch (error) {
             clearOptimisticWrite(optimisticWrite, true);
-            // Keep the pre-write entry caches on failure. They already contain
-            // the persisted value, and retaining them lets every read surface
-            // roll back immediately without an extra round trip.
-            invalidateResource('stats');
+            if (!response || response.ok || response.status >= 500) {
+                clearDataCaches();
+                // A lost response may follow a server commit, so refresh both linked sides.
+                invalidateResource('stats', 'stat');
+            }
             throw error;
         }
     },

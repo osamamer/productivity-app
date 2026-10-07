@@ -1,0 +1,131 @@
+databaseChangeLog:
+  - changeSet:
+      id: 075-add-calendar-item-references
+      author: codex
+      comment: Assign tasks, recurring series, events, and individual template items to calendars
+      changes:
+        - addColumn:
+            tableName: task
+            columns:
+              - column:
+                  name: calendar_id
+                  type: varchar(255)
+        - addColumn:
+            tableName: task_series
+            columns:
+              - column:
+                  name: calendar_id
+                  type: varchar(255)
+        - addColumn:
+            tableName: calendar_event
+            columns:
+              - column:
+                  name: calendar_id
+                  type: varchar(255)
+        - addColumn:
+            tableName: day_template_task
+            columns:
+              - column:
+                  name: calendar_id
+                  type: varchar(255)
+        - addColumn:
+            tableName: day_template_event
+            columns:
+              - column:
+                  name: calendar_id
+                  type: varchar(255)
+        - sql:
+            sql: UPDATE task t SET calendar_id = c.calendar_id FROM app_calendar c WHERE c.user_id = t.user_id AND c.is_default = TRUE AND t.calendar_id IS NULL
+        - sql:
+            sql: UPDATE task_series s SET calendar_id = c.calendar_id FROM app_calendar c WHERE c.user_id = s.user_id AND c.is_default = TRUE AND s.calendar_id IS NULL
+        - sql:
+            sql: UPDATE calendar_event e SET calendar_id = c.calendar_id FROM app_calendar c WHERE c.user_id = e.user_id AND c.is_default = TRUE AND e.calendar_id IS NULL
+        - sql:
+            sql: UPDATE day_template_task tt SET calendar_id = c.calendar_id FROM day_template t JOIN app_calendar c ON c.user_id = t.user_id AND c.is_default = TRUE WHERE tt.template_id = t.template_id AND tt.calendar_id IS NULL
+        - sql:
+            sql: UPDATE day_template_event te SET calendar_id = c.calendar_id FROM day_template t JOIN app_calendar c ON c.user_id = t.user_id AND c.is_default = TRUE WHERE te.template_id = t.template_id AND te.calendar_id IS NULL
+        - addNotNullConstraint:
+            tableName: task
+            columnName: calendar_id
+            columnDataType: varchar(255)
+        - addNotNullConstraint:
+            tableName: task_series
+            columnName: calendar_id
+            columnDataType: varchar(255)
+        - addNotNullConstraint:
+            tableName: calendar_event
+            columnName: calendar_id
+            columnDataType: varchar(255)
+        - addNotNullConstraint:
+            tableName: day_template_task
+            columnName: calendar_id
+            columnDataType: varchar(255)
+        - addNotNullConstraint:
+            tableName: day_template_event
+            columnName: calendar_id
+            columnDataType: varchar(255)
+        - addForeignKeyConstraint:
+            baseTableName: task
+            baseColumnNames: calendar_id
+            referencedTableName: app_calendar
+            referencedColumnNames: calendar_id
+            constraintName: fk_app_task_calendar
+        - addForeignKeyConstraint:
+            baseTableName: task_series
+            baseColumnNames: calendar_id
+            referencedTableName: app_calendar
+            referencedColumnNames: calendar_id
+            constraintName: fk_app_task_series_calendar
+        - addForeignKeyConstraint:
+            baseTableName: calendar_event
+            baseColumnNames: calendar_id
+            referencedTableName: app_calendar
+            referencedColumnNames: calendar_id
+            constraintName: fk_app_calendar_event_calendar
+        - addForeignKeyConstraint:
+            baseTableName: day_template_task
+            baseColumnNames: calendar_id
+            referencedTableName: app_calendar
+            referencedColumnNames: calendar_id
+            constraintName: fk_app_day_template_task_calendar
+        - addForeignKeyConstraint:
+            baseTableName: day_template_event
+            baseColumnNames: calendar_id
+            referencedTableName: app_calendar
+            referencedColumnNames: calendar_id
+            constraintName: fk_app_day_template_event_calendar
+        - createIndex:
+            tableName: task
+            indexName: idx_app_task_calendar
+            ifNotExists: true
+            columns:
+              - column:
+                  name: calendar_id
+        - createIndex:
+            tableName: task_series
+            indexName: idx_app_task_series_calendar
+            ifNotExists: true
+            columns:
+              - column:
+                  name: calendar_id
+        - createIndex:
+            tableName: calendar_event
+            indexName: idx_app_calendar_event_calendar
+            ifNotExists: true
+            columns:
+              - column:
+                  name: calendar_id
+        - createIndex:
+            tableName: day_template_task
+            indexName: idx_app_day_template_task_calendar
+            ifNotExists: true
+            columns:
+              - column:
+                  name: calendar_id
+        - createIndex:
+            tableName: day_template_event
+            indexName: idx_app_day_template_event_calendar
+            ifNotExists: true
+            columns:
+              - column:
+                  name: calendar_id

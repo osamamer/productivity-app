@@ -1,5 +1,7 @@
+import { CompactPopover } from '../CompactPopover';
 import {
-    Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, Fade, Stack, TextField,
+    Alert, Button, DialogActions, DialogContent,
+    DialogTitle, Fade, Stack, TextField,
     ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material';
 import { useLayoutEffect, useMemo, useState } from 'react';
@@ -8,12 +10,14 @@ import {
     DayTemplate, DayTemplateEventRequest, DayTemplateRequest, DayTemplateTaskRequest,
 } from '../../types/DayTemplate';
 import { Task } from '../../types/Task';
+import { Calendar } from '../../types/Calendar';
 import { AppDateField } from '../input/AppPickerFields';
 import { DayTemplateEditor } from './DayTemplateEditor';
 import { buildDayTemplateRequest, formatTemplateDate } from './dayTemplateUtils';
 
-function defaultEventDraft(): DayTemplateEventRequest {
+function defaultEventDraft(defaultCalendarId: string): DayTemplateEventRequest {
     return {
+        calendarId: defaultCalendarId,
         title: '',
         description: '',
         allDay: false,
@@ -25,8 +29,9 @@ function defaultEventDraft(): DayTemplateEventRequest {
     };
 }
 
-function defaultTaskDraft(): DayTemplateTaskRequest {
+function defaultTaskDraft(defaultCalendarId: string): DayTemplateTaskRequest {
     return {
+        calendarId: defaultCalendarId,
         name: '',
         description: '',
         scheduledTime: null,
@@ -37,9 +42,12 @@ function defaultTaskDraft(): DayTemplateTaskRequest {
 
 type Props = {
     open: boolean;
+    anchorPosition?: { top: number; left: number };
     initialDate: string;
     events: CalendarEvent[];
     tasks: Task[];
+    calendars: Calendar[];
+    defaultCalendarId: string;
     template?: DayTemplate | null;
     onSave: (request: DayTemplateRequest) => Promise<void>;
     onClose: () => void;
@@ -47,7 +55,7 @@ type Props = {
 
 type TemplateCreationMode = 'copy' | 'scratch';
 
-export function DayTemplateCreationDialog({ open, initialDate, events, tasks, template = null, onSave, onClose }: Props) {
+export function DayTemplateCreationDialog({ open, anchorPosition, initialDate, events, tasks, calendars, defaultCalendarId, template = null, onSave, onClose }: Props) {
     const [name, setName] = useState('');
     const [sourceDate, setSourceDate] = useState(initialDate);
     const [creationMode, setCreationMode] = useState<TemplateCreationMode>('copy');
@@ -62,6 +70,7 @@ export function DayTemplateCreationDialog({ open, initialDate, events, tasks, te
         setSourceDate(initialDate);
         setCreationMode(template ? 'scratch' : 'copy');
         setEventDrafts(template?.events.map(event => ({
+            calendarId: event.calendarId,
             title: event.title,
             description: event.description,
             allDay: event.allDay,
@@ -72,6 +81,7 @@ export function DayTemplateCreationDialog({ open, initialDate, events, tasks, te
             status: event.status,
         })) ?? []);
         setTaskDrafts(template?.tasks.map(task => ({
+            calendarId: task.calendarId,
             name: task.name,
             description: task.description,
             scheduledTime: task.scheduledTime,
@@ -141,14 +151,14 @@ export function DayTemplateCreationDialog({ open, initialDate, events, tasks, te
     };
 
     return (
-        <Dialog
+        <CompactPopover
             open={open}
             onClose={close}
+            anchorPosition={anchorPosition}
             TransitionComponent={Fade}
             transitionDuration={{ enter: 180, exit: 140 }}
             fullWidth
             maxWidth={showEditor ? 'sm' : 'xs'}
-            scroll="paper"
         >
             <DialogTitle>
                 {template ? 'Edit day template' : creationMode === 'scratch' ? 'New day template' : 'Save day as template'}
@@ -196,10 +206,11 @@ export function DayTemplateCreationDialog({ open, initialDate, events, tasks, te
                         <DayTemplateEditor
                             events={eventDrafts}
                             tasks={taskDrafts}
-                            onAddEvent={() => setEventDrafts(current => [...current, defaultEventDraft()])}
+                            calendars={calendars}
+                            onAddEvent={() => setEventDrafts(current => [...current, defaultEventDraft(defaultCalendarId)])}
                             onUpdateEvent={updateEvent}
                             onRemoveEvent={index => setEventDrafts(current => current.filter((_, eventIndex) => eventIndex !== index))}
-                            onAddTask={() => setTaskDrafts(current => [...current, defaultTaskDraft()])}
+                            onAddTask={() => setTaskDrafts(current => [...current, defaultTaskDraft(defaultCalendarId)])}
                             onUpdateTask={updateTask}
                             onRemoveTask={index => setTaskDrafts(current => current.filter((_, taskIndex) => taskIndex !== index))}
                         />
@@ -220,6 +231,6 @@ export function DayTemplateCreationDialog({ open, initialDate, events, tasks, te
                     {saving ? 'Saving…' : template ? 'Save changes' : 'Save template'}
                 </Button>
             </DialogActions>
-        </Dialog>
+        </CompactPopover>
     );
 }
