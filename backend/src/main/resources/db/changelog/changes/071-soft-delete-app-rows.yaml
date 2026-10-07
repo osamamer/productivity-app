@@ -67,8 +67,6 @@ databaseChangeLog:
               ALTER TABLE reminder DROP CONSTRAINT uq_app_reminder_event;
               ALTER TABLE note_category DROP CONSTRAINT uq_app_note_category_user_normalized_name;
               ALTER TABLE task_group DROP CONSTRAINT uq_app_task_group_user_mental_thread;
-              DROP INDEX IF EXISTS idx_app_stat_definition_user_lower_name;
-              DROP INDEX IF EXISTS idx_app_stat_definition_user_system_key;
               DROP INDEX IF EXISTS idx_day_entity_user_date;
               DROP INDEX IF EXISTS idx_app_pomodoro_one_active_per_user;
         - sql:
@@ -80,8 +78,6 @@ databaseChangeLog:
               CREATE UNIQUE INDEX IF NOT EXISTS idx_app_mental_capacity_live_user_date ON mental_capacity_check_in(user_id, check_in_date) WHERE soft_deleted = FALSE;
               CREATE UNIQUE INDEX IF NOT EXISTS idx_app_stat_entry_live_definition_user_date ON stat_entry(stat_definition_id, user_id, date) WHERE soft_deleted = FALSE;
               CREATE UNIQUE INDEX IF NOT EXISTS idx_app_stat_focus_task_link_live_name ON stat_focus_task_link(stat_definition_id, task_name) WHERE soft_deleted = FALSE;
-              CREATE UNIQUE INDEX IF NOT EXISTS idx_app_stat_definition_user_lower_name ON stat_definition(user_id, lower(name)) WHERE soft_deleted = FALSE;
-              CREATE UNIQUE INDEX IF NOT EXISTS idx_app_stat_definition_user_system_key ON stat_definition(user_id, system_key) WHERE soft_deleted = FALSE AND system_key IS NOT NULL;
               CREATE UNIQUE INDEX IF NOT EXISTS idx_app_stat_definition_live_task_series ON stat_definition(recurring_task_series_id) WHERE soft_deleted = FALSE AND recurring_task_series_id IS NOT NULL;
               CREATE UNIQUE INDEX IF NOT EXISTS idx_app_mobile_push_token_live_token ON mobile_push_token(token) WHERE soft_deleted = FALSE;
               CREATE UNIQUE INDEX IF NOT EXISTS idx_app_task_group_task_live_pair ON task_group_task(group_id, task_id) WHERE soft_deleted = FALSE;

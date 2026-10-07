@@ -268,3 +268,5 @@ databaseChangeLog:
       file: db/changelog/changes/070-add-checkup-time-zone.yaml
   - include:
       file: db/changelog/changes/071-soft-delete-app-rows.yaml
+  - include:
+      file: db/changelog/changes/072-soft-delete-stat-definition-indexes.yaml

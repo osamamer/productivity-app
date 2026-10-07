@@ -1,0 +1,12 @@
+databaseChangeLog:
+  - changeSet:
+      id: 072-soft-delete-stat-definition-indexes
+      author: codex
+      comment: Allow reusing stat names after soft deletion
+      changes:
+        - sql:
+            sql: >-
+              DROP INDEX IF EXISTS idx_app_stat_definition_user_lower_name;
+              DROP INDEX IF EXISTS idx_app_stat_definition_user_system_key;
+              CREATE UNIQUE INDEX IF NOT EXISTS idx_app_stat_definition_user_lower_name ON stat_definition(user_id, lower(name)) WHERE soft_deleted = FALSE;
+              CREATE UNIQUE INDEX IF NOT EXISTS idx_app_stat_definition_user_system_key ON stat_definition(user_id, system_key) WHERE soft_deleted = FALSE AND system_key IS NOT NULL;
