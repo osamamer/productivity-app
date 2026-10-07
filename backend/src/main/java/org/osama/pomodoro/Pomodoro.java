@@ -9,8 +9,13 @@ import org.osama.user.User;
 import java.time.LocalDateTime;
 
 @Data
+@org.hibernate.annotations.SQLDelete(sql = "UPDATE pomodoro SET soft_deleted = true WHERE pomodoro_id = ?")
+@org.hibernate.annotations.Where(clause = "soft_deleted = false")
 @Entity
 public class Pomodoro {
+    @Column(name = "soft_deleted", nullable = false)
+    private boolean softDeleted;
+
     @Id
     @Column(nullable = false)
     private String pomodoroId;

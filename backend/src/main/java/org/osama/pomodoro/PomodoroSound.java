@@ -16,11 +16,16 @@ import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
 
+@org.hibernate.annotations.SQLDelete(sql = "UPDATE pomodoro_sound SET soft_deleted = true WHERE id = ?")
+@org.hibernate.annotations.Where(clause = "soft_deleted = false")
 @Entity
 @Table(name = "pomodoro_sound")
 @Getter
 @NoArgsConstructor
 public class PomodoroSound {
+
+    @Column(name = "soft_deleted", nullable = false)
+    private boolean softDeleted;
 
     @Id
     @Column(nullable = false, unique = true)

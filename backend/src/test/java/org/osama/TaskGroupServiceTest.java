@@ -14,6 +14,7 @@ import org.osama.taskgroup.TaskGroupService;
 import org.osama.user.User;
 import org.osama.user.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import jakarta.persistence.EntityManager;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,6 +41,7 @@ class TaskGroupServiceTest {
     @Autowired private TaskRepository taskRepository;
     @Autowired private TaskService taskService;
     @Autowired private UserRepository userRepository;
+    @Autowired private EntityManager entityManager;
 
     @BeforeEach
     void setUp() {
@@ -292,11 +294,16 @@ class TaskGroupServiceTest {
     void deletingATaskAlsoRemovesItFromItsTaskGroup() {
         Task first = createTask(TEST_USER_ID, "First");
         Task second = createTask(TEST_USER_ID, "Second");
-        taskGroupService.createGroup("Together", List.of(first.getTaskId(), second.getTaskId()), TEST_USER_ID);
+        TaskGroupResponse group = taskGroupService.createGroup(
+                "Together", List.of(first.getTaskId(), second.getTaskId()), TEST_USER_ID);
 
         taskService.deleteTask(first.getTaskId(), TEST_USER_ID);
+        entityManager.flush();
 
         assertEquals(0, taskGroupService.getGroups(TEST_USER_ID).size());
+        assertEquals(1, countRows("task", "task_id", first.getTaskId(), true));
+        assertEquals(1, countRows("task_group", "group_id", group.groupId(), true));
+        assertEquals(2, countRows("task_group_task", "group_id", group.groupId(), true));
     }
 
     @Test
@@ -362,5 +369,14 @@ class TaskGroupServiceTest {
                 .username(username)
                 .active(true)
                 .build();
+    }
+
+    private long countRows(String table, String column, String value, boolean softDeleted) {
+        Object count = entityManager.createNativeQuery("select count(*) from " + table
+                        + " where " + column + " = :value and soft_deleted = :softDeleted")
+                .setParameter("value", value)
+                .setParameter("softDeleted", softDeleted)
+                .getSingleResult();
+        return ((Number) count).longValue();
     }
 }

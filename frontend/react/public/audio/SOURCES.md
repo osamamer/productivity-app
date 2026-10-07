@@ -4,7 +4,7 @@ These bundled MP3s are five-minute derivatives of the downloaded recordings in
 `Documents`. Each file uses an eight-second crossfade at its loop boundary so
 the clients can repeat it without an obvious restart.
 
-- `rain-5m.mp3`: `dragon-studio-gentle-rain-01-437305.mp3`
+- `rain-5m.mp3`: Dragon Studio, recording 437305
 - `ocean.mp3`: `mindmist-sounds-of-waves-313367.mp3`
 - `forest.mp3`: `audiopapkin-forest-ambience-296528.mp3`
 - `bowls.mp3`: `45693695-singing-bowl-248823.mp3`

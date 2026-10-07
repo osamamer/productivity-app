@@ -20,6 +20,6 @@ public interface TaskSeriesRepository extends JpaRepository<TaskSeries, String> 
     Optional<TaskSeries> lockBySeriesIdAndUserId(@Param("seriesId") String seriesId, @Param("userId") String userId);
 
     @Modifying
-    @Query("update TaskSeries s set s.projectId = null where s.projectId = :projectId and s.userId = :userId")
+    @Query("update TaskSeries s set s.projectId = null where s.projectId = :projectId and s.userId = :userId and s.softDeleted = false")
     int clearProjectAssignments(@Param("projectId") String projectId, @Param("userId") String userId);
 }

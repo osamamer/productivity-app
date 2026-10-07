@@ -81,6 +81,8 @@ public class CalendarEventService {
                 .orElseThrow(() -> new ResourceNotFoundException("Calendar event not found: " + eventId));
         cancellationRepository.deleteAllByEventId(eventId);
         cancellationRepository.flush();
+        reminderRepository.findByEventId(eventId).ifPresent(reminderRepository::delete);
+        reminderRepository.flush();
         eventRepository.delete(event);
         log.info("Calendar event deleted: userId={} eventId={}", userId, eventId);
     }

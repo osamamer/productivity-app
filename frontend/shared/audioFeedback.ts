@@ -62,7 +62,7 @@ export const AUDIO_FEEDBACK_SOUNDS: Record<AudioFeedbackKind, readonly AudioFeed
     NOTE(G5, 0.09),
     NOTE(C6, 0.25, { gapAfter: 0, volume: 0.085 }),
   ],
-  // Gentle descent: acknowledges a hard day without sounding like an error.
+  // Soft descent: acknowledges a hard day without sounding like an error.
   dayRatingLow: [
     NOTE(A4, 0.12, { waveform: 'triangle', volume: 0.06 }),
     NOTE(F4, 0.12, { waveform: 'triangle', volume: 0.06 }),

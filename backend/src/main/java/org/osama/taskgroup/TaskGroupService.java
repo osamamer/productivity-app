@@ -53,11 +53,11 @@ public class TaskGroupService {
         group.setUser(user);
         group.setName(validateName(name));
         group.setDisplayOrder(nextDisplayOrder(userId));
-        group.setTasks(new LinkedHashSet<>(tasks));
+        group.replaceTasks(tasks);
 
         TaskGroup savedGroup = groupRepository.save(group);
         log.info("Task group created: userId={} groupId={} taskCount={}",
-                userId, savedGroup.getGroupId(), savedGroup.getTasks().size());
+                userId, savedGroup.getGroupId(), savedGroup.taskCount());
         return TaskGroupResponse.from(savedGroup);
     }
 
@@ -67,7 +67,7 @@ public class TaskGroupService {
                 .findByUserIdAndMentalThreadId(userId, mentalThread.getId())
                 .orElseGet(() -> createDefaultGroup(mentalThread, userId));
 
-        group.getTasks().add(task);
+        group.addTask(task);
         TaskGroup savedGroup = groupRepository.save(group);
         log.info("Task added to mental-thread group: userId={} groupId={} taskId={} mentalThreadId={}",
                 userId, savedGroup.getGroupId(), task.getTaskId(), mentalThread.getId());
@@ -88,10 +88,10 @@ public class TaskGroupService {
         TaskGroup group = getGroupOrThrow(groupId, userId);
         List<Task> tasks = findOwnedTasks(taskIds, userId);
         detachTasksFromOtherGroups(taskIds, userId, groupId);
-        group.setTasks(new LinkedHashSet<>(tasks));
+        group.replaceTasks(tasks);
         TaskGroup savedGroup = groupRepository.save(group);
         log.info("Task group membership replaced: userId={} groupId={} taskCount={}",
-                userId, groupId, savedGroup.getTasks().size());
+                userId, groupId, savedGroup.taskCount());
         return TaskGroupResponse.from(savedGroup);
     }
 
@@ -117,13 +117,13 @@ public class TaskGroupService {
     @Transactional
     public void removeTask(String groupId, String taskId, String userId) {
         TaskGroup group = getGroupOrThrow(groupId, userId);
-        boolean removed = group.getTasks().removeIf(task -> task.getTaskId().equals(taskId));
+        boolean removed = group.removeTasks(List.of(taskId));
         if (!removed) {
             return;
         }
 
-        if (group.getTasks().size() < 2) {
-            group.getTasks().clear();
+        if (group.taskCount() < 2) {
+            group.clearTasks();
             groupRepository.delete(group);
             log.info("Task removed from group and group deleted: userId={} groupId={} taskId={}",
                     userId, groupId, taskId);
@@ -132,13 +132,13 @@ public class TaskGroupService {
 
         TaskGroup savedGroup = groupRepository.save(group);
         log.info("Task removed from group: userId={} groupId={} taskId={} remainingTaskCount={}",
-                userId, groupId, taskId, savedGroup.getTasks().size());
+                userId, groupId, taskId, savedGroup.taskCount());
     }
 
     @Transactional
     public void deleteGroup(String groupId, String userId) {
         TaskGroup group = getGroupOrThrow(groupId, userId);
-        group.getTasks().clear();
+        group.clearTasks();
         groupRepository.delete(group);
         log.info("Task group deleted: userId={} groupId={}", userId, groupId);
     }
@@ -151,12 +151,12 @@ public class TaskGroupService {
 
         LinkedHashSet<String> taskIdsToRemove = new LinkedHashSet<>(taskIds);
         groupRepository.findAllByUserIdOrderByDisplayOrderAsc(userId).stream()
-                .filter(group -> group.getTasks().removeIf(task -> taskIdsToRemove.contains(task.getTaskId())))
+                .filter(group -> group.removeTasks(taskIdsToRemove))
                 .forEach(group -> {
                     // Manual groups need at least two tasks; mental-thread groups can remain
                     // as an empty/default container for the next connected task.
-                    if (group.getMentalThreadId() == null && group.getTasks().size() < 2) {
-                        group.getTasks().clear();
+                    if (group.getMentalThreadId() == null && group.taskCount() < 2) {
+                        group.clearTasks();
                         groupRepository.delete(group);
                     } else {
                         groupRepository.save(group);
@@ -190,10 +190,10 @@ public class TaskGroupService {
         LinkedHashSet<String> taskIdsToMove = new LinkedHashSet<>(taskIds);
         groupRepository.findAllByUserIdOrderByDisplayOrderAsc(userId).stream()
                 .filter(group -> !group.getGroupId().equals(destinationGroupId))
-                .filter(group -> group.getTasks().removeIf(task -> taskIdsToMove.contains(task.getTaskId())))
+                .filter(group -> group.removeTasks(taskIdsToMove))
                 .forEach(group -> {
-                    if (group.getTasks().size() < 2) {
-                        group.getTasks().clear();
+                    if (group.taskCount() < 2) {
+                        group.clearTasks();
                         groupRepository.delete(group);
                     } else {
                         groupRepository.save(group);

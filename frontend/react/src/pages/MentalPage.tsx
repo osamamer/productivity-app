@@ -23,7 +23,7 @@ const mentalDestinations = [
     },
     {
         title: 'Meditation',
-        description: 'Take a quiet pause with a guided focus session and gentle sounds.',
+        description: 'Take a quiet pause with a guided focus session and calming sounds.',
         target: '/meditation',
         Icon: SelfImprovementRoundedIcon,
     },

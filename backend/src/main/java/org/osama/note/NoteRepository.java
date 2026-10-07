@@ -14,13 +14,14 @@ public interface NoteRepository extends JpaRepository<Note, String> {
     List<Note> findAllByIdInAndUserId(List<String> ids, String userId);
 
     @Modifying
-    @Query("update Note note set note.category = null where note.category.id = :categoryId and note.userId = :userId")
+    @Query("update Note note set note.category = null where note.category.id = :categoryId and note.userId = :userId and note.softDeleted = false")
     int clearCategoryAssignments(@Param("categoryId") String categoryId, @Param("userId") String userId);
 
     @Query("""
             select note.title
             from Note note
             where note.userId = :userId
+              and note.softDeleted = false
               and note.title like concat(:prefix, '%')
             """)
     List<String> findTitlesStartingWith(

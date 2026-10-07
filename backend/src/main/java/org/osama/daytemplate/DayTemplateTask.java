@@ -17,9 +17,14 @@ import java.util.UUID;
 @Getter
 @Setter
 @NoArgsConstructor
+@org.hibernate.annotations.SQLDelete(sql = "UPDATE day_template_task SET soft_deleted = true WHERE task_template_id = ?")
+@org.hibernate.annotations.Where(clause = "soft_deleted = false")
 @Entity
 @Table(name = "day_template_task")
 public class DayTemplateTask {
+    @Column(name = "soft_deleted", nullable = false)
+    private boolean softDeleted;
+
     @Id
     @Column(name = "task_template_id", nullable = false)
     private String id;

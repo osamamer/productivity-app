@@ -20,9 +20,14 @@ import java.util.UUID;
 @Getter
 @Setter
 @NoArgsConstructor
+@org.hibernate.annotations.SQLDelete(sql = "UPDATE day_template_event SET soft_deleted = true WHERE event_template_id = ?")
+@org.hibernate.annotations.Where(clause = "soft_deleted = false")
 @Entity
 @Table(name = "day_template_event")
 public class DayTemplateEvent {
+    @Column(name = "soft_deleted", nullable = false)
+    private boolean softDeleted;
+
     @Id
     @Column(name = "event_template_id", nullable = false)
     private String id;

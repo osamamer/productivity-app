@@ -10,9 +10,14 @@ import java.time.LocalDate;
 
 @Data
 @NoArgsConstructor
+@org.hibernate.annotations.SQLDelete(sql = "UPDATE calendar_event SET soft_deleted = true WHERE event_id = ?")
+@org.hibernate.annotations.Where(clause = "soft_deleted = false")
 @Entity
 @Table(name = "calendar_event")
 public class CalendarEvent {
+    @Column(name = "soft_deleted", nullable = false)
+    private boolean softDeleted;
+
     @Id
     @Column(name = "event_id", nullable = false)
     private String id;

@@ -10,7 +10,6 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -19,13 +18,14 @@ import java.time.LocalDate;
 
 @Data
 @NoArgsConstructor
+@org.hibernate.annotations.SQLDelete(sql = "UPDATE calendar_event_cancellation SET soft_deleted = true WHERE cancellation_id = ?")
+@org.hibernate.annotations.Where(clause = "soft_deleted = false")
 @Entity
-@Table(name = "calendar_event_cancellation", uniqueConstraints = {
-        @UniqueConstraint(
-                name = "uq_app_calendar_event_cancellation_event_occurrence",
-                columnNames = {"event_id", "occurrence_key"})
-})
+@Table(name = "calendar_event_cancellation")
 public class CalendarEventCancellation {
+    @Column(name = "soft_deleted", nullable = false)
+    private boolean softDeleted;
+
     @Id
     @Column(name = "cancellation_id", nullable = false)
     private String id;

@@ -395,7 +395,7 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
 
     const bellDescription = useMemo(() => {
         if (numIntervalBells === 0) return 'No interval bells';
-        return `${numIntervalBells} gentle bell${numIntervalBells === 1 ? '' : 's'} during the session`;
+        return `${numIntervalBells} interval bell${numIntervalBells === 1 ? '' : 's'} during the session`;
     }, [numIntervalBells]);
 
     const handleSoundChange = (sound: MeditationSoundId) => {

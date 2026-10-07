@@ -73,10 +73,10 @@ public class MentalStateAdviceService {
                 "Your system may be running fast while clarity is low. Reduce stimulation, write down the next small step, and give yourself a short quiet block to settle."),
         EMOTIONALLY_LOADED(
                 "Emotionally Loaded",
-                "There is a lot of emotional weight here. Reach out to someone safe or choose a gentle, grounding activity before taking on demanding work."),
+                "If you feel overloaded, talk to someone you trust or take a break before demanding work."),
         LOW_MOOD(
                 "Low Mood",
-                "Be gentle with yourself for now. Choose warmth or connection—a walk, a shower, music, journaling, or a low-pressure show—before pushing for productivity."),
+                "Choose a walk, shower, music, journaling, or an easy show before returning to work."),
         READY(
                 "Ready",
                 "You have a good window for focused work. Choose the most important thing and give it your full attention for a while."),

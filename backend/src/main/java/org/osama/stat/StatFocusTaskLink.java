@@ -7,7 +7,6 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -15,12 +14,14 @@ import java.util.UUID;
 
 @Data
 @NoArgsConstructor
+@org.hibernate.annotations.SQLDelete(sql = "UPDATE stat_focus_task_link SET soft_deleted = true WHERE id = ?")
+@org.hibernate.annotations.Where(clause = "soft_deleted = false")
 @Entity
-@Table(name = "stat_focus_task_link", uniqueConstraints = @UniqueConstraint(
-        name = "uk_app_stat_focus_task_link_definition_name",
-        columnNames = {"stat_definition_id", "task_name"}
-))
+@Table(name = "stat_focus_task_link")
 public class StatFocusTaskLink {
+
+    @Column(name = "soft_deleted", nullable = false)
+    private boolean softDeleted;
 
     @Id
     @Column(nullable = false)

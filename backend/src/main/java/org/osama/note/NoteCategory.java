@@ -16,9 +16,14 @@ import java.time.LocalDateTime;
 
 @Data
 @NoArgsConstructor
+@org.hibernate.annotations.SQLDelete(sql = "UPDATE note_category SET soft_deleted = true WHERE id = ?")
+@org.hibernate.annotations.Where(clause = "soft_deleted = false")
 @Entity
 @Table(name = "note_category")
 public class NoteCategory {
+    @Column(name = "soft_deleted", nullable = false)
+    private boolean softDeleted;
+
     @Id
     @Column(nullable = false)
     private String id;

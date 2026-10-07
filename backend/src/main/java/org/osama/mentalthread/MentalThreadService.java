@@ -2,6 +2,8 @@ package org.osama.mentalthread;
 
 import lombok.extern.slf4j.Slf4j;
 import org.osama.exceptions.ResourceNotFoundException;
+import org.osama.task.TaskRepository;
+import org.osama.taskgroup.TaskGroupRepository;
 import org.osama.user.User;
 import org.osama.user.UserRepository;
 import org.springframework.stereotype.Service;
@@ -22,15 +24,21 @@ public class MentalThreadService {
     private final MentalThreadLoadEntryRepository loadEntryRepository;
     private final MentalCapacityCheckInRepository capacityRepository;
     private final UserRepository userRepository;
+    private final TaskRepository taskRepository;
+    private final TaskGroupRepository taskGroupRepository;
 
     public MentalThreadService(MentalThreadRepository mentalThreadRepository,
                                MentalThreadLoadEntryRepository loadEntryRepository,
                                MentalCapacityCheckInRepository capacityRepository,
-                               UserRepository userRepository) {
+                               UserRepository userRepository,
+                               TaskRepository taskRepository,
+                               TaskGroupRepository taskGroupRepository) {
         this.mentalThreadRepository = mentalThreadRepository;
         this.loadEntryRepository = loadEntryRepository;
         this.capacityRepository = capacityRepository;
         this.userRepository = userRepository;
+        this.taskRepository = taskRepository;
+        this.taskGroupRepository = taskGroupRepository;
     }
 
     @Transactional(readOnly = true)
@@ -144,6 +152,8 @@ public class MentalThreadService {
     @Transactional
     public void deleteThread(String threadId, String userId) {
         MentalThread mentalThread = findOwnedThread(threadId, userId);
+        taskRepository.clearMentalThreadAssignments(threadId);
+        taskGroupRepository.clearMentalThreadAssignments(threadId);
         loadEntryRepository.deleteAllByMentalThreadId(threadId);
         mentalThreadRepository.delete(mentalThread);
         log.info("Mental thread deleted: userId={} threadId={}", userId, threadId);

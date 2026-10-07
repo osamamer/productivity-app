@@ -266,3 +266,5 @@ databaseChangeLog:
   # Interpret check-up schedules in the user's local time zone
   - include:
       file: db/changelog/changes/070-add-checkup-time-zone.yaml
+  - include:
+      file: db/changelog/changes/071-soft-delete-app-rows.yaml

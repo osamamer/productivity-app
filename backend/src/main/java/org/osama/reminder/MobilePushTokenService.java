@@ -6,6 +6,8 @@ import org.osama.user.User;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -22,7 +24,7 @@ public class MobilePushTokenService {
     @Transactional
     public void register(User user, String token) {
         validate(token);
-        MobilePushToken pushToken = tokenRepository.findById(token).orElseGet(MobilePushToken::new);
+        MobilePushToken pushToken = tokenRepository.findByToken(token).orElseGet(MobilePushToken::new);
         pushToken.setToken(token);
         pushToken.setUser(user);
         tokenRepository.save(pushToken);
@@ -31,7 +33,9 @@ public class MobilePushTokenService {
 
     @Transactional
     public void removeForUser(String userId) {
-        long removed = tokenRepository.deleteByUserId(userId);
+        List<MobilePushToken> tokens = tokenRepository.findAllByUserId(userId);
+        tokenRepository.deleteAll(tokens);
+        long removed = tokens.size();
         if (removed > 0) {
             log.info("Mobile push tokens removed: userId={} count={}", userId, removed);
         }

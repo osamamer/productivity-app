@@ -47,8 +47,6 @@ public interface TaskRepository extends JpaRepository<Task, String>,
 
     List<Task> findAllByTaskIdInAndUserId(Collection<String> taskIds, String userId);
 
-    void deleteTaskByTaskId(String taskId);
-
     List<Task> findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(String taskSeriesId);
 
     List<Task> findAllByTaskSeriesIdAndUserIdAndSeriesOccurrenceAtGreaterThanEqualAndSeriesOccurrenceAtLessThanOrderBySeriesOccurrenceAtAsc(
@@ -67,12 +65,17 @@ public interface TaskRepository extends JpaRepository<Task, String>,
               and t.projectId in :projectIds
               and t.parentId is null
               and t.skipped = false
+              and t.softDeleted = false
             group by t.projectId
             """)
     List<ProjectTaskCount> countTasksByProjectIds(@Param("userId") String userId,
                                                   @Param("projectIds") Collection<String> projectIds);
 
     @Modifying
-    @Query("update Task t set t.projectId = null where t.projectId = :projectId and t.userId = :userId")
+    @Query("update Task t set t.projectId = null where t.projectId = :projectId and t.userId = :userId and t.softDeleted = false")
     int clearProjectAssignments(@Param("projectId") String projectId, @Param("userId") String userId);
+
+    @Modifying
+    @Query("update Task t set t.mentalThreadId = null where t.mentalThreadId = :threadId and t.softDeleted = false")
+    int clearMentalThreadAssignments(@Param("threadId") String threadId);
 }

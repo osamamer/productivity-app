@@ -127,7 +127,7 @@ export function MeditationStats({ refreshKey, compact = false, onViewCalendar }:
           </View>
           <View style={styles.grow}>
             <AppText variant="heading">Your practice</AppText>
-            <AppText variant="caption" color="muted">A gentle look back at this month</AppText>
+            <AppText variant="caption" color="muted">This month</AppText>
           </View>
         </View>
         {!compact && (

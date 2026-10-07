@@ -1,5 +1,7 @@
 FROM eclipse-temurin:21-jdk-jammy AS build
 
+ARG APP_VERSION=1.2.0
+
 WORKDIR /workspace
 
 COPY backend/mvnw backend/pom.xml ./
@@ -7,9 +9,12 @@ COPY backend/.mvn ./.mvn
 RUN chmod +x mvnw
 
 COPY backend/src ./src
-RUN ./mvnw -B clean package -DskipTests
+RUN ./mvnw -B clean package -DskipTests "-Drevision=${APP_VERSION}"
 
 FROM eclipse-temurin:21-jre-jammy
+
+ARG APP_VERSION=1.2.0
+LABEL org.opencontainers.image.version="${APP_VERSION}"
 
 RUN apt-get update \
     && apt-get install --no-install-recommends -y curl util-linux \

@@ -1,5 +1,6 @@
 package org.osama.note;
 
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Execution;
@@ -42,6 +43,9 @@ class NoteServiceTest {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private EntityManager entityManager;
 
     private User user;
 
@@ -124,9 +128,14 @@ class NoteServiceTest {
         BulkNoteRequest delete = new BulkNoteRequest();
         delete.setNoteIds(java.util.List.of(first.getId(), second.getId()));
         noteService.deleteNotes(delete, USER_ID);
+        entityManager.flush();
 
         assertFalse(noteRepository.existsById(first.getId()));
         assertFalse(noteRepository.existsById(second.getId()));
+        assertEquals(2L, ((Number) entityManager.createNativeQuery(
+                "select count(*) from note where user_id = :userId and soft_deleted = true")
+                .setParameter("userId", USER_ID)
+                .getSingleResult()).longValue());
     }
 
     private Note saveNote(String title) {

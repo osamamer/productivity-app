@@ -85,11 +85,17 @@ jobs:
       packages: write
     outputs:
       image_prefix: ${{ steps.images.outputs.prefix }}
+      version: ${{ steps.version.outputs.value }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Set image names
         id: images
         run: echo "prefix=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - name: Resolve application version
+        id: version
+        run: echo "value=$(bash scripts/resolve-version.sh)" >> "$GITHUB_OUTPUT"
       - name: Validate production frontend variables
         env:
           APP_DOMAIN: ${{ vars.APP_DOMAIN }}
@@ -112,7 +118,10 @@ jobs:
           push: true
           tags: |
             ${{ steps.images.outputs.prefix }}-backend:${{ github.sha }}
+            ${{ steps.images.outputs.prefix }}-backend:${{ steps.version.outputs.value }}
             ${{ steps.images.outputs.prefix }}-backend:latest
+          build-args: |
+            APP_VERSION=${{ steps.version.outputs.value }}
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
       - name: Build and push edge image
@@ -122,6 +131,7 @@ jobs:
           file: deployment/frontend.production.dockerfile
           push: true
           build-args: |
+            APP_VERSION=${{ steps.version.outputs.value }}
             VITE_API_URL=https://${{ vars.APP_DOMAIN }}
             VITE_WS_URL=wss://${{ vars.APP_DOMAIN }}/ws
             VITE_KEYCLOAK_URL=https://${{ vars.APP_DOMAIN }}/auth
@@ -129,6 +139,7 @@ jobs:
             VITE_KEYCLOAK_CLIENT_ID=${{ vars.KEYCLOAK_CLIENT_ID || 'productivity-app-frontend' }}
           tags: |
             ${{ steps.images.outputs.prefix }}-edge:${{ github.sha }}
+            ${{ steps.images.outputs.prefix }}-edge:${{ steps.version.outputs.value }}
             ${{ steps.images.outputs.prefix }}-edge:latest
           cache-from: type=gha,scope=edge
           cache-to: type=gha,mode=max,scope=edge

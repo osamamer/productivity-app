@@ -182,6 +182,15 @@ public class StatTaskLinkService {
                 .ifPresent(definition -> synchronizeExistingEntries(definition, event.userId()));
     }
 
+    @Transactional
+    public void clearRecurringSeriesLink(String seriesId, String userId) {
+        definitionRepository.findByRecurringTaskSeriesIdAndUserId(seriesId, userId)
+                .ifPresent(definition -> {
+                    definition.setRecurringTaskSeriesId(null);
+                    definitionRepository.save(definition);
+                });
+    }
+
     private boolean isLinkedBoolean(StatDefinition definition) {
         return definition != null
                 && definition.getType() == StatType.BOOLEAN

@@ -129,7 +129,8 @@ public class ExpoPushNotificationService {
             for (int index = 0; index < tickets.size() && index < tokens.size(); index++) {
                 JsonNode ticket = tickets.get(index);
                 if ("DeviceNotRegistered".equals(ticket.path("details").path("error").asText())) {
-                    tokenRepository.deleteById(tokens.get(index).getToken());
+                    tokenRepository.findByToken(tokens.get(index).getToken())
+                            .ifPresent(tokenRepository::delete);
                 } else if ("error".equals(ticket.path("status").asText())) {
                     successful = false;
                     log.warn("Expo rejected a mobile notification ticket: error={} tokenCount={}",

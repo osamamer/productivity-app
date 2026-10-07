@@ -15,15 +15,24 @@ import lombok.NoArgsConstructor;
 import org.osama.user.User;
 
 import java.time.Instant;
+import java.util.UUID;
 
 @Data
 @NoArgsConstructor
+@org.hibernate.annotations.SQLDelete(sql = "UPDATE mobile_push_token SET soft_deleted = true WHERE token_id = ?")
+@org.hibernate.annotations.Where(clause = "soft_deleted = false")
 @Entity
 @Table(name = "mobile_push_token", indexes = {
         @Index(name = "idx_app_mobile_push_token_user", columnList = "user_id")
 })
 public class MobilePushToken {
+    @Column(name = "soft_deleted", nullable = false)
+    private boolean softDeleted;
+
     @Id
+    @Column(name = "token_id", nullable = false, length = 36)
+    private String id = UUID.randomUUID().toString();
+
     @Column(nullable = false, length = 512)
     private String token;
 

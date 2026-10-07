@@ -34,7 +34,7 @@ export default function SignInScreen() {
           </View>
           <AppText variant="display" style={styles.center}>Claritard keeps life from getting overwhelming.</AppText>
           <AppText color="muted" style={styles.center}>
-            Your tasks, focus, reflections, and routines—kept gently in one place.
+            Your tasks, focus, reflections, and routines—in one place.
           </AppText>
         </View>
         <Card style={styles.card}>

@@ -25,10 +25,12 @@ public interface ReminderRepository extends JpaRepository<Reminder, String> {
 
     @Modifying
     @Query("""
-            delete from Reminder reminder
+            update Reminder reminder
+            set reminder.softDeleted = true
             where reminder.userId = :userId
               and reminder.notificationType = :notificationType
               and reminder.acknowledgedAt is null
+              and reminder.softDeleted = false
             """)
     int deletePendingByUserIdAndNotificationType(@Param("userId") String userId,
                                                   @Param("notificationType") NotificationType notificationType);
@@ -40,6 +42,7 @@ public interface ReminderRepository extends JpaRepository<Reminder, String> {
             left join fetch reminder.event event
             left join fetch reminder.task task
             where reminder.acknowledgedAt is null
+              and reminder.softDeleted = false
               and reminder.dateTime <= :now
               and reminder.dispatchedAt is null
             order by reminder.dateTime
@@ -52,6 +55,7 @@ public interface ReminderRepository extends JpaRepository<Reminder, String> {
             left join fetch reminder.event event
             left join fetch reminder.task task
             where reminder.userId = :userId
+              and reminder.softDeleted = false
               and reminder.acknowledgedAt is null
               and reminder.dateTime <= :now
             order by reminder.dateTime

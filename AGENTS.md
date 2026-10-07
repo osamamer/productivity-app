@@ -70,7 +70,8 @@ The mobile client uses Expo remote push for every application notification, incl
 
 - **Production**: PostgreSQL on port 5432 (via Docker)
 - **Tests**: H2 in-memory; Liquibase disabled; `spring.jpa.hibernate.ddl-auto=create-drop`
-- **Migrations**: Liquibase YAML files in `backend/src/main/resources/db/changelog/changes/`; master file is `db.changelog-master.yaml`. Mental threads, load history, daily capacity check-ins, task connections, individual repeating-calendar-event cancellations, and the Sleep system stat are persisted by the latest migrations. Projects (including recurring-series project assignment) are persisted by migration 069; check-up time zones are persisted by migration 070.
+- **Migrations**: Liquibase YAML files in `backend/src/main/resources/db/changelog/changes/`; master file is `db.changelog-master.yaml`. Mental threads, load history, daily capacity check-ins, task connections, individual repeating-calendar-event cancellations, and the Sleep system stat are persisted by the latest migrations. Projects (including recurring-series project assignment) are persisted by migration 069; check-up time zones by 070; soft deletion for application records and association rows by 071.
+- **Soft deletion**: All JPA entities, including relationship rows, use `soft_deleted`; entity deletion is an update and normal ORM queries filter deleted rows. New entities and relationship tables must follow the same mapping and receive a forward migration. Bulk mutations must explicitly exclude or mark soft-deleted rows; preserve the previous cascade/unlink behavior in services because database foreign-key delete actions do not run on soft deletes. Keep uniqueness constraints scoped to active rows so a deleted value can be reused.
 - Dev applies Liquibase migrations incrementally with `spring.liquibase.drop-first=false`; PostgreSQL data persists in the named `postgres_data` Docker volume across normal app restarts
 - The `dev` profile fills missing `sleep_time` entries across the latest year with deterministic demo values after startup, while preserving any dates the user already recorded; test and production profiles never seed this data
 
@@ -127,6 +128,8 @@ Docker services are defined in `deployment/docker-compose.yml`. Environment vari
 ### CI/CD
 
 **Prefix all index names with `idx_app_` to avoid collisions with Keycloak.** Keycloak shares the same PostgreSQL database and creates its own indexes (e.g. `IDX_USER_EMAIL` on `USER_ENTITY`). PostgreSQL index names are unique per schema and case-insensitive, so a plain `idx_user_email` on our `app_user` table collides with Keycloak's index of the same name, causing one of them to fail on startup. Always use `idx_app_<table>_<column>` for our indexes.
+
+**Application versioning.** `VERSION` is the semantic version baseline. `scripts/resolve-version.sh` adds one patch for each first-parent commit after the most recent commit that changed `VERSION`; CI resolves it with full Git history and tags production images with both that version and the commit SHA. Bump `VERSION` manually for a major/minor release. Keep Maven's `revision` default and web/mobile package/app metadata aligned with the baseline. EAS continues to manage Android build numbers remotely so app-version based OTA runtime compatibility remains stable between native releases.
 
 **Always use `ifNotExists: true` on `createIndex` in Liquibase changesets.** Partial runs (e.g. a failed startup) can leave indexes in the DB without a corresponding `DATABASECHANGELOG` entry. On the next run Liquibase tries to create them again and fails. `ifNotExists: true` makes index creation idempotent and prevents this.
 

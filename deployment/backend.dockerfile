@@ -1,5 +1,8 @@
 FROM eclipse-temurin:21-jre-jammy
 
+ARG APP_VERSION=1.2.0
+LABEL org.opencontainers.image.version="${APP_VERSION}"
+
 COPY set-timezone.sh /set-timezone.sh
 RUN apt-get update \
     && apt-get install --no-install-recommends -y util-linux \

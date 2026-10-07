@@ -678,10 +678,10 @@ public class TaskService {
         taskGroupService.removeTasksFromGroups(deletedTaskIds, userId);
         deleteTaskReminders(deletedTaskIds);
         deleteTaskRuntimeState(deletedTaskIds);
-        subtasks.forEach(subtask -> taskRepository.deleteTaskByTaskId(subtask.getTaskId()));
+        taskRepository.deleteAll(subtasks);
 
         // Delete main task
-        taskRepository.deleteTaskByTaskId(taskId);
+        taskRepository.delete(taskToDelete.get());
         log.info("Task deleted: userId={} taskId={} deletedSubtaskCount={}",
                 userId, taskId, subtasks.size());
     }
@@ -724,6 +724,7 @@ public class TaskService {
         taskGroupService.removeTasksFromGroups(deletedTaskIds, userId);
         deleteTaskReminders(deletedTaskIds);
         deleteTaskRuntimeState(deletedTaskIds);
+        statTaskLinkService.clearRecurringSeriesLink(seriesId, userId);
         taskRepository.deleteAll(subtasks);
         taskRepository.deleteAll(occurrences);
         taskSeriesRepository.deleteById(seriesId);
@@ -778,7 +779,7 @@ public class TaskService {
 
         List<Task> deletionOrder = new ArrayList<>(tasksToDelete.values());
         Collections.reverse(deletionOrder);
-        deletionOrder.forEach(task -> taskRepository.deleteTaskByTaskId(task.getTaskId()));
+        taskRepository.deleteAll(deletionOrder);
 
         log.info("Future tasks deleted: userId={} futureBoundary={} taskCount={}",
                 userId, futureBoundary, deletionOrder.size());

@@ -15,19 +15,24 @@ import java.time.ZoneId;
 @AllArgsConstructor
 @Builder
 @Data
+@org.hibernate.annotations.SQLDelete(sql = "UPDATE app_user SET soft_deleted = true WHERE id = ?")
+@org.hibernate.annotations.Where(clause = "soft_deleted = false")
 @Entity
 @Table(name = "app_user")
 @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class User {
 
+    @Column(name = "soft_deleted", nullable = false)
+    private boolean softDeleted;
+
     @Id
-    @Column(nullable = false, unique = true)
+    @Column(nullable = false)
     private String id;
 
-    @Column(unique = true)
+    @Column
     private String keycloakId;
 
-    @Column(nullable = false, unique = true)
+    @Column(nullable = false)
     private String email;
 
     @Column(nullable = false)
@@ -36,7 +41,7 @@ public class User {
     @Column(nullable = false)
     private String lastName;
 
-    @Column(nullable = false, unique = true)
+    @Column(nullable = false)
     private String username;
 
     @Column(nullable = false)

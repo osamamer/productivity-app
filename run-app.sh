@@ -3,6 +3,7 @@ set -euo pipefail
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 cd "$script_dir"
+app_version=$(bash "$script_dir/scripts/resolve-version.sh")
 
 env_file="$script_dir/deployment/.env"
 compose_file="$script_dir/deployment/docker-compose.yml"
@@ -261,7 +262,7 @@ start_backend() {
   echo "🚀 Starting backend..."
   (
     cd "$script_dir/backend"
-    exec setsid ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
+    exec setsid ./mvnw spring-boot:run "-Drevision=$app_version" -Dspring-boot.run.profiles=dev
   ) &
   backend_pid=$!
 

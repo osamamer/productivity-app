@@ -717,6 +717,7 @@ public class StatService {
             throw new IllegalArgumentException("Cannot delete a system stat.");
         }
         statGroupService.removeDefinitionFromGroups(definitionId, userId);
+        entryRepository.deleteAll(entryRepository.findAllByStatDefinitionIdAndUserId(definitionId, userId));
         focusTaskLinkRepository.deleteAllByStatDefinitionId(definitionId);
         definitionRepository.delete(statDefinition);
         log.info("Stat definition deleted: userId={} statDefinitionId={} name={}",

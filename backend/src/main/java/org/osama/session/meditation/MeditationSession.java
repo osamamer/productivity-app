@@ -11,8 +11,13 @@ import org.osama.user.User;
 @NoArgsConstructor
 @AllArgsConstructor
 @EqualsAndHashCode(callSuper = true)
+@org.hibernate.annotations.SQLDelete(sql = "UPDATE meditation_session SET soft_deleted = true WHERE id = ?")
+@org.hibernate.annotations.Where(clause = "soft_deleted = false")
 @Entity
 public class MeditationSession extends Session {
+    @Column(name = "soft_deleted", nullable = false)
+    private boolean softDeleted;
+
     @Id
     @Column(nullable = false)
     private String id;

@@ -10,9 +10,14 @@ import java.util.List;
 
 @Data
 @NoArgsConstructor
+@org.hibernate.annotations.SQLDelete(sql = "UPDATE stat_definition SET soft_deleted = true WHERE id = ?")
+@org.hibernate.annotations.Where(clause = "soft_deleted = false")
 @Entity
 @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class StatDefinition {
+
+    @Column(name = "soft_deleted", nullable = false)
+    private boolean softDeleted;
 
     @Id
     @Column(nullable = false)
@@ -47,7 +52,7 @@ public class StatDefinition {
     @Column(name = "system_key")
     private String systemKey;
 
-    @Column(name = "recurring_task_series_id", unique = true)
+    @Column(name = "recurring_task_series_id")
     private String recurringTaskSeriesId;
 
     // Legacy mirror of the first linked task name. New code uses focusTaskNames.

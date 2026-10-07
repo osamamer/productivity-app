@@ -124,6 +124,17 @@ The backend test profile uses an in-memory H2 database and disables Liquibase.
 Local development uses PostgreSQL and Liquibase with `drop-first=false`, so
 normal restarts preserve data.
 
+## Versioning
+
+The starting version is `1.2.0`, recorded in [`VERSION`](VERSION). Production
+image builds automatically add one patch number for each first-parent commit
+after the last commit that changed `VERSION`; the images keep both the semantic
+version tag and the immutable commit SHA tag. Bump `VERSION` manually when
+starting a new major or minor release, and keep the Maven and package/app
+metadata defaults aligned with it. EAS separately increments Android build
+numbers; the Expo app version stays stable between native releases so OTA
+updates remain compatible.
+
 ## Configuration
 
 `deployment/.env` supplies the local PostgreSQL and Keycloak settings. The

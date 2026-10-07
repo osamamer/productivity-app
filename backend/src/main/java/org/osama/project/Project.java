@@ -20,10 +20,15 @@ import java.time.LocalDateTime;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
+@org.hibernate.annotations.SQLDelete(sql = "UPDATE project SET soft_deleted = true WHERE project_id = ?")
+@org.hibernate.annotations.Where(clause = "soft_deleted = false")
 @Entity
 @Builder
 @Table(name = "project")
 public class Project {
+    @Column(name = "soft_deleted", nullable = false)
+    private boolean softDeleted;
+
     @Id
     @Column(name = "project_id", nullable = false)
     private String projectId;

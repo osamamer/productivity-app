@@ -1,0 +1,93 @@
+databaseChangeLog:
+  - changeSet:
+      id: 071-soft-delete-app-rows
+      author: codex
+      comment: Retain deleted application records while excluding them from active queries
+      changes:
+        - sql:
+            sql: >-
+              ALTER TABLE app_user ADD COLUMN soft_deleted BOOLEAN NOT NULL DEFAULT FALSE;
+              ALTER TABLE day_entity ADD COLUMN soft_deleted BOOLEAN NOT NULL DEFAULT FALSE;
+              ALTER TABLE day_template ADD COLUMN soft_deleted BOOLEAN NOT NULL DEFAULT FALSE;
+              ALTER TABLE day_template_event ADD COLUMN soft_deleted BOOLEAN NOT NULL DEFAULT FALSE;
+              ALTER TABLE day_template_task ADD COLUMN soft_deleted BOOLEAN NOT NULL DEFAULT FALSE;
+              ALTER TABLE calendar_event ADD COLUMN soft_deleted BOOLEAN NOT NULL DEFAULT FALSE;
+              ALTER TABLE calendar_event_cancellation ADD COLUMN soft_deleted BOOLEAN NOT NULL DEFAULT FALSE;
+              ALTER TABLE mental_state_check_in ADD COLUMN soft_deleted BOOLEAN NOT NULL DEFAULT FALSE;
+              ALTER TABLE mental_capacity_check_in ADD COLUMN soft_deleted BOOLEAN NOT NULL DEFAULT FALSE;
+              ALTER TABLE mental_thread ADD COLUMN soft_deleted BOOLEAN NOT NULL DEFAULT FALSE;
+              ALTER TABLE mental_thread_load_entry ADD COLUMN soft_deleted BOOLEAN NOT NULL DEFAULT FALSE;
+              ALTER TABLE note ADD COLUMN soft_deleted BOOLEAN NOT NULL DEFAULT FALSE;
+              ALTER TABLE note_category ADD COLUMN soft_deleted BOOLEAN NOT NULL DEFAULT FALSE;
+              ALTER TABLE pomodoro ADD COLUMN soft_deleted BOOLEAN NOT NULL DEFAULT FALSE;
+              ALTER TABLE pomodoro_sound ADD COLUMN soft_deleted BOOLEAN NOT NULL DEFAULT FALSE;
+              ALTER TABLE project ADD COLUMN soft_deleted BOOLEAN NOT NULL DEFAULT FALSE;
+              ALTER TABLE mobile_push_token ADD COLUMN soft_deleted BOOLEAN NOT NULL DEFAULT FALSE;
+              ALTER TABLE reminder ADD COLUMN soft_deleted BOOLEAN NOT NULL DEFAULT FALSE;
+              ALTER TABLE scheduled_job ADD COLUMN soft_deleted BOOLEAN NOT NULL DEFAULT FALSE;
+              ALTER TABLE meditation_session ADD COLUMN soft_deleted BOOLEAN NOT NULL DEFAULT FALSE;
+              ALTER TABLE task_session ADD COLUMN soft_deleted BOOLEAN NOT NULL DEFAULT FALSE;
+              ALTER TABLE stat_definition ADD COLUMN soft_deleted BOOLEAN NOT NULL DEFAULT FALSE;
+              ALTER TABLE stat_entry ADD COLUMN soft_deleted BOOLEAN NOT NULL DEFAULT FALSE;
+              ALTER TABLE stat_focus_task_link ADD COLUMN soft_deleted BOOLEAN NOT NULL DEFAULT FALSE;
+              ALTER TABLE stat_group ADD COLUMN soft_deleted BOOLEAN NOT NULL DEFAULT FALSE;
+              ALTER TABLE task ADD COLUMN soft_deleted BOOLEAN NOT NULL DEFAULT FALSE;
+              ALTER TABLE task_series ADD COLUMN soft_deleted BOOLEAN NOT NULL DEFAULT FALSE;
+              ALTER TABLE task_group ADD COLUMN soft_deleted BOOLEAN NOT NULL DEFAULT FALSE;
+              ALTER TABLE task_group_task ADD COLUMN soft_deleted BOOLEAN NOT NULL DEFAULT FALSE;
+              ALTER TABLE stat_group_definition ADD COLUMN soft_deleted BOOLEAN NOT NULL DEFAULT FALSE;
+        - sql:
+            sql: >-
+              ALTER TABLE task_group_task ADD COLUMN membership_id VARCHAR(36);
+              UPDATE task_group_task SET membership_id = MD5(CONCAT(group_id, ':', task_id));
+              ALTER TABLE task_group_task ALTER COLUMN membership_id SET NOT NULL;
+              ALTER TABLE task_group_task DROP CONSTRAINT pk_app_task_group_task;
+              ALTER TABLE task_group_task ADD CONSTRAINT pk_app_task_group_task PRIMARY KEY (membership_id);
+              ALTER TABLE stat_group_definition ADD COLUMN membership_id VARCHAR(36);
+              UPDATE stat_group_definition SET membership_id = MD5(CONCAT(group_id, ':', stat_definition_id));
+              ALTER TABLE stat_group_definition ALTER COLUMN membership_id SET NOT NULL;
+              ALTER TABLE stat_group_definition DROP CONSTRAINT pk_app_stat_group_definition;
+              ALTER TABLE stat_group_definition ADD CONSTRAINT pk_app_stat_group_definition PRIMARY KEY (membership_id);
+              ALTER TABLE stat_group_definition DROP CONSTRAINT uk_app_stat_group_definition_stat_definition;
+              ALTER TABLE mobile_push_token ADD COLUMN token_id VARCHAR(36);
+              UPDATE mobile_push_token SET token_id = MD5(token);
+              ALTER TABLE mobile_push_token ALTER COLUMN token_id SET NOT NULL;
+              ALTER TABLE mobile_push_token DROP CONSTRAINT mobile_push_token_pkey;
+              ALTER TABLE mobile_push_token ADD CONSTRAINT pk_app_mobile_push_token PRIMARY KEY (token_id);
+        - sql:
+            sql: >-
+              ALTER TABLE app_user DROP CONSTRAINT IF EXISTS app_user_email_key;
+              ALTER TABLE app_user DROP CONSTRAINT IF EXISTS app_user_username_key;
+              ALTER TABLE app_user DROP CONSTRAINT IF EXISTS app_user_keycloak_id_key;
+              ALTER TABLE calendar_event_cancellation DROP CONSTRAINT uq_app_calendar_event_cancellation_event_occurrence;
+              ALTER TABLE mental_capacity_check_in DROP CONSTRAINT uq_app_mental_capacity_user_date;
+              ALTER TABLE stat_entry DROP CONSTRAINT uq_stat_entry_definition_user_date;
+              ALTER TABLE stat_focus_task_link DROP CONSTRAINT uk_app_stat_focus_task_link_definition_name;
+              ALTER TABLE stat_definition DROP CONSTRAINT uq_app_stat_definition_task_series;
+              ALTER TABLE reminder DROP CONSTRAINT uq_app_reminder_event;
+              ALTER TABLE note_category DROP CONSTRAINT uq_app_note_category_user_normalized_name;
+              ALTER TABLE task_group DROP CONSTRAINT uq_app_task_group_user_mental_thread;
+              DROP INDEX IF EXISTS idx_app_stat_definition_user_lower_name;
+              DROP INDEX IF EXISTS idx_app_stat_definition_user_system_key;
+              DROP INDEX IF EXISTS idx_day_entity_user_date;
+              DROP INDEX IF EXISTS idx_app_pomodoro_one_active_per_user;
+        - sql:
+            sql: >-
+              CREATE UNIQUE INDEX IF NOT EXISTS idx_app_user_live_email ON app_user(email) WHERE soft_deleted = FALSE;
+              CREATE UNIQUE INDEX IF NOT EXISTS idx_app_user_live_username ON app_user(username) WHERE soft_deleted = FALSE;
+              CREATE UNIQUE INDEX IF NOT EXISTS idx_app_user_live_keycloak_id ON app_user(keycloak_id) WHERE soft_deleted = FALSE AND keycloak_id IS NOT NULL;
+              CREATE UNIQUE INDEX IF NOT EXISTS idx_app_calendar_cancellation_live_occurrence ON calendar_event_cancellation(event_id, occurrence_key) WHERE soft_deleted = FALSE;
+              CREATE UNIQUE INDEX IF NOT EXISTS idx_app_mental_capacity_live_user_date ON mental_capacity_check_in(user_id, check_in_date) WHERE soft_deleted = FALSE;
+              CREATE UNIQUE INDEX IF NOT EXISTS idx_app_stat_entry_live_definition_user_date ON stat_entry(stat_definition_id, user_id, date) WHERE soft_deleted = FALSE;
+              CREATE UNIQUE INDEX IF NOT EXISTS idx_app_stat_focus_task_link_live_name ON stat_focus_task_link(stat_definition_id, task_name) WHERE soft_deleted = FALSE;
+              CREATE UNIQUE INDEX IF NOT EXISTS idx_app_stat_definition_user_lower_name ON stat_definition(user_id, lower(name)) WHERE soft_deleted = FALSE;
+              CREATE UNIQUE INDEX IF NOT EXISTS idx_app_stat_definition_user_system_key ON stat_definition(user_id, system_key) WHERE soft_deleted = FALSE AND system_key IS NOT NULL;
+              CREATE UNIQUE INDEX IF NOT EXISTS idx_app_stat_definition_live_task_series ON stat_definition(recurring_task_series_id) WHERE soft_deleted = FALSE AND recurring_task_series_id IS NOT NULL;
+              CREATE UNIQUE INDEX IF NOT EXISTS idx_app_mobile_push_token_live_token ON mobile_push_token(token) WHERE soft_deleted = FALSE;
+              CREATE UNIQUE INDEX IF NOT EXISTS idx_app_task_group_task_live_pair ON task_group_task(group_id, task_id) WHERE soft_deleted = FALSE;
+              CREATE UNIQUE INDEX IF NOT EXISTS idx_app_stat_group_definition_live_stat ON stat_group_definition(stat_definition_id) WHERE soft_deleted = FALSE;
+              CREATE UNIQUE INDEX IF NOT EXISTS idx_app_reminder_live_event ON reminder(event_id) WHERE soft_deleted = FALSE AND event_id IS NOT NULL;
+              CREATE UNIQUE INDEX IF NOT EXISTS idx_app_pomodoro_one_active_per_user ON pomodoro(user_id) WHERE is_active = TRUE AND soft_deleted = FALSE;
+              CREATE UNIQUE INDEX IF NOT EXISTS idx_app_day_entity_live_user_date ON day_entity(user_id, local_date) WHERE soft_deleted = FALSE;
+              CREATE UNIQUE INDEX IF NOT EXISTS idx_app_note_category_live_name ON note_category(user_id, normalized_name) WHERE soft_deleted = FALSE;
+              CREATE UNIQUE INDEX IF NOT EXISTS idx_app_task_group_live_mental_thread ON task_group(user_id, mental_thread_id) WHERE soft_deleted = FALSE AND mental_thread_id IS NOT NULL;

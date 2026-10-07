@@ -2,6 +2,8 @@ package org.osama.user;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import org.osama.pomodoro.PomodoroSoundIds;
 import org.osama.pomodoro.PomodoroSoundRepository;
 import org.osama.reminder.NotificationService;
@@ -25,12 +27,19 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @Slf4j
 public class UserService {
+    private static final List<String> USER_OWNED_TABLES = List.of(
+            "day_entity", "day_template", "pomodoro", "pomodoro_sound", "project", "reminder",
+            "scheduled_job", "meditation_session", "stat_definition", "stat_entry", "note",
+            "note_category", "task", "task_series", "task_group", "stat_group", "mental_thread",
+            "mental_capacity_check_in", "mental_state_check_in", "calendar_event", "mobile_push_token");
 
     private final UserRepository userRepository;
     private final KeycloakAccountService keycloakAccountService;
     private final SystemStatProvisioningService systemStatProvisioningService;
     private final NotificationService notificationService;
     private final PomodoroSoundRepository pomodoroSoundRepository;
+    @PersistenceContext
+    private EntityManager entityManager;
 
     /**
      * Looks up the app User by Keycloak subject, creating one on first login.
@@ -338,11 +347,49 @@ public class UserService {
 
     @Transactional
     public void deleteUser(String userId) {
-        if (!userRepository.existsById(userId)) {
-            throw new IllegalArgumentException("User not found: " + userId);
-        }
-        userRepository.deleteById(userId);
+        User user = userRepository.findUserById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
+        softDeleteUserData(userId);
+        userRepository.delete(user);
         log.info("Deleted user: {}", userId);
+    }
+
+    private void softDeleteUserData(String userId) {
+        entityManager.flush();
+        softDeleteRelatedRows("UPDATE day_template_event SET soft_deleted = TRUE WHERE soft_deleted = FALSE "
+                + "AND template_id IN (SELECT template_id FROM day_template WHERE user_id = :userId)", userId);
+        softDeleteRelatedRows("UPDATE day_template_task SET soft_deleted = TRUE WHERE soft_deleted = FALSE "
+                + "AND template_id IN (SELECT template_id FROM day_template WHERE user_id = :userId)", userId);
+        softDeleteRelatedRows("UPDATE calendar_event_cancellation SET soft_deleted = TRUE WHERE soft_deleted = FALSE "
+                + "AND event_id IN (SELECT event_id FROM calendar_event WHERE user_id = :userId)", userId);
+        softDeleteRelatedRows("UPDATE mental_thread_load_entry SET soft_deleted = TRUE WHERE soft_deleted = FALSE "
+                + "AND thread_id IN (SELECT thread_id FROM mental_thread WHERE user_id = :userId)", userId);
+        softDeleteRelatedRows("UPDATE stat_focus_task_link SET soft_deleted = TRUE WHERE soft_deleted = FALSE "
+                + "AND stat_definition_id IN (SELECT id FROM stat_definition WHERE user_id = :userId)", userId);
+        softDeleteRelatedRows("UPDATE stat_group_definition SET soft_deleted = TRUE WHERE soft_deleted = FALSE "
+                + "AND (group_id IN (SELECT group_id FROM stat_group WHERE user_id = :userId) "
+                + "OR stat_definition_id IN (SELECT id FROM stat_definition WHERE user_id = :userId))", userId);
+        softDeleteRelatedRows("UPDATE task_group_task SET soft_deleted = TRUE WHERE soft_deleted = FALSE "
+                + "AND (group_id IN (SELECT group_id FROM task_group WHERE user_id = :userId) "
+                + "OR task_id IN (SELECT task_id FROM task WHERE user_id = :userId))", userId);
+        softDeleteRelatedRows("UPDATE task_session SET soft_deleted = TRUE WHERE soft_deleted = FALSE "
+                + "AND associated_task_id IN (SELECT task_id FROM task WHERE user_id = :userId)", userId);
+        USER_OWNED_TABLES.forEach(table -> softDeleteUserOwnedRows(table, userId));
+        // Native bulk updates do not refresh entities already loaded in this persistence context.
+        entityManager.clear();
+    }
+
+    private void softDeleteRelatedRows(String sql, String userId) {
+        entityManager.createNativeQuery(sql)
+                .setParameter("userId", userId)
+                .executeUpdate();
+    }
+
+    private void softDeleteUserOwnedRows(String table, String userId) {
+        entityManager.createNativeQuery("UPDATE " + table
+                        + " SET soft_deleted = TRUE WHERE user_id = :userId AND soft_deleted = FALSE")
+                .setParameter("userId", userId)
+                .executeUpdate();
     }
 
     public void changePassword(String username, String keycloakUserId, String currentPassword, String newPassword) {

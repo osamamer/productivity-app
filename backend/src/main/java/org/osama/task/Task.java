@@ -14,8 +14,13 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Data
+@org.hibernate.annotations.SQLDelete(sql = "UPDATE task SET soft_deleted = true WHERE task_id = ?")
+@org.hibernate.annotations.Where(clause = "soft_deleted = false")
 @Entity
 public class Task {
+    @Column(name = "soft_deleted", nullable = false)
+    private boolean softDeleted;
+
     @Id
     @Column(nullable = false)
     private String taskId;

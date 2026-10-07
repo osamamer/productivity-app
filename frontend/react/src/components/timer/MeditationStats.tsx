@@ -209,7 +209,7 @@ export function MeditationStats({ refreshKey }: MeditationStatsProps) {
                         </Box>
                         <Box>
                             <Typography variant="h6" fontWeight={600}>Your practice</Typography>
-                            <Typography variant="body2" color="text.secondary">A gentle look back at this month</Typography>
+                            <Typography variant="body2" color="text.secondary">This month</Typography>
                         </Box>
                     </Stack>
                     <Stack direction="row" spacing={0.25} alignItems="center">

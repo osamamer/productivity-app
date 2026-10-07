@@ -16,14 +16,16 @@ import java.time.LocalDate;
 
 @Data
 @NoArgsConstructor
+@org.hibernate.annotations.SQLDelete(sql = "UPDATE stat_entry SET soft_deleted = true WHERE id = ?")
+@org.hibernate.annotations.Where(clause = "soft_deleted = false")
 @Entity
 @Builder
 @AllArgsConstructor
-// Unique constraint: one entry per user per stat per day.
-@Table(uniqueConstraints = {
-        @UniqueConstraint(columnNames = {"stat_definition_id", "user_id", "date"})
-})
+@Table(name = "stat_entry")
 public class StatEntry {
+
+    @Column(name = "soft_deleted", nullable = false)
+    private boolean softDeleted;
 
     @Id
     @Column(nullable = false)

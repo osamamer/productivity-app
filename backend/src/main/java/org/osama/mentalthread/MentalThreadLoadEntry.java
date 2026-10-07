@@ -17,6 +17,8 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
+@org.hibernate.annotations.SQLDelete(sql = "UPDATE mental_thread_load_entry SET soft_deleted = true WHERE entry_id = ?")
+@org.hibernate.annotations.Where(clause = "soft_deleted = false")
 @Entity
 @Table(name = "mental_thread_load_entry")
 @Getter
@@ -24,6 +26,9 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 public class MentalThreadLoadEntry {
+
+    @Column(name = "soft_deleted", nullable = false)
+    private boolean softDeleted;
 
     @Id
     @Column(name = "entry_id", nullable = false)

@@ -11,8 +11,13 @@ import java.time.Instant;
 
 @Data
 @NoArgsConstructor
+@org.hibernate.annotations.SQLDelete(sql = "UPDATE reminder SET soft_deleted = true WHERE reminder_id = ?")
+@org.hibernate.annotations.Where(clause = "soft_deleted = false")
 @Entity
 public class Reminder {
+    @Column(name = "soft_deleted", nullable = false)
+    private boolean softDeleted;
+
     @Id
     @Column(nullable = false)
     private String reminderId;

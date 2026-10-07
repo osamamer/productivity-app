@@ -15,6 +15,8 @@ import org.osama.user.User;
 
 import java.time.Instant;
 
+@org.hibernate.annotations.SQLDelete(sql = "UPDATE mental_state_check_in SET soft_deleted = true WHERE check_in_id = ?")
+@org.hibernate.annotations.Where(clause = "soft_deleted = false")
 @Entity
 @Table(name = "mental_state_check_in")
 @Getter
@@ -22,6 +24,9 @@ import java.time.Instant;
 @NoArgsConstructor
 @AllArgsConstructor
 public class MentalStateCheckIn {
+
+    @Column(name = "soft_deleted", nullable = false)
+    private boolean softDeleted;
 
     @Id
     @Column(name = "check_in_id", nullable = false)

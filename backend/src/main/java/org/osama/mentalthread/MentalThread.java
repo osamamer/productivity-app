@@ -22,6 +22,8 @@ import org.osama.user.User;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
+@org.hibernate.annotations.SQLDelete(sql = "UPDATE mental_thread SET soft_deleted = true WHERE thread_id = ? AND version = ?")
+@org.hibernate.annotations.Where(clause = "soft_deleted = false")
 @Entity
 @Table(name = "mental_thread")
 @Getter
@@ -30,6 +32,9 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 public class MentalThread {
+
+    @Column(name = "soft_deleted", nullable = false)
+    private boolean softDeleted;
 
     @Id
     @Column(name = "thread_id", nullable = false)

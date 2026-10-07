@@ -9,7 +9,6 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -20,20 +19,19 @@ import org.osama.user.User;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
+@org.hibernate.annotations.SQLDelete(sql = "UPDATE mental_capacity_check_in SET soft_deleted = true WHERE check_in_id = ?")
+@org.hibernate.annotations.Where(clause = "soft_deleted = false")
 @Entity
-@Table(
-        name = "mental_capacity_check_in",
-        uniqueConstraints = @UniqueConstraint(
-                name = "uq_app_mental_capacity_user_date",
-                columnNames = {"user_id", "check_in_date"}
-        )
-)
+@Table(name = "mental_capacity_check_in")
 @Getter
 @Setter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class MentalCapacityCheckIn {
+
+    @Column(name = "soft_deleted", nullable = false)
+    private boolean softDeleted;
 
     @Id
     @Column(name = "check_in_id", nullable = false)

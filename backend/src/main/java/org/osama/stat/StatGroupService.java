@@ -56,11 +56,11 @@ public class StatGroupService {
         group.setUser(user);
         group.setName(validateName(name));
         group.setDisplayOrder(nextDisplayOrder(userId));
-        group.setDefinitions(new LinkedHashSet<>(definitions));
+        group.replaceDefinitions(definitions);
 
         StatGroup savedGroup = groupRepository.save(group);
         log.info("Stat group created: userId={} groupId={} statCount={}",
-                userId, savedGroup.getGroupId(), savedGroup.getDefinitions().size());
+                userId, savedGroup.getGroupId(), savedGroup.definitionCount());
         return StatGroupResponse.from(savedGroup);
     }
 
@@ -105,11 +105,10 @@ public class StatGroupService {
         List<StatDefinition> definitions = findOwnedDailyDefinitions(requestedIds, userId);
         detachDefinitionsFromOtherGroups(requestedIds, userId, groupId);
 
-        group.getDefinitions().clear();
-        group.getDefinitions().addAll(definitions);
+        group.replaceDefinitions(definitions);
         StatGroup savedGroup = groupRepository.save(group);
         log.info("Stat group membership replaced: userId={} groupId={} statCount={}",
-                userId, groupId, definitions.size());
+                userId, groupId, group.definitionCount());
         return StatGroupResponse.from(savedGroup);
     }
 
@@ -120,8 +119,7 @@ public class StatGroupService {
         for (StatGroup otherGroup : groupRepository.findAllByUserIdOrderByDisplayOrderAsc(userId)) {
             if (otherGroup.getGroupId().equals(destinationGroupId)) continue;
 
-            boolean changed = otherGroup.getDefinitions()
-                    .removeIf(definition -> idsToMove.contains(definition.getId()));
+            boolean changed = otherGroup.removeDefinitions(idsToMove);
             if (changed) {
                 groupRepository.save(otherGroup);
                 detachedFromAnotherGroup = true;
@@ -133,7 +131,7 @@ public class StatGroupService {
     @Transactional
     public void deleteGroup(String groupId, String userId) {
         StatGroup group = getGroupOrThrow(groupId, userId);
-        group.getDefinitions().clear();
+        group.clearDefinitions();
         groupRepository.delete(group);
         log.info("Stat group deleted: userId={} groupId={}", userId, groupId);
     }
@@ -141,8 +139,7 @@ public class StatGroupService {
     @Transactional
     public void removeDefinitionFromGroups(String definitionId, String userId) {
         groupRepository.findAllByUserIdOrderByDisplayOrderAsc(userId).stream()
-                .filter(group -> group.getDefinitions()
-                        .removeIf(definition -> definition.getId().equals(definitionId)))
+                .filter(group -> group.removeDefinitions(List.of(definitionId)))
                 .forEach(groupRepository::save);
     }
 

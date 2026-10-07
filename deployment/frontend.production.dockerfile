@@ -26,6 +26,9 @@ RUN npm run build -- --mode=production
 
 FROM caddy:2-alpine
 
+ARG APP_VERSION=1.2.0
+LABEL org.opencontainers.image.version="${APP_VERSION}"
+
 COPY --from=build /app/dist /srv
 # Keep a stable public URL for the Keycloak login theme to reuse the app favicon.
 COPY frontend/react/src/assets/images/eye-care.png /srv/favicon.png
