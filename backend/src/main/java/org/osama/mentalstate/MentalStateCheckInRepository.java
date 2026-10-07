@@ -15,5 +15,8 @@ public interface MentalStateCheckInRepository extends JpaRepository<MentalStateC
     List<MentalStateCheckIn> findAllByUserIdAndRecordedAtGreaterThanEqualAndRecordedAtLessThanOrderByRecordedAtAsc(
             String userId, Instant from, Instant to);
 
+    boolean existsByUserIdAndRecordedAtGreaterThanEqualAndRecordedAtLessThanEqual(
+            String userId, Instant from, Instant to);
+
     boolean existsByUserIdAndRecordedAtAfter(String userId, Instant recordedAt);
 }

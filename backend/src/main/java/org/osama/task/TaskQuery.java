@@ -19,6 +19,7 @@ public class TaskQuery {
     private String parentId;
     private Integer minImportance;
     private String tag;
+    private String projectId;
     private String userId;
 
     public enum DatePeriod {

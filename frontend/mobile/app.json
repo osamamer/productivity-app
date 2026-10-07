@@ -42,13 +42,8 @@
         }
       ],
       "expo-secure-store",
-      [
-        "expo-notifications",
-        {
-          "sounds": ["./assets/audio/meditation_bell.wav"]
-        }
-      ],
-      "expo-audio",
+      "expo-notifications",
+      ["expo-audio", { "enableBackgroundPlayback": true }],
       "./plugins/withAndroidBuildPerformance",
       [
         "react-native-audio-api",

@@ -258,3 +258,11 @@ databaseChangeLog:
   # Persist date and time overrides for moved repeating calendar event occurrences
   - include:
       file: db/changelog/changes/068-add-calendar-event-occurrence-move-overrides.yaml
+
+  # Track project updates and link recurring task series to their project
+  - include:
+      file: db/changelog/changes/069-add-project-updated-at.yaml
+
+  # Interpret check-up schedules in the user's local time zone
+  - include:
+      file: db/changelog/changes/070-add-checkup-time-zone.yaml

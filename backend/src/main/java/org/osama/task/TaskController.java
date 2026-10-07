@@ -57,6 +57,9 @@ public class TaskController {
             String tag,
 
             @RequestParam(required = false)
+            String projectId,
+
+            @RequestParam(required = false)
             Boolean scheduled,
 
             @RequestParam(required = false)
@@ -73,6 +76,7 @@ public class TaskController {
                 .parentId(parentId)
                 .minImportance(minImportance)
                 .tag(tag)
+                .projectId(projectId)
                 .scheduled(scheduled)
                 .userId(userId)
                 .build();

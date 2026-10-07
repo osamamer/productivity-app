@@ -9,6 +9,7 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.ZoneId;
 
 @NoArgsConstructor
 @AllArgsConstructor
@@ -119,6 +120,10 @@ public class User {
     @Builder.Default
     @Column(name = "checkup_times_per_day", nullable = false)
     private Integer checkupTimesPerDay = 5;
+
+    @Builder.Default
+    @Column(name = "checkup_time_zone", nullable = false, length = 64)
+    private String checkupTimeZone = ZoneId.systemDefault().getId();
 
     @Column(nullable = false)
     private LocalDateTime createdAt;

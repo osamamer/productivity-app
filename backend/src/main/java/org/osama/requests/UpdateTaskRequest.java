@@ -1,5 +1,6 @@
 package org.osama.requests;
 
+import com.fasterxml.jackson.annotation.JsonSetter;
 import lombok.Data;
 
 @Data
@@ -15,6 +16,9 @@ public class UpdateTaskRequest {
     private Integer reminderMinutesBefore;
     private boolean reminderMinutesBeforePresent;
 
+    private String projectId;
+    private boolean projectIdPresent;
+
     public void setReminderMinutesBefore(Integer reminderMinutesBefore) {
         this.reminderMinutesBefore = reminderMinutesBefore;
         this.reminderMinutesBeforePresent = true;
@@ -22,5 +26,11 @@ public class UpdateTaskRequest {
 
     public boolean isReminderMinutesBeforePresent() {
         return reminderMinutesBeforePresent;
+    }
+
+    @JsonSetter("projectId")
+    public void setProjectId(String projectId) {
+        this.projectId = projectId;
+        this.projectIdPresent = true;
     }
 }

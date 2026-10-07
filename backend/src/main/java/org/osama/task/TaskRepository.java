@@ -3,6 +3,7 @@ package org.osama.task;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -13,6 +14,14 @@ import java.time.LocalDateTime;
 
 public interface TaskRepository extends JpaRepository<Task, String>,
                                         JpaSpecificationExecutor<Task> {
+
+    interface ProjectTaskCount {
+        String getProjectId();
+
+        long getTaskCount();
+
+        long getCompletedTaskCount();
+    }
 
     Optional<Task> findTaskByTaskId(String taskId);
 
@@ -49,5 +58,21 @@ public interface TaskRepository extends JpaRepository<Task, String>,
 
     List<Task> findAllByTaskSeriesIdAndSeriesOccurrenceAtAfter(String taskSeriesId, LocalDateTime seriesOccurrenceAt);
 
+    @Query("""
+            select t.projectId as projectId,
+                   count(t) as taskCount,
+                   sum(case when t.completed = true then 1 else 0 end) as completedTaskCount
+            from Task t
+            where t.userId = :userId
+              and t.projectId in :projectIds
+              and t.parentId is null
+              and t.skipped = false
+            group by t.projectId
+            """)
+    List<ProjectTaskCount> countTasksByProjectIds(@Param("userId") String userId,
+                                                  @Param("projectIds") Collection<String> projectIds);
 
+    @Modifying
+    @Query("update Task t set t.projectId = null where t.projectId = :projectId and t.userId = :userId")
+    int clearProjectAssignments(@Param("projectId") String projectId, @Param("userId") String userId);
 }

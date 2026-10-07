@@ -12,3 +12,4 @@ export const MEDITATION_AUDIO_SOURCES: Record<MeditationSoundId, number> = {
 };
 
 export const INTERVAL_BELL_SOURCE = MEDITATION_AUDIO_SOURCES.bowls;
+export const MEDITATION_COMPLETION_SOURCE = require('../../assets/audio/meditation_bell.wav');

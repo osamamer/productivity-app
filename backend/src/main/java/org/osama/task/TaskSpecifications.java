@@ -62,6 +62,10 @@ public class TaskSpecifications {
         return (root, query, cb) -> cb.equal(root.get("tag"), tag);
     }
 
+    public static Specification<Task> hasProjectId(String projectId) {
+        return (root, query, cb) -> cb.equal(root.get("projectId"), projectId);
+    }
+
     public static Specification<Task> hasUserId(String userId) {
         return (root, query, cb) -> cb.equal(root.get("userId"), userId);
     }
@@ -112,6 +116,11 @@ public class TaskSpecifications {
         // Tag
         if (taskQuery.getTag() != null) {
             spec = spec.and(hasTag(taskQuery.getTag()));
+        }
+
+        // Project
+        if (taskQuery.getProjectId() != null) {
+            spec = spec.and(hasProjectId(taskQuery.getProjectId()));
         }
 
         return spec;

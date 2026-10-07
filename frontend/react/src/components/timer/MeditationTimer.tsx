@@ -203,6 +203,10 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
     const mountedRef = useRef(true);
     const [clientRunningAnchor, setClientRunningAnchor] = useState<ClientRunningAnchor | null>(null);
     const [loadedSettingsKey, setLoadedSettingsKey] = useState<string | null>(null);
+    const sessionRef = useRef<MeditationSession | null>(session);
+    const sessionActionInFlightRef = useRef(false);
+    const sessionMutationVersionRef = useRef(0);
+    sessionRef.current = session;
 
     useEffect(() => {
         let cancelled = false;
@@ -261,6 +265,68 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
             mounted = false;
         };
     }, []);
+
+    useEffect(() => {
+        if (startPending) return;
+
+        let mounted = true;
+        let requestInFlight = false;
+        const syncWithBackend = async () => {
+            const currentSession = sessionRef.current;
+            if (!mounted || !currentSession || document.visibilityState !== 'visible' || requestInFlight || sessionActionInFlightRef.current) return;
+            const observedSessionId = currentSession.id;
+            const observedMutationVersion = sessionMutationVersionRef.current;
+            requestInFlight = true;
+            try {
+                const canonicalSession = await meditationService.getActiveSession();
+                if (
+                    !mounted
+                    || sessionActionInFlightRef.current
+                    || sessionMutationVersionRef.current !== observedMutationVersion
+                    || sessionRef.current?.id !== observedSessionId
+                ) return;
+
+                if (!canonicalSession) {
+                    setSession(null);
+                    setClientRunningAnchor(null);
+                    setFinishDialogOpen(false);
+                    meditationSoundscape.stop();
+                    soundStartedByUserRef.current = false;
+                    onSessionCompleted();
+                    return;
+                }
+
+                const currentSession = sessionRef.current;
+                const sessionChanged = !currentSession
+                    || currentSession.id !== canonicalSession.id
+                    || currentSession.running !== canonicalSession.running
+                    || currentSession.lastUnpauseTime !== canonicalSession.lastUnpauseTime
+                    || currentSession.totalSessionTime !== canonicalSession.totalSessionTime;
+                if (sessionChanged) setClientRunningAnchor(null);
+                setSession(canonicalSession);
+                setElapsed(elapsedSeconds(canonicalSession));
+            } catch (syncError) {
+                console.warn('Could not sync active meditation session:', syncError);
+            } finally {
+                requestInFlight = false;
+            }
+        };
+
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible') void syncWithBackend();
+        };
+        const intervalId = window.setInterval(() => void syncWithBackend(), 15_000);
+        window.addEventListener('focus', syncWithBackend);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        void syncWithBackend();
+
+        return () => {
+            mounted = false;
+            window.clearInterval(intervalId);
+            window.removeEventListener('focus', syncWithBackend);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
+    }, [onSessionCompleted, session?.id, startPending]);
 
     useEffect(() => {
         if (!session) {
@@ -369,6 +435,8 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
 
         setStartPending(true);
         setActionLoading(true);
+        sessionMutationVersionRef.current += 1;
+        sessionActionInFlightRef.current = true;
         setError(null);
         setCompletedSession(null);
         setSession(optimisticSession);
@@ -397,13 +465,24 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
             setElapsed(elapsedSeconds(started, Date.now(), reconciledAnchor));
         } catch (startError) {
             if (!mountedRef.current) return;
-            setSession(null);
-            setClientRunningAnchor(null);
-            setElapsed(0);
-            meditationSoundscape.stop();
-            soundStartedByUserRef.current = false;
+            const canonicalSession = await meditationService.getActiveSession().catch(refreshError => {
+                console.warn('Could not restore the active meditation session after start failed:', refreshError);
+                return null;
+            });
+            if (canonicalSession) {
+                setSession(canonicalSession);
+                setClientRunningAnchor(null);
+                setElapsed(elapsedSeconds(canonicalSession));
+            } else {
+                setSession(null);
+                setClientRunningAnchor(null);
+                setElapsed(0);
+                meditationSoundscape.stop();
+                soundStartedByUserRef.current = false;
+            }
             setError(startError instanceof Error ? startError.message : 'Could not start meditation.');
         } finally {
+            sessionActionInFlightRef.current = false;
             if (mountedRef.current) {
                 setStartPending(false);
                 setActionLoading(false);
@@ -414,6 +493,8 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
     const togglePause = async () => {
         if (!session) return;
         setActionLoading(true);
+        sessionMutationVersionRef.current += 1;
+        sessionActionInFlightRef.current = true;
         setError(null);
         try {
             const updated = session.running
@@ -432,6 +513,7 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
         } catch (pauseError) {
             setError(pauseError instanceof Error ? pauseError.message : 'Could not update meditation.');
         } finally {
+            sessionActionInFlightRef.current = false;
             setActionLoading(false);
         }
     };
@@ -439,6 +521,8 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
     const finishSession = async () => {
         if (!session) return;
         setActionLoading(true);
+        sessionMutationVersionRef.current += 1;
+        sessionActionInFlightRef.current = true;
         setError(null);
         try {
             const finished = await meditationService.endSession(session.id, moodAfter);
@@ -452,6 +536,7 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
         } catch (finishError) {
             setError(finishError instanceof Error ? finishError.message : 'Could not finish meditation.');
         } finally {
+            sessionActionInFlightRef.current = false;
             setActionLoading(false);
         }
     };
@@ -459,6 +544,8 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
     const discardSession = async () => {
         if (!session) return;
         setActionLoading(true);
+        sessionMutationVersionRef.current += 1;
+        sessionActionInFlightRef.current = true;
         setError(null);
         try {
             await meditationService.discardSession(session.id);
@@ -470,6 +557,7 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
         } catch (discardError) {
             setError(discardError instanceof Error ? discardError.message : 'Could not dismiss meditation.');
         } finally {
+            sessionActionInFlightRef.current = false;
             setActionLoading(false);
         }
     };

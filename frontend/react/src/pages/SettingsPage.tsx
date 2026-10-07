@@ -319,6 +319,12 @@ const CheckupSettingsSection = memo(function CheckupSettingsSection() {
                     setCheckupIntervalMinutes(preferences.checkupIntervalMinutes || DEFAULT_CHECKUP_INTERVAL_MINUTES);
                     setCheckupStartTime(preferences.checkupStartTime?.slice(0, 5) || DEFAULT_CHECKUP_START_TIME);
                     setCheckupTimesPerDay(preferences.checkupTimesPerDay || DEFAULT_CHECKUP_TIMES_PER_DAY);
+                    const checkupTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+                    if (preferences.checkupTimeZone !== checkupTimeZone) {
+                        void userService.updatePreferences({ checkupTimeZone }).catch(error => {
+                            console.error('Could not synchronize the check-up time zone:', error);
+                        });
+                    }
                 }
             })
             .catch(error => {
@@ -386,6 +392,7 @@ const CheckupSettingsSection = memo(function CheckupSettingsSection() {
                 checkupIntervalMinutes,
                 checkupStartTime,
                 checkupTimesPerDay,
+                checkupTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
             });
             setCheckupIntervalMinutes(preferences.checkupIntervalMinutes);
             setCheckupStartTime(preferences.checkupStartTime.slice(0, 5));

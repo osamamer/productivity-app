@@ -8,6 +8,7 @@ import org.osama.exceptions.ResourceNotFoundException;
 import org.osama.mentalstate.MentalStateCheckInRepository;
 import org.osama.pomodoro.PomodoroTransition;
 import org.osama.scheduling.ScheduledJob;
+import org.osama.task.Task;
 import org.osama.user.User;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -15,12 +16,16 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.DateTimeException;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
 
@@ -29,6 +34,8 @@ import java.util.UUID;
 public class NotificationService {
     private static final int PUSH_BATCH_SIZE = 100;
     private static final long CHECKUP_REPEAT_MINUTES = 30;
+    private static final long CHECKUP_WINDOW_MINUTES = 30;
+    private static final Duration CALENDAR_REMINDER_DELIVERY_GRACE = Duration.ofMinutes(1);
     private static final String USER_DESTINATION = "/queue/notifications";
     public static final String DEFAULT_CHANNEL_ID = "default";
     public static final String CHECKUP_TITLE = "Check-Up";
@@ -61,10 +68,37 @@ public class NotificationService {
                 now, PageRequest.of(0, PUSH_BATCH_SIZE));
 
         for (Reminder reminder : due) {
+            if (reminder.getNotificationType() == NotificationType.MEDITATION_COMPLETED) {
+                reminder.setAcknowledgedAt(now);
+                log.info("Legacy meditation completion notification suppressed: userId={} notificationId={}",
+                        reminder.getUserId(), reminder.getReminderId());
+                continue;
+            }
             if (isCancelledEventReminder(reminder)) {
                 if (!scheduleNextRecurringEventReminder(reminder, now)) {
                     reminder.setAcknowledgedAt(now);
                 }
+                continue;
+            }
+            Instant deliveryTime = Instant.now();
+            if (shouldSkipTaskReminder(reminder, deliveryTime)) {
+                reminder.setAcknowledgedAt(deliveryTime);
+                log.info("Completed, past, or unscheduled task reminder skipped: userId={} notificationId={} taskId={} scheduledAt={}",
+                        reminder.getUserId(), reminder.getReminderId(), reminder.getTaskId(), reminder.getDateTime());
+                continue;
+            }
+            if (shouldSkipCalendarEventReminder(reminder, deliveryTime)) {
+                if (!scheduleNextRecurringEventReminder(reminder, deliveryTime)) {
+                    reminder.setAcknowledgedAt(deliveryTime);
+                }
+                log.info("Past or missed calendar event reminder skipped: userId={} notificationId={} eventId={} scheduledAt={}",
+                        reminder.getUserId(), reminder.getReminderId(), reminder.getEventId(), reminder.getDateTime());
+                continue;
+            }
+            if (shouldSkipCheckup(reminder, deliveryTime)) {
+                reminder.setAcknowledgedAt(deliveryTime);
+                log.info("Stale or recently answered check-up notification skipped: userId={} notificationId={} scheduledAt={}",
+                        reminder.getUserId(), reminder.getReminderId(), reminder.getDateTime());
                 continue;
             }
             String keycloakId = reminder.getUser().getKeycloakId();
@@ -79,7 +113,7 @@ public class NotificationService {
             // A reminder is claimed permanently after its first delivery attempt. Expo
             // can accept a request even when the response is lost, so retrying an
             // unacknowledged request would create duplicate native notifications.
-            reminder.setDispatchedAt(now);
+            reminder.setDispatchedAt(deliveryTime);
             if (!remotePushAccepted) {
                 log.warn("Remote notification delivery was not accepted: userId={} notificationId={} type={}",
                         reminder.getUserId(), reminder.getReminderId(), reminder.getNotificationType());
@@ -91,7 +125,12 @@ public class NotificationService {
 
     @Transactional(readOnly = true)
     public List<NotificationMessage> getDue(String userId) {
-        return reminderRepository.findDueForUser(userId, Instant.now()).stream()
+        Instant now = Instant.now();
+        return reminderRepository.findDueForUser(userId, now).stream()
+                .filter(reminder -> reminder.getNotificationType() != NotificationType.MEDITATION_COMPLETED)
+                .filter(reminder -> !shouldSkipTaskReminder(reminder, now))
+                .filter(reminder -> !shouldSkipCalendarEventReminder(reminder, now))
+                .filter(reminder -> !shouldSkipCheckup(reminder, now))
                 .map(NotificationMessage::from)
                 .toList();
     }
@@ -117,8 +156,7 @@ public class NotificationService {
     private boolean scheduleNextCheckupReminder(Reminder reminder, Instant now) {
         if (reminder.getNotificationType() != NotificationType.MENTAL_STATE_CHECKUP
                 || Boolean.FALSE.equals(reminder.getUser().getRepeatCheckupNotificationsEnabled())
-                || checkInRepository.existsByUserIdAndRecordedAtAfter(
-                reminder.getUser().getId(), reminder.getDateTime())) {
+                || shouldSkipCheckup(reminder, now)) {
             return false;
         }
 
@@ -157,6 +195,7 @@ public class NotificationService {
         ZonedDateTime nextOccurrence = currentOccurrenceStart.atZone(zone);
         Instant nextOccurrenceStart;
         Instant effectiveNextOccurrenceStart;
+        Instant nextReminderAt;
         do {
             nextOccurrence = nextOccurrence(event, nextOccurrence, zone);
             nextOccurrenceStart = nextOccurrence.toInstant();
@@ -165,7 +204,9 @@ public class NotificationService {
                 return false;
             }
             effectiveNextOccurrenceStart = effectiveEventOccurrenceStart(event, nextOccurrenceStart);
+            nextReminderAt = effectiveNextOccurrenceStart.minusSeconds(reminder.getMinutesBefore() * 60L);
         } while (!effectiveNextOccurrenceStart.isAfter(now)
+                || !nextReminderAt.isAfter(now)
                 || isCancelledEventOccurrence(event, nextOccurrenceStart));
 
         String userId = reminder.getUser().getId();
@@ -174,8 +215,7 @@ public class NotificationService {
         nextReminder.setUser(reminder.getUser());
         nextReminder.setEvent(event);
         nextReminder.setEventOccurrenceStart(nextOccurrenceStart);
-        nextReminder.setDateTime(effectiveNextOccurrenceStart
-                .minusSeconds(reminder.getMinutesBefore() * 60L));
+        nextReminder.setDateTime(nextReminderAt);
         nextReminder.setRepeat(0);
         nextReminder.setNotificationType(reminder.getNotificationType());
         nextReminder.setTitle(reminder.getTitle());
@@ -195,6 +235,45 @@ public class NotificationService {
         CalendarEvent event = reminder.getEvent();
         return event != null && (event.getStatus() == org.osama.event.CalendarEventStatus.CANCELLED
                 || isCancelledEventOccurrence(event, reminder.getEventOccurrenceStart()));
+    }
+
+    private boolean shouldSkipCalendarEventReminder(Reminder reminder, Instant now) {
+        CalendarEvent event = reminder.getEvent();
+        if (reminder.getNotificationType() != NotificationType.CALENDAR_EVENT || event == null) {
+            return false;
+        }
+
+        Instant occurrenceStart = reminder.getEventOccurrenceStart();
+        if (occurrenceStart == null) {
+            ZoneId zone = ZoneId.of(event.getTimeZone());
+            occurrenceStart = event.isAllDay()
+                    ? event.getStartDate().atStartOfDay(zone).toInstant()
+                    : event.getStartTime();
+        }
+        Instant effectiveStart = effectiveEventOccurrenceStart(event, occurrenceStart);
+        return !effectiveStart.isAfter(now)
+                || reminder.getDateTime().isBefore(now.minus(CALENDAR_REMINDER_DELIVERY_GRACE));
+    }
+
+    private boolean shouldSkipTaskReminder(Reminder reminder, Instant now) {
+        if (reminder.getNotificationType() != NotificationType.TASK_REMINDER || reminder.getTaskId() == null) {
+            return false;
+        }
+
+        Task task = reminder.getTask();
+        if (task == null || task.isCompleted() || task.getScheduledPerformDateTime() == null) {
+            return true;
+        }
+
+        String taskTimeZone = task.getTimeZone();
+        try {
+            ZoneId zone = ZoneId.of(taskTimeZone == null || taskTimeZone.isBlank() ? "UTC" : taskTimeZone);
+            return !task.getScheduledPerformDateTime().atZone(zone).toInstant().isAfter(now);
+        } catch (DateTimeException exception) {
+            log.warn("Task reminder skipped because its task has an invalid time zone: userId={} taskId={} timeZone={}",
+                    reminder.getUserId(), task.getTaskId(), taskTimeZone, exception);
+            return true;
+        }
     }
 
     private boolean isCancelledEventOccurrence(CalendarEvent event, Instant occurrenceStart) {
@@ -282,8 +361,18 @@ public class NotificationService {
 
     @Transactional
     public void createCheckupNotification(User user, ZonedDateTime scheduledAt) {
+        Instant scheduledInstant = scheduledAt.toInstant();
+        Instant now = Instant.now();
+        if (shouldSkipCheckup(user.getId(), scheduledInstant, now)) {
+            log.debug("Mental state check-up suppressed after a nearby check-in: userId={} scheduledAt={}",
+                    user.getId(), scheduledAt);
+            return;
+        }
+
+        String zoneKey = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(scheduledAt.getZone().getId().getBytes(StandardCharsets.UTF_8));
         String notificationId = "mental-state-checkup-" + user.getId() + "-"
-                + scheduledAt.toLocalDate() + "-" + String.format("%02d%02d",
+                + scheduledAt.toLocalDate() + "-" + zoneKey + "-" + String.format("%02d%02d",
                 scheduledAt.getHour(), scheduledAt.getMinute());
         if (reminderRepository.existsById(notificationId)) {
             return;
@@ -291,7 +380,7 @@ public class NotificationService {
 
         Reminder notification = new Reminder();
         notification.setReminderId(notificationId);
-        notification.setDateTime(scheduledAt.toInstant());
+        notification.setDateTime(scheduledInstant);
         notification.setRepeat(0);
         notification.setMinutesBefore(0);
         notification.setUser(user);
@@ -302,6 +391,21 @@ public class NotificationService {
         reminderRepository.save(notification);
         log.info("Mental state check-up notification persisted: userId={} notificationId={} scheduledAt={}",
                 user.getId(), notificationId, scheduledAt);
+    }
+
+    private boolean shouldSkipCheckup(Reminder reminder, Instant now) {
+        if (reminder.getNotificationType() != NotificationType.MENTAL_STATE_CHECKUP) return false;
+        return shouldSkipCheckup(reminder.getUser().getId(), reminder.getDateTime(), now);
+    }
+
+    private boolean shouldSkipCheckup(String userId, Instant scheduledAt, Instant now) {
+        Instant expiresAt = scheduledAt.plus(CHECKUP_WINDOW_MINUTES, ChronoUnit.MINUTES);
+        if (!now.isBefore(expiresAt)) return true;
+
+        Instant recentCheckInFrom = scheduledAt.minus(CHECKUP_WINDOW_MINUTES, ChronoUnit.MINUTES);
+        return checkInRepository.existsByUserIdAndRecordedAtGreaterThanEqualAndRecordedAtLessThanEqual(
+                userId, recentCheckInFrom, scheduledAt)
+                || checkInRepository.existsByUserIdAndRecordedAtAfter(userId, scheduledAt);
     }
 
     @Transactional

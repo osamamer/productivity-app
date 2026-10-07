@@ -14,6 +14,7 @@ import type {
   NoteCategory,
   PomodoroConfig,
   PomodoroStatus,
+  Project,
   StatDefinition,
   StatMorality,
   StatEntryStatus,
@@ -77,12 +78,13 @@ const json = <T>(path: string, method: string, body?: unknown) =>
 
 export const TASK_PAGE_BATCH_SIZE = 30;
 
-function taskPeriodPath(period: 'PAST' | 'FUTURE', limit?: number, offset = 0): string {
+function taskPeriodPath(period: 'PAST' | 'FUTURE', limit?: number, offset = 0, completed?: boolean): string {
   const params = new URLSearchParams({ period });
   if (limit !== undefined) {
     params.set('limit', String(limit));
     params.set('offset', String(offset));
   }
+  if (completed !== undefined) params.set('completed', String(completed));
   return `/api/v1/tasks?${params.toString()}`;
 }
 
@@ -92,8 +94,8 @@ export const api = {
     scheduled: () => apiRequest<Task[]>('/api/v1/tasks?scheduled=true'),
     today: () => apiRequest<Task[]>('/api/v1/tasks/today'),
     focusToday: (date: string) => apiRequest<TodayFocusSummary>(`/api/v1/tasks/focus-today?date=${encodeURIComponent(date)}`),
-    past: (limit?: number, offset = 0) => apiRequest<Task[]>(taskPeriodPath('PAST', limit, offset)),
-    future: (limit?: number, offset = 0) => apiRequest<Task[]>(taskPeriodPath('FUTURE', limit, offset)),
+    past: (limit?: number, offset = 0, completed?: boolean) => apiRequest<Task[]>(taskPeriodPath('PAST', limit, offset, completed)),
+    future: (limit?: number, offset = 0, completed?: boolean) => apiRequest<Task[]>(taskPeriodPath('FUTURE', limit, offset, completed)),
     undated: () => apiRequest<Task[]>('/api/v1/tasks/undated'),
     create: (input: TaskInput) => json<Task>('/api/v1/tasks', 'POST', {
       ...input,
@@ -151,6 +153,13 @@ export const api = {
     replaceTasks: (groupId: string, taskIds: string[]) =>
       json<TaskGroup>(`/api/v1/task-groups/${groupId}/tasks`, 'PUT', { taskIds }),
     remove: (groupId: string) => apiRequest<void>(`/api/v1/task-groups/${groupId}`, { method: 'DELETE' }),
+  },
+  projects: {
+    all: () => apiRequest<Project[]>('/api/v1/projects'),
+    create: (input: { name: string; description: string | null }) => json<Project>('/api/v1/projects', 'POST', input),
+    update: (id: string, input: { name?: string; description?: string | null }) => json<Project>(`/api/v1/projects/${id}`, 'PATCH', input),
+    remove: (id: string) => apiRequest<void>(`/api/v1/projects/${id}`, { method: 'DELETE' }),
+    tasks: (projectId: string) => apiRequest<Task[]>(`/api/v1/tasks?projectId=${encodeURIComponent(projectId)}`),
   },
   session: {
     pause: (taskId: string) => apiRequest<void>(`/api/v1/session/pause/${taskId}`, { method: 'POST' }),

@@ -7,6 +7,7 @@ export { mentalStateService } from './mentalStateService';
 export { meditationService } from './meditationService';
 export { notesService } from './notesService';
 export { taskGroupService } from './taskGroupService';
+export { projectService } from './projectService';
 export { eventService } from './eventService';
 export { dayTemplateService } from './dayTemplateService';
 export { notificationService } from './notificationService';

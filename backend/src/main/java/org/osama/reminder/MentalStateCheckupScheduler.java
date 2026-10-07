@@ -9,7 +9,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.ZonedDateTime;
 
 @Service
@@ -19,6 +21,8 @@ public class MentalStateCheckupScheduler {
     private static final int DEFAULT_INTERVAL_MINUTES = 180;
     private static final LocalTime DEFAULT_START_TIME = LocalTime.of(9, 0);
     private static final int DEFAULT_TIMES_PER_DAY = 5;
+    private static final int RECOVERY_WINDOW_MINUTES = 5;
+    private static final String SERVER_TIME_ZONE = "SERVER";
 
     private final UserRepository userRepository;
     private final NotificationService notificationService;
@@ -41,20 +45,31 @@ public class MentalStateCheckupScheduler {
     @Scheduled(cron = "0 * * * * *")
     @Transactional
     public void createDueCheckups() {
-        ZonedDateTime scheduledAt = ZonedDateTime.now(clock)
-                .withSecond(0)
-                .withNano(0);
+        Instant now = clock.instant();
 
         userRepository.findAllByActiveTrue().forEach(user -> {
             if (Boolean.FALSE.equals(user.getCheckupNotificationsEnabled())) {
                 notificationService.clearPendingCheckupNotifications(user.getId());
                 return;
             }
-            if (isScheduledFor(user, scheduledAt)) {
-                notificationService.createCheckupNotification(user, scheduledAt);
+
+            ZoneId zone = zoneFor(user);
+            ZonedDateTime currentMinute = now.atZone(zone).withSecond(0).withNano(0);
+            for (int minutesLate = 0; minutesLate <= RECOVERY_WINDOW_MINUTES; minutesLate++) {
+                ZonedDateTime scheduledAt = currentMinute.minusMinutes(minutesLate);
+                if (isScheduledFor(user, scheduledAt)) {
+                    notificationService.createCheckupNotification(user, scheduledAt);
+                }
             }
         });
-        log.debug("Mental state check-up notifications evaluated: scheduledAt={}", scheduledAt);
+        log.debug("Mental state check-up notifications evaluated: now={}", now);
+    }
+
+    private ZoneId zoneFor(User user) {
+        return user.getCheckupTimeZone() == null || user.getCheckupTimeZone().isBlank()
+                || SERVER_TIME_ZONE.equals(user.getCheckupTimeZone())
+                ? clock.getZone()
+                : ZoneId.of(user.getCheckupTimeZone());
     }
 
     boolean isScheduledFor(User user, ZonedDateTime scheduledAt) {

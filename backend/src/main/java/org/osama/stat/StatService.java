@@ -389,6 +389,15 @@ public class StatService {
     public Task startFocusTask(String definitionId, String requestedTaskName,
                                Integer requestedImportance, String requestedTimeZone,
                                String userId) {
+        return startFocusTask(definitionId, requestedTaskName, requestedImportance, requestedTimeZone,
+                null, null, userId);
+    }
+
+    @Transactional
+    public Task startFocusTask(String definitionId, String requestedTaskName,
+                               Integer requestedImportance, String requestedTimeZone,
+                               String requestedScheduledPerformDateTime, Integer requestedReminderMinutesBefore,
+                               String userId) {
         StatDefinition definition = definitionRepository.findByIdAndUserId(definitionId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("No such stat."));
         ensureUserStat(definition);
@@ -414,15 +423,29 @@ public class StatService {
         NewTaskRequest request = new NewTaskRequest();
         request.setName(taskName);
         request.setDescription("");
-        request.setScheduledPerformDateTime(LocalDateTime.now(timeZone).withSecond(0).withNano(0).toString());
+        String scheduledPerformDateTime = requestedScheduledPerformDateTime == null
+                || requestedScheduledPerformDateTime.isBlank()
+                ? LocalDateTime.now(timeZone).withSecond(0).withNano(0).toString()
+                : requestedScheduledPerformDateTime.trim();
+        try {
+            LocalDateTime.parse(scheduledPerformDateTime);
+        } catch (java.time.format.DateTimeParseException exception) {
+            log.warn("Focus task creation rejected because scheduled time is invalid: statDefinitionId={} value={}",
+                    definitionId, scheduledPerformDateTime, exception);
+            throw new IllegalArgumentException(
+                    "Invalid datetime format. Use ISO format: 2024-01-20T10:30:00", exception);
+        }
+        request.setScheduledPerformDateTime(scheduledPerformDateTime);
+        request.setReminderMinutesBefore(requestedReminderMinutesBefore);
         request.setImportance(resolveTaskImportance(requestedImportance));
         request.setTimeZone(timeZone.getId());
         Task task = taskService.createTask(request, userId);
 
         linkFocusTaskInternal(definition, taskName);
         definitionRepository.save(definition);
-        log.info("Focus task started from statistic: userId={} statDefinitionId={} taskId={} importance={}",
-                userId, definitionId, task.getTaskId(), task.getImportance());
+        log.info("Focus task created from statistic: userId={} statDefinitionId={} taskId={} importance={} scheduledAt={} reminderMinutesBefore={}",
+                userId, definitionId, task.getTaskId(), task.getImportance(), scheduledPerformDateTime,
+                requestedReminderMinutesBefore);
         return task;
     }
 

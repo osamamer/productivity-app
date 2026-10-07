@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
     Button,
     CircularProgress,
@@ -25,6 +25,37 @@ export function MeditationNavigationGuard({
 }: MeditationNavigationGuardProps) {
     const blocker = useBlocker(Boolean(session));
     const [isEnding, setIsEnding] = useState(false);
+    const [isCheckingSession, setIsCheckingSession] = useState(false);
+    const blockerState = blocker.state;
+    const blockerRef = useRef(blocker);
+    const onSessionEndedRef = useRef(onSessionEnded);
+    blockerRef.current = blocker;
+    onSessionEndedRef.current = onSessionEnded;
+
+    useEffect(() => {
+        if (blockerState !== 'blocked') return;
+
+        let cancelled = false;
+        setIsCheckingSession(true);
+        void meditationService.getActiveSession()
+            .then(activeSession => {
+                const currentBlocker = blockerRef.current;
+                if (cancelled || currentBlocker.state !== 'blocked' || activeSession) return;
+                onSessionEndedRef.current();
+                currentBlocker.proceed();
+            })
+            .catch(error => {
+                console.warn('Could not check the active meditation session before leaving:', error);
+            })
+            .finally(() => {
+                if (!cancelled) setIsCheckingSession(false);
+            });
+
+        return () => {
+            cancelled = true;
+            setIsCheckingSession(false);
+        };
+    }, [blockerState]);
 
     useEffect(() => {
         if (!session) return;
@@ -55,11 +86,23 @@ export function MeditationNavigationGuard({
         setIsEnding(true);
         onError('');
         try {
-            await meditationService.endSession(session.id);
+            const activeSession = await meditationService.getActiveSession();
+            if (activeSession) await meditationService.endSession(activeSession.id);
             onSessionEnded();
             blocker.proceed();
         } catch (error) {
+            try {
+                const activeSession = await meditationService.getActiveSession();
+                if (!activeSession) {
+                    onSessionEnded();
+                    blocker.proceed();
+                    return;
+                }
+            } catch (refreshError) {
+                console.warn('Could not recheck the meditation session after ending failed:', refreshError);
+            }
             onError(error instanceof Error ? error.message : 'Could not finish meditation.');
+        } finally {
             setIsEnding(false);
         }
     };
@@ -74,8 +117,8 @@ export function MeditationNavigationGuard({
             </DialogContent>
             <DialogActions sx={{ px: 3, pb: 2 }}>
                 <Button onClick={stayOnPage} disabled={isEnding}>Keep meditating</Button>
-                <Button variant="contained" color="error" onClick={endSessionAndLeave} disabled={isEnding}>
-                    {isEnding ? <CircularProgress size={18} color="inherit" /> : 'End session and leave'}
+                <Button variant="contained" color="error" onClick={endSessionAndLeave} disabled={isEnding || isCheckingSession}>
+                    {isEnding || isCheckingSession ? <CircularProgress size={18} color="inherit" /> : 'End session and leave'}
                 </Button>
             </DialogActions>
         </Dialog>

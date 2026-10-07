@@ -292,6 +292,11 @@ export function TaskPage() {
         });
     }, [updateTaskInState]);
 
+    const showTaskFeedback = useCallback((severity: TaskFeedback['severity'], message: string) => {
+        taskFeedbackIdRef.current += 1;
+        setTaskFeedback({ id: taskFeedbackIdRef.current, severity, message });
+    }, []);
+
     const updateTask = useCallback(async (taskId: string, updates: Partial<Task>) => {
         const originalTask = allTasksRef.current.find(task => task.taskId === taskId);
         updateTaskInState(taskId, updates);
@@ -301,9 +306,10 @@ export function TaskPage() {
         } catch (error) {
             console.error('Error updating task:', error);
             if (originalTask) updateTaskInState(taskId, originalTask);
+            showTaskFeedback('error', 'Could not update the task');
             await refreshTaskBuckets(true, 'taskPage');
         }
-    }, [refreshTaskBuckets, updateTaskInState]);
+    }, [refreshTaskBuckets, showTaskFeedback, updateTaskInState]);
 
     const clearSelection = useCallback(() => {
         setSelectedTaskIds([]);
@@ -609,11 +615,6 @@ export function TaskPage() {
         });
     }, [allTasks, taskGroups]);
 
-    const showTaskFeedback = useCallback((severity: TaskFeedback['severity'], message: string) => {
-        taskFeedbackIdRef.current += 1;
-        setTaskFeedback({ id: taskFeedbackIdRef.current, severity, message });
-    }, []);
-
     const createTaskInGroup = useCallback(async (group: TaskGroup, taskToCreate: TaskToCreate) => {
         if (!taskToCreate.name.trim()) return;
 
@@ -634,6 +635,7 @@ export function TaskPage() {
             importance: taskToCreate.importance,
             displayOrder: 0,
             mentalThreadId: taskToCreate.mentalThreadId ?? null,
+            projectId: taskToCreate.projectId ?? null,
             taskSeriesId: null,
             seriesOccurrenceAt: null,
             skipped: false,

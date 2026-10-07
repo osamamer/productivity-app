@@ -1,0 +1,34 @@
+databaseChangeLog:
+  - changeSet:
+      id: 070-add-checkup-time-zone
+      author: codex
+      comment: Store the time zone used to schedule each user's mental state check-ups
+      changes:
+        - addColumn:
+            tableName: app_user
+            columns:
+              - column:
+                  name: checkup_time_zone
+                  type: varchar(64)
+                  defaultValue: UTC
+                  constraints:
+                    nullable: false
+        - createIndex:
+            tableName: mental_state_check_in
+            indexName: idx_app_mental_state_check_in_user_recorded_at
+            ifNotExists: true
+            columns:
+              - column:
+                  name: user_id
+              - column:
+                  name: recorded_at
+        - delete:
+            tableName: reminder
+            where: notification_type = 'MENTAL_STATE_CHECKUP' AND acknowledged_at IS NULL
+      rollback:
+        - dropIndex:
+            tableName: mental_state_check_in
+            indexName: idx_app_mental_state_check_in_user_recorded_at
+        - dropColumn:
+            tableName: app_user
+            columnName: checkup_time_zone

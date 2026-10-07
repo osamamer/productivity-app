@@ -49,6 +49,9 @@ public class TaskSeries {
     @Column(name = "mental_thread_id")
     private String mentalThreadId;
 
+    @Column(name = "project_id")
+    private String projectId;
+
     @Column(name = "start_date_time", nullable = false)
     private LocalDateTime startDateTime;
 

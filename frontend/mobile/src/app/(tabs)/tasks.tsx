@@ -280,8 +280,7 @@ export default function TasksScreen() {
         ? ['comingUp']
         : ['today', 'comingUp', 'leftovers', 'undated'];
   const hasRenderableTasks = sectionsToRender.some(section => visibleSectionTasks[section].length > 0)
-    || (!focusedTask && ((sectionsToRender.includes('comingUp') && hasMoreFutureTasks)
-      || (sectionsToRender.includes('leftovers') && hasMorePastTasks)));
+    || (!focusedTask && sectionsToRender.includes('comingUp') && hasMoreFutureTasks);
   const selectedTaskIdSet = useMemo(() => new Set(selectedTaskIds), [selectedTaskIds]);
   const selectedGroupIdSet = useMemo(() => new Set(selectedGroupIds), [selectedGroupIds]);
   const selectedGroupTaskIdSet = useMemo(
@@ -564,7 +563,7 @@ export default function TasksScreen() {
         {sectionsToRender.map(section => {
           const tasks = visibleSectionTasks[section];
           const hasMore = section === 'comingUp' ? hasMoreFutureTasks : section === 'leftovers' ? hasMorePastTasks : false;
-          if (tasks.length === 0 && !hasMore) return null;
+          if (tasks.length === 0 && (section === 'leftovers' || !hasMore)) return null;
           const title = section === 'today'
             ? 'Today'
             : section === 'comingUp'
@@ -580,7 +579,7 @@ export default function TasksScreen() {
               completedCount={tasks.filter(task => task.completed).length}
               expanded={expandedSections[section]}
               onToggle={() => toggleSection(section)}
-              emptyMessage={section === 'comingUp' ? 'No upcoming tasks loaded yet' : 'No older tasks loaded yet'}
+              emptyMessage={section === 'comingUp' ? 'No upcoming tasks' : 'No older tasks'}
               showMore={hasMore ? {
                 label: section === 'comingUp' ? `Show next ${TASK_PAGE_BATCH_SIZE} upcoming tasks` : `Show next ${TASK_PAGE_BATCH_SIZE} older tasks`,
                 loading: section === 'comingUp' ? loadingMoreFutureTasks : loadingMorePastTasks,

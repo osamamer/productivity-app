@@ -19,6 +19,7 @@ export interface UserPreferences {
     checkupIntervalMinutes: number;
     checkupStartTime: string;
     checkupTimesPerDay: number;
+    checkupTimeZone?: string;
     showCompletedHomeTasks?: boolean | null;
     excludeTodayCompletedTasks?: boolean | null;
     showClosedMentalThreads?: boolean | null;

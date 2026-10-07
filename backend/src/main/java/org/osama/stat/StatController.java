@@ -136,6 +136,8 @@ public class StatController {
                 request == null ? null : request.taskName,
                 request == null ? null : request.importance,
                 request == null ? null : request.timeZone,
+                request == null ? null : request.scheduledPerformDateTime,
+                request == null ? null : request.reminderMinutesBefore,
                 currentUserService.getCurrentUserId()
         );
     }
@@ -276,5 +278,7 @@ public class StatController {
         String taskName;
         Integer importance;
         String timeZone;
+        String scheduledPerformDateTime;
+        Integer reminderMinutesBefore;
     }
 }

@@ -12,6 +12,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -88,6 +89,9 @@ public class ExpoPushNotificationService {
         message.put("priority", "high");
         message.put("channelId", NotificationService.DEFAULT_CHANNEL_ID);
         message.put("sound", "default");
+        if (reminder.getNotificationType() == NotificationType.MENTAL_STATE_CHECKUP) {
+            message.put("expiration", reminder.getDateTime().plus(30, ChronoUnit.MINUTES).getEpochSecond());
+        }
         return message;
     }
 

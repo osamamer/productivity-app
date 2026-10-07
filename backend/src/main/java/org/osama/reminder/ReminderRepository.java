@@ -38,6 +38,7 @@ public interface ReminderRepository extends JpaRepository<Reminder, String> {
             select reminder from Reminder reminder
             join fetch reminder.user user
             left join fetch reminder.event event
+            left join fetch reminder.task task
             where reminder.acknowledgedAt is null
               and reminder.dateTime <= :now
               and reminder.dispatchedAt is null
@@ -49,6 +50,7 @@ public interface ReminderRepository extends JpaRepository<Reminder, String> {
     @Query("""
             select reminder from Reminder reminder
             left join fetch reminder.event event
+            left join fetch reminder.task task
             where reminder.userId = :userId
               and reminder.acknowledgedAt is null
               and reminder.dateTime <= :now

@@ -127,7 +127,29 @@ function NoteDraftEditorView({
     const [wordCount, setWordCount] = useState(() => countWords(content));
     const titleRef = useRef<HTMLInputElement | null>(null);
     const quillRef = useRef<ReactQuill | null>(null);
+    const scrollContainerRef = useRef<HTMLDivElement | null>(null);
     const wordCountTimerRef = useRef<number | null>(null);
+
+    function keepEndCaretInWritingSpace() {
+        const quill = quillRef.current?.getEditor();
+        const scrollContainer = scrollContainerRef.current;
+        const selection = quill?.getSelection();
+        if (!quill || !scrollContainer || !selection || selection.length > 0) return;
+        if (selection.index < quill.getLength() - 1) return;
+
+        const caretBounds = quill.getBounds(selection.index);
+        const editorContainer = quill.root.parentElement;
+        if (!caretBounds || !editorContainer) return;
+
+        const viewportBottom = scrollContainer.getBoundingClientRect().bottom;
+        const caretBottom = editorContainer.getBoundingClientRect().top + caretBounds.bottom;
+        const spaceBelowCaret = Math.min(240, Math.max(120, scrollContainer.clientHeight * 0.2));
+        const targetBottom = viewportBottom - spaceBelowCaret;
+
+        if (caretBottom > targetBottom) {
+            scrollContainer.scrollTop += caretBottom - targetBottom;
+        }
+    }
 
     useEffect(() => {
         if (!focusTitle) return;
@@ -199,8 +221,8 @@ function NoteDraftEditorView({
     }
 
     return (
-        <Box className="notes-editor-scroll" sx={{ flex: 1, overflowY: 'auto' }}>
-            <Box sx={{ maxWidth: 880, width: '100%', minHeight: '100%', mx: 'auto', px: { xs: 2.5, md: 5, xl: 7 }, pt: { xs: 3, md: 5 }, pb: 5 }}>
+        <Box ref={scrollContainerRef} className="notes-editor-scroll" sx={{ flex: 1, overflowY: 'auto' }}>
+            <Box sx={{ maxWidth: 880, width: '100%', minHeight: '100%', mx: 'auto', px: { xs: 2.5, md: 5, xl: 7 }, pt: { xs: 3, md: 5 }, pb: 'clamp(180px, 28vh, 320px)' }}>
                 <Box
                     component="input"
                     ref={titleRef}
@@ -263,6 +285,7 @@ function NoteDraftEditorView({
                         onChange={(nextContent, _delta, source) => {
                             if (source !== 'user') return;
                             queueDraftUpdate({ content: nextContent });
+                            window.requestAnimationFrame(keepEndCaretInWritingSpace);
                         }}
                         modules={editorModules}
                         formats={editorFormats}

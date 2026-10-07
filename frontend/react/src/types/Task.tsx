@@ -16,6 +16,7 @@ export interface Task   {
     importance: number;
     displayOrder: number;
     mentalThreadId: string | null;
+    projectId: string | null;
     taskSeriesId: string | null;
     seriesOccurrenceAt: string | null;
     skipped: boolean;

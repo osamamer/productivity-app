@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.osama.exceptions.ResourceNotFoundException;
+import org.osama.project.ProjectService;
 import org.osama.user.User;
 import org.osama.user.UserRepository;
 import org.osama.requests.NewTaskRequest;
@@ -31,7 +32,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @DataJpaTest
 @ActiveProfiles("test")
-@Import({MentalThreadService.class, TaskService.class, TaskGroupService.class, StatTaskLinkService.class})
+@Import({MentalThreadService.class, TaskService.class, TaskGroupService.class, StatTaskLinkService.class,
+        ProjectService.class})
 @Execution(ExecutionMode.SAME_THREAD)
 @TestExecutionListeners(
         listeners = {

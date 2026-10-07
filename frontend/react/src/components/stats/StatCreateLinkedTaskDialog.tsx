@@ -6,6 +6,8 @@ import {
 import { StatDefinition, StatRecurringTaskDraft } from '../../types/Stats';
 import { defaultStatRecurringTaskDraft } from './statRecurringTaskUtils';
 import { StatRecurringTaskOptions } from './StatRecurringTaskDialog';
+import { AppTimeField } from '../input/AppPickerFields';
+import { TaskReminderPicker } from '../task/TaskReminderPicker';
 
 type PopupPosition = { top: number; left: number };
 
@@ -16,7 +18,12 @@ type Props = {
     error?: string | null;
     anchorPosition?: PopupPosition | null;
     onClose: () => void;
-    onCreate: (taskName: string, importance: number) => void;
+    onCreate: (
+        taskName: string,
+        importance: number,
+        timeOfDay: string,
+        reminderMinutesBefore: number | null,
+    ) => void;
     onCreateRecurring: (taskName: string, recurrence: StatRecurringTaskDraft) => void;
 };
 
@@ -39,6 +46,8 @@ export function StatCreateLinkedTaskDialog({
     const [taskName, setTaskName] = useState('');
     const [importance, setImportance] = useState(3);
     const [mode, setMode] = useState<'once' | 'recurring'>('once');
+    const [timeOfDay, setTimeOfDay] = useState('');
+    const [reminderMinutesBefore, setReminderMinutesBefore] = useState<number | null>(null);
     const [recurrence, setRecurrence] = useState<StatRecurringTaskDraft>(defaultStatRecurringTaskDraft);
 
     useEffect(() => {
@@ -46,6 +55,9 @@ export function StatCreateLinkedTaskDialog({
         setTaskName(definition?.name ?? '');
         setImportance(3);
         setMode('once');
+        const now = new Date();
+        setTimeOfDay(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
+        setReminderMinutesBefore(null);
         setRecurrence(defaultStatRecurringTaskDraft());
     }, [definition?.id, definition?.name, open]);
 
@@ -53,8 +65,9 @@ export function StatCreateLinkedTaskDialog({
     const customDaysMissing = recurrence.recurrenceFrequency === 'CUSTOM'
         && recurrence.recurrenceDaysOfWeek.length === 0;
     const timeMissing = !/^\d{2}:\d{2}$/.test(recurrence.timeOfDay);
+    const oneTimeMissing = !/^\d{2}:\d{2}$/.test(timeOfDay);
     const canCreate = Boolean(definition && trimmedTaskName && !saving
-        && (mode === 'once' || (!customDaysMissing && !timeMissing)));
+        && (mode === 'once' ? !oneTimeMissing : (!customDaysMissing && !timeMissing)));
 
     return (
         <Popover
@@ -138,6 +151,23 @@ export function StatCreateLinkedTaskDialog({
                             )}
                         </>
                     )}
+                    {mode === 'once' && (
+                        <>
+                            <AppTimeField
+                                label="Task time"
+                                value={timeOfDay}
+                                onChange={setTimeOfDay}
+                                disabled={saving}
+                                error={oneTimeMissing}
+                                helperText={oneTimeMissing ? 'Choose a task time.' : undefined}
+                            />
+                            <TaskReminderPicker
+                                value={reminderMinutesBefore}
+                                disabled={saving}
+                                onChange={setReminderMinutesBefore}
+                            />
+                        </>
+                    )}
                     {error && <Alert severity="error">{error}</Alert>}
                 </Stack>
             </DialogContent>
@@ -147,7 +177,7 @@ export function StatCreateLinkedTaskDialog({
                     variant="contained"
                     onClick={() => mode === 'recurring'
                         ? onCreateRecurring(trimmedTaskName, { ...recurrence, importance, taskName: trimmedTaskName })
-                        : onCreate(trimmedTaskName, importance)}
+                        : onCreate(trimmedTaskName, importance, timeOfDay, reminderMinutesBefore)}
                     disabled={!canCreate}
                 >
                     {saving ? 'Creating…' : mode === 'recurring' ? 'Create recurring task' : 'Create task'}

@@ -1,0 +1,63 @@
+databaseChangeLog:
+  - changeSet:
+      id: 069-add-project-updated-at
+      author: codex
+      comment: Track when each project was last updated
+      changes:
+        - addColumn:
+            tableName: project
+            columns:
+              - column:
+                  name: updated_at
+                  type: timestamp
+        - update:
+            tableName: project
+            columns:
+              - column:
+                  name: updated_at
+                  valueComputed: creation_date_time
+        - addNotNullConstraint:
+            tableName: project
+            columnName: updated_at
+            columnDataType: timestamp
+      rollback:
+        - dropColumn:
+            tableName: project
+            columnName: updated_at
+
+  - changeSet:
+      id: 069-link-task-series-to-project
+      author: codex
+      comment: Let recurring task series belong to a project and survive project deletion unassigned
+      changes:
+        - addColumn:
+            tableName: task_series
+            columns:
+              - column:
+                  name: project_id
+                  type: varchar(255)
+        - addForeignKeyConstraint:
+            baseTableName: task_series
+            baseColumnNames: project_id
+            referencedTableName: project
+            referencedColumnNames: project_id
+            constraintName: fk_app_task_series_project
+            onDelete: SET NULL
+            onUpdate: CASCADE
+        - createIndex:
+            tableName: task_series
+            indexName: idx_app_task_series_project
+            ifNotExists: true
+            columns:
+              - column:
+                  name: project_id
+      rollback:
+        - dropIndex:
+            tableName: task_series
+            indexName: idx_app_task_series_project
+        - dropForeignKeyConstraint:
+            baseTableName: task_series
+            constraintName: fk_app_task_series_project
+        - dropColumn:
+            tableName: task_series
+            columnName: project_id

@@ -8,6 +8,7 @@ import org.osama.mentalthread.MentalThreadRepository;
 import org.osama.mentalthread.MentalThreadStatus;
 import org.osama.pomodoro.Pomodoro;
 import org.osama.pomodoro.PomodoroRepository;
+import org.osama.project.ProjectService;
 import org.osama.reminder.NotificationType;
 import org.osama.reminder.Reminder;
 import org.osama.reminder.ReminderRepository;
@@ -31,6 +32,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.DateTimeException;
@@ -55,6 +57,7 @@ public class TaskService {
     private final ReminderRepository reminderRepository;
     private final PomodoroRepository pomodoroRepository;
     private final ScheduledJobRepository scheduledJobRepository;
+    private final ProjectService projectService;
     private final ApplicationEventPublisher eventPublisher;
 
     public TaskService(TaskRepository taskRepository, TaskSessionRepository taskSessionRepository,
@@ -62,7 +65,7 @@ public class TaskService {
                        TaskGroupService taskGroupService, StatTaskLinkService statTaskLinkService,
                        TaskSeriesRepository taskSeriesRepository, ReminderRepository reminderRepository,
                        PomodoroRepository pomodoroRepository, ScheduledJobRepository scheduledJobRepository,
-                       ApplicationEventPublisher eventPublisher) {
+                       ProjectService projectService, ApplicationEventPublisher eventPublisher) {
         this.taskRepository = taskRepository;
         this.taskSessionRepository = taskSessionRepository;
         this.userRepository = userRepository;
@@ -73,6 +76,7 @@ public class TaskService {
         this.reminderRepository = reminderRepository;
         this.pomodoroRepository = pomodoroRepository;
         this.scheduledJobRepository = scheduledJobRepository;
+        this.projectService = projectService;
         this.eventPublisher = eventPublisher;
     }
 
@@ -389,6 +393,11 @@ public class TaskService {
             }
         }
 
+        String projectId = normalizeOptionalId(request.getProjectId());
+        if (projectId != null) {
+            projectService.requireOwnedProject(projectId, userId);
+        }
+
         Task task = new Task();
         task.setTaskId(UUID.randomUUID().toString());
         task.setName(request.getName());
@@ -409,6 +418,7 @@ public class TaskService {
         }
 
         task.setParentId(parentId); // null is fine for main tasks
+        task.setProjectId(projectId); // null is fine
         task.setTag(request.getTag()); // null is fine
         task.setImportance(request.getImportance()); // primitive int defaults to 0
         if (mentalThread == null) {
@@ -435,8 +445,9 @@ public class TaskService {
         if (mentalThread != null) {
             taskGroupService.addTaskToDefaultMentalThreadGroup(savedTask, mentalThread, userId);
         }
-        log.info("Task created: userId={} taskId={} parentTaskId={} mentalThreadId={}",
-                userId, savedTask.getTaskId(), savedTask.getParentId(), savedTask.getMentalThreadId());
+        log.info("Task created: userId={} taskId={} parentTaskId={} mentalThreadId={} projectId={}",
+                userId, savedTask.getTaskId(), savedTask.getParentId(), savedTask.getMentalThreadId(),
+                savedTask.getProjectId());
         return savedTask;
     }
 
@@ -450,6 +461,7 @@ public class TaskService {
         }
 
         Task task = existingTask.get();
+        boolean wasCompleted = task.isCompleted();
         Optional<Reminder> existingReminder = findTaskReminder(taskId);
         LocalDate previousTaskDate = taskDate(task);
         boolean scheduleChanged = request.getScheduledPerformDateTime() != null;
@@ -479,6 +491,14 @@ public class TaskService {
         if (request.getImportance() != null) {
             task.setImportance(request.getImportance());
             changedFields.add("importance");
+        }
+        if (request.isProjectIdPresent()) {
+            String projectId = normalizeOptionalId(request.getProjectId());
+            if (projectId != null) {
+                projectService.requireOwnedProject(projectId, userId);
+            }
+            task.setProjectId(projectId);
+            changedFields.add("projectId");
         }
         if (request.getScheduledPerformDateTime() != null) {
             String requestedDateTime = request.getScheduledPerformDateTime().trim();
@@ -515,6 +535,7 @@ public class TaskService {
         } else {
             savedTask.setReminderMinutesBefore(existingReminder.map(Reminder::getMinutesBefore).orElse(null));
         }
+        synchronizeTaskReminderCompletion(savedTask, wasCompleted);
         if (scheduleChanged) {
             statTaskLinkService.synchronizeTaskSchedule(savedTask, previousTaskDate, userId);
         }
@@ -556,10 +577,8 @@ public class TaskService {
         Reminder reminder = new Reminder();
         reminder.setReminderId(UUID.randomUUID().toString());
         reminder.setTaskId(task.getTaskId());
-        reminder.setDateTime(task.getScheduledPerformDateTime()
-                .atZone(ZoneId.of(normalizeTimeZone(task.getTimeZone())))
-                .toInstant()
-                .minusSeconds(minutesBefore.longValue() * 60));
+        Instant taskDateTime = taskDateTime(task);
+        reminder.setDateTime(taskDateTime.minusSeconds(minutesBefore.longValue() * 60));
         reminder.setRepeat(0);
         reminder.setNotificationType(NotificationType.TASK_REMINDER);
         reminder.setTitle(task.getName());
@@ -567,8 +586,41 @@ public class TaskService {
         reminder.setTargetUrl("/tasks");
         reminder.setMinutesBefore(minutesBefore);
         reminder.setUser(user);
+        Instant now = Instant.now();
+        if (!taskDateTime.isAfter(now) || task.isCompleted()) {
+            reminder.setAcknowledgedAt(now);
+        }
         reminderRepository.save(reminder);
         task.setReminderMinutesBefore(minutesBefore);
+    }
+
+    private void synchronizeTaskReminderCompletion(Task task, boolean wasCompleted) {
+        Optional<Reminder> taskReminder = findTaskReminder(task.getTaskId());
+        if (task.isCompleted()) {
+            taskReminder.ifPresent(reminder -> {
+                if (reminder.getAcknowledgedAt() == null) {
+                    reminder.setAcknowledgedAt(Instant.now());
+                    reminderRepository.save(reminder);
+                }
+            });
+            return;
+        }
+
+        if (!wasCompleted || task.getScheduledPerformDateTime() == null) return;
+
+        Instant now = Instant.now();
+        taskReminder.filter(reminder -> taskDateTime(task).isAfter(now) && reminder.getDateTime().isAfter(now))
+                .ifPresent(reminder -> {
+                    reminder.setAcknowledgedAt(null);
+                    reminder.setDispatchedAt(null);
+                    reminderRepository.save(reminder);
+                });
+    }
+
+    private Instant taskDateTime(Task task) {
+        return task.getScheduledPerformDateTime()
+                .atZone(ZoneId.of(normalizeTimeZone(task.getTimeZone())))
+                .toInstant();
     }
 
     private Optional<Reminder> findTaskReminder(String taskId) {

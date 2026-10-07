@@ -229,6 +229,7 @@ public class TaskSeriesService {
         series.setTag(task.getTag());
         series.setImportance(task.getImportance());
         series.setMentalThreadId(task.getMentalThreadId());
+        series.setProjectId(task.getProjectId());
         series.setStartDateTime(task.getScheduledPerformDateTime());
         series.setRecurrenceFrequency(frequency);
         series.setRecurrenceEndDate(endDate);
@@ -271,6 +272,7 @@ public class TaskSeriesService {
             occurrenceRequest.setTag(series.getTag());
             occurrenceRequest.setImportance(series.getImportance());
             occurrenceRequest.setMentalThreadId(series.getMentalThreadId());
+            occurrenceRequest.setProjectId(series.getProjectId());
             occurrenceRequest.setTimeZone(series.getTimeZone());
             occurrenceRequest.setReminderMinutesBefore(series.getReminderMinutesBefore());
 
@@ -369,7 +371,7 @@ public class TaskSeriesService {
     private TaskSeriesResponse toResponse(TaskSeries series, String userId) {
         return new TaskSeriesResponse(
                 series.getSeriesId(), series.getName(), series.getDescription(), series.getTag(),
-                series.getImportance(), series.getMentalThreadId(), series.getStartDateTime(),
+                series.getImportance(), series.getMentalThreadId(), series.getProjectId(), series.getStartDateTime(),
                 series.getRecurrenceFrequency(), series.getRecurrenceEndDate(), series.getRecurrenceInterval(),
                 series.getRecurrenceUnit(), TaskRecurrenceDays.decode(series.getRecurrenceDaysOfWeek()),
                 series.getTimeZone(), series.getReminderMinutesBefore(), series.isActive(),

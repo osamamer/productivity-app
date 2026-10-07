@@ -11,6 +11,8 @@ import { AppText } from '../ui/AppText';
 import { SilentPressable } from '../ui/SilentPressable';
 
 const pad = (value: number) => String(value).padStart(2, '0');
+const HOUR_VALUES = Array.from({ length: 24 }, (_, value) => value);
+const MINUTE_VALUES = Array.from({ length: 60 }, (_, value) => value);
 
 export function dateFromScheduleValue(value: string | null | undefined): Date {
   if (value) {
@@ -43,7 +45,12 @@ function TimeColumn({ label, values, selected, onSelect }: {
   return (
     <View style={styles.timeColumn}>
       <AppText variant="caption" color="muted" style={styles.timeLabel}>{label}</AppText>
-      <ScrollView ref={scrollRef} style={styles.timeScroll} contentContainerStyle={styles.timeOptions} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        ref={scrollRef}
+        style={styles.timeScroll}
+        contentContainerStyle={styles.timeOptions}
+        showsVerticalScrollIndicator={false}
+        nestedScrollEnabled>
         {values.map(value => {
           const selectedValue = value === selected;
           return (
@@ -68,9 +75,6 @@ function TimeColumn({ label, values, selected, onSelect }: {
 }
 
 export function TimePicker({ value, onChange }: { value: Date; onChange: (value: Date) => void }) {
-  const hours = Array.from({ length: 24 }, (_, value) => value);
-  const minutes = Array.from({ length: 60 }, (_, value) => value);
-
   function update(hoursValue: number, minutesValue: number) {
     const next = new Date(value);
     next.setHours(hoursValue, minutesValue, 0, 0);
@@ -81,13 +85,13 @@ export function TimePicker({ value, onChange }: { value: Date; onChange: (value:
     <View style={styles.timePicker}>
       <TimeColumn
         label="HOUR"
-        values={hours}
+        values={HOUR_VALUES}
         selected={value.getHours()}
         onSelect={hoursValue => update(hoursValue, value.getMinutes())}
       />
       <TimeColumn
         label="MINUTE"
-        values={minutes}
+        values={MINUTE_VALUES}
         selected={value.getMinutes()}
         onSelect={minutesValue => update(value.getHours(), minutesValue)}
       />

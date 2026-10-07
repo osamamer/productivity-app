@@ -68,7 +68,11 @@ export function CalendarDatePicker({ value, onChange }: { value: Date; onChange:
             key={day.toISOString()}
             accessibilityRole="button"
             accessibilityLabel={day.toLocaleDateString()}
-            onPress={() => onChange(day)}
+            onPress={() => {
+              const next = new Date(value);
+              next.setFullYear(day.getFullYear(), day.getMonth(), day.getDate());
+              onChange(next);
+            }}
             style={({ pressed }) => [styles.day, pressed && styles.pressed]}>
             <View style={[
               styles.dayButton,

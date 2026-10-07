@@ -501,6 +501,7 @@ export const taskService = {
                 importance: task.importance,
                 parentId: task.parentId,
                 mentalThreadId: task.mentalThreadId,
+                projectId: task.projectId,
                 recurrenceFrequency: task.recurrenceFrequency,
                 recurrenceEndDate: task.recurrenceEndDate,
                 recurrenceInterval: task.recurrenceInterval,
@@ -580,6 +581,7 @@ export const taskService = {
             invalidateResource('tasks');
             if (updatedTask.statLinked) invalidateResource('stats');
         }
+        if ('projectId' in updates) invalidateResource('projects');
         return updatedTask;
     },
 

@@ -1,8 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
-import { router, useNavigation } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, ScrollView, StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { router, useFocusEffect, useNavigation } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, AppState, Easing, ScrollView, StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 
 import { MeditationStats } from '@/components/meditation/MeditationStats';
 import { AppButton } from '@/components/ui/AppButton';
@@ -387,6 +387,65 @@ export default function MeditationScreen() {
   const sessionComplete = Boolean(session && session.intendedLength > 0 && remaining === 0);
   const sessionId = session?.id;
   const selectedSoundOption = useMemo(() => soundOption(selectedSound), [selectedSound]);
+  const sessionRef = useRef<MeditationSession | null>(session);
+  const mutationInFlightRef = useRef(false);
+  const mutationVersionRef = useRef(0);
+  const syncInFlightRef = useRef(false);
+
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
+
+  const clearLocalSession = useCallback((refreshStats = false) => {
+    setSessionData(undefined);
+    setClientRunningAnchor(null);
+    setFinishSheetOpen(false);
+    stopAudio();
+    audioStartedRef.current = false;
+    if (refreshStats) setStatsRefreshKey(key => key + 1);
+  }, [setSessionData, stopAudio]);
+
+  const syncActiveSession = useCallback(async () => {
+    const observedSession = sessionRef.current;
+    if (!observedSession || observedSession.id.startsWith('optimistic-meditation-')
+      || mutationInFlightRef.current || syncInFlightRef.current) return;
+
+    const observedVersion = mutationVersionRef.current;
+    syncInFlightRef.current = true;
+    try {
+      const canonicalSession = await api.meditation.active();
+      if (mutationInFlightRef.current || mutationVersionRef.current !== observedVersion
+        || sessionRef.current?.id !== observedSession.id) return;
+
+      if (!canonicalSession) {
+        clearLocalSession(true);
+        return;
+      }
+
+      const changed = canonicalSession.id !== observedSession.id
+        || canonicalSession.running !== observedSession.running
+        || canonicalSession.lastUnpauseTime !== observedSession.lastUnpauseTime
+        || canonicalSession.totalSessionTime !== observedSession.totalSessionTime;
+      if (changed) setClientRunningAnchor(null);
+      setSessionData(canonicalSession);
+    } catch (cause) {
+      console.warn('Could not sync active meditation session:', cause);
+    } finally {
+      syncInFlightRef.current = false;
+    }
+  }, [clearLocalSession, setSessionData]);
+
+  useFocusEffect(useCallback(() => {
+    void syncActiveSession();
+    const interval = setInterval(() => void syncActiveSession(), 15_000);
+    const appStateSubscription = AppState.addEventListener('change', state => {
+      if (state === 'active') void syncActiveSession();
+    });
+    return () => {
+      clearInterval(interval);
+      appStateSubscription.remove();
+    };
+  }, [syncActiveSession]));
 
   useEffect(() => {
     if (!sessionId) return;
@@ -407,18 +466,19 @@ export default function MeditationScreen() {
       audioStartedRef.current = false;
       return;
     }
-    if (!soundMuted && !audioStartedRef.current) {
+    if (!audioStartedRef.current) {
       startAudio(selectedSound);
+      if (soundMuted) setMuted(true);
       lastAppliedSoundRef.current = selectedSound;
       audioStartedRef.current = true;
     }
-  }, [session, selectedSound, soundMuted, startAudio, stopAudio]);
+  }, [session, selectedSound, setMuted, soundMuted, startAudio]);
 
   useEffect(() => {
-    if (!session || soundMuted || !audioStartedRef.current || lastAppliedSoundRef.current === selectedSound) return;
+    if (!session || !audioStartedRef.current || lastAppliedSoundRef.current === selectedSound) return;
     changeSound(selectedSound);
     lastAppliedSoundRef.current = selectedSound;
-  }, [changeSound, selectedSound, session, soundMuted]);
+  }, [changeSound, selectedSound, session]);
 
   useEffect(() => {
     if (!session || !session.intendedLength || !session.numIntervalBells) {
@@ -446,9 +506,8 @@ export default function MeditationScreen() {
     if (!sessionComplete || completionGongSessionRef.current === session.id) return;
 
     completionGongSessionRef.current = session.id;
-    stopAudio();
     playCompletionGong();
-  }, [playCompletionGong, session, sessionComplete, stopAudio]);
+  }, [playCompletionGong, session, sessionComplete]);
 
   function chooseSound(sound: MeditationSoundId) {
     setSelectedSound(sound);
@@ -469,16 +528,17 @@ export default function MeditationScreen() {
     const optimisticSession = createOptimisticSession(startedAt, moodBefore, numIntervalBells, intendedLength);
     setStartPending(true);
     setSaving(true);
+    mutationVersionRef.current += 1;
+    mutationInFlightRef.current = true;
     setError(null);
     setCompletedSession(null);
     setClientRunningAnchor({ sessionId: optimisticSession.id, startedAt });
-    resource.setData(optimisticSession);
+        setSessionData(optimisticSession);
     prepareAudio();
-    if (!soundMuted) {
-      startAudio(selectedSound);
-      lastAppliedSoundRef.current = selectedSound;
-      audioStartedRef.current = true;
-    }
+    startAudio(selectedSound);
+    if (soundMuted) setMuted(true);
+    lastAppliedSoundRef.current = selectedSound;
+    audioStartedRef.current = true;
     try {
       const started = await api.meditation.start(moodBefore, intendedLength, numIntervalBells);
       if (!mountedRef.current) {
@@ -487,15 +547,22 @@ export default function MeditationScreen() {
       }
 
       setClientRunningAnchor({ sessionId: started.id, startedAt });
-      resource.setData(started);
+      setSessionData(started);
     } catch (cause) {
       if (!mountedRef.current) return;
-      resource.setData(undefined);
-      setClientRunningAnchor(null);
-      stopAudio();
-      audioStartedRef.current = false;
+      const canonicalSession = await api.meditation.active().catch(refreshError => {
+        console.warn('Could not restore the active meditation session after start failed:', refreshError);
+        return undefined;
+      });
+      if (canonicalSession) {
+        setSessionData(canonicalSession);
+        setClientRunningAnchor(null);
+      } else {
+        clearLocalSession();
+      }
       setError(reportError('Could not start meditation', cause));
     } finally {
+      mutationInFlightRef.current = false;
       if (mountedRef.current) {
         setStartPending(false);
         setSaving(false);
@@ -506,14 +573,16 @@ export default function MeditationScreen() {
   async function togglePause() {
     if (!session) return;
     setSaving(true);
+    mutationVersionRef.current += 1;
+    mutationInFlightRef.current = true;
     setError(null);
     try {
       const updated = session.running ? await api.meditation.pause(session.id) : await api.meditation.resume(session.id);
-      resource.setData(updated);
+      setSessionData(updated);
       if (updated.running) {
         const resumedAt = Date.now();
         setClientRunningAnchor({ sessionId: updated.id, startedAt: resumedAt });
-        if (!soundMuted) resumeAudio();
+        resumeAudio();
       } else {
         setClientRunningAnchor(null);
         pauseAudio();
@@ -521,6 +590,7 @@ export default function MeditationScreen() {
     } catch (cause) {
       setError(reportError('Could not update meditation', cause));
     } finally {
+      mutationInFlightRef.current = false;
       setSaving(false);
     }
   }
@@ -535,8 +605,8 @@ export default function MeditationScreen() {
         audioStartedRef.current = true;
       }
     } else {
+      // Keep the silent player active so Android can keep the locked-screen timer running.
       setMuted(true);
-      pauseAudio();
       setSoundMuted(true);
     }
   }
@@ -544,10 +614,12 @@ export default function MeditationScreen() {
   async function finish() {
     if (!session) return;
     setSaving(true);
+    mutationVersionRef.current += 1;
+    mutationInFlightRef.current = true;
     setError(null);
     try {
       const finished = await api.meditation.end(session.id, moodAfter);
-      resource.setData(undefined);
+      setSessionData(undefined);
       setClientRunningAnchor(null);
       setCompletedSession(finished);
       setStatsRefreshKey(key => key + 1);
@@ -557,6 +629,7 @@ export default function MeditationScreen() {
     } catch (cause) {
       setError(reportError('Could not finish meditation', cause));
     } finally {
+      mutationInFlightRef.current = false;
       setSaving(false);
     }
   }
@@ -564,10 +637,12 @@ export default function MeditationScreen() {
   async function discard() {
     if (!session) return;
     setSaving(true);
+    mutationVersionRef.current += 1;
+    mutationInFlightRef.current = true;
     setError(null);
     try {
       await api.meditation.discard(session.id);
-      resource.setData(undefined);
+      setSessionData(undefined);
       setClientRunningAnchor(null);
       setFinishSheetOpen(false);
       stopAudio();
@@ -575,6 +650,7 @@ export default function MeditationScreen() {
     } catch (cause) {
       setError(reportError('Could not dismiss meditation', cause));
     } finally {
+      mutationInFlightRef.current = false;
       setSaving(false);
     }
   }
@@ -600,26 +676,36 @@ export default function MeditationScreen() {
 
         leavingRef.current = true;
         setSaving(true);
+        mutationVersionRef.current += 1;
+        mutationInFlightRef.current = true;
         setError(null);
         try {
-          await api.meditation.end(session.id);
-          setSessionData(undefined);
-          setClientRunningAnchor(null);
-          setFinishSheetOpen(false);
-          stopAudio();
-          audioStartedRef.current = false;
+          const activeSession = await api.meditation.active();
+          if (activeSession) await api.meditation.end(activeSession.id);
+          clearLocalSession(true);
           navigation.dispatch(event.data.action);
         } catch (cause) {
+          try {
+            const activeSession = await api.meditation.active();
+            if (!activeSession) {
+              clearLocalSession(true);
+              navigation.dispatch(event.data.action);
+              return;
+            }
+          } catch (refreshError) {
+            console.warn('Could not recheck the meditation session after ending failed:', refreshError);
+          }
           leavingRef.current = false;
           setError(reportError('Could not end meditation while leaving', cause));
         } finally {
+          mutationInFlightRef.current = false;
           setSaving(false);
         }
       })();
     });
 
     return unsubscribe;
-  }, [confirm, navigation, session, setSessionData, startPending, stopAudio]);
+  }, [clearLocalSession, confirm, navigation, session, startPending]);
 
   return (
     <Screen safeAreaTop={false} contentStyle={styles.screenContent} refreshing={resource.refreshing} onRefresh={() => void resource.reload()}>

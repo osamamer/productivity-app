@@ -13,6 +13,7 @@ public record UserPreferenceUpdates(
         Integer checkupIntervalMinutes,
         LocalTime checkupStartTime,
         Integer checkupTimesPerDay,
+        String checkupTimeZone,
         String pomodoroSoundId,
         Boolean showCompletedHomeTasks,
         Boolean excludeTodayCompletedTasks,
@@ -39,6 +40,7 @@ public record UserPreferenceUpdates(
                 && checkupIntervalMinutes == null
                 && checkupStartTime == null
                 && checkupTimesPerDay == null
+                && checkupTimeZone == null
                 && pomodoroSoundId == null
                 && showCompletedHomeTasks == null
                 && excludeTodayCompletedTasks == null

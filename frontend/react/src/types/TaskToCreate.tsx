@@ -9,6 +9,7 @@ export interface TaskToCreate   {
     importance: number;
     parentId?: string;
     mentalThreadId?: string;
+    projectId?: string | null;
     recurrenceFrequency?: 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'CUSTOM';
     recurrenceEndDate?: string | null;
     recurrenceInterval?: number | null;

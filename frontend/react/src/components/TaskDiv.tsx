@@ -64,6 +64,7 @@ const isOverdue = (dateTime: string | null): boolean => {
 export function TaskDiv(props: props) {
     const importance = props.task.importance;
     const scheduledDateTime = props.task.scheduledPerformDateTime;
+    const isSubtask = Boolean(props.task.parentId);
     const overdue = isOverdue(scheduledDateTime) && !props.task.completed;
 
     // Checkbox color based on priority
@@ -115,12 +116,26 @@ export function TaskDiv(props: props) {
                     sx={{
                         color: props.task.completed ? "gray" : "inherit",
                         textDecoration: props.task.completed ? "line-through" : "none",
-                        display: "-webkit-box",
-                        overflow: "hidden",
-                        WebkitBoxOrient: "vertical",
-                        WebkitLineClamp: 4,
                         lineHeight: 1.4,
-                        maxHeight: "5.6em",
+                        ...(isSubtask
+                            ? {
+                                display: "block",
+                                minWidth: 0,
+                                maxHeight: "6.3em",
+                                overflowY: "auto",
+                                overflowX: "hidden",
+                                scrollbarGutter: "stable",
+                                whiteSpace: "pre-wrap",
+                                overflowWrap: "anywhere",
+                                wordBreak: "break-word",
+                            }
+                            : {
+                                display: "-webkit-box",
+                                overflow: "hidden",
+                                WebkitBoxOrient: "vertical",
+                                WebkitLineClamp: 4,
+                                maxHeight: "5.6em",
+                            }),
                         flex: 1,
                     }}
                 >

@@ -11,8 +11,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import org.springframework.security.oauth2.jwt.Jwt;
 
+import java.time.DateTimeException;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -178,7 +180,7 @@ public class UserService {
         return updatePreferences(userId, new UserPreferenceUpdates(
                 includeUnloggedNumericDaysAsZero, autoStartPomodoroSessions,
                 checkupNotificationsEnabled, repeatCheckupNotificationsEnabled,
-                checkupIntervalMinutes, checkupStartTime, checkupTimesPerDay, pomodoroSoundId,
+                checkupIntervalMinutes, checkupStartTime, checkupTimesPerDay, null, pomodoroSoundId,
                 null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null));
     }
 
@@ -192,7 +194,8 @@ public class UserService {
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
         boolean checkupScheduleChanged = updates.checkupIntervalMinutes() != null
                 || updates.checkupStartTime() != null
-                || updates.checkupTimesPerDay() != null;
+                || updates.checkupTimesPerDay() != null
+                || updates.checkupTimeZone() != null;
 
         int effectiveIntervalMinutes = updates.checkupIntervalMinutes() != null
                 ? updates.checkupIntervalMinutes() : user.getCheckupIntervalMinutes();
@@ -203,6 +206,7 @@ public class UserService {
         if (checkupScheduleChanged || updates.checkupNotificationsEnabled() != null) {
             validateCheckupSchedule(effectiveIntervalMinutes, effectiveStartTime, effectiveTimesPerDay);
         }
+        if (updates.checkupTimeZone() != null) validateCheckupTimeZone(updates.checkupTimeZone());
         validateUserSettings(updates);
 
         if (updates.includeUnloggedNumericDaysAsZero() != null) user.setIncludeUnloggedNumericDaysAsZero(updates.includeUnloggedNumericDaysAsZero());
@@ -216,6 +220,7 @@ public class UserService {
         if (updates.checkupIntervalMinutes() != null) user.setCheckupIntervalMinutes(updates.checkupIntervalMinutes());
         if (updates.checkupStartTime() != null) user.setCheckupStartTime(updates.checkupStartTime());
         if (updates.checkupTimesPerDay() != null) user.setCheckupTimesPerDay(updates.checkupTimesPerDay());
+        if (updates.checkupTimeZone() != null) user.setCheckupTimeZone(updates.checkupTimeZone());
         if (updates.showCompletedHomeTasks() != null) user.setShowCompletedHomeTasks(updates.showCompletedHomeTasks());
         if (updates.excludeTodayCompletedTasks() != null) user.setExcludeTodayCompletedTasks(updates.excludeTodayCompletedTasks());
         if (updates.showClosedMentalThreads() != null) user.setShowClosedMentalThreads(updates.showClosedMentalThreads());
@@ -235,7 +240,7 @@ public class UserService {
 
         User savedUser = userRepository.save(user);
         log.info("User preferences updated: userId={} changedFields={}", userId, updates);
-        if (Boolean.FALSE.equals(savedUser.getCheckupNotificationsEnabled())
+        if (checkupScheduleChanged || Boolean.FALSE.equals(savedUser.getCheckupNotificationsEnabled())
                 || Boolean.FALSE.equals(savedUser.getRepeatCheckupNotificationsEnabled())) {
             notificationService.clearPendingCheckupNotifications(userId);
         }
@@ -302,6 +307,14 @@ public class UserService {
                 + (long) (timesPerDay - 1) * intervalMinutes;
         if (finalCheckupMinute > 24 * 60) {
             throw new IllegalArgumentException("The check-up schedule must fit within the same day or end at midnight.");
+        }
+    }
+
+    private void validateCheckupTimeZone(String timeZone) {
+        try {
+            ZoneId.of(timeZone);
+        } catch (DateTimeException | NullPointerException e) {
+            throw new IllegalArgumentException("Check-up time zone must be a valid IANA time zone.", e);
         }
     }
 

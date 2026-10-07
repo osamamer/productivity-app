@@ -49,10 +49,11 @@ Package root: `org.osama`
 Feature packages follow a consistent pattern — each has an entity, repository, service, and controller:
 - `task/` — Task CRUD with filtering via JPA Specifications (`TaskSpecifications.java`); tasks may optionally originate from a mental thread
 - `taskgroup/` — User-owned groups that relate multiple tasks independently of subtasks
+- `project/` — User-owned containers for organizing tasks; deleting a project leaves its tasks intact and unassigned
 - `mentalthread/` — User-owned unresolved concerns with acting/ruminating/planned/pending attention states, subjective load history, closure outcomes, daily capacity check-ins, and connected next-action tasks
 - `day/` — Daily rating/plan/summary (`DayEntity`, one per user per date)
 - `pomodoro/` — Pomodoro timer settings, persisted phase state, automatic/manual phase transitions, and user-owned MP3 sounds. New audio files live in the configured persistent `app.pomodoro.sounds.directory`; the database keeps metadata and supports legacy database blobs.
-- `reminder/` — Durable, typed notification inbox shared by calendar reminders and Pomodoro transitions; notifications remain due until the client acknowledges presentation, while authenticated WebSocket pushes are only a low-latency delivery signal
+- `reminder/` — Durable, typed notification inbox shared by calendar reminders, Pomodoro transitions, and mental-state check-ups; check-ups use each user's local time zone, recover missed scheduler ticks for up to five minutes, and expire after thirty minutes
 - `stat/` — Daily user-defined tracking plus built-in meditation activity and sleep stats provisioned from `SystemStatCatalog`; built-ins use a stable `systemKey`, cannot be deleted, and expose server-side personal correlation insights. User statistics can also link focus time from historical Pomodoro tasks by an exact case-insensitive task name, including completed tasks.
 - `mentalstate/` — Timestamped, multiple-per-day check-ins that capture energy, activation, stimulation hunger, clarity, valence, and emotional load together and generate deterministic state guidance
 - `session/task/` and `session/meditation/` — Session tracking with start/pause/unpause/end lifecycle, published as Spring events via `ApplicationEventPublisher`
@@ -63,13 +64,13 @@ WebSocket (STOMP) is configured in `WebSocketConfig.java`. The frontend connects
 
 Reminder delivery is database-first. `ScheduledJobExecutor` locks and runs each due Pomodoro job in one transaction with creation of its notification, while `NotificationService` sends each due record once to the WebSocket and Expo Push Service. The app-wide frontend `NotificationCenter` owns the single authenticated socket, synchronizes `/api/v1/notifications/due` on startup/reconnect/focus/visibility/online changes and on a recovery interval, presents either an OS notification or a queued in-app fallback, then acknowledges it. Never add feature-specific ephemeral notification sockets; create another typed durable notification instead.
 
-The mobile client uses Expo remote push for every application notification, including calendar, task, check-up, Pomodoro, and meditation notifications. It must not schedule local copies or re-present the durable inbox; startup cleanup only removes schedules left by older mobile builds. The backend records the first dispatch attempt so an unacknowledged remote push is not sent repeatedly.
+The mobile client uses Expo remote push for every application notification, including calendar, task, check-up, Pomodoro, and meditation notifications. It syncs the device time zone for check-up schedules on startup and foreground, suppresses a check-up when a check-in is recorded within thirty minutes of its scheduled time, and expires check-up pushes after thirty minutes. It must not schedule local copies or re-present the durable inbox; startup cleanup only removes schedules left by older mobile builds. The backend records the first dispatch attempt so an unacknowledged remote push is not sent repeatedly.
 
 ### Database
 
 - **Production**: PostgreSQL on port 5432 (via Docker)
 - **Tests**: H2 in-memory; Liquibase disabled; `spring.jpa.hibernate.ddl-auto=create-drop`
-- **Migrations**: Liquibase YAML files in `backend/src/main/resources/db/changelog/changes/`; master file is `db.changelog-master.yaml`. Mental threads, load history, daily capacity check-ins, task connections, individual repeating-calendar-event cancellations, and the Sleep system stat are persisted by the latest migrations.
+- **Migrations**: Liquibase YAML files in `backend/src/main/resources/db/changelog/changes/`; master file is `db.changelog-master.yaml`. Mental threads, load history, daily capacity check-ins, task connections, individual repeating-calendar-event cancellations, and the Sleep system stat are persisted by the latest migrations. Projects (including recurring-series project assignment) are persisted by migration 069; check-up time zones are persisted by migration 070.
 - Dev applies Liquibase migrations incrementally with `spring.liquibase.drop-first=false`; PostgreSQL data persists in the named `postgres_data` Docker volume across normal app restarts
 - The `dev` profile fills missing `sleep_time` entries across the latest year with deterministic demo values after startup, while preserving any dates the user already recorded; test and production profiles never seed this data
 
@@ -106,6 +107,7 @@ All user-scoped entities (Task, DayEntity, MeditationSession, TaskSession, Pomod
 - **Notes**: `pages/NotesPage.tsx` and `components/notes/`; the frontend calls the planned authenticated API through `services/api/notesService.ts`, with its backend contract tracked in `backend/NOTES_BACKEND_TODO.md`
 - **Mental threads**: `pages/MentalThreadsPage.tsx` and `components/mental-threads/`; the dashboard keeps total subjective load separate from the user's daily capacity check-in
 - **Mental state**: `pages/MentalStatePage.tsx` and `components/mental-state/`; each check-in records six signals together, calculates private derived scores on the backend, returns only state and suggested actions, and supports multiple entries per day
+- **Projects**: `pages/ProjectsPage.tsx` and `components/projects/`; master/detail view with inline task quick-add, complete/unassign, and project assignment in the task details panel
 
 ### Services / Ports
 
@@ -129,6 +131,8 @@ Docker services are defined in `deployment/docker-compose.yml`. Environment vari
 **Always use `ifNotExists: true` on `createIndex` in Liquibase changesets.** Partial runs (e.g. a failed startup) can leave indexes in the DB without a corresponding `DATABASECHANGELOG` entry. On the next run Liquibase tries to create them again and fails. `ifNotExists: true` makes index creation idempotent and prevents this.
 
 **Never edit a Liquibase changeset after it may have been applied.** Liquibase stores each applied changeset's checksum in `DATABASECHANGELOG`; changing the file later prevents startup with a checksum validation failure. Restore the applied changeset exactly and put every subsequent schema or data change in a new, sequentially numbered changeset. Never work around this with `clearCheckSums` or `validCheckSum` unless the user explicitly authorizes a deliberate migration-history repair.
+
+**Coordinate parallel Liquibase work.** In this shared working tree, assign one owner to each migration file and its `db.changelog-master.yaml` include; parallel contributors must not edit or reuse that migration ID. Freeze the migration before any process starts Spring against the shared dev database. `run-app.sh`, `spring-boot:run`, and any build or test task that boots Spring can apply Liquibase changesets. Once a startup may have run, treat included changesets as applied even if startup later fails, leave them byte-for-byte unchanged, and put later changes in a new sequential changeset. Separate worktrees isolate source edits but do not isolate a shared database, so serialize app startups around migrations or give each concurrent run its own database.
 
 **Keycloak schema backups include its Liquibase ledger.** Never copy or restore Keycloak tables without `databasechangelog` and `databasechangeloglock`. Keycloak's schema and migration history are one recovery unit; separating them makes Keycloak replay its initial migrations against existing tables. Keep the production Keycloak image pinned, and perform version upgrades only as explicit maintenance with a verified full backup. When an application migration creates a table, add that table to `app_tables` in `deployment/migrate-keycloak-database.sh` so the legacy split tool cannot copy it into the Keycloak database.
 

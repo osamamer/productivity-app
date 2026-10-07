@@ -40,6 +40,7 @@ Package root: `org.osama`
 
 Feature packages follow a consistent pattern — each has an entity, repository, service, and controller:
 - `task/` — Task CRUD with filtering via JPA Specifications (`TaskSpecifications.java`)
+- `project/` — User-owned containers for organizing tasks; deleting a project leaves its tasks intact and unassigned
 - `day/` — Daily rating/plan/summary (`DayEntity`, one per user per date)
 - `pomodoro/` — Pomodoro timer settings and state
 - `session/task/` and `session/meditation/` — Session tracking with start/pause/unpause/end lifecycle, published as Spring events via `ApplicationEventPublisher`

@@ -175,6 +175,7 @@ public class UserController {
             @JsonFormat(pattern = "HH:mm")
             LocalTime checkupStartTime,
             Integer checkupTimesPerDay,
+            String checkupTimeZone,
             String pomodoroSoundId,
             Boolean showCompletedHomeTasks,
             Boolean excludeTodayCompletedTasks,
@@ -196,7 +197,7 @@ public class UserController {
         UserPreferenceUpdates toUpdates() {
             return new UserPreferenceUpdates(includeUnloggedNumericDaysAsZero, autoStartPomodoroSessions,
                     checkupNotificationsEnabled, repeatCheckupNotificationsEnabled, checkupIntervalMinutes,
-                    checkupStartTime, checkupTimesPerDay, pomodoroSoundId, showCompletedHomeTasks,
+                    checkupStartTime, checkupTimesPerDay, checkupTimeZone, pomodoroSoundId, showCompletedHomeTasks,
                     excludeTodayCompletedTasks, showClosedMentalThreads, soundEffectsEnabled, whiteNoiseEnabled,
                     pomodoroSecondsMode, pomodoroLongBreakCooldown, pomodoroFocusDuration,
                     pomodoroShortBreakDuration, pomodoroLongBreakDuration, pomodoroNumFocuses,
@@ -215,6 +216,7 @@ public class UserController {
             @JsonFormat(pattern = "HH:mm")
             LocalTime checkupStartTime,
             int checkupTimesPerDay,
+            String checkupTimeZone,
             Boolean showCompletedHomeTasks,
             Boolean excludeTodayCompletedTasks,
             Boolean showClosedMentalThreads,
@@ -242,6 +244,7 @@ public class UserController {
                     user.getCheckupIntervalMinutes(),
                     user.getCheckupStartTime(),
                     user.getCheckupTimesPerDay(),
+                    user.getCheckupTimeZone(),
                     user.getShowCompletedHomeTasks(),
                     user.getExcludeTodayCompletedTasks(),
                     user.getShowClosedMentalThreads(),

@@ -22,6 +22,7 @@ export interface Task {
   importance: number;
   displayOrder: number;
   mentalThreadId: string | null;
+  projectId: string | null;
   taskSeriesId: string | null;
   seriesOccurrenceAt: string | null;
   skipped: boolean;
@@ -58,6 +59,7 @@ export interface TaskInput {
   importance: number;
   parentId?: string;
   mentalThreadId?: string;
+  projectId?: string | null;
   recurrenceFrequency?: Exclude<TaskRecurrenceFrequency, 'NONE'>;
   recurrenceEndDate?: string | null;
   recurrenceInterval?: number | null;
@@ -71,6 +73,16 @@ export interface TaskGroup {
   name: string;
   taskIds: string[];
   displayOrder: number;
+}
+
+export interface Project {
+  projectId: string;
+  name: string;
+  description: string | null;
+  creationDateTime: string;
+  updatedAt: string;
+  taskCount: number;
+  completedTaskCount: number;
 }
 
 export interface TodayFocusSummary {
@@ -279,6 +291,7 @@ export interface UserPreferences {
   checkupIntervalMinutes: number;
   checkupStartTime: string;
   checkupTimesPerDay: number;
+  checkupTimeZone?: string;
 }
 
 export type PomodoroPhase = 'FOCUS' | 'BREAK' | 'WAITING_FOR_BREAK' | 'WAITING_FOR_FOCUS' | 'COMPLETED';

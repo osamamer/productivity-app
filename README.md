@@ -1,8 +1,8 @@
 # Claritard
 
-Claritard is a full-stack productivity app for tasks, daily planning, focus
-sessions, meditation, notes, calendar events, mental threads, and personal
-tracking. Its goal is simple: so life doesn't get overwhelming.
+Claritard is a full-stack productivity app for tasks, projects, daily planning,
+focus sessions, meditation, notes, calendar events, mental threads, and
+personal tracking. Its goal is simple: so life doesn't get overwhelming.
 
 The repository contains a Spring Boot API, a React web app, a Keycloak identity
 provider, and a PostgreSQL database. The mobile client lives in

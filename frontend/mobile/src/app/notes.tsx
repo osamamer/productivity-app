@@ -219,7 +219,10 @@ export default function NotesScreen() {
             accessibilityLabel={selectionMode ? `${selectedNoteIdSet.has(note.id) ? 'Deselect' : 'Select'} ${note.title || 'Untitled'}` : `Open ${note.title || 'Untitled'}`}
             style={styles.half}
           >
-            <Card style={[styles.note, selectedNoteIdSet.has(note.id) && { borderColor: colors.accent, backgroundColor: colors.accentSoft }]}>
+            <Card style={styles.note}>
+              {selectedNoteIdSet.has(note.id) && (
+                <View pointerEvents="none" style={[styles.selectionMarker, { backgroundColor: colors.accent }]} />
+              )}
               <View style={styles.spaceBetween}>
                 <View style={styles.titleRow}>
                   {selectionMode && <Ionicons name={selectedNoteIdSet.has(note.id) ? 'checkmark-circle' : 'ellipse-outline'} size={19} color={selectedNoteIdSet.has(note.id) ? colors.accent : colors.textMuted} />}
@@ -280,6 +283,7 @@ const styles = StyleSheet.create({
   bulkActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   newButton: { position: 'absolute', right: 18, shadowColor: '#11111A', shadowOffset: { width: 0, height: 5 }, shadowRadius: 12, shadowOpacity: 0.28, elevation: 6 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -5 }, half: { width: '50%', paddingHorizontal: 5, marginBottom: 10 }, note: { height: 220, gap: 10, padding: 14, overflow: 'hidden' },
+  selectionMarker: { position: 'absolute', left: 0, top: 14, bottom: 14, width: 3, borderTopRightRadius: 3, borderBottomRightRadius: 3 },
   grow: { flex: 1 }, spaceBetween: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 }, titleRow: { flex: 1, flexDirection: 'row', alignItems: 'flex-start', gap: 6 }, preview: { flex: 1 }, categorySlot: { height: 24 }, updatedAt: { height: 16 },
   category: { alignSelf: 'flex-start', maxWidth: '100%', minHeight: 24, paddingHorizontal: 8, borderRadius: 12, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 5 }, categoryDot: { width: 6, height: 6, borderRadius: 3 },
   categoryChoices: { gap: 8 }, categoryChoice: { minHeight: 44, paddingHorizontal: 12, borderWidth: 1, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 8 },

@@ -4,6 +4,7 @@ import { statService } from '../services/api/statService';
 import { dayService } from '../services/api/dayService';
 import { eventService } from '../services/api/eventService';
 import { mentalThreadService } from '../services/api/mentalThreadService';
+import { projectService } from '../services/api/projectService';
 import { taskGroupService } from '../services/api/taskGroupService';
 import { taskService } from '../services/api/taskService';
 import { userService } from '../services/api/userService';
@@ -60,6 +61,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
         dayService.clearCache();
         eventService.clearCache();
         mentalThreadService.clearCache();
+        projectService.clearCache();
         taskGroupService.clearCache();
         taskService.clearCache();
         userService.clearPreferencesCache();

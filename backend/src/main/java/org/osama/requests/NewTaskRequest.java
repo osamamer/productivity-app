@@ -24,6 +24,8 @@ public class NewTaskRequest {
 
     private String mentalThreadId;
 
+    private String projectId;
+
     @Size(max = 50, message = "Tag must not exceed 50 characters")
     private String tag;
 

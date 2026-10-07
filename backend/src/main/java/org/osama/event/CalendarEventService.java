@@ -22,6 +22,7 @@ import java.util.UUID;
 public class CalendarEventService {
     public static final int DEFAULT_REMINDER_MINUTES = 24 * 60;
     private static final int MAX_REMINDER_MINUTES = 8 * 7 * 24 * 60;
+    private static final long MISSED_REMINDER_MARKER_AGE_SECONDS = 120;
 
     private final CalendarEventRepository eventRepository;
     private final CalendarEventCancellationRepository cancellationRepository;
@@ -208,7 +209,13 @@ public class CalendarEventService {
                 .filter(reminder -> occurrenceKey.equals(eventOccurrenceKey(event, reminder.getEventOccurrenceStart())))
                 .ifPresent(reminder -> {
                     Instant movedStart = movedOccurrenceStart(event, override);
-                    reminder.setDateTime(movedStart.minusSeconds(reminder.getMinutesBefore() * 60L));
+                    Instant now = Instant.now();
+                    Instant reminderAt = movedStart.minusSeconds(reminder.getMinutesBefore() * 60L);
+                    if (!movedStart.isAfter(now) || !reminderAt.isAfter(now)) {
+                        reminder.setDateTime(now.minusSeconds(MISSED_REMINDER_MARKER_AGE_SECONDS));
+                    } else {
+                        reminder.setDateTime(reminderAt);
+                    }
                     reminder.setDispatchedAt(null);
                     reminder.setAcknowledgedAt(null);
                     reminderRepository.save(reminder);
@@ -365,6 +372,13 @@ public class CalendarEventService {
         Instant eventStart = event.isAllDay()
                 ? event.getStartDate().atStartOfDay(ZoneId.of(event.getTimeZone())).toInstant()
                 : event.getStartTime();
+        Instant now = Instant.now();
+        Instant reminderAt = eventStart.minusSeconds(minutesBefore.longValue() * 60);
+        boolean reminderWindowMissed = !eventStart.isAfter(now) || !reminderAt.isAfter(now);
+        boolean recurring = event.getRecurrenceFrequency() != RecurrenceFrequency.NONE;
+        if (!recurring && reminderWindowMissed) {
+            return;
+        }
         Reminder reminder = new Reminder();
         reminder.setReminderId(UUID.randomUUID().toString());
         reminder.setRepeat(0);
@@ -374,7 +388,9 @@ public class CalendarEventService {
         reminder.setTitle(event.getTitle());
         reminder.setBody("Event reminder");
         reminder.setTargetUrl("/calendar");
-        reminder.setDateTime(eventStart.minusSeconds(minutesBefore.longValue() * 60));
+        reminder.setDateTime(recurring && reminderWindowMissed
+                ? now.minusSeconds(MISSED_REMINDER_MARKER_AGE_SECONDS)
+                : reminderAt);
         reminder.setEventOccurrenceStart(eventStart);
         reminder.setMinutesBefore(minutesBefore);
         reminder.setDispatchedAt(null);

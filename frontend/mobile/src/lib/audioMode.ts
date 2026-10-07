@@ -7,6 +7,7 @@ type AudioModuleLike = {
 export async function configureBackgroundAudio(
   audioModule: AudioModuleLike,
   featureName: string,
+  interruptionMode: AudioMode['interruptionMode'] = 'mixWithOthers',
 ): Promise<void> {
   if (typeof audioModule.setAudioModeAsync !== 'function') {
     console.warn(`${featureName} audio mode is unavailable in this native build.`);
@@ -17,7 +18,7 @@ export async function configureBackgroundAudio(
     await audioModule.setAudioModeAsync({
       playsInSilentMode: true,
       shouldPlayInBackground: true,
-      interruptionMode: 'mixWithOthers',
+      interruptionMode,
     });
   } catch (error) {
     console.error(`Could not configure ${featureName} audio:`, error);

@@ -625,6 +625,7 @@ function createOptimisticTask(taskToCreate: TaskToCreate): Task {
         importance: taskToCreate.importance,
         displayOrder: 0,
         mentalThreadId: taskToCreate.mentalThreadId ?? null,
+        projectId: taskToCreate.projectId ?? null,
         taskSeriesId: null,
         seriesOccurrenceAt: null,
         skipped: false,
@@ -1020,7 +1021,10 @@ export function HomePage() {
     // Task groups are optional decoration; they must not blank the task list
     // while their separate request is still loading.
     const homeContentReady = tasksLoaded || todayTasksLoaded || focusedPomodoroTask !== null;
-    const homeTaskControlsReady = homeContentReady && allTasksSynchronized && pomodoroStatusResolved;
+    // A task refresh temporarily clears allTasksSynchronized. Home already has
+    // a usable snapshot once tasksLoaded is true, so keep these controls mounted
+    // during later refreshes instead of collapsing and reopening the older list.
+    const homeTaskControlsReady = homeContentReady && tasksLoaded && pomodoroStatusResolved;
 
     useEffect(() => {
         const navigationState = location.state as { openPomodoroTaskId?: unknown } | null;
@@ -1242,7 +1246,7 @@ export function HomePage() {
         }
     }, [allTasks, refreshTaskBuckets, todayTasks, updateTaskInState]);
 
-    const handleScheduledDateBlur = useCallback((taskId: string) => {
+    const handleScheduledDateEditComplete = useCallback((taskId: string) => {
         const pendingEdit = pendingHomeDateEditsRef.current.get(taskId);
         if (!pendingEdit) return;
 
@@ -2568,6 +2572,7 @@ export function HomePage() {
             importance: taskToCreate.importance,
             displayOrder: 0,
             mentalThreadId: taskToCreate.mentalThreadId ?? null,
+            projectId: taskToCreate.projectId ?? null,
             taskSeriesId: null,
             seriesOccurrenceAt: null,
             skipped: false,
@@ -2831,7 +2836,7 @@ export function HomePage() {
                         ? activePomodoro
                         : task.taskId === activePomodoroTaskId ? initialPomodoroStatus : null}
                     expectedPomodoroActive={rowHasActivePomodoro}
-                    onScheduledDateBlur={handleScheduledDateBlur}
+                    onScheduledDateEditComplete={handleScheduledDateEditComplete}
                 />
             </Box>
         );

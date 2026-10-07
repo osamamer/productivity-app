@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { alpha, Box, Checkbox, TextField, Typography, useTheme } from '@mui/material';
+import { alpha, Box, Checkbox, TextField, Tooltip, Typography, useTheme } from '@mui/material';
+import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded';
 import { Task } from '../../types/Task';
 
 type TaskPageListRowProps = {
@@ -243,6 +244,13 @@ export const TaskPageListRow = React.memo(function TaskPageListRow({
                         />
                     )}
                 </Box>
+                {task.projectId && (
+                    <Tooltip title="In a project">
+                        <FolderOpenRoundedIcon
+                            sx={{ fontSize: 15, color: 'text.secondary', ml: 1, flexShrink: 0 }}
+                        />
+                    </Tooltip>
+                )}
                 {scheduledLabel && (
                     <Typography variant="body2" color="text.secondary" sx={{ mx: 1.5, minWidth: 84, textAlign: 'right', flexShrink: 0 }}>
                         {scheduledLabel}

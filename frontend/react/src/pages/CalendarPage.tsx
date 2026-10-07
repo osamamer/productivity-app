@@ -107,6 +107,7 @@ function createOptimisticTasks(task: TaskToCreate): Task[] {
         importance: task.importance,
         displayOrder: index,
         mentalThreadId: task.mentalThreadId ?? null,
+        projectId: task.projectId ?? null,
         taskSeriesId: optimisticSeriesId,
         seriesOccurrenceAt: optimisticSeriesId ? scheduledPerformDateTime : null,
         skipped: false,

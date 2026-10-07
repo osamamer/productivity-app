@@ -12,6 +12,7 @@ public record TaskSeriesResponse(
         String tag,
         int importance,
         String mentalThreadId,
+        String projectId,
         LocalDateTime startDateTime,
         TaskRecurrenceFrequency recurrenceFrequency,
         LocalDate recurrenceEndDate,

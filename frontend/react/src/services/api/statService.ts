@@ -488,12 +488,16 @@ export const statService = {
         definitionId: string,
         taskName: string,
         importance: number,
+        scheduledPerformDateTime?: string,
+        reminderMinutesBefore: number | null = null,
     ): Promise<import('../../types/Task').Task> {
         const response = await fetch(`${STATS_URL}/definitions/${definitionId}/focus-task/start`, {
             method: 'POST',
             body: JSON.stringify({
                 taskName,
                 importance,
+                scheduledPerformDateTime,
+                reminderMinutesBefore,
                 timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
             }),
             headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getAuthHeaders() },

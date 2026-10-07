@@ -64,6 +64,8 @@ function Navigation() {
           <Stack.Screen name="meditation-calendar" options={{ title: 'Meditation calendar' }} />
           <Stack.Screen name="notes" options={{ title: 'Notes' }} />
           <Stack.Screen name="notes/[id]" options={{ headerShown: false }} />
+          <Stack.Screen name="projects" options={{ title: 'Projects' }} />
+          <Stack.Screen name="projects/[id]" options={{ title: 'Project' }} />
           <Stack.Screen name="stats" options={{ title: 'Statistics' }} />
           <Stack.Screen name="settings" options={{
             title: 'Settings',

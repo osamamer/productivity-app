@@ -121,12 +121,14 @@ export default function SettingsScreen() {
       checkupIntervalMinutes: displayedCheckupIntervalMinutes,
       checkupStartTime: displayedCheckupStartTime,
       checkupTimesPerDay: timesPerDay,
+      checkupTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
     });
     try {
       const updated = await api.preferences.update({
         checkupIntervalMinutes: displayedCheckupIntervalMinutes,
         checkupStartTime: displayedCheckupStartTime,
         checkupTimesPerDay: timesPerDay,
+        checkupTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
       });
       resource.setData(updated);
       setCheckupIntervalMinutes(updated.checkupIntervalMinutes);

@@ -7,15 +7,16 @@ import { AppText } from './AppText';
 import { SilentPressable } from './SilentPressable';
 import { KeyboardAwareScrollView, KeyboardAwareView } from './KeyboardAwareScrollView';
 
-export function ModalSheet({ visible, onClose, title, children, footer }: PropsWithChildren<{
+export function ModalSheet({ visible, onClose, onShow, title, children, footer }: PropsWithChildren<{
   visible: boolean;
   onClose: () => void;
+  onShow?: () => void;
   title: string;
   footer?: ReactNode;
 }>) {
   const { colors } = useAppTheme();
   return (
-    <Modal transparent animationType="slide" visible={visible} onRequestClose={onClose}>
+    <Modal transparent animationType="slide" visible={visible} onShow={onShow} onRequestClose={onClose}>
       <KeyboardAwareView style={styles.fill}>
         <SilentPressable style={[styles.backdrop, { backgroundColor: colors.overlay }]} onPress={onClose} />
         <SafeAreaView edges={['bottom']} style={[styles.sheet, { backgroundColor: colors.surface }]}>

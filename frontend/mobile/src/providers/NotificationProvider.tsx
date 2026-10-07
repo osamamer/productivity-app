@@ -52,8 +52,35 @@ export function NotificationProvider({ children }: PropsWithChildren) {
   const { loading: authLoading, isAuthenticated } = useAuth();
   const acknowledgedRef = useRef(new Set<string>());
   const pushRegistrationInFlightRef = useRef<Promise<void> | null>(null);
+  const timeZoneSyncInFlightRef = useRef<Promise<void> | null>(null);
+  const lastSyncedTimeZoneRef = useRef<string | null>(null);
   const pushRegisteredRef = useRef(false);
   const remotePushUnavailableRef = useRef(false);
+
+  const syncCheckupTimeZone = useCallback(async () => {
+    if (!isAuthenticated || Platform.OS === 'web') return;
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    if (lastSyncedTimeZoneRef.current === timeZone) return;
+    if (timeZoneSyncInFlightRef.current) return timeZoneSyncInFlightRef.current;
+
+    const synchronization = (async () => {
+      const preferences = await api.preferences.get();
+      if (preferences.checkupTimeZone !== timeZone) {
+        await api.preferences.update({ checkupTimeZone: timeZone });
+      }
+      lastSyncedTimeZoneRef.current = timeZone;
+    })();
+    timeZoneSyncInFlightRef.current = synchronization;
+    try {
+      await synchronization;
+    } catch (cause) {
+      console.error('Could not synchronize the check-up time zone:', errorObject(cause));
+    } finally {
+      if (timeZoneSyncInFlightRef.current === synchronization) {
+        timeZoneSyncInFlightRef.current = null;
+      }
+    }
+  }, [isAuthenticated]);
 
   const acknowledgeNotification = useCallback(async (notificationId: string) => {
     if (acknowledgedRef.current.has(notificationId)) return;
@@ -146,6 +173,19 @@ export function NotificationProvider({ children }: PropsWithChildren) {
     });
     return () => appStateSubscription.remove();
   }, [acknowledgePresentedNotifications, authLoading, isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated || Platform.OS === 'web') {
+      lastSyncedTimeZoneRef.current = null;
+      return;
+    }
+
+    void syncCheckupTimeZone();
+    const appStateSubscription = AppState.addEventListener('change', state => {
+      if (state === 'active') void syncCheckupTimeZone();
+    });
+    return () => appStateSubscription.remove();
+  }, [isAuthenticated, syncCheckupTimeZone]);
 
   useEffect(() => {
     if (authLoading || !isAuthenticated || Platform.OS === 'web') {

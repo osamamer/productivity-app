@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
 
 import { AppButton } from '@/components/ui/AppButton';
@@ -47,12 +47,6 @@ export function TaskComposerSheet({ visible, onClose, onCreated, initialDate }: 
   const previousSchedule = useRef<Exclude<Schedule, 'custom'>>('today');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!visible) return undefined;
-    const focusTimer = setTimeout(() => nameInputRef.current?.focus(), 220);
-    return () => clearTimeout(focusTimer);
-  }, [visible]);
 
   function reset() {
     setName('');
@@ -120,9 +114,10 @@ export function TaskComposerSheet({ visible, onClose, onCreated, initialDate }: 
     <ModalSheet
       visible={visible}
       onClose={close}
+      onShow={() => requestAnimationFrame(() => nameInputRef.current?.focus())}
       title="New task"
       footer={<AppButton label="Add task" icon="add" loading={saving} onPress={() => void submit()} />}>
-      <AppInput ref={nameInputRef} autoFocus label="What needs doing?" value={name} onChangeText={setName} error={error ?? undefined} />
+      <AppInput ref={nameInputRef} label="What needs doing?" value={name} onChangeText={setName} error={error ?? undefined} />
       <AppText variant="label">When</AppText>
       <ChoiceChips value={schedule} onChange={chooseSchedule} options={[
         { value: 'today', label: 'Today' },
@@ -138,6 +133,7 @@ export function TaskComposerSheet({ visible, onClose, onCreated, initialDate }: 
       <ChoiceChips value={importance} onChange={setImportance} options={[...TASK_PRIORITY_OPTIONS]} />
       <TaskReminderField
         value={reminderMinutesBefore}
+        scheduledDateTime={schedule === 'custom' ? customSchedule : scheduledDate(schedule)}
         onChange={setReminderMinutesBefore}
       />
       <AppPopup

@@ -575,7 +575,13 @@ export function StatsPage() {
             });
     };
 
-    const handleCreateLinkedTask = (definition: StatDefinition, taskName: string, importance: number) => {
+    const handleCreateLinkedTask = (
+        definition: StatDefinition,
+        taskName: string,
+        importance: number,
+        timeOfDay: string,
+        reminderMinutesBefore: number | null,
+    ) => {
         const trimmedTaskName = taskName.trim();
         if (!trimmedTaskName) return;
         const previous = definitionsRef.current.find(item => item.id === definition.id) ?? definition;
@@ -593,7 +599,16 @@ export function StatsPage() {
         setCreateLinkedTaskError(null);
         setCreateLinkedTaskTarget(null);
         setCreateLinkedTaskAnchorPosition(null);
-        void statService.startFocusTask(definition.id, trimmedTaskName, importance)
+        const now = new Date();
+        const localDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        const scheduledPerformDateTime = `${localDate}T${timeOfDay}:00`;
+        void statService.startFocusTask(
+            definition.id,
+            trimmedTaskName,
+            importance,
+            scheduledPerformDateTime,
+            reminderMinutesBefore,
+        )
             .then(task => {
                 reconcileDefinition({ ...optimisticDefinition }, operationId);
                 navigate('/', { state: { openPomodoroTaskId: task.taskId } });
@@ -1483,9 +1498,15 @@ export function StatsPage() {
                             setCreateLinkedTaskError(null);
                         }
                     }}
-                    onCreate={(taskName, importance) => {
+                    onCreate={(taskName, importance, timeOfDay, reminderMinutesBefore) => {
                         if (createLinkedTaskTarget) {
-                            handleCreateLinkedTask(createLinkedTaskTarget, taskName, importance);
+                            handleCreateLinkedTask(
+                                createLinkedTaskTarget,
+                                taskName,
+                                importance,
+                                timeOfDay,
+                                reminderMinutesBefore,
+                            );
                         }
                     }}
                     onCreateRecurring={(taskName, recurrence) => {

@@ -1,10 +1,11 @@
-export type InvalidatedResource = 'tasks' | 'stats';
+export type InvalidatedResource = 'tasks' | 'stats' | 'projects';
 
 type ResourceInvalidationListener = () => void;
 
 const listeners: Record<InvalidatedResource, Set<ResourceInvalidationListener>> = {
     tasks: new Set(),
     stats: new Set(),
+    projects: new Set(),
 };
 
 export function subscribeToResourceInvalidation(

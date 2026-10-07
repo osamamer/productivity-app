@@ -7,6 +7,7 @@ import { subscribeToResourceInvalidation } from '@/lib/resourceInvalidation';
 import { api, TASK_PAGE_BATCH_SIZE } from '@/services/api';
 import type { Task, TaskGroup } from '@/types/models';
 import { useAuth } from './AuthProvider';
+import { usePreferences } from './PreferencesProvider';
 
 type TaskWorkspaceValue = {
   allTasks: Task[];
@@ -86,6 +87,7 @@ function orderWithTasksAtEndOfToday(tasks: Task[], movedTaskIds: string[]): stri
 
 export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
   const { isAuthenticated } = useAuth();
+  const { showCompletedTasks } = usePreferences();
   const [allTasks, setAllTasks] = useState<Task[]>([]);
   const [groups, setGroups] = useState<TaskGroup[]>([]);
   const [loading, setLoading] = useState(true);
@@ -95,6 +97,9 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
   const [hasMorePastTasks, setHasMorePastTasks] = useState(false);
   const loadedAtRef = useRef(0);
   const requestRef = useRef<Promise<void> | null>(null);
+  const loadedCompletedFilterRef = useRef<boolean | null>(null);
+  const loadRef = useRef<(force?: boolean) => Promise<void>>(async () => undefined);
+  const taskPageQueryVersionRef = useRef(0);
   const futureOffsetRef = useRef(0);
   const pastOffsetRef = useRef(0);
   const futureRequestRef = useRef<Promise<void> | null>(null);
@@ -102,22 +107,34 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
   const reorderVersionRef = useRef(0);
   const reorderSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
 
-  const load = useCallback(async (force = false) => {
+  const load = useCallback(async (force = false): Promise<void> => {
     if (!isAuthenticated) return;
-    if (requestRef.current) return requestRef.current;
+    if (requestRef.current) {
+      await requestRef.current;
+      // A preference change during a request needs one fresh page with the new completion filter.
+      if (force && loadedCompletedFilterRef.current !== showCompletedTasks) {
+        await loadRef.current(true);
+      }
+      return;
+    }
     if (!force && loadedAtRef.current > 0) return;
 
+    const queryVersion = ++taskPageQueryVersionRef.current;
+    const completedFilter = showCompletedTasks ? undefined : false;
     const request = (async () => {
       setLoading(true);
       setError(null);
       try {
-        const [today, future, past, undated, taskGroups] = await Promise.all([
+        const [today, future, past, futureProbe, pastProbe, undated, taskGroups] = await Promise.all([
           api.tasks.today(),
-          api.tasks.future(TASK_PAGE_BATCH_SIZE, 0),
-          api.tasks.past(TASK_PAGE_BATCH_SIZE, 0),
+          api.tasks.future(TASK_PAGE_BATCH_SIZE, 0, completedFilter),
+          api.tasks.past(TASK_PAGE_BATCH_SIZE, 0, completedFilter),
+          api.tasks.future(1, TASK_PAGE_BATCH_SIZE, completedFilter),
+          api.tasks.past(1, TASK_PAGE_BATCH_SIZE, completedFilter),
           api.tasks.undated(),
           api.taskGroups.all(),
         ]);
+        if (queryVersion !== taskPageQueryVersionRef.current) return;
         const tasks = appendUniqueTasks(
           appendUniqueTasks(appendUniqueTasks(today, future), past),
           undated,
@@ -127,31 +144,39 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
         setGroups(usableGroups(taskGroups));
         futureOffsetRef.current = future.length;
         pastOffsetRef.current = past.length;
-        setHasMoreFutureTasks(future.length === TASK_PAGE_BATCH_SIZE);
-        setHasMorePastTasks(past.length === TASK_PAGE_BATCH_SIZE);
+        setHasMoreFutureTasks(future.length === TASK_PAGE_BATCH_SIZE && futureProbe.length > 0);
+        setHasMorePastTasks(past.length === TASK_PAGE_BATCH_SIZE && pastProbe.length > 0);
         loadedAtRef.current = Date.now();
+        loadedCompletedFilterRef.current = showCompletedTasks;
         setReady(true);
       } catch (cause) {
+        if (queryVersion !== taskPageQueryVersionRef.current) return;
         console.error('Could not load mobile task workspace:', cause);
         setError(reportError('Could not load tasks', cause));
         loadedAtRef.current = 0;
         setReady(true);
       } finally {
-        setLoading(false);
+        if (queryVersion === taskPageQueryVersionRef.current) setLoading(false);
       }
     })();
-    requestRef.current = request;
-    try {
-      await request;
-    } finally {
-      if (requestRef.current === request) requestRef.current = null;
-    }
-  }, [isAuthenticated]);
+    let trackedRequest: Promise<void>;
+    trackedRequest = request.finally(() => {
+      if (requestRef.current === trackedRequest) requestRef.current = null;
+    });
+    requestRef.current = trackedRequest;
+    await trackedRequest;
+  }, [isAuthenticated, showCompletedTasks]);
+
+  useEffect(() => {
+    loadRef.current = load;
+  }, [load]);
 
   useEffect(() => {
     if (!isAuthenticated) {
       const resetTimer = setTimeout(() => {
+        taskPageQueryVersionRef.current += 1;
         loadedAtRef.current = 0;
+        loadedCompletedFilterRef.current = null;
         setAllTasks([]);
         setGroups([]);
         futureOffsetRef.current = 0;
@@ -178,18 +203,28 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
 
     const offsetReference = period === 'FUTURE' ? futureOffsetRef : pastOffsetRef;
     const hasMore = period === 'FUTURE' ? hasMoreFutureTasks : hasMorePastTasks;
-    if (!hasMore) return;
+    if (!hasMore || loading || requestRef.current) return;
 
     const offset = offsetReference.current;
+    const queryVersion = taskPageQueryVersionRef.current;
+    const completedFilter = showCompletedTasks ? undefined : false;
     const request = (async () => {
       try {
-        const tasks = period === 'FUTURE'
-          ? await api.tasks.future(TASK_PAGE_BATCH_SIZE, offset)
-          : await api.tasks.past(TASK_PAGE_BATCH_SIZE, offset);
-        setAllTasks(previous => appendUniqueTasks(previous, tasks));
-        offsetReference.current = offset + tasks.length;
-        if (period === 'FUTURE') setHasMoreFutureTasks(tasks.length === TASK_PAGE_BATCH_SIZE);
-        else setHasMorePastTasks(tasks.length === TASK_PAGE_BATCH_SIZE);
+        const results = period === 'FUTURE'
+          ? await api.tasks.future(TASK_PAGE_BATCH_SIZE, offset, completedFilter)
+          : await api.tasks.past(TASK_PAGE_BATCH_SIZE, offset, completedFilter);
+        if (queryVersion !== taskPageQueryVersionRef.current) return;
+        const probe = results.length === TASK_PAGE_BATCH_SIZE
+          ? period === 'FUTURE'
+            ? await api.tasks.future(1, offset + TASK_PAGE_BATCH_SIZE, completedFilter)
+            : await api.tasks.past(1, offset + TASK_PAGE_BATCH_SIZE, completedFilter)
+          : [];
+        if (queryVersion !== taskPageQueryVersionRef.current) return;
+        setAllTasks(previous => appendUniqueTasks(previous, results));
+        offsetReference.current = offset + results.length;
+        const hasMore = results.length === TASK_PAGE_BATCH_SIZE && probe.length > 0;
+        if (period === 'FUTURE') setHasMoreFutureTasks(hasMore);
+        else setHasMorePastTasks(hasMore);
       } catch (cause) {
         console.error(`Could not load more ${period.toLowerCase()} mobile tasks:`, cause);
         throw cause;
@@ -201,7 +236,7 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
     } finally {
       if (requestReference.current === request) requestReference.current = null;
     }
-  }, [hasMoreFutureTasks, hasMorePastTasks]);
+  }, [hasMoreFutureTasks, hasMorePastTasks, loading, showCompletedTasks]);
 
   const loadMoreFutureTasks = useCallback(() => loadMore('FUTURE'), [loadMore]);
   const loadMorePastTasks = useCallback(() => loadMore('PAST'), [loadMore]);

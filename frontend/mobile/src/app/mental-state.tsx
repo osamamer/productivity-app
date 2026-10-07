@@ -40,12 +40,11 @@ interface MentalStateResultCardProps {
   selected: boolean;
   isCurrent: boolean;
   isMostRecent: boolean;
-  highlighted: boolean;
   onCheckInAgain: () => void;
   onGoToMostRecent: () => void;
 }
 
-function MentalStateResultCard({ checkIn, selected, isCurrent, isMostRecent, highlighted, onCheckInAgain, onGoToMostRecent }: MentalStateResultCardProps) {
+function MentalStateResultCard({ checkIn, selected, isCurrent, isMostRecent, onCheckInAgain, onGoToMostRecent }: MentalStateResultCardProps) {
   const [animations] = useState(() => ({
     opacity: new Animated.Value(0),
     translateY: new Animated.Value(12),
@@ -53,7 +52,6 @@ function MentalStateResultCard({ checkIn, selected, isCurrent, isMostRecent, hig
     recommendationTranslateY: new Animated.Value(8),
   }));
   const { opacity, translateY, recommendationOpacity, recommendationTranslateY } = animations;
-  const { colors } = useAppTheme();
   const readyForHome = checkIn.state === 'Ready' || checkIn.state === 'Almost Ready';
 
   useEffect(() => {
@@ -81,7 +79,7 @@ function MentalStateResultCard({ checkIn, selected, isCurrent, isMostRecent, hig
 
   return (
     <Animated.View style={{ opacity, transform: [{ translateY }] }}>
-      <Card style={[styles.result, highlighted && { backgroundColor: colors.accentSoft, borderColor: colors.accent }]}>
+      <Card style={styles.result}>
         <AppText variant="caption" color="accent">{selected ? 'SELECTED CHECK-IN' : 'YOUR STATE'}</AppText>
         <AppText variant="title">{checkIn.state}</AppText>
         <Animated.View style={{ opacity: recommendationOpacity, transform: [{ translateY: recommendationTranslateY }] }}>
@@ -130,10 +128,6 @@ export default function MentalStateScreen() {
   const displayedCheckIn = selectedHistoryItem ?? (isCheckingIn ? null : recentCheckIn);
   const displayedIsCurrent = isRecentCheckIn(displayedCheckIn, now);
   const displayedIsMostRecent = displayedCheckIn !== null && displayedCheckIn.id === latestCheckIn?.id;
-  const displayedIsNewResult = displayedCheckIn !== null
-    && selectedHistoryItem === null
-    && recentResult?.id === displayedCheckIn.id;
-
   function startAnotherCheckIn() {
     setResult(null);
     setSelectedHistoryItem(null);
@@ -175,7 +169,6 @@ export default function MentalStateScreen() {
           selected={selectedHistoryItem !== null}
           isCurrent={displayedIsCurrent}
           isMostRecent={displayedIsMostRecent}
-          highlighted={displayedIsNewResult}
           onCheckInAgain={startAnotherCheckIn}
           onGoToMostRecent={goToMostRecent}
         />

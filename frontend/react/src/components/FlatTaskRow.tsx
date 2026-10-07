@@ -110,7 +110,7 @@ export type FlatTaskRowProps = {
     expectedPomodoroActive?: boolean;
     readOnly?: boolean;
     onRefreshTasks?: () => Promise<void>;
-    onScheduledDateBlur?: (taskId: string) => void;
+    onScheduledDateEditComplete?: (taskId: string) => void;
     subtaskDeletionContextMenu?: boolean;
 };
 
@@ -309,7 +309,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     expectedPomodoroActive = false,
     readOnly = false,
     onRefreshTasks,
-    onScheduledDateBlur,
+    onScheduledDateEditComplete,
     subtaskDeletionContextMenu = false,
 }: FlatTaskRowProps) {
     const theme = useTheme();
@@ -356,13 +356,11 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     const pomodoroFeedbackIdRef = useRef(0);
     const handledEditRequestIdRef = useRef<number | null>(null);
     const subtaskCommitRef = useRef<string | null>(null);
+    const creatingSubtaskNamesRef = useRef(new Set<string>());
     const subtaskPointerDownRef = useRef<{ x: number; y: number } | null>(null);
     const scheduledDateCommitRef = useRef<Promise<void> | null>(null);
-    const scheduledDateCommitStartedRef = useRef(false);
     const scheduledDateEditActiveRef = useRef(false);
-    const scheduledDateBlurredRef = useRef(false);
     const scheduledDateBlurNotifiedRef = useRef(false);
-    const [isScheduledDateEditing, setIsScheduledDateEditing] = useState(false);
 
     useEffect(() => {
         if (editRequestId === null || editRequestId === handledEditRequestIdRef.current) return;
@@ -957,12 +955,12 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         setEditingSubtaskId(null);
     };
 
-    const handleCreateSubtask = async (event: React.FormEvent<HTMLFormElement>) => {
-        event.preventDefault();
-        const input = event.currentTarget.elements.namedItem('home-subtask-name');
-        if (!(input instanceof HTMLInputElement)) return;
+    const createSubtaskFromInput = async (input: HTMLInputElement) => {
         const name = input.value.trim();
         if (!name) return;
+        const requestKey = `${task.taskId}\0${name}`;
+        if (creatingSubtaskNamesRef.current.has(requestKey)) return;
+        creatingSubtaskNamesRef.current.add(requestKey);
 
         try {
             const createdSubtask = await taskService.createTask({
@@ -986,26 +984,33 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
             window.setTimeout(() => {
                 setNewSubtaskId(previous => previous === createdSubtask.taskId ? null : previous);
             }, 240);
-            input.value = '';
+            if (input.value.trim() === name) input.value = '';
         } catch (error) {
             console.error('Error creating Home subtask:', error);
+        } finally {
+            creatingSubtaskNamesRef.current.delete(requestKey);
         }
     };
 
-    const notifyScheduledDateBlur = useCallback(() => {
+    const handleCreateSubtask = (event: React.FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        const input = event.currentTarget.elements.namedItem('home-subtask-name');
+        if (input instanceof HTMLInputElement) void createSubtaskFromInput(input);
+    };
+
+    const finishScheduledDateEdit = useCallback(() => {
         if (!scheduledDateEditActiveRef.current || scheduledDateBlurNotifiedRef.current) return;
         scheduledDateBlurNotifiedRef.current = true;
-        scheduledDateCommitStartedRef.current = false;
         scheduledDateEditActiveRef.current = false;
-        setIsScheduledDateEditing(false);
-        onScheduledDateBlur?.(task.taskId);
-    }, [onScheduledDateBlur, task.taskId]);
+        onScheduledDateEditComplete?.(task.taskId);
+    }, [onScheduledDateEditComplete, task.taskId]);
 
     const commitDateChange = async (newDate: Date | null) => {
         if (readOnly) return;
-        scheduledDateCommitStartedRef.current = true;
+        if (!scheduledDateEditActiveRef.current) {
+            scheduledDateBlurNotifiedRef.current = false;
+        }
         scheduledDateEditActiveRef.current = true;
-        setIsScheduledDateEditing(true);
         const scheduledPerformDateTime = newDate
             ? (() => {
                 const pad = (n: number) => String(n).padStart(2, '0');
@@ -1026,68 +1031,20 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         } finally {
             if (scheduledDateCommitRef.current === commit) {
                 scheduledDateCommitRef.current = null;
-                if (scheduledDateBlurredRef.current) notifyScheduledDateBlur();
+                finishScheduledDateEdit();
             }
         }
-    };
-
-    const handleScheduledDateBlur = (event: React.FocusEvent<HTMLElement>) => {
-        const relatedTarget = event.relatedTarget;
-        if (relatedTarget instanceof Element
-            && relatedTarget.closest('.MuiPickerPopper-root')) {
-            // Moving focus into the picker action bar (for example, to Accept)
-            // is not leaving the scheduled-date editor.
-            return;
-        }
-
-        // The picker can blur its text field before firing onAccept. Keep the
-        // edit active until that accepted save has finished.
-        scheduledDateBlurredRef.current = true;
-        if (scheduledDateCommitStartedRef.current && !scheduledDateCommitRef.current) {
-            notifyScheduledDateBlur();
-        }
-    };
-
-    const handleScheduledDateFocus = () => {
-        scheduledDateBlurredRef.current = false;
     };
 
     const handleDateChange = (newDate: Date | null) => {
         if (readOnly) return;
         if (!scheduledDateEditActiveRef.current) {
             scheduledDateBlurNotifiedRef.current = false;
-            scheduledDateCommitStartedRef.current = false;
         }
         scheduledDateEditActiveRef.current = true;
-        setIsScheduledDateEditing(true);
         setScheduledDraft(newDate);
         if (!newDate) commitDateChange(null);
     };
-
-    useEffect(() => {
-        if (!isScheduledDateEditing) return undefined;
-
-        const handlePointerDown = (event: PointerEvent) => {
-            const target = event.target;
-            if (!(target instanceof Element)) return;
-
-            const fieldRoot = target.closest('.MuiPickersTextField-root, .MuiFormControl-root');
-            const isScheduledDateField = Boolean(
-                fieldRoot?.querySelector('[data-task-scheduled-date-field="true"]'),
-            );
-            if (isScheduledDateField || target.closest('.MuiPickerPopper-root')) {
-                return;
-            }
-
-            scheduledDateBlurredRef.current = true;
-            if (scheduledDateCommitStartedRef.current && !scheduledDateCommitRef.current) {
-                notifyScheduledDateBlur();
-            }
-        };
-
-        document.addEventListener('pointerdown', handlePointerDown, true);
-        return () => document.removeEventListener('pointerdown', handlePointerDown, true);
-    }, [isScheduledDateEditing, notifyScheduledDateBlur]);
 
     const handleRecurrenceChange = (
         nextDraft: TaskRecurrenceDraft,
@@ -1761,13 +1718,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                             slotProps={{
                                                 field: { clearable: false },
                                                 actionBar: { actions: ['cancel', 'accept'] },
-                                                textField: {
-                                                    size: 'small',
-                                                    fullWidth: true,
-                                                    inputProps: { 'data-task-scheduled-date-field': 'true' },
-                                                    onFocus: handleScheduledDateFocus,
-                                                    onBlur: handleScheduledDateBlur,
-                                                },
+                                                textField: { size: 'small', fullWidth: true },
                                             }}
                                         />
                                     </Collapse>
@@ -1782,13 +1733,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                             slotProps={{
                                                 field: { clearable: true },
                                                 actionBar: { actions: ['cancel', 'accept'] },
-                                                textField: {
-                                                    size: 'small',
-                                                    fullWidth: true,
-                                                    inputProps: { 'data-task-scheduled-date-field': 'true' },
-                                                    onFocus: handleScheduledDateFocus,
-                                                    onBlur: handleScheduledDateBlur,
-                                                },
+                                                textField: { size: 'small', fullWidth: true },
                                             }}
                                         />
                                     </Collapse>
@@ -1964,6 +1909,9 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                                     fontSize: '1rem',
                                                     lineHeight: 1.45,
                                                     whiteSpace: 'pre-wrap',
+                                                    maxHeight: '4.35em',
+                                                    overflowY: 'auto',
+                                                    overflowX: 'hidden',
                                                     color: subtask.completed ? 'text.disabled' : 'text.primary',
                                                     textDecoration: subtask.completed ? 'line-through' : 'none',
                                                     userSelect: 'text',
@@ -1983,6 +1931,11 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                 variant="standard"
                                 placeholder="Add a subtask"
                                 autoComplete="off"
+                                onBlur={event => {
+                                    if (event.target instanceof HTMLInputElement) {
+                                        void createSubtaskFromInput(event.target);
+                                    }
+                                }}
                                 fullWidth
                                 InputProps={{ disableUnderline: true }}
                                 inputProps={{ draggable: false, 'aria-label': 'Add a subtask' }}
