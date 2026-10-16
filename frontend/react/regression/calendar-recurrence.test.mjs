@@ -10,7 +10,7 @@ before(async () => {
     configFile: false,
     root: process.cwd(),
     appType: 'custom',
-    server: { middlewareMode: true },
+    server: { middlewareMode: true, ws: false, watch: null },
     logLevel: 'silent',
   });
   ({ expandCalendarEvent } = await viteServer.ssrLoadModule('/src/components/calendar/recurrence.ts'));

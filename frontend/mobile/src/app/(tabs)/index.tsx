@@ -26,9 +26,9 @@ import { useAsyncData } from '@/hooks/useAsyncData';
 import { useAppPopup } from '@/providers/PopupProvider';
 import { usePreferences } from '@/providers/PreferencesProvider';
 import { useTaskWorkspace } from '@/providers/TaskWorkspaceProvider';
-import { useAppTheme, type AppColors } from '@/providers/ThemeProvider';
+import { useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
-import type { CalendarEvent, Day, MentalStateCheckIn, Task, TaskGroup, TodayFocusSummary } from '@/types/models';
+import type { CalendarEvent, Day, MentalStateCheckIn, Task, TaskGroup } from '@/types/models';
 
 interface TodayData { day: Day }
 
@@ -64,7 +64,6 @@ const TASK_LIST_GAP = 10;
 const MENTAL_STATE_FRESHNESS_WINDOW_MS = 60 * 60 * 1000;
 
 interface TodaySnapshot {
-  focusSeconds: number | null;
   mentalState: string | null;
 }
 
@@ -77,102 +76,66 @@ function isFreshMentalState(recordedAt: string, now = Date.now()): boolean {
 }
 
 async function loadTodaySnapshot(): Promise<TodaySnapshot> {
-  const [focusResult, mentalStateResult] = await Promise.allSettled([
-    api.tasks.focusToday(localDate()),
-    api.mentalState.history(1),
-  ]);
-
-  if (focusResult.status === 'rejected') {
-    console.error('Could not load today focus summary:', focusResult.reason);
+  try {
+    const mentalCheckIns = await api.mentalState.history(1);
+    const latestMentalCheckIn = mentalCheckIns[0];
+    return {
+      mentalState: latestMentalCheckIn && isFreshMentalState(latestMentalCheckIn.recordedAt)
+        ? latestMentalCheckIn.state
+        : null,
+    };
+  } catch (reason) {
+    console.error('Could not load today mental state:', reason);
+    return { mentalState: null };
   }
-  if (mentalStateResult.status === 'rejected') {
-    console.error('Could not load today mental state:', mentalStateResult.reason);
-  }
-
-  const focusSummary: TodayFocusSummary | null = focusResult.status === 'fulfilled' ? focusResult.value : null;
-  const mentalCheckIns: MentalStateCheckIn[] | null = mentalStateResult.status === 'fulfilled' ? mentalStateResult.value : null;
-  const latestMentalCheckIn = mentalCheckIns?.[0];
-
-  return {
-    focusSeconds: focusSummary?.totalFocusSeconds ?? null,
-    mentalState: latestMentalCheckIn && isFreshMentalState(latestMentalCheckIn.recordedAt)
-      ? latestMentalCheckIn.state
-      : null,
-  };
 }
 
-function mentalStateMetricColor(state: string | null, colors: AppColors): string {
-  if (!state) return colors.textMuted;
-  if (state === 'Ready' || state === 'Engaged') return colors.success;
-  if (state === 'Almost Ready') return colors.successLight;
-  if (state === 'Mixed' || state === 'Stimulation-Seeking') return colors.warning;
-  return colors.danger;
+function mentalStateIcon(state: string | null): keyof typeof Ionicons.glyphMap {
+  switch (state) {
+    case 'Wired/Tired': return 'flash-outline';
+    case 'Depleted': return 'battery-dead-outline';
+    case 'Stimulation-Seeking': return 'game-controller-outline';
+    case 'Scattered/Overactivated': return 'shuffle-outline';
+    case 'Emotionally Loaded': return 'cloud-outline';
+    case 'Low Mood': return 'rainy-outline';
+    case 'Ready': return 'checkmark-circle-outline';
+    case 'Almost Ready': return 'sunny-outline';
+    case 'Engaged': return 'sparkles-outline';
+    case 'Mixed': return 'options-outline';
+    default: return 'pulse-outline';
+  }
 }
 
 function TodaySnapshotCard({ snapshot }: { snapshot: TodaySnapshot | null }) {
   const { colors } = useAppTheme();
-  const focusLabel = snapshot?.focusSeconds === null || snapshot === null
-    ? '—'
-    : `${(snapshot.focusSeconds / 3600).toFixed(1)}h`;
   const mentalStateLabel = snapshot === null
     ? 'Checking'
     : snapshot.mentalState ?? 'Check in';
-  const mentalStateColor = snapshot?.mentalState
-    ? colors.text
-    : snapshot
-      ? colors.accent
-      : colors.textMuted;
+  const stateColor = snapshot?.mentalState ? colors.text : colors.textMuted;
 
   return (
     <Card style={styles.snapshotCard}>
-      <AppText variant="heading" style={styles.snapshotHeading}>Today</AppText>
-      <View style={styles.snapshotMetrics}>
-        <View style={[styles.snapshotMetric, styles.snapshotFocusMetric]}>
-          <View style={styles.snapshotMetricLabel}>
-            <View style={[styles.snapshotMetricIcon, { backgroundColor: colors.accentSoft }]}>
-              <Ionicons name="time-outline" size={15} color={colors.accent} />
-            </View>
-            <AppText variant="caption" color="muted">Focus time</AppText>
-          </View>
-          <View style={styles.snapshotValue}>
-            <AppText style={styles.snapshotFocusText}>{focusLabel}</AppText>
-          </View>
-        </View>
-        <SilentPressable
-          accessibilityRole="button"
-          accessibilityLabel={snapshot?.mentalState ? `View current mental state: ${snapshot.mentalState}` : 'Check in mental state'}
-          onPress={() => router.push('/mental-state')}
-          style={({ pressed }) => [
-            styles.snapshotMetric,
-            styles.snapshotStateMetric,
-            { borderLeftColor: colors.border },
-            pressed && styles.pressed,
-          ]}>
-          <View style={styles.snapshotMetricLabel}>
-            <View style={[styles.snapshotMetricIcon, { backgroundColor: colors.accentSoft }]}>
-              <Ionicons name="pulse-outline" size={15} color={colors.accent} />
-            </View>
-            <AppText variant="caption" color="muted">Mental state</AppText>
-          </View>
-          <View style={styles.snapshotValue}>
-            {snapshot?.mentalState && (
-              <View
-                style={[
-                  styles.snapshotStateDot,
-                  { backgroundColor: mentalStateMetricColor(snapshot.mentalState, colors) },
-                ]}
-              />
-            )}
-            <AppText
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.78}
-              style={[styles.snapshotStateText, { color: mentalStateColor }]}>
-              {mentalStateLabel}
-            </AppText>
-          </View>
-        </SilentPressable>
-      </View>
+      <AppText variant="label" color="muted" style={styles.snapshotEyebrow}>MENTAL STATE</AppText>
+      <SilentPressable
+        accessibilityRole="button"
+        accessibilityLabel={snapshot?.mentalState ? `View current mental state: ${snapshot.mentalState}` : 'Check in mental state'}
+        onPress={() => router.push('/mental-state')}
+        style={({ pressed }) => [styles.snapshotStateRow, pressed && styles.pressed]}>
+        <Ionicons
+          name={mentalStateIcon(snapshot?.mentalState ?? null)}
+          size={27}
+          color={stateColor}
+        />
+        <AppText
+          variant="heading"
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.78}
+          style={[styles.snapshotStateText, { color: stateColor }]}>
+          {mentalStateLabel}
+        </AppText>
+        <Ionicons name="chevron-forward" size={17} color={colors.textMuted} />
+      </SilentPressable>
     </Card>
   );
 }
@@ -279,7 +242,7 @@ export default function TodayScreen() {
   const { reload: reloadEvents } = eventsResource;
   const { reload: reloadSnapshot } = snapshotResource;
   const eventFocusLoadedRef = useRef(false);
-  const snapshotFocusLoadedRef = useRef(false);
+  const snapshotLoadedRef = useRef(false);
   const {
     allTasks,
     todayTasks,
@@ -328,8 +291,8 @@ export default function TodayScreen() {
   }, [reloadEvents]));
 
   useFocusEffect(useCallback(() => {
-    if (snapshotFocusLoadedRef.current) void reloadSnapshot();
-    else snapshotFocusLoadedRef.current = true;
+    if (snapshotLoadedRef.current) void reloadSnapshot();
+    else snapshotLoadedRef.current = true;
 
     const refreshInterval = setInterval(() => void reloadSnapshot(), 30_000);
     return () => clearInterval(refreshInterval);
@@ -915,6 +878,7 @@ export default function TodayScreen() {
                         onDragCancel={resetDrag}
                         inGroup
                         groupLast={task.taskId === item.tasks[item.tasks.length - 1]?.taskId}
+                        showSelectionBorder={!selectedGroupIdSet.has(item.group.groupId)}
                         />
                     ))}
                   </View>
@@ -982,18 +946,10 @@ export default function TodayScreen() {
 }
 
 const styles = StyleSheet.create({
-  snapshotCard: { gap: 12, padding: 16, borderRadius: 18 },
-  snapshotHeading: { fontSize: 17, lineHeight: 22 },
-  snapshotMetrics: { flexDirection: 'row', alignItems: 'stretch' },
-  snapshotMetric: { flex: 1, minWidth: 0, minHeight: 64, justifyContent: 'space-between', gap: 8, paddingVertical: 2 },
-  snapshotFocusMetric: { paddingRight: 14 },
-  snapshotStateMetric: { paddingLeft: 14, borderLeftWidth: StyleSheet.hairlineWidth },
-  snapshotMetricLabel: { minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 7 },
-  snapshotMetricIcon: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
-  snapshotValue: { minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 7 },
-  snapshotFocusText: { fontSize: 25, lineHeight: 31, fontWeight: '600', letterSpacing: -0.5, fontVariant: ['tabular-nums'] },
-  snapshotStateText: { flex: 1, minWidth: 0, fontSize: 15, lineHeight: 20, fontWeight: '600' },
-  snapshotStateDot: { width: 7, height: 7, borderRadius: 4 },
+  snapshotCard: { gap: 12, padding: 18, borderRadius: 20, borderWidth: 0 },
+  snapshotEyebrow: { fontSize: 11, lineHeight: 15, letterSpacing: 1.1 },
+  snapshotStateRow: { minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: 11 },
+  snapshotStateText: { flex: 1, minWidth: 0, fontSize: 23, lineHeight: 29, letterSpacing: -0.35 },
   eventsCard: { gap: 12 },
   eventsList: { gap: 4 },
   eventRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 },

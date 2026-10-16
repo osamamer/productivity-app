@@ -1,4 +1,5 @@
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider as NavigationThemeProvider } from 'expo-router';
+import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo } from 'react';
@@ -15,6 +16,10 @@ import { AppThemeProvider, useAppTheme } from '@/providers/ThemeProvider';
 void SplashScreen.preventAutoHideAsync();
 
 function Navigation() {
+  const [fontsLoaded] = useFonts({
+    InterRegular: require('../../assets/Inter-Regular.otf'),
+    InterSemiBold: require('../../assets/Inter-SemiBold.otf'),
+  });
   const { loading, isAuthenticated } = useAuth();
   const { colors, dark } = useAppTheme();
   const navigationTheme = useMemo(() => ({
@@ -31,10 +36,10 @@ function Navigation() {
   }), [colors, dark]);
 
   useEffect(() => {
-    if (!loading) void SplashScreen.hideAsync();
-  }, [loading]);
+    if (!loading && fontsLoaded) void SplashScreen.hideAsync();
+  }, [fontsLoaded, loading]);
 
-  if (loading) return null;
+  if (loading || !fontsLoaded) return null;
 
   return (
     <NavigationThemeProvider value={navigationTheme}>
@@ -57,8 +62,6 @@ function Navigation() {
           <Stack.Screen name="meditation-calendar" />
           <Stack.Screen name="notes" />
           <Stack.Screen name="notes/[id]" options={{ headerShown: false }} />
-          <Stack.Screen name="projects" />
-          <Stack.Screen name="projects/[id]" />
           <Stack.Screen name="stats" />
           <Stack.Screen name="settings" />
         </Stack.Protected>

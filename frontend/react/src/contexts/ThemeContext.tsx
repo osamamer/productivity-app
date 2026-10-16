@@ -6,8 +6,13 @@ import {accentPalettes, type AccentColor} from './themeOptions';
 import keycloak from '../services/keycloak';
 import { userService } from '../services/api/userService';
 import { getRuntimeUserPreferences, subscribeToUserPreferences } from '../services/userPreferenceStore';
-
-type ThemeMode = 'light' | 'dark';
+import {
+    getLocalAccentColor,
+    getLocalThemeMode,
+    setLocalAccentColor,
+    setLocalThemeMode,
+    type ThemeMode,
+} from '../services/localAppearancePreferences';
 
 interface ThemeContextType {
     darkMode: boolean;
@@ -50,7 +55,7 @@ interface ThemeProviderProps {
 
 export const AppThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     const [mode, setMode] = useState<ThemeMode>(() => {
-        const savedMode = getRuntimeUserPreferences().themeMode;
+        const savedMode = getLocalThemeMode() ?? getRuntimeUserPreferences().themeMode;
         if (savedMode === 'light' || savedMode === 'dark') {
             return savedMode;
         }
@@ -58,7 +63,7 @@ export const AppThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => 
         return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     });
     const [accentColor, setAccentColorState] = useState<AccentColor>(() => {
-        const savedAccentColor = getRuntimeUserPreferences().accentColor;
+        const savedAccentColor = getLocalAccentColor() ?? getRuntimeUserPreferences().accentColor;
         if (savedAccentColor === 'amber') return 'sage';
         return savedAccentColor === 'teal' || savedAccentColor === 'coral'
             || savedAccentColor === 'sage' || savedAccentColor === 'violet'
@@ -71,12 +76,17 @@ export const AppThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => 
 
         const syncRuntimePreferences = () => {
             const preferences = getRuntimeUserPreferences();
-            if (preferences.themeMode) setMode(preferences.themeMode);
-            if (preferences.accentColor === 'amber') {
-                setAccentColorState('sage');
-            } else if (preferences.accentColor === 'teal' || preferences.accentColor === 'coral'
-                || preferences.accentColor === 'sage' || preferences.accentColor === 'violet') {
-                setAccentColorState(preferences.accentColor);
+            const localMode = getLocalThemeMode();
+            const localAccentColor = getLocalAccentColor();
+            if (!localMode && preferences.themeMode) setMode(preferences.themeMode);
+            if (!localAccentColor) {
+                const preferenceAccent = preferences.accentColor;
+                if (preferenceAccent === 'amber') {
+                    setAccentColorState('sage');
+                } else if (preferenceAccent === 'teal' || preferenceAccent === 'coral'
+                    || preferenceAccent === 'sage' || preferenceAccent === 'violet') {
+                    setAccentColorState(preferenceAccent);
+                }
             }
         };
 
@@ -90,26 +100,20 @@ export const AppThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => 
 
     const setTheme = useCallback((mode: ThemeMode) => {
         setMode(mode);
-        void userService.updatePreferences({ themeMode: mode }).catch(error => {
-            console.error('Could not save theme preference:', error);
-        });
+        setLocalThemeMode(mode);
     }, []);
 
     const toggleTheme = useCallback(() => {
         setMode(previousMode => {
             const nextMode = previousMode === 'dark' ? 'light' : 'dark';
-            void userService.updatePreferences({ themeMode: nextMode }).catch(error => {
-                console.error('Could not save theme preference:', error);
-            });
+            setLocalThemeMode(nextMode);
             return nextMode;
         });
     }, []);
 
     const setAccentColor = useCallback((color: AccentColor) => {
         setAccentColorState(color);
-        void userService.updatePreferences({ accentColor: color }).catch(error => {
-            console.error('Could not save accent color preference:', error);
-        });
+        setLocalAccentColor(color);
     }, []);
 
     const theme = useMemo(() => {

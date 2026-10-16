@@ -30,6 +30,7 @@ import StopIcon from '@mui/icons-material/Stop';
 import SkipNextIcon from '@mui/icons-material/SkipNext';
 import FreeBreakfastIcon from '@mui/icons-material/FreeBreakfast';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
@@ -97,6 +98,7 @@ export type FlatTaskRowProps = {
     editRequestId?: number | null;
     onSelectionClick?: (task: Task, event: React.MouseEvent<HTMLElement>) => void;
     onContextMenu?: (task: Task, event: React.MouseEvent<HTMLElement>) => void;
+    onDelete?: (task: Task, anchorEl: HTMLElement) => void;
     reorderable?: boolean;
     draggable?: boolean;
     onDragStart?: (task: Task) => void;
@@ -292,6 +294,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     editRequestId = null,
     onSelectionClick,
     onContextMenu,
+    onDelete,
     reorderable = false,
     draggable = reorderable,
     onDragStart,
@@ -1373,10 +1376,11 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
             }}
             onClick={handleRowSelection}
             onContextMenu={event => {
-                if (!onContextMenu) return;
+                if (!onContextMenu && !onDelete) return;
                 event.preventDefault();
                 event.stopPropagation();
-                onContextMenu(task, event);
+                if (onContextMenu) onContextMenu(task, event);
+                else onDelete?.(task, event.currentTarget);
             }}
             onMouseDownCapture={(event) => {
                 dragAllowedRef.current = Boolean(draggable && !isEditableDragOrigin(event.target));
@@ -1551,7 +1555,9 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                     </Typography>
                 )}
 
-                {((showPomodoroButton && !readOnly) || (showDetailsButton && !readOnly)) && (
+                {((showPomodoroButton && !readOnly)
+                    || (showDetailsButton && !readOnly)
+                    || (onDelete && !readOnly)) && (
                     <Box sx={{ display: 'flex', gap: 0.25, ml: 0.5 }}>
                         {showPomodoroButton && !readOnly && (
                             <Tooltip title={pomodoroDisabled ? 'Finish the current Pomodoro first' : 'Pomodoro'}>
@@ -1593,6 +1599,21 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                     {detailsLoading
                                         ? <CircularProgress size={17} />
                                         : <TuneIcon sx={{ fontSize: '1.1rem' }} />}
+                                </IconButton>
+                            </Tooltip>
+                        )}
+                        {onDelete && !readOnly && (
+                            <Tooltip title="Delete task">
+                                <IconButton
+                                    size="small"
+                                    aria-label={`Delete task ${task.name}`}
+                                    color="error"
+                                    onClick={event => {
+                                        event.stopPropagation();
+                                        onDelete(task, event.currentTarget);
+                                    }}
+                                >
+                                    <DeleteOutlineIcon sx={{ fontSize: '1.1rem' }} />
                                 </IconButton>
                             </Tooltip>
                         )}

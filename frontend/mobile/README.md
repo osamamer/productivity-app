@@ -7,7 +7,7 @@ React Native client for the productivity app, built with Expo SDK 57 and Expo Ro
 - Native Keycloak email/password sign-in, encrypted refresh-token storage, token refresh, and logout
 - Today dashboard, day rating, and task creation/editing/completion
 - Task, calendar event, mental thread, mental-state, meditation, note, and stat workflows
-- Shared Raleway typography, web palette, four accent colors, light/dark/system themes, soft cards, and task-priority colors
+- Shared Inter typography, web palette, four accent colors, light/dark/system themes, soft cards, and task-priority colors
 - All application notifications are delivered through Expo remote push and acknowledged against the durable backend inbox
 
 Meditation audio runs through a native media playback service on Android and the

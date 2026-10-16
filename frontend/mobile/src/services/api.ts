@@ -15,7 +15,6 @@ import type {
   MentalThreadSummary,
   Note,
   NoteCategory,
-  Project,
   StatDefinition,
   StatMorality,
   StatEntryStatus,
@@ -175,13 +174,6 @@ export const api = {
     replaceTasks: (groupId: string, taskIds: string[]) =>
       json<TaskGroup>(`/api/v1/task-groups/${groupId}/tasks`, 'PUT', { taskIds }),
     remove: (groupId: string) => apiRequest<void>(`/api/v1/task-groups/${groupId}`, { method: 'DELETE' }),
-  },
-  projects: {
-    all: () => apiRequest<Project[]>('/api/v1/projects'),
-    create: (input: { name: string; description: string | null }) => json<Project>('/api/v1/projects', 'POST', input),
-    update: (id: string, input: { name?: string; description?: string | null }) => json<Project>(`/api/v1/projects/${id}`, 'PATCH', input),
-    remove: (id: string) => apiRequest<void>(`/api/v1/projects/${id}`, { method: 'DELETE' }),
-    tasks: (projectId: string) => apiRequest<Task[]>(`/api/v1/tasks?projectId=${encodeURIComponent(projectId)}`),
   },
   session: {
     pause: (taskId: string) => apiRequest<void>(`/api/v1/session/pause/${taskId}`, { method: 'POST' }),

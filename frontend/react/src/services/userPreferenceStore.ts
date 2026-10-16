@@ -121,22 +121,6 @@ export function readLegacyUserPreferenceUpdates(): Partial<UserPreferences> {
         if (whiteNoise !== null) updates.whiteNoiseEnabled = whiteNoise;
         if (secondsMode !== null) updates.pomodoroSecondsMode = secondsMode;
 
-        const themeMode = window.localStorage.getItem('themeMode');
-        if (themeMode === 'light' || themeMode === 'dark') {
-            updates.themeMode = themeMode;
-        } else {
-            const darkMode = window.localStorage.getItem('darkMode');
-            if (darkMode === 'true') updates.themeMode = 'dark';
-            if (darkMode === 'false') updates.themeMode = 'light';
-        }
-
-        const accentColor = window.localStorage.getItem('accentColor');
-        if (accentColor === 'amber') {
-            updates.accentColor = 'sage';
-        } else if (accentColor === 'teal' || accentColor === 'coral' || accentColor === 'sage' || accentColor === 'violet') {
-            updates.accentColor = accentColor;
-        }
-
         const form = window.localStorage.getItem(`solife.pomodoro-form.${activeScope}`);
         if (form) {
             const parsed = JSON.parse(form) as {
@@ -205,9 +189,6 @@ export function clearLegacyUserPreferences(): void {
         'claritard.audio-feedback-enabled',
         'pomodoro-white-noise-enabled',
         'pomodoroDevSecondsMode',
-        'themeMode',
-        'darkMode',
-        'accentColor',
         'meditation-soundscape',
     ].forEach(key => window.localStorage.removeItem(key));
 }

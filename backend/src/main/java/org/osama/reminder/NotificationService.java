@@ -35,7 +35,8 @@ import java.util.UUID;
 public class NotificationService {
     private static final int PUSH_BATCH_SIZE = 100;
     private static final long CHECKUP_REPEAT_MINUTES = 30;
-    private static final long CHECKUP_WINDOW_MINUTES = 30;
+    private static final long CHECKUP_DELIVERY_WINDOW_MINUTES = 30;
+    private static final long CURRENT_MENTAL_STATE_WINDOW_MINUTES = 60;
     private static final Duration CALENDAR_REMINDER_DELIVERY_GRACE = Duration.ofMinutes(1);
     private static final String USER_DESTINATION = "/queue/notifications";
     public static final String DEFAULT_CHANNEL_ID = "default";
@@ -422,10 +423,10 @@ public class NotificationService {
     }
 
     private boolean shouldSkipCheckup(String userId, Instant scheduledAt, Instant now) {
-        Instant expiresAt = scheduledAt.plus(CHECKUP_WINDOW_MINUTES, ChronoUnit.MINUTES);
+        Instant expiresAt = scheduledAt.plus(CHECKUP_DELIVERY_WINDOW_MINUTES, ChronoUnit.MINUTES);
         if (!now.isBefore(expiresAt)) return true;
 
-        Instant recentCheckInFrom = scheduledAt.minus(CHECKUP_WINDOW_MINUTES, ChronoUnit.MINUTES);
+        Instant recentCheckInFrom = scheduledAt.minus(CURRENT_MENTAL_STATE_WINDOW_MINUTES, ChronoUnit.MINUTES);
         return checkInRepository.existsByUserIdAndRecordedAtGreaterThanEqualAndRecordedAtLessThanEqual(
                 userId, recentCheckInFrom, scheduledAt)
                 || checkInRepository.existsByUserIdAndRecordedAtAfter(userId, scheduledAt);

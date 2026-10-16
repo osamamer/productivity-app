@@ -1873,6 +1873,23 @@ export function HomePage() {
         setActiveExpansion(previous => previous ?? { taskId, panel });
     }, []);
 
+    const applySelection = useCallback((taskIds: string[], groupIds: string[]) => {
+        const nextTaskIds = new Set(taskIds);
+        const nextGroupIds = new Set(groupIds);
+
+        (groups ?? []).forEach(group => {
+            if (nextGroupIds.has(group.groupId)) {
+                group.taskIds.forEach(taskId => nextTaskIds.delete(taskId));
+            } else if (group.taskIds.length > 0 && group.taskIds.every(taskId => nextTaskIds.has(taskId))) {
+                nextGroupIds.add(group.groupId);
+                group.taskIds.forEach(taskId => nextTaskIds.delete(taskId));
+            }
+        });
+
+        setSelectedTaskIds([...nextTaskIds]);
+        setSelectedGroupIds([...nextGroupIds]);
+    }, [groups]);
+
     const handleTaskSelection = useCallback((task: Task, event: React.MouseEvent<HTMLElement>) => {
         event.stopPropagation();
         const taskId = task.taskId;
@@ -1884,9 +1901,7 @@ export function HomePage() {
         const anchorId = selectionAnchorRef.current;
 
         if (event.shiftKey && anchorId) {
-            const anchorIndex = renderedSelectionEntities.findIndex(
-                entity => entity.kind === 'task' && entity.id === anchorId,
-            );
+            const anchorIndex = renderedSelectionEntities.findIndex(entity => entity.id === anchorId);
             const taskIndex = renderedSelectionEntities.findIndex(
                 entity => entity.kind === 'task' && entity.id === taskId,
             );
@@ -1900,24 +1915,44 @@ export function HomePage() {
                 const rangeGroupIds = rangeEntities
                     .filter((entity): entity is Extract<SelectionEntity, { kind: 'group' }> => entity.kind === 'group')
                     .map(entity => entity.id);
-                setSelectedTaskIds(previous => [...new Set([...previous, ...rangeTaskIds])]);
-                setSelectedGroupIds(previous => [...new Set([...previous, ...rangeGroupIds])]);
+                applySelection(
+                    [...new Set([...selectedTaskIds, ...rangeTaskIds])],
+                    [...new Set([...selectedGroupIds, ...rangeGroupIds])],
+                );
                 return;
             }
         }
 
         if (event.ctrlKey || event.metaKey) {
-            setSelectedTaskIds(previous => previous.includes(taskId)
-                ? previous.filter(selectedTaskId => selectedTaskId !== taskId)
-                : [...previous, taskId]);
+            if (selectedGroupTaskIdSet.has(taskId)) {
+                const selectedGroupsContainingTask = (groups ?? []).filter(group =>
+                    selectedGroupIds.includes(group.groupId) && group.taskIds.includes(taskId),
+                );
+                const expandedGroupIds = new Set(selectedGroupsContainingTask.map(group => group.groupId));
+                const remainingGroupIds = selectedGroupIds.filter(groupId => !expandedGroupIds.has(groupId));
+                const remainingGroupTaskIds = selectedGroupsContainingTask
+                    .flatMap(group => group.taskIds.filter(groupTaskId => groupTaskId !== taskId));
+                applySelection(
+                    [...new Set([...selectedTaskIds, ...remainingGroupTaskIds])],
+                    remainingGroupIds,
+                );
+                selectionAnchorRef.current = taskId;
+                return;
+            }
+            applySelection(
+                selectedTaskIds.includes(taskId)
+                    ? selectedTaskIds.filter(selectedTaskId => selectedTaskId !== taskId)
+                    : [...selectedTaskIds, taskId],
+                selectedGroupIds,
+            );
             selectionAnchorRef.current = taskId;
             return;
         }
 
-        setSelectedTaskIds([taskId]);
-        setSelectedGroupIds([]);
+        applySelection([taskId], []);
         selectionAnchorRef.current = taskId;
-    }, [activeExpansion, renderedSelectionEntities]);
+    }, [activeExpansion, applySelection, groups, renderedSelectionEntities, selectedGroupIds,
+        selectedGroupTaskIdSet, selectedTaskIds]);
 
     const handleTaskContextMenu = useCallback((task: Task, event: React.MouseEvent<HTMLElement>) => {
         setTaskReminderEditor(null);
@@ -1946,29 +1981,28 @@ export function HomePage() {
                     Math.min(anchorIndex, groupIndex),
                     Math.max(anchorIndex, groupIndex) + 1,
                 );
-                setSelectedTaskIds(previous => [...new Set([
-                    ...previous,
-                    ...rangeEntities.filter(entity => entity.kind === 'task').map(entity => entity.id),
-                ])]);
-                setSelectedGroupIds(previous => [...new Set([
-                    ...previous,
-                    ...rangeEntities.filter(entity => entity.kind === 'group').map(entity => entity.id),
-                ])]);
+                applySelection(
+                    [...new Set([
+                        ...selectedTaskIds,
+                        ...rangeEntities.filter(entity => entity.kind === 'task').map(entity => entity.id),
+                    ])],
+                    [...new Set([
+                        ...selectedGroupIds,
+                        ...rangeEntities.filter(entity => entity.kind === 'group').map(entity => entity.id),
+                    ])],
+                );
                 return;
             }
         }
 
-        if (event.ctrlKey || event.metaKey) {
-            setSelectedGroupIds(previous => previous.includes(groupId)
-                ? previous.filter(selectedGroupId => selectedGroupId !== groupId)
-                : [...previous, groupId]);
-        } else {
-            setSelectedGroupIds(previous => previous.includes(groupId)
-                ? previous.filter(selectedGroupId => selectedGroupId !== groupId)
-                : [...previous, groupId]);
-        }
+        applySelection(
+            selectedTaskIds,
+            selectedGroupIds.includes(groupId)
+                ? selectedGroupIds.filter(selectedGroupId => selectedGroupId !== groupId)
+                : [...selectedGroupIds, groupId],
+        );
         selectionAnchorRef.current = groupId;
-    }, [renderedSelectionEntities]);
+    }, [applySelection, renderedSelectionEntities, selectedGroupIds, selectedTaskIds]);
 
     useEffect(() => {
         const handleTaskKeyboard = (event: KeyboardEvent) => {
@@ -3162,10 +3196,11 @@ export function HomePage() {
                         : isGlobalActivePomodoro ? 'pomodoro' : null}
                     onTogglePanel={handleTogglePanel}
                     onAutoExpand={handleAutoExpand}
-                    selected={selectedTaskIdSet.has(task.taskId) || selectedGroupTaskIdSet.has(task.taskId)}
+                    selected={selectedTaskIdSet.has(task.taskId)}
                     editRequestId={editRequest?.taskId === task.taskId ? editRequest.requestId : null}
                     onSelectionClick={handleTaskSelection}
                     onContextMenu={handleTaskContextMenu}
+                    onDelete={deleteTask}
                     showScheduledDate={options.showScheduledDate}
                     pomodoroDisabled={Boolean(activePomodoroTaskIdForRender) && !rowHasActivePomodoro}
                     reorderable={reorderable}
@@ -3203,6 +3238,7 @@ export function HomePage() {
             if (item.kind === 'task') return renderTaskRow(item.task, options);
 
             const collapsed = collapsedGroupIds.has(item.group.groupId);
+            const groupSelected = selectedGroupIdSet.has(item.group.groupId);
             const groupDragging = draggedGroupId === item.group.groupId;
             const groupDragTarget = dragTargetGroupId === item.group.groupId;
             const groupDraggable = (options.draggable ?? reorderable)
@@ -3211,7 +3247,12 @@ export function HomePage() {
                 <Box
                     key={item.group.groupId}
                     sx={{
+                        borderRadius: 1.5,
+                        boxShadow: groupSelected
+                            ? theme => `inset 0 0 0 2px ${alpha(theme.palette.primary.main, 0.38)}`
+                            : 'none',
                         mb: 0.4,
+                        transition: 'box-shadow 0.18s',
                     }}
                 >
                     <Box
@@ -3311,19 +3352,14 @@ export function HomePage() {
                             borderRadius: 1.5,
                             px: 0.5,
                             color: 'text.secondary',
-                            boxShadow: selectedGroupIdSet.has(item.group.groupId)
-                                ? theme => `inset 0 0 0 1.5px ${alpha(theme.palette.primary.main, 0.38)}`
-                                : 'none',
                             opacity: groupDragging ? 0.42 : 1,
                             transform: groupDragging ? 'scale(0.98)' : 'scale(1)',
-                            backgroundColor: selectedGroupIdSet.has(item.group.groupId)
-                                ? theme => alpha(theme.palette.primary.main, 0.09)
-                                : groupDragTarget && dragTargetPosition === 'inside' ? 'action.hover' : 'transparent',
+                            backgroundColor: groupDragTarget && dragTargetPosition === 'inside'
+                                ? 'action.hover'
+                                : 'transparent',
                             transition: 'opacity 0.16s, transform 0.16s, background-color 0.18s',
                             '&:hover': {
-                                backgroundColor: selectedGroupIdSet.has(item.group.groupId)
-                                    ? theme => alpha(theme.palette.primary.main, 0.09)
-                                    : 'action.hover',
+                                backgroundColor: 'action.hover',
                             },
                             '&::before': groupDragTarget && !dragTargetTaskId && dragTargetPosition !== 'inside' ? {
                                 content: '""',

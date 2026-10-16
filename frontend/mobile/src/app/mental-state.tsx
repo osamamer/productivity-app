@@ -80,10 +80,10 @@ function MentalStateResultCard({ checkIn, selected, isCurrent, isMostRecent, onC
   return (
     <Animated.View style={{ opacity, transform: [{ translateY }] }}>
       <Card style={styles.result}>
-        <AppText variant="caption" color="accent">{selected ? 'SELECTED CHECK-IN' : 'YOUR STATE'}</AppText>
+        <AppText variant="caption" color="muted">{selected ? 'SELECTED CHECK-IN' : 'YOUR STATE'}</AppText>
         <AppText variant="title">{checkIn.state}</AppText>
         <Animated.View style={{ opacity: recommendationOpacity, transform: [{ translateY: recommendationTranslateY }] }}>
-          <AppText variant="caption" color="accent">{isCurrent ? 'WHAT MAY HELP NOW' : 'RECOMMENDATION FOR THIS CHECK-IN'}</AppText>
+          <AppText variant="caption" color="muted">{isCurrent ? 'WHAT MAY HELP NOW' : 'RECOMMENDATION FOR THIS CHECK-IN'}</AppText>
           <View style={styles.recommendations}>
             {checkIn.suggestedActions.map(action => <AppText key={action}>{action}</AppText>)}
           </View>
@@ -207,7 +207,7 @@ export default function MentalStateScreen() {
               pressed && styles.pressed,
             ]}>
             <View style={styles.grow}><AppText variant="label">{item.state}</AppText><AppText variant="caption" color="muted">{new Date(item.recordedAt).toLocaleString()}</AppText></View>
-            <AppText variant="caption" color="accent">{item.suggestedActions.length} suggestions</AppText>
+            <AppText variant="caption" color="muted">{item.suggestedActions.length} suggestions</AppText>
             <Ionicons name="chevron-forward" size={17} color={colors.textMuted} />
           </SilentPressable>
         ))}

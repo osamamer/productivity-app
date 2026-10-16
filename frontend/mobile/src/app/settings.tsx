@@ -23,8 +23,6 @@ const DEFAULT_CHECKUP_INTERVAL_MINUTES = 180;
 const DEFAULT_CHECKUP_START_TIME = '09:00';
 const DEFAULT_CHECKUP_TIMES_PER_DAY = 5;
 const checkupIntervalOptions = [
-  { value: 15, label: '15m' },
-  { value: 30, label: '30m' },
   { value: 60, label: '1h' },
   { value: 120, label: '2h' },
   { value: 180, label: '3h' },

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { StyleSheet, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { reportError } from '@/lib/errors';
@@ -7,7 +7,7 @@ import { TASK_PRIORITY_OPTIONS, taskPriorityColor, taskPriorityValue } from '@/l
 import { useAppPopup } from '@/providers/PopupProvider';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
-import type { Calendar, Project, Task, TaskRecurrenceFrequency, TaskSeries } from '@/types/models';
+import type { Calendar, Task, TaskRecurrenceFrequency, TaskSeries } from '@/types/models';
 import { AppButton } from '../ui/AppButton';
 import { AppInput } from '../ui/AppInput';
 import { AppPopup } from '../ui/AppPopup';
@@ -44,10 +44,6 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
   const [error, setError] = useState<string | null>(null);
   const [deletePromptOpen, setDeletePromptOpen] = useState(false);
   const [repeat, setRepeat] = useState<TaskRecurrenceFrequency>('NONE');
-  const [projectId, setProjectId] = useState(task?.projectId ?? null);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [projectsLoading, setProjectsLoading] = useState(Boolean(task?.taskId));
-  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [subtasks, setSubtasks] = useState<Task[]>([]);
   const [subtasksLoading, setSubtasksLoading] = useState(false);
   const [subtaskComposerOpen, setSubtaskComposerOpen] = useState(false);
@@ -60,8 +56,6 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
   const repeatRef = useRef<TaskRecurrenceFrequency>('NONE');
   const recurrenceMutationRef = useRef<Promise<void>>(Promise.resolve());
   const recurrenceRequestIdRef = useRef(0);
-  const projectIdRef = useRef(task?.projectId ?? null);
-  const projectRequestIdRef = useRef(0);
 
   useEffect(() => {
     if (!task?.taskId) return undefined;
@@ -97,29 +91,6 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
       clearTimeout(resetTimer);
     };
   }, [task?.parentId, task?.taskId]);
-
-  useEffect(() => {
-    const taskId = task?.taskId;
-    if (!taskId) return undefined;
-    let active = true;
-    const loadTimer = setTimeout(() => {
-      setProjectsLoading(true);
-      void api.projects.all()
-        .then(items => {
-          if (active) setProjects(items);
-        })
-        .catch(cause => {
-          if (active) void showError('Could not load projects', reportError('Could not load projects', cause));
-        })
-        .finally(() => {
-          if (active) setProjectsLoading(false);
-        });
-    }, 0);
-    return () => {
-      active = false;
-      clearTimeout(loadTimer);
-    };
-  }, [task?.taskId, showError]);
 
   useEffect(() => {
     if (!subtaskComposerOpen) return undefined;
@@ -235,28 +206,6 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
     }
   }
 
-  function selectProject(nextProjectId: string | null) {
-    if (!task) return;
-    setProjectPickerOpen(false);
-    const previousProjectId = projectIdRef.current;
-    if (nextProjectId === previousProjectId) return;
-    projectIdRef.current = nextProjectId;
-    setProjectId(nextProjectId);
-    const requestId = projectRequestIdRef.current + 1;
-    projectRequestIdRef.current = requestId;
-    void api.tasks.update(task.taskId, { projectId: nextProjectId })
-      .then(updated => {
-        if (requestId !== projectRequestIdRef.current) return;
-        onUpdated(updated);
-      })
-      .catch(cause => {
-        if (requestId !== projectRequestIdRef.current) return;
-        projectIdRef.current = previousProjectId;
-        setProjectId(previousProjectId);
-        void showError('Could not move task', reportError('Could not move task', cause));
-      });
-  }
-
   async function confirmDelete(scope: 'occurrence' | 'series') {
     if (!task) return;
     setDeletePromptOpen(false);
@@ -348,11 +297,6 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
     }
   }
 
-  const selectedProject = projects.find(project => project.projectId === projectId) ?? null;
-  const projectLabel = projectId
-    ? selectedProject?.name ?? (projectsLoading ? 'Loading projects…' : 'Project unavailable')
-    : 'No project';
-
   return (
     <ModalSheet
       visible={Boolean(task)}
@@ -438,18 +382,6 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
         scheduledDateTime={scheduledPerformDateTime}
         onChange={setReminderMinutesBefore}
       />
-      <View style={styles.projectSection}>
-        <AppText variant="label">Project</AppText>
-        <SilentPressable
-          accessibilityRole="button"
-          accessibilityLabel={`Project: ${projectLabel}`}
-          onPress={() => setProjectPickerOpen(true)}
-          style={({ pressed }) => [styles.projectField, { borderColor: colors.border, backgroundColor: colors.background }, pressed && styles.pressed]}>
-          <Ionicons name="folder-outline" size={19} color={colors.accent} />
-          <AppText variant="label" color={projectId ? 'default' : 'muted'} style={styles.projectFieldValue}>{projectLabel}</AppText>
-          <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-        </SilentPressable>
-      </View>
       <AppText variant="label">Priority</AppText>
       <ChoiceChips value={importance} onChange={handlePriorityChange} options={[...TASK_PRIORITY_OPTIONS]} />
       {error && <AppText color="danger">{error}</AppText>}
@@ -503,50 +435,7 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
               onPress={() => void confirmDelete('series')} />
           </View>
         )} />
-      <AppPopup
-        visible={projectPickerOpen}
-        title="Project"
-        showIcon={false}
-        onClose={() => setProjectPickerOpen(false)}
-        footer={<AppButton variant="secondary" label="Cancel" onPress={() => setProjectPickerOpen(false)} />}>
-        <ScrollView style={styles.projectChoices} contentContainerStyle={styles.projectChoicesContent} showsVerticalScrollIndicator={false}>
-          <ProjectChoice label="No project" selected={projectId === null} onPress={() => selectProject(null)} />
-          {projects.map(project => (
-            <ProjectChoice
-              key={project.projectId}
-              label={project.name}
-              selected={project.projectId === projectId}
-              onPress={() => selectProject(project.projectId)} />
-          ))}
-        </ScrollView>
-      </AppPopup>
     </ModalSheet>
-  );
-}
-
-function ProjectChoice({ label, selected, onPress }: {
-  label: string;
-  selected: boolean;
-  onPress: () => void;
-}) {
-  const { colors } = useAppTheme();
-
-  return (
-    <SilentPressable
-      accessibilityRole="button"
-      accessibilityState={{ selected }}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.projectChoice,
-        {
-          borderColor: selected ? colors.accent : colors.border,
-          backgroundColor: colors.background,
-        },
-        pressed && styles.pressed,
-      ]}>
-      <AppText variant="label" numberOfLines={1} style={[styles.projectChoiceLabel, selected && { color: colors.accent }]}>{label}</AppText>
-      {selected && <Ionicons name="checkmark" size={18} color={colors.accent} />}
-    </SilentPressable>
   );
 }
 
@@ -568,13 +457,6 @@ const styles = StyleSheet.create({
   subtaskButton: { minWidth: 72, minHeight: 48, marginTop: 22 },
   addSubtaskButton: { alignSelf: 'flex-start' },
   repeatSection: { gap: 8 },
-  projectSection: { gap: 8 },
-  projectField: { minHeight: 58, paddingHorizontal: 13, paddingVertical: 10, borderWidth: 1, borderRadius: 14, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  projectFieldValue: { flex: 1 },
-  projectChoices: { maxHeight: 280 },
-  projectChoicesContent: { gap: 8 },
-  projectChoice: { minHeight: 44, paddingHorizontal: 12, borderWidth: 1, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  projectChoiceLabel: { flex: 1 },
   completed: { textDecorationLine: 'line-through', opacity: 0.55 },
   pressed: { opacity: 0.72 },
 });

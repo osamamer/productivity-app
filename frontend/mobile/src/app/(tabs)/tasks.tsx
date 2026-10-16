@@ -376,14 +376,19 @@ export default function TasksScreen() {
         </SilentPressable>
         {!collapsedGroupIds.has(item.group.groupId) && (
           <View style={[styles.groupTasks, { backgroundColor: colors.surface }] }>
-            {item.tasks.map((task, index) => renderTask(task, true, index === item.tasks.length - 1))}
+            {item.tasks.map((task, index) => renderTask(
+              task,
+              true,
+              index === item.tasks.length - 1,
+              selectedGroupIdSet.has(item.group.groupId),
+            ))}
           </View>
         )}
       </View>
     ));
   }
 
-  function renderTask(task: Task, inGroup = false, groupLast = false) {
+  function renderTask(task: Task, inGroup = false, groupLast = false, groupSelected = false) {
     const selectionMode = selectedTaskIds.length > 0 || selectedGroupIds.length > 0;
     return (
       <TaskRow
@@ -396,6 +401,7 @@ export default function TasksScreen() {
         selected={selectedTaskIdSet.has(task.taskId) || selectedGroupTaskIdSet.has(task.taskId)}
         inGroup={inGroup}
         groupLast={groupLast}
+        showSelectionBorder={!groupSelected}
       />
     );
   }

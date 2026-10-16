@@ -76,7 +76,7 @@ function TaskRowBody({ task, onToggle, onPress, onLongPress, onSelectionToggle, 
   );
 }
 
-export function TaskRow({ task, onToggle, onPress, onLongPress, onSelectionToggle, selected = false, onDelete, dragEnabled = false, dragging = false, dragInProgress = false, dragPreviewOffset = 0, dropTarget = false, dropTargetEdge, onDragLayout, onDragViewRef, onDragStart, onDragMove, onDragEnd, onDragCancel, inGroup = false, groupLast = false }: {
+export function TaskRow({ task, onToggle, onPress, onLongPress, onSelectionToggle, selected = false, onDelete, dragEnabled = false, dragging = false, dragInProgress = false, dragPreviewOffset = 0, dropTarget = false, dropTargetEdge, onDragLayout, onDragViewRef, onDragStart, onDragMove, onDragEnd, onDragCancel, inGroup = false, groupLast = false, showSelectionBorder = true }: {
   task: Task;
   onToggle: () => void;
   onPress?: () => void;
@@ -98,6 +98,7 @@ export function TaskRow({ task, onToggle, onPress, onLongPress, onSelectionToggl
   onDragCancel?: (taskId: string) => void;
   inGroup?: boolean;
   groupLast?: boolean;
+  showSelectionBorder?: boolean;
 }) {
   const { colors } = useAppTheme();
   const rowRef = useRef<View>(null);
@@ -147,7 +148,7 @@ export function TaskRow({ task, onToggle, onPress, onLongPress, onSelectionToggl
               backgroundColor: colors.surface,
               borderColor: colors.border,
               borderBottomColor: inGroup ? colors.border : undefined,
-            }, selected && (inGroup ? { borderLeftWidth: 3, borderLeftColor: colors.accent } : { borderColor: colors.accent, borderWidth: 2 }),
+            }, selected && showSelectionBorder && (inGroup ? { borderLeftWidth: 3, borderLeftColor: colors.accent } : { borderColor: colors.accent, borderWidth: 2 }),
             drag.animatedStyle,
             showDrag && styles.dragging,
             ]}>
