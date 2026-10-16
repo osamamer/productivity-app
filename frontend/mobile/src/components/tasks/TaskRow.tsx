@@ -147,7 +147,7 @@ export function TaskRow({ task, onToggle, onPress, onLongPress, onSelectionToggl
               backgroundColor: colors.surface,
               borderColor: colors.border,
               borderBottomColor: inGroup ? colors.border : undefined,
-            }, selected && (inGroup ? { backgroundColor: colors.accentSoft, borderLeftWidth: 3, borderLeftColor: colors.accent } : { borderColor: colors.accent, borderWidth: 2 }),
+            }, selected && (inGroup ? { borderLeftWidth: 3, borderLeftColor: colors.accent } : { borderColor: colors.accent, borderWidth: 2 }),
             drag.animatedStyle,
             showDrag && styles.dragging,
             ]}>

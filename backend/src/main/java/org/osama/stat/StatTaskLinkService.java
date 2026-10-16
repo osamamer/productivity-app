@@ -75,7 +75,17 @@ public class StatTaskLinkService {
 
     @Transactional
     public void synchronizeTaskCompletion(Task task, String userId) {
-        LocalDate date = taskDate(task);
+        synchronizeTaskCompletion(task, userId, null);
+    }
+
+    @Transactional
+    public void synchronizeTaskCompletion(Task task, String userId, LocalDate previousCompletionDate) {
+        LocalDate scheduledDate = taskDate(task);
+        LocalDate date = scheduledDate != null
+                ? scheduledDate
+                : task.isCompleted() && task.getCompletionDateTime() != null
+                        ? task.getCompletionDateTime().toLocalDate()
+                        : previousCompletionDate;
         if (date == null) return;
 
         Map<String, StatDefinition> definitions = linkedBooleanDefinitions(task, userId);
@@ -98,6 +108,13 @@ public class StatTaskLinkService {
             log.info("Linked task completion synchronized to stat: userId={} taskId={} statDefinitionId={} date={} completed={}",
                     userId, task.getTaskId(), definition.getId(), date, task.isCompleted());
         });
+    }
+
+    @Transactional
+    public void linkCreatedTaskToStat(Task task, StatDefinition definition) {
+        task.setLinkedStatDefinitionId(definition.getId());
+        task.setStatLinked(true);
+        taskRepository.save(task);
     }
 
     /**
@@ -131,6 +148,10 @@ public class StatTaskLinkService {
 
     @Transactional(readOnly = true)
     public boolean isStatLinkedTask(Task task, String userId) {
+        if (task.getLinkedStatDefinitionId() != null
+                && definitionRepository.findByIdAndUserId(task.getLinkedStatDefinitionId(), userId).isPresent()) {
+            return true;
+        }
         if (task.getTaskSeriesId() != null
                 && definitionRepository.findByRecurringTaskSeriesIdAndUserId(task.getTaskSeriesId(), userId)
                 .isPresent()) {
@@ -234,6 +255,12 @@ public class StatTaskLinkService {
 
     private Map<String, StatDefinition> linkedBooleanDefinitions(Task task, String userId) {
         Map<String, StatDefinition> definitions = new LinkedHashMap<>();
+
+        if (task.getLinkedStatDefinitionId() != null) {
+            definitionRepository.findByIdAndUserId(task.getLinkedStatDefinitionId(), userId)
+                    .filter(this::isBoolean)
+                    .ifPresent(definition -> definitions.put(definition.getId(), definition));
+        }
 
         if (task.getTaskSeriesId() != null) {
             definitionRepository.findByRecurringTaskSeriesIdAndUserId(task.getTaskSeriesId(), userId)

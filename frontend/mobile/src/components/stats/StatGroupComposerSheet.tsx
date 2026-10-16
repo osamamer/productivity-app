@@ -87,13 +87,13 @@ export function StatGroupComposerSheet({
             onPress={() => toggleDefinition(definition.id)}
             style={({ pressed }) => [
               styles.definition,
-              { backgroundColor: selected ? colors.accentSoft : colors.background, borderColor: selected ? colors.accent : colors.border },
+              { backgroundColor: colors.background, borderColor: selected ? colors.accent : colors.border },
               pressed && styles.pressed,
             ]}>
-            <View style={[styles.checkbox, { borderColor: selected ? colors.accent : colors.border, backgroundColor: selected ? colors.accent : 'transparent' }]}>
-              {selected && <Ionicons name="checkmark" size={16} color={colors.onAccent} />}
+            <View style={[styles.checkbox, { borderColor: selected ? colors.accent : colors.border }]}>
+              {selected && <Ionicons name="checkmark" size={16} color={colors.accent} />}
             </View>
-            <AppText variant="label" numberOfLines={1} style={styles.definitionName}>{definition.name}</AppText>
+            <AppText variant="label" numberOfLines={1} style={[styles.definitionName, selected && { color: colors.accent }]}>{definition.name}</AppText>
           </SilentPressable>
         );
       }) : (

@@ -1,0 +1,12 @@
+databaseChangeLog:
+  - changeSet:
+      id: 082-mute-focus-noise-during-breaks
+      author: codex
+      changes:
+        - addColumn:
+            tableName: app_user
+            columns:
+              - column:
+                  name: mute_focus_noise_during_breaks
+                  type: BOOLEAN
+                  defaultValueBoolean: true

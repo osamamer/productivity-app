@@ -158,11 +158,11 @@ function SessionOptionRow({
       onPress={onPress}
       style={({ pressed }) => [
         styles.optionRow,
-        { backgroundColor: active ? colors.accentSoft : colors.background, borderColor: active ? colors.accent : colors.border },
+        { backgroundColor: colors.background, borderColor: active ? colors.accent : colors.border },
         pressed && styles.pressed,
       ]}>
-      <View style={[styles.optionIcon, { backgroundColor: active ? colors.accent : colors.surfaceRaised }]}>
-        <Ionicons name={icon} size={18} color={active ? colors.onAccent : colors.accent} />
+      <View style={[styles.optionIcon, { backgroundColor: colors.surfaceRaised }]}>
+        <Ionicons name={icon} size={18} color={colors.accent} />
       </View>
       <AppText variant="label" style={styles.optionLabel}>{label}</AppText>
       <AppText variant="label" color={active ? 'accent' : 'muted'} style={styles.optionValue}>{value}</AppText>
@@ -242,7 +242,7 @@ function DurationPicker({ value, onChange }: { value: number; onChange: (value: 
               onPress={() => selectValue(minutes)}
               style={({ pressed }) => [
                 styles.durationOption,
-                { backgroundColor: selected ? colors.accentSoft : 'transparent' },
+                { borderWidth: selected ? 1 : 0, borderColor: colors.accent },
                 pressed && styles.pressed,
               ]}
             >
@@ -256,7 +256,7 @@ function DurationPicker({ value, onChange }: { value: number; onChange: (value: 
       </ScrollView>
       <View
         pointerEvents="none"
-        style={[styles.durationSelectionFrame, { borderColor: `${colors.accent}80`, backgroundColor: `${colors.accent}0d` }]}
+        style={[styles.durationSelectionFrame, { borderColor: colors.accent }]}
       />
     </View>
   );
@@ -281,11 +281,11 @@ function SoundChoices({ selected, onChange, compact = false }: {
             style={({ pressed }) => [
               styles.soundChoice,
               compact && styles.soundChoiceCompact,
-              { backgroundColor: active ? colors.accentSoft : colors.background, borderColor: active ? colors.accent : colors.border },
+              { backgroundColor: colors.background, borderColor: active ? colors.accent : colors.border },
               pressed && styles.pressed,
             ]}>
-            <View style={[styles.soundIcon, { backgroundColor: active ? colors.accent : colors.surfaceRaised }]}>
-              <Ionicons name={SOUND_ICONS[option.id]} size={compact ? 17 : 19} color={active ? colors.onAccent : colors.accent} />
+            <View style={[styles.soundIcon, { backgroundColor: colors.surfaceRaised }]}>
+              <Ionicons name={SOUND_ICONS[option.id]} size={compact ? 17 : 19} color={colors.accent} />
             </View>
             <View style={styles.grow}>
               <AppText variant="label">{option.label}</AppText>

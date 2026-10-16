@@ -76,6 +76,10 @@ public class Task {
     @Column(name = "task_series_id")
     private String taskSeriesId;
 
+    @Column(name = "linked_stat_definition_id")
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private String linkedStatDefinitionId;
+
     @Column(name = "calendar_id", nullable = false)
     private String calendarId;
 

@@ -3,7 +3,7 @@ import { ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { reportError } from '@/lib/errors';
-import { TASK_PRIORITY_OPTIONS, taskPriorityValue } from '@/lib/taskPriority';
+import { TASK_PRIORITY_OPTIONS, taskPriorityColor, taskPriorityValue } from '@/lib/taskPriority';
 import { useAppPopup } from '@/providers/PopupProvider';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
@@ -357,9 +357,28 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
     <ModalSheet
       visible={Boolean(task)}
       onClose={onClose}
-      title="Task details"
       footer={<AppButton label="Save changes" loading={saving} onPress={() => void save()} />}>
-      <AppInput ref={taskNameInputRef} label="Task" value={name} onChangeText={setName} autoFocus />
+      <View style={styles.taskNameRow}>
+        <SilentPressable
+          accessibilityRole="checkbox"
+          accessibilityLabel={completed ? 'Mark task as incomplete' : 'Mark task as complete'}
+          accessibilityState={{ checked: completed }}
+          onPress={() => setCompleted(value => !value)}
+          style={({ pressed }) => [styles.completeToggle, pressed && styles.pressed]}>
+          <Ionicons
+            name={completed ? 'checkbox' : 'square-outline'}
+            size={23}
+            color={taskPriorityColor(importance)} />
+        </SilentPressable>
+        <AppInput
+          ref={taskNameInputRef}
+          containerStyle={styles.taskNameInput}
+          value={name}
+          onChangeText={setName}
+          style={[styles.taskTitleInput, completed && styles.completed]}
+          accessibilityLabel="Task name"
+          autoFocus />
+      </View>
       {availableCalendars && <CalendarDestinationField calendars={availableCalendars} value={calendarId} onChange={setCalendarId} />}
       {!task?.parentId && (
         <View style={styles.subtasks}>
@@ -398,14 +417,6 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
           {subtaskError && <AppText variant="caption" color="danger">{subtaskError}</AppText>}
         </View>
       )}
-      <SilentPressable
-        accessibilityRole="checkbox"
-        accessibilityState={{ checked: completed }}
-        onPress={() => setCompleted(value => !value)}
-        style={({ pressed }) => [styles.completeToggle, { borderColor: colors.border, backgroundColor: completed ? colors.accentSoft : colors.background }, pressed && styles.pressed]}>
-        <Ionicons name={completed ? 'checkmark-circle' : 'ellipse-outline'} size={22} color={completed ? colors.success : colors.textMuted} />
-        <AppText variant="label">{completed ? 'Completed' : 'Mark as complete'}</AppText>
-      </SilentPressable>
       <TaskScheduleField
         value={scheduledPerformDateTime}
         onChange={handleScheduledChange}
@@ -529,11 +540,11 @@ function ProjectChoice({ label, selected, onPress }: {
         styles.projectChoice,
         {
           borderColor: selected ? colors.accent : colors.border,
-          backgroundColor: selected ? colors.accentSoft : colors.background,
+          backgroundColor: colors.background,
         },
         pressed && styles.pressed,
       ]}>
-      <AppText variant="label" numberOfLines={1} style={styles.projectChoiceLabel}>{label}</AppText>
+      <AppText variant="label" numberOfLines={1} style={[styles.projectChoiceLabel, selected && { color: colors.accent }]}>{label}</AppText>
       {selected && <Ionicons name="checkmark" size={18} color={colors.accent} />}
     </SilentPressable>
   );
@@ -544,7 +555,10 @@ const styles = StyleSheet.create({
   grow: { flex: 1 },
   deleteChoices: { gap: 10 },
   deleteChoice: { width: '100%' },
-  completeToggle: { minHeight: 48, borderWidth: 1, borderRadius: 14, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  taskNameRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  taskNameInput: { flex: 1, minWidth: 0 },
+  taskTitleInput: { minHeight: 0, paddingHorizontal: 0, paddingVertical: 0, borderWidth: 0, borderRadius: 0, backgroundColor: 'transparent', fontSize: 22, fontWeight: '600', lineHeight: 28 },
+  completeToggle: { width: 28, height: 30, alignItems: 'center', justifyContent: 'center' },
   subtasks: { gap: 8 },
   subtasksHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   subtaskRow: { minHeight: 44, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 9 },

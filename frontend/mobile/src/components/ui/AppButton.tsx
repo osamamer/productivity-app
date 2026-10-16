@@ -32,16 +32,14 @@ export function AppButton({
   const danger = variant === 'danger';
   const success = variant === 'success';
   const backgroundColor = primary
-    ? colors.accent
+    ? 'transparent'
     : success
       ? colors.success
     : danger
       ? `${colors.danger}18`
-      : variant === 'secondary'
-        ? colors.accentSoft
-        : 'transparent';
+      : 'transparent';
   const foreground = primary
-    ? colors.onAccent
+    ? colors.accent
     : success
       ? dark ? colors.onAccent : colors.text
       : danger ? colors.danger : colors.accent;
@@ -54,7 +52,7 @@ export function AppButton({
       style={({ pressed }) => [
         styles.button,
         compact && styles.compact,
-        { backgroundColor, borderColor: primary || success ? backgroundColor : colors.border },
+        { backgroundColor, borderColor: primary ? colors.accent : success ? colors.success : colors.border },
         (disabled || loading) && styles.disabled,
         pressed && styles.pressed,
         style,

@@ -76,12 +76,11 @@ export function CalendarDatePicker({ value, onChange }: { value: Date; onChange:
             style={({ pressed }) => [styles.day, pressed && styles.pressed]}>
             <View style={[
               styles.dayButton,
-              sameCalendarDay(day, today) && { borderColor: colors.accent, borderWidth: 1 },
-              sameCalendarDay(day, value) && { backgroundColor: colors.accent, borderColor: colors.accent },
+              (sameCalendarDay(day, today) || sameCalendarDay(day, value)) && { borderColor: colors.accent, borderWidth: 1 },
             ]}>
               <AppText
                 variant="label"
-                style={{ color: sameCalendarDay(day, value) ? colors.onAccent : colors.text }}>
+                style={{ color: sameCalendarDay(day, value) ? colors.accent : colors.text }}>
                 {day.getDate()}
               </AppText>
             </View>

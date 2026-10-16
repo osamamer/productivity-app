@@ -11,7 +11,7 @@ export function ModalSheet({ visible, onClose, onShow, title, children, footer }
   visible: boolean;
   onClose: () => void;
   onShow?: () => void;
-  title: string;
+  title?: string;
   footer?: ReactNode;
 }>) {
   const { colors } = useAppTheme();
@@ -22,7 +22,7 @@ export function ModalSheet({ visible, onClose, onShow, title, children, footer }
         <SafeAreaView edges={['bottom']} style={[styles.sheet, { backgroundColor: colors.surface }]}>
           <View style={[styles.handle, { backgroundColor: colors.border }]} />
           <View style={styles.heading}>
-            <AppText variant="heading">{title}</AppText>
+            {title ? <AppText variant="heading">{title}</AppText> : <View />}
           <SilentPressable onPress={onClose} hitSlop={12}><AppText color="accent">Close</AppText></SilentPressable>
           </View>
           <KeyboardAwareScrollView

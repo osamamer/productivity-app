@@ -5,7 +5,7 @@ import { CachedResource } from '../services/cache/ttlCache';
 import { playAudioFeedback } from '../services/audioFeedback';
 import { createAuthenticatedStompClient } from '../services/authenticatedStompClient';
 import { getAuthCacheScope } from '../services/utils/authHeaders';
-import { subscribeToUserPreferences } from '../services/userPreferenceStore';
+import { getRuntimeUserPreference, subscribeToUserPreferences } from '../services/userPreferenceStore';
 import {
     isWhiteNoiseEnabled,
     pauseWhiteNoise,
@@ -105,6 +105,10 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
     );
     const [pomodoroStatusResolved, setPomodoroStatusResolved] = useState(false);
     const [whiteNoiseEnabled, setWhiteNoiseEnabledState] = useState(isWhiteNoiseEnabled);
+    const [focusNoiseAutoMuted, setFocusNoiseAutoMuted] = useState(false);
+    const [muteFocusNoiseDuringBreaks, setMuteFocusNoiseDuringBreaks] = useState(
+        () => getRuntimeUserPreference('muteFocusNoiseDuringBreaks'),
+    );
     const [stompConnected, setStompConnected] = useState(false);
     const activePomodoroRef = useRef(activePomodoro);
     const statusRevisionRef = useRef(0);
@@ -113,9 +117,11 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
     const refreshRequestRef = useRef<Promise<PomodoroStatus | null> | null>(null);
     const stompClientRef = useRef<Client | null>(null);
     const subscriptionRef = useRef<StompSubscription | null>(null);
+    const sessionWasRunningRef = useRef(false);
 
     useEffect(() => subscribeToUserPreferences(() => {
         setWhiteNoiseEnabledState(isWhiteNoiseEnabled());
+        setMuteFocusNoiseDuringBreaks(getRuntimeUserPreference('muteFocusNoiseDuringBreaks'));
     }), []);
 
     const optimisticStatusAllowsUpdate = useCallback((nextStatus: PomodoroStatus | null): boolean => {
@@ -331,10 +337,41 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
     );
     useEffect(() => {
         if (!activePomodoro?.active) {
+            sessionWasRunningRef.current = false;
+            setFocusNoiseAutoMuted(false);
+            return;
+        }
+
+        const sessionRunning = Boolean(
+            activePomodoro.sessionActive
+            && activePomodoro.sessionRunning,
+        );
+        const transitionedToNotRunning = sessionWasRunningRef.current && !sessionRunning;
+        const transitionedToRunning = !sessionWasRunningRef.current && sessionRunning;
+        sessionWasRunningRef.current = sessionRunning;
+
+        if (transitionedToNotRunning && muteFocusNoiseDuringBreaks && whiteNoiseEnabled) {
+            setFocusNoiseAutoMuted(true);
+        } else if (transitionedToRunning && focusNoiseAutoMuted) {
+            setFocusNoiseAutoMuted(false);
+        }
+    }, [
+        activePomodoro?.active,
+        activePomodoro?.sessionActive,
+        activePomodoro?.sessionRunning,
+        muteFocusNoiseDuringBreaks,
+        whiteNoiseEnabled,
+        focusNoiseAutoMuted,
+    ]);
+
+    const effectiveWhiteNoiseEnabled = whiteNoiseEnabled && !focusNoiseAutoMuted;
+
+    useEffect(() => {
+        if (!activePomodoro?.active) {
             stopWhiteNoise();
-        } else if (isFocusRunning && whiteNoiseEnabled) {
+        } else if (isFocusRunning && effectiveWhiteNoiseEnabled) {
             void startWhiteNoise();
-        } else {
+        } else if (isFocusRunning || focusNoiseAutoMuted) {
             pauseWhiteNoise();
         }
     }, [
@@ -343,17 +380,22 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
         activePomodoro?.pomodoroId,
         activePomodoro?.sessionActive,
         activePomodoro?.sessionRunning,
+        effectiveWhiteNoiseEnabled,
+        focusNoiseAutoMuted,
         isFocusRunning,
-        whiteNoiseEnabled,
     ]);
 
     const updateWhiteNoiseEnabled = useCallback((enabled: boolean) => {
-        setWhiteNoiseEnabledState(enabled);
-        persistWhiteNoiseEnabled(enabled);
-    }, []);
+        setFocusNoiseAutoMuted(false);
+        if (enabled !== whiteNoiseEnabled) {
+            setWhiteNoiseEnabledState(enabled);
+            persistWhiteNoiseEnabled(enabled);
+        }
+        if (enabled) void startWhiteNoise();
+    }, [whiteNoiseEnabled]);
     const toggleWhiteNoise = useCallback(() => {
-        updateWhiteNoiseEnabled(!whiteNoiseEnabled);
-    }, [updateWhiteNoiseEnabled, whiteNoiseEnabled]);
+        updateWhiteNoiseEnabled(!effectiveWhiteNoiseEnabled);
+    }, [effectiveWhiteNoiseEnabled, updateWhiteNoiseEnabled]);
 
     const contextValue = useMemo(() => ({
         activePomodoro,
@@ -377,10 +419,10 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
     }), [canStartPomodoroForTask, clearPomodoroMutation, publishPomodoroStatus, refreshActivePomodoro]);
 
     const preferencesContextValue = useMemo(() => ({
-        whiteNoiseEnabled,
+        whiteNoiseEnabled: effectiveWhiteNoiseEnabled,
         setWhiteNoiseEnabled: updateWhiteNoiseEnabled,
         toggleWhiteNoise,
-    }), [toggleWhiteNoise, updateWhiteNoiseEnabled, whiteNoiseEnabled]);
+    }), [effectiveWhiteNoiseEnabled, toggleWhiteNoise, updateWhiteNoiseEnabled]);
 
     return (
         <PomodoroActionsContext.Provider value={actionsContextValue}>

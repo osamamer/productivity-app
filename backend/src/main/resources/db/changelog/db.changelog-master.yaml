@@ -288,3 +288,7 @@ databaseChangeLog:
       file: db/changelog/changes/080-enforce-partial-web-push-endpoint-index.yaml
   - include:
       file: db/changelog/changes/081-repeat-task-subtasks.yaml
+  - include:
+      file: db/changelog/changes/082-mute-focus-noise-during-breaks.yaml
+  - include:
+      file: db/changelog/changes/083-link-created-task-to-stat.yaml

@@ -142,12 +142,12 @@ export function CalendarDisplayButton({ onPress, disabled = false }: { onPress: 
       onPress={onPress}
       style={({ pressed }) => [
         styles.floatingActionButton,
-        { backgroundColor: colors.accent, shadowColor: colors.accent },
+        { backgroundColor: colors.surface, borderColor: colors.accent, borderWidth: 1, shadowColor: colors.text },
         disabled && styles.disabled,
         pressed && styles.pressed,
       ]}>
-      <Ionicons name="options-outline" size={18} color={colors.onAccent} />
-      <AppText variant="label" style={{ color: colors.onAccent }}>Display</AppText>
+      <Ionicons name="options-outline" size={18} color={colors.accent} />
+      <AppText variant="label" color="accent">Display</AppText>
     </SilentPressable>
   );
 }

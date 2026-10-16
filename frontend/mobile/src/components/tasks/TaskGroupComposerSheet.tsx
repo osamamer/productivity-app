@@ -103,10 +103,10 @@ export function TaskGroupComposerSheet({ visible, taskIds, availableTasks, group
                 }}
                 style={({ pressed }) => [
                   styles.task,
-                  { borderColor: selected ? colors.accent : colors.border, backgroundColor: selected ? colors.accentSoft : colors.surface },
+                  { borderColor: selected ? colors.accent : colors.border, backgroundColor: colors.surface },
                   pressed && styles.pressed,
                 ]}>
-                <AppText variant="label" numberOfLines={2} style={styles.taskName}>{task.name}</AppText>
+                <AppText variant="label" numberOfLines={2} style={[styles.taskName, selected && { color: colors.accent }]}>{task.name}</AppText>
                 <Ionicons name={selected ? 'checkmark-circle' : 'ellipse-outline'} size={22} color={selected ? colors.accent : colors.textMuted} />
               </SilentPressable>
             );

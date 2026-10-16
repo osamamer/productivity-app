@@ -73,6 +73,10 @@ public class User {
     @Column(name = "white_noise_enabled")
     private Boolean whiteNoiseEnabled;
 
+    @Builder.Default
+    @Column(name = "mute_focus_noise_during_breaks")
+    private Boolean muteFocusNoiseDuringBreaks = true;
+
     @Column(name = "pomodoro_seconds_mode")
     private Boolean pomodoroSecondsMode;
 

@@ -24,7 +24,7 @@ function ActionButton({ label, icon, onPress, disabled = false, danger = false }
       onPress={onPress}
       style={({ pressed }) => [
         styles.action,
-        { backgroundColor: danger ? `${colors.danger}12` : colors.accentSoft },
+        { borderColor: danger ? colors.danger : colors.accent },
         disabled && styles.disabled,
         pressed && styles.pressed,
       ]}>
@@ -109,7 +109,7 @@ const styles = StyleSheet.create({
   card: { width: '100%', maxWidth: 380, alignSelf: 'center', borderRadius: 18, borderWidth: 1, padding: 10, gap: 8, shadowColor: '#11111A', shadowOffset: { width: 0, height: 6 }, shadowRadius: 18, shadowOpacity: 0.18, elevation: 7 },
   heading: { minHeight: 28, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 3 },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  action: { width: 38, height: 38, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  action: { width: 38, height: 38, borderRadius: 11, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   disabled: { opacity: 0.45 },
   pressed: { opacity: 0.72, transform: [{ scale: 0.96 }] },
 });

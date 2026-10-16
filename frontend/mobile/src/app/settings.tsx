@@ -189,8 +189,8 @@ export default function SettingsScreen() {
               key={option.value}
               onPress={() => setAccent(option.value)}
               style={[styles.swatchWrap, {
-                backgroundColor: accent === option.value ? colors.accentSoft : 'transparent',
-                borderColor: accent === option.value ? `${colors.accent}66` : colors.border,
+                backgroundColor: 'transparent',
+                borderColor: accent === option.value ? colors.accent : colors.border,
               }]}
             >
               <View style={[styles.swatch, { backgroundColor: option.color }]} />

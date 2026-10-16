@@ -476,6 +476,8 @@ public class TaskService {
 
         Task task = existingTask.get();
         boolean wasCompleted = task.isCompleted();
+        LocalDate previousCompletionDate = task.getCompletionDateTime() == null
+                ? null : task.getCompletionDateTime().toLocalDate();
         Optional<Reminder> existingReminder = findTaskReminder(taskId);
         LocalDate previousTaskDate = taskDate(task);
         boolean scheduleChanged = request.getScheduledPerformDateTime() != null;
@@ -581,7 +583,7 @@ public class TaskService {
         if (request.getCompleted() != null || (scheduleChanged && savedTask.isCompleted())) {
             // Schedule migration happens before this state write so a
             // completion change in the same request wins at the new date.
-            statTaskLinkService.synchronizeTaskCompletion(savedTask, userId);
+            statTaskLinkService.synchronizeTaskCompletion(savedTask, userId, previousCompletionDate);
         }
         savedTask.setStatLinked(statTaskLinkService.isStatLinkedTask(savedTask, userId));
         log.info("Task updated: userId={} taskId={} changedFields={}",

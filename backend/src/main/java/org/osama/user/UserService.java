@@ -193,7 +193,7 @@ public class UserService {
                 includeUnloggedNumericDaysAsZero, autoStartPomodoroSessions,
                 checkupNotificationsEnabled, repeatCheckupNotificationsEnabled,
                 checkupIntervalMinutes, checkupStartTime, checkupTimesPerDay, null, pomodoroSoundId,
-                null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null));
+                null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null));
     }
 
     @Transactional
@@ -238,6 +238,7 @@ public class UserService {
         if (updates.showClosedMentalThreads() != null) user.setShowClosedMentalThreads(updates.showClosedMentalThreads());
         if (updates.soundEffectsEnabled() != null) user.setSoundEffectsEnabled(updates.soundEffectsEnabled());
         if (updates.whiteNoiseEnabled() != null) user.setWhiteNoiseEnabled(updates.whiteNoiseEnabled());
+        if (updates.muteFocusNoiseDuringBreaks() != null) user.setMuteFocusNoiseDuringBreaks(updates.muteFocusNoiseDuringBreaks());
         if (updates.pomodoroSecondsMode() != null) user.setPomodoroSecondsMode(updates.pomodoroSecondsMode());
         if (updates.pomodoroLongBreakCooldown() != null) user.setPomodoroLongBreakCooldown(updates.pomodoroLongBreakCooldown());
         if (updates.pomodoroFocusDuration() != null) user.setPomodoroFocusDuration(updates.pomodoroFocusDuration());

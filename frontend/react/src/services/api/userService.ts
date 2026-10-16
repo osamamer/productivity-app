@@ -26,6 +26,7 @@ export interface UserPreferences {
     showClosedMentalThreads?: boolean | null;
     soundEffectsEnabled?: boolean | null;
     whiteNoiseEnabled?: boolean | null;
+    muteFocusNoiseDuringBreaks?: boolean | null;
     pomodoroSecondsMode?: boolean | null;
     pomodoroLongBreakCooldown?: number | null;
     pomodoroFocusDuration?: number | null;

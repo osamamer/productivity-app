@@ -1870,11 +1870,7 @@ export function HomePage() {
     }, [activeExpansion?.taskId]);
 
     const handleAutoExpand = useCallback((taskId: string, panel: 'pomodoro') => {
-        setActiveExpansion(previous => (
-            previous?.taskId === taskId && (previous.panel === panel || previous.panel === 'details')
-                ? previous
-                : { taskId, panel }
-        ));
+        setActiveExpansion(previous => previous ?? { taskId, panel });
     }, []);
 
     const handleTaskSelection = useCallback((task: Task, event: React.MouseEvent<HTMLElement>) => {
@@ -2132,13 +2128,12 @@ export function HomePage() {
             handlePomodoroActiveChange(taskId, true, { animate: false });
         }
 
-        // Restore the timer panel by default, while preserving an explicit
-        // details choice made for the active task.
+        // Keep the timer as the default panel, but let another task's details
+        // stay open while this Pomodoro continues running.
         setActiveExpansion(previous => (
             previous?.taskId === taskId
-                && (previous.panel === 'pomodoro' || previous.panel === 'details')
                 ? previous
-                : { taskId, panel: 'pomodoro' }
+                : previous ?? { taskId, panel: 'pomodoro' }
         ));
     }, [activePomodoro, handlePomodoroActiveChange]);
 
@@ -2182,15 +2177,13 @@ export function HomePage() {
         if (!focusedPomodoroTask || tasksBelowFocus.length === 0) return;
 
         clearFocusTransitionTimer();
-        rememberFocusTaskPosition(focusedPomodoroTask.taskId);
-        setShowOlderTasks(false);
         setFocusVisibility('fading');
-        focusTransitionTimerRef.current = window.setTimeout(
-            finishFocusTransition,
-            TASKS_FADE_DURATION_MS,
-        );
-    }, [clearFocusTransitionTimer, finishFocusTransition, focusedPomodoroTask,
-        rememberFocusTaskPosition, tasksBelowFocus.length]);
+        focusTransitionTimerRef.current = window.setTimeout(() => {
+            setShowOlderTasks(false);
+            setFocusVisibility('hidden');
+            focusTransitionTimerRef.current = null;
+        }, TASKS_FADE_DURATION_MS);
+    }, [clearFocusTransitionTimer, focusedPomodoroTask, tasksBelowFocus.length]);
 
     const minimizePomodoroTask = useCallback((taskId: string) => {
         if (activePomodoroTaskIdRef.current !== taskId) return;
@@ -3169,12 +3162,12 @@ export function HomePage() {
                         : isGlobalActivePomodoro ? 'pomodoro' : null}
                     onTogglePanel={handleTogglePanel}
                     onAutoExpand={handleAutoExpand}
-                    onDelete={deleteTask}
                     selected={selectedTaskIdSet.has(task.taskId) || selectedGroupTaskIdSet.has(task.taskId)}
                     editRequestId={editRequest?.taskId === task.taskId ? editRequest.requestId : null}
                     onSelectionClick={handleTaskSelection}
                     onContextMenu={handleTaskContextMenu}
                     showScheduledDate={options.showScheduledDate}
+                    pomodoroDisabled={Boolean(activePomodoroTaskIdForRender) && !rowHasActivePomodoro}
                     reorderable={reorderable}
                     draggable={rowDraggable}
                     onDragStart={handleTaskDragStart}
@@ -3542,6 +3535,7 @@ export function HomePage() {
     const showTasksBelowFocus = !focusedPomodoroTask
         || focusVisibility === 'all'
         || focusVisibility === 'revealing'
+        || focusVisibility === 'fading'
         || focusVisibility === 'returning';
     const hasHomeTaskRows = visibleTasks.length > 0 || focusedPomodoroTask !== null || homeTaskListAnimating;
     const dragInProgress = draggedTaskIds.length > 0 || draggedGroupId !== null;
@@ -3735,7 +3729,7 @@ export function HomePage() {
 
                             <Collapse
                                 in={showTasksBelowFocus}
-                                timeout={{ enter: 260, exit: TASKS_FADE_DURATION_MS }}
+                                timeout={focusVisibility === 'hidden' ? 0 : { enter: 260, exit: TASKS_FADE_DURATION_MS }}
                                 mountOnEnter
                                 unmountOnExit
                             >
@@ -3850,12 +3844,22 @@ export function HomePage() {
                         </Typography>
                     ) : null}
 
-                    {focusVisibility === 'all' && <TodayEventsSection />}
+                    {(focusVisibility === 'all' || focusVisibility === 'fading') && (
+                        <Box
+                            sx={{
+                                animation: focusVisibility === 'fading'
+                                    ? `${tasksFadeAway} ${TASKS_FADE_DURATION_MS}ms ease-out forwards`
+                                    : 'none',
+                            }}
+                        >
+                            <TodayEventsSection />
+                        </Box>
+                    )}
 
                     <Collapse
-                        in={homeTaskControlsReady && focusVisibility === 'all'
+                        in={homeTaskControlsReady && (focusVisibility === 'all' || focusVisibility === 'fading')
                             && showOlderTasks && olderTasks.length > 0}
-                        timeout={{ enter: 260, exit: 220 }}
+                        timeout={focusVisibility === 'hidden' ? 0 : { enter: 260, exit: 220 }}
                         mountOnEnter
                         unmountOnExit
                         onEntered={() => olderTasksSectionRef.current?.scrollIntoView({
@@ -3866,7 +3870,15 @@ export function HomePage() {
                         <Box
                             ref={olderTasksSectionRef}
                             onClick={clearSelection}
-                            sx={{ mt: 2, pt: 1.25, borderTop: '1px solid', borderColor: 'divider' }}
+                            sx={{
+                                mt: 2,
+                                pt: 1.25,
+                                borderTop: '1px solid',
+                                borderColor: 'divider',
+                                animation: focusVisibility === 'fading'
+                                    ? `${tasksFadeAway} ${TASKS_FADE_DURATION_MS}ms ease-out forwards`
+                                    : 'none',
+                            }}
                         >
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
                                 <HistoryIcon color="action" fontSize="small" />
@@ -3892,9 +3904,9 @@ export function HomePage() {
                     </Collapse>
 
                     <Collapse
-                        in={homeTaskControlsReady && focusVisibility === 'all'
+                        in={homeTaskControlsReady && (focusVisibility === 'all' || focusVisibility === 'fading')
                             && (olderTasks.length > 0 || (focusedPomodoroTask !== null && tasksBelowFocus.length > 0))}
-                        timeout={{ enter: 220, exit: 180 }}
+                        timeout={focusVisibility === 'hidden' ? 0 : { enter: 220, exit: 180 }}
                         mountOnEnter
                         unmountOnExit
                     >
@@ -3902,9 +3914,7 @@ export function HomePage() {
                             sx={{
                                 display: 'flex',
                                 flexWrap: 'wrap',
-                                justifyContent: focusedPomodoroTask && tasksBelowFocus.length > 0
-                                    ? 'flex-start'
-                                    : 'center',
+                                justifyContent: 'center',
                                 gap: 0.5,
                                 mt: 2,
                             }}

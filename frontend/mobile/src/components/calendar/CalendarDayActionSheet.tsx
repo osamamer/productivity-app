@@ -60,7 +60,6 @@ export function CalendarDayActionSheet({
         label={`Add ${tab === 'stats' ? 'stats' : tab}`}
         onPress={() => date && onCreate(tab)} />
     )}>
-      <AppText color="muted">Choose what belongs on this day.</AppText>
       <ChoiceChips value={tab} onChange={setTab} options={options} />
 
       <View style={styles.sectionHeading}>

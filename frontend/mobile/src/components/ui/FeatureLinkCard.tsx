@@ -17,7 +17,7 @@ export function FeatureLinkCard({ title, description, icon, href }: {
     <SilentPressable
       onPress={() => router.push(href)}
       style={({ pressed }) => [styles.card, { backgroundColor: colors.surface, borderColor: colors.border }, pressed && { opacity: 0.72 }]}>
-      <View style={[styles.icon, { backgroundColor: colors.accentSoft }]}><Ionicons name={icon} size={24} color={colors.accent} /></View>
+      <View style={styles.icon}><Ionicons name={icon} size={24} color={colors.accent} /></View>
       <View style={styles.copy}>
         <AppText variant="heading">{title}</AppText>
         <AppText color="muted">{description}</AppText>
@@ -29,6 +29,6 @@ export function FeatureLinkCard({ title, description, icon, href }: {
 
 const styles = StyleSheet.create({
   card: { minHeight: 92, padding: 16, borderWidth: 1, borderRadius: 20, flexDirection: 'row', alignItems: 'center', gap: 14 },
-  icon: { width: 50, height: 50, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  icon: { width: 50, height: 50, alignItems: 'center', justifyContent: 'center' },
   copy: { flex: 1, gap: 3 },
 });

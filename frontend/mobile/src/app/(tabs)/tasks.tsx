@@ -345,11 +345,11 @@ export default function TasksScreen() {
           accessibilityLabel={`${collapsedGroupIds.has(item.group.groupId) ? 'Expand' : 'Collapse'} ${item.group.name}`}
           accessibilityState={{ expanded: !collapsedGroupIds.has(item.group.groupId) }}
           onPress={() => toggleGroup(item.group.groupId)}
-          style={({ pressed }) => [styles.groupHeader, !collapsedGroupIds.has(item.group.groupId) && styles.groupHeaderExpanded, { backgroundColor: selectedGroupIdSet.has(item.group.groupId) ? colors.accentSoft : colors.surface, borderBottomColor: colors.border }, pressed && styles.pressed]}
+          style={({ pressed }) => [styles.groupHeader, !collapsedGroupIds.has(item.group.groupId) && styles.groupHeaderExpanded, { backgroundColor: colors.surface, borderBottomColor: colors.border }, pressed && styles.pressed]}
         >
           <GroupChevron collapsed={collapsedGroupIds.has(item.group.groupId)} color={colors.accent} />
           <View style={styles.groupSelection}>
-            <AppText variant="label" style={styles.groupTitle}>{item.group.name}</AppText>
+            <AppText variant="label" style={[styles.groupTitle, selectedGroupIdSet.has(item.group.groupId) && { color: colors.accent }]}>{item.group.name}</AppText>
             <AppText variant="caption" color="muted">{item.tasks.length}</AppText>
           </View>
           <SilentPressable
@@ -402,24 +402,33 @@ export default function TasksScreen() {
 
   return (
     <Screen
-      action={<AppButton compact label="Add" icon="add" onPress={() => setComposerOpen(true)} />}
       overlay={(
-        <TaskSelectionActionsPopup
-          visible={selectedTaskIds.length > 1 || selectedGroupIds.length > 0}
-          taskCount={selectedTasks.length}
-          loading={bulkActionLoading || bulkDateSaving}
-          canMoveToToday={selectedPastTaskIds.length > 0}
-          canReorder={selectedTaskIds.length === 1 && selectedGroupIds.length === 0}
-          canGroup={canGroupSelectedTasks}
-          onComplete={() => void performBulkAction('complete')}
-          onMoveToToday={() => void performBulkAction('move-to-today')}
-          onMoveToDate={() => setBulkDateOpen(true)}
-          onMoveUp={() => void moveSelected('up')}
-          onMoveDown={() => void moveSelected('down')}
-          onGroup={openCreateGroup}
-          onDelete={() => void confirmBulkDelete()}
-          onDismiss={clearSelection}
-        />
+        <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
+          {selectedTaskIds.length === 0 && selectedGroupIds.length === 0 && (
+            <AppButton
+              compact
+              label="Add"
+              icon="add"
+              onPress={() => setComposerOpen(true)}
+              style={styles.addTaskButton} />
+          )}
+          <TaskSelectionActionsPopup
+            visible={selectedTaskIds.length > 1 || selectedGroupIds.length > 0}
+            taskCount={selectedTasks.length}
+            loading={bulkActionLoading || bulkDateSaving}
+            canMoveToToday={selectedPastTaskIds.length > 0}
+            canReorder={selectedTaskIds.length === 1 && selectedGroupIds.length === 0}
+            canGroup={canGroupSelectedTasks}
+            onComplete={() => void performBulkAction('complete')}
+            onMoveToToday={() => void performBulkAction('move-to-today')}
+            onMoveToDate={() => setBulkDateOpen(true)}
+            onMoveUp={() => void moveSelected('up')}
+            onMoveDown={() => void moveSelected('down')}
+            onGroup={openCreateGroup}
+            onDelete={() => void confirmBulkDelete()}
+            onDismiss={clearSelection}
+          />
+        </View>
       )}
       refreshing={loading}
       onRefresh={() => void refresh()}>
@@ -501,6 +510,7 @@ export default function TasksScreen() {
 }
 
 const styles = StyleSheet.create({
+  addTaskButton: { position: 'absolute', right: 18, bottom: 18, zIndex: 1 },
   sections: { gap: 20 },
   list: { gap: 10 },
   group: { borderWidth: 1, borderRadius: 20, overflow: 'hidden' },

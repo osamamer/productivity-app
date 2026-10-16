@@ -87,7 +87,7 @@ export function MonthCalendarGrid({
           <SilentPressable accessibilityRole="button" accessibilityLabel="Previous month" hitSlop={8} onPress={() => onMonthChange(-1)} style={styles.navButton}>
             <Ionicons name="chevron-back" size={19} color={colors.textMuted} />
           </SilentPressable>
-          <SilentPressable accessibilityRole="button" accessibilityLabel="Go to today" onPress={onToday} style={[styles.todayButton, { backgroundColor: colors.accentSoft }]}>
+          <SilentPressable accessibilityRole="button" accessibilityLabel="Go to today" onPress={onToday} style={[styles.todayButton, { borderColor: colors.accent }]}>
             <AppText variant="caption" color="accent">Today</AppText>
           </SilentPressable>
           <SilentPressable accessibilityRole="button" accessibilityLabel="Next month" hitSlop={8} onPress={() => onMonthChange(1)} style={styles.navButton}>
@@ -125,12 +125,12 @@ export function MonthCalendarGrid({
                   styles.day,
                   { borderColor: colors.border, backgroundColor: inMonth ? colors.surface : colors.background },
                   !inMonth && styles.outsideDay,
-                  isToday && { backgroundColor: colors.accentSoft, borderColor: colors.accent },
+                  isToday && { borderColor: colors.accent },
                   pressed && styles.pressed,
                 ]}>
                 <View style={styles.dayHeader}>
-                  <View style={[styles.dayNumber, isToday && { backgroundColor: colors.accent }]}>
-                    <AppText variant="caption" style={{ color: isToday ? colors.onAccent : inMonth ? colors.text : colors.textMuted }}>{day.getDate()}</AppText>
+                  <View style={[styles.dayNumber, isToday && { borderWidth: 1, borderColor: colors.accent }]}>
+                    <AppText variant="caption" style={{ color: isToday ? colors.accent : inMonth ? colors.text : colors.textMuted }}>{day.getDate()}</AppText>
                   </View>
                   {items.length > 0 && <AppText variant="caption" color="muted">{items.length}</AppText>}
                 </View>

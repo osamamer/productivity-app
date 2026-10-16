@@ -1,0 +1,17 @@
+databaseChangeLog:
+  - changeSet:
+      id: 083-link-created-task-to-stat
+      author: codex
+      changes:
+        - addColumn:
+            tableName: task
+            columns:
+              - column:
+                  name: linked_stat_definition_id
+                  type: VARCHAR(255)
+        - addForeignKeyConstraint:
+            baseTableName: task
+            baseColumnNames: linked_stat_definition_id
+            constraintName: fk_app_task_linked_stat_definition
+            referencedTableName: stat_definition
+            referencedColumnNames: id

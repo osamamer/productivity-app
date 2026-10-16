@@ -20,6 +20,7 @@ public record UserPreferenceUpdates(
         Boolean showClosedMentalThreads,
         Boolean soundEffectsEnabled,
         Boolean whiteNoiseEnabled,
+        Boolean muteFocusNoiseDuringBreaks,
         Boolean pomodoroSecondsMode,
         Integer pomodoroLongBreakCooldown,
         Integer pomodoroFocusDuration,
@@ -47,6 +48,7 @@ public record UserPreferenceUpdates(
                 && showClosedMentalThreads == null
                 && soundEffectsEnabled == null
                 && whiteNoiseEnabled == null
+                && muteFocusNoiseDuringBreaks == null
                 && pomodoroSecondsMode == null
                 && pomodoroLongBreakCooldown == null
                 && pomodoroFocusDuration == null

@@ -108,8 +108,8 @@ function TimeColumn({ label, values, selected, onSelect }: { label: string; valu
             <SilentPressable
               key={value}
               onPress={() => onSelect(value)}
-              style={[styles.timeOption, { backgroundColor: selectedValue ? colors.accent : colors.background, borderColor: selectedValue ? colors.accent : colors.border }]}>
-              <AppText variant="label" style={{ color: selectedValue ? colors.onAccent : colors.text }}>{String(value).padStart(2, '0')}</AppText>
+              style={[styles.timeOption, { backgroundColor: 'transparent', borderColor: selectedValue ? colors.accent : colors.border }]}>
+              <AppText variant="label" style={{ color: selectedValue ? colors.accent : colors.text }}>{String(value).padStart(2, '0')}</AppText>
             </SilentPressable>
           );
         })}
@@ -160,7 +160,6 @@ function eventDefaults(event: CalendarEvent | null | undefined, initialDate?: st
 
   return {
     title: event?.title ?? '',
-    description: event?.description ?? '',
     date,
     endDate,
     allDay: event?.allDay ? 'yes' as const : 'no' as const,
@@ -257,7 +256,6 @@ export function EventComposerSheet({
   const { user } = useAuth();
   const defaults = eventDefaults(event, initialDate, occurrenceStatus);
   const [title, setTitle] = useState(defaults.title);
-  const [description, setDescription] = useState(defaults.description);
   const [date, setDate] = useState(defaults.date);
   const [endDate, setEndDate] = useState(defaults.endDate);
   const [allDay, setAllDay] = useState<'yes' | 'no'>(defaults.allDay);
@@ -298,7 +296,6 @@ export function EventComposerSheet({
   function reset() {
     const next = eventDefaults(null, initialDate);
     setTitle(next.title);
-    setDescription(next.description);
     setDate(next.date);
     setEndDate(next.endDate);
     setAllDay(next.allDay);
@@ -372,7 +369,7 @@ export function EventComposerSheet({
     setError(null);
     const input: CalendarEventInput = {
       title: title.trim(),
-      description: description.trim(),
+      description: event?.description ?? '',
       allDay: allDay === 'yes',
       startDate: allDay === 'yes' ? date : null,
       endDate: allDay === 'yes' ? endDate : null,
@@ -501,7 +498,6 @@ export function EventComposerSheet({
         </View>
       )}>
       <AppInput autoFocus label="Event" value={title} onChangeText={setTitle} error={error ?? undefined} />
-      <AppInput label="Details (optional)" multiline value={description} onChangeText={setDescription} />
       <CalendarDestinationField calendars={calendarOptions} value={calendarId} onChange={setCalendarId} />
       <AppText variant="label">{event && recurrence !== 'NONE' && !occurrenceKey ? 'Series status' : 'Status'}</AppText>
       <ChoiceChips value={status} onChange={setStatus} options={[

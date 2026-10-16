@@ -106,7 +106,7 @@ export function WeekCalendarGrid({
           <SilentPressable accessibilityRole="button" accessibilityLabel="Previous week" hitSlop={8} onPress={() => onWeekChange(-1)} style={styles.navButton}>
             <Ionicons name="chevron-back" size={19} color={colors.textMuted} />
           </SilentPressable>
-          <SilentPressable accessibilityRole="button" accessibilityLabel="Go to today" onPress={onToday} style={[styles.todayButton, { backgroundColor: colors.accentSoft }]}>
+          <SilentPressable accessibilityRole="button" accessibilityLabel="Go to today" onPress={onToday} style={[styles.todayButton, { borderColor: colors.accent }]}>
             <AppText variant="caption" color="accent">Today</AppText>
           </SilentPressable>
           <SilentPressable accessibilityRole="button" accessibilityLabel="Next week" hitSlop={8} onPress={() => onWeekChange(1)} style={styles.navButton}>
@@ -131,7 +131,7 @@ export function WeekCalendarGrid({
                   accessibilityRole="button"
                   accessibilityLabel={`${dayLabel(day)}${items.length ? `, ${items.length} items` : ''}`}
                   onPress={() => onDayPress(key, items)}
-                  style={({ pressed }) => [styles.dayHeader, isToday && { backgroundColor: colors.accentSoft, borderColor: colors.accent }, isToday && styles.todayHeader, pressed && styles.pressed]}>
+                  style={({ pressed }) => [styles.dayHeader, isToday && { borderColor: colors.accent }, isToday && styles.todayHeader, pressed && styles.pressed]}>
                   <View style={styles.dayHeading}>
                     <AppText variant="label" style={isToday && { color: colors.accent }}>{dayLabel(day)}</AppText>
                     {isToday && <AppText variant="caption" color="accent">Today</AppText>}

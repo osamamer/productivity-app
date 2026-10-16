@@ -29,7 +29,6 @@ import PauseIcon from '@mui/icons-material/Pause';
 import StopIcon from '@mui/icons-material/Stop';
 import SkipNextIcon from '@mui/icons-material/SkipNext';
 import FreeBreakfastIcon from '@mui/icons-material/FreeBreakfast';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -89,9 +88,9 @@ export type FlatTaskRowProps = {
     expandedPanel: 'pomodoro' | 'details' | null;
     onTogglePanel: (taskId: string, panel: 'pomodoro' | 'details') => void;
     onAutoExpand: (taskId: string, panel: 'pomodoro') => void;
-    onDelete?: (task: Task, anchorEl: HTMLElement) => void;
     showScheduledDate?: boolean;
     showPomodoroButton?: boolean;
+    pomodoroDisabled?: boolean;
     showDetailsButton?: boolean;
     onSelect?: (task: Task) => void;
     selected?: boolean;
@@ -284,9 +283,9 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     expandedPanel,
     onTogglePanel,
     onAutoExpand,
-    onDelete,
     showScheduledDate = false,
     showPomodoroButton = true,
+    pomodoroDisabled = false,
     showDetailsButton = true,
     onSelect,
     selected = false,
@@ -1552,25 +1551,28 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                     </Typography>
                 )}
 
-                {((showPomodoroButton && !readOnly) || (showDetailsButton && !readOnly) || (onDelete && !readOnly)) && (
+                {((showPomodoroButton && !readOnly) || (showDetailsButton && !readOnly)) && (
                     <Box sx={{ display: 'flex', gap: 0.25, ml: 0.5 }}>
                         {showPomodoroButton && !readOnly && (
-                            <Tooltip title="Pomodoro">
-                                <IconButton
-                                    size="small"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleRowSelection(e);
-                                        togglePanel('pomodoro');
-                                    }}
-                                    color={expandedPanel === 'pomodoro' || isActive ? 'primary' : 'default'}
-                                    sx={{
-                                        transition: 'color 180ms ease, background-color 180ms ease, transform 180ms ease',
-                                        transform: expandedPanel === 'pomodoro' ? 'scale(1.04)' : 'scale(1)',
-                                    }}
-                                >
-                                    <TimerIcon sx={{ fontSize: '1.1rem' }} />
-                                </IconButton>
+                            <Tooltip title={pomodoroDisabled ? 'Finish the current Pomodoro first' : 'Pomodoro'}>
+                                <span>
+                                    <IconButton
+                                        size="small"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleRowSelection(e);
+                                            togglePanel('pomodoro');
+                                        }}
+                                        disabled={pomodoroDisabled}
+                                        color={expandedPanel === 'pomodoro' || isActive ? 'primary' : 'default'}
+                                        sx={{
+                                            transition: 'color 180ms ease, background-color 180ms ease, transform 180ms ease',
+                                            transform: expandedPanel === 'pomodoro' ? 'scale(1.04)' : 'scale(1)',
+                                        }}
+                                    >
+                                        <TimerIcon sx={{ fontSize: '1.1rem' }} />
+                                    </IconButton>
+                                </span>
                             </Tooltip>
                         )}
                         {showDetailsButton && !readOnly && (
@@ -1591,21 +1593,6 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                     {detailsLoading
                                         ? <CircularProgress size={17} />
                                         : <TuneIcon sx={{ fontSize: '1.1rem' }} />}
-                                </IconButton>
-                            </Tooltip>
-                        )}
-                        {onDelete && !readOnly && (
-                            <Tooltip title="Delete task">
-                                <IconButton
-                                    size="small"
-                                    aria-label={`Delete ${task.name}`}
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        onDelete(task, e.currentTarget);
-                                    }}
-                                    color="error"
-                                >
-                                    <DeleteOutlineIcon sx={{ fontSize: '1.1rem' }} />
                                 </IconButton>
                             </Tooltip>
                         )}

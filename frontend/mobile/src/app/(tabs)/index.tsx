@@ -829,7 +829,7 @@ export default function TodayScreen() {
                   {
                     borderWidth: selectedGroupIdSet.has(item.group.groupId) || dragTargetGroupId === item.group.groupId ? 2 : 1,
                     borderColor: selectedGroupIdSet.has(item.group.groupId) || dragTargetGroupId === item.group.groupId ? colors.accent : colors.border,
-                    backgroundColor: dragTargetGroupId === item.group.groupId ? colors.accentSoft : colors.surface,
+                    backgroundColor: colors.surface,
                     overflow: dragSource ? 'visible' : 'hidden',
                   },
                 ]}
@@ -842,7 +842,7 @@ export default function TodayScreen() {
                     style={({ pressed }) => [
                       styles.groupHeader,
                       collapsedGroupIds.has(item.group.groupId) ? styles.groupHeaderCollapsed : styles.groupHeaderExpanded,
-                      { backgroundColor: selectedGroupIdSet.has(item.group.groupId) || dragTargetGroupId === item.group.groupId ? colors.accentSoft : colors.surface, borderBottomColor: colors.border },
+                      { backgroundColor: colors.surface, borderBottomColor: colors.border },
                       pressed && styles.pressed,
                     ]}
                   >
@@ -851,7 +851,7 @@ export default function TodayScreen() {
                       color={selectedGroupIdSet.has(item.group.groupId) || dragTargetGroupId === item.group.groupId ? colors.accent : colors.textMuted}
                     />
                     <View style={styles.groupSelection}>
-                      <AppText variant="label" style={styles.groupTitle}>{item.group.name}</AppText>
+                      <AppText variant="label" style={[styles.groupTitle, (selectedGroupIdSet.has(item.group.groupId) || dragTargetGroupId === item.group.groupId) && { color: colors.accent }]}>{item.group.name}</AppText>
                       <AppText variant="caption" color="muted">{item.tasks.length}</AppText>
                     </View>
                     <SilentPressable

@@ -27,12 +27,12 @@ export function ChoiceChips<T extends string | number>({ value, options, onChang
             style={({ pressed }) => [
               styles.chip,
               {
-                backgroundColor: selected ? option.color ?? colors.accent : colors.background,
+                backgroundColor: 'transparent',
                 borderColor: option.color ?? (selected ? colors.accent : colors.border),
               },
               pressed && { opacity: 0.72 },
             ]}>
-            <AppText variant="caption" style={{ color: selected ? colors.onAccent : option.color ?? colors.text }}>
+            <AppText variant="caption" style={{ color: selected ? option.color ?? colors.accent : option.color ?? colors.text }}>
               {option.label}
             </AppText>
           </SilentPressable>

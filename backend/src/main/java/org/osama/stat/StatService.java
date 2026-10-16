@@ -440,6 +440,7 @@ public class StatService {
         request.setImportance(resolveTaskImportance(requestedImportance));
         request.setTimeZone(timeZone.getId());
         Task task = taskService.createTask(request, userId);
+        statTaskLinkService.linkCreatedTaskToStat(task, definition);
 
         linkFocusTaskInternal(definition, taskName);
         definitionRepository.save(definition);

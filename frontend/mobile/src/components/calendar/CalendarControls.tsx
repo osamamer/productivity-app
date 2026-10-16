@@ -255,7 +255,7 @@ const styles = StyleSheet.create({
   destinationOptions: { gap: 8 },
   destinationOption: { minHeight: 48, borderWidth: 1, borderRadius: 13, paddingHorizontal: 11, flexDirection: 'row', alignItems: 'center', gap: 9 },
   swatch: { width: 16, height: 16, borderRadius: 8 },
-  managementHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  managementHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 12 },
   calendarList: { gap: 7 },
   calendarRow: { minHeight: 55, borderWidth: 1, borderRadius: 13, paddingHorizontal: 9, flexDirection: 'row', alignItems: 'center', gap: 6 },
   rowSwatch: { width: 12, height: 12 },

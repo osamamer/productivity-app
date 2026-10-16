@@ -60,10 +60,10 @@ function TimeColumn({ label, values, selected, onSelect }: {
               accessibilityState={{ selected: selectedValue }}
               onPress={() => onSelect(value)}
               style={[styles.timeOption, {
-                backgroundColor: selectedValue ? colors.accent : colors.background,
+                backgroundColor: 'transparent',
                 borderColor: selectedValue ? colors.accent : colors.border,
               }]}>
-              <AppText variant="label" style={{ color: selectedValue ? colors.onAccent : colors.text }}>
+              <AppText variant="label" style={{ color: selectedValue ? colors.accent : colors.text }}>
                 {pad(value)}
               </AppText>
             </SilentPressable>

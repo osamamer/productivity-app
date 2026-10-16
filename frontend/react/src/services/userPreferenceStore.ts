@@ -6,6 +6,7 @@ export type RuntimeUserPreferences = {
     showClosedMentalThreads: boolean;
     soundEffectsEnabled: boolean;
     whiteNoiseEnabled: boolean;
+    muteFocusNoiseDuringBreaks: boolean;
     pomodoroSecondsMode: boolean | null;
     pomodoroLongBreakCooldown: number;
     pomodoroFocusDuration: number | null;
@@ -25,6 +26,7 @@ const DEFAULT_RUNTIME_PREFERENCES: RuntimeUserPreferences = {
     showClosedMentalThreads: false,
     soundEffectsEnabled: true,
     whiteNoiseEnabled: true,
+    muteFocusNoiseDuringBreaks: true,
     pomodoroSecondsMode: null,
     pomodoroLongBreakCooldown: 4,
     pomodoroFocusDuration: null,
@@ -70,6 +72,7 @@ export function applyUserPreferences(scope: string, preferences: UserPreferences
         showClosedMentalThreads: preferences.showClosedMentalThreads ?? DEFAULT_RUNTIME_PREFERENCES.showClosedMentalThreads,
         soundEffectsEnabled: preferences.soundEffectsEnabled ?? DEFAULT_RUNTIME_PREFERENCES.soundEffectsEnabled,
         whiteNoiseEnabled: preferences.whiteNoiseEnabled ?? DEFAULT_RUNTIME_PREFERENCES.whiteNoiseEnabled,
+        muteFocusNoiseDuringBreaks: preferences.muteFocusNoiseDuringBreaks ?? DEFAULT_RUNTIME_PREFERENCES.muteFocusNoiseDuringBreaks,
         pomodoroSecondsMode: preferences.pomodoroSecondsMode ?? DEFAULT_RUNTIME_PREFERENCES.pomodoroSecondsMode,
         pomodoroLongBreakCooldown: preferences.pomodoroLongBreakCooldown ?? DEFAULT_RUNTIME_PREFERENCES.pomodoroLongBreakCooldown,
         pomodoroFocusDuration: preferences.pomodoroFocusDuration ?? DEFAULT_RUNTIME_PREFERENCES.pomodoroFocusDuration,

@@ -47,7 +47,6 @@ import { DAY_TEMPLATE_DRAG_TYPE, DayTemplatePanel, DayTemplatePreviewPopover } f
 import { CalendarEventOccurrence, expandCalendarEvent } from "./calendar/recurrence.ts";
 import { getBooleanChoiceColor } from "../services/statFeedback.ts";
 import { dayService, taskService } from "../services/api";
-import { getShowCompletedHomeTasks } from "../services/utils/homePreferences.ts";
 import { AppDateField } from "./input/AppPickerFields";
 import { TaskRecurrenceCustomOptions, TaskRecurrencePicker } from "./task/TaskRecurrencePicker";
 import { TaskReminderPicker } from "./task/TaskReminderPicker";
@@ -112,7 +111,7 @@ type CalendarDisplayPreferences = Record<CalendarDisplayView, CalendarDisplaySet
 const DEFAULT_CALENDAR_DISPLAY_SETTINGS: CalendarDisplaySettings = {
     showTasks: true,
     showStats: true,
-    taskStatus: 'all',
+    taskStatus: 'open',
     priorityFilters: [3, 6, 9],
     selectedStatIds: null,
 };
@@ -656,8 +655,6 @@ export function MonthCalendar({
         return groupByTaskId;
     }, [groups]);
 
-    const showCompletedTasks = getShowCompletedHomeTasks();
-
     React.useEffect(() => {
         let cancelled = false;
         if (!hasVisibleStats) {
@@ -696,14 +693,12 @@ export function MonthCalendar({
     const calendarTasks = useMemo(() => tasks.filter(task => {
         if (!visibleCalendarIds.has(task.calendarId ?? '')) return false;
         if (!task.scheduledPerformDateTime) return false;
-        const matchesStatus = taskStatus === 'open'
-            ? !task.completed
-            : taskStatus === 'completed'
-                ? task.completed
-                : showCompletedTasks || !task.completed;
+        const matchesStatus = taskStatus === 'all'
+            || (taskStatus === 'open' && !task.completed)
+            || (taskStatus === 'completed' && task.completed);
         if (!matchesStatus) return false;
         return priorityFilters.includes(priorityBucket(task.importance));
-    }), [priorityFilters, showCompletedTasks, taskStatus, tasks, visibleCalendarIds]);
+    }), [priorityFilters, taskStatus, tasks, visibleCalendarIds]);
 
     const selectedTaskGroupTasks = useMemo(() => {
         if (!selectedTaskGroup) return [];

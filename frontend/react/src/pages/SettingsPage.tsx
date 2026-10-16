@@ -30,6 +30,7 @@ import { accentColorOptions } from '../contexts/themeOptions';
 import { useAppTheme } from '../hooks/useAppTheme';
 import { useSearchParams } from 'react-router-dom';
 import { userService } from '../services/api/userService.ts';
+import { getRuntimeUserPreference, updateRuntimeUserPreferences } from '../services/userPreferenceStore';
 import axios from 'axios';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -93,7 +94,7 @@ const sectionHeadingSx = {
     mb: 1.5,
 };
 
-const hideCompletedTasksDescription = 'Hide completed tasks from the Tasks and Calendar pages.';
+const hideCompletedTasksDescription = 'Hide completed tasks on the Tasks page. Calendar uses its own status filter.';
 const excludeTodayCompletedTasksDescription = 'Also hide completed tasks scheduled for today from the Home page.';
 const numericStatsAverageDescription = 'Include days without a logged numeric value as 0 when calculating averages, starting from the first logged day.';
 const pomodoroAutoStartDescription = 'Start each break and focus session automatically, or wait for you to start the next phase.';
@@ -102,6 +103,7 @@ const pomodoroLongBreakDescription = 'Take a long break after this many complete
 const pomodoroSoundDescription = 'Use brown noise or one of your uploaded MP3 files during focus sessions.';
 const showClosedMentalThreadsDescription = 'Keep closed threads visible in the mental threads list.';
 const soundEffectsDescription = 'Play short musical cues when you complete, capture, schedule, or rate something.';
+const muteFocusNoiseDuringBreaksDescription = 'Mute focus noise when a running focus session pauses or ends.';
 const repeatCheckupNotificationsDescription = 'If you do not check in, remind you again every 30 minutes.';
 const DEFAULT_CHECKUP_INTERVAL_MINUTES = 180;
 const DEFAULT_CHECKUP_START_TIME = '09:00';
@@ -659,6 +661,10 @@ export function SettingsPage() {
     const [excludeTodayCompletedTasks, setExcludeTodayCompletedTasksState] = useState(getExcludeTodayCompletedHomeTasks);
     const [showClosedMentalThreads, setShowClosedMentalThreadsState] = useState(getShowClosedMentalThreads);
     const [soundEffectsEnabled, setSoundEffectsEnabledState] = useState(isAudioFeedbackEnabled);
+    const [muteFocusNoiseDuringBreaks, setMuteFocusNoiseDuringBreaks] = useState(
+        () => getRuntimeUserPreference('muteFocusNoiseDuringBreaks'),
+    );
+    const muteFocusNoisePreferenceRevision = useRef(0);
     const [includeUnloggedNumericDaysAsZero, setIncludeUnloggedNumericDaysAsZero] = useState(false);
     const [userPreferencesLoading, setUserPreferencesLoading] = useState(true);
     const [numericStatsPreferenceSaving, setNumericStatsPreferenceSaving] = useState(false);
@@ -709,6 +715,7 @@ export function SettingsPage() {
                     setExcludeTodayCompletedTasksState(preferences.excludeTodayCompletedTasks ?? false);
                     setShowClosedMentalThreadsState(preferences.showClosedMentalThreads ?? false);
                     setSoundEffectsEnabledState(preferences.soundEffectsEnabled ?? true);
+                    setMuteFocusNoiseDuringBreaks(preferences.muteFocusNoiseDuringBreaks ?? true);
                     if (preferences.pomodoroSecondsMode != null) {
                         setPomodoroSecondsMode(preferences.pomodoroSecondsMode);
                     }
@@ -900,6 +907,24 @@ export function SettingsPage() {
             console.error('Failed to update sound-effects preference:', error);
             setSoundEffectsEnabledState(previousValue);
             setAudioFeedbackEnabled(previousValue);
+            setUserPreferenceError('Could not save this preference right now.');
+        }
+    }
+
+    async function handleMuteFocusNoiseDuringBreaksChange(event: ChangeEvent<HTMLInputElement>) {
+        const nextValue = event.target.checked;
+        const previousValue = muteFocusNoiseDuringBreaks;
+        const revision = ++muteFocusNoisePreferenceRevision.current;
+        setMuteFocusNoiseDuringBreaks(nextValue);
+        updateRuntimeUserPreferences({ muteFocusNoiseDuringBreaks: nextValue });
+        setUserPreferenceError(null);
+        try {
+            await userService.updatePreferences({ muteFocusNoiseDuringBreaks: nextValue });
+        } catch (error) {
+            console.error('Failed to update focus-noise break preference:', error);
+            if (revision !== muteFocusNoisePreferenceRevision.current) return;
+            setMuteFocusNoiseDuringBreaks(previousValue);
+            updateRuntimeUserPreferences({ muteFocusNoiseDuringBreaks: previousValue });
             setUserPreferenceError('Could not save this preference right now.');
         }
     }
@@ -1335,6 +1360,22 @@ export function SettingsPage() {
                                         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5, textAlign: 'left' }}>
                                             {pomodoroSoundDescription}
                                         </Typography>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mb: 1.5 }}>
+                                            <Box sx={{ textAlign: 'left' }}>
+                                                <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                                                    Mute focus noise during breaks
+                                                </Typography>
+                                                <Typography variant="body2" color="text.secondary">
+                                                    {muteFocusNoiseDuringBreaksDescription}
+                                                </Typography>
+                                            </Box>
+                                            <Switch
+                                                checked={muteFocusNoiseDuringBreaks}
+                                                onChange={handleMuteFocusNoiseDuringBreaksChange}
+                                                disabled={userPreferencesLoading}
+                                                inputProps={{ 'aria-label': 'Mute focus noise during breaks' }}
+                                            />
+                                        </Box>
                                         {(pomodoroSoundError || pomodoroUploadError) && (
                                             <Alert severity="warning" sx={{ mb: 1.5 }}>
                                                 {pomodoroSoundError || pomodoroUploadError}
