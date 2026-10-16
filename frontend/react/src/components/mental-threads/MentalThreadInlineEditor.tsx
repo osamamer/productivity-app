@@ -307,7 +307,12 @@ export function MentalThreadInlineEditor({
                         valueLabelDisplay="auto"
                         disabled={readOnly}
                         aria-label="Mental load"
-                        sx={{ color: displayColor, mt: 0.25, width: { xs: '100%', sm: 'calc(100% - 12px)' } }}
+                        sx={{
+                            color: displayColor,
+                            mt: 0.25,
+                            ml: 0.5,
+                            width: { xs: 'calc(100% - 4px)', sm: 'calc(100% - 16px)' },
+                        }}
                     />
                 </Box>
                 <Box sx={{ minWidth: 0, pt: { sm: 2 } }}>
