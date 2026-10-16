@@ -251,6 +251,61 @@ class TaskSeriesServiceTest {
                 .stream().allMatch(task -> task.getImportance() == 9));
     }
 
+    @Test
+    void repeatSubtasksCopiesTheAnchorChecklistToEachOccurrenceOnlyOnce() {
+        LocalDateTime start = LocalDateTime.now().plusDays(1).withSecond(0).withNano(0);
+        Task first = taskService.createTask(request(start), USER_ID);
+        NewTaskRequest subtaskRequest = new NewTaskRequest();
+        subtaskRequest.setName("Prepare notes");
+        subtaskRequest.setParentId(first.getTaskId());
+        taskService.createTask(subtaskRequest, USER_ID);
+
+        TaskSeriesRuleRequest rule = new TaskSeriesRuleRequest();
+        rule.setRecurrenceFrequency(TaskRecurrenceFrequency.DAILY);
+        rule.setRecurrenceEndDate(start.toLocalDate().plusDays(2));
+        rule.setTimeZone("UTC");
+        rule.setRepeatSubtasks(true);
+        TaskSeriesResponse series = taskSeriesService.createSeriesFromTask(first.getTaskId(), rule, USER_ID);
+
+        List<Task> occurrences = taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(series.seriesId());
+        assertTrue(series.repeatSubtasks());
+        assertEquals(3, occurrences.size());
+        occurrences.forEach(occurrence -> assertEquals(List.of("Prepare notes"),
+                taskService.getSubtasks(occurrence.getTaskId(), USER_ID).stream().map(Task::getName).toList()));
+
+        taskSeriesService.expandActiveSeries();
+        occurrences.forEach(occurrence -> assertEquals(1,
+                taskService.getSubtasks(occurrence.getTaskId(), USER_ID).size()));
+    }
+
+    @Test
+    void enablingRepeatSubtasksFillsAlreadyMaterializedOccurrences() {
+        LocalDateTime start = LocalDateTime.now().plusDays(1).withSecond(0).withNano(0);
+        Task first = taskService.createTask(request(start), USER_ID);
+        NewTaskRequest subtaskRequest = new NewTaskRequest();
+        subtaskRequest.setName("Prepare notes");
+        subtaskRequest.setParentId(first.getTaskId());
+        taskService.createTask(subtaskRequest, USER_ID);
+
+        TaskSeriesRuleRequest rule = new TaskSeriesRuleRequest();
+        rule.setRecurrenceFrequency(TaskRecurrenceFrequency.DAILY);
+        rule.setRecurrenceEndDate(start.toLocalDate().plusDays(2));
+        rule.setTimeZone("UTC");
+        TaskSeriesResponse series = taskSeriesService.createSeriesFromTask(first.getTaskId(), rule, USER_ID);
+        Task second = taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(series.seriesId()).get(1);
+        assertTrue(taskService.getSubtasks(second.getTaskId(), USER_ID).isEmpty());
+
+        TaskSeriesUpdateRequest update = new TaskSeriesUpdateRequest();
+        update.setRecurrenceFrequency(TaskRecurrenceFrequency.DAILY);
+        update.setRecurrenceEndDate(start.toLocalDate().plusDays(2));
+        update.setTimeZone("UTC");
+        update.setRepeatSubtasks(true);
+        taskSeriesService.updateSeries(series.seriesId(), update, USER_ID);
+
+        assertEquals(List.of("Prepare notes"), taskService.getSubtasks(second.getTaskId(), USER_ID)
+                .stream().map(Task::getName).toList());
+    }
+
     private NewTaskRequest request(LocalDateTime start) {
         NewTaskRequest request = new NewTaskRequest();
         request.setName("Review recurring work");

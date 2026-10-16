@@ -64,11 +64,14 @@ export function DurationInput({
     return (
         <Stack direction="row" spacing={0.75} alignItems="center">
             <AppNumberField
+                inputType="text"
                 autoComplete="off"
                 size="small"
                 label="Hours"
                 value={hours}
-                onChange={event => updateValue(event.target.value, minutes)}
+                onChange={event => {
+                    if (/^\d*$/.test(event.target.value)) updateValue(event.target.value, minutes);
+                }}
                 onStepValueChange={value => updateValue(String(value), minutes)}
                 onKeyDown={event => {
                     if (event.key !== 'Tab' || event.shiftKey) return;
@@ -76,7 +79,10 @@ export function DurationInput({
                     event.preventDefault();
                     minutesInputRef.current.focus();
                 }}
-                onFocus={onFocus}
+                onFocus={event => {
+                    event.target.select();
+                    onFocus?.(event);
+                }}
                 onBlur={onBlur}
                 min={0}
                 step={1}
@@ -86,11 +92,14 @@ export function DurationInput({
             />
             <Typography color="text.secondary">:</Typography>
             <AppNumberField
+                inputType="text"
                 autoComplete="off"
                 size="small"
                 label="Minutes"
                 value={minutes}
-                onChange={event => updateValue(hours, event.target.value)}
+                onChange={event => {
+                    if (/^\d*$/.test(event.target.value)) updateValue(hours, event.target.value);
+                }}
                 onStepValueChange={value => updateValue(hours, String(value))}
                 inputRef={minutesInputRef}
                 onKeyDown={event => {
@@ -98,7 +107,10 @@ export function DurationInput({
                         onTabFromMinutes?.(event);
                     }
                 }}
-                onFocus={onFocus}
+                onFocus={event => {
+                    event.target.select();
+                    onFocus?.(event);
+                }}
                 onBlur={onBlur}
                 min={0}
                 max={59}

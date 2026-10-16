@@ -60,6 +60,7 @@ export function PomodoroNumberField({
             max={max}
             error={Boolean(validationMessage)}
             helperText={validationMessage}
+            stepperTabIndex={-1}
             inputProps={{
                 inputMode: 'numeric',
                 style: { textAlign: 'left' },

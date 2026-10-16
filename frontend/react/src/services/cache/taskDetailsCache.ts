@@ -19,6 +19,26 @@ const taskDetailsResource = new CachedResource<TaskDetailsCacheEntry>({
     maxEntries: 500,
 });
 
+const MAX_CONCURRENT_DETAIL_LOADS = 4;
+let availableDetailLoadSlots = MAX_CONCURRENT_DETAIL_LOADS;
+const detailLoadWaiters: Array<() => void> = [];
+
+async function withDetailLoadSlot<T>(loader: () => Promise<T>): Promise<T> {
+    if (availableDetailLoadSlots === 0) {
+        await new Promise<void>(resolve => detailLoadWaiters.push(resolve));
+    } else {
+        availableDetailLoadSlots -= 1;
+    }
+
+    try {
+        return await loader();
+    } finally {
+        const nextWaiter = detailLoadWaiters.shift();
+        if (nextWaiter) nextWaiter();
+        else availableDetailLoadSlots += 1;
+    }
+}
+
 function cacheKey(taskId: string): string {
     return `${getAuthCacheScope()}:${taskId}`;
 }
@@ -35,7 +55,17 @@ export function loadTaskDetails(
     taskId: string,
     loader: () => Promise<TaskDetailsCacheEntry>,
 ): Promise<TaskDetailsCacheEntry> {
-    return taskDetailsResource.get(cacheKey(taskId), loader, TASK_DETAILS_TTL_MS);
+    const scope = getAuthCacheScope();
+    return taskDetailsResource.get(
+        `${scope}:${taskId}`,
+        () => withDetailLoadSlot(() => {
+            if (getAuthCacheScope() !== scope) {
+                throw new Error('Task details request belongs to a previous account');
+            }
+            return loader();
+        }),
+        TASK_DETAILS_TTL_MS,
+    );
 }
 
 export function setCachedTaskDetails(taskId: string, details: TaskDetailsCacheEntry): void {

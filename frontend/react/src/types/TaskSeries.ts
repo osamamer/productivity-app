@@ -16,6 +16,7 @@ export type TaskSeries = {
     recurrenceDaysOfWeek?: TaskRecurrenceDay[] | null;
     timeZone: string;
     active: boolean;
+    repeatSubtasks: boolean;
     createdAt: string;
     updatedAt: string;
     statLinked?: boolean;

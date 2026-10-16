@@ -6,9 +6,11 @@ import KeyboardArrowUpRoundedIcon from '@mui/icons-material/KeyboardArrowUpRound
 type NumberFieldValue = number | string | null | undefined;
 
 export type AppNumberFieldProps = Omit<TextFieldProps, 'type' | 'InputProps'> & {
+    inputType?: 'number' | 'text';
     min?: number;
     max?: number;
     step?: number | 'any';
+    stepperTabIndex?: number;
     value?: NumberFieldValue;
     onStepValueChange: (value: number) => void;
 };
@@ -40,12 +42,14 @@ export function AppNumberField({
     min,
     max,
     step,
+    stepperTabIndex = 0,
     value,
     onStepValueChange,
     inputProps,
     sx,
     disabled = false,
     label,
+    inputType = 'number',
     ...textFieldProps
 }: AppNumberFieldProps) {
     const inputMin = min ?? numericAttribute(inputProps?.min);
@@ -85,7 +89,7 @@ export function AppNumberField({
         <TextField
             {...textFieldProps}
             label={label}
-            type="number"
+            type={inputType}
             value={value ?? ''}
             disabled={disabled}
             inputProps={numberInputProps}
@@ -101,6 +105,7 @@ export function AppNumberField({
                         >
                             <IconButton
                                 size="small"
+                                tabIndex={stepperTabIndex}
                                 disableRipple
                                 disableFocusRipple
                                 aria-label={`Increase ${displayLabel}`}
@@ -123,6 +128,7 @@ export function AppNumberField({
                             </IconButton>
                             <IconButton
                                 size="small"
+                                tabIndex={stepperTabIndex}
                                 disableRipple
                                 disableFocusRipple
                                 aria-label={`Decrease ${displayLabel}`}

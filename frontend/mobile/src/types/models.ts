@@ -283,6 +283,7 @@ export interface MeditationSession {
   active: boolean;
   totalSessionTime: string | number | [number, number] | null;
   startTime: string | null;
+  expiresAt: string | null;
   lastUnpauseTime: string | null;
   lastPauseTime: string | null;
   endTime: string | null;
@@ -303,36 +304,10 @@ export type NotificationType =
 
 export interface UserPreferences {
   includeUnloggedNumericDaysAsZero: boolean;
-  autoStartPomodoroSessions: boolean;
   checkupNotificationsEnabled: boolean;
   repeatCheckupNotificationsEnabled: boolean;
   checkupIntervalMinutes: number;
   checkupStartTime: string;
   checkupTimesPerDay: number;
   checkupTimeZone?: string;
-}
-
-export type PomodoroPhase = 'FOCUS' | 'BREAK' | 'WAITING_FOR_BREAK' | 'WAITING_FOR_FOCUS' | 'COMPLETED';
-
-export interface PomodoroStatus {
-  pomodoroId: string;
-  associatedTaskId: string;
-  active: boolean;
-  sessionActive: boolean;
-  sessionRunning: boolean;
-  secondsPassedInSession: number;
-  secondsUntilNextTransition: number;
-  currentFocusNumber: number;
-  numFocuses: number;
-  completedFocusSessions?: number;
-  totalFocusSeconds?: number;
-  phase?: PomodoroPhase;
-}
-
-export interface PomodoroConfig {
-  secondsMode: boolean;
-  durationUnit: 'minutes' | 'seconds';
-  defaultFocusDuration: number;
-  defaultShortBreakDuration: number;
-  defaultLongBreakDuration: number;
 }

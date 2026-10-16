@@ -1,5 +1,7 @@
 package org.osama.stat;
 
+import java.time.LocalDate;
+
 /**
  * Summary statistics for a single stat definition, computed server-side.
  * Fields that don't apply to the definition's type are null.
@@ -11,5 +13,6 @@ public record StatSummaryResponse(
         Integer longestBooleanStreak, // longest consecutive run of value=1 in the selected period (BOOLEAN only)
         Double periodAverage,      // average value in the selected period (NUMBER / RANGE / TIME / DURATION)
         Double periodTotal,         // sum of values in the selected period (NUMBER / RANGE / TIME / DURATION)
-        Double periodHighest        // highest single-day value in the selected period (NUMBER / RANGE / TIME / DURATION)
+        Double periodHighest,       // highest single-day value in the selected period (NUMBER / RANGE / TIME / DURATION)
+        LocalDate averageStartDate  // first eligible day when unlogged days count as zero
 ) {}

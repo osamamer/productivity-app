@@ -1,0 +1,14 @@
+databaseChangeLog:
+  - changeSet:
+      id: 081-repeat-task-subtasks
+      author: codex
+      changes:
+        - addColumn:
+            tableName: task_series
+            columns:
+              - column:
+                  name: repeat_subtasks
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false

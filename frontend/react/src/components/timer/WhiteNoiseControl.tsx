@@ -6,18 +6,20 @@ import {
     ListItemText,
     Menu,
     MenuItem,
+    Snackbar,
     Tooltip,
 } from '@mui/material';
 import CheckIcon from '@mui/icons-material/Check';
 import MusicNoteIcon from '@mui/icons-material/MusicNote';
 import VolumeOffIcon from '@mui/icons-material/VolumeOff';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
-import { usePomodoro } from '../../hooks/usePomodoro';
+import { usePomodoroPreferences } from '../../hooks/usePomodoro';
 import {
     getAvailableWhiteNoiseSounds,
     getWhiteNoiseSource,
     selectWhiteNoiseSound,
     subscribeToWhiteNoiseSource,
+    subscribeToWhiteNoiseError,
     type WhiteNoiseSource,
 } from '../../services/whiteNoise';
 import {
@@ -33,7 +35,7 @@ interface WhiteNoiseControlProps {
 }
 
 export function WhiteNoiseControl({ disabled = false, size = 'medium' }: WhiteNoiseControlProps) {
-    const { whiteNoiseEnabled, setWhiteNoiseEnabled } = usePomodoro();
+    const { whiteNoiseEnabled, setWhiteNoiseEnabled } = usePomodoroPreferences();
     const [source, setSource] = useState<WhiteNoiseSource>(getWhiteNoiseSource);
     const [sounds, setSounds] = useState<PomodoroSound[]>(() => {
         const cached = getCachedPomodoroSounds();
@@ -42,6 +44,7 @@ export function WhiteNoiseControl({ disabled = false, size = 'medium' }: WhiteNo
     const [soundsLoading, setSoundsLoading] = useState(false);
     const [soundLoadError, setSoundLoadError] = useState<string | null>(null);
     const [soundSelectionError, setSoundSelectionError] = useState<string | null>(null);
+    const [playbackError, setPlaybackError] = useState<string | null>(null);
     const [pendingSoundId, setPendingSoundId] = useState<string | null>(null);
     const selectionAttempt = useRef(0);
     const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
@@ -51,6 +54,7 @@ export function WhiteNoiseControl({ disabled = false, size = 'medium' }: WhiteNo
         setSource(nextSource);
         setPendingSoundId(current => current === nextSource.id ? null : current);
     }), []);
+    useEffect(() => subscribeToWhiteNoiseError(setPlaybackError), []);
 
     const loadSounds = useCallback(async () => {
         const cached = getCachedPomodoroSounds();
@@ -107,6 +111,7 @@ export function WhiteNoiseControl({ disabled = false, size = 'medium' }: WhiteNo
                 console.error('Could not select focus sound:', error);
                 setPendingSoundId(null);
                 setSoundSelectionError('Could not change the focus sound right now.');
+                setPlaybackError("Can't play audio right now.");
             });
     };
 
@@ -116,6 +121,8 @@ export function WhiteNoiseControl({ disabled = false, size = 'medium' }: WhiteNo
 
     return (
         <>
+            <Snackbar open={playbackError !== null} autoHideDuration={5000}
+                onClose={() => setPlaybackError(null)} message={playbackError} />
             <span style={{ display: 'inline-flex', alignItems: 'center' }}>
                 <Tooltip title={soundSelectionError ?? `Focus sound options: ${sourceLabel}`}>
                     <span>

@@ -195,6 +195,7 @@ function renderResonantTone(
   frequency: number,
   duration: number,
   volume: number,
+  destination: AudioNodeLike = context.destination,
 ): void {
   RESONANT_BELL_PARTIALS.forEach(partial => {
     const oscillator = context.createOscillator();
@@ -210,15 +211,19 @@ function renderResonantTone(
     gain.gain.linearRampToValueAtTime(peak * 0.48, decayEnd);
     gain.gain.linearRampToValueAtTime(0, start + duration);
     oscillator.connect(gain);
-    gain.connect(context.destination);
+    gain.connect(destination);
     oscillator.start(start);
     oscillator.stop(start + duration + 0.02);
   });
 }
 
 /** A full-decay cue for the quiet boundaries inside a meditation. */
-export function renderMeditationIntervalBell(context: AudioContextLike): void {
-  renderResonantTone(context, context.currentTime + 0.01, 293.66, 3.2, 0.12);
+export function renderMeditationIntervalBell(
+  context: AudioContextLike,
+  when = context.currentTime + 0.01,
+  destination: AudioNodeLike = context.destination,
+): void {
+  renderResonantTone(context, when, 293.66, 3.2, 0.12, destination);
 }
 
 /** A lower, longer two-tone gong that marks the end of a meditation. */

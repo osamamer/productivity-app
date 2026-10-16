@@ -44,6 +44,10 @@ type DeleteTaskOptions = {
     notifyResource?: boolean;
 };
 
+type TaskUpdateOptions = {
+    notifyResource?: boolean;
+};
+
 export type TaskDeletionReceipt = {
     taskIds: string[];
     taskSeriesIds: string[];
@@ -642,7 +646,7 @@ export const taskService = {
         return movedTasks;
     },
 
-    async updateTask(taskId: string, updates: TaskUpdate): Promise<Task> {
+    async updateTask(taskId: string, updates: TaskUpdate, { notifyResource = true }: TaskUpdateOptions = {}): Promise<Task> {
         const response = await fetch(`${TASK_URL}/${taskId}`, {
             method: 'PATCH',
             body: JSON.stringify(updates),
@@ -662,7 +666,7 @@ export const taskService = {
         cacheMainTasks([updatedTask]);
         invalidateTaskViewCaches();
         if (updates.completed !== undefined || updates.scheduledPerformDateTime !== undefined) {
-            invalidateResource('tasks');
+            if (notifyResource) invalidateResource('tasks');
             if (updatedTask.statLinked) invalidateResource('stats', 'task');
         }
         if ('projectId' in updates) invalidateResource('projects');
@@ -697,10 +701,10 @@ export const taskService = {
         });
     },
 
-    async startTaskRecurrence(taskId: string, recurrence: TaskRecurrenceDraft): Promise<TaskSeries> {
+    async startTaskRecurrence(taskId: string, recurrence: TaskRecurrenceDraft, repeatSubtasks = false): Promise<TaskSeries> {
         const response = await fetch(`${TASK_URL}/${taskId}/recurrence`, {
             method: 'POST',
-            body: JSON.stringify(recurrence),
+            body: JSON.stringify({ ...recurrence, repeatSubtasks }),
             headers: {
                 'Content-Type': 'application/json; charset=UTF-8',
                 ...getAuthHeaders(),
@@ -719,10 +723,11 @@ export const taskService = {
         return series;
     },
 
-    async updateTaskSeries(seriesId: string, recurrence: TaskRecurrenceDraft, active?: boolean): Promise<TaskSeries> {
+    async updateTaskSeries(seriesId: string, recurrence: TaskRecurrenceDraft, active?: boolean, repeatSubtasks?: boolean): Promise<TaskSeries> {
         const response = await fetch(`${TASK_SERIES_URL}/${seriesId}`, {
             method: 'PATCH',
-            body: JSON.stringify(active === undefined ? recurrence : { ...recurrence, active }),
+            body: JSON.stringify({ ...recurrence, ...(active === undefined ? {} : { active }),
+                ...(repeatSubtasks === undefined ? {} : { repeatSubtasks }) }),
             headers: {
                 'Content-Type': 'application/json; charset=UTF-8',
                 ...getAuthHeaders(),
@@ -774,9 +779,13 @@ export const taskService = {
         invalidateResource('tasks');
     },
 
-    async toggleTaskCompletion(taskId: string, completed?: boolean): Promise<Task> {
+    async toggleTaskCompletion(
+        taskId: string,
+        completed?: boolean,
+        options?: TaskUpdateOptions,
+    ): Promise<Task> {
         const nextCompleted = completed ?? !(await this.getTask(taskId)).completed;
-        return this.updateTask(taskId, { completed: nextCompleted });
+        return this.updateTask(taskId, { completed: nextCompleted }, options);
     },
 
     async updateDescription(taskId: string, description: string): Promise<Task> {

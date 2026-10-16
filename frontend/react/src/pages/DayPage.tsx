@@ -32,6 +32,8 @@ type TimelineItem = {
     titleSuffix?: string;
     start: Date;
     end: Date | null;
+    eventOccurrenceId?: string;
+    timeLabel?: string;
     detail?: string;
     durationSeconds?: number;
     completed?: boolean;
@@ -95,6 +97,20 @@ function buildTimeline(overview: DayOverview, mode: DayViewMode): TimelineItem[]
     const calendarDayStart = parseISO(`${overview.date}T00:00:00`);
     const calendarDayEnd = addDays(calendarDayStart, 1);
     const items: TimelineItem[] = overview.tasks.flatMap(task => {
+        if (mode === 'future') {
+            if (task.completed || !task.scheduledAt) return [];
+            const scheduledTime = parseISO(task.scheduledAt);
+            if (!isValid(scheduledTime) || scheduledTime < dayStart || scheduledTime >= dayEnd) return [];
+            return [{
+                id: `task-${task.id}`,
+                kind: 'task' as const,
+                title: task.name || 'Untitled task',
+                start: scheduledTime,
+                end: null,
+                detail: 'Planned task',
+            }];
+        }
+
         const completionTime = taskCompletionTime(task, dayStart, dayEnd);
         if (!completionTime) return [];
 
@@ -187,32 +203,48 @@ function buildTimeline(overview: DayOverview, mode: DayViewMode): TimelineItem[]
                         titleSuffix: occurrence.status === 'CANCELLED' ? 'canceled' : undefined,
                         start,
                         end: null,
+                        eventOccurrenceId: occurrence.id,
+                        timeLabel: occurrence.allDay ? 'All day' : undefined,
                         detail: undefined,
                     });
                     return;
                 }
 
                 const end = parseISO(occurrence.end);
-                items.push(
-                    {
+                if (rawStart < dayStart) {
+                    items.push({
+                        id: `event-${occurrence.id}-continue`,
+                        kind: 'event',
+                        title: event.title,
+                        titleSuffix: 'continues',
+                        start: dayStart,
+                        end: null,
+                        eventOccurrenceId: occurrence.id,
+                    });
+                } else {
+                    items.push({
                         id: `event-${occurrence.id}-start`,
                         kind: 'event',
                         title: event.title,
-                        titleSuffix: 'started',
+                        titleSuffix: eventBoundarySuffix(start, mode, 'start'),
                         start,
                         end: null,
+                        eventOccurrenceId: occurrence.id,
                         detail: undefined,
-                    },
-                    {
+                    });
+                }
+                if (end >= dayStart && end < dayEnd) {
+                    items.push({
                         id: `event-${occurrence.id}-end`,
                         kind: 'event',
                         title: event.title,
-                        titleSuffix: 'finished',
+                        titleSuffix: eventBoundarySuffix(end, mode, 'end'),
                         start: end,
                         end: null,
+                        eventOccurrenceId: occurrence.id,
                         detail: undefined,
-                    },
-                );
+                    });
+                }
             });
     });
 
@@ -221,6 +253,13 @@ function buildTimeline(overview: DayOverview, mode: DayViewMode): TimelineItem[]
         .sort((first, second) => {
             return first.start.getTime() - second.start.getTime();
         });
+}
+
+function eventBoundarySuffix(time: Date, mode: DayViewMode, boundary: 'start' | 'end'): string {
+    if (mode === 'future' || (mode === 'today' && time > new Date())) {
+        return boundary === 'start' ? 'will start' : 'will finish';
+    }
+    return boundary === 'start' ? 'started' : 'finished';
 }
 
 function TimelineIcon({ kind }: { kind: TimelineKind }) {
@@ -234,7 +273,7 @@ function TimelineIcon({ kind }: { kind: TimelineKind }) {
 }
 
 function timelineTimeLabel(item: TimelineItem): string {
-    return format(item.start, 'h:mm a');
+    return item.timeLabel ?? format(item.start, 'h:mm a');
 }
 
 function TimeBoundary({ label, time, detail }: { label: string; time: Date; detail?: string }) {
@@ -305,6 +344,10 @@ export function DayPage() {
     const viewMode = dayViewMode(date);
     const timeline = useMemo(() => overview ? buildTimeline(overview, viewMode) : [], [overview, viewMode]);
     const completedTasks = overview?.tasks.filter(task => task.completed).length ?? 0;
+    const scheduledEventCount = new Set(timeline
+        .filter(item => item.kind === 'event')
+        .map(item => item.eventOccurrenceId ?? item.id)).size;
+    const plannedStatCount = overview?.stats.filter(stat => stat.status !== 'NOT_PLANNED').length ?? 0;
     const pomodoroSeconds = overview?.focusSessions
         .filter(session => session.pomodoro)
         .reduce((total, session) => total + session.durationSeconds, 0) ?? 0;
@@ -354,7 +397,9 @@ export function DayPage() {
                         </IconButton>
                         <Box>
                             <Typography variant="h5" fontWeight={700}>{format(dateValue, 'EEEE, MMMM d')}</Typography>
-                            <Typography variant="body2" color="text.secondary">A time-ordered view of your day</Typography>
+                            <Typography variant="body2" color="text.secondary">
+                                {viewMode === 'future' ? 'A look ahead at your day' : 'A time-ordered view of your day'}
+                            </Typography>
                         </Box>
                     </Stack>
                     <Stack direction="row" spacing={0.5} alignItems="center">
@@ -373,7 +418,9 @@ export function DayPage() {
                                 <Box sx={{ flex: 1 }}>
                                     <Typography variant="overline" color="text.secondary">Day notes</Typography>
                                     <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
-                                        {overview.day.summary || 'No summary written for this day.'}
+                                        {overview.day.summary || (viewMode === 'future'
+                                            ? 'No notes added for this day yet.'
+                                            : 'No summary written for this day.')}
                                     </Typography>
                                     {overview.day.plan && (
                                         <Typography variant="body2" color="text.secondary" sx={{ mt: 1, whiteSpace: 'pre-wrap' }}>
@@ -381,7 +428,7 @@ export function DayPage() {
                                         </Typography>
                                     )}
                                 </Box>
-                                {overview.day.rating !== null && (
+                                {viewMode !== 'future' && overview.day.rating !== null && (
                                     <Box sx={{ minWidth: 120 }}>
                                         <Typography variant="overline" color="text.secondary">Day rating</Typography>
                                         <Typography variant="h4" fontWeight={700}>{overview.day.rating}<Typography component="span" variant="body2" color="text.secondary"> / 10</Typography></Typography>
@@ -390,12 +437,20 @@ export function DayPage() {
                             </Stack>
                         </Card>
 
-                        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(4, minmax(0, 1fr))' }, gap: 1.5 }}>
-                            <SummaryCard icon={<TaskAltRoundedIcon />} value={`${completedTasks}/${overview.tasks.length}`} label="tasks completed" />
-                            <SummaryCard icon={<TimerOutlinedIcon />} value={durationLabel(pomodoroSeconds)} label="Pomodoro focus" />
-                            <SummaryCard icon={<SelfImprovementOutlinedIcon />} value={durationLabel(meditationSeconds)} label="meditation" />
-                            <SummaryCard icon={<InsightsOutlinedIcon />} value={String(overview.stats.length)} label="stats recorded" />
-                        </Box>
+                        {viewMode === 'future' ? (
+                            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(3, minmax(0, 1fr))' }, gap: 1.5 }}>
+                                <SummaryCard icon={<TaskAltRoundedIcon />} value={String(overview.tasks.length)} label="tasks on the plan" />
+                                <SummaryCard icon={<EventNoteOutlinedIcon />} value={String(scheduledEventCount)} label="calendar events" />
+                                <SummaryCard icon={<InsightsOutlinedIcon />} value={String(plannedStatCount)} label="stats planned" />
+                            </Box>
+                        ) : (
+                            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(4, minmax(0, 1fr))' }, gap: 1.5 }}>
+                                <SummaryCard icon={<TaskAltRoundedIcon />} value={`${completedTasks}/${overview.tasks.length}`} label="tasks completed" />
+                                <SummaryCard icon={<TimerOutlinedIcon />} value={durationLabel(pomodoroSeconds)} label="Pomodoro focus" />
+                                <SummaryCard icon={<SelfImprovementOutlinedIcon />} value={durationLabel(meditationSeconds)} label="meditation" />
+                                <SummaryCard icon={<InsightsOutlinedIcon />} value={String(overview.stats.length)} label="stats recorded" />
+                            </Box>
+                        )}
 
                         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: hasDetailPanel ? 'minmax(0, 1.4fr) minmax(280px, 0.8fr)' : '1fr' }, gap: 2 }}>
                             <Card variant="outlined" sx={{ p: { xs: 1.5, sm: 2 } }}>
@@ -411,7 +466,7 @@ export function DayPage() {
                                     {timeline.length === 0 ? (
                                         <Typography color="text.secondary" sx={{ py: 4, pl: 5 }}>
                                             {viewMode === 'future'
-                                                ? 'No completed tasks or other activity recorded for this day yet.'
+                                                ? 'Nothing planned for this day yet.'
                                                 : 'Nothing recorded during this window yet.'}
                                         </Typography>
                                     ) : timeline.map(item => (
@@ -559,7 +614,7 @@ function DayDetailsPanel({
                                                 </Typography>
                                                 {item.detail && <Typography variant="caption" color="text.secondary">{item.detail}</Typography>}
                                             </Box>
-                                            <Typography variant="caption" color="text.secondary">{format(item.start, 'h:mm a')}</Typography>
+                                            <Typography variant="caption" color="text.secondary">{timelineTimeLabel(item)}</Typography>
                                         </Stack>
                                     ))}
                                 </Stack>
@@ -610,7 +665,9 @@ function TaskSummaryRow({ task, viewMode }: { task: DayTask; viewMode: DayViewMo
         ? format(parseISO(task.scheduledAt), 'h:mm a')
         : null;
     const notCompleted = viewMode === 'past' && !task.completed;
-    const timeLabel = viewMode === 'future' ? scheduledTime : completionTime;
+    const timeLabel = viewMode === 'future'
+        ? task.completed ? 'Already completed' : scheduledTime
+        : completionTime;
 
     return (
         <Stack direction="row" alignItems="center" justifyContent="flex-start" spacing={1} sx={{ py: 1, textAlign: 'left' }}>

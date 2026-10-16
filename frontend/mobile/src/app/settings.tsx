@@ -93,7 +93,7 @@ export default function SettingsScreen() {
   const checkupScheduleVisible = resource.data !== null && resource.data.checkupNotificationsEnabled !== false;
 
   async function updatePreference(
-    key: 'includeUnloggedNumericDaysAsZero' | 'autoStartPomodoroSessions' | 'checkupNotificationsEnabled' | 'repeatCheckupNotificationsEnabled',
+    key: 'includeUnloggedNumericDaysAsZero' | 'checkupNotificationsEnabled' | 'repeatCheckupNotificationsEnabled',
     value: boolean,
   ) {
     if (!resource.data) return;
@@ -177,7 +177,7 @@ export default function SettingsScreen() {
   }
 
   return (
-    <Screen safeAreaTop={false}>
+    <Screen back>
       <Card style={styles.section}>
         <View style={styles.sectionHeading}><Ionicons name="color-palette-outline" size={20} color={colors.textMuted} /><AppText variant="heading">Appearance</AppText></View>
         <AppText variant="label">Theme</AppText>
@@ -209,8 +209,6 @@ export default function SettingsScreen() {
         <SettingRow label="Show completed tasks" detail="Keep completed tasks visible on Today and Tasks." value={showCompletedTasks} onChange={setShowCompletedTasks} />
         <View style={[styles.divider, { backgroundColor: colors.border }]} />
         <SettingRow label="Show closed threads" detail="Keep closed threads visible in the mental threads list." value={showClosedMentalThreads} onChange={setShowClosedMentalThreads} />
-        <View style={[styles.divider, { backgroundColor: colors.border }]} />
-        <SettingRow label="Auto-start Pomodoro phases" detail="Move directly into the next focus or break phase." value={resource.data?.autoStartPomodoroSessions ?? true} disabled={!resource.data} onChange={value => void updatePreference('autoStartPomodoroSessions', value)} />
       </Card>
 
       <Card style={styles.section}>

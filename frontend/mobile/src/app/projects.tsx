@@ -95,7 +95,7 @@ export default function ProjectsScreen() {
 
   return (
     <Screen
-      safeAreaTop={false}
+      back
       action={<AppButton compact label="New" icon="add" onPress={() => setComposerOpen(true)} />}
       refreshing={resource.refreshing}
       onRefresh={() => void resource.reload()}>

@@ -26,6 +26,7 @@ import SkipNextIcon from '@mui/icons-material/SkipNext';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { taskService } from '../../services/api/index.ts'; // Import the service
 import { requestSystemNotificationPermission } from '../../services/systemNotifications';
+import { primePomodoroTransitionSound } from '../../services/pomodoroTransitionSound';
 import {
     createPomodoroFormDefaults,
     getPomodoroConfig,
@@ -431,6 +432,7 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
         if (!applyLocalPomodoroStatus(optimisticStatus, false, true)) return;
 
         const mutationRevision = ++pomodoroMutationRevisionRef.current;
+        primePomodoroTransitionSound();
         void requestSystemNotificationPermission()
             .catch(error => console.error('Failed to request Pomodoro notification permission:', error));
         console.log('Starting pomodoro with data:', formData);

@@ -15,6 +15,8 @@ import { CalendarSelect } from './CalendarSelect';
 
 type Props = {
     initialDate: string;
+    initialName?: string;
+    onNameChange?: (name: string) => void;
     visibleCalendars: Calendar[];
     onSave: (task: TaskToCreate) => Promise<void>;
     onCancel: () => void;
@@ -39,8 +41,8 @@ function defaultScheduledDateTime(date: string): string {
     return `${date}T${pad(now.getHours())}:${pad(now.getMinutes())}:00`;
 }
 
-export function CalendarTaskForm({ initialDate, visibleCalendars, onSave, onCancel }: Props) {
-    const [name, setName] = useState('');
+export function CalendarTaskForm({ initialDate, initialName = '', onNameChange, visibleCalendars, onSave, onCancel }: Props) {
+    const [name, setName] = useState(initialName);
     const [importance, setImportance] = useState(0);
     const [calendarId, setCalendarId] = useState(visibleCalendars.length === 1 ? visibleCalendars[0].id : '');
     const [scheduledPerformDateTime, setScheduledPerformDateTime] = useState(defaultScheduledDateTime(initialDate));
@@ -111,7 +113,10 @@ export function CalendarTaskForm({ initialDate, visibleCalendars, onSave, onCanc
             <TextField
                 label="Name"
                 value={name}
-                onChange={event => setName(event.target.value)}
+                onChange={event => {
+                    setName(event.target.value);
+                    onNameChange?.(event.target.value);
+                }}
                 onKeyDown={event => {
                     if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return;
                     event.preventDefault();

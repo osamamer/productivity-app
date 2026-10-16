@@ -101,14 +101,6 @@ async function loadTodaySnapshot(): Promise<TodaySnapshot> {
   };
 }
 
-function focusMetricColor(seconds: number | null, colors: AppColors): string {
-  if (seconds === null) return colors.textMuted;
-  const hours = Number((seconds / 3600).toFixed(1));
-  if (hours < 1) return colors.danger;
-  if (hours < 2) return colors.warning;
-  return colors.success;
-}
-
 function mentalStateMetricColor(state: string | null, colors: AppColors): string {
   if (!state) return colors.textMuted;
   if (state === 'Ready' || state === 'Engaged') return colors.success;
@@ -124,25 +116,27 @@ function TodaySnapshotCard({ snapshot }: { snapshot: TodaySnapshot | null }) {
     : `${(snapshot.focusSeconds / 3600).toFixed(1)}h`;
   const mentalStateLabel = snapshot === null
     ? 'Checking'
-    : snapshot.mentalState ?? 'Not checked in';
-  const mentalStateMissing = snapshot !== null && snapshot.mentalState === null;
+    : snapshot.mentalState ?? 'Check in';
+  const mentalStateColor = snapshot?.mentalState
+    ? colors.text
+    : snapshot
+      ? colors.accent
+      : colors.textMuted;
 
   return (
     <Card style={styles.snapshotCard}>
-      <View style={styles.snapshotHeading}>
-        <View style={styles.snapshotHeadingCopy}>
-          <AppText variant="heading">Today at a glance</AppText>
-          <AppText color="muted">A quick read on your focus and state</AppText>
-        </View>
-        <Ionicons name="sparkles-outline" size={24} color={colors.accent} />
-      </View>
+      <AppText variant="heading" style={styles.snapshotHeading}>Today</AppText>
       <View style={styles.snapshotMetrics}>
-        <View style={[styles.snapshotMetric, { backgroundColor: colors.accentSoft, borderColor: `${colors.accent}45` }]}>
+        <View style={[styles.snapshotMetric, styles.snapshotFocusMetric]}>
           <View style={styles.snapshotMetricLabel}>
-            <Ionicons name="time-outline" size={15} color={colors.accent} />
-            <AppText variant="caption" color="muted">Hours focused</AppText>
+            <View style={[styles.snapshotMetricIcon, { backgroundColor: colors.accentSoft }]}>
+              <Ionicons name="time-outline" size={15} color={colors.accent} />
+            </View>
+            <AppText variant="caption" color="muted">Focus time</AppText>
           </View>
-          <AppText variant="heading" style={{ color: focusMetricColor(snapshot?.focusSeconds ?? null, colors) }}>{focusLabel}</AppText>
+          <View style={styles.snapshotValue}>
+            <AppText style={styles.snapshotFocusText}>{focusLabel}</AppText>
+          </View>
         </View>
         <SilentPressable
           accessibilityRole="button"
@@ -150,24 +144,33 @@ function TodaySnapshotCard({ snapshot }: { snapshot: TodaySnapshot | null }) {
           onPress={() => router.push('/mental-state')}
           style={({ pressed }) => [
             styles.snapshotMetric,
-            { backgroundColor: colors.background, borderColor: colors.border },
+            styles.snapshotStateMetric,
+            { borderLeftColor: colors.border },
             pressed && styles.pressed,
           ]}>
           <View style={styles.snapshotMetricLabel}>
-            <Ionicons name="pulse-outline" size={15} color={colors.accent} />
+            <View style={[styles.snapshotMetricIcon, { backgroundColor: colors.accentSoft }]}>
+              <Ionicons name="pulse-outline" size={15} color={colors.accent} />
+            </View>
             <AppText variant="caption" color="muted">Mental state</AppText>
           </View>
-          <View style={styles.snapshotStateValue}>
+          <View style={styles.snapshotValue}>
+            {snapshot?.mentalState && (
+              <View
+                style={[
+                  styles.snapshotStateDot,
+                  { backgroundColor: mentalStateMetricColor(snapshot.mentalState, colors) },
+                ]}
+              />
+            )}
             <AppText
-              variant="heading"
-              numberOfLines={2}
+              numberOfLines={1}
               adjustsFontSizeToFit
-              minimumFontScale={0.85}
-              style={{ color: mentalStateMetricColor(snapshot?.mentalState ?? null, colors) }}>
+              minimumFontScale={0.78}
+              style={[styles.snapshotStateText, { color: mentalStateColor }]}>
               {mentalStateLabel}
             </AppText>
           </View>
-          {mentalStateMissing && <AppText variant="caption" color="accent">Check in now</AppText>}
         </SilentPressable>
       </View>
     </Card>
@@ -979,13 +982,18 @@ export default function TodayScreen() {
 }
 
 const styles = StyleSheet.create({
-  snapshotCard: { gap: 8, padding: 14, borderRadius: 18 },
-  snapshotHeading: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  snapshotHeadingCopy: { flex: 1, gap: 1 },
-  snapshotMetrics: { flexDirection: 'row', gap: 8 },
-  snapshotMetric: { flex: 1, minWidth: 0, minHeight: 76, borderWidth: 1, borderRadius: 14, padding: 10, gap: 4 },
-  snapshotMetricLabel: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  snapshotStateValue: { justifyContent: 'center' },
+  snapshotCard: { gap: 12, padding: 16, borderRadius: 18 },
+  snapshotHeading: { fontSize: 17, lineHeight: 22 },
+  snapshotMetrics: { flexDirection: 'row', alignItems: 'stretch' },
+  snapshotMetric: { flex: 1, minWidth: 0, minHeight: 64, justifyContent: 'space-between', gap: 8, paddingVertical: 2 },
+  snapshotFocusMetric: { paddingRight: 14 },
+  snapshotStateMetric: { paddingLeft: 14, borderLeftWidth: StyleSheet.hairlineWidth },
+  snapshotMetricLabel: { minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 7 },
+  snapshotMetricIcon: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  snapshotValue: { minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 7 },
+  snapshotFocusText: { fontSize: 25, lineHeight: 31, fontWeight: '600', letterSpacing: -0.5, fontVariant: ['tabular-nums'] },
+  snapshotStateText: { flex: 1, minWidth: 0, fontSize: 15, lineHeight: 20, fontWeight: '600' },
+  snapshotStateDot: { width: 7, height: 7, borderRadius: 4 },
   eventsCard: { gap: 12 },
   eventsList: { gap: 4 },
   eventRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 },

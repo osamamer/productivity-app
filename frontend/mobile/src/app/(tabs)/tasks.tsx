@@ -1,6 +1,5 @@
-import { useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { TaskGroupComposerSheet } from '@/components/tasks/TaskGroupComposerSheet';
@@ -33,7 +32,7 @@ import {
   type TaskSectionExpansionState,
   type TaskSectionName,
 } from '@/lib/taskPagePreferences';
-import type { PomodoroStatus, Task, TaskGroup } from '@/types/models';
+import type { Task, TaskGroup } from '@/types/models';
 
 type Filter = 'today' | 'upcoming' | 'all';
 
@@ -82,30 +81,6 @@ function compareMostRecentFirst(first: Task, second: Task): number {
   return compareNearestFirst(second, first);
 }
 
-function sectionForTask(task: Task): TaskSectionName {
-  if (!task.scheduledPerformDateTime) return 'undated';
-  const scheduled = new Date(task.scheduledPerformDateTime);
-  if (Number.isNaN(scheduled.getTime())) return 'undated';
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const scheduledDate = new Date(scheduled.getFullYear(), scheduled.getMonth(), scheduled.getDate());
-  if (scheduledDate.getTime() === today.getTime()) return 'today';
-  return scheduledDate > today ? 'comingUp' : 'leftovers';
-}
-
-function optimisticPomodoroStatusAllowsUpdate(
-  optimistic: PomodoroStatus,
-  next: PomodoroStatus,
-): boolean {
-  if (next.pomodoroId !== optimistic.pomodoroId) return true;
-  if (!optimistic.active) return !next.active;
-  if (!next.active) return true;
-
-  return optimistic.sessionActive === next.sessionActive
-    && optimistic.sessionRunning === next.sessionRunning
-    && optimistic.phase === next.phase;
-}
-
 export default function TasksScreen() {
   const { colors } = useAppTheme();
   const { user } = useAuth();
@@ -143,11 +118,6 @@ export default function TasksScreen() {
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
   const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(new Set());
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
-  const [expandedPomodoroTaskId, setExpandedPomodoroTaskId] = useState<string | null>(null);
-  const [activePomodoroTaskId, setActivePomodoroTaskId] = useState<string | null>(null);
-  const [activePomodoroStatus, setActivePomodoroStatus] = useState<PomodoroStatus | null>(null);
-  const activePomodoroStatusRef = useRef<PomodoroStatus | null>(null);
-  const optimisticPomodoroStatusRef = useRef<PomodoroStatus | null>(null);
   const [bulkDateOpen, setBulkDateOpen] = useState(false);
   const [bulkDateSaving, setBulkDateSaving] = useState(false);
   const [loadingMoreFutureTasks, setLoadingMoreFutureTasks] = useState(false);
@@ -175,80 +145,6 @@ export default function TasksScreen() {
     setFilter(nextFilter);
   }
 
-  useFocusEffect(useCallback(() => {
-    let active = true;
-    let requestInFlight = false;
-
-    async function refreshPomodoroStatus() {
-      if (!active || requestInFlight) return;
-      requestInFlight = true;
-      try {
-        const status = await api.pomodoro.status();
-        if (!active) return;
-        if (!status?.active) {
-          if (optimisticPomodoroStatusRef.current) return;
-          if (activePomodoroStatusRef.current?.phase === 'COMPLETED') return;
-          activePomodoroStatusRef.current = null;
-          setActivePomodoroTaskId(null);
-          setActivePomodoroStatus(null);
-          setExpandedPomodoroTaskId(null);
-          return;
-        }
-        const optimistic = optimisticPomodoroStatusRef.current;
-        if (optimistic && !optimisticPomodoroStatusAllowsUpdate(optimistic, status)) return;
-        optimisticPomodoroStatusRef.current = null;
-        activePomodoroStatusRef.current = status;
-        setActivePomodoroTaskId(status.associatedTaskId);
-        setActivePomodoroStatus(status);
-        setExpandedPomodoroTaskId(status.associatedTaskId);
-      } catch (cause) {
-        console.warn('Could not refresh Pomodoro status:', cause);
-      } finally {
-        requestInFlight = false;
-      }
-    }
-
-    void refreshPomodoroStatus();
-    const timer = setInterval(() => void refreshPomodoroStatus(), 5_000);
-    const appStateSubscription = AppState.addEventListener('change', state => {
-      if (state === 'active') void refreshPomodoroStatus();
-    });
-
-    return () => {
-      active = false;
-      clearInterval(timer);
-      appStateSubscription.remove();
-    };
-  }, []));
-
-  const openPomodoro = useCallback((taskId: string) => {
-    setExpandedPomodoroTaskId(current => current === taskId ? null : taskId);
-  }, []);
-
-  const handlePomodoroActiveChange = useCallback((taskId: string, active: boolean) => {
-    if (active) {
-      setActivePomodoroTaskId(taskId);
-      setExpandedPomodoroTaskId(taskId);
-    } else {
-      optimisticPomodoroStatusRef.current = null;
-      activePomodoroStatusRef.current = null;
-      setActivePomodoroTaskId(current => current === taskId ? null : current);
-      setActivePomodoroStatus(current => current?.associatedTaskId === taskId ? null : current);
-      setExpandedPomodoroTaskId(current => current === taskId ? null : current);
-    }
-  }, []);
-
-  const handlePomodoroStatusChange = useCallback((taskId: string, status: PomodoroStatus, optimistic = false) => {
-    if (!status.active && status.phase !== 'COMPLETED') return;
-    const pending = optimisticPomodoroStatusRef.current;
-    if (optimistic) optimisticPomodoroStatusRef.current = status;
-    else if (pending && !optimisticPomodoroStatusAllowsUpdate(pending, status)) return;
-    else optimisticPomodoroStatusRef.current = null;
-    activePomodoroStatusRef.current = status;
-    setActivePomodoroTaskId(taskId);
-    setActivePomodoroStatus(status);
-  }, []);
-
   const sectionTasks = useMemo(() => {
     const visible = (tasks: Task[]) => tasks.filter(task => !task.parentId && (showCompletedTasks || !task.completed));
     return {
@@ -259,28 +155,13 @@ export default function TasksScreen() {
     } satisfies Record<TaskSectionName, Task[]>;
   }, [futureTasks, pastTasks, showCompletedTasks, todayTasks, undatedTasks]);
 
-  const focusedTask = activePomodoroTaskId
-    ? allTasks.find(task => task.taskId === activePomodoroTaskId) ?? null
-    : null;
-  const visibleSectionTasks = useMemo(() => {
-    if (!focusedTask) return sectionTasks;
-    return {
-      today: [],
-      comingUp: [],
-      leftovers: [],
-      undated: [],
-      [sectionForTask(focusedTask)]: [focusedTask],
-    } satisfies Record<TaskSectionName, Task[]>;
-  }, [focusedTask, sectionTasks]);
-  const sectionsToRender: TaskSectionName[] = focusedTask
-    ? [sectionForTask(focusedTask)]
-    : filter === 'today'
-      ? ['today']
-      : filter === 'upcoming'
-        ? ['comingUp']
-        : ['today', 'comingUp', 'leftovers', 'undated'];
-  const hasRenderableTasks = sectionsToRender.some(section => visibleSectionTasks[section].length > 0)
-    || (!focusedTask && sectionsToRender.includes('comingUp') && hasMoreFutureTasks);
+  const sectionsToRender: TaskSectionName[] = filter === 'today'
+    ? ['today']
+    : filter === 'upcoming'
+      ? ['comingUp']
+      : ['today', 'comingUp', 'leftovers', 'undated'];
+  const hasRenderableTasks = sectionsToRender.some(section => sectionTasks[section].length > 0)
+    || (sectionsToRender.includes('comingUp') && hasMoreFutureTasks);
   const selectedTaskIdSet = useMemo(() => new Set(selectedTaskIds), [selectedTaskIds]);
   const selectedGroupIdSet = useMemo(() => new Set(selectedGroupIds), [selectedGroupIds]);
   const selectedGroupTaskIdSet = useMemo(
@@ -513,12 +394,6 @@ export default function TasksScreen() {
         onLongPress={() => startSelection(task.taskId)}
         onSelectionToggle={selectionMode ? () => toggleSelection(task.taskId) : undefined}
         selected={selectedTaskIdSet.has(task.taskId) || selectedGroupTaskIdSet.has(task.taskId)}
-        onPomodoroPress={() => openPomodoro(task.taskId)}
-        pomodoroOpen={expandedPomodoroTaskId === task.taskId || activePomodoroTaskId === task.taskId}
-        pomodoroStatus={activePomodoroTaskId === task.taskId ? activePomodoroStatus : null}
-        onPomodoroActiveChange={active => handlePomodoroActiveChange(task.taskId, active)}
-        onPomodoroStatusChange={(status, optimistic) => handlePomodoroStatusChange(task.taskId, status, optimistic)}
-        onPomodoroClose={() => setExpandedPomodoroTaskId(null)}
         inGroup={inGroup}
         groupLast={groupLast}
       />
@@ -527,7 +402,6 @@ export default function TasksScreen() {
 
   return (
     <Screen
-      eyebrow="Make it manageable"
       action={<AppButton compact label="Add" icon="add" onPress={() => setComposerOpen(true)} />}
       overlay={(
         <TaskSelectionActionsPopup
@@ -561,7 +435,7 @@ export default function TasksScreen() {
       )}
       <View style={styles.sections}>
         {sectionsToRender.map(section => {
-          const tasks = visibleSectionTasks[section];
+          const tasks = sectionTasks[section];
           const hasMore = section === 'comingUp' ? hasMoreFutureTasks : section === 'leftovers' ? hasMorePastTasks : false;
           if (tasks.length === 0 && (section === 'leftovers' || !hasMore)) return null;
           const title = section === 'today'
@@ -620,7 +494,6 @@ export default function TasksScreen() {
         onClose={() => setSelected(null)}
         onUpdated={replace}
         onSubtaskCreated={addTask}
-        onStartFocus={task => { setSelected(null); openPomodoro(task.taskId); }}
         onDeleted={id => { removeWorkspaceTask(id); setSelected(null); }}
       />
     </Screen>

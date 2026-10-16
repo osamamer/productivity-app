@@ -72,12 +72,28 @@ export interface PomodoroContextValue {
         optimistic?: boolean,
     ) => boolean;
     clearPomodoroMutation: () => void;
+}
+
+export interface PomodoroPreferencesContextValue {
     whiteNoiseEnabled: boolean;
     setWhiteNoiseEnabled: (enabled: boolean) => void;
     toggleWhiteNoise: () => void;
 }
 
+export interface PomodoroActionsContextValue {
+    refreshActivePomodoro: (force?: boolean) => Promise<PomodoroStatus | null>;
+    publishPomodoroStatus: (
+        status: PomodoroStatus | null,
+        authoritative?: boolean,
+        optimistic?: boolean,
+    ) => boolean;
+    clearPomodoroMutation: () => void;
+    canStartPomodoroForTask: (taskId: string) => boolean;
+}
+
 export const PomodoroContext = createContext<PomodoroContextValue | undefined>(undefined);
+export const PomodoroActionsContext = createContext<PomodoroActionsContextValue | undefined>(undefined);
+export const PomodoroPreferencesContext = createContext<PomodoroPreferencesContextValue | undefined>(undefined);
 
 export function PomodoroProvider({ children }: { children: ReactNode }) {
     const cacheKey = activePomodoroCacheKey();
@@ -189,6 +205,11 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
 
     const clearPomodoroMutation = useCallback(() => {
         optimisticPomodoroStatusRef.current = null;
+    }, []);
+
+    const canStartPomodoroForTask = useCallback((taskId: string) => {
+        const currentStatus = activePomodoroRef.current;
+        return !currentStatus?.active || currentStatus.associatedTaskId === taskId;
     }, []);
 
     const refreshActivePomodoro = useCallback(async (force = false) => {
@@ -340,23 +361,34 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
         refreshActivePomodoro,
         publishPomodoroStatus,
         clearPomodoroMutation,
-        whiteNoiseEnabled,
-        setWhiteNoiseEnabled: updateWhiteNoiseEnabled,
-        toggleWhiteNoise,
     }), [
         activePomodoro,
         clearPomodoroMutation,
         pomodoroStatusResolved,
         publishPomodoroStatus,
         refreshActivePomodoro,
-        toggleWhiteNoise,
-        updateWhiteNoiseEnabled,
-        whiteNoiseEnabled,
     ]);
 
+    const actionsContextValue = useMemo(() => ({
+        refreshActivePomodoro,
+        publishPomodoroStatus,
+        clearPomodoroMutation,
+        canStartPomodoroForTask,
+    }), [canStartPomodoroForTask, clearPomodoroMutation, publishPomodoroStatus, refreshActivePomodoro]);
+
+    const preferencesContextValue = useMemo(() => ({
+        whiteNoiseEnabled,
+        setWhiteNoiseEnabled: updateWhiteNoiseEnabled,
+        toggleWhiteNoise,
+    }), [toggleWhiteNoise, updateWhiteNoiseEnabled, whiteNoiseEnabled]);
+
     return (
-        <PomodoroContext.Provider value={contextValue}>
-            {children}
-        </PomodoroContext.Provider>
+        <PomodoroActionsContext.Provider value={actionsContextValue}>
+            <PomodoroPreferencesContext.Provider value={preferencesContextValue}>
+                <PomodoroContext.Provider value={contextValue}>
+                    {children}
+                </PomodoroContext.Provider>
+            </PomodoroPreferencesContext.Provider>
+        </PomodoroActionsContext.Provider>
     );
 }

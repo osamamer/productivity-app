@@ -285,7 +285,7 @@ public class UserService {
             throw new IllegalArgumentException("That accent color is not available.");
         }
         if (updates.meditationDurationMinutes() != null
-                && !List.of(5, 10, 15, 20, 30).contains(updates.meditationDurationMinutes())) {
+                && !List.of(5, 10, 15, 20, 30, 60).contains(updates.meditationDurationMinutes())) {
             throw new IllegalArgumentException("That meditation duration is not available.");
         }
         if (updates.meditationIntervalBells() != null

@@ -95,7 +95,7 @@ const sectionHeadingSx = {
 
 const hideCompletedTasksDescription = 'Hide completed tasks from the Tasks and Calendar pages.';
 const excludeTodayCompletedTasksDescription = 'Also hide completed tasks scheduled for today from the Home page.';
-const numericStatsAverageDescription = 'Include days without a logged numeric value as 0 when calculating averages.';
+const numericStatsAverageDescription = 'Include days without a logged numeric value as 0 when calculating averages, starting from the first logged day.';
 const pomodoroAutoStartDescription = 'Start each break and focus session automatically, or wait for you to start the next phase.';
 const pomodoroSecondsModeDescription = 'Use 10-second focus and break durations instead of the normal 25/5/15-minute defaults.';
 const pomodoroLongBreakDescription = 'Take a long break after this many completed focus sessions in every Pomodoro.';
@@ -610,7 +610,7 @@ const BrowserNotificationsSection = memo(function BrowserNotificationsSection() 
                         Notify me when the app is closed
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
-                        Receive reminders on this browser even when Claritard is not open.
+                        Receive reminders on this browser when Claritard is closed. Pomodoro transition alerts play and appear locally while the app is open.
                     </Typography>
                 </Box>
                 <Switch

@@ -37,9 +37,19 @@ class MeditationSessionTest {
     }
 
     @Test
+    void exposesAnOffsetAwareOneHourDeadline() {
+        MeditationSession session = meditationSessionService.createSession();
+        session.setStartTime(LocalDateTime.of(2026, 1, 1, 10, 0));
+
+        assertEquals(session.getStartTime().plusHours(1), session.getExpiresAt().toLocalDateTime());
+    }
+
+    @Test
     void validatesMeditationConfiguration() {
         assertThrows(IllegalArgumentException.class, () -> meditationSessionService.validateMood(0));
         assertThrows(IllegalArgumentException.class, () -> meditationSessionService.validateNumIntervalBells(11));
         assertThrows(IllegalArgumentException.class, () -> meditationSessionService.validateIntendedLength(-1));
+        assertThrows(IllegalArgumentException.class, () -> meditationSessionService.validateIntendedLength(3601));
+        meditationSessionService.validateIntendedLength(3600);
     }
 }

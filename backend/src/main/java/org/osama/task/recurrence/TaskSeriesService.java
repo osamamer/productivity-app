@@ -93,6 +93,8 @@ public class TaskSeriesService {
         TaskSeries series = createSeriesForTask(task, request.getRecurrenceFrequency(), request.getRecurrenceEndDate(),
                 request.getRecurrenceInterval(), request.getRecurrenceUnit(), request.getRecurrenceDaysOfWeek(),
                 request.getTimeZone());
+        series.setRepeatSubtasks(Boolean.TRUE.equals(request.getRepeatSubtasks()));
+        seriesRepository.save(series);
         attachOccurrence(task, series, task.getScheduledPerformDateTime());
         materializeOccurrences(series, userId);
         log.info("Task converted to recurring series: userId={} taskId={} seriesId={}",
@@ -174,6 +176,9 @@ public class TaskSeriesService {
         series.setTimeZone(timeZone);
         if (request.getActive() != null) {
             series.setActive(request.getActive());
+        }
+        if (request.getRepeatSubtasks() != null) {
+            series.setRepeatSubtasks(request.getRepeatSubtasks());
         }
         TaskSeries saved = seriesRepository.save(series);
         if (request.getImportance() != null) {
@@ -315,11 +320,32 @@ public class TaskSeriesService {
 
             Task occurrence = taskService.createTaskFromSeries(occurrenceRequest, userId);
             attachOccurrence(occurrence, series, occurrenceDate);
+            copySeriesSubtasks(series, occurrence, userId);
             newOccurrences.add(occurrence);
         }
         // Preserve newest-first ordering with one rewrite instead of rewriting
         // every existing task once for every generated occurrence.
         taskService.prependSeriesOccurrences(newOccurrences, userId);
+        if (series.isRepeatSubtasks()) {
+            taskRepository.findAllByTaskSeriesIdAndUserIdOrderBySeriesOccurrenceAtAsc(series.getSeriesId(), userId)
+                    .forEach(occurrence -> copySeriesSubtasks(series, occurrence, userId));
+        }
+    }
+
+    private void copySeriesSubtasks(TaskSeries series, Task occurrence, String userId) {
+        if (!series.isRepeatSubtasks() || occurrence.getSeriesOccurrenceAt().equals(series.getStartDateTime())) return;
+        if (!taskService.getSubtasks(occurrence.getTaskId(), userId).isEmpty()) return;
+        taskRepository.findByTaskSeriesIdAndSeriesOccurrenceAt(series.getSeriesId(), series.getStartDateTime())
+                .ifPresent(template -> taskService.getSubtasks(template.getTaskId(), userId).forEach(subtask -> {
+                    NewTaskRequest copy = new NewTaskRequest();
+                    copy.setParentId(occurrence.getTaskId());
+                    copy.setName(subtask.getName());
+                    copy.setDescription(subtask.getDescription());
+                    copy.setTag(subtask.getTag());
+                    copy.setImportance(subtask.getImportance());
+                    copy.setCalendarId(occurrence.getCalendarId());
+                    taskService.createTaskFromSeries(copy, userId);
+                }));
     }
 
     private void attachOccurrence(Task task, TaskSeries series, LocalDateTime occurrenceDate) {
@@ -414,6 +440,6 @@ public class TaskSeriesService {
                 series.getTimeZone(), series.getReminderMinutesBefore(), series.isActive(),
                 series.getCreatedAt(), series.getUpdatedAt(),
                 statTaskLinkService.isStatLinkedSeries(series.getSeriesId(), series.getName(), userId),
-                series.getCalendarId());
+                series.getCalendarId(), series.isRepeatSubtasks());
     }
 }

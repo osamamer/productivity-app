@@ -21,6 +21,7 @@ public class StartMeditationRequest {
 
     @NotNull
     @Min(1)
+    @Max(MAX_SESSION_SECONDS)
     private Integer intendedLength;
 
 }

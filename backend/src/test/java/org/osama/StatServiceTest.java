@@ -604,6 +604,54 @@ public class StatServiceTest {
     }
 
     @Test
+    void unloggedZeroAverageStartsOnFirstLoggedDayEvenWhenPeriodStartsEarlier() {
+        StatDefinition number = createNamedStatDefinition("First logged number", StatType.NUMBER);
+        StatDefinition duration = createNamedStatDefinition("First logged duration", StatType.DURATION);
+        LocalDate today = LocalDate.now();
+        statService.recordEntry(number.getId(), today.minusDays(2), 6.0, TEST_USER_ID);
+        statService.recordEntry(duration.getId(), today.minusDays(2), 90.0, TEST_USER_ID);
+
+        User user = userRepository.findUserById(TEST_USER_ID).orElseThrow();
+        user.setIncludeUnloggedNumericDaysAsZero(true);
+        userRepository.save(user);
+
+        StatSummaryResponse numberSummary = statService.getSummary(
+                number.getId(), today.minusDays(6), today, TEST_USER_ID);
+        assertEquals(2.0, numberSummary.periodAverage(), 0.0001);
+        assertEquals(today.minusDays(2), numberSummary.averageStartDate());
+
+        StatSummaryResponse durationSummary = statService.getSummary(
+                duration.getId(), today.minusDays(6), today, TEST_USER_ID);
+        assertEquals(30.0, durationSummary.periodAverage(), 0.0001);
+        assertEquals(today.minusDays(2), durationSummary.averageStartDate());
+
+        StatBootstrapResponse bootstrap = statService.getBootstrap(today.minusDays(6), today, TEST_USER_ID);
+        assertEquals(2.0, bootstrap.summaries().get(number.getId()).periodAverage(), 0.0001);
+        assertEquals(today.minusDays(2), bootstrap.summaries().get(number.getId()).averageStartDate());
+    }
+
+    @Test
+    void unloggedZeroAverageUsesFirstLogOutsidePeriodAndIgnoresPeriodsBeforeIt() {
+        StatDefinition statDefinition = createStatDefinition(StatType.NUMBER, null, null);
+        LocalDate today = LocalDate.now();
+        statService.recordEntry(statDefinition.getId(), today.minusDays(5), 8.0, TEST_USER_ID);
+
+        User user = userRepository.findUserById(TEST_USER_ID).orElseThrow();
+        user.setIncludeUnloggedNumericDaysAsZero(true);
+        userRepository.save(user);
+
+        StatSummaryResponse beforeFirstLog = statService.getSummary(
+                statDefinition.getId(), today.minusDays(10), today.minusDays(6), TEST_USER_ID);
+        assertNull(beforeFirstLog.periodAverage());
+        assertNull(beforeFirstLog.averageStartDate());
+
+        StatSummaryResponse afterFirstLog = statService.getSummary(
+                statDefinition.getId(), today.minusDays(2), today, TEST_USER_ID);
+        assertEquals(0.0, afterFirstLog.periodAverage(), 0.0001);
+        assertEquals(today.minusDays(2), afterFirstLog.averageStartDate());
+    }
+
+    @Test
     void sleepDurationSummaryNeverCountsUnloggedDaysAsZero() {
         User user = userRepository.findUserById(TEST_USER_ID).orElseThrow();
         provisioningService.createMissingSystemStatsFor(user);

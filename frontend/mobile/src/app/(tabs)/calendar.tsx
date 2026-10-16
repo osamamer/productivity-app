@@ -133,7 +133,6 @@ export default function CalendarScreen() {
 
   return (
     <Screen
-      eyebrow="What’s ahead"
       contentStyle={styles.content}
       refreshing={eventsResource.refreshing || calendarsResource.refreshing || definitionsResource.refreshing}
       onRefresh={() => void refresh()}

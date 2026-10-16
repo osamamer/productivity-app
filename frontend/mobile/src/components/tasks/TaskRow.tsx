@@ -7,8 +7,7 @@ import Reanimated from 'react-native-reanimated';
 import { formatShortDate, formatTime } from '@/lib/date';
 import { taskPriorityColor } from '@/lib/taskPriority';
 import { useAppTheme } from '@/providers/ThemeProvider';
-import type { PomodoroStatus, Task } from '@/types/models';
-import { PomodoroPanel } from '../pomodoro/PomodoroPanel';
+import type { Task } from '@/types/models';
 import { AppText } from '../ui/AppText';
 import { SilentPressable } from '../ui/SilentPressable';
 import { DRAG_HOLD_DURATION_MS, useLongPressDrag } from './useLongPressDrag';
@@ -20,7 +19,7 @@ export interface TaskDragLayout {
   bottom: number;
 }
 
-function TaskRowBody({ task, onToggle, onPress, onLongPress, onSelectionToggle, selected, onDelete, onPomodoroPress, pomodoroOpen, pomodoroStatus, interactive = true }: {
+function TaskRowBody({ task, onToggle, onPress, onLongPress, onSelectionToggle, selected, onDelete, interactive = true }: {
   task: Task;
   onToggle: () => void;
   onPress?: () => void;
@@ -28,13 +27,9 @@ function TaskRowBody({ task, onToggle, onPress, onLongPress, onSelectionToggle, 
   onSelectionToggle?: () => void;
   selected: boolean;
   onDelete?: () => void;
-  onPomodoroPress?: () => void;
-  pomodoroOpen?: boolean;
-  pomodoroStatus?: PomodoroStatus | null;
   interactive?: boolean;
 }) {
   const { colors } = useAppTheme();
-  const active = Boolean(pomodoroStatus?.active);
   const content = (
     <>
       <SilentPressable
@@ -60,15 +55,6 @@ function TaskRowBody({ task, onToggle, onPress, onLongPress, onSelectionToggle, 
         </AppText>
       </View>
       {selected && <Ionicons name="checkmark-circle" size={22} color={colors.accent} />}
-      {onPomodoroPress && (
-        <SilentPressable
-          hitSlop={10}
-          accessibilityRole="button"
-          accessibilityLabel={pomodoroOpen ? 'Close focus timer' : 'Open focus timer'}
-          onPress={event => { event.stopPropagation(); onPomodoroPress(); }}>
-          <Ionicons name="timer-outline" size={21} color={active || pomodoroOpen ? colors.accent : colors.textMuted} />
-        </SilentPressable>
-      )}
       {onDelete && (
         <SilentPressable hitSlop={10} onPress={event => { event.stopPropagation(); onDelete(); }}>
           <Ionicons name="trash-outline" size={19} color={colors.textMuted} />
@@ -90,7 +76,7 @@ function TaskRowBody({ task, onToggle, onPress, onLongPress, onSelectionToggle, 
   );
 }
 
-export function TaskRow({ task, onToggle, onPress, onLongPress, onSelectionToggle, selected = false, onDelete, onPomodoroPress, pomodoroOpen, pomodoroStatus, onPomodoroClose, onPomodoroActiveChange, onPomodoroStatusChange, dragEnabled = false, dragging = false, dragInProgress = false, dragPreviewOffset = 0, dropTarget = false, dropTargetEdge, onDragLayout, onDragViewRef, onDragStart, onDragMove, onDragEnd, onDragCancel, inGroup = false, groupLast = false }: {
+export function TaskRow({ task, onToggle, onPress, onLongPress, onSelectionToggle, selected = false, onDelete, dragEnabled = false, dragging = false, dragInProgress = false, dragPreviewOffset = 0, dropTarget = false, dropTargetEdge, onDragLayout, onDragViewRef, onDragStart, onDragMove, onDragEnd, onDragCancel, inGroup = false, groupLast = false }: {
   task: Task;
   onToggle: () => void;
   onPress?: () => void;
@@ -98,12 +84,6 @@ export function TaskRow({ task, onToggle, onPress, onLongPress, onSelectionToggl
   onSelectionToggle?: () => void;
   selected?: boolean;
   onDelete?: () => void;
-  onPomodoroPress?: () => void;
-  pomodoroOpen?: boolean;
-  pomodoroStatus?: PomodoroStatus | null;
-  onPomodoroClose?: () => void;
-  onPomodoroActiveChange?: (active: boolean) => void;
-  onPomodoroStatusChange?: (status: PomodoroStatus, optimistic?: boolean) => void;
   dragEnabled?: boolean;
   dragging?: boolean;
   dragInProgress?: boolean;
@@ -150,18 +130,6 @@ export function TaskRow({ task, onToggle, onPress, onLongPress, onSelectionToggl
     if (!onDragLayout) return;
     rowRef.current?.measureInWindow((left, top, width, height) => onDragLayout(task.taskId, { left, top, width, bottom: top + height }));
   }
-  const active = Boolean(pomodoroStatus?.active);
-  const progress = pomodoroStatus
-    ? (() => {
-        const passed = Math.max(0, pomodoroStatus.secondsPassedInSession);
-        const remaining = Math.max(0, pomodoroStatus.secondsUntilNextTransition);
-        const total = passed + remaining;
-        return total > 0 ? Math.min(1, passed / total) : 0;
-      })()
-    : 0;
-  const resting = pomodoroStatus?.phase === 'BREAK'
-    || pomodoroStatus?.phase === 'WAITING_FOR_BREAK'
-    || Boolean(pomodoroStatus && !pomodoroStatus.sessionActive);
   const showDrag = dragging || drag.dragging;
   return (
     <GestureDetector gesture={drag.gesture}>
@@ -176,8 +144,8 @@ export function TaskRow({ task, onToggle, onPress, onLongPress, onSelectionToggl
         <NativeAnimated.View style={{ transform: [{ translateY: animatedPreviewOffset }] }}>
           <Reanimated.View
             style={[styles.container, inGroup && styles.groupedContainer, groupLast && styles.groupedLast, {
-              backgroundColor: active ? colors.accentSoft : colors.surface,
-              borderColor: active ? (resting ? colors.success : colors.accent) : colors.border,
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
               borderBottomColor: inGroup ? colors.border : undefined,
             }, selected && (inGroup ? { backgroundColor: colors.accentSoft, borderLeftWidth: 3, borderLeftColor: colors.accent } : { borderColor: colors.accent, borderWidth: 2 }),
             drag.animatedStyle,
@@ -191,9 +159,6 @@ export function TaskRow({ task, onToggle, onPress, onLongPress, onSelectionToggl
             onSelectionToggle={onSelectionToggle}
             selected={selected}
             onDelete={onDelete}
-            onPomodoroPress={onPomodoroPress}
-            pomodoroOpen={pomodoroOpen}
-            pomodoroStatus={pomodoroStatus}
             interactive={!showDrag}
           />
           {dropTarget && (
@@ -207,20 +172,6 @@ export function TaskRow({ task, onToggle, onPress, onLongPress, onSelectionToggl
                   : [styles.dropIndicatorBefore, !inGroup && styles.dropIndicatorBeforeGap],
               ]}
             />
-          )}
-          {pomodoroOpen && onPomodoroActiveChange && onPomodoroStatusChange && (
-            <PomodoroPanel
-              taskId={task.taskId}
-              initialStatus={pomodoroStatus}
-              onClose={onPomodoroClose ?? (() => undefined)}
-              onActiveChange={onPomodoroActiveChange}
-              onStatusChange={onPomodoroStatusChange}
-            />
-          )}
-          {active && (
-            <View style={[styles.progressTrack, { backgroundColor: resting ? `${colors.success}28` : colors.accentSoft }]}>
-              <View style={[styles.progressFill, { width: `${progress * 100}%`, backgroundColor: resting ? colors.success : colors.accent }]} />
-            </View>
           )}
           </Reanimated.View>
         </NativeAnimated.View>
@@ -259,6 +210,4 @@ const styles = StyleSheet.create({
   },
   copy: { flex: 1, gap: 4 },
   completed: { textDecorationLine: 'line-through', opacity: 0.52 },
-  progressTrack: { height: 3 },
-  progressFill: { height: 3 },
 });

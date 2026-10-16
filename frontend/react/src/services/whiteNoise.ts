@@ -36,6 +36,7 @@ let sourceOwnerScope: string | null = null;
 let initializedSourceScope: string | null = null;
 let sourceLoadScope: string | null = null;
 let sourceLoadPromise: Promise<void> | null = null;
+let sourceLoadFailed = false;
 let sourceRevision = 0;
 let playbackRequestId = 0;
 let preferenceRevision = 0;
@@ -43,6 +44,17 @@ let sourceSelectionRevision = 0;
 let sourcePreloadRevision: number | null = null;
 let sourcePreloadPromise: Promise<void> | null = null;
 const sourceListeners = new Set<(source: WhiteNoiseSource) => void>();
+const playbackErrorListeners = new Set<(message: string) => void>();
+
+export function subscribeToWhiteNoiseError(listener: (message: string) => void): () => void {
+    playbackErrorListeners.add(listener);
+    return () => playbackErrorListeners.delete(listener);
+}
+
+function reportPlaybackError(error: unknown): void {
+    console.error('Could not play focus audio:', error);
+    playbackErrorListeners.forEach(listener => listener("Can't play audio right now."));
+}
 
 subscribeToUserPreferences(() => {
     enabled = getRuntimeUserPreference('whiteNoiseEnabled');
@@ -105,21 +117,24 @@ function setSource(audio: HTMLAudioElement, nextSource: { id: string; url: strin
 function preloadAudio(audio: HTMLAudioElement): Promise<void> {
     if (audio.readyState >= AUDIO_READY_STATE) return Promise.resolve();
 
-    return new Promise(resolve => {
+    return new Promise((resolve, reject) => {
         let settled = false;
-        const timeoutId = window.setTimeout(finish, AUDIO_PRELOAD_TIMEOUT_MS);
+        const timeoutId = window.setTimeout(() => finish(), AUDIO_PRELOAD_TIMEOUT_MS);
 
-        function finish(): void {
+        function finish(error?: Error): void {
             if (settled) return;
             settled = true;
             window.clearTimeout(timeoutId);
-            audio.removeEventListener('canplaythrough', finish);
-            audio.removeEventListener('error', finish);
-            resolve();
+            audio.removeEventListener('canplaythrough', onReady);
+            audio.removeEventListener('error', onError);
+            if (error) reject(error);
+            else resolve();
         }
 
-        audio.addEventListener('canplaythrough', finish);
-        audio.addEventListener('error', finish);
+        const onReady = () => finish();
+        const onError = () => finish(new Error('Focus audio could not be loaded.'));
+        audio.addEventListener('canplaythrough', onReady);
+        audio.addEventListener('error', onError);
         audio.load();
         if (audio.readyState >= AUDIO_READY_STATE) finish();
     });
@@ -146,7 +161,7 @@ export function preloadWhiteNoiseSource(): Promise<void> {
         setSource(audio, sourceAtStart);
         return preloadAudio(audio);
     })).then(() => undefined).catch(error => {
-        console.warn('Could not preload Pomodoro white noise:', error);
+        if (sourceRevision === revisionAtStart) reportPlaybackError(error);
     }).finally(() => {
         if (sourcePreloadPromise === request) {
             sourcePreloadPromise = null;
@@ -192,7 +207,7 @@ async function crossfadeTo(nextIndex: 0 | 1, durationMs: number): Promise<void> 
     try {
         await next.play();
     } catch (error) {
-        console.warn('Could not play the next Pomodoro white noise layer:', error);
+        reportPlaybackError(error);
         if (generation === crossfadeGeneration) {
             next.pause();
             next.volume = 0;
@@ -252,8 +267,7 @@ export function isWhiteNoiseEnabled(): boolean {
 }
 
 /**
- * Resolves the authenticated user's selected source without blocking player
- * creation. A fallback can start immediately while the private MP3 loads.
+ * Resolves the authenticated user's selected source before playback starts.
  */
 export function initializeWhiteNoiseSource(): Promise<void> {
     const scope = getAuthCacheScope();
@@ -263,6 +277,7 @@ export function initializeWhiteNoiseSource(): Promise<void> {
     if (sourceOwnerScope !== scope) {
         sourceOwnerScope = scope;
         initializedSourceScope = null;
+        sourceLoadFailed = false;
         source = DEFAULT_SOURCE;
         sourceRevision += 1;
         resetPlaybackState();
@@ -274,13 +289,10 @@ export function initializeWhiteNoiseSource(): Promise<void> {
         .then(selectedSound => {
             const requestIsCurrent = sourceRevision === revisionAtStart && getAuthCacheScope() === scope;
             if (requestIsCurrent) {
-                initializedSourceScope = scope;
-                // Metadata is enough to finish initialization. Fetch the MP3
-                // in the background and let a running timer move to it when
-                // the authenticated audio URL becomes available.
-                void getPomodoroSoundAudioUrl(selectedSound)
+                return getPomodoroSoundAudioUrl(selectedSound)
                     .then(url => {
                         if (sourceRevision === revisionAtStart && getAuthCacheScope() === scope) {
+                            sourceLoadFailed = false;
                             setWhiteNoiseSource({
                                 id: selectedSound.id,
                                 name: selectedSound.name,
@@ -289,15 +301,15 @@ export function initializeWhiteNoiseSource(): Promise<void> {
                         }
                     })
                     .catch(error => {
-                        console.error('Could not load the selected Pomodoro sound audio:', error);
+                        reportPlaybackError(error);
+                        if (sourceRevision === revisionAtStart) sourceLoadFailed = true;
                     });
             }
         })
         .catch(error => {
-            // Keep brown noise as the safe fallback if the preference request is unavailable.
-            console.error('Could not load the selected Pomodoro sound:', error);
+            reportPlaybackError(error);
             if (sourceRevision === revisionAtStart && getAuthCacheScope() === scope) {
-                initializedSourceScope = scope;
+                sourceLoadFailed = true;
             }
         })
         .finally(() => {
@@ -321,6 +333,7 @@ export function resetWhiteNoiseSource(): void {
     sourcePreloadRevision = null;
     sourcePreloadPromise = null;
     source = DEFAULT_SOURCE;
+    sourceLoadFailed = false;
     publishSource();
     stopWhiteNoise();
 }
@@ -340,6 +353,7 @@ export function setWhiteNoiseSource(nextSource: { id: string; name?: string; url
 
     const wasRunning = running;
     source = { id: nextSource.id, name: nextName, url: nextSource.url };
+    sourceLoadFailed = false;
     publishSource();
     clearCrossfade();
 
@@ -447,10 +461,8 @@ export function setWhiteNoiseEnabled(nextEnabled: boolean): void {
 export async function startWhiteNoise(): Promise<void> {
     if (!enabled) return;
     const requestId = ++playbackRequestId;
-    // Starting playback must not wait for an authenticated MP3 download.
-    // Initialization continues in the background and swaps the source when
-    // it is ready.
-    void initializeWhiteNoiseSource();
+    await initializeWhiteNoiseSource();
+    if (sourceLoadFailed) return;
     if (!enabled || requestId !== playbackRequestId) return;
 
     const audio = getPlayer(activeLayer as 0 | 1);
@@ -466,7 +478,7 @@ export async function startWhiteNoise(): Promise<void> {
     } catch (error) {
         // Browsers may block restored sessions until the user interacts with the page.
         if (requestId === playbackRequestId) running = false;
-        console.warn('Could not play Pomodoro white noise:', error);
+        reportPlaybackError(error);
     }
 }
 

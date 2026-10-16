@@ -672,11 +672,16 @@ public class StatService {
                         entry -> entry.getStatDefinition().getId(),
                         LinkedHashMap::new,
                         Collectors.toList()));
+        Map<String, LocalDate> firstLoggedDates = Boolean.TRUE.equals(user.getIncludeUnloggedNumericDaysAsZero())
+                ? entryRepository.findFirstLoggedDatesByUserId(userId).stream()
+                        .collect(Collectors.toMap(row -> (String) row[0], row -> (LocalDate) row[1]))
+                : Map.of();
         Map<String, StatSummaryResponse> summaries = new LinkedHashMap<>();
         for (StatDefinition definition : definitions) {
             List<StatEntry> entries = entriesByDefinition.getOrDefault(definition.getId(), List.of());
             entriesByDefinition.putIfAbsent(definition.getId(), entries);
-            summaries.put(definition.getId(), summarize(definition, entries, from, to, user));
+            summaries.put(definition.getId(), summarize(definition, entries, from, to, user,
+                    firstLoggedDates.get(definition.getId())));
         }
 
         return new StatBootstrapResponse(from, to, definitions, entriesByDefinition, summaries);
@@ -904,11 +909,14 @@ public class StatService {
         List<StatEntry> entries = entryRepository
                 .findAllByStatDefinitionIdAndUserIdAndDateBetween(definitionId, userId, from, to);
 
-        return summarize(def, entries, from, to, user);
+        LocalDate firstLoggedDate = Boolean.TRUE.equals(user.getIncludeUnloggedNumericDaysAsZero())
+                ? entryRepository.findFirstLoggedDate(definitionId, userId)
+                : null;
+        return summarize(def, entries, from, to, user, firstLoggedDate);
     }
 
     private StatSummaryResponse summarize(StatDefinition def, List<StatEntry> entries,
-                                          LocalDate from, LocalDate to, User user) {
+                                          LocalDate from, LocalDate to, User user, LocalDate firstLoggedDate) {
 
         Map<LocalDate, Double> valueByDate = entries.stream()
                 .collect(Collectors.toMap(StatEntry::getDate, StatEntry::getValue));
@@ -921,6 +929,7 @@ public class StatService {
         Double periodAverage = null;
         Double periodTotal = null;
         Double periodHighest = null;
+        LocalDate averageStartDate = null;
 
         if (def.getType() == StatType.BOOLEAN) {
             periodYesCount = (int) entries.stream()
@@ -950,8 +959,9 @@ public class StatService {
                     .orElse(null);
             boolean countUnloggedDaysAsZero = !SystemStatCatalog.SLEEP_HOURS_SYSTEM_KEY.equals(def.getSystemKey())
                     && Boolean.TRUE.equals(user.getIncludeUnloggedNumericDaysAsZero());
-            if (countUnloggedDaysAsZero) {
-                long periodDays = ChronoUnit.DAYS.between(from, to) + 1;
+            if (countUnloggedDaysAsZero && firstLoggedDate != null && !firstLoggedDate.isAfter(to)) {
+                averageStartDate = firstLoggedDate.isAfter(from) ? firstLoggedDate : from;
+                long periodDays = ChronoUnit.DAYS.between(averageStartDate, to) + 1;
                 periodAverage = periodTotal / periodDays;
             } else if (!entries.isEmpty()) {
                 periodAverage = periodTotal / entries.size();
@@ -974,7 +984,7 @@ public class StatService {
         }
 
         return new StatSummaryResponse(checkInStreak, periodYesCount, booleanStreak, longestBooleanStreak,
-                periodAverage, periodTotal, periodHighest);
+                periodAverage, periodTotal, periodHighest, averageStartDate);
     }
 
     private void validatePeriod(LocalDate from, LocalDate to) {

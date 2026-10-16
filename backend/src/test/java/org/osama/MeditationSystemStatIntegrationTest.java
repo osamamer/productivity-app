@@ -20,6 +20,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.Duration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -87,6 +88,40 @@ class MeditationSystemStatIntegrationTest {
                 TEST_USER_ID,
                 session.getStartTime().toLocalDate(),
                 session.getStartTime().toLocalDate()).size());
+    }
+
+    @Test
+    void expiredRunningSessionEndsAtExactlyOneHourAndCanBeStartedAgain() {
+        MeditationSession session = meditationSessionService.startSession(5, 0, 3600, TEST_USER_ID);
+        session.setStartTime(LocalDateTime.now().minusHours(2));
+        session.setLastUnpauseTime(session.getStartTime());
+        meditationSessionRepository.save(session);
+
+        meditationSessionService.endExpiredSessions();
+
+        MeditationSession ended = meditationSessionRepository.findById(session.getId()).orElseThrow();
+        assertFalse(ended.isActive());
+        assertFalse(ended.isRunning());
+        assertEquals(ended.getStartTime().plusHours(1), ended.getEndTime());
+        assertEquals(Duration.ofHours(1), ended.getTotalSessionTime());
+        assertFalse(meditationSessionService.getActiveSession(TEST_USER_ID).isPresent());
+        assertEquals(ended.getId(), meditationSessionService.endSession(ended.getId(), TEST_USER_ID, null).getId());
+        meditationSessionService.startSession(5, 0, 600, TEST_USER_ID);
+    }
+
+    @Test
+    void expiredPausedSessionKeepsOnlyTimeActuallyMeditated() {
+        MeditationSession session = meditationSessionService.startSession(5, 0, 600, TEST_USER_ID);
+        session.setStartTime(LocalDateTime.now().minusHours(2));
+        session.setRunning(false);
+        session.setTotalSessionTime(Duration.ofMinutes(12));
+        meditationSessionRepository.save(session);
+
+        MeditationSession ended = meditationSessionService.getSession(session.getId(), TEST_USER_ID).orElseThrow();
+
+        assertFalse(ended.isActive());
+        assertEquals(Duration.ofMinutes(12), ended.getTotalSessionTime());
+        assertEquals(ended.getStartTime().plusHours(1), ended.getEndTime());
     }
 
     private MeditationSession endSessionWithElapsedMinutes(long minutes) {

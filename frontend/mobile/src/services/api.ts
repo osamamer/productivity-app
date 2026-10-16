@@ -15,8 +15,6 @@ import type {
   MentalThreadSummary,
   Note,
   NoteCategory,
-  PomodoroConfig,
-  PomodoroStatus,
   Project,
   StatDefinition,
   StatMorality,
@@ -189,22 +187,6 @@ export const api = {
     pause: (taskId: string) => apiRequest<void>(`/api/v1/session/pause/${taskId}`, { method: 'POST' }),
     resume: (taskId: string) => apiRequest<void>(`/api/v1/session/unpause/${taskId}`, { method: 'POST' }),
   },
-  pomodoro: {
-    config: () => apiRequest<PomodoroConfig>('/api/v1/pomodoro/config'),
-    start: (taskId: string, input: {
-      focusDuration: number;
-      shortBreakDuration: number;
-      longBreakDuration: number;
-      numFocuses: number;
-      longBreakCooldown: number;
-      secondsMode: boolean;
-    }) => json<void>('/api/v1/pomodoro/start', 'POST', { taskId, ...input }),
-    end: (taskId: string) => apiRequest<PomodoroStatus>(`/api/v1/pomodoro/end/${taskId}`, { method: 'POST' }),
-    startNextPhase: (taskId: string) => apiRequest<void>(`/api/v1/pomodoro/phase/start/${taskId}`, { method: 'POST' }),
-    finishBreakEarly: (taskId: string) => apiRequest<void>(`/api/v1/pomodoro/phase/finish-break/${taskId}`, { method: 'POST' }),
-    statusForTask: (taskId: string) => apiRequest<PomodoroStatus | undefined>(`/api/v1/pomodoro/status/${taskId}`),
-    status: () => apiRequest<PomodoroStatus | undefined>('/api/v1/pomodoro/status'),
-  },
   day: {
     today: () => apiRequest<Day>('/api/v1/day/get-today'),
     save: (rating: number, plan: string, summary: string) =>
@@ -303,6 +285,7 @@ export const api = {
   },
   meditation: {
     active: () => apiRequest<MeditationSession | undefined>('/api/v1/meditation/active'),
+    get: (id: string) => apiRequest<MeditationSession | undefined>(`/api/v1/meditation/${id}`),
     start: (mood: number, intendedLength: number, numIntervalBells = 0) =>
       json<MeditationSession>('/api/v1/meditation/start', 'POST', {
         mood,

@@ -131,7 +131,7 @@ function optimisticSummary(
         return {
             ...serverSummary,
             checkInStreak: computeStreak(entries, from, to, () => true),
-            periodAverage: null,
+            periodAverage: serverSummary.averageStartDate ? 0 : null,
             periodTotal: 0,
             periodHighest: null,
         };
@@ -150,14 +150,13 @@ function optimisticSummary(
     }
 
     const total = values.reduce((sum, value) => sum + value, 0);
-    const periodDays = differenceInCalendarDays(parseISO(to), parseISO(from)) + 1;
-    const serverUsesUnloggedZeros = serverSummary.periodAverage != null
-        && serverSummary.periodTotal != null
-        && Math.abs(serverSummary.periodAverage - serverSummary.periodTotal / periodDays) < 0.000001;
+    const eligibleDays = serverSummary.averageStartDate
+        ? differenceInCalendarDays(parseISO(to), parseISO(serverSummary.averageStartDate)) + 1
+        : values.length;
     return {
         ...serverSummary,
         checkInStreak: computeStreak(entries, from, to, () => true),
-        periodAverage: total / (serverUsesUnloggedZeros ? periodDays : values.length),
+        periodAverage: total / eligibleDays,
         periodTotal: total,
         periodHighest: Math.max(...values),
     };

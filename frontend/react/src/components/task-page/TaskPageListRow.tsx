@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { alpha, Box, Checkbox, TextField, Typography, useTheme } from '@mui/material';
 import { Task } from '../../types/Task';
+import { getTextOffsetAtPoint } from '../task/taskTextCaret';
 
 type TaskPageListRowProps = {
     task: Task;
@@ -63,10 +64,11 @@ export const TaskPageListRow = React.memo(function TaskPageListRow({
     const [localName, setLocalName] = useState(task.name ?? '');
     const [editing, setEditing] = useState(false);
     const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+    const nameCaretOffsetRef = useRef<number | null>(null);
     const handledEditRequestRef = useRef<number | null>(null);
     const dragAllowedRef = useRef(true);
 
-    useEffect(() => setLocalName(task.name ?? ''), [task.name]);
+    useLayoutEffect(() => setLocalName(task.name ?? ''), [task.name]);
 
     useEffect(() => {
         if (editRequestId === null || handledEditRequestRef.current === editRequestId) return;
@@ -74,10 +76,13 @@ export const TaskPageListRow = React.memo(function TaskPageListRow({
         setEditing(true);
     }, [editRequestId]);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         if (!editing || !inputRef.current) return;
-        inputRef.current.focus();
-        inputRef.current.setSelectionRange(inputRef.current.value.length, inputRef.current.value.length);
+        const input = inputRef.current;
+        input.focus();
+        const caretOffset = nameCaretOffsetRef.current ?? input.value.length;
+        nameCaretOffsetRef.current = null;
+        input.setSelectionRange(caretOffset, caretOffset);
     }, [editing]);
 
     const selectTask = (event: React.MouseEvent<HTMLElement>) => {
@@ -173,6 +178,11 @@ export const TaskPageListRow = React.memo(function TaskPageListRow({
                         onClick={event => {
                             event.stopPropagation();
                             selectTask(event);
+                            nameCaretOffsetRef.current = getTextOffsetAtPoint(
+                                event.currentTarget,
+                                event.clientX,
+                                event.clientY,
+                            );
                             setEditing(true);
                         }}
                         sx={{
@@ -197,7 +207,7 @@ export const TaskPageListRow = React.memo(function TaskPageListRow({
                                 textAlign: 'left',
                             }}
                         >
-                            {editing ? localName : task.name}
+                            {localName}
                         </Typography>
                     </Box>
                     {editing && (

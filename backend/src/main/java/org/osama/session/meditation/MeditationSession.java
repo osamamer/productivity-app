@@ -1,10 +1,16 @@
 package org.osama.session.meditation;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
 import org.osama.session.Session;
 import org.osama.user.User;
+
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+
+import static org.osama.constants.MeditationConstants.MAX_SESSION_SECONDS;
 
 @Data
 @SuperBuilder
@@ -40,4 +46,11 @@ public class MeditationSession extends Session {
 
     @Column(name = "user_id", insertable = false, updatable = false)
     private String userId;
+
+    @Transient
+    @JsonProperty("expiresAt")
+    public OffsetDateTime getExpiresAt() {
+        return startTime == null ? null
+                : startTime.plusSeconds(MAX_SESSION_SECONDS).atZone(ZoneId.systemDefault()).toOffsetDateTime();
+    }
 }

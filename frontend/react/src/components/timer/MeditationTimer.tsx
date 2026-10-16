@@ -31,7 +31,8 @@ import {
 import { MeditationNavigationGuard } from './MeditationNavigationGuard.tsx';
 import { getRuntimeUserPreferences, subscribeToUserPreferences, updateRuntimeUserPreferences } from '../../services/userPreferenceStore';
 
-const DURATION_OPTIONS = [5, 10, 15, 20, 30];
+const DURATION_OPTIONS = [5, 10, 15, 20, 30, 60];
+const MAX_SESSION_SECONDS = 60 * 60;
 const MIN_MOOD = 1;
 const MAX_MOOD = 10;
 interface MeditationSettings {
@@ -140,6 +141,7 @@ function createOptimisticSession(
         active: true,
         totalSessionTime: 0,
         startTime: timestamp,
+        expiresAt: new Date(startedAt + MAX_SESSION_SECONDS * 1000).toISOString(),
         lastUnpauseTime: timestamp,
         lastPauseTime: null,
         endTime: null,
@@ -197,6 +199,7 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
     const sessionRef = useRef<MeditationSession | null>(session);
     const sessionActionInFlightRef = useRef(false);
     const sessionMutationVersionRef = useRef(0);
+    const autoEndingSessionRef = useRef<string | null>(null);
     sessionRef.current = session;
 
     useEffect(() => {
@@ -278,6 +281,12 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
                 ) return;
 
                 if (!canonicalSession) {
+                    const endedSession = await meditationService.getSession(observedSessionId).catch(error => {
+                        console.warn('Could not load completed meditation session:', error);
+                        return null;
+                    });
+                    if (!mounted || sessionRef.current?.id !== observedSessionId) return;
+                    if (endedSession && !endedSession.active) setCompletedSession(endedSession);
                     setSession(null);
                     setClientRunningAnchor(null);
                     setFinishDialogOpen(false);
@@ -332,6 +341,29 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
         const interval = window.setInterval(updateElapsed, 1000);
         return () => window.clearInterval(interval);
     }, [clientRunningAnchor, session]);
+
+    useEffect(() => {
+        if (!session || startPending || sessionActionInFlightRef.current || autoEndingSessionRef.current === session.id) return;
+        const expiresAt = parseDate(session.expiresAt);
+        if (expiresAt === null || Date.now() < expiresAt) return;
+
+        autoEndingSessionRef.current = session.id;
+        sessionMutationVersionRef.current += 1;
+        sessionActionInFlightRef.current = true;
+        void meditationService.endSession(session.id).then(finished => {
+            if (!mountedRef.current || sessionRef.current?.id !== finished.id) return;
+            setCompletedSession(finished);
+            setSession(null);
+            setClientRunningAnchor(null);
+            setFinishDialogOpen(false);
+            meditationSoundscape.stop();
+            soundStartedByUserRef.current = false;
+            onSessionCompleted();
+        }).catch(error => {
+            console.error('Could not automatically end meditation:', error);
+            autoEndingSessionRef.current = null;
+        }).finally(() => { sessionActionInFlightRef.current = false; });
+    }, [elapsed, onSessionCompleted, session, startPending]);
 
     useEffect(() => {
         if (!session || !session.intendedLength || !session.numIntervalBells) {
@@ -491,6 +523,14 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
             const updated = session.running
                 ? await meditationService.pauseSession(session.id)
                 : await meditationService.unpauseSession(session.id);
+            if (!updated.active) {
+                setCompletedSession(updated);
+                setSession(null);
+                setClientRunningAnchor(null);
+                meditationSoundscape.stop();
+                onSessionCompleted();
+                return;
+            }
             setSession(updated);
             const updatedAt = Date.now();
             const nextAnchor = updated.running ? { sessionId: updated.id, startedAt: updatedAt } : null;
@@ -811,7 +851,7 @@ function StartMeditation({
 
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'text.secondary', px: 1 }}>
                 <SelfImprovementIcon fontSize="small" />
-                <Typography variant="body2">You can pause or finish your session whenever you need.</Typography>
+                <Typography variant="body2">You can pause or finish whenever you need. Sessions end automatically after one hour.</Typography>
             </Box>
         </Stack>
     );

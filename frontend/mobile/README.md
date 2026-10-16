@@ -5,10 +5,14 @@ React Native client for the productivity app, built with Expo SDK 57 and Expo Ro
 ## What is included
 
 - Native Keycloak email/password sign-in, encrypted refresh-token storage, token refresh, and logout
-- Today dashboard, day rating, task creation/editing/completion, and the full in-row Pomodoro focus flow
+- Today dashboard, day rating, and task creation/editing/completion
 - Task, calendar event, mental thread, mental-state, meditation, note, and stat workflows
 - Shared Raleway typography, web palette, four accent colors, light/dark/system themes, soft cards, and task-priority colors
 - All application notifications are delivered through Expo remote push and acknowledged against the durable backend inbox
+
+Meditation audio runs through a native media playback service on Android and the
+background audio mode on iOS. After changing its native audio configuration,
+rebuild and reinstall the app; an OTA update cannot change those capabilities.
 
 ## First-time setup
 
@@ -218,5 +222,5 @@ for JavaScript-only updates.
 - Calendar uses a touch-friendly upcoming agenda instead of FullCalendar's desktop month grid.
 - Notes use a plain-text editor. Existing rich HTML is readable as text, but saving it from mobile simplifies that formatting.
 - The sign-in screen is native and submits credentials to Keycloak without storing the password. Logout still returns through the `solife` callback scheme.
-- Meditation bundles the shared web soundscape choices and uses a singing-bowl recording for interval bells. Session state and timing still persist through the backend.
+- Meditation bundles the shared web soundscape choices and uses a singing-bowl recording for interval bells. Its native audio player schedules the soundscape and bells on one background audio timeline. Session state and timing still persist through the backend.
 - Notes remain dependent on the planned notes backend, just like the current web Notes page.

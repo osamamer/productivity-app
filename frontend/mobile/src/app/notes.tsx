@@ -164,7 +164,7 @@ export default function NotesScreen() {
 
   return (
     <Screen
-      safeAreaTop={false}
+      back
       contentStyle={styles.content}
       overlay={(
         <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
@@ -191,7 +191,7 @@ export default function NotesScreen() {
           </>
         ) : (
           <>
-            <AppText variant="title" style={styles.grow}>Notes</AppText>
+            <View style={styles.grow} />
             <AppButton compact variant="secondary" icon="checkbox-outline" label="Select" onPress={() => setSelectionMode(true)} />
           </>
         )}

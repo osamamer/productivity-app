@@ -9,4 +9,3 @@ the clients can repeat it without an obvious restart.
 - `forest.mp3`: `audiopapkin-forest-ambience-296528.mp3`
 - `bowls.mp3`: `45693695-singing-bowl-248823.mp3`
 - `meditation_bell.wav`: five-second clip trimmed from `bowls.mp3` for meditation completion playback
-- `brown-noise.mp3`: `cosmic-scapes-relaxing-smoothed-brown-noise-294838.mp3` (Pomodoro)

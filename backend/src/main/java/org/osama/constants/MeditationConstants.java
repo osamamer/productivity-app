@@ -5,4 +5,5 @@ public class MeditationConstants {
     public static final int MIN_MOOD = 1;
     public static final int MAX_MOOD = 10;
     public static final int MAX_BELLS = 10;
+    public static final int MAX_SESSION_SECONDS = 60 * 60;
 }

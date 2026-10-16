@@ -155,7 +155,7 @@ export default function MentalStateScreen() {
 
   return (
     <Screen
-      safeAreaTop={false}
+      back
       contentStyle={styles.content}
       scrollToTopKey={result?.id}
       refreshing={resource.refreshing}

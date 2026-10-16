@@ -14,7 +14,7 @@ import { keyframes } from '@mui/system';
 import { alpha } from '@mui/material/styles';
 import { Task, TaskUpdate } from "../types/Task.tsx";
 import { useTheme } from "@mui/material";
-import { DayCellContentArg, DayCellMountArg, DatesSetArg, EventClickArg, EventContentArg, EventDropArg, EventMountArg } from '@fullcalendar/core';
+import { DayCellContentArg, DayCellMountArg, DatesSetArg, EventClickArg, EventContentArg, EventDropArg, EventMountArg, MoreLinkArg } from '@fullcalendar/core';
 import { TaskToCreate } from "../types/TaskToCreate.tsx";
 import { TaskGroup } from "../types/TaskGroup.ts";
 import { StatDefinition, StatEntry } from "../types/Stats.ts";
@@ -93,6 +93,11 @@ type TaskStatusFilter = 'all' | 'open' | 'completed';
 
 const CALENDAR_DISPLAY_PREFERENCES_KEY = 'calendar-display-preferences';
 type CalendarDisplayView = 'month' | 'week';
+
+const expandDayReveal = keyframes`
+    from { clip-path: inset(0 0 100% 0); opacity: 0.7; }
+    to { clip-path: inset(0 0 0 0); opacity: 1; }
+`;
 
 type CalendarDisplaySettings = {
     showTasks: boolean;
@@ -429,6 +434,7 @@ export function MonthCalendar({
     const [calendarPopupAnchorPosition, setCalendarPopupAnchorPosition] = useState<{ top: number; left: number } | null>(null);
     const [taskCreationError, setTaskCreationError] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<CreateTab>('event');
+    const [creationName, setCreationName] = useState('');
     const [selectedEventSelection, setSelectedEventSelection] = useState<{
         eventId: string;
         occurrenceKey: string;
@@ -690,9 +696,12 @@ export function MonthCalendar({
     const calendarTasks = useMemo(() => tasks.filter(task => {
         if (!visibleCalendarIds.has(task.calendarId ?? '')) return false;
         if (!task.scheduledPerformDateTime) return false;
-        if (!showCompletedTasks && task.completed) return false;
-        if (taskStatus === 'open' && task.completed) return false;
-        if (taskStatus === 'completed' && !task.completed) return false;
+        const matchesStatus = taskStatus === 'open'
+            ? !task.completed
+            : taskStatus === 'completed'
+                ? task.completed
+                : showCompletedTasks || !task.completed;
+        if (!matchesStatus) return false;
         return priorityFilters.includes(priorityBucket(task.importance));
     }), [priorityFilters, showCompletedTasks, taskStatus, tasks, visibleCalendarIds]);
 
@@ -927,14 +936,14 @@ export function MonthCalendar({
             });
         };
 
-        info.el.addEventListener('contextmenu', contextMenu);
+        info.el.addEventListener('contextmenu', contextMenu, true);
         eventContextMenuListenersRef.current.set(info.el, contextMenu);
     }, []);
 
     const handleEventWillUnmount = useCallback((info: EventMountArg) => {
         const contextMenu = eventContextMenuListenersRef.current.get(info.el);
         if (!contextMenu) return;
-        info.el.removeEventListener('contextmenu', contextMenu);
+        info.el.removeEventListener('contextmenu', contextMenu, true);
         eventContextMenuListenersRef.current.delete(info.el);
     }, []);
 
@@ -946,12 +955,14 @@ export function MonthCalendar({
         setEditingDate(arg.dateStr);
         setCalendarPopupAnchorPosition({ top: arg.jsEvent.clientY, left: arg.jsEvent.clientX });
         setActiveTab('event');
+        setCreationName('');
         setEditingDialogOpen(true);
     }, []);
 
     const closeEditingDialog = useCallback(() => {
         setEditingDialogOpen(false);
         setActiveTab('event');
+        setCreationName('');
     }, []);
 
     const openTemplateCreation = useCallback((sourceDate?: string, anchorPosition?: { top: number; left: number }) => {
@@ -1357,6 +1368,27 @@ export function MonthCalendar({
             && previous.end.getTime() === arg.end.getTime()
             ? previous
             : { start: arg.start, end: arg.end });
+    }, []);
+
+    const handleMoreLinkClick = useCallback((arg: MoreLinkArg) => {
+        const target = arg.jsEvent.target;
+        const dayCell = target instanceof Element ? target.closest('.fc-daygrid-day') : null;
+        const viewHarness = dayCell?.closest('.fc-view-harness');
+        if (dayCell && viewHarness instanceof HTMLElement) {
+            const cellRect = dayCell.getBoundingClientRect();
+            const harnessRect = viewHarness.getBoundingClientRect();
+            const pixelRatio = window.devicePixelRatio || 1;
+            const snapToPixel = (value: number) => Math.round(value * pixelRatio) / pixelRatio;
+            const left = snapToPixel(cellRect.left);
+            const right = snapToPixel(cellRect.right);
+            const top = snapToPixel(cellRect.top);
+            const bottom = snapToPixel(cellRect.bottom);
+            viewHarness.style.setProperty('--calendar-expanded-day-left', `${left - harnessRect.left}px`);
+            viewHarness.style.setProperty('--calendar-expanded-day-top', `${top - harnessRect.top}px`);
+            viewHarness.style.setProperty('--calendar-expanded-day-width', `${right - left}px`);
+            viewHarness.style.setProperty('--calendar-expanded-day-height', `${bottom - top}px`);
+        }
+        return 'popover';
     }, []);
 
     const togglePriority = (priority: number) => {
@@ -2144,6 +2176,44 @@ export function MonthCalendar({
                             borderRadius: '8px',
                             overflow: 'hidden',
                         },
+                        '& .fc-more-popover': {
+                            left: 'var(--calendar-expanded-day-left) !important',
+                            top: 'var(--calendar-expanded-day-top) !important',
+                            width: 'var(--calendar-expanded-day-width) !important',
+                            minHeight: 'var(--calendar-expanded-day-height)',
+                            maxHeight: 'min(80vh, 680px)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            border: `2px solid ${theme.palette.primary.main} !important`,
+                            borderRadius: '0 !important',
+                            backgroundColor: `${theme.palette.background.default} !important`,
+                            backgroundImage: theme.palette.mode === 'dark'
+                                ? 'linear-gradient(rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.03))'
+                                : 'linear-gradient(rgba(0, 0, 0, 0.02), rgba(0, 0, 0, 0.02))',
+                            animation: `${expandDayReveal} 220ms ease-out both`,
+                            '@media (prefers-reduced-motion: reduce)': {
+                                animation: 'none',
+                            },
+                        },
+                        '& .fc-more-popover.fc-day-today': {
+                            outline: `2px solid ${theme.palette.text.primary}`,
+                            outlineOffset: '-2px',
+                            backgroundImage: theme.palette.mode === 'dark'
+                                ? 'linear-gradient(rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.04))'
+                                : 'linear-gradient(rgba(0, 0, 0, 0.03), rgba(0, 0, 0, 0.03))',
+                        },
+                        '& .fc-more-popover .fc-popover-header': {
+                            position: 'absolute',
+                            right: '6px',
+                            top: '6px',
+                            zIndex: 1,
+                            border: 'none',
+                            background: 'transparent',
+                            padding: '2px',
+                        },
+                        '& .fc-more-popover .fc-popover-title': {
+                            display: 'none',
+                        },
                         '& .fc-popover-header': {
                             backgroundColor: theme.palette.mode === 'dark'
                                 ? 'rgba(255, 255, 255, 0.04)'
@@ -2156,11 +2226,17 @@ export function MonthCalendar({
                             backgroundColor: `${theme.palette.background.default} !important`,
                             padding: '3px 4px',
                         },
+                        '& .fc-more-popover .fc-popover-body': {
+                            flex: 1,
+                            minHeight: 0,
+                            overflowY: 'auto',
+                            backgroundColor: 'transparent !important',
+                        },
                         '& .fc-more-popover .fc-daygrid-event-harness': {
                             marginBottom: '2px',
                         },
                         '& .fc-more-popover-misc': {
-                            display: 'none',
+                            paddingRight: '22px',
                         },
                         '& .fc-popover-close': {
                             color: `${theme.palette.text.secondary} !important`,
@@ -2186,6 +2262,7 @@ export function MonthCalendar({
                             dayCellDidMount={handleDayCellDidMount}
                             dayCellWillUnmount={handleDayCellWillUnmount}
                             dayMaxEvents={isWeekView ? false : 4}
+                            moreLinkClick={handleMoreLinkClick}
                             headerToolbar={{
                                 left: 'prev,next today',
                                 center: 'title',
@@ -2218,6 +2295,7 @@ export function MonthCalendar({
                                 : 'rgba(250, 250, 250, 0.98)',
                             boxShadow: theme.shadows[8],
                             maxHeight: '80vh',
+                            pt: 1,
                         },
                     },
                 }}
@@ -2249,6 +2327,8 @@ export function MonthCalendar({
                     {activeTab === 'event' && editingDate && (
                         <CalendarEventForm
                             initialDate={editingDate}
+                            initialTitle={creationName}
+                            onTitleChange={setCreationName}
                             calendars={calendars}
                             visibleCalendars={visibleCalendars}
                             onSave={async event => {
@@ -2263,6 +2343,8 @@ export function MonthCalendar({
                             <CalendarTaskForm
                                 key={editingDate}
                                 initialDate={editingDate}
+                                initialName={creationName}
+                                onNameChange={setCreationName}
                                 visibleCalendars={visibleCalendars}
                                 onSave={handleTaskSubmit}
                                 onCancel={closeEditingDialog}
@@ -2371,7 +2453,7 @@ export function MonthCalendar({
                 transitionDuration={{ enter: 180, exit: 140 }}
                 fullWidth
                 maxWidth="sm"
-                slotProps={{ paper: { sx: { borderRadius: '8px' } } }}
+                slotProps={{ paper: { sx: { borderRadius: '8px', pt: 1 } } }}
             >
                 {selectedCalendarEvent && (
                     <CalendarEventForm
@@ -2484,7 +2566,7 @@ export function MonthCalendar({
                 transitionDuration={{ enter: 180, exit: 140 }}
                 fullWidth
                 maxWidth="sm"
-                slotProps={{ paper: { sx: { borderRadius: '8px' } } }}
+                slotProps={{ paper: { sx: { borderRadius: '8px', pt: 1 } } }}
             >
                 <DialogTitle component="div" sx={{ pl: 1, pr: 1.5, pt: 1.25, pb: 0.5 }}>
                     <Stack direction="row" alignItems="center" spacing={1}>

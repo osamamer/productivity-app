@@ -19,6 +19,8 @@ import { CalendarChipSelect, CalendarSelect } from './CalendarSelect';
 
 type Props = {
     initialDate: string;
+    initialTitle?: string;
+    onTitleChange?: (title: string) => void;
     event?: CalendarEvent | null;
     calendars: Calendar[];
     visibleCalendars: Calendar[];
@@ -103,6 +105,8 @@ function addDay(date: string): string {
 
 export function CalendarEventForm({
     initialDate,
+    initialTitle = '',
+    onTitleChange,
     event,
     calendars,
     visibleCalendars,
@@ -123,7 +127,7 @@ export function CalendarEventForm({
 }: Props) {
     const theme = useTheme();
     const [rememberedTimes] = useState(() => event ? {} : readEventTimePreferences());
-    const [title, setTitle] = useState(event?.title ?? '');
+    const [title, setTitle] = useState(event?.title ?? initialTitle);
     const [calendarId, setCalendarId] = useState(event?.calendarId
         ?? (visibleCalendars.length === 1 ? visibleCalendars[0].id : ''));
     const description = event?.description ?? '';
@@ -356,7 +360,7 @@ export function CalendarEventForm({
                         <Box sx={{ flex: 1, minWidth: 0 }}>
                             <InputBase
                                 value={title}
-                                onChange={changeEvent => setTitle(changeEvent.target.value)}
+                                onChange={changeEvent => { setTitle(changeEvent.target.value); onTitleChange?.(changeEvent.target.value); }}
                                 onKeyDown={keyboardEvent => {
                                     if (keyboardEvent.key !== 'Enter' || keyboardEvent.shiftKey
                                         || keyboardEvent.nativeEvent.isComposing) return;
@@ -390,7 +394,7 @@ export function CalendarEventForm({
                 <TextField
                     label="Event title"
                     value={title}
-                    onChange={e => setTitle(e.target.value)}
+                    onChange={e => { setTitle(e.target.value); onTitleChange?.(e.target.value); }}
                     onKeyDown={keyboardEvent => {
                         if (event || keyboardEvent.key !== 'Enter' || keyboardEvent.shiftKey
                             || keyboardEvent.nativeEvent.isComposing) return;

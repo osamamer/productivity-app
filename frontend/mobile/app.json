@@ -43,14 +43,17 @@
       ],
       "expo-secure-store",
       "expo-notifications",
-      ["expo-audio", { "enableBackgroundPlayback": true }],
       "./plugins/withAndroidBuildPerformance",
       [
         "react-native-audio-api",
         {
-          "iosBackgroundMode": false,
-          "androidForegroundService": false,
-          "androidPermissions": [],
+          "iosBackgroundMode": true,
+          "androidForegroundService": true,
+          "androidPermissions": [
+            "android.permission.FOREGROUND_SERVICE",
+            "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+          ],
+          "androidFSTypes": ["mediaPlayback"],
           "disableFFmpeg": true,
           "disableStaticExternalLibs": true
         }

@@ -14,4 +14,5 @@ public class TaskSeriesRuleRequest {
     private TaskRecurrenceUnit recurrenceUnit;
     private List<DayOfWeek> recurrenceDaysOfWeek;
     private String timeZone;
+    private Boolean repeatSubtasks;
 }

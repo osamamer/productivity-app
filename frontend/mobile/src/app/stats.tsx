@@ -257,7 +257,7 @@ export default function StatsScreen() {
 
   return (
     <Screen
-      safeAreaTop={false}
+      back
       refreshing={resource.refreshing}
       onRefresh={() => void refresh()}>
       <View style={styles.controls} accessibilityLabel="Statistics controls">

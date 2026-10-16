@@ -4,6 +4,7 @@ export interface MeditationSession {
     active: boolean;
     totalSessionTime: string | number | [number, number] | null;
     startTime: string | null;
+    expiresAt: string | null;
     lastUnpauseTime: string | null;
     lastPauseTime: string | null;
     endTime: string | null;

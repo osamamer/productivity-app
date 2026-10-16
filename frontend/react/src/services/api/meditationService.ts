@@ -12,6 +12,12 @@ function jsonHeaders(): Record<string, string> {
 }
 
 export const meditationService = {
+    async getSession(sessionId: string): Promise<MeditationSession | null> {
+        const response = await fetch(`${MEDITATION_URL}/${sessionId}`, { headers: getAuthHeaders() });
+        if (response.status === 404) return null;
+        if (!response.ok) throw new Error('Failed to restore meditation session');
+        return response.json();
+    },
     async getActiveSession(): Promise<MeditationSession | null> {
         const response = await fetch(`${MEDITATION_URL}/active`, {
             headers: getAuthHeaders(),

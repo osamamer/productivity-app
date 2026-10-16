@@ -25,6 +25,7 @@ public record TaskSeriesResponse(
         LocalDateTime createdAt,
         LocalDateTime updatedAt,
         boolean statLinked,
-        String calendarId
+        String calendarId,
+        boolean repeatSubtasks
 ) {
 }

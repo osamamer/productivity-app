@@ -25,7 +25,7 @@ import { api } from '@/services/api';
 import type { MeditationSession } from '@/types/models';
 
 const MIN_SESSION_MINUTES = 1;
-const MAX_SESSION_MINUTES = 120;
+const MAX_SESSION_MINUTES = 60;
 const DURATION_ITEM_HEIGHT = 44;
 const DURATION_VISIBLE_ITEMS = 5;
 const DURATION_CENTER_INDEX = Math.floor(DURATION_VISIBLE_ITEMS / 2);
@@ -112,6 +112,7 @@ function createOptimisticSession(
     active: true,
     totalSessionTime: 0,
     startTime: timestamp,
+    expiresAt: new Date(startedAt + MAX_SESSION_MINUTES * 60_000).toISOString(),
     lastUnpauseTime: timestamp,
     lastPauseTime: null,
     endTime: null,
@@ -305,7 +306,7 @@ export default function MeditationScreen() {
   const { confirm } = useAppPopup();
   const resource = useAsyncData<MeditationSession | undefined>(api.meditation.active);
   const setSessionData = resource.setData;
-  const { start: startAudio, changeSound, previewSound, pause: pauseAudio, resume: resumeAudio, stop: stopAudio, setMuted, playBell, playCompletionGong, prepareAudio } = useMeditationAudio();
+  const { start: startAudio, changeSound, previewSound, pause: pauseAudio, resume: resumeAudio, stop: stopAudio, setMuted, playerElement } = useMeditationAudio();
   const settingsStorageKey = meditationSettingsStorageKey(user?.id);
   const [durationMinutes, setDurationMinutes] = useState(DEFAULT_MEDITATION_SETTINGS.durationMinutes);
   const [moodBefore, setMoodBefore] = useState(5);
@@ -322,9 +323,6 @@ export default function MeditationScreen() {
   const [completedSession, setCompletedSession] = useState<MeditationSession | null>(null);
   const [statsRefreshKey, setStatsRefreshKey] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const bellSessionRef = useRef<string | null>(null);
-  const lastBellRef = useRef(0);
-  const completionGongSessionRef = useRef<string | null>(null);
   const audioStartedRef = useRef(false);
   const lastAppliedSoundRef = useRef<MeditationSoundId>('rain');
   const [loadedSettingsKey, setLoadedSettingsKey] = useState<string | null>(null);
@@ -391,6 +389,7 @@ export default function MeditationScreen() {
   const mutationInFlightRef = useRef(false);
   const mutationVersionRef = useRef(0);
   const syncInFlightRef = useRef(false);
+  const autoEndingSessionRef = useRef<string | null>(null);
 
   useEffect(() => {
     sessionRef.current = session;
@@ -405,6 +404,23 @@ export default function MeditationScreen() {
     if (refreshStats) setStatsRefreshKey(key => key + 1);
   }, [setSessionData, stopAudio]);
 
+  useEffect(() => {
+    if (!session || startPending || mutationInFlightRef.current || autoEndingSessionRef.current === session.id
+      || !session.expiresAt || now < new Date(session.expiresAt).getTime()) return;
+
+    autoEndingSessionRef.current = session.id;
+    mutationVersionRef.current += 1;
+    mutationInFlightRef.current = true;
+    void api.meditation.end(session.id).then(finished => {
+      if (!mountedRef.current || sessionRef.current?.id !== finished.id) return;
+      setCompletedSession(finished);
+      clearLocalSession(true);
+    }).catch(cause => {
+      console.warn('Could not automatically end meditation:', cause);
+      autoEndingSessionRef.current = null;
+    }).finally(() => { mutationInFlightRef.current = false; });
+  }, [clearLocalSession, now, session, startPending]);
+
   const syncActiveSession = useCallback(async () => {
     const observedSession = sessionRef.current;
     if (!observedSession || observedSession.id.startsWith('optimistic-meditation-')
@@ -418,6 +434,12 @@ export default function MeditationScreen() {
         || sessionRef.current?.id !== observedSession.id) return;
 
       if (!canonicalSession) {
+        const endedSession = await api.meditation.get(observedSession.id).catch(cause => {
+          console.warn('Could not load completed meditation session:', cause);
+          return undefined;
+        });
+        if (sessionRef.current?.id !== observedSession.id) return;
+        if (endedSession && !endedSession.active) setCompletedSession(endedSession);
         clearLocalSession(true);
         return;
       }
@@ -467,47 +489,18 @@ export default function MeditationScreen() {
       return;
     }
     if (!audioStartedRef.current) {
-      startAudio(selectedSound);
-      if (soundMuted) setMuted(true);
+      setMuted(soundMuted);
+      startAudio(selectedSound, remaining, session.intendedLength, session.numIntervalBells, session.running);
       lastAppliedSoundRef.current = selectedSound;
       audioStartedRef.current = true;
     }
-  }, [session, selectedSound, setMuted, soundMuted, startAudio]);
+  }, [remaining, session, selectedSound, setMuted, soundMuted, startAudio]);
 
   useEffect(() => {
     if (!session || !audioStartedRef.current || lastAppliedSoundRef.current === selectedSound) return;
     changeSound(selectedSound);
     lastAppliedSoundRef.current = selectedSound;
   }, [changeSound, selectedSound, session]);
-
-  useEffect(() => {
-    if (!session || !session.intendedLength || !session.numIntervalBells) {
-      bellSessionRef.current = null;
-      lastBellRef.current = 0;
-      return;
-    }
-    const secondsPerBell = session.intendedLength / (session.numIntervalBells + 1);
-    const currentBell = Math.min(session.numIntervalBells, Math.floor(elapsed / secondsPerBell));
-    if (bellSessionRef.current !== session.id) {
-      bellSessionRef.current = session.id;
-      lastBellRef.current = currentBell;
-      return;
-    }
-    if (!session.running || currentBell <= lastBellRef.current) return;
-    lastBellRef.current = currentBell;
-    if (!soundMuted) playBell();
-  }, [elapsed, playBell, session, soundMuted]);
-
-  useEffect(() => {
-    if (!session) {
-      completionGongSessionRef.current = null;
-      return;
-    }
-    if (!sessionComplete || completionGongSessionRef.current === session.id) return;
-
-    completionGongSessionRef.current = session.id;
-    playCompletionGong();
-  }, [playCompletionGong, session, sessionComplete]);
 
   function chooseSound(sound: MeditationSoundId) {
     setSelectedSound(sound);
@@ -533,10 +526,9 @@ export default function MeditationScreen() {
     setError(null);
     setCompletedSession(null);
     setClientRunningAnchor({ sessionId: optimisticSession.id, startedAt });
-        setSessionData(optimisticSession);
-    prepareAudio();
-    startAudio(selectedSound);
-    if (soundMuted) setMuted(true);
+    setSessionData(optimisticSession);
+    setMuted(soundMuted);
+    startAudio(selectedSound, intendedLength, intendedLength, numIntervalBells);
     lastAppliedSoundRef.current = selectedSound;
     audioStartedRef.current = true;
     try {
@@ -578,6 +570,11 @@ export default function MeditationScreen() {
     setError(null);
     try {
       const updated = session.running ? await api.meditation.pause(session.id) : await api.meditation.resume(session.id);
+      if (!updated.active) {
+        setCompletedSession(updated);
+        clearLocalSession(true);
+        return;
+      }
       setSessionData(updated);
       if (updated.running) {
         const resumedAt = Date.now();
@@ -599,13 +596,8 @@ export default function MeditationScreen() {
     if (soundMuted) {
       setMuted(false);
       setSoundMuted(false);
-      if (session) {
-        startAudio(selectedSound);
-        lastAppliedSoundRef.current = selectedSound;
-        audioStartedRef.current = true;
-      }
     } else {
-      // Keep the silent player active so Android can keep the locked-screen timer running.
+      // Muting the ambient and interval buses leaves the completion bell audible.
       setMuted(true);
       setSoundMuted(true);
     }
@@ -708,7 +700,8 @@ export default function MeditationScreen() {
   }, [clearLocalSession, confirm, navigation, session, startPending]);
 
   return (
-    <Screen safeAreaTop={false} contentStyle={styles.screenContent} refreshing={resource.refreshing} onRefresh={() => void resource.reload()}>
+    <Screen back contentStyle={styles.screenContent} refreshing={resource.refreshing} onRefresh={() => void resource.reload()}>
+      {playerElement}
       {resource.loading && <LoadingView label="Restoring your session…" />}
       {resource.error && !resource.data && <ErrorView message={resource.error} retry={() => void resource.reload()} />}
       {error && <AppText color="danger" style={styles.error}>{error}</AppText>}
@@ -719,7 +712,7 @@ export default function MeditationScreen() {
             <View style={[styles.leaf, { backgroundColor: colors.accentSoft }]}>
               <Ionicons name="leaf" size={34} color={colors.accent} />
             </View>
-            <AppText color="muted" style={styles.setupIntroCopy}>Choose a length, check in with yourself, and make some quiet space.</AppText>
+            <AppText color="muted" style={styles.setupIntroCopy}>Choose a length, check in with yourself, and make some quiet space. Sessions end after one hour.</AppText>
           </View>
           <View style={styles.optionList}>
             <SessionOptionRow

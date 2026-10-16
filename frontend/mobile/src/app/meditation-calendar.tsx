@@ -3,7 +3,7 @@ import { Screen } from '@/components/ui/Screen';
 
 export default function MeditationCalendarScreen() {
   return (
-    <Screen title="Meditation calendar" safeAreaTop={false}>
+    <Screen back>
       <MeditationStats refreshKey={0} />
     </Screen>
   );

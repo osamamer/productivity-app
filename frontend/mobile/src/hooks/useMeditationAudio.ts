@@ -1,185 +1,311 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { createElement, useCallback, useEffect, useRef, useState } from 'react';
 
-import {
-  MEDITATION_AUDIO_SOURCES,
-  MEDITATION_COMPLETION_SOURCE,
-  type MeditationSoundId,
-} from '@/lib/meditationAudio';
-import { playMeditationIntervalBell, prepareMeditationAudio } from '@/lib/audioFeedback';
-import { configureBackgroundAudio } from '@/lib/audioMode';
+import { renderMeditationIntervalBell, type AudioContextLike } from '../../../shared/audioFeedback';
+import { remainingIntervalBellOffsets } from '@/lib/meditationCueTimes';
+import { MEDITATION_AUDIO_SOURCES, MEDITATION_COMPLETION_SOURCE, type MeditationSoundId } from '@/lib/meditationAudio';
 
-type AudioModule = typeof import('expo-audio');
-type AudioPlayer = ReturnType<AudioModule['createAudioPlayer']>;
-type PendingSound = { sound: MeditationSoundId; loop: boolean };
+type AudioModule = typeof import('react-native-audio-api');
+type AudioContext = InstanceType<AudioModule['AudioContext']>;
+type AudioTagHandle = import('react-native-audio-api').AudioTagHandle;
+type AudioBuffer = InstanceType<AudioModule['AudioBuffer']>;
+type GainNode = InstanceType<AudioModule['GainNode']>;
+type MediaNode = InstanceType<AudioModule['MediaElementAudioSourceNode']>;
 
-const LOCK_SCREEN_METADATA = { title: 'Meditation', artist: 'Claritard' };
+interface Runtime {
+  module: AudioModule;
+  context: AudioContext;
+  ambientGain: GainNode;
+  bellBuffer: AudioBuffer;
+}
 
-async function loadAudioModule(): Promise<AudioModule | null> {
-  try {
-    return await import('expo-audio');
-  } catch (error) {
-    // Expo Go and development builds created before expo-audio was installed do
-    // not include the native module. Meditation remains usable without sound.
-    console.warn('Meditation audio is unavailable in this native build.', error);
-    return null;
-  }
+interface SessionRequest {
+  remainingSeconds: number;
+  intendedSeconds: number;
+  intervalBells: number;
+  requestedAt: number;
+  running: boolean;
+}
+
+interface Timeline {
+  endAt: number;
+  intervalGain: GainNode;
+  completionGain: GainNode;
+}
+
+const BACKGROUND_METADATA = { title: 'Meditation', artist: 'Claritard' };
+
+function NativeAudioPlayer({ runtime, sound, onLoad, setHandle }: {
+  runtime: Runtime;
+  sound: MeditationSoundId;
+  onLoad: () => void;
+  setHandle: (handle: AudioTagHandle | null) => void;
+}) {
+  return createElement(runtime.module.Audio, {
+    ref: setHandle,
+    source: MEDITATION_AUDIO_SOURCES[sound],
+    context: runtime.context,
+    loop: true,
+    preload: 'auto',
+    onLoad,
+    onError: (error: Error) => console.error('Could not load meditation soundscape:', error),
+  });
 }
 
 export function useMeditationAudio() {
-  const player = useRef<AudioPlayer | null>(null);
-  const previewTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingSound = useRef<PendingSound | null>(null);
-  const previewingSound = useRef<MeditationSoundId | null>(null);
+  const [runtime, setRuntime] = useState<Runtime | null>(null);
+  const [renderedSound, setRenderedSound] = useState<MeditationSoundId>('rain');
+  const runtimeRef = useRef<Runtime | null>(null);
+  const audioRef = useRef<AudioTagHandle | null>(null);
+  const mediaNode = useRef<MediaNode | null>(null);
+  const loadedSound = useRef<MeditationSoundId | null>(null);
+  const sessionRequest = useRef<SessionRequest | null>(null);
+  const timeline = useRef<Timeline | null>(null);
   const mutedRef = useRef(false);
-  const backgroundSessionActive = useRef(false);
-  const completionPending = useRef(false);
-  const completionPlaying = useRef(false);
-  const completionStartedAt = useRef(0);
-  const statusSubscription = useRef<{ remove: () => void } | null>(null);
-
-  const activateLockScreenPlayback = useCallback((currentPlayer: AudioPlayer) => {
-    // Android needs active media controls to keep its background audio service alive.
-    currentPlayer.setActiveForLockScreen(true, LOCK_SCREEN_METADATA, {
-      showSeekForward: false,
-      showSeekBackward: false,
-    });
-  }, []);
-
-  const playCompletionOnPlayer = useCallback((currentPlayer: AudioPlayer) => {
-    completionPending.current = false;
-    if (previewTimeout.current) clearTimeout(previewTimeout.current);
-    previewTimeout.current = null;
-    previewingSound.current = null;
-    pendingSound.current = null;
-    activateLockScreenPlayback(currentPlayer);
-    currentPlayer.replace(MEDITATION_COMPLETION_SOURCE);
-    currentPlayer.loop = false;
-    currentPlayer.volume = 1;
-    currentPlayer.muted = false;
-    completionPlaying.current = true;
-    completionStartedAt.current = Date.now();
-    currentPlayer.play();
-  }, [activateLockScreenPlayback]);
-
-  const loadSound = useCallback((sound: MeditationSoundId, loop: boolean) => {
-    const currentPlayer = player.current;
-    if (!currentPlayer) {
-      pendingSound.current = { sound, loop };
-      return;
-    }
-    const continuePreview = loop && previewingSound.current === sound;
-    if (previewTimeout.current) clearTimeout(previewTimeout.current);
-    previewTimeout.current = null;
-    previewingSound.current = loop ? null : sound;
-    if (backgroundSessionActive.current) activateLockScreenPlayback(currentPlayer);
-    if (!continuePreview) currentPlayer.replace(MEDITATION_AUDIO_SOURCES[sound]);
-    currentPlayer.loop = loop;
-    currentPlayer.volume = 0.16;
-    currentPlayer.muted = mutedRef.current;
-    currentPlayer.play();
-    if (!loop) {
-      previewTimeout.current = setTimeout(() => {
-        if (player.current !== currentPlayer || previewingSound.current !== sound) return;
-        currentPlayer.pause();
-        previewingSound.current = null;
-        previewTimeout.current = null;
-      }, 5_000);
-    }
-  }, [activateLockScreenPlayback]);
+  const previewRequested = useRef(false);
+  const previewTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const operationVersion = useRef(0);
+  const activationInFlight = useRef(false);
+  const stopRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     let disposed = false;
-
-    void loadAudioModule().then(async audioModule => {
-      if (!audioModule || disposed) return;
-
-      await configureBackgroundAudio(audioModule, 'meditation', 'doNotMix');
-      if (disposed) return;
-
-      if (typeof audioModule.createAudioPlayer !== 'function') {
-        console.warn('Meditation audio playback is unavailable in this native build.');
-        return;
-      }
-      const nextPlayer = audioModule.createAudioPlayer(null, { keepAudioSessionActive: true, updateInterval: 1_000 });
+    void import('react-native-audio-api').then(async module => {
+      module.AudioManager.setAudioSessionOptions({ iosCategory: 'playback' });
+      const context = new module.AudioContext();
+      const ambientGain = context.createGain();
+      ambientGain.gain.value = 0;
+      ambientGain.connect(context.destination);
+      const bellBuffer = await context.decodeAudioData(MEDITATION_COMPLETION_SOURCE);
       if (disposed) {
-        nextPlayer.remove();
+        void context.close();
         return;
       }
-
-      player.current = nextPlayer;
-      statusSubscription.current = nextPlayer.addListener('playbackStatusUpdate', status => {
-        if (!status.didJustFinish || !completionPlaying.current
-          || Date.now() - completionStartedAt.current < 1_500) return;
-        completionPlaying.current = false;
-        backgroundSessionActive.current = false;
-        nextPlayer.pause();
-        nextPlayer.setActiveForLockScreen(false);
-      });
-
-      if (completionPending.current) {
-        playCompletionOnPlayer(nextPlayer);
-      } else {
-        const pending = pendingSound.current;
-        pendingSound.current = null;
-        if (pending) loadSound(pending.sound, pending.loop);
-      }
-    });
+      const nextRuntime = { module, context, ambientGain, bellBuffer };
+      runtimeRef.current = nextRuntime;
+      setRuntime(nextRuntime);
+    }).catch(error => console.error('Could not initialize meditation audio:', error));
 
     return () => {
       disposed = true;
-      backgroundSessionActive.current = false;
-      completionPending.current = false;
-      completionPlaying.current = false;
-      pendingSound.current = null;
-      previewingSound.current = null;
+      operationVersion.current += 1;
       if (previewTimeout.current) clearTimeout(previewTimeout.current);
-      statusSubscription.current?.remove();
-      statusSubscription.current = null;
-      player.current?.setActiveForLockScreen(false);
-      player.current?.remove();
-      player.current = null;
+      mediaNode.current?.disconnect();
+      timeline.current?.intervalGain.disconnect();
+      timeline.current?.completionGain.disconnect();
+      void runtimeRef.current?.context.close().catch(error => console.error('Could not close meditation audio:', error));
+      void runtimeRef.current?.module.PlaybackNotificationManager.hide().catch(error => console.error('Could not hide meditation playback:', error));
+      runtimeRef.current = null;
     };
-  }, [loadSound, playCompletionOnPlayer]);
-
-  const start = useCallback((sound: MeditationSoundId) => {
-    backgroundSessionActive.current = true;
-    loadSound(sound, true);
-  }, [loadSound]);
-  const changeSound = useCallback((sound: MeditationSoundId) => loadSound(sound, true), [loadSound]);
-  const previewSound = useCallback((sound: MeditationSoundId) => loadSound(sound, false), [loadSound]);
-  const pause = useCallback(() => {
-    backgroundSessionActive.current = false;
-    player.current?.pause();
-    player.current?.setActiveForLockScreen(false);
   }, []);
+
+  const activate = useCallback(async () => {
+    const current = runtimeRef.current;
+    const request = sessionRequest.current;
+    if (!current || !request || timeline.current || activationInFlight.current || !audioRef.current || !loadedSound.current) return;
+
+    activationInFlight.current = true;
+    const version = operationVersion.current;
+    try {
+      const startupDelay = request.running ? (Date.now() - request.requestedAt) / 1_000 : 0;
+      const remaining = Math.max(0, request.remainingSeconds - startupDelay);
+      const elapsed = Math.max(0, request.intendedSeconds - remaining);
+      const { context, module, ambientGain, bellBuffer } = current;
+      if (request.running) await context.resume();
+      else await context.suspend();
+      if (version !== operationVersion.current) return;
+
+      const startAt = context.currentTime + 0.05;
+      const endAt = startAt + remaining;
+      const intervalGain = context.createGain();
+      intervalGain.gain.value = mutedRef.current ? 0 : 1;
+      intervalGain.connect(context.destination);
+      const completionGain = context.createGain();
+      completionGain.connect(context.destination);
+
+      ambientGain.gain.cancelScheduledValues(context.currentTime);
+      ambientGain.gain.setValueAtTime(0, context.currentTime);
+      ambientGain.gain.setValueAtTime(mutedRef.current ? 0 : 0.16, startAt);
+      ambientGain.gain.setValueAtTime(0, endAt);
+
+      for (const offset of remainingIntervalBellOffsets(request.intendedSeconds, elapsed, request.intervalBells)) {
+        renderMeditationIntervalBell(
+          context as unknown as AudioContextLike,
+          startAt + offset,
+          intervalGain as unknown as AudioContextLike['destination'],
+        );
+      }
+
+      const completion = context.createBufferSource();
+      completion.buffer = bellBuffer;
+      completion.connect(completionGain);
+      completion.onEnded = () => {
+        if (version === operationVersion.current) stopRef.current();
+      };
+      completion.start(endAt);
+      timeline.current = { endAt, intervalGain, completionGain };
+      if (request.running) audioRef.current?.play();
+      await module.PlaybackNotificationManager.show({
+        ...BACKGROUND_METADATA,
+        duration: request.intendedSeconds,
+        elapsedTime: elapsed,
+        state: request.running ? 'playing' : 'paused',
+      });
+      await Promise.all([
+        module.PlaybackNotificationManager.enableControl('play', false),
+        module.PlaybackNotificationManager.enableControl('pause', false),
+        module.PlaybackNotificationManager.enableControl('stop', false),
+        module.PlaybackNotificationManager.enableControl('nextTrack', false),
+        module.PlaybackNotificationManager.enableControl('previousTrack', false),
+        module.PlaybackNotificationManager.enableControl('skipForward', false),
+        module.PlaybackNotificationManager.enableControl('skipBackward', false),
+        module.PlaybackNotificationManager.enableControl('seekTo', false),
+      ]);
+    } catch (error) {
+      console.error('Could not start meditation background playback:', error);
+    } finally {
+      activationInFlight.current = false;
+    }
+  }, []);
+
+  const onAudioLoaded = useCallback(() => {
+    const current = runtimeRef.current;
+    const tag = audioRef.current;
+    if (!current || !tag) return;
+    try {
+      mediaNode.current?.disconnect();
+      mediaNode.current = current.context.createMediaElementSource(tag);
+      mediaNode.current.connect(current.ambientGain);
+      loadedSound.current = renderedSound;
+      if (sessionRequest.current && !timeline.current) {
+        void activate();
+      } else if (sessionRequest.current?.running && timeline.current) {
+        tag.play();
+      } else if (previewRequested.current) {
+        current.ambientGain.gain.value = 0.16;
+        void current.context.resume().then(() => tag.play()).catch(error => console.error('Could not preview meditation sound:', error));
+      }
+    } catch (error) {
+      console.error('Could not connect meditation soundscape:', error);
+    }
+  }, [activate, renderedSound]);
+
+  const start = useCallback((sound: MeditationSoundId, remainingSeconds: number, intendedSeconds: number, intervalBells: number, running = true) => {
+    operationVersion.current += 1;
+    if (previewTimeout.current) clearTimeout(previewTimeout.current);
+    previewRequested.current = false;
+    sessionRequest.current = { remainingSeconds, intendedSeconds, intervalBells, requestedAt: Date.now(), running };
+    setRenderedSound(sound);
+    if (loadedSound.current === sound) void activate();
+  }, [activate]);
+
+  const changeSound = useCallback((sound: MeditationSoundId) => {
+    if (loadedSound.current === sound) return;
+    loadedSound.current = null;
+    audioRef.current?.pause();
+    setRenderedSound(sound);
+  }, []);
+
+  const previewSound = useCallback((sound: MeditationSoundId) => {
+    if (previewTimeout.current) clearTimeout(previewTimeout.current);
+    previewRequested.current = true;
+    if (loadedSound.current === sound) {
+      const current = runtimeRef.current;
+      if (current) {
+        current.ambientGain.gain.value = 0.16;
+        void current.context.resume().then(() => audioRef.current?.play()).catch(error => console.error('Could not preview meditation sound:', error));
+      }
+    } else {
+      changeSound(sound);
+    }
+    previewTimeout.current = setTimeout(() => {
+      previewRequested.current = false;
+      audioRef.current?.pause();
+      const current = runtimeRef.current;
+      if (current && !sessionRequest.current) {
+        current.ambientGain.gain.value = 0;
+        void current.context.suspend().catch(error => console.error('Could not pause meditation preview:', error));
+      }
+      previewTimeout.current = null;
+    }, 5_000);
+  }, [changeSound]);
+
+  const pause = useCallback(() => {
+    if (sessionRequest.current) {
+      if (sessionRequest.current.running && !timeline.current) {
+        sessionRequest.current.remainingSeconds = Math.max(0,
+          sessionRequest.current.remainingSeconds - (Date.now() - sessionRequest.current.requestedAt) / 1_000);
+        sessionRequest.current.requestedAt = Date.now();
+      }
+      sessionRequest.current.running = false;
+    }
+    audioRef.current?.pause();
+    const current = runtimeRef.current;
+    if (!current) return;
+    void current.context.suspend().catch(error => console.error('Could not pause meditation audio:', error));
+    void current.module.PlaybackNotificationManager.show({ ...BACKGROUND_METADATA, state: 'paused' })
+      .catch(error => console.error('Could not update meditation playback:', error));
+  }, []);
+
   const resume = useCallback(() => {
-    backgroundSessionActive.current = true;
-    const currentPlayer = player.current;
-    if (!currentPlayer) return;
-    activateLockScreenPlayback(currentPlayer);
-    currentPlayer.play();
-  }, [activateLockScreenPlayback]);
+    if (sessionRequest.current) {
+      sessionRequest.current.running = true;
+      if (!timeline.current) sessionRequest.current.requestedAt = Date.now();
+    }
+    const current = runtimeRef.current;
+    if (!current) return;
+    void current.context.resume().then(() => {
+      if (timeline.current) audioRef.current?.play();
+      else void activate();
+    }).catch(error => console.error('Could not resume meditation audio:', error));
+    void current.module.PlaybackNotificationManager.show({ ...BACKGROUND_METADATA, state: 'playing' })
+      .catch(error => console.error('Could not update meditation playback:', error));
+  }, [activate]);
+
   const stop = useCallback(() => {
-    backgroundSessionActive.current = false;
-    completionPending.current = false;
-    completionPlaying.current = false;
-    pendingSound.current = null;
+    operationVersion.current += 1;
+    sessionRequest.current = null;
+    previewRequested.current = false;
     if (previewTimeout.current) clearTimeout(previewTimeout.current);
     previewTimeout.current = null;
-    previewingSound.current = null;
-    player.current?.pause();
-    player.current?.setActiveForLockScreen(false);
+    audioRef.current?.pause();
+    const current = runtimeRef.current;
+    if (!current) return;
+    const currentTimeline = timeline.current;
+    timeline.current = null;
+    currentTimeline?.intervalGain.disconnect();
+    currentTimeline?.completionGain.disconnect();
+    current.ambientGain.gain.cancelScheduledValues(current.context.currentTime);
+    current.ambientGain.gain.value = 0;
+    void current.context.suspend().catch(error => console.error('Could not stop meditation audio:', error));
+    void current.module.PlaybackNotificationManager.hide().catch(error => console.error('Could not hide meditation playback:', error));
   }, []);
+  useEffect(() => {
+    stopRef.current = stop;
+  }, [stop]);
+
   const setMuted = useCallback((muted: boolean) => {
     mutedRef.current = muted;
-    if (player.current) player.current.muted = muted;
+    const current = runtimeRef.current;
+    if (!current) return;
+    if (timeline.current && current.context.currentTime < timeline.current.endAt) {
+      current.ambientGain.gain.setValueAtTime(muted ? 0 : 0.16, current.context.currentTime);
+      timeline.current.intervalGain.gain.value = muted ? 0 : 1;
+    }
   }, []);
-  const playBell = useCallback(() => playMeditationIntervalBell(), []);
-  const playCompletionGong = useCallback(() => {
-    completionPending.current = true;
-    if (player.current) playCompletionOnPlayer(player.current);
-  }, [playCompletionOnPlayer]);
-  const prepareAudio = useCallback(() => prepareMeditationAudio(), []);
 
-  return { start, changeSound, previewSound, pause, resume, stop, setMuted, playBell, playCompletionGong, prepareAudio };
+  const setAudioHandle = useCallback((handle: AudioTagHandle | null) => {
+    audioRef.current = handle;
+  }, []);
+
+  // React Compiler treats these native callbacks as ref reads; they run after render.
+  // eslint-disable-next-line react-hooks/refs
+  const playerElement = runtime ? createElement(NativeAudioPlayer, {
+    key: renderedSound,
+    runtime,
+    sound: renderedSound,
+    onLoad: onAudioLoaded,
+    setHandle: setAudioHandle,
+  }) : null;
+
+  return { start, changeSound, previewSound, pause, resume, stop, setMuted, playerElement };
 }

@@ -1,14 +1,15 @@
+import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { PropsWithChildren, ReactNode } from 'react';
 import { RefreshControl, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAppTheme } from '@/providers/ThemeProvider';
-import { AppText } from './AppText';
+import { SilentPressable } from './SilentPressable';
 import { KeyboardAwareScrollView, KeyboardAwareView } from './KeyboardAwareScrollView';
 
 interface Props {
-  title?: string;
-  eyebrow?: string;
+  back?: boolean;
   action?: ReactNode;
   scroll?: boolean;
   refreshing?: boolean;
@@ -22,8 +23,7 @@ interface Props {
 
 export function Screen({
   children,
-  title,
-  eyebrow,
+  back = false,
   action,
   scroll = true,
   refreshing = false,
@@ -37,12 +37,18 @@ export function Screen({
   const { colors } = useAppTheme();
   const body = (
     <View style={[styles.content, contentStyle]}>
-      {(title || eyebrow || action) && (
-        <View style={[styles.header, !title && styles.headerWithoutTitle]}>
-          <View style={styles.headerText}>
-            {eyebrow && <AppText variant="heading" color="accent">{eyebrow}</AppText>}
-            {title && <AppText variant="title">{title}</AppText>}
-          </View>
+      {(back || action) && (
+        <View style={styles.controls}>
+          {back && (
+            <SilentPressable
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
+              hitSlop={10}
+              onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)')}
+              style={styles.backButton}>
+              <Ionicons name="arrow-back" size={24} color={colors.text} />
+            </SilentPressable>
+          )}
           {action}
         </View>
       )}
@@ -70,7 +76,6 @@ const styles = StyleSheet.create({
   safe: { flex: 1 },
   scroll: { flexGrow: 1 },
   content: { paddingHorizontal: 18, paddingTop: 0, paddingBottom: 120, gap: 16 },
-  header: { minHeight: 54, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 16 },
-  headerWithoutTitle: { minHeight: 32 },
-  headerText: { flex: 1, gap: 3 },
+  controls: { minHeight: 40, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  backButton: { width: 40, height: 40, justifyContent: 'center' },
 });

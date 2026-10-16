@@ -19,4 +19,5 @@ public class TaskSeriesUpdateRequest {
     private String timeZone;
     private String calendarId;
     private Boolean active;
+    private Boolean repeatSubtasks;
 }

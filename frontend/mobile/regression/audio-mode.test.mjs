@@ -1,35 +1,16 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { configureBackgroundAudio } from '../src/lib/audioMode.ts';
 
-test('enables silent-mode playback and background audio with the selected interruption mode', async () => {
-  let configuredMode;
-  await configureBackgroundAudio({
-    setAudioModeAsync: async mode => { configuredMode = mode; },
-  }, 'meditation', 'duckOthers');
+const config = JSON.parse(readFileSync(new URL('../app.json', import.meta.url), 'utf8'));
+const [, audioOptions] = config.expo.plugins.find(plugin => Array.isArray(plugin) && plugin[0] === 'react-native-audio-api');
 
-  assert.deepEqual(configuredMode, {
-    playsInSilentMode: true,
-    shouldPlayInBackground: true,
-    interruptionMode: 'duckOthers',
-  });
+test('native meditation audio continues through the Android media playback service', () => {
+  assert.equal(audioOptions.androidForegroundService, true);
+  assert.ok(audioOptions.androidFSTypes.includes('mediaPlayback'));
+  assert.ok(audioOptions.androidPermissions.includes('android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK'));
 });
 
-test('does not throw when background audio is unavailable or configuration fails', async () => {
-  const originalWarn = console.warn;
-  const originalError = console.error;
-  const logged = [];
-  console.warn = (...args) => { logged.push(args); };
-  console.error = (...args) => { logged.push(args); };
-
-  try {
-    await configureBackgroundAudio({}, 'pomodoro');
-    const failure = new Error('native audio unavailable');
-    await configureBackgroundAudio({ setAudioModeAsync: async () => { throw failure; } }, 'pomodoro');
-    assert.equal(logged[0][0], 'pomodoro audio mode is unavailable in this native build.');
-    assert.deepEqual(logged[1], ['Could not configure pomodoro audio:', failure]);
-  } finally {
-    console.warn = originalWarn;
-    console.error = originalError;
-  }
+test('native meditation audio is allowed in the iOS background', () => {
+  assert.equal(audioOptions.iosBackgroundMode, true);
 });

@@ -7,6 +7,7 @@ import org.osama.user.User;
 import org.osama.user.UserRepository;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.scheduling.annotation.Scheduled;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -32,7 +33,7 @@ public class MeditationSessionService {
     }
 
     public MeditationSession startSession(int mood, int numIntervalBells, int intendedLength, String userId) {
-        Optional<MeditationSession> activeSession = meditationSessionRepository.findByUserIdAndActiveIsTrue(userId);
+        Optional<MeditationSession> activeSession = getActiveSession(userId);
         if (activeSession.isPresent()) {
             throw new IllegalStateException("Cannot start a meditation session when another is already active.");
         }
@@ -64,11 +65,22 @@ public class MeditationSessionService {
     }
 
     public Optional<MeditationSession> getActiveSession(String userId) {
-        return meditationSessionRepository.findByUserIdAndActiveIsTrue(userId);
+        Optional<MeditationSession> session = meditationSessionRepository.findByUserIdAndActiveIsTrue(userId);
+        session.ifPresent(value -> endIfExpired(value, LocalDateTime.now()));
+        return session.filter(MeditationSession::isActive);
     }
 
     public Optional<MeditationSession> getSession(String sessionId, String userId) {
-        return meditationSessionRepository.findByIdAndUserId(sessionId, userId);
+        Optional<MeditationSession> session = meditationSessionRepository.findByIdAndUserId(sessionId, userId);
+        session.ifPresent(value -> endIfExpired(value, LocalDateTime.now()));
+        return session;
+    }
+
+    @Scheduled(fixedDelay = 5000)
+    public void endExpiredSessions() {
+        LocalDateTime now = LocalDateTime.now();
+        meditationSessionRepository.findAllByActiveIsTrueAndStartTimeLessThanEqual(now.minusSeconds(MAX_SESSION_SECONDS))
+                .forEach(session -> endIfExpired(session, now));
     }
 
     public MeditationSession pauseSession(String sessionId, String userId) {
@@ -79,6 +91,7 @@ public class MeditationSessionService {
                 .orElseThrow(() -> new IllegalArgumentException("Cannot pause a meditation session when it is not running."));
 
         LocalDateTime pauseTime = LocalDateTime.now();
+        if (endIfExpired(runningSession, pauseTime)) return runningSession;
         runningSession.setRunning(false);
         runningSession.setLastPauseTime(pauseTime);
         addSessionTimeAfterPausing(runningSession);
@@ -100,6 +113,7 @@ public class MeditationSessionService {
         }
 
         MeditationSession session = activeSession.get();
+        if (endIfExpired(session, LocalDateTime.now())) return session;
         if (session.isRunning()) {
             throw new IllegalStateException("Cannot unpause a meditation session when it is already running.");
         }
@@ -115,14 +129,21 @@ public class MeditationSessionService {
 
     public MeditationSession endSession(String sessionId, String userId, Integer moodAfter) {
         Optional<MeditationSession> activeSession = userId == null
-                ? meditationSessionRepository.findMeditationSessionByIdAndActiveIsTrue(sessionId)
-                : meditationSessionRepository.findByIdAndActiveIsTrueAndUserId(sessionId, userId);
+                ? meditationSessionRepository.findById(sessionId)
+                : meditationSessionRepository.findByIdAndUserId(sessionId, userId);
         if (activeSession.isEmpty()) {
             throw new IllegalStateException("Cannot end a meditation session when it is not active.");
         }
 
         MeditationSession session = activeSession.get();
+        if (!session.isActive()) return session;
         LocalDateTime endTime = LocalDateTime.now();
+        LocalDateTime deadline = session.getStartTime().plusSeconds(MAX_SESSION_SECONDS);
+        if (endTime.isAfter(deadline)) endTime = deadline;
+        return finishSession(session, endTime, moodAfter, userId);
+    }
+
+    private MeditationSession finishSession(MeditationSession session, LocalDateTime endTime, Integer moodAfter, String userId) {
         if (session.isRunning()) {
             session.setLastPauseTime(endTime);
             addSessionTimeAfterPausing(session);
@@ -144,6 +165,13 @@ public class MeditationSessionService {
                 savedSession.getEndTime()
         ));
         return savedSession;
+    }
+
+    private boolean endIfExpired(MeditationSession session, LocalDateTime now) {
+        if (!session.isActive() || session.getStartTime() == null
+                || now.isBefore(session.getStartTime().plusSeconds(MAX_SESSION_SECONDS))) return false;
+        finishSession(session, session.getStartTime().plusSeconds(MAX_SESSION_SECONDS), null, session.getUser().getId());
+        return true;
     }
 
     public MeditationSession endSession(String sessionId) {
@@ -182,7 +210,9 @@ public class MeditationSessionService {
         if (lastUnpauseTime == null || lastPauseTime == null) return;
         Duration addedTime = Duration.between(lastUnpauseTime, lastPauseTime);
         Duration currentTotal = session.getTotalSessionTime() == null ? Duration.ZERO : session.getTotalSessionTime();
-        session.setTotalSessionTime(currentTotal.plus(addedTime));
+        Duration total = currentTotal.plus(addedTime);
+        session.setTotalSessionTime(total.compareTo(Duration.ofSeconds(MAX_SESSION_SECONDS)) > 0
+                ? Duration.ofSeconds(MAX_SESSION_SECONDS) : total);
     }
 
     public void validateMood(int mood) {
@@ -196,8 +226,8 @@ public class MeditationSessionService {
     }
 
     public void validateIntendedLength(int intendedLength) {
-        if (intendedLength < 0)
-            throw new IllegalArgumentException("Intended meditation length cannot be negative");
+        if (intendedLength < 0 || intendedLength > MAX_SESSION_SECONDS)
+            throw new IllegalArgumentException("Intended meditation length must be between 0 and 3600 seconds");
     }
 
 }

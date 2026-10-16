@@ -29,6 +29,7 @@ import { expandCalendarEvent } from '../calendar/recurrence';
 import { TaskReminderPicker } from '../task/TaskReminderPicker';
 import { AppTimeField } from '../input/AppPickerFields';
 import { eventService } from '../../services/api';
+import { homeTodayEventsSnapshot } from '../../services/cache/homeTodayEventsSnapshot';
 import { getHomeTodayEventsExpanded, setHomeTodayEventsExpanded } from '../../services/utils/homePreferences';
 import { readEventTimePreferences, saveEventTimePreferences } from '../../services/utils/inputPreferences';
 import {
@@ -144,6 +145,12 @@ function eventsForToday(events: CalendarEvent[], dayStart: Date): TodayEvent[] {
         if (first.allDay !== second.allDay) return first.allDay ? -1 : 1;
         return (first.start?.getTime() ?? 0) - (second.start?.getTime() ?? 0);
     });
+}
+
+function sourceEventsForToday(events: CalendarEvent[], dayStart: Date): CalendarEvent[] {
+    const todayEventIds = new Set(eventsForToday(events, dayStart).map(item => item.event.id));
+    return events.filter(event => todayEventIds.has(event.id)
+        && !event.id.startsWith(OPTIMISTIC_EVENT_ID_PREFIX));
 }
 
 function eventTimeLabel(event: TodayEvent, dayStart: Date): string {
@@ -934,7 +941,15 @@ function TodayEventCard({ item, dayStart, pendingCreation, onEventUpdated, onEve
 }
 
 export function TodayEventsSection() {
-    const [initialEvents] = useState(() => eventService.getLastKnownEvents());
+    const [dayStart] = useState(() => startOfDay(new Date()));
+    const todayKey = format(dayStart, 'yyyy-MM-dd');
+    const [initialEvents] = useState(() => {
+        const snapshot = homeTodayEventsSnapshot.get(todayKey);
+        if (snapshot !== undefined) return snapshot;
+
+        const lastKnownEvents = eventService.getLastKnownEvents();
+        return lastKnownEvents ? sourceEventsForToday(lastKnownEvents, dayStart) : undefined;
+    });
     const [events, setEvents] = useState<CalendarEvent[]>(() => initialEvents ?? []);
     const [loading, setLoading] = useState(() => initialEvents === undefined);
     const [expanded, setExpanded] = useState(getHomeTodayEventsExpanded);
@@ -958,6 +973,11 @@ export function TodayEventsSection() {
     useEffect(() => {
         setHomeTodayEventsExpanded(expanded);
     }, [expanded]);
+
+    useEffect(() => {
+        if (loading) return;
+        homeTodayEventsSnapshot.set(todayKey, sourceEventsForToday(events, dayStart));
+    }, [dayStart, events, loading, todayKey]);
 
     useEffect(() => {
         const cancelScroll = () => {
@@ -999,7 +1019,6 @@ export function TodayEventsSection() {
         return () => { cancelled = true; };
     }, []);
 
-    const [dayStart] = useState(() => startOfDay(new Date()));
     const todayEvents = useMemo(() => eventsForToday(events, dayStart), [dayStart, events]);
     const updateEventInState = (updatedEvent: CalendarEvent) => {
         setEvents(current => current.map(event => event.id === updatedEvent.id ? updatedEvent : event));

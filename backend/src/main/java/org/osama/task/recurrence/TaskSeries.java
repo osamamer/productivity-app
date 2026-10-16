@@ -89,6 +89,9 @@ public class TaskSeries {
     @Column(nullable = false)
     private boolean active;
 
+    @Column(name = "repeat_subtasks", nullable = false)
+    private boolean repeatSubtasks;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

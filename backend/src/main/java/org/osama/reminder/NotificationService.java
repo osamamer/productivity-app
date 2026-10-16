@@ -115,6 +115,12 @@ public class NotificationService {
                         reminder.getUserId(), reminder.getReminderId(), reminder.getDateTime());
                 continue;
             }
+            if (isPomodoroNotification(reminder.getNotificationType())) {
+                reminder.setDispatchedAt(deliveryTime);
+                log.info("Pomodoro transition reserved for local browser delivery: userId={} notificationId={} type={}",
+                        reminder.getUserId(), reminder.getReminderId(), reminder.getNotificationType());
+                continue;
+            }
             String keycloakId = reminder.getUser().getKeycloakId();
             if (keycloakId != null && !keycloakId.isBlank()) {
                 messagingTemplate.convertAndSendToUser(
@@ -453,5 +459,11 @@ public class NotificationService {
                 notification.setBody(safeTaskName + " · All focus sessions finished");
             }
         }
+    }
+
+    private boolean isPomodoroNotification(NotificationType notificationType) {
+        return notificationType == NotificationType.POMODORO_FOCUS_ENDED
+                || notificationType == NotificationType.POMODORO_BREAK_ENDED
+                || notificationType == NotificationType.POMODORO_COMPLETED;
     }
 }

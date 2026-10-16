@@ -83,6 +83,7 @@ export interface StatSummary {
     periodAverage: number | null;     // NUMBER / RANGE / TIME / DURATION
     periodTotal: number | null;       // NUMBER / RANGE / TIME / DURATION
     periodHighest?: number | null;     // NUMBER / RANGE / TIME / DURATION
+    averageStartDate?: string | null;   // first day eligible for unlogged zeroes
 }
 
 export interface StatBootstrapResponse {

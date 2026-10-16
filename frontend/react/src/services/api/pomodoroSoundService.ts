@@ -231,6 +231,12 @@ export async function loadSelectedPomodoroSoundMetadata(): Promise<PomodoroSound
         getPomodoroSounds(),
     ]);
     const selectedId = preferences.pomodoroSoundId || BUILT_IN_POMODORO_SOUND_ID;
-    return [BUILT_IN_POMODORO_SOUND, ...uploadedSounds]
-        .find(sound => sound.id === selectedId) ?? BUILT_IN_POMODORO_SOUND;
+    const selected = [BUILT_IN_POMODORO_SOUND, ...uploadedSounds]
+        .find(sound => sound.id === selectedId);
+    if (selected) return selected;
+    const refreshed = (await apiClient.get<PomodoroSound[]>('/api/v1/users/me/pomodoro-sounds')).data;
+    pomodoroSoundListCache.set(pomodoroSoundListCacheKey(), refreshed);
+    const current = refreshed.find(sound => sound.id === selectedId);
+    if (!current) throw new Error('The selected focus sound is unavailable.');
+    return current;
 }

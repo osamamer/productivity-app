@@ -19,11 +19,10 @@ import { TaskScheduleField } from './TaskScheduleField';
 import { TaskReminderField } from './TaskReminderField';
 import { CalendarDestinationField } from '../calendar/CalendarControls';
 
-export function TaskDetailSheet({ task, onClose, onUpdated, onStartFocus, onDeleted, onDeletedOccurrence, onSubtaskCreated, availableCalendars }: {
+export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeletedOccurrence, onSubtaskCreated, availableCalendars }: {
   task: Task | null;
   onClose: () => void;
   onUpdated: (task: Task) => void;
-  onStartFocus?: (task: Task) => void;
   onDeleted: (taskId: string) => void;
   onDeletedOccurrence?: (taskId: string) => Promise<void>;
   onSubtaskCreated?: (task: Task) => void;
@@ -444,7 +443,6 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onStartFocus, onDele
       <ChoiceChips value={importance} onChange={handlePriorityChange} options={[...TASK_PRIORITY_OPTIONS]} />
       {error && <AppText color="danger">{error}</AppText>}
       <View style={styles.actions}>
-        {onStartFocus && task && <AppButton label="Focus options" icon="timer-outline" variant="secondary" onPress={() => { onClose(); onStartFocus(task); }} style={styles.grow} />}
         <AppButton label="Delete" icon="trash-outline" variant="danger" onPress={requestDelete} disabled={deleting} style={styles.grow} />
       </View>
       <AppPopup

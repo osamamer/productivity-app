@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useUser } from '../../hooks/useUser';
 import { createAuthenticatedStompClient } from '../../services/authenticatedStompClient';
 import { notificationService } from '../../services/api/notificationService';
+import { playPomodoroTransitionSound } from '../../services/pomodoroTransitionSound';
 import { showSystemNotification } from '../../services/systemNotifications';
 import { ApplicationNotification } from '../../types/ApplicationNotification';
 
@@ -68,6 +69,7 @@ export function NotificationCenter() {
         try {
             await withNotificationLock(notification.notificationId, async () => {
                 if (!readDeliveryLedger().includes(notification.notificationId)) {
+                    playPomodoroTransitionSound(notification.type);
                     const body = notificationBody(notification);
                     const systemNotificationShown = await showSystemNotification(notification.title, {
                         body,

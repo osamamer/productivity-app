@@ -28,6 +28,7 @@ import { AppDateField } from '../input/AppPickerFields';
 import { TaskRecurrenceCustomOptions, TaskRecurrencePicker } from '../task/TaskRecurrencePicker';
 import { TaskReminderPicker } from '../task/TaskReminderPicker';
 import { SubtaskNameField } from '../task/SubtaskNameField';
+import { getTextOffsetAtPoint } from '../task/taskTextCaret';
 import { playAudioFeedback } from '../../services/audioFeedback';
 import {
     getStaleTaskPomodoroStats,
@@ -243,13 +244,14 @@ const SubtaskComposer = React.memo(function SubtaskComposer({
             sx={{
                 display: 'flex',
                 alignItems: 'center',
+                minHeight: 38,
             }}
         >
             <Checkbox
                 size="small"
                 disabled
                 checked={false}
-                sx={{ p: 0.5, mr: 0.5, color: 'text.disabled' }}
+                sx={{ p: 0.5, mr: 0.75, color: 'text.disabled' }}
                 inputProps={{ 'aria-label': 'New subtask' }}
             />
             <TextField
@@ -265,7 +267,7 @@ const SubtaskComposer = React.memo(function SubtaskComposer({
                 variant="standard"
                 fullWidth
                 InputProps={{ disableUnderline: true }}
-                sx={{ '& .MuiInputBase-input': { py: 1.25, fontSize: '0.875rem' } }}
+                sx={{ '& .MuiInputBase-input': { py: 0.5, fontSize: '1rem' } }}
             />
         </Box>
     );
@@ -280,7 +282,6 @@ const SubtaskList = React.memo(function SubtaskList({
     const [contextMenu, setContextMenu] = useState<SubtaskContextMenuState | null>(null);
     const [editingSubtaskId, setEditingSubtaskId] = useState<string | null>(null);
     const [localSubtaskName, setLocalSubtaskName] = useState('');
-    const subtaskNameInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
     const subtaskCommitRef = useRef<string | null>(null);
     const subtaskPointerDownRef = useRef<{ x: number; y: number } | null>(null);
 
@@ -289,14 +290,6 @@ const SubtaskList = React.memo(function SubtaskList({
             setContextMenu(null);
         }
     }, [contextMenu, items]);
-
-    useEffect(() => {
-        if (!editingSubtaskId || !subtaskNameInputRef.current) return;
-
-        const input = subtaskNameInputRef.current;
-        input.focus();
-        input.setSelectionRange(input.value.length, input.value.length);
-    }, [editingSubtaskId]);
 
     useEffect(() => {
         if (editingSubtaskId && !items.some(item => item.taskId === editingSubtaskId)) {
@@ -399,7 +392,6 @@ const SubtaskList = React.memo(function SubtaskList({
                                 value={isEditing ? localSubtaskName : subtask.name}
                                 completed={subtask.completed}
                                 readOnly={!isEditing}
-                                inputRef={isEditing ? subtaskNameInputRef : undefined}
                                 onChange={event => setLocalSubtaskName(event.target.value)}
                                 onBlur={() => {
                                     if (isEditing) void commitName(subtask);
@@ -474,6 +466,8 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
         recurrenceDraftFromSeries(initialTaskDetails?.taskSeries),
     );
     const [recurrenceError, setRecurrenceError] = useState<string | null>(null);
+    const [repeatSubtasks, setRepeatSubtasks] = useState(initialTaskDetails?.taskSeries?.repeatSubtasks ?? false);
+    const repeatSubtasksRef = useRef(repeatSubtasks);
     const [subtaskError, setSubtaskError] = useState<string | null>(null);
     const [priorityError, setPriorityError] = useState<string | null>(null);
     const [priorityScopeRequest, setPriorityScopeRequest] = useState<{
@@ -495,22 +489,25 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
     const [localTaskName, setLocalTaskName] = useState(task.name ?? '');
     const [editingTaskName, setEditingTaskName] = useState(false);
     const taskNameInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+    const taskNameCaretOffsetRef = useRef<number | null>(null);
     const taskNameCommitRef = useRef(false);
     const visibleDescription = descriptionDraft.taskId === task.taskId
         && descriptionDraft.source === taskDescription
         ? descriptionDraft.value
         : taskDescription;
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         setLocalTaskName(task.name ?? '');
         setEditingTaskName(false);
     }, [task.taskId, task.name]);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         if (!editingTaskName || !taskNameInputRef.current) return;
         const input = taskNameInputRef.current;
         input.focus();
-        input.setSelectionRange(input.value.length, input.value.length);
+        const caretOffset = taskNameCaretOffsetRef.current ?? input.value.length;
+        taskNameCaretOffsetRef.current = null;
+        input.setSelectionRange(caretOffset, caretOffset);
     }, [editingTaskName]);
 
     const [subtaskState, setSubtaskState] = useState<SubtaskState>({
@@ -569,11 +566,15 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
             taskSeriesRef.current = cached.taskSeries;
             recurrenceDraftRef.current = nextDraft;
             setRecurrenceDraft(nextDraft);
+            setRepeatSubtasks(cached.taskSeries?.repeatSubtasks ?? false);
+            repeatSubtasksRef.current = cached.taskSeries?.repeatSubtasks ?? false;
             setSubtaskState({ taskId, items: sortSubtasks(cached.subtasks), loading: !fresh });
         } else {
             taskSeriesRef.current = null;
             recurrenceDraftRef.current = defaultTaskRecurrence();
             setRecurrenceDraft(recurrenceDraftRef.current);
+            setRepeatSubtasks(false);
+            repeatSubtasksRef.current = false;
             setSubtaskState({ taskId, items: EMPTY_SUBTASKS, loading: true });
         }
 
@@ -620,6 +621,8 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
                 taskSeriesRef.current = series;
                 recurrenceDraftRef.current = nextDraft;
                 setRecurrenceDraft(nextDraft);
+                setRepeatSubtasks(series?.repeatSubtasks ?? false);
+                repeatSubtasksRef.current = series?.repeatSubtasks ?? false;
                 cacheCompleteDetails();
             })
             .catch(error => {
@@ -827,8 +830,8 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
 
             if (!nextScheduledPerformDateTime) return;
             const savedSeries = currentSeries
-                ? await taskService.updateTaskSeries(currentSeries.seriesId, nextDraft, true)
-                : await taskService.startTaskRecurrence(task.taskId, nextDraft);
+                ? await taskService.updateTaskSeries(currentSeries.seriesId, nextDraft, true, repeatSubtasksRef.current)
+                : await taskService.startTaskRecurrence(task.taskId, nextDraft, repeatSubtasksRef.current);
             taskSeriesRef.current = savedSeries;
             if (requestId !== recurrenceRequestIdRef.current) return;
             void onRefreshTasks?.();
@@ -1077,11 +1080,16 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
                             variant="h5"
                             onClick={event => {
                                 event.stopPropagation();
+                                taskNameCaretOffsetRef.current = getTextOffsetAtPoint(
+                                    event.currentTarget,
+                                    event.clientX,
+                                    event.clientY,
+                                );
                                 startTaskNameEditing();
                             }}
                             sx={{
                                 maxWidth: '100%',
-                                fontSize: getTaskNameFontSize(task.name ?? ''),
+                                fontSize: getTaskNameFontSize(localTaskName),
                                 textAlign: 'left',
                                 lineHeight: 1.25,
                                 overflowWrap: 'anywhere',
@@ -1092,7 +1100,7 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
                                 cursor: 'text',
                             }}
                         >
-                            {task.name}
+                            {localTaskName}
                         </Typography>
                     )}
                 </Box>
@@ -1198,6 +1206,18 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
                             </Box>
                             {!task.parentId && (
                                 <Collapse in={recurrenceDraft.recurrenceFrequency !== 'NONE'} timeout={180} unmountOnExit>
+                                    <Box>
+                                    {visibleSubtaskState.items.length > 0 && (
+                                        <Box sx={{ mt: 1 }}>
+                                            <Checkbox checked={repeatSubtasks} size="small" inputProps={{ 'aria-label': 'Repeat subtasks with each occurrence' }}
+                                                onChange={event => {
+                                                    repeatSubtasksRef.current = event.target.checked;
+                                                    setRepeatSubtasks(event.target.checked);
+                                                    handleRecurrenceChange(recurrenceDraftRef.current);
+                                                }} />
+                                            <Typography component="span" variant="body2">Repeat subtasks with each occurrence</Typography>
+                                        </Box>
+                                    )}
                                     <Box sx={{
                                         mt: 1.25,
                                         display: 'grid',
@@ -1221,6 +1241,7 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
                                                 recurrenceEndDate: recurrenceEndDate || null,
                                             })}
                                         />
+                                    </Box>
                                     </Box>
                                 </Collapse>
                             )}

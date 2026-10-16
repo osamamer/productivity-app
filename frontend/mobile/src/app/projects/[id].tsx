@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Stack, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
@@ -238,9 +238,8 @@ export default function ProjectDetailScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: project?.name ?? 'Project' }} />
       <Screen
-        safeAreaTop={false}
+        back
         refreshing={resource.refreshing}
         onRefresh={() => void resource.reload()}>
         {resource.loading && !resource.data && <LoadingView label="Loading project…" />}
