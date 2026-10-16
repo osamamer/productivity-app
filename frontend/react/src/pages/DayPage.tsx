@@ -96,7 +96,7 @@ function buildTimeline(overview: DayOverview, mode: DayViewMode): TimelineItem[]
     const dayEnd = parseISO(overview.dayEnd);
     const calendarDayStart = parseISO(`${overview.date}T00:00:00`);
     const calendarDayEnd = addDays(calendarDayStart, 1);
-    const items: TimelineItem[] = overview.tasks.flatMap(task => {
+    const items: TimelineItem[] = overview.tasks.flatMap<TimelineItem>(task => {
         if (mode === 'future') {
             if (task.completed || !task.scheduledAt) return [];
             const scheduledTime = parseISO(task.scheduledAt);

@@ -120,10 +120,17 @@ class NotificationServiceRepeatTest {
         notificationService.pushDueNotifications();
 
         reminders.forEach(reminder -> {
-            if (reminder.getNotificationType() == NotificationType.MEDITATION_COMPLETED) {
+            NotificationType type = reminder.getNotificationType();
+            if (type == NotificationType.MEDITATION_COMPLETED) {
                 verify(expoPushNotificationService, never()).send(reminder);
                 assertNull(reminder.getDispatchedAt());
                 assertNotNull(reminder.getAcknowledgedAt());
+            } else if (type == NotificationType.POMODORO_FOCUS_ENDED
+                    || type == NotificationType.POMODORO_BREAK_ENDED
+                    || type == NotificationType.POMODORO_COMPLETED) {
+                verify(expoPushNotificationService, never()).send(reminder);
+                assertNotNull(reminder.getDispatchedAt());
+                assertNull(reminder.getAcknowledgedAt());
             } else {
                 verify(expoPushNotificationService).send(reminder);
                 assertNotNull(reminder.getDispatchedAt());
