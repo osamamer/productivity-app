@@ -14,9 +14,11 @@ import { useAsyncData } from '@/hooks/useAsyncData';
 import { reportError } from '@/lib/errors';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
-import type { MentalStateCheckIn, MentalStateRequest } from '@/types/models';
+import { MENTAL_STATE_GOAL_LABELS, type MentalStateCheckIn, type MentalStateGoal, type MentalStateSignals } from '@/types/models';
 
-const signals: { key: keyof MentalStateRequest; label: string; low: string; high: string }[] = [
+const goals: MentalStateGoal[] = ['LABOR', 'LEISURE', 'RECOVERY'];
+
+const signals: { key: keyof MentalStateSignals; label: string; low: string; high: string }[] = [
   { key: 'energy', label: 'Energy', low: 'Drained', high: 'Charged' },
   { key: 'activation', label: 'Activation', low: 'Still', high: 'Revved up' },
   { key: 'stimulationHunger', label: 'Stimulation hunger', low: 'Content', high: 'Seeking input' },
@@ -53,6 +55,8 @@ function MentalStateResultCard({ checkIn, selected, isCurrent, isMostRecent, onC
   }));
   const { opacity, translateY, recommendationOpacity, recommendationTranslateY } = animations;
   const readyForHome = checkIn.state === 'Ready' || checkIn.state === 'Almost Ready';
+  const meditationGoal = checkIn.goal === 'RECOVERY' || !readyForHome;
+  const destination = checkIn.goal === 'LEISURE' ? null : meditationGoal ? '/meditation' : '/(tabs)';
 
   useEffect(() => {
     opacity.setValue(0);
@@ -80,7 +84,7 @@ function MentalStateResultCard({ checkIn, selected, isCurrent, isMostRecent, onC
   return (
     <Animated.View style={{ opacity, transform: [{ translateY }] }}>
       <Card style={styles.result}>
-        <AppText variant="caption" color="muted">{selected ? 'SELECTED CHECK-IN' : 'YOUR STATE'}</AppText>
+        <AppText variant="caption" color="muted">{selected ? 'SELECTED CHECK-IN' : 'YOUR STATE'} · {MENTAL_STATE_GOAL_LABELS[checkIn.goal].toUpperCase()}</AppText>
         <AppText variant="title">{checkIn.state}</AppText>
         <Animated.View style={{ opacity: recommendationOpacity, transform: [{ translateY: recommendationTranslateY }] }}>
           <AppText variant="caption" color="muted">{isCurrent ? 'WHAT MAY HELP NOW' : 'RECOMMENDATION FOR THIS CHECK-IN'}</AppText>
@@ -90,12 +94,14 @@ function MentalStateResultCard({ checkIn, selected, isCurrent, isMostRecent, onC
         </Animated.View>
         {isMostRecent ? (
           <>
-            <AppButton
-              label={readyForHome ? 'Go to home' : 'Go to meditation'}
-              icon={readyForHome ? 'home-outline' : 'leaf-outline'}
-              variant={readyForHome ? 'primary' : 'secondary'}
-              onPress={() => router.push(readyForHome ? '/(tabs)' : '/meditation')}
-            />
+            {destination && (
+              <AppButton
+                label={meditationGoal ? 'Go to meditation' : 'Go to home'}
+                icon={meditationGoal ? 'leaf-outline' : 'home-outline'}
+                variant={meditationGoal ? 'secondary' : 'primary'}
+                onPress={() => router.push(destination)}
+              />
+            )}
             <AppButton label="Check in again" icon="refresh-outline" variant="secondary" onPress={onCheckInAgain} />
           </>
         ) : (
@@ -109,7 +115,8 @@ function MentalStateResultCard({ checkIn, selected, isCurrent, isMostRecent, onC
 export default function MentalStateScreen() {
   const { colors } = useAppTheme();
   const resource = useAsyncData(() => api.mentalState.history());
-  const [values, setValues] = useState<MentalStateRequest>({ energy: 5, activation: 5, stimulationHunger: 5, clarity: 5, valence: 5, emotionalLoad: 5 });
+  const [values, setValues] = useState<MentalStateSignals>({ energy: 5, activation: 5, stimulationHunger: 5, clarity: 5, valence: 5, emotionalLoad: 5 });
+  const [goal, setGoal] = useState<MentalStateGoal | null>(null);
   const [result, setResult] = useState<MentalStateCheckIn | null>(null);
   const [selectedHistoryItem, setSelectedHistoryItem] = useState<MentalStateCheckIn | null>(null);
   const [isCheckingIn, setIsCheckingIn] = useState(false);
@@ -131,6 +138,7 @@ export default function MentalStateScreen() {
   function startAnotherCheckIn() {
     setResult(null);
     setSelectedHistoryItem(null);
+    setGoal(null);
     setIsCheckingIn(true);
     setError(null);
   }
@@ -142,9 +150,10 @@ export default function MentalStateScreen() {
   }
 
   async function submit() {
+    if (!goal) return;
     setSaving(true); setError(null);
     try {
-      const checkIn = await api.mentalState.checkIn(values);
+      const checkIn = await api.mentalState.checkIn({ ...values, goal });
       setResult(checkIn);
       setSelectedHistoryItem(null);
       setIsCheckingIn(false);
@@ -174,6 +183,29 @@ export default function MentalStateScreen() {
         />
       ) : (
         <Card style={styles.form}>
+          <View style={styles.goalSection}>
+            <AppText variant="label">What are we doing?</AppText>
+            <View style={styles.goals}>
+              {goals.map(option => {
+                const selected = goal === option;
+                return (
+                  <SilentPressable
+                    key={option}
+                    accessibilityRole="radio"
+                    accessibilityLabel={MENTAL_STATE_GOAL_LABELS[option]}
+                    accessibilityState={{ checked: selected }}
+                    onPress={() => setGoal(option)}
+                    style={({ pressed }) => [
+                      styles.goalChoice,
+                      { borderColor: selected ? colors.accent : colors.border, backgroundColor: colors.surface },
+                      pressed && styles.pressed,
+                    ]}>
+                    <AppText variant="label" color={selected ? 'accent' : 'default'}>{MENTAL_STATE_GOAL_LABELS[option]}</AppText>
+                  </SilentPressable>
+                );
+              })}
+            </View>
+          </View>
           {signals.map(signal => (
             <View key={signal.key} style={styles.signal}>
               <View style={styles.spaceBetween}><AppText variant="label">{signal.label}</AppText><AppText variant="label" color="accent">{values[signal.key]}/10</AppText></View>
@@ -187,7 +219,7 @@ export default function MentalStateScreen() {
             </View>
           ))}
           {error && <AppText color="danger">{error}</AppText>}
-          <AppButton label="Check in" icon="sparkles-outline" loading={saving} onPress={() => void submit()} />
+          <AppButton label="Check in" icon="sparkles-outline" loading={saving} disabled={!goal} onPress={() => void submit()} />
         </Card>
       )}
       <AppText variant="heading">Recent check-ins</AppText>
@@ -197,7 +229,7 @@ export default function MentalStateScreen() {
           <SilentPressable
             key={item.id}
             accessibilityRole="button"
-            accessibilityLabel={`View ${item.state} check-in`}
+            accessibilityLabel={`View ${item.state}, ${MENTAL_STATE_GOAL_LABELS[item.goal]} check-in`}
             accessibilityState={{ selected: selectedHistoryItem?.id === item.id }}
             onPress={() => { setSelectedHistoryItem(item); setResult(null); }}
             style={({ pressed }) => [
@@ -206,7 +238,7 @@ export default function MentalStateScreen() {
               selectedHistoryItem?.id === item.id && styles.historyCardSelected,
               pressed && styles.pressed,
             ]}>
-            <View style={styles.grow}><AppText variant="label">{item.state}</AppText><AppText variant="caption" color="muted">{new Date(item.recordedAt).toLocaleString()}</AppText></View>
+            <View style={styles.grow}><AppText variant="label">{item.state}</AppText><AppText variant="caption" color="muted">{MENTAL_STATE_GOAL_LABELS[item.goal]} · {new Date(item.recordedAt).toLocaleString()}</AppText></View>
             <AppText variant="caption" color="muted">{item.suggestedActions.length} suggestions</AppText>
             <Ionicons name="chevron-forward" size={17} color={colors.textMuted} />
           </SilentPressable>
@@ -218,6 +250,6 @@ export default function MentalStateScreen() {
 
 const styles = StyleSheet.create({
   content: { paddingTop: 0 },
-  form: { gap: 22 }, signal: { gap: 8 }, spaceBetween: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
+  form: { gap: 22 }, goalSection: { gap: 10 }, goals: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, goalChoice: { minHeight: 42, paddingHorizontal: 14, borderWidth: 1, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }, signal: { gap: 8 }, spaceBetween: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
   result: { gap: 9 }, recommendations: { gap: 7, marginTop: 2 }, history: { gap: 10 }, historyCard: { minHeight: 68, borderWidth: 1, borderRadius: 18, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }, historyCardSelected: { borderWidth: 2 }, grow: { flex: 1, gap: 3 }, pressed: { opacity: 0.72 },
 });

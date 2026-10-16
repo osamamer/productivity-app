@@ -1,4 +1,5 @@
 import { CalendarEvent } from './CalendarEvent';
+import { MentalStateGoal } from './MentalState';
 import { StatEntryStatus, StatType } from './Stats';
 
 export interface DayOverview {
@@ -65,6 +66,7 @@ export interface DayMeditationSession {
 export interface DayMentalStateCheckIn {
     id: string;
     recordedAt: string;
+    goal: MentalStateGoal;
     state: string;
     suggestedActions: string[];
 }

@@ -292,3 +292,5 @@ databaseChangeLog:
       file: db/changelog/changes/082-mute-focus-noise-during-breaks.yaml
   - include:
       file: db/changelog/changes/083-link-created-task-to-stat.yaml
+  - include:
+      file: db/changelog/changes/084-add-mental-state-goal.yaml

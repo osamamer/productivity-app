@@ -20,6 +20,7 @@ import { dayService } from '../services/api';
 import { formatTimeValue } from '../services/utils/statValues';
 import { expandCalendarEvent } from '../components/calendar/recurrence';
 import { DayOverview, DayStat, DayTask } from '../types/DayOverview';
+import { MENTAL_STATE_GOAL_LABELS } from '../types/MentalState';
 
 type TimelineKind = 'task' | 'focus' | 'meditation' | 'state' | 'note' | 'event';
 type DetailTab = 'stats' | 'tasks' | 'notes' | 'more';
@@ -158,7 +159,7 @@ function buildTimeline(overview: DayOverview, mode: DayViewMode): TimelineItem[]
             title: 'Mental state check-in',
             start,
             end: null,
-            detail: checkIn.state,
+            detail: `${checkIn.state} · ${MENTAL_STATE_GOAL_LABELS[checkIn.goal]}`,
         });
     });
 

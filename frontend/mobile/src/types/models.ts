@@ -149,7 +149,15 @@ export interface MentalThreadSummary {
   capacityToday: number | null;
 }
 
-export interface MentalStateRequest {
+export type MentalStateGoal = 'LABOR' | 'LEISURE' | 'RECOVERY';
+
+export const MENTAL_STATE_GOAL_LABELS: Record<MentalStateGoal, string> = {
+  LABOR: 'Labor',
+  LEISURE: 'Leisure',
+  RECOVERY: 'Recovery',
+};
+
+export interface MentalStateSignals {
   energy: number;
   activation: number;
   stimulationHunger: number;
@@ -158,9 +166,14 @@ export interface MentalStateRequest {
   emotionalLoad: number;
 }
 
+export interface MentalStateRequest extends MentalStateSignals {
+  goal: MentalStateGoal;
+}
+
 export interface MentalStateCheckIn {
   id: string;
   recordedAt: string;
+  goal: MentalStateGoal;
   state: string;
   suggestedActions: string[];
 }

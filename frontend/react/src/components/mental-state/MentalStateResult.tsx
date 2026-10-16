@@ -4,7 +4,7 @@ import HomeOutlinedIcon from '@mui/icons-material/HomeOutlined';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import SelfImprovementOutlinedIcon from '@mui/icons-material/SelfImprovementOutlined';
 import { useNavigate } from 'react-router-dom';
-import { MentalStateCheckIn } from '../../types/MentalState';
+import { MENTAL_STATE_GOAL_LABELS, MentalStateCheckIn } from '../../types/MentalState';
 
 interface MentalStateResultProps {
     checkIn: MentalStateCheckIn | null;
@@ -37,13 +37,16 @@ export function MentalStateResult({
     }
 
     const readyForHome = checkIn.state === 'Ready' || checkIn.state === 'Almost Ready';
+    const meditationGoal = checkIn.goal === 'RECOVERY' || !readyForHome;
+    const destination = checkIn.goal === 'LEISURE' ? null : meditationGoal ? '/meditation' : '/';
+    const destinationLabel = meditationGoal ? 'Go to meditation' : 'Go to home';
 
     const content = (
         <>
             <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2} flexWrap="wrap">
                 <Box>
                     <Typography variant="overline" color="text.secondary">
-                        {isCurrent ? 'Your current state' : 'Past state'}
+                        {isCurrent ? 'Your current state' : 'Past state'} · {MENTAL_STATE_GOAL_LABELS[checkIn.goal]}
                     </Typography>
                     <Typography variant="h5" fontWeight={750}>{checkIn.state}</Typography>
                 </Box>
@@ -76,13 +79,15 @@ export function MentalStateResult({
             >
                 {isMostRecent ? (
                     <>
-                        <Button
-                            variant={readyForHome ? 'contained' : 'outlined'}
-                            startIcon={readyForHome ? <HomeOutlinedIcon /> : <SelfImprovementOutlinedIcon />}
-                            onClick={() => navigate(readyForHome ? '/' : '/meditation')}
-                        >
-                            {readyForHome ? 'Go to home' : 'Go to meditation'}
-                        </Button>
+                        {destination && (
+                            <Button
+                                variant={destination === '/' ? 'contained' : 'outlined'}
+                                startIcon={destination === '/' ? <HomeOutlinedIcon /> : <SelfImprovementOutlinedIcon />}
+                                onClick={() => navigate(destination)}
+                            >
+                                {destinationLabel}
+                            </Button>
+                        )}
                         {onRecheck && (
                             <Button variant="outlined" onClick={onRecheck}>
                                 Recheck my state

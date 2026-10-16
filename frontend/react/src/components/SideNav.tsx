@@ -202,9 +202,10 @@ function getFocusTone(seconds: number | null): MetricTone {
 
 function getMentalStateTone(state: string | null): MetricTone {
     if (!state) return 'neutral';
-    if (state === 'Ready' || state === 'Engaged') return 'good';
-    if (state === 'Almost Ready') return 'goodLight';
-    if (state === 'Mixed' || state === 'Stimulation-Seeking') return 'caution';
+    const stateName = state.split(' · ')[0];
+    if (stateName === 'Ready' || stateName === 'Engaged') return 'good';
+    if (stateName === 'Almost Ready') return 'goodLight';
+    if (stateName === 'Mixed' || stateName === 'Stimulation-Seeking') return 'caution';
     return 'bad';
 }
 

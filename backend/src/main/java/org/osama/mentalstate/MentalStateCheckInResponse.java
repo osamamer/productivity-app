@@ -6,6 +6,7 @@ import java.util.List;
 public record MentalStateCheckInResponse(
         String id,
         Instant recordedAt,
+        MentalStateGoal goal,
         String state,
         List<String> suggestedActions
 ) {
@@ -13,6 +14,7 @@ public record MentalStateCheckInResponse(
         return new MentalStateCheckInResponse(
                 checkIn.getId(),
                 checkIn.getRecordedAt(),
+                checkIn.getGoal(),
                 assessment.state(),
                 assessment.suggestedActions()
         );

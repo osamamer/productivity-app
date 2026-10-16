@@ -47,6 +47,7 @@ public class MentalStateService {
                 .id(UUID.randomUUID().toString())
                 .user(user)
                 .recordedAt(Instant.now())
+                .goal(request.goal())
                 .energy(request.energy())
                 .activation(request.activation())
                 .stimulationHunger(request.stimulationHunger())
@@ -61,8 +62,8 @@ public class MentalStateService {
             log.info("Mental state check-in cleared pending check-up notifications: userId={} count={}",
                     userId, clearedNotifications);
         }
-        log.info("Mental state check-in recorded: userId={} checkInId={} energy={} activation={} stimulationHunger={} clarity={} valence={} emotionalLoad={}",
-                userId, saved.getId(), saved.getEnergy(), saved.getActivation(),
+        log.info("Mental state check-in recorded: userId={} checkInId={} goal={} energy={} activation={} stimulationHunger={} clarity={} valence={} emotionalLoad={}",
+                userId, saved.getId(), saved.getGoal(), saved.getEnergy(), saved.getActivation(),
                 saved.getStimulationHunger(), saved.getClarity(), saved.getValence(), saved.getEmotionalLoad());
         return toResponse(saved);
     }
@@ -104,12 +105,13 @@ public class MentalStateService {
     private MentalStateCheckInResponse toResponse(MentalStateCheckIn checkIn) {
         MentalStateAssessment assessment = adviceService.assess(
                 checkIn.getEnergy(), checkIn.getActivation(), checkIn.getStimulationHunger(),
-                checkIn.getClarity(), checkIn.getValence(), checkIn.getEmotionalLoad());
+                checkIn.getClarity(), checkIn.getValence(), checkIn.getEmotionalLoad(), checkIn.getGoal());
         return MentalStateCheckInResponse.from(checkIn, assessment);
     }
 
     private void validate(CreateMentalStateCheckInRequest request) {
         if (request == null) throw new IllegalArgumentException("A mental state check-in is required.");
+        if (request.goal() == null) throw new IllegalArgumentException("A mental state goal is required.");
         validateRating("Energy", request.energy());
         validateRating("Activation", request.activation());
         validateRating("Stimulation Hunger", request.stimulationHunger());

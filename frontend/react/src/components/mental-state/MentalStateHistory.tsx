@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { List, ListItemButton, ListItemText, ListItemIcon, Menu, MenuItem, Paper, Stack, Typography } from '@mui/material';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
-import { MentalStateCheckIn } from '../../types/MentalState';
+import { MENTAL_STATE_GOAL_LABELS, MentalStateCheckIn } from '../../types/MentalState';
 
 interface MentalStateHistoryProps {
     checkIns: MentalStateCheckIn[];
@@ -49,7 +49,7 @@ export function MentalStateHistory({ checkIns, selectedId, onSelect, onDelete }:
                         >
                             <ListItemText
                                 primary={checkIn.state}
-                                secondary={formatRecordedAt(checkIn.recordedAt)}
+                                secondary={`${MENTAL_STATE_GOAL_LABELS[checkIn.goal]} · ${formatRecordedAt(checkIn.recordedAt)}`}
                                 primaryTypographyProps={{ fontWeight: checkIn.id === selectedId ? 700 : 500 }}
                             />
                         </ListItemButton>

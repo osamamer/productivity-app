@@ -2,6 +2,8 @@ package org.osama.mentalstate;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
@@ -41,6 +43,10 @@ public class MentalStateCheckIn {
 
     @Column(name = "recorded_at", nullable = false, updatable = false)
     private Instant recordedAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "goal", nullable = false, length = 20)
+    private MentalStateGoal goal;
 
     @Column(nullable = false)
     private int energy;

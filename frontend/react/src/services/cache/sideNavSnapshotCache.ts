@@ -2,6 +2,7 @@ import { mentalStateService } from '../api/mentalStateService';
 import { taskService } from '../api/taskService';
 import { CachedResource } from './ttlCache';
 import { getAuthCacheScope } from '../utils/authHeaders';
+import { formatMentalStateSummary } from '../../types/MentalState';
 
 export interface TodaySnapshot {
     openTaskCount: number | null;
@@ -60,7 +61,7 @@ async function loadSnapshot(): Promise<TodaySnapshot> {
         focusSeconds: focusSummary?.totalFocusSeconds ?? null,
         mentalState: latestMentalCheckIn
             && isFreshMentalState(latestMentalCheckIn.recordedAt)
-            ? latestMentalCheckIn.state
+            ? formatMentalStateSummary(latestMentalCheckIn.state, latestMentalCheckIn.goal)
             : null,
     };
 }

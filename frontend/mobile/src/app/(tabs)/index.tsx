@@ -28,7 +28,7 @@ import { usePreferences } from '@/providers/PreferencesProvider';
 import { useTaskWorkspace } from '@/providers/TaskWorkspaceProvider';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
-import type { CalendarEvent, Day, MentalStateCheckIn, Task, TaskGroup } from '@/types/models';
+import { MENTAL_STATE_GOAL_LABELS, type CalendarEvent, type Day, type Task, type TaskGroup } from '@/types/models';
 
 interface TodayData { day: Day }
 
@@ -81,7 +81,7 @@ async function loadTodaySnapshot(): Promise<TodaySnapshot> {
     const latestMentalCheckIn = mentalCheckIns[0];
     return {
       mentalState: latestMentalCheckIn && isFreshMentalState(latestMentalCheckIn.recordedAt)
-        ? latestMentalCheckIn.state
+        ? `${latestMentalCheckIn.state} · ${MENTAL_STATE_GOAL_LABELS[latestMentalCheckIn.goal]}`
         : null,
     };
   } catch (reason) {
@@ -91,7 +91,7 @@ async function loadTodaySnapshot(): Promise<TodaySnapshot> {
 }
 
 function mentalStateIcon(state: string | null): keyof typeof Ionicons.glyphMap {
-  switch (state) {
+  switch (state?.split(' · ')[0]) {
     case 'Wired/Tired': return 'flash-outline';
     case 'Depleted': return 'battery-dead-outline';
     case 'Stimulation-Seeking': return 'game-controller-outline';

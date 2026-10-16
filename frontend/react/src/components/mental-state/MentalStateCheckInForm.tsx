@@ -1,7 +1,7 @@
 import { FormEvent, useState } from 'react';
-import { Alert, Box, Button, CircularProgress, Paper, Stack, Typography } from '@mui/material';
+import { Alert, Box, Button, CircularProgress, FormControl, FormControlLabel, FormLabel, Paper, Radio, RadioGroup, Stack, Typography } from '@mui/material';
 import CheckCircleOutlineRoundedIcon from '@mui/icons-material/CheckCircleOutlineRounded';
-import { MentalStateCheckIn, MentalStateCheckInRequest } from '../../types/MentalState';
+import { MENTAL_STATE_GOAL_LABELS, MentalStateCheckIn, MentalStateCheckInRequest, MentalStateGoal } from '../../types/MentalState';
 import { mentalStateService } from '../../services/api/mentalStateService';
 import { MentalStateScale } from './MentalStateScale';
 
@@ -10,7 +10,7 @@ interface MentalStateCheckInFormProps {
     embedded?: boolean;
 }
 
-const INITIAL_STATE: MentalStateCheckInRequest = {
+const INITIAL_STATE: Omit<MentalStateCheckInRequest, 'goal'> = {
     energy: 5,
     activation: 5,
     stimulationHunger: 5,
@@ -20,20 +20,22 @@ const INITIAL_STATE: MentalStateCheckInRequest = {
 };
 
 export function MentalStateCheckInForm({ onSaved, embedded = false }: MentalStateCheckInFormProps) {
-    const [values, setValues] = useState<MentalStateCheckInRequest>(INITIAL_STATE);
+    const [values, setValues] = useState<Omit<MentalStateCheckInRequest, 'goal'>>(INITIAL_STATE);
+    const [goal, setGoal] = useState<MentalStateGoal | ''>('');
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const update = (field: keyof MentalStateCheckInRequest, value: number) => {
+    const update = (field: keyof typeof values, value: number) => {
         setValues(current => ({ ...current, [field]: value }));
     };
 
     async function handleSubmit(event: FormEvent) {
         event.preventDefault();
+        if (!goal) return;
         setSaving(true);
         setError(null);
         try {
-            onSaved(await mentalStateService.checkIn(values));
+            onSaved(await mentalStateService.checkIn({ ...values, goal }));
         } catch (requestError) {
             console.error('Failed to record mental state check-in:', requestError);
             setError('Could not save this check-in. Your ratings are still here so you can try again.');
@@ -48,6 +50,22 @@ export function MentalStateCheckInForm({ onSaved, embedded = false }: MentalStat
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 2.5 }}>
                 Rate each signal from 1 to 10. Check in again whenever your state changes.
             </Typography>
+
+            <FormControl component="fieldset" sx={{ mb: 2.5 }}>
+                <FormLabel component="legend" sx={{ color: 'text.primary', fontWeight: 600 }}>
+                    What are we doing?
+                </FormLabel>
+                <RadioGroup
+                    row
+                    value={goal}
+                    onChange={event => setGoal(event.target.value as MentalStateGoal)}
+                    sx={{ mt: 0.5, gap: { xs: 0, sm: 1 } }}
+                >
+                    {(Object.entries(MENTAL_STATE_GOAL_LABELS) as [MentalStateGoal, string][]).map(([value, label]) => (
+                        <FormControlLabel key={value} value={value} control={<Radio />} label={label} />
+                    ))}
+                </RadioGroup>
+            </FormControl>
 
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: { xs: 2.5, md: 2.25 } }}>
                 <MentalStateScale
@@ -107,7 +125,7 @@ export function MentalStateCheckInForm({ onSaved, embedded = false }: MentalStat
                     type="submit"
                     variant="contained"
                     size="medium"
-                    disabled={saving}
+                    disabled={saving || !goal}
                     startIcon={saving ? <CircularProgress color="inherit" size={18} /> : <CheckCircleOutlineRoundedIcon />}
                 >
                     {saving ? 'Checking in…' : 'See my state'}
