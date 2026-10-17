@@ -1,3 +1,4 @@
+import { apiFetch } from '../utils/apiFetch';
 import { getAuthCacheScope, getAuthHeaders } from '../utils/authHeaders';
 import { TtlCache } from '../cache/ttlCache';
 import { userService } from './userService';
@@ -242,7 +243,7 @@ export async function getPomodoroConfig(): Promise<PomodoroConfig> {
 
     let request = pomodoroConfigRequests.get(cacheKey);
     if (!request) {
-        request = fetch(`${API_BASE_URL}/api/v1/pomodoro/config`, {
+        request = apiFetch(`${API_BASE_URL}/api/v1/pomodoro/config`, {
             headers: getAuthHeaders(),
         })
             .then(response => {

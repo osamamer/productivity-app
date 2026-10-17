@@ -1,6 +1,6 @@
 import { Theme } from '@mui/material/styles';
 import { StatDefinition } from '../../types/Stats';
-import { formatTimeCircleValue, isTimeAtOrBeforeThreshold } from '../../services/utils/statValues';
+import { formatTimeCircleValue, isTimeAtOrAfterThreshold, isTimeAtOrBeforeThreshold } from '../../services/utils/statValues';
 
 export function compactTimeValue(value: number, definition?: StatDefinition): string {
     return formatTimeCircleValue(definition ?? {}, value);
@@ -13,7 +13,9 @@ export function statValueColor(definition: StatDefinition, value: number, theme:
     }
 
     const isGood = definition.type === 'TIME'
-        ? isTimeAtOrBeforeThreshold(definition, value, definition.goodThreshold)
+        ? morality === 'BAD'
+            ? isTimeAtOrAfterThreshold(definition, value, definition.goodThreshold)
+            : isTimeAtOrBeforeThreshold(definition, value, definition.goodThreshold)
         : morality === 'GOOD'
             ? value >= definition.goodThreshold
             : value <= definition.goodThreshold;

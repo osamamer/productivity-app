@@ -1,3 +1,4 @@
+import { apiFetch } from '../utils/apiFetch';
 import { Note, NoteCategory } from '../../types/Note.ts';
 import { getAuthHeaders } from '../utils/authHeaders.ts';
 
@@ -23,12 +24,12 @@ async function responseJson<T>(response: Response, errorMessage: string): Promis
 
 export const notesService = {
     async getNotes(signal?: AbortSignal): Promise<Note[]> {
-        const response = await fetch(NOTES_URL, { headers: getAuthHeaders(), signal });
+        const response = await apiFetch(NOTES_URL, { headers: getAuthHeaders(), signal });
         return responseJson(response, 'Failed to load notes');
     },
 
     async createNote(categoryId: string | null): Promise<Note> {
-        const response = await fetch(NOTES_URL, {
+        const response = await apiFetch(NOTES_URL, {
             method: 'POST',
             headers: jsonHeaders(),
             body: JSON.stringify({ title: '', content: '', categoryId, pinned: false }),
@@ -37,7 +38,7 @@ export const notesService = {
     },
 
     async updateNote(noteId: string, updates: NotePatch, keepalive = false): Promise<Note> {
-        const response = await fetch(`${NOTES_URL}/${noteId}`, {
+        const response = await apiFetch(`${NOTES_URL}/${noteId}`, {
             method: 'PATCH',
             headers: jsonHeaders(),
             body: JSON.stringify(updates),
@@ -47,7 +48,7 @@ export const notesService = {
     },
 
     async deleteNote(noteId: string): Promise<void> {
-        const response = await fetch(`${NOTES_URL}/${noteId}`, {
+        const response = await apiFetch(`${NOTES_URL}/${noteId}`, {
             method: 'DELETE',
             headers: getAuthHeaders(),
         });
@@ -55,7 +56,7 @@ export const notesService = {
     },
 
     async updateNotes(noteIds: string[], updates: BulkNotePatch): Promise<Note[]> {
-        const response = await fetch(`${NOTES_URL}/bulk`, {
+        const response = await apiFetch(`${NOTES_URL}/bulk`, {
             method: 'PATCH',
             headers: jsonHeaders(),
             body: JSON.stringify({ noteIds, ...updates }),
@@ -64,7 +65,7 @@ export const notesService = {
     },
 
     async deleteNotes(noteIds: string[]): Promise<void> {
-        const response = await fetch(`${NOTES_URL}/bulk`, {
+        const response = await apiFetch(`${NOTES_URL}/bulk`, {
             method: 'DELETE',
             headers: jsonHeaders(),
             body: JSON.stringify({ noteIds }),
@@ -73,12 +74,12 @@ export const notesService = {
     },
 
     async getCategories(signal?: AbortSignal): Promise<NoteCategory[]> {
-        const response = await fetch(CATEGORIES_URL, { headers: getAuthHeaders(), signal });
+        const response = await apiFetch(CATEGORIES_URL, { headers: getAuthHeaders(), signal });
         return responseJson(response, 'Failed to load note categories');
     },
 
     async createCategory(input: CategoryInput): Promise<NoteCategory> {
-        const response = await fetch(CATEGORIES_URL, {
+        const response = await apiFetch(CATEGORIES_URL, {
             method: 'POST',
             headers: jsonHeaders(),
             body: JSON.stringify(input),
@@ -87,7 +88,7 @@ export const notesService = {
     },
 
     async updateCategory(categoryId: string, input: CategoryInput): Promise<NoteCategory> {
-        const response = await fetch(`${CATEGORIES_URL}/${categoryId}`, {
+        const response = await apiFetch(`${CATEGORIES_URL}/${categoryId}`, {
             method: 'PATCH',
             headers: jsonHeaders(),
             body: JSON.stringify(input),
@@ -96,7 +97,7 @@ export const notesService = {
     },
 
     async deleteCategory(categoryId: string): Promise<void> {
-        const response = await fetch(`${CATEGORIES_URL}/${categoryId}`, {
+        const response = await apiFetch(`${CATEGORIES_URL}/${categoryId}`, {
             method: 'DELETE',
             headers: getAuthHeaders(),
         });

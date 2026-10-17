@@ -8,7 +8,7 @@ import {
     type StatFeedbackMark,
 } from './statCelebration';
 import type { CelebrationAnchor } from './statCelebration';
-import { isTimeAtOrBeforeThreshold } from './utils/statValues';
+import { isTimeAtOrAfterThreshold, isTimeAtOrBeforeThreshold } from './utils/statValues';
 
 type StatFeedbackOptions = {
     positiveEffect?: 'confetti' | 'pulse';
@@ -30,10 +30,10 @@ function meetsGoodThreshold(definition: StatDefinition, value: number): boolean 
 
     if (definition.goodThreshold == null) return null;
     if (definition.type === 'TIME') {
-        // Time thresholds are upper bounds. sleep_time is compared on its
-        // bedtime scale by isTimeAtOrBeforeThreshold; wake_up_time uses the
-        // normal clock scale.
-        return isTimeAtOrBeforeThreshold(definition, value, definition.goodThreshold);
+        const meetsTimeThreshold = effectiveStatMorality(definition) === 'BAD'
+            ? isTimeAtOrAfterThreshold
+            : isTimeAtOrBeforeThreshold;
+        return meetsTimeThreshold(definition, value, definition.goodThreshold);
     }
 
     return effectiveStatMorality(definition) === 'GOOD'

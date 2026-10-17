@@ -45,7 +45,8 @@ function isSleepStat(def: StatDefinition): boolean {
 
 function sleepGoodDirectionImprovement(def: StatDefinition, value: number): number {
     return def.type === 'TIME'
-        ? timeValueToScale(def, def.goodThreshold!) - timeValueToScale(def, value)
+        ? (effectiveStatMorality(def) === 'BAD' ? -1 : 1)
+            * (timeValueToScale(def, def.goodThreshold!) - timeValueToScale(def, value))
         : value - def.goodThreshold!;
 }
 
@@ -82,6 +83,20 @@ function getThresholdGoodnessRatio(
     return 1 + improvement / Math.max(Math.abs(threshold), 1);
 }
 
+function getTimeThresholdGoodnessRatio(
+    def: StatDefinition,
+    value: number,
+    threshold: number,
+    morality: 'GOOD' | 'BAD',
+): number {
+    const scaledThreshold = timeValueToScale(def, threshold);
+    const scaledValue = timeValueToScale(def, value);
+    if (morality === 'BAD') return scaledThreshold === 0 ? 2 : scaledValue / scaledThreshold;
+    return scaledThreshold === 0
+        ? scaledValue === 0 ? 2 : 0
+        : scaledThreshold / Math.max(scaledValue, 1);
+}
+
 function thresholdGoodnessRatio(def: StatDefinition, value: number): number | null {
     if ((def.type !== 'NUMBER' && def.type !== 'RANGE' && def.type !== 'TIME' && def.type !== 'DURATION')
         || def.goodThreshold == null
@@ -93,9 +108,7 @@ function thresholdGoodnessRatio(def: StatDefinition, value: number): number | nu
     if (morality !== 'GOOD' && morality !== 'BAD') return null;
 
     return def.type === 'TIME'
-        ? timeValueToScale(def, def.goodThreshold) === 0
-            ? timeValueToScale(def, value) === 0 ? 2 : 0
-            : timeValueToScale(def, def.goodThreshold) / Math.max(timeValueToScale(def, value), 1)
+        ? getTimeThresholdGoodnessRatio(def, value, def.goodThreshold, morality)
         : getThresholdGoodnessRatio(value, def.goodThreshold, morality);
 }
 

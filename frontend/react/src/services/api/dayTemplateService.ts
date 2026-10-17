@@ -1,3 +1,4 @@
+import { apiFetch } from '../utils/apiFetch';
 import {
     DayTemplate,
     DayTemplateApplication,
@@ -14,13 +15,13 @@ async function ensureSuccessful(response: Response, fallback: string): Promise<v
 
 export const dayTemplateService = {
     async getTemplates(): Promise<DayTemplate[]> {
-        const response = await fetch(TEMPLATE_URL, { headers: getAuthHeaders() });
+        const response = await apiFetch(TEMPLATE_URL, { headers: getAuthHeaders() });
         await ensureSuccessful(response, 'Unable to load day templates.');
         return response.json();
     },
 
     async createTemplate(request: DayTemplateRequest): Promise<DayTemplate> {
-        const response = await fetch(TEMPLATE_URL, {
+        const response = await apiFetch(TEMPLATE_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify(request),
@@ -30,7 +31,7 @@ export const dayTemplateService = {
     },
 
     async updateTemplate(templateId: string, request: DayTemplateRequest): Promise<DayTemplate> {
-        const response = await fetch(`${TEMPLATE_URL}/${templateId}`, {
+        const response = await apiFetch(`${TEMPLATE_URL}/${templateId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify(request),
@@ -40,7 +41,7 @@ export const dayTemplateService = {
     },
 
     async deleteTemplate(templateId: string): Promise<void> {
-        const response = await fetch(`${TEMPLATE_URL}/${templateId}`, {
+        const response = await apiFetch(`${TEMPLATE_URL}/${templateId}`, {
             method: 'DELETE',
             headers: getAuthHeaders(),
         });
@@ -48,7 +49,7 @@ export const dayTemplateService = {
     },
 
     async applyTemplate(templateId: string, date: string): Promise<DayTemplateApplication> {
-        const response = await fetch(`${TEMPLATE_URL}/${templateId}/apply`, {
+        const response = await apiFetch(`${TEMPLATE_URL}/${templateId}/apply`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify({ date }),

@@ -178,9 +178,6 @@ export function CreateStatForm({
         validationSchema,
         onSubmit: async (values, { setSubmitting, setFieldError }) => {
             try {
-                const morality = values.type === 'TIME' && values.morality === 'BAD'
-                    ? 'GOOD'
-                    : values.morality;
                 const threshold = values.type === 'TIME'
                     ? timeValueToMinutes(values.goodThreshold)
                     : values.type === 'DURATION'
@@ -191,8 +188,8 @@ export function CreateStatForm({
                 if (initialDefinition) {
                     const request = {
                         name: values.name.trim(),
-                        morality,
-                        goodThreshold: values.type !== 'BOOLEAN' && morality !== 'NEUTRAL'
+                        morality: values.morality,
+                        goodThreshold: values.type !== 'BOOLEAN' && values.morality !== 'NEUTRAL'
                             ? threshold ?? undefined
                             : undefined,
                     };
@@ -222,8 +219,8 @@ export function CreateStatForm({
                         type: values.type,
                         minValue: values.type === 'RANGE' ? Number(values.minValue) : undefined,
                         maxValue: values.type === 'RANGE' ? Number(values.maxValue) : undefined,
-                        morality,
-                        goodThreshold: values.type !== 'BOOLEAN' && morality !== 'NEUTRAL'
+                        morality: values.morality,
+                        goodThreshold: values.type !== 'BOOLEAN' && values.morality !== 'NEUTRAL'
                             ? threshold ?? undefined
                             : undefined,
                         createRecurringTask: values.type === 'BOOLEAN' && values.createRecurringTask,
@@ -386,9 +383,6 @@ export function CreateStatForm({
                             } else {
                                 formik.setFieldValue('createRecurringTask', false);
                             }
-                            if (type === 'TIME' && formik.values.morality === 'BAD') {
-                                formik.setFieldValue('morality', 'GOOD');
-                            }
                         }}
                     >
                         <MenuItem value="NUMBER">Number — free-form numeric value</MenuItem>
@@ -402,9 +396,7 @@ export function CreateStatForm({
                     <InputLabel>Morality</InputLabel>
                     <Select
                         name="morality"
-                        value={formik.values.type === 'TIME' && formik.values.morality === 'BAD'
-                            ? 'GOOD'
-                            : formik.values.morality}
+                        value={formik.values.morality}
                         label="Morality"
                         onChange={event => {
                             const morality = event.target.value as StatMorality;
@@ -413,7 +405,7 @@ export function CreateStatForm({
                         }}
                     >
                         <MenuItem value="GOOD">{formik.values.type === 'TIME' ? 'Earlier is better' : 'Higher is better'}</MenuItem>
-                        {formik.values.type !== 'TIME' && <MenuItem value="BAD">Lower is better</MenuItem>}
+                        <MenuItem value="BAD">{formik.values.type === 'TIME' ? 'Later is better' : 'Lower is better'}</MenuItem>
                         <MenuItem value="NEUTRAL">Neutral</MenuItem>
                     </Select>
                 </FormControl>

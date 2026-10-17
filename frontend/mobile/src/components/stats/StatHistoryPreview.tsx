@@ -15,6 +15,7 @@ import {
   formatTimeCircleValue,
   formatTimeValue,
   formatDurationValue,
+  isTimeAtOrAfterThreshold,
   isTimeAtOrBeforeThreshold,
   timeDisplayScaleMaximum,
   timeDisplayScaleTicks,
@@ -51,7 +52,8 @@ function isSleepStat(definition: StatDefinition): boolean {
 
 function sleepGoodDirectionImprovement(definition: StatDefinition, value: number): number {
   return definition.type === 'TIME'
-    ? timeValueToScale(definition, definition.goodThreshold!) - timeValueToScale(definition, value)
+    ? (effectiveMorality(definition) === 'BAD' ? -1 : 1)
+      * (timeValueToScale(definition, definition.goodThreshold!) - timeValueToScale(definition, value))
     : value - definition.goodThreshold!;
 }
 
@@ -204,6 +206,20 @@ function mixHexColors(first: string, second: string, firstWeight: number): strin
   return `rgb(${channels.join(', ')})`;
 }
 
+function timeThresholdGoodnessRatio(
+  definition: StatDefinition,
+  value: number,
+  threshold: number,
+  morality: 'GOOD' | 'BAD',
+): number {
+  const scaledThreshold = timeValueToScale(definition, threshold);
+  const scaledValue = timeValueToScale(definition, value);
+  if (morality === 'BAD') return scaledThreshold === 0 ? 2 : scaledValue / scaledThreshold;
+  return scaledThreshold === 0
+    ? scaledValue === 0 ? 2 : 0
+    : scaledThreshold / Math.max(scaledValue, 1);
+}
+
 function thresholdGoodnessRatio(definition: StatDefinition, value: number): number | null {
   if ((definition.type !== 'NUMBER' && definition.type !== 'RANGE' && definition.type !== 'TIME' && definition.type !== 'DURATION')
     || definition.goodThreshold == null
@@ -214,9 +230,7 @@ function thresholdGoodnessRatio(definition: StatDefinition, value: number): numb
 
   const threshold = definition.goodThreshold;
   return definition.type === 'TIME'
-    ? timeValueToScale(definition, threshold) === 0
-      ? timeValueToScale(definition, value) === 0 ? 2 : 0
-      : timeValueToScale(definition, threshold) / Math.max(timeValueToScale(definition, value), 1)
+    ? timeThresholdGoodnessRatio(definition, value, threshold, morality)
     : threshold > 0
     ? morality === 'GOOD' ? value / threshold : value <= 0 ? 3 : threshold / value
     : 1 + (morality === 'GOOD' ? value - threshold : threshold - value) / Math.max(Math.abs(threshold), 1);
@@ -297,7 +311,9 @@ function getCircleColor(
     : definition.goodThreshold == null
         ? 'NONE'
         : definition.type === 'TIME'
-          ? isTimeAtOrBeforeThreshold(definition, value, definition.goodThreshold) ? 'CELEBRATE' : 'SAD'
+          ? (morality === 'BAD'
+            ? isTimeAtOrAfterThreshold(definition, value, definition.goodThreshold)
+            : isTimeAtOrBeforeThreshold(definition, value, definition.goodThreshold)) ? 'CELEBRATE' : 'SAD'
         : morality === 'GOOD'
           ? value >= definition.goodThreshold ? 'CELEBRATE' : 'NONE'
           : value <= definition.goodThreshold ? 'CELEBRATE' : 'SAD';

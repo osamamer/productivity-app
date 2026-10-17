@@ -1,3 +1,4 @@
+import { apiFetch } from '../utils/apiFetch';
 import { MeditationSession, StartMeditationRequest } from '../../types/MeditationSession';
 import { getAuthHeaders } from '../utils/authHeaders';
 
@@ -13,13 +14,13 @@ function jsonHeaders(): Record<string, string> {
 
 export const meditationService = {
     async getSession(sessionId: string): Promise<MeditationSession | null> {
-        const response = await fetch(`${MEDITATION_URL}/${sessionId}`, { headers: getAuthHeaders() });
+        const response = await apiFetch(`${MEDITATION_URL}/${sessionId}`, { headers: getAuthHeaders() });
         if (response.status === 404) return null;
         if (!response.ok) throw new Error('Failed to restore meditation session');
         return response.json();
     },
     async getActiveSession(): Promise<MeditationSession | null> {
-        const response = await fetch(`${MEDITATION_URL}/active`, {
+        const response = await apiFetch(`${MEDITATION_URL}/active`, {
             headers: getAuthHeaders(),
         });
 
@@ -29,7 +30,7 @@ export const meditationService = {
     },
 
     async startSession(request: StartMeditationRequest): Promise<MeditationSession> {
-        const response = await fetch(`${MEDITATION_URL}/start`, {
+        const response = await apiFetch(`${MEDITATION_URL}/start`, {
             method: 'POST',
             body: JSON.stringify(request),
             headers: jsonHeaders(),
@@ -48,7 +49,7 @@ export const meditationService = {
     },
 
     async endSession(sessionId: string, moodAfter?: number): Promise<MeditationSession> {
-        const response = await fetch(`${MEDITATION_URL}/${sessionId}/end`, {
+        const response = await apiFetch(`${MEDITATION_URL}/${sessionId}/end`, {
             method: 'POST',
             body: moodAfter === undefined ? undefined : JSON.stringify({ moodAfter }),
             headers: moodAfter === undefined ? getAuthHeaders() : jsonHeaders(),
@@ -59,7 +60,7 @@ export const meditationService = {
     },
 
     async discardSession(sessionId: string): Promise<void> {
-        const response = await fetch(`${MEDITATION_URL}/${sessionId}`, {
+        const response = await apiFetch(`${MEDITATION_URL}/${sessionId}`, {
             method: 'DELETE',
             headers: getAuthHeaders(),
         });
@@ -68,7 +69,7 @@ export const meditationService = {
     },
 
     endSessionOnUnload(sessionId: string): void {
-        void fetch(`${MEDITATION_URL}/${sessionId}/end`, {
+        void apiFetch(`${MEDITATION_URL}/${sessionId}/end`, {
             method: 'POST',
             headers: getAuthHeaders(),
             keepalive: true,
@@ -79,7 +80,7 @@ export const meditationService = {
 };
 
 async function updateSession(path: string, errorMessage: string): Promise<MeditationSession> {
-    const response = await fetch(`${MEDITATION_URL}/${path}`, {
+    const response = await apiFetch(`${MEDITATION_URL}/${path}`, {
         method: 'PATCH',
         headers: getAuthHeaders(),
     });

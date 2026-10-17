@@ -1,3 +1,4 @@
+import { apiFetch } from '../utils/apiFetch';
 import { ApplicationNotification } from '../../types/ApplicationNotification';
 import { getAuthHeaders } from '../utils/authHeaders';
 
@@ -14,13 +15,13 @@ export interface WebPushSubscriptionPayload {
 
 export const notificationService = {
     async getDue(): Promise<ApplicationNotification[]> {
-        const response = await fetch(`${NOTIFICATION_URL}/due`, { headers: getAuthHeaders() });
+        const response = await apiFetch(`${NOTIFICATION_URL}/due`, { headers: getAuthHeaders() });
         if (!response.ok) throw new Error('Failed to load due notifications');
         return response.json();
     },
 
     async acknowledge(notificationId: string): Promise<void> {
-        const response = await fetch(`${NOTIFICATION_URL}/${notificationId}/acknowledge`, {
+        const response = await apiFetch(`${NOTIFICATION_URL}/${notificationId}/acknowledge`, {
             method: 'POST',
             headers: getAuthHeaders(),
         });
@@ -28,7 +29,7 @@ export const notificationService = {
     },
 
     async getWebPushPublicKey(): Promise<string> {
-        const response = await fetch(`${NOTIFICATION_URL}/web-push/public-key`, {
+        const response = await apiFetch(`${NOTIFICATION_URL}/web-push/public-key`, {
             headers: getAuthHeaders(),
         });
         if (!response.ok) throw new Error('Browser notifications are unavailable');
@@ -37,7 +38,7 @@ export const notificationService = {
     },
 
     async registerWebPushSubscription(subscription: WebPushSubscriptionPayload): Promise<void> {
-        const response = await fetch(`${NOTIFICATION_URL}/web-push/subscription`, {
+        const response = await apiFetch(`${NOTIFICATION_URL}/web-push/subscription`, {
             method: 'POST',
             headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
             body: JSON.stringify(subscription),
@@ -46,7 +47,7 @@ export const notificationService = {
     },
 
     async removeWebPushSubscription(endpoint: string): Promise<void> {
-        const response = await fetch(`${NOTIFICATION_URL}/web-push/subscription`, {
+        const response = await apiFetch(`${NOTIFICATION_URL}/web-push/subscription`, {
             method: 'DELETE',
             headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
             body: JSON.stringify({ endpoint }),

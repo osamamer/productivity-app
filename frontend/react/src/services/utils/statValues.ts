@@ -79,6 +79,14 @@ export function isTimeAtOrBeforeThreshold(
     return timeValueToScale(definition, value) <= timeValueToScale(definition, threshold);
 }
 
+export function isTimeAtOrAfterThreshold(
+    definition: TimeStatIdentity,
+    value: number,
+    threshold: number,
+): boolean {
+    return timeValueToScale(definition, value) >= timeValueToScale(definition, threshold);
+}
+
 export function averageTimeValues(definition: TimeStatIdentity, values: number[]): number | null {
     if (values.length === 0) return null;
     const average = values.reduce(

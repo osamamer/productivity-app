@@ -1,3 +1,4 @@
+import { apiFetch } from '../utils/apiFetch';
 import { TaskGroup } from '../../types/TaskGroup';
 import { Task } from '../../types/Task';
 import { getAuthCacheScope, getAuthHeaders } from '../utils/authHeaders';
@@ -67,7 +68,7 @@ export const taskGroupService = {
 
     async getGroups(): Promise<TaskGroup[]> {
         return groupsCache.get(groupsCacheKey(), async () => {
-            const response = await fetch(GROUP_URL, { headers: getAuthHeaders() });
+            const response = await apiFetch(GROUP_URL, { headers: getAuthHeaders() });
             if (!response.ok) {
                 throw new Error('Failed to fetch task groups');
             }
@@ -78,7 +79,7 @@ export const taskGroupService = {
     },
 
     async createGroup(name: string, taskIds: string[]): Promise<TaskGroup> {
-        const response = await fetch(GROUP_URL, {
+        const response = await apiFetch(GROUP_URL, {
             method: 'POST',
             body: JSON.stringify({ name, taskIds }),
             headers: {
@@ -96,7 +97,7 @@ export const taskGroupService = {
     },
 
     async renameGroup(groupId: string, name: string): Promise<TaskGroup> {
-        const response = await fetch(`${GROUP_URL}/${groupId}`, {
+        const response = await apiFetch(`${GROUP_URL}/${groupId}`, {
             method: 'PATCH',
             body: JSON.stringify({ name }),
             headers: {
@@ -115,7 +116,7 @@ export const taskGroupService = {
     },
 
     async replaceTasks(groupId: string, taskIds: string[]): Promise<TaskGroup> {
-        const response = await fetch(`${GROUP_URL}/${groupId}/tasks`, {
+        const response = await apiFetch(`${GROUP_URL}/${groupId}/tasks`, {
             method: 'PUT',
             body: JSON.stringify({ taskIds }),
             headers: {
@@ -134,7 +135,7 @@ export const taskGroupService = {
     },
 
     async moveToToday(groupId: string): Promise<Task[]> {
-        const response = await fetch(`${GROUP_URL}/${groupId}/move-to-today`, {
+        const response = await apiFetch(`${GROUP_URL}/${groupId}/move-to-today`, {
             method: 'PUT',
             headers: getAuthHeaders(),
         });
@@ -145,7 +146,7 @@ export const taskGroupService = {
     },
 
     async removeTask(groupId: string, taskId: string): Promise<void> {
-        const response = await fetch(`${GROUP_URL}/${groupId}/tasks/${taskId}`, {
+        const response = await apiFetch(`${GROUP_URL}/${groupId}/tasks/${taskId}`, {
             method: 'DELETE',
             headers: getAuthHeaders(),
         });
@@ -160,7 +161,7 @@ export const taskGroupService = {
     },
 
     async deleteGroup(groupId: string): Promise<TaskDeletionReceipt | null> {
-        const response = await fetch(`${GROUP_URL}/${groupId}`, {
+        const response = await apiFetch(`${GROUP_URL}/${groupId}`, {
             method: 'DELETE',
             headers: getAuthHeaders(),
         });

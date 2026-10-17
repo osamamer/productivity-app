@@ -1,3 +1,4 @@
+import { apiFetch } from '../utils/apiFetch';
 import { StatBootstrapResponse, StatDefinition, StatEntry, StatEntryStatus, StatSummary, StatInsights, StatFocusTimeEntry, CreateDefinitionRequest, RecordEntryRequest, UpdateDefinitionRequest, StatRecurringTaskDraft } from '../../types/Stats';
 import { TaskSeries } from '../../types/TaskSeries';
 import { getAuthCacheScope, getAuthHeaders } from '../utils/authHeaders';
@@ -304,7 +305,7 @@ export const statService = {
         const pendingRequest = definitionsRequests.get(key);
         if (pendingRequest) return pendingRequest;
 
-        const request = fetch(`${STATS_URL}/definitions`, { headers: getAuthHeaders() })
+        const request = apiFetch(`${STATS_URL}/definitions`, { headers: getAuthHeaders() })
             .then(response => {
                 if (!response.ok) throw new Error('Failed to fetch stat definitions');
                 return response.json() as Promise<StatDefinition[]>;
@@ -331,7 +332,7 @@ export const statService = {
         const requestGeneration = statCacheGeneration;
         const request = (async () => {
             const params = new URLSearchParams({ from: range.from, to: range.to });
-            const response = await fetch(`${STAT_BOOTSTRAP_URL}?${params}`, {
+            const response = await apiFetch(`${STAT_BOOTSTRAP_URL}?${params}`, {
                 headers: getAuthHeaders(),
             });
             if (!response.ok) throw new Error('Failed to warm statistics');
@@ -370,7 +371,7 @@ export const statService = {
     },
 
     async createDefinition(req: CreateDefinitionRequest): Promise<StatDefinition> {
-        const response = await fetch(`${STATS_URL}/definitions`, {
+        const response = await apiFetch(`${STATS_URL}/definitions`, {
             method: 'POST',
             body: JSON.stringify(req),
             headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getAuthHeaders() },
@@ -383,7 +384,7 @@ export const statService = {
     },
 
     async deleteDefinition(id: string): Promise<void> {
-        const response = await fetch(`${STATS_URL}/definitions/${id}`, {
+        const response = await apiFetch(`${STATS_URL}/definitions/${id}`, {
             method: 'DELETE',
             headers: getAuthHeaders(),
         });
@@ -395,7 +396,7 @@ export const statService = {
     },
 
     async updateDefinition(id: string, req: UpdateDefinitionRequest): Promise<StatDefinition> {
-        const response = await fetch(`${STATS_URL}/definitions/${id}`, {
+        const response = await apiFetch(`${STATS_URL}/definitions/${id}`, {
             method: 'PUT',
             body: JSON.stringify(req),
             headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getAuthHeaders() },
@@ -410,7 +411,7 @@ export const statService = {
     },
 
     async createRecurringTask(definitionId: string, recurrence: StatRecurringTaskDraft): Promise<StatDefinition> {
-        const response = await fetch(`${STATS_URL}/definitions/${definitionId}/recurring-task`, {
+        const response = await apiFetch(`${STATS_URL}/definitions/${definitionId}/recurring-task`, {
             method: 'POST',
             body: JSON.stringify({
                 timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
@@ -429,7 +430,7 @@ export const statService = {
     },
 
     async getRecurringTask(definitionId: string): Promise<TaskSeries> {
-        const response = await fetch(`${STATS_URL}/definitions/${definitionId}/recurring-task`, {
+        const response = await apiFetch(`${STATS_URL}/definitions/${definitionId}/recurring-task`, {
             headers: getAuthHeaders(),
         });
         if (!response.ok) throw new Error('Failed to fetch recurring task');
@@ -437,7 +438,7 @@ export const statService = {
     },
 
     async updateRecurringTask(definitionId: string, recurrence: StatRecurringTaskDraft): Promise<StatDefinition> {
-        const response = await fetch(`${STATS_URL}/definitions/${definitionId}/recurring-task`, {
+        const response = await apiFetch(`${STATS_URL}/definitions/${definitionId}/recurring-task`, {
             method: 'PUT',
             body: JSON.stringify({
                 timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
@@ -455,7 +456,7 @@ export const statService = {
     },
 
     async deleteRecurringTaskSeries(definitionId: string): Promise<StatDefinition> {
-        const response = await fetch(`${STATS_URL}/definitions/${definitionId}/recurring-task/series`, {
+        const response = await apiFetch(`${STATS_URL}/definitions/${definitionId}/recurring-task/series`, {
             method: 'DELETE',
             headers: getAuthHeaders(),
         });
@@ -466,7 +467,7 @@ export const statService = {
     },
 
     async disconnectRecurringTask(definitionId: string): Promise<StatDefinition> {
-        const response = await fetch(`${STATS_URL}/definitions/${definitionId}/recurring-task`, {
+        const response = await apiFetch(`${STATS_URL}/definitions/${definitionId}/recurring-task`, {
             method: 'DELETE',
             headers: getAuthHeaders(),
         });
@@ -477,7 +478,7 @@ export const statService = {
     },
 
     async linkFocusTask(definitionId: string, taskName: string): Promise<StatDefinition> {
-        const response = await fetch(`${STATS_URL}/definitions/${definitionId}/focus-task`, {
+        const response = await apiFetch(`${STATS_URL}/definitions/${definitionId}/focus-task`, {
             method: 'PUT',
             body: JSON.stringify({ taskName }),
             headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getAuthHeaders() },
@@ -495,7 +496,7 @@ export const statService = {
         scheduledPerformDateTime?: string,
         reminderMinutesBefore: number | null = null,
     ): Promise<import('../../types/Task').Task> {
-        const response = await fetch(`${STATS_URL}/definitions/${definitionId}/focus-task/start`, {
+        const response = await apiFetch(`${STATS_URL}/definitions/${definitionId}/focus-task/start`, {
             method: 'POST',
             body: JSON.stringify({
                 taskName,
@@ -513,7 +514,7 @@ export const statService = {
     },
 
     async unlinkFocusTask(definitionId: string, taskName?: string): Promise<StatDefinition> {
-        const response = await fetch(`${STATS_URL}/definitions/${definitionId}/focus-task`, {
+        const response = await apiFetch(`${STATS_URL}/definitions/${definitionId}/focus-task`, {
             method: 'DELETE',
             body: taskName ? JSON.stringify({ taskName }) : undefined,
             headers: getAuthHeaders(),
@@ -525,7 +526,7 @@ export const statService = {
     },
 
     async reorderDefinitions(definitionIds: string[]): Promise<StatDefinition[]> {
-        const response = await fetch(`${STATS_URL}/definitions/order`, {
+        const response = await apiFetch(`${STATS_URL}/definitions/order`, {
             method: 'PUT',
             body: JSON.stringify({ definitionIds }),
             headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getAuthHeaders() },
@@ -545,7 +546,7 @@ export const statService = {
 
         const requestGeneration = statCacheGeneration;
         const params = new URLSearchParams({ statDefinitionId: definitionId, from, to });
-        const request = fetch(`${STATS_URL}/entries?${params}`, { headers: getAuthHeaders() })
+        const request = apiFetch(`${STATS_URL}/entries?${params}`, { headers: getAuthHeaders() })
             .then(response => {
                 if (!response.ok) throw new Error('Failed to fetch stat entries');
                 return response.json() as Promise<StatEntry[]>;
@@ -585,7 +586,7 @@ export const statService = {
 
         const requestGeneration = statCacheGeneration;
         const params = new URLSearchParams({ from, to });
-        const request = fetch(`${STATS_URL}/definitions/${definitionId}/focus-time?${params}`, {
+        const request = apiFetch(`${STATS_URL}/definitions/${definitionId}/focus-time?${params}`, {
             headers: getAuthHeaders(),
         })
             .then(response => {
@@ -618,7 +619,7 @@ export const statService = {
     async getTodayEntries(): Promise<StatEntry[]> {
         const date = localDateString();
         const entries = await dailyEntriesCache.get(dailyEntriesCacheKey(date), async () => {
-            const response = await fetch(`${STATS_URL}/entries/today`, { headers: getAuthHeaders() });
+            const response = await apiFetch(`${STATS_URL}/entries/today`, { headers: getAuthHeaders() });
             if (!response.ok) throw new Error("Failed to fetch today's entries");
             return response.json();
         }, CURRENT_STAT_DATA_TTL_MS);
@@ -635,7 +636,7 @@ export const statService = {
 
         const requestGeneration = statCacheGeneration;
         const params = new URLSearchParams({ from, to });
-        const request = fetch(`${STATS_URL}/definitions/${definitionId}/summary?${params}`, {
+        const request = apiFetch(`${STATS_URL}/definitions/${definitionId}/summary?${params}`, {
             headers: getAuthHeaders(),
         })
             .then(response => {
@@ -692,7 +693,7 @@ export const statService = {
 
         const requestGeneration = statCacheGeneration;
         const params = new URLSearchParams({ from, to });
-        const request = fetch(`${STATS_URL}/definitions/${definitionId}/insights?${params}`, {
+        const request = apiFetch(`${STATS_URL}/definitions/${definitionId}/insights?${params}`, {
             headers: getAuthHeaders(),
         })
             .then(response => {
@@ -720,7 +721,7 @@ export const statService = {
 
     async getEntriesByDate(date: string): Promise<StatEntry[]> {
         const entries = await dailyEntriesCache.get(dailyEntriesCacheKey(date), async () => {
-            const response = await fetch(`${STATS_URL}/entries/by-date?date=${date}`, { headers: getAuthHeaders() });
+            const response = await apiFetch(`${STATS_URL}/entries/by-date?date=${date}`, { headers: getAuthHeaders() });
             if (!response.ok) throw new Error(`Failed to fetch entries for ${date}`);
             return response.json();
         }, isCurrentOrFutureRange(date) ? CURRENT_STAT_DATA_TTL_MS : DERIVED_STAT_DATA_TTL_MS);
@@ -731,7 +732,7 @@ export const statService = {
         const optimisticWrite = applyOptimisticRecord(req);
         let response: Response | undefined;
         try {
-            response = await fetch(`${STATS_URL}/entries`, {
+            response = await apiFetch(`${STATS_URL}/entries`, {
                 method: 'POST',
                 body: JSON.stringify(req),
                 headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getAuthHeaders() },

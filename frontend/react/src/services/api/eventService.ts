@@ -1,3 +1,4 @@
+import { apiFetch } from '../utils/apiFetch';
 import { CalendarEvent, CalendarEventInput, CalendarEventOccurrenceMoveInput } from '../../types/CalendarEvent';
 import { getAuthCacheScope, getAuthHeaders } from '../utils/authHeaders';
 import { CachedResource } from '../cache/ttlCache';
@@ -19,7 +20,7 @@ async function parseError(response: Response, fallback: string): Promise<Error> 
 export const eventService = {
     async getEvents(): Promise<CalendarEvent[]> {
         return eventsCache.get(eventsCacheKey(), async () => {
-            const response = await fetch(EVENT_URL, { headers: getAuthHeaders() });
+            const response = await apiFetch(EVENT_URL, { headers: getAuthHeaders() });
             if (!response.ok) throw await parseError(response, 'Failed to load events');
             return response.json();
         });
@@ -30,7 +31,7 @@ export const eventService = {
     },
 
     async createEvent(event: CalendarEventInput): Promise<CalendarEvent> {
-        const response = await fetch(EVENT_URL, {
+        const response = await apiFetch(EVENT_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify(event),
@@ -41,7 +42,7 @@ export const eventService = {
     },
 
     async updateEvent(eventId: string, event: CalendarEventInput): Promise<CalendarEvent> {
-        const response = await fetch(`${EVENT_URL}/${eventId}`, {
+        const response = await apiFetch(`${EVENT_URL}/${eventId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify(event),
@@ -56,7 +57,7 @@ export const eventService = {
         occurrenceKey: string,
         move: CalendarEventOccurrenceMoveInput,
     ): Promise<CalendarEvent> {
-        const response = await fetch(`${EVENT_URL}/${eventId}/occurrences/move`, {
+        const response = await apiFetch(`${EVENT_URL}/${eventId}/occurrences/move`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify({ occurrenceKey, ...move }),
@@ -67,7 +68,7 @@ export const eventService = {
     },
 
     async deleteEvent(eventId: string): Promise<void> {
-        const response = await fetch(`${EVENT_URL}/${eventId}`, {
+        const response = await apiFetch(`${EVENT_URL}/${eventId}`, {
             method: 'DELETE',
             headers: getAuthHeaders(),
         });
@@ -76,7 +77,7 @@ export const eventService = {
     },
 
     async cancelEventOccurrence(eventId: string, occurrenceKey: string): Promise<CalendarEvent> {
-        const response = await fetch(`${EVENT_URL}/${eventId}/occurrences/cancel`, {
+        const response = await apiFetch(`${EVENT_URL}/${eventId}/occurrences/cancel`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify({ occurrenceKey }),
@@ -91,7 +92,7 @@ export const eventService = {
         occurrenceKey: string,
         status: CalendarEvent['status'],
     ): Promise<CalendarEvent> {
-        const response = await fetch(`${EVENT_URL}/${eventId}/occurrences/status`, {
+        const response = await apiFetch(`${EVENT_URL}/${eventId}/occurrences/status`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify({ occurrenceKey, status }),
@@ -102,7 +103,7 @@ export const eventService = {
     },
 
     async deleteEventOccurrence(eventId: string, occurrenceKey: string): Promise<CalendarEvent> {
-        const response = await fetch(`${EVENT_URL}/${eventId}/occurrences`, {
+        const response = await apiFetch(`${EVENT_URL}/${eventId}/occurrences`, {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify({ occurrenceKey }),
@@ -113,7 +114,7 @@ export const eventService = {
     },
 
     async restoreEventOccurrence(eventId: string, occurrenceKey: string): Promise<CalendarEvent> {
-        const response = await fetch(
+        const response = await apiFetch(
             `${EVENT_URL}/${eventId}/occurrences/cancel?occurrenceKey=${encodeURIComponent(occurrenceKey)}`,
             { method: 'DELETE', headers: getAuthHeaders() },
         );

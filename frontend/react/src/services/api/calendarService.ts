@@ -1,3 +1,4 @@
+import { apiFetch } from '../utils/apiFetch';
 import { Calendar, CalendarColor, CalendarUpdate } from '../../types/Calendar';
 import { getAuthHeaders } from '../utils/authHeaders';
 
@@ -11,13 +12,13 @@ async function parseError(response: Response, fallback: string): Promise<Error> 
 
 export const calendarService = {
     async getCalendars(): Promise<Calendar[]> {
-        const response = await fetch(CALENDAR_URL, { headers: getAuthHeaders() });
+        const response = await apiFetch(CALENDAR_URL, { headers: getAuthHeaders() });
         if (!response.ok) throw await parseError(response, 'Failed to load calendars');
         return response.json();
     },
 
     async createCalendar(name: string, color: CalendarColor): Promise<Calendar> {
-        const response = await fetch(CALENDAR_URL, {
+        const response = await apiFetch(CALENDAR_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify({ name, color }),
@@ -27,7 +28,7 @@ export const calendarService = {
     },
 
     async updateCalendar(calendarId: string, updates: CalendarUpdate): Promise<Calendar> {
-        const response = await fetch(`${CALENDAR_URL}/${calendarId}`, {
+        const response = await apiFetch(`${CALENDAR_URL}/${calendarId}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify(updates),
@@ -37,7 +38,7 @@ export const calendarService = {
     },
 
     async deleteCalendar(calendarId: string): Promise<void> {
-        const response = await fetch(`${CALENDAR_URL}/${calendarId}`, {
+        const response = await apiFetch(`${CALENDAR_URL}/${calendarId}`, {
             method: 'DELETE',
             headers: getAuthHeaders(),
         });

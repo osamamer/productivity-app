@@ -1,4 +1,5 @@
 // src/services/api/dayService.ts
+import { apiFetch } from '../utils/apiFetch';
 import { DayCalendarEntry, DayEntity } from '../../types/DayEntity';
 import { DayOverview } from '../../types/DayOverview';
 import { getAuthCacheScope, getAuthHeaders } from '../utils/authHeaders';
@@ -16,7 +17,7 @@ function todayCacheKey(): string {
 export const dayService = {
 
     async getOverview(date: string, signal?: AbortSignal): Promise<DayOverview> {
-        const response = await fetch(`${DAY_URL}/overview/${encodeURIComponent(date)}`, {
+        const response = await apiFetch(`${DAY_URL}/overview/${encodeURIComponent(date)}`, {
             headers: getAuthHeaders(),
             signal,
         });
@@ -28,7 +29,7 @@ export const dayService = {
 
     async getToday(): Promise<DayEntity> {
         return todayCache.get(todayCacheKey(), async () => {
-            const response = await fetch(`${DAY_URL}/get-today`, {
+            const response = await apiFetch(`${DAY_URL}/get-today`, {
                 headers: getAuthHeaders(),
             });
             if (!response.ok) {
@@ -40,7 +41,7 @@ export const dayService = {
 
     async getCalendarDays(from: string, to: string, signal?: AbortSignal): Promise<DayCalendarEntry[]> {
         const params = new URLSearchParams({ from, to });
-        const response = await fetch(`${DAY_URL}/calendar-days?${params.toString()}`, {
+        const response = await apiFetch(`${DAY_URL}/calendar-days?${params.toString()}`, {
             headers: getAuthHeaders(),
             signal,
         });
@@ -51,7 +52,7 @@ export const dayService = {
     },
 
     async clearAppliedTemplate(date: string): Promise<void> {
-        const response = await fetch(`${DAY_URL}/clear-applied-template/${encodeURIComponent(date)}`, {
+        const response = await apiFetch(`${DAY_URL}/clear-applied-template/${encodeURIComponent(date)}`, {
             method: 'POST',
             headers: getAuthHeaders(),
         });
@@ -61,7 +62,7 @@ export const dayService = {
     },
 
     async setTodayInfo(rating: number, plan: string, summary: string): Promise<void> {
-        const response = await fetch(`${DAY_URL}/set-today-info`, {
+        const response = await apiFetch(`${DAY_URL}/set-today-info`, {
             method: 'POST',
             body: JSON.stringify({
                 dayRating: rating,

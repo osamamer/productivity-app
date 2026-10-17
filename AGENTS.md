@@ -105,7 +105,7 @@ All user-scoped entities (Task, DayEntity, MeditationSession, TaskSession, Pomod
 ### Frontend (React 18, TypeScript, Vite)
 
 - **State**: React Context — `UserContext` (auth), `TaskContext` (tasks), `ThemeContext`
-- **API layer**: `frontend/react/src/services/api/` — feature services such as `taskService.ts`, `dayService.ts`, and `mentalThreadService.ts`; authenticated requests use `getAuthHeaders()`
+- **API layer**: `frontend/react/src/services/api/` — feature services such as `taskService.ts`, `dayService.ts`, and `mentalThreadService.ts`; authenticated requests use `getAuthHeaders()`. Transient failures on GET requests retry for up to three seconds through `services/utils/apiFetch.ts` or the shared Axios client; write requests are sent once.
 - **UI**: Material-UI (MUI) v7
 - **Forms**: Formik + Yup
 - **Calendar**: FullCalendar

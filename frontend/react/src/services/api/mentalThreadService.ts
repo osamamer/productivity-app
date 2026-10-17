@@ -1,3 +1,4 @@
+import { apiFetch } from '../utils/apiFetch';
 import {
     CloseMentalThreadInput,
     MentalThread,
@@ -47,7 +48,7 @@ export const mentalThreadService = {
     // Cached reads must outlive an individual component mount so Strict Mode cleanup cannot abort the shared request.
     async getThreads(includeClosed = false): Promise<MentalThread[]> {
         return threadsCache.get(threadsCacheKey(includeClosed), async () => {
-            const response = await fetch(`${MENTAL_THREADS_URL}?includeClosed=${includeClosed}`, {
+            const response = await apiFetch(`${MENTAL_THREADS_URL}?includeClosed=${includeClosed}`, {
                 headers: getAuthHeaders(),
             });
             return responseJson(response, 'Failed to load mental threads');
@@ -56,7 +57,7 @@ export const mentalThreadService = {
 
     async getSummary(): Promise<MentalThreadSummary> {
         return summaryCache.get(summaryCacheKey(), async () => {
-            const response = await fetch(`${MENTAL_THREADS_URL}/summary`, {
+            const response = await apiFetch(`${MENTAL_THREADS_URL}/summary`, {
                 headers: getAuthHeaders(),
             });
             return responseJson(response, 'Failed to load the mental load summary');
@@ -64,7 +65,7 @@ export const mentalThreadService = {
     },
 
     async createThread(input: MentalThreadInput): Promise<MentalThread> {
-        const response = await fetch(MENTAL_THREADS_URL, {
+        const response = await apiFetch(MENTAL_THREADS_URL, {
             method: 'POST',
             headers: jsonHeaders(),
             body: JSON.stringify(input),
@@ -75,7 +76,7 @@ export const mentalThreadService = {
     },
 
     async updateThread(threadId: string, input: MentalThreadInput): Promise<MentalThread> {
-        const response = await fetch(`${MENTAL_THREADS_URL}/${threadId}`, {
+        const response = await apiFetch(`${MENTAL_THREADS_URL}/${threadId}`, {
             method: 'PUT',
             headers: jsonHeaders(),
             body: JSON.stringify(input),
@@ -86,7 +87,7 @@ export const mentalThreadService = {
     },
 
     async closeThread(threadId: string, input: CloseMentalThreadInput): Promise<MentalThread> {
-        const response = await fetch(`${MENTAL_THREADS_URL}/${threadId}/close`, {
+        const response = await apiFetch(`${MENTAL_THREADS_URL}/${threadId}/close`, {
             method: 'POST',
             headers: jsonHeaders(),
             body: JSON.stringify(input),
@@ -97,7 +98,7 @@ export const mentalThreadService = {
     },
 
     async reopenThread(threadId: string): Promise<MentalThread> {
-        const response = await fetch(`${MENTAL_THREADS_URL}/${threadId}/reopen`, {
+        const response = await apiFetch(`${MENTAL_THREADS_URL}/${threadId}/reopen`, {
             method: 'POST',
             headers: getAuthHeaders(),
         });
@@ -107,7 +108,7 @@ export const mentalThreadService = {
     },
 
     async deleteThread(threadId: string): Promise<void> {
-        const response = await fetch(`${MENTAL_THREADS_URL}/${threadId}`, {
+        const response = await apiFetch(`${MENTAL_THREADS_URL}/${threadId}`, {
             method: 'DELETE',
             headers: getAuthHeaders(),
         });
@@ -116,7 +117,7 @@ export const mentalThreadService = {
     },
 
     async getLoadHistory(threadId: string, signal?: AbortSignal): Promise<MentalThreadLoadEntry[]> {
-        const response = await fetch(`${MENTAL_THREADS_URL}/${threadId}/load-history`, {
+        const response = await apiFetch(`${MENTAL_THREADS_URL}/${threadId}/load-history`, {
             headers: getAuthHeaders(),
             signal,
         });
@@ -124,7 +125,7 @@ export const mentalThreadService = {
     },
 
     async checkInCapacity(capacity: number): Promise<void> {
-        const response = await fetch(`${MENTAL_THREADS_URL}/capacity/today`, {
+        const response = await apiFetch(`${MENTAL_THREADS_URL}/capacity/today`, {
             method: 'PUT',
             headers: jsonHeaders(),
             body: JSON.stringify({ capacity }),

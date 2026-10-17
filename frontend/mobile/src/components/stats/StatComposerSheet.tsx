@@ -94,9 +94,8 @@ export function StatComposerSheet({ visible, definition, onClose, onCreated, onU
       return;
     }
 
-    const effectiveMorality = type === 'TIME' && morality === 'BAD' ? 'GOOD' : morality;
-    const goodThreshold = effectiveMorality === 'NEUTRAL' || type === 'BOOLEAN' ? null : thresholdValue();
-    if (effectiveMorality !== 'NEUTRAL' && type !== 'BOOLEAN' && goodThreshold == null) {
+    const goodThreshold = morality === 'NEUTRAL' || type === 'BOOLEAN' ? null : thresholdValue();
+    if (morality !== 'NEUTRAL' && type !== 'BOOLEAN' && goodThreshold == null) {
       setError(type === 'DURATION' ? 'Enter a duration threshold.' : type === 'TIME' ? 'Choose a time threshold.' : 'Enter a numeric threshold.');
       return;
     }
@@ -107,7 +106,7 @@ export function StatComposerSheet({ visible, definition, onClose, onCreated, onU
       if (definition) {
         const updated = await api.stats.update(definition.id, {
           name: name.trim(),
-          morality: effectiveMorality,
+          morality,
           goodThreshold,
         });
         onUpdated?.(updated);
@@ -117,7 +116,7 @@ export function StatComposerSheet({ visible, definition, onClose, onCreated, onU
           type,
           minValue,
           maxValue,
-          morality: effectiveMorality,
+          morality,
           goodThreshold,
         });
         onCreated(created);
@@ -143,7 +142,7 @@ export function StatComposerSheet({ visible, definition, onClose, onCreated, onU
         <AppText variant="label">Type</AppText>
         <ChoiceChips value={type} onChange={next => {
           setType(next);
-          setMorality(next === 'BOOLEAN' ? 'NEUTRAL' : next === 'TIME' && morality === 'BAD' ? 'GOOD' : morality);
+          setMorality(next === 'BOOLEAN' ? 'NEUTRAL' : morality);
           setThreshold('');
           setDurationThreshold(null);
         }} options={[
@@ -162,10 +161,11 @@ export function StatComposerSheet({ visible, definition, onClose, onCreated, onU
       )}
       <AppText variant="label">Meaning of the value</AppText>
       <ChoiceChips
-        value={type === 'TIME' && morality === 'BAD' ? 'GOOD' : morality}
+        value={morality}
         onChange={setMorality}
         options={type === 'TIME' ? [
           { value: 'GOOD' as const, label: 'Earlier is better' },
+          { value: 'BAD' as const, label: 'Later is better' },
           { value: 'NEUTRAL' as const, label: 'Neutral' },
         ] : [
           { value: 'GOOD' as const, label: 'Higher is better' },

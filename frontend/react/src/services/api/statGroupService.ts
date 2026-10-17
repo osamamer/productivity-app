@@ -1,3 +1,4 @@
+import { apiFetch } from '../utils/apiFetch';
 import { StatGroup } from '../../types/StatGroup';
 import { getAuthCacheScope, getAuthHeaders } from '../utils/authHeaders';
 import { CachedResource } from '../cache/ttlCache';
@@ -14,14 +15,14 @@ function groupsCacheKey(): string {
 export const statGroupService = {
     async getGroups(): Promise<StatGroup[]> {
         return groupsCache.get(groupsCacheKey(), async () => {
-            const response = await fetch(GROUPS_URL, { headers: getAuthHeaders() });
+            const response = await apiFetch(GROUPS_URL, { headers: getAuthHeaders() });
             if (!response.ok) throw new Error('Failed to fetch stat groups');
             return response.json();
         });
     },
 
     async createGroup(name: string, statDefinitionIds: string[] = []): Promise<StatGroup> {
-        const response = await fetch(GROUPS_URL, {
+        const response = await apiFetch(GROUPS_URL, {
             method: 'POST',
             body: JSON.stringify({ name, statDefinitionIds }),
             headers: {
@@ -35,7 +36,7 @@ export const statGroupService = {
     },
 
     async reorderGroups(groupIds: string[]): Promise<StatGroup[]> {
-        const response = await fetch(`${GROUPS_URL}/order`, {
+        const response = await apiFetch(`${GROUPS_URL}/order`, {
             method: 'PUT',
             body: JSON.stringify({ groupIds }),
             headers: {
@@ -49,7 +50,7 @@ export const statGroupService = {
     },
 
     async renameGroup(groupId: string, name: string): Promise<StatGroup> {
-        const response = await fetch(`${GROUPS_URL}/${groupId}`, {
+        const response = await apiFetch(`${GROUPS_URL}/${groupId}`, {
             method: 'PATCH',
             body: JSON.stringify({ name }),
             headers: {
@@ -63,7 +64,7 @@ export const statGroupService = {
     },
 
     async replaceDefinitions(groupId: string, statDefinitionIds: string[]): Promise<StatGroup> {
-        const response = await fetch(`${GROUPS_URL}/${groupId}/definitions`, {
+        const response = await apiFetch(`${GROUPS_URL}/${groupId}/definitions`, {
             method: 'PUT',
             body: JSON.stringify({ statDefinitionIds }),
             headers: {
@@ -77,7 +78,7 @@ export const statGroupService = {
     },
 
     async deleteGroup(groupId: string): Promise<void> {
-        const response = await fetch(`${GROUPS_URL}/${groupId}`, {
+        const response = await apiFetch(`${GROUPS_URL}/${groupId}`, {
             method: 'DELETE',
             headers: getAuthHeaders(),
         });

@@ -1,3 +1,4 @@
+import { apiFetch } from '../utils/apiFetch';
 import { Project, ProjectInput } from '../../types/Project';
 import { Task } from '../../types/Task';
 import { getAuthCacheScope, getAuthHeaders } from '../utils/authHeaders';
@@ -91,7 +92,7 @@ export const projectService = {
 
     async getProjects(): Promise<Project[]> {
         return projectsCache.get(projectsCacheKey(), async () => {
-            const response = await fetch(PROJECTS_URL, { headers: getAuthHeaders() });
+            const response = await apiFetch(PROJECTS_URL, { headers: getAuthHeaders() });
             if (!response.ok) {
                 throw new Error('Failed to fetch projects');
             }
@@ -102,7 +103,7 @@ export const projectService = {
     },
 
     async createProject(input: ProjectInput): Promise<Project> {
-        const response = await fetch(PROJECTS_URL, {
+        const response = await apiFetch(PROJECTS_URL, {
             method: 'POST',
             headers: jsonHeaders(),
             body: JSON.stringify(input),
@@ -114,7 +115,7 @@ export const projectService = {
     },
 
     async updateProject(projectId: string, input: Partial<ProjectInput>): Promise<Project> {
-        const response = await fetch(`${PROJECTS_URL}/${projectId}`, {
+        const response = await apiFetch(`${PROJECTS_URL}/${projectId}`, {
             method: 'PATCH',
             headers: jsonHeaders(),
             body: JSON.stringify(input),
@@ -127,7 +128,7 @@ export const projectService = {
     },
 
     async deleteProject(projectId: string): Promise<void> {
-        const response = await fetch(`${PROJECTS_URL}/${projectId}`, {
+        const response = await apiFetch(`${PROJECTS_URL}/${projectId}`, {
             method: 'DELETE',
             headers: getAuthHeaders(),
         });
@@ -138,7 +139,7 @@ export const projectService = {
     },
 
     async getProjectTasks(projectId: string): Promise<Task[]> {
-        const response = await fetch(`${TASKS_URL}?projectId=${encodeURIComponent(projectId)}`, {
+        const response = await apiFetch(`${TASKS_URL}?projectId=${encodeURIComponent(projectId)}`, {
             headers: getAuthHeaders(),
         });
         if (!response.ok) {

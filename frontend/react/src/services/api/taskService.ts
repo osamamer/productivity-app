@@ -1,3 +1,4 @@
+import { apiFetch } from '../utils/apiFetch';
 import { Task, TaskUpdate } from '../../types/Task';
 import { TaskToCreate } from '../../types/TaskToCreate';
 import { getAuthHeaders } from '../utils/authHeaders';
@@ -336,7 +337,7 @@ async function fetchTaskPeriod(
     }
 
     const load = async () => {
-        const response = await fetch(`${TASK_URL}?${params.toString()}`, {
+        const response = await apiFetch(`${TASK_URL}?${params.toString()}`, {
             headers: getAuthHeaders(),
         });
         if (!response.ok) {
@@ -355,7 +356,7 @@ async function fetchUndatedTasks(completed?: boolean): Promise<Task[]> {
     const params = new URLSearchParams({ scheduled: 'false' });
     if (completed !== undefined) params.set('completed', String(completed));
 
-    const response = await fetch(`${TASK_URL}?${params.toString()}`, {
+    const response = await apiFetch(`${TASK_URL}?${params.toString()}`, {
         headers: getAuthHeaders(),
     });
     if (!response.ok) throw new Error('Failed to fetch undated tasks');
@@ -380,7 +381,7 @@ export const taskService = {
         if (forceRefresh) mainTasksCache.invalidate(key);
 
         const tasks = await mainTasksCache.get(key, async () => {
-            const response = await fetch(`${TASK_URL}/main`, {
+            const response = await apiFetch(`${TASK_URL}/main`, {
                 headers: getAuthHeaders(),
             });
             if (!response.ok) {
@@ -413,7 +414,7 @@ export const taskService = {
         if (forceRefresh) todayTasksCache.invalidate(key);
 
         const tasks = await todayTasksCache.get(key, async () => {
-            const response = await fetch(`${TASK_URL}/today`, {
+            const response = await apiFetch(`${TASK_URL}/today`, {
                 headers: getAuthHeaders(),
             });
             if (!response.ok) {
@@ -462,7 +463,7 @@ export const taskService = {
     },
 
     async reorderTasks(taskIds: string[]): Promise<Task[]> {
-        const response = await fetch(`${TASK_URL}/order`, {
+        const response = await apiFetch(`${TASK_URL}/order`, {
             method: 'PUT',
             body: JSON.stringify({ taskIds }),
             headers: {
@@ -488,7 +489,7 @@ export const taskService = {
     },
 
     async getHighestPriorityTask(): Promise<Task> {
-        const response = await fetch(`${TASK_URL}/highest-priority`, {
+        const response = await apiFetch(`${TASK_URL}/highest-priority`, {
             headers: getAuthHeaders(),
         });
         if (!response.ok) {
@@ -501,7 +502,7 @@ export const taskService = {
 
     async getSubtasks(taskId: string): Promise<Task[]> {
         const subtasks = await loadTaskSubtasks(taskId, async () => {
-            const response = await fetch(`${TASK_URL}/${taskId}/subtasks`, {
+            const response = await apiFetch(`${TASK_URL}/${taskId}/subtasks`, {
                 headers: getAuthHeaders(),
             });
             if (!response.ok) {
@@ -554,7 +555,7 @@ export const taskService = {
     },
 
     async getPomodoroStats(taskId: string, signal?: AbortSignal): Promise<TaskPomodoroStats> {
-        const response = await fetch(`${TASK_URL}/${taskId}/pomodoro-stats`, {
+        const response = await apiFetch(`${TASK_URL}/${taskId}/pomodoro-stats`, {
             headers: getAuthHeaders(),
             signal,
         });
@@ -565,7 +566,7 @@ export const taskService = {
     },
 
     async getTodayFocusSummary(date: string): Promise<TodayFocusSummary> {
-        const response = await fetch(`${TASK_URL}/focus-today?date=${encodeURIComponent(date)}`, {
+        const response = await apiFetch(`${TASK_URL}/focus-today?date=${encodeURIComponent(date)}`, {
             headers: getAuthHeaders(),
         });
         if (!response.ok) {
@@ -577,7 +578,7 @@ export const taskService = {
     // ============ Task Mutations ============
 
     async createTask(task: TaskToCreate): Promise<Task> {
-        const response = await fetch(`${TASK_URL}`, {
+        const response = await apiFetch(`${TASK_URL}`, {
             method: 'POST',
             body: JSON.stringify({
                 name: task.name,
@@ -623,7 +624,7 @@ export const taskService = {
     },
 
     async moveTasksToParent(taskIds: string[], parentId: string | null): Promise<Task[]> {
-        const response = await fetch(`${TASK_URL}/parent`, {
+        const response = await apiFetch(`${TASK_URL}/parent`, {
             method: 'PUT',
             body: JSON.stringify({ taskIds, parentId }),
             headers: {
@@ -647,7 +648,7 @@ export const taskService = {
     },
 
     async updateTask(taskId: string, updates: TaskUpdate, { notifyResource = true }: TaskUpdateOptions = {}): Promise<Task> {
-        const response = await fetch(`${TASK_URL}/${taskId}`, {
+        const response = await apiFetch(`${TASK_URL}/${taskId}`, {
             method: 'PATCH',
             body: JSON.stringify(updates),
             headers: {
@@ -674,7 +675,7 @@ export const taskService = {
     },
 
     async getTask(taskId: string): Promise<Task> {
-        const response = await fetch(`${TASK_URL}/${taskId}`, {
+        const response = await apiFetch(`${TASK_URL}/${taskId}`, {
             headers: getAuthHeaders(),
         });
         if (!response.ok) {
@@ -690,7 +691,7 @@ export const taskService = {
             const url = seriesId
                 ? `${TASK_SERIES_URL}/${seriesId}`
                 : `${TASK_URL}/${taskId}/recurrence`;
-            const response = await fetch(url, {
+            const response = await apiFetch(url, {
                 headers: getAuthHeaders(),
             });
             if (response.status === 404) return null;
@@ -702,7 +703,7 @@ export const taskService = {
     },
 
     async startTaskRecurrence(taskId: string, recurrence: TaskRecurrenceDraft, repeatSubtasks = false): Promise<TaskSeries> {
-        const response = await fetch(`${TASK_URL}/${taskId}/recurrence`, {
+        const response = await apiFetch(`${TASK_URL}/${taskId}/recurrence`, {
             method: 'POST',
             body: JSON.stringify({ ...recurrence, repeatSubtasks }),
             headers: {
@@ -724,7 +725,7 @@ export const taskService = {
     },
 
     async updateTaskSeries(seriesId: string, recurrence: TaskRecurrenceDraft, active?: boolean, repeatSubtasks?: boolean): Promise<TaskSeries> {
-        const response = await fetch(`${TASK_SERIES_URL}/${seriesId}`, {
+        const response = await apiFetch(`${TASK_SERIES_URL}/${seriesId}`, {
             method: 'PATCH',
             body: JSON.stringify({ ...recurrence, ...(active === undefined ? {} : { active }),
                 ...(repeatSubtasks === undefined ? {} : { repeatSubtasks }) }),
@@ -746,7 +747,7 @@ export const taskService = {
     },
 
     async updateTaskSeriesImportance(seriesId: string, importance: number): Promise<TaskSeries> {
-        const response = await fetch(`${TASK_SERIES_URL}/${seriesId}/importance`, {
+        const response = await apiFetch(`${TASK_SERIES_URL}/${seriesId}/importance`, {
             method: 'PATCH',
             body: JSON.stringify({ importance }),
             headers: {
@@ -766,7 +767,7 @@ export const taskService = {
     },
 
     async stopTaskSeries(seriesId: string): Promise<void> {
-        const response = await fetch(`${TASK_SERIES_URL}/${seriesId}`, {
+        const response = await apiFetch(`${TASK_SERIES_URL}/${seriesId}`, {
             method: 'DELETE',
             headers: getAuthHeaders(),
         });
@@ -796,7 +797,7 @@ export const taskService = {
         markTasksDeleted([taskId]);
         let response: Response;
         try {
-            response = await fetch(`${TASK_URL}/${taskId}`, {
+            response = await apiFetch(`${TASK_URL}/${taskId}`, {
                 method: 'DELETE',
                 headers: getAuthHeaders(),
             });
@@ -827,7 +828,7 @@ export const taskService = {
         markTasksDeleted([taskId]);
         let response: Response;
         try {
-            response = await fetch(`${TASK_URL}/${taskId}/occurrence`, {
+            response = await apiFetch(`${TASK_URL}/${taskId}/occurrence`, {
                 method: 'DELETE',
                 headers: getAuthHeaders(),
             });
@@ -865,7 +866,7 @@ export const taskService = {
         receipt: TaskDeletionReceipt,
         { notifyResource = true }: RestoreTaskDeletionOptions = {},
     ): Promise<void> {
-        const response = await fetch(`${TASK_URL}/deletions/restore`, {
+        const response = await apiFetch(`${TASK_URL}/deletions/restore`, {
             method: 'POST',
             body: JSON.stringify(receipt),
             headers: {
@@ -896,7 +897,7 @@ export const taskService = {
     // ============ Session Operations ============
 
     async startSession(taskId: string): Promise<void> {
-        const response = await fetch(`${SESSION_URL}/start/${taskId}`, {
+        const response = await apiFetch(`${SESSION_URL}/start/${taskId}`, {
             method: 'POST',
             headers: getAuthHeaders(),
         });
@@ -907,7 +908,7 @@ export const taskService = {
     },
 
     async pauseSession(taskId: string): Promise<void> {
-        const response = await fetch(`${SESSION_URL}/pause/${taskId}`, {
+        const response = await apiFetch(`${SESSION_URL}/pause/${taskId}`, {
             method: 'POST',
             headers: getAuthHeaders(),
         });
@@ -918,7 +919,7 @@ export const taskService = {
     },
 
     async unpauseSession(taskId: string): Promise<void> {
-        const response = await fetch(`${SESSION_URL}/unpause/${taskId}`, {
+        const response = await apiFetch(`${SESSION_URL}/unpause/${taskId}`, {
             method: 'POST',
             headers: getAuthHeaders(),
         });
@@ -929,7 +930,7 @@ export const taskService = {
     },
 
     async endSession(taskId: string): Promise<void> {
-        const response = await fetch(`${SESSION_URL}/end/${taskId}`, {
+        const response = await apiFetch(`${SESSION_URL}/end/${taskId}`, {
             method: 'POST',
             headers: getAuthHeaders(),
         });
@@ -950,7 +951,7 @@ export const taskService = {
         longBreakCooldown: number,
         secondsMode: boolean
     ): Promise<void> {
-        const response = await fetch(`${POMODORO_URL}/start`, {
+        const response = await apiFetch(`${POMODORO_URL}/start`, {
             method: 'POST',
             body: JSON.stringify({
                 taskId,
@@ -975,7 +976,7 @@ export const taskService = {
     },
 
     async endPomodoro(taskId: string): Promise<PomodoroStatus> {
-        const response = await fetch(`${POMODORO_URL}/end/${taskId}`, {
+        const response = await apiFetch(`${POMODORO_URL}/end/${taskId}`, {
             method: 'POST',
             headers: getAuthHeaders(),
         });
@@ -988,7 +989,7 @@ export const taskService = {
     },
 
     async startNextPomodoroPhase(taskId: string): Promise<void> {
-        const response = await fetch(`${POMODORO_URL}/phase/start/${taskId}`, {
+        const response = await apiFetch(`${POMODORO_URL}/phase/start/${taskId}`, {
             method: 'POST',
             headers: getAuthHeaders(),
         });
@@ -999,7 +1000,7 @@ export const taskService = {
     },
 
     async finishPomodoroBreak(taskId: string): Promise<void> {
-        const response = await fetch(`${POMODORO_URL}/phase/finish-break/${taskId}`, {
+        const response = await apiFetch(`${POMODORO_URL}/phase/finish-break/${taskId}`, {
             method: 'POST',
             headers: getAuthHeaders(),
         });
@@ -1010,7 +1011,7 @@ export const taskService = {
     },
 
     async startPomodoroBreak(taskId: string): Promise<void> {
-        const response = await fetch(`${POMODORO_URL}/phase/start-break/${taskId}`, {
+        const response = await apiFetch(`${POMODORO_URL}/phase/start-break/${taskId}`, {
             method: 'POST',
             headers: getAuthHeaders(),
         });
@@ -1022,7 +1023,7 @@ export const taskService = {
 
     // Returns the current user's active pomodoro, or null if none is running.
     async getActivePomodoro(): Promise<PomodoroStatus | null> {
-        const response = await fetch(`${POMODORO_URL}/status`, {
+        const response = await apiFetch(`${POMODORO_URL}/status`, {
             headers: getAuthHeaders(),
         });
         if (response.status === 204) return null;
