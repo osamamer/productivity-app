@@ -12,7 +12,7 @@ const MAX_CONCURRENT_DETAIL_LOADS = 4;
 
 const entries = new Map<string, { details: TaskDetailsCacheEntry; expiresAt: number }>();
 const pendingLoads = new Map<string, Promise<TaskDetailsCacheEntry>>();
-const detailLoadWaiters: Array<() => void> = [];
+const detailLoadWaiters: (() => void)[] = [];
 let availableDetailLoadSlots = MAX_CONCURRENT_DETAIL_LOADS;
 let cacheGeneration = 0;
 

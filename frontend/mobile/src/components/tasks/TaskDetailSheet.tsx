@@ -61,6 +61,17 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
   const repeatRef = useRef<TaskRecurrenceFrequency>('NONE');
   const recurrenceMutationRef = useRef<Promise<void>>(Promise.resolve());
   const recurrenceRequestIdRef = useRef(0);
+  const [previousTaskId, setPreviousTaskId] = useState(task?.taskId);
+
+  if (previousTaskId !== task?.taskId) {
+    setPreviousTaskId(task?.taskId);
+    const cached = task && !task.parentId ? getCachedTaskDetails(task.taskId) : undefined;
+    setSubtasks(cached?.subtasks ?? []);
+    setSubtasksLoading(Boolean(task && !task.parentId && !cached));
+    setSubtaskComposerOpen(false);
+    setSubtaskName('');
+    setSubtaskError(null);
+  }
 
   useEffect(() => {
     if (!task?.taskId) return undefined;
@@ -71,13 +82,7 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
   useEffect(() => {
     const taskId = task?.taskId;
     const parentId = task?.parentId;
-    const cached = taskId && !parentId ? getCachedTaskDetails(taskId) : undefined;
     let active = true;
-    setSubtasks(cached?.subtasks ?? []);
-    setSubtasksLoading(Boolean(taskId && !parentId && !cached));
-    setSubtaskComposerOpen(false);
-    setSubtaskName('');
-    setSubtaskError(null);
     if (!taskId || parentId || !task) return () => { active = false; };
 
     void api.tasks.details(task)

@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
-import { PropsWithChildren, ReactNode, useCallback, useRef } from 'react';
+import { PropsWithChildren, ReactNode, useCallback, useState } from 'react';
 import { Animated, Easing, RefreshControl, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -35,8 +35,8 @@ export function Screen({
   scrollToTopKey = null,
 }: PropsWithChildren<Props>) {
   const { colors } = useAppTheme();
-  const entryOpacity = useRef(new Animated.Value(1)).current;
-  const entryOffset = useRef(new Animated.Value(0)).current;
+  const [entryOpacity] = useState(() => new Animated.Value(1));
+  const [entryOffset] = useState(() => new Animated.Value(0));
   useFocusEffect(useCallback(() => {
     entryOpacity.setValue(0.97);
     entryOffset.setValue(3);
