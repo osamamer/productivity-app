@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import {
     Box, Typography, CircularProgress, Stack, Popover,
-    ToggleButton, ToggleButtonGroup, Alert, Tooltip,
+    ToggleButton, ToggleButtonGroup, Alert,
 } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
@@ -11,7 +11,7 @@ import { format, eachDayOfInterval, getDay, getMonth, parseISO } from 'date-fns'
 import { StatDefinition, StatEntry, StatEntryStatus } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
 import { getBooleanChoiceColor, getStatFeedbackColor, showStatFeedback } from '../../services/statFeedback';
-import { formatStatBucketRange, getStatPeriodWindow, StatPeriodMode, StatPeriodOffset } from './statPeriod';
+import { getStatPeriodWindow, StatPeriodMode, StatPeriodOffset } from './statPeriod';
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -26,24 +26,6 @@ interface Props {
     onDateContextMenu?: (date: string, event: React.MouseEvent<Element>) => void;
 }
 
-interface BooleanHeatmapBucket {
-    from: Date;
-    to: Date;
-    bucketLabel?: string;
-    average: number | null;
-    doneDays: number;
-    eligibleDays: number;
-    recordedDays: number;
-    notPlannedOnly: boolean;
-}
-
-interface HeatmapMonthSegment {
-    key: string;
-    label: string;
-    start: number;
-    span: number;
-}
-
 function entryMaps(entries: StatEntry[]): { values: Map<string, number>; statuses: Map<string, StatEntryStatus> } {
     return {
         values: new Map(entries.map(entry => [entry.date, entry.value])),
@@ -51,80 +33,24 @@ function entryMaps(entries: StatEntry[]): { values: Map<string, number>; statuse
     };
 }
 
-function booleanPeriodAverages(
-    days: Date[],
-    valueMap: Map<string, number>,
-    statusMap: Map<string, StatEntryStatus>,
-    daysPerBucket: number,
-): BooleanHeatmapBucket[] {
-    const buckets: BooleanHeatmapBucket[] = [];
-    for (let index = 0; index < days.length; index += daysPerBucket) {
-        const bucketDays = days.slice(index, index + daysPerBucket);
-        const bucketDates = bucketDays.map(day => format(day, 'yyyy-MM-dd'));
-        const eligibleDates = bucketDates.filter(date => statusMap.get(date) !== 'NOT_PLANNED');
-        const recordedValues = eligibleDates
-            .map(date => valueMap.get(date))
-            .filter((value): value is number => value !== undefined);
-        const doneDays = recordedValues.reduce((total, value) => total + value, 0);
-        buckets.push({
-            from: bucketDays[0],
-            to: bucketDays[bucketDays.length - 1],
-            bucketLabel: daysPerBucket === 7
-                ? formatStatBucketRange(bucketDays[0], bucketDays[bucketDays.length - 1])
-                : undefined,
-            average: eligibleDates.length > 0
-                ? doneDays / eligibleDates.length
-                : null,
-            doneDays,
-            eligibleDays: eligibleDates.length,
-            recordedDays: recordedValues.length,
-            notPlannedOnly: eligibleDates.length === 0,
-        });
+function calendarWeeks(days: Date[]): (Date | null)[][] {
+    const calendarDays: (Date | null)[] = [...Array<Date | null>(getDay(days[0])).fill(null), ...days];
+    while (calendarDays.length % 7 !== 0) calendarDays.push(null);
+    const weeks: (Date | null)[][] = [];
+    for (let index = 0; index < calendarDays.length; index += 7) {
+        weeks.push(calendarDays.slice(index, index + 7));
     }
-    return buckets;
+    return weeks;
 }
 
-function heatmapBucketLabel(bucket: BooleanHeatmapBucket): string {
-    const label = bucket.bucketLabel ?? `${format(bucket.from, 'MMM d')} – ${format(bucket.to, 'MMM d, yyyy')}`;
-    if (bucket.notPlannedOnly) return `${label} · Not planned`;
-
-    const average = Math.round((bucket.average ?? 0) * 100);
-    const logged = bucket.recordedDays === 0
-        ? 'no entries logged'
-        : `${bucket.recordedDays} logged`;
-    return `${label} · ${average}% · ${bucket.doneDays} of ${bucket.eligibleDays} days done · ${logged}`;
-}
-
-function splitHeatmapRows(buckets: BooleanHeatmapBucket[], rowCount: number): BooleanHeatmapBucket[][] {
-    const rows: BooleanHeatmapBucket[][] = [];
-    let offset = 0;
-    for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
-        const remainingRows = rowCount - rowIndex;
-        const rowSize = Math.ceil((buckets.length - offset) / remainingRows);
-        rows.push(buckets.slice(offset, offset + rowSize));
-        offset += rowSize;
-    }
-    return rows;
-}
-
-function monthSegments(buckets: BooleanHeatmapBucket[], showYear: boolean): HeatmapMonthSegment[] {
-    const segments: HeatmapMonthSegment[] = [];
-    buckets.forEach((bucket, index) => {
-        const midpoint = new Date((bucket.from.getTime() + bucket.to.getTime()) / 2);
-        const key = format(midpoint, 'yyyy-MM');
-        const previous = segments[segments.length - 1];
-        if (previous?.key === key) {
-            previous.span += 1;
-            return;
-        }
-        segments.push({
-            key,
-            label: format(midpoint, showYear && getMonth(midpoint) === 0 ? 'MMM yyyy' : 'MMM'),
-            start: index,
-            span: 1,
-        });
+function monthLabelsForWeeks(weeks: (Date | null)[][], showYear: boolean): string[] {
+    let previousMonth = '';
+    return weeks.map(week => {
+        const monthStart = week.find(day => day && format(day, 'yyyy-MM') !== previousMonth);
+        if (!monthStart) return '';
+        previousMonth = format(monthStart, 'yyyy-MM');
+        return format(monthStart, showYear && getMonth(monthStart) === 0 ? 'MMM yyyy' : 'MMM');
     });
-    return segments;
 }
 
 export const BooleanCalendarView = React.memo(function BooleanCalendarView({
@@ -176,8 +102,21 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
     const [editStatus, setEditStatus] = useState<StatEntryStatus>('RECORDED');
     const [saveError, setSaveError] = useState<string | null>(null);
     const entryMutationVersionsRef = useRef(new Map<string, number>());
+    const dailyGridRef = useRef<HTMLDivElement | null>(null);
+    const [dailyGridWidth, setDailyGridWidth] = useState(0);
 
     const allDays = eachDayOfInterval({ start: from, end: to });
+    const isDailyGrid = dateRange >= 90;
+    const dailyWeeks = isDailyGrid ? calendarWeeks(allDays) : [];
+    const dailyMonthLabels = monthLabelsForWeeks(dailyWeeks, dateRange > 90);
+    const dailyGridGap = 2;
+    const dailyGridAxisWidth = 26;
+    const dailyGridCellSize = dailyGridWidth > 0
+        ? Math.max(6, Math.min(
+            dateRange <= 90 ? 20 : 14,
+            Math.floor((dailyGridWidth - dailyGridAxisWidth - 6 - dailyGridGap * (dailyWeeks.length - 1)) / dailyWeeks.length),
+        ))
+        : dateRange <= 90 ? 20 : 12;
     const startOffset = getDay(from);
     const days: (Date | null)[] = [...Array(startOffset).fill(null), ...allDays];
     while (days.length % 7 !== 0) days.push(null);
@@ -205,6 +144,17 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
             });
         return () => { cancelled = true; };
     }, [dataKey, definition.id, fromStr, refreshKey, toStr]);
+
+    useEffect(() => {
+        if (!isDailyGrid || !dailyGridRef.current) return;
+        const element = dailyGridRef.current;
+        const updateWidth = () => setDailyGridWidth(element.getBoundingClientRect().width);
+        updateWidth();
+        if (typeof ResizeObserver === 'undefined') return;
+        const observer = new ResizeObserver(updateWidth);
+        observer.observe(element);
+        return () => observer.disconnect();
+    }, [isDailyGrid]);
 
     const openEditor = (event: React.MouseEvent<HTMLElement>, date: string) => {
         event.stopPropagation();
@@ -288,12 +238,6 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
     const weeks: (Date | null)[][] = [];
     for (let i = 0; i < days.length; i += 7) weeks.push(days.slice(i, i + 7));
 
-    const isHeatmap = dateRange > 30;
-    const heatmapBucketDays = dateRange <= 90 ? 3 : 7;
-    const heatmapBuckets = isHeatmap
-        ? booleanPeriodAverages(allDays, valueMap, statusMap, heatmapBucketDays)
-        : [];
-    const heatmapRows = splitHeatmapRows(heatmapBuckets, dateRange <= 90 ? 2 : 4);
     const notPlannedColor = theme.palette.notPlanned.main;
     const gridStyle = {
         display: 'grid',
@@ -309,85 +253,135 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
                     sx={{ position: 'absolute', top: 0, right: 0, zIndex: 1, pointerEvents: 'none' }}
                 />
             )}
-            {isHeatmap ? (
+            {isDailyGrid ? (
                 <Box
-                    sx={{
-                        display: 'grid',
-                        gap: dateRange <= 90 ? '9px' : '7px',
-                        width: '100%',
-                    }}
-                    aria-label={`${definition.name} ${heatmapBucketDays}-day average heatmap`}
+                    ref={dailyGridRef}
+                    sx={{ width: '100%', overflowX: 'auto' }}
+                    role="group"
+                    aria-label={`${definition.name} daily history grid`}
                 >
-                    {heatmapRows.map((row, rowIndex) => (
-                        <Box key={`${row[0]?.from.toISOString()}-${rowIndex}`}>
+                    <Box sx={{ width: 'max-content', minWidth: '100%' }}>
+                        <Box
+                            sx={{
+                                display: 'grid',
+                                gridTemplateColumns: `${dailyGridAxisWidth}px max-content`,
+                                columnGap: '6px',
+                                width: 'max-content',
+                                mx: 'auto',
+                                mb: 0.5,
+                            }}
+                        >
+                            <Box aria-hidden="true" />
                             <Box
                                 sx={{
                                     display: 'grid',
-                                    gridTemplateColumns: `repeat(${row.length}, minmax(0, 1fr))`,
-                                    minHeight: 16,
-                                    mb: 0.5,
+                                    gridTemplateColumns: `repeat(${dailyWeeks.length}, ${dailyGridCellSize}px)`,
+                                    columnGap: `${dailyGridGap}px`,
                                 }}
                             >
-                                {monthSegments(row, dateRange > 90).map(segment => (
-                                    <Typography
-                                        key={`${segment.key}-${segment.start}`}
-                                        variant="caption"
-                                        color="text.secondary"
-                                        sx={{
-                                            gridColumn: `${segment.start + 1} / span ${segment.span}`,
-                                            px: 0.5,
-                                            fontSize: 10,
-                                            lineHeight: '16px',
-                                            whiteSpace: 'nowrap',
-                                            overflow: 'hidden',
-                                            textOverflow: 'ellipsis',
-                                        }}
-                                    >
-                                        {segment.label}
-                                    </Typography>
-                                ))}
-                            </Box>
-                            <Box
-                                sx={{
-                                    display: 'grid',
-                                    gridTemplateColumns: `repeat(${row.length}, minmax(0, 1fr))`,
-                                    gridAutoRows: dateRange <= 90 ? 28 : 22,
-                                    gap: '5px',
-                                }}
-                            >
-                                {row.map((bucket, index) => (
-                                    <Tooltip
-                                        key={`${bucket.from.toISOString()}-${index}`}
-                                        title={heatmapBucketLabel(bucket)}
-                                        placement="top"
-                                        arrow
-                                    >
-                                        <Box
-                                            tabIndex={0}
-                                            aria-label={heatmapBucketLabel(bucket)}
-                                            sx={{
-                                                minWidth: 0,
-                                                borderRadius: 0.75,
-                                                bgcolor: bucket.average == null
-                                                    ? theme.palette.action.hover
-                                                    : alpha(theme.palette.primary.main, 0.14 + bucket.average * 0.86),
-                                                outline: '1px solid',
-                                                outlineColor: bucket.average == null
-                                                    ? theme.palette.action.disabledBackground
-                                                    : alpha(theme.palette.primary.main, 0.2 + bucket.average * 0.45),
-                                                outlineOffset: -1,
-                                                transition: 'transform 100ms ease, outline-color 100ms ease',
-                                                '&:hover, &:focus-visible': {
-                                                    transform: 'translateY(-1px)',
-                                                    outlineColor: theme.palette.primary.main,
-                                                },
-                                            }}
-                                        />
-                                    </Tooltip>
+                                {dailyMonthLabels.map((label, index) => (
+                                    <Box key={`${label}-${index}`} sx={{ position: 'relative', height: 16, overflow: 'visible' }}>
+                                        {label && (
+                                            <Typography
+                                                variant="caption"
+                                                color="text.secondary"
+                                                sx={{ position: 'absolute', left: 0, fontSize: 10, lineHeight: '16px', whiteSpace: 'nowrap' }}
+                                            >
+                                                {label}
+                                            </Typography>
+                                        )}
+                                    </Box>
                                 ))}
                             </Box>
                         </Box>
-                    ))}
+                        <Box
+                            sx={{
+                                display: 'grid',
+                                gridTemplateColumns: `${dailyGridAxisWidth}px max-content`,
+                                columnGap: '6px',
+                                width: 'max-content',
+                                mx: 'auto',
+                            }}
+                        >
+                            <Box
+                                sx={{
+                                    display: 'grid',
+                                    gridTemplateRows: `repeat(7, ${dailyGridCellSize}px)`,
+                                    rowGap: `${dailyGridGap}px`,
+                                }}
+                            >
+                                {DAY_LABELS.map((label, index) => (
+                                    <Box key={label} sx={{ height: dailyGridCellSize, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+                                        {[1, 3, 5].includes(index) && (
+                                            <Typography variant="caption" color="text.secondary" sx={{ fontSize: 9, lineHeight: 1 }}>
+                                                {label}
+                                            </Typography>
+                                        )}
+                                    </Box>
+                                ))}
+                            </Box>
+                            <Box
+                                sx={{
+                                    display: 'grid',
+                                    gridTemplateColumns: `repeat(${dailyWeeks.length}, ${dailyGridCellSize}px)`,
+                                    columnGap: `${dailyGridGap}px`,
+                                }}
+                            >
+                                {dailyWeeks.map((week, weekIndex) => (
+                                    <Box
+                                        key={`week-${weekIndex}`}
+                                        sx={{ display: 'grid', gridTemplateRows: `repeat(7, ${dailyGridCellSize}px)`, rowGap: `${dailyGridGap}px` }}
+                                    >
+                                        {week.map((day, dayIndex) => {
+                                            if (!day) return <Box key={`empty-${dayIndex}`} aria-hidden="true" sx={{ width: dailyGridCellSize, height: dailyGridCellSize }} />;
+                                            const dateKey = format(day, 'yyyy-MM-dd');
+                                            const hasEntry = valueMap.has(dateKey);
+                                            const value = valueMap.get(dateKey);
+                                            const status = statusMap.get(dateKey);
+                                            const isNotPlanned = hasEntry && status === 'NOT_PLANNED';
+                                            const isYes = hasEntry && !isNotPlanned && value === 1;
+                                            const isNo = hasEntry && !isNotPlanned && value !== 1;
+                                            const label = `${format(day, 'MMMM d, yyyy')}: ${isNotPlanned ? 'Not planned' : isYes ? 'Yes' : isNo ? 'No' : 'Not recorded'}`;
+                                            const backgroundColor = isNotPlanned
+                                                ? notPlannedColor
+                                                : isYes
+                                                    ? yesColor
+                                                    : isNo
+                                                        ? noColor
+                                                        : theme.palette.action.disabledBackground;
+
+                                            return (
+                                                <Box
+                                                    key={dateKey}
+                                                    component="button"
+                                                    type="button"
+                                                    title={label}
+                                                    aria-label={label}
+                                                    onClick={event => openEditor(event, dateKey)}
+                                                    onContextMenu={event => {
+                                                        event.preventDefault();
+                                                        event.stopPropagation();
+                                                        onDateContextMenu?.(dateKey, event);
+                                                    }}
+                                                    sx={{
+                                                        width: dailyGridCellSize,
+                                                        height: dailyGridCellSize,
+                                                        p: 0,
+                                                        border: 0,
+                                                        appearance: 'none',
+                                                        borderRadius: '2px',
+                                                        bgcolor: backgroundColor,
+                                                        cursor: 'pointer',
+                                                        '&:hover, &:focus-visible': { outline: `2px solid ${theme.palette.text.primary}`, outlineOffset: 1, zIndex: 1 },
+                                                    }}
+                                                />
+                                            );
+                                        })}
+                                    </Box>
+                                ))}
+                            </Box>
+                        </Box>
+                    </Box>
                 </Box>
             ) : (
                 <>
@@ -507,7 +501,21 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
                 </>
             )}
 
-            {!isHeatmap && (
+            {isDailyGrid ? (
+                <Stack direction="row" spacing={1.5} sx={{ mt: 1.5, flexWrap: 'wrap' }}>
+                    {[
+                        { label: 'Yes', color: yesColor },
+                        { label: 'No', color: noColor },
+                        { label: 'No entry', color: theme.palette.action.disabledBackground },
+                        { label: 'Not planned', color: notPlannedColor },
+                    ].map(item => (
+                        <Stack key={item.label} direction="row" spacing={0.5} alignItems="center">
+                            <Box sx={{ width: 10, height: 10, borderRadius: '2px', bgcolor: item.color }} />
+                            <Typography variant="caption" color="text.secondary">{item.label}</Typography>
+                        </Stack>
+                    ))}
+                </Stack>
+            ) : (
                 <Stack direction="row" spacing={2} sx={{ mt: 1.5 }}>
                     <Stack direction="row" spacing={0.5} alignItems="center">
                         <CheckCircleOutlineIcon sx={{ fontSize: 14, color: yesColor, transform: 'rotate(-12deg)' }} />
