@@ -28,7 +28,6 @@ export function StatComposerSheet({ visible, definition, onClose, onCreated, onU
   onUpdated?: (definition: StatDefinition) => void;
 }) {
   const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
   const [type, setType] = useState<StatType>('BOOLEAN');
   const [min, setMin] = useState('1');
   const [max, setMax] = useState('10');
@@ -49,7 +48,6 @@ export function StatComposerSheet({ visible, definition, onClose, onCreated, onU
     const definitionThreshold = definition?.goodThreshold ?? null;
     const setupTimer = setTimeout(() => {
       setName(definition?.name ?? '');
-      setDescription(definition?.description ?? '');
       setType(definitionType);
       setMin(definition?.minValue == null ? '1' : String(definition.minValue));
       setMax(definition?.maxValue == null ? '10' : String(definition.maxValue));
@@ -108,7 +106,6 @@ export function StatComposerSheet({ visible, definition, onClose, onCreated, onU
       if (definition) {
         const updated = await api.stats.update(definition.id, {
           name: name.trim(),
-          description: description.trim(),
           morality,
           goodThreshold,
         });
@@ -116,7 +113,6 @@ export function StatComposerSheet({ visible, definition, onClose, onCreated, onU
       } else {
         const created = await api.stats.create({
           name: name.trim(),
-          description: description.trim(),
           type,
           minValue,
           maxValue,
@@ -142,11 +138,8 @@ export function StatComposerSheet({ visible, definition, onClose, onCreated, onU
       title={editing ? 'Edit stat' : 'New stat'}
       footer={<AppButton label={editing ? 'Save changes' : 'Create stat'} loading={saving} onPress={() => void submit()} />}>
       <AppInput ref={nameInputRef} autoFocus label="Name" value={name} onChangeText={setName} error={error ?? undefined} />
-      <AppInput label="Description (optional)" value={description} onChangeText={setDescription} multiline />
-      <AppText variant="label">Type</AppText>
-      {editing ? (
-        <AppText color="muted">{type} · type and range bounds cannot be changed after creation.</AppText>
-      ) : (
+      {!editing && <>
+        <AppText variant="label">Type</AppText>
         <ChoiceChips value={type} onChange={next => { setType(next); setMorality(next === 'BOOLEAN' ? 'NEUTRAL' : morality); setThreshold(''); setDurationThreshold(null); }} options={[
           { value: 'BOOLEAN' as const, label: 'Yes / No' },
           { value: 'NUMBER' as const, label: 'Number' },
@@ -154,7 +147,7 @@ export function StatComposerSheet({ visible, definition, onClose, onCreated, onU
           { value: 'TIME' as const, label: 'Time of day' },
           { value: 'DURATION' as const, label: 'Duration' },
         ]} />
-      )}
+      </>}
       {!editing && type === 'RANGE' && (
         <View style={styles.rangeRow}>
           <AppInput containerStyle={styles.rangeInput} label="Minimum" value={min} onChangeText={setMin} keyboardType="decimal-pad" />
@@ -163,13 +156,13 @@ export function StatComposerSheet({ visible, definition, onClose, onCreated, onU
       )}
       <AppText variant="label">Meaning of the value</AppText>
       <ChoiceChips value={morality} onChange={setMorality} options={[
-        { value: 'GOOD' as const, label: 'Higher is good' },
-        { value: 'BAD' as const, label: 'Lower is good' },
+        { value: 'GOOD' as const, label: type === 'TIME' ? 'Earlier is better' : 'Higher is better' },
+        { value: 'BAD' as const, label: type === 'TIME' ? 'Later is worse' : 'Lower is better' },
         { value: 'NEUTRAL' as const, label: 'Neutral' },
       ]} />
       {thresholdVisible && type === 'TIME' && (
         <>
-          <AppText variant="caption" color="muted">Good at or before</AppText>
+          <AppText variant="caption" color="muted">Time threshold</AppText>
           <AppButton variant="secondary" label={formatTimeValue(timeThreshold.getHours() * 60 + timeThreshold.getMinutes())} icon="time-outline" onPress={() => setThresholdPickerOpen(true)} />
         </>
       )}
@@ -177,12 +170,12 @@ export function StatComposerSheet({ visible, definition, onClose, onCreated, onU
         <DurationInput value={durationThreshold} onChange={setDurationThreshold} />
       )}
       {thresholdVisible && type !== 'TIME' && type !== 'DURATION' && (
-        <AppInput label={morality === 'BAD' ? 'Good at or below' : 'Good at or above'} value={threshold} onChangeText={setThreshold} keyboardType="decimal-pad" />
+        <AppInput label={morality === 'BAD' ? 'Threshold at or below' : 'Threshold at or above'} value={threshold} onChangeText={setThreshold} keyboardType="decimal-pad" />
       )}
       {error && <AppText variant="caption" color="danger">{error}</AppText>}
       <AppPopup
         visible={thresholdPickerOpen}
-        title="Good at or before"
+        title="Time threshold"
         showIcon={false}
         onClose={() => setThresholdPickerOpen(false)}
         dismissOnBackdrop={false}

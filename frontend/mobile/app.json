@@ -3,7 +3,7 @@
     "name": "Claritard",
     "slug": "so-life",
     "version": "1.2.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/images/eye-care.png",
     "scheme": "solife",
     "userInterfaceStyle": "automatic",

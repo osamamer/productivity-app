@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -6,12 +7,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatComposerSheet } from '@/components/stats/StatComposerSheet';
 import { StatEntrySheet } from '@/components/stats/StatEntrySheet';
 import { StatGroupComposerSheet } from '@/components/stats/StatGroupComposerSheet';
-import { StatHistoryPreview } from '@/components/stats/StatHistoryPreview';
 import { StatLogSheet } from '@/components/stats/StatLogSheet';
 import { AppButton } from '@/components/ui/AppButton';
 import { AppText } from '@/components/ui/AppText';
 import { Card } from '@/components/ui/Card';
-import { ChoiceChips } from '@/components/ui/ChoiceChips';
 import { Screen } from '@/components/ui/Screen';
 import { SilentPressable } from '@/components/ui/SilentPressable';
 import { ErrorView, LoadingView } from '@/components/ui/StateView';
@@ -25,24 +24,27 @@ import { api } from '@/services/api';
 import { reportError } from '@/lib/errors';
 import { localDate } from '@/lib/date';
 import { registerStatDefinitions } from '@/lib/optimisticStats';
+import { formatDurationValue, formatTimeValue } from '@/lib/statValues';
 import type { StatDefinition, StatEntry, StatGroup } from '@/types/models';
 
 interface StatsData { definitions: StatDefinition[]; entries: StatEntry[]; groups: StatGroup[] }
 
 const AUTOMATIC_SYSTEM_KEYS = new Set(['meditated', 'meditation_minutes']);
-const TIME_RANGES = [
-  { value: 7, label: '7d' },
-  { value: 30, label: '30d' },
-  { value: 90, label: '3m' },
-  { value: 365, label: '1y' },
-];
-
 function isManualDefinition(definition: StatDefinition): boolean {
   return !definition.systemKey || !AUTOMATIC_SYSTEM_KEYS.has(definition.systemKey);
 }
 
+function statValue(definition: StatDefinition, entry: StatEntry | undefined): string {
+  if (!entry) return 'Not logged';
+  if (entry.status === 'NOT_PLANNED') return 'Not planned';
+  if (definition.type === 'BOOLEAN') return entry.value === 1 ? 'Yes' : 'No';
+  if (definition.type === 'TIME') return formatTimeValue(entry.value);
+  if (definition.type === 'DURATION') return formatDurationValue(entry.value);
+  return Number.isInteger(entry.value) ? String(entry.value) : String(Number(entry.value.toFixed(2)));
+}
+
 export default function StatsScreen() {
-  const { colors } = useAppTheme();
+  const { colors, dark } = useAppTheme();
   const insets = useSafeAreaInsets();
   const { confirm, showError } = useAppPopup();
   const { user } = useAuth();
@@ -64,8 +66,6 @@ export default function StatsScreen() {
   const [editingGroup, setEditingGroup] = useState<StatGroup | null>(null);
   const [openGroupIds, setOpenGroupIds] = useState<Set<string>>(new Set());
   const [loadedGroupPreferencesKey, setLoadedGroupPreferencesKey] = useState<string | null>(null);
-  const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
-  const [dateRange, setDateRange] = useState(7);
   const { reload } = resource;
 
   useEffect(() => {
@@ -99,7 +99,6 @@ export default function StatsScreen() {
   const groupPreferencesReady = loadedGroupPreferencesKey === groupPreferencesKey;
 
   const refresh = useCallback(async () => {
-    setHistoryRefreshKey(key => key + 1);
     await reload();
   }, [reload]);
 
@@ -220,46 +219,52 @@ export default function StatsScreen() {
 
   function renderDefinition(definition: StatDefinition) {
     const entry = entriesByDefinition.get(definition.id);
-    const icon = !entry
-      ? 'add'
-      : definition.type === 'BOOLEAN' && entry.status === 'NOT_PLANNED'
-        ? 'remove-circle-outline'
-      : definition.type === 'BOOLEAN' && entry.value !== 1
-        ? 'close'
-        : 'checkmark';
-    const iconColor = !entry
-      ? colors.accent
-      : definition.type === 'BOOLEAN' && entry.status === 'NOT_PLANNED'
-        ? colors.notPlanned
-      : definition.type === 'BOOLEAN' && entry.value !== 1
-        ? colors.danger
-        : colors.success;
+    const isBoolean = definition.type === 'BOOLEAN';
+    const notPlanned = entry?.status === 'NOT_PLANNED';
+    const booleanPositive = entry?.value === 1;
+    const yesIsGood = definition.morality !== 'BAD';
+    const semanticGood = booleanPositive === yesIsGood;
+    const goodColor = dark ? '#578469' : '#376A4F';
+    const badColor = dark ? '#B76561' : '#9B4443';
+    const icon = isBoolean
+      ? !entry ? 'toggle-outline' : notPlanned ? 'remove' : booleanPositive ? 'checkmark' : 'close'
+      : definition.type === 'TIME' ? 'time-outline'
+        : definition.type === 'DURATION' ? 'hourglass-outline'
+          : 'stats-chart-outline';
+    const iconColor = isBoolean
+      ? !entry || notPlanned ? colors.textMuted : semanticGood ? goodColor : badColor
+      : colors.textMuted;
+    const markerBackground = isBoolean && entry && !notPlanned
+      ? `${iconColor}20`
+      : colors.surfaceRaised;
+    const value = statValue(definition, entry);
 
     return (
-      <SilentPressable key={definition.id} onPress={() => openStatEntry(definition)}>
+      <SilentPressable
+        key={definition.id}
+        accessibilityRole="button"
+        accessibilityLabel={`${definition.name}, today's value ${value}. Open details.`}
+        onPress={() => router.push(`/stats/${definition.id}`)}
+      >
         <Card style={styles.stat}>
-          <StatHistoryPreview
-            definition={definition}
-            todayEntry={entry}
-            dateRange={dateRange}
-            refreshKey={historyRefreshKey}
-            header={(
-              <View style={styles.statHeader}>
-                <View style={[styles.check, { backgroundColor: entry ? `${iconColor}20` : colors.accentSoft }]}>
-                  <Ionicons name={icon} size={22} color={iconColor} />
-                </View>
-                <View style={styles.grow}><AppText variant="heading" numberOfLines={1}>{definition.name}</AppText></View>
-                <SilentPressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`Edit ${definition.name}`}
-                  hitSlop={8}
-                  onPress={event => { event.stopPropagation(); openEditStat(definition); }}
-                  style={({ pressed }) => [styles.iconAction, pressed && styles.pressed]}>
-                  <Ionicons name="create-outline" size={18} color={colors.textMuted} />
-                </SilentPressable>
-              </View>
-            )}
-          />
+          <View style={[styles.statMark, { backgroundColor: markerBackground }]}>
+            <Ionicons name={icon} size={22} color={iconColor} />
+          </View>
+          <View style={styles.statCopy}>
+            <AppText variant="heading" numberOfLines={1}>{definition.name}</AppText>
+          </View>
+          <View style={styles.statValue}>
+            <AppText variant="label" numberOfLines={1} style={{ color: isBoolean && entry && !notPlanned ? iconColor : colors.text }}>{value}</AppText>
+          </View>
+          <SilentPressable
+            accessibilityRole="button"
+            accessibilityLabel={`Edit ${definition.name}`}
+            hitSlop={8}
+            onPress={event => { event.stopPropagation(); openEditStat(definition); }}
+            style={({ pressed }) => [styles.iconAction, pressed && styles.pressed]}>
+            <Ionicons name="create-outline" size={18} color={colors.textMuted} />
+          </SilentPressable>
+          <Ionicons name="chevron-forward" size={17} color={colors.textMuted} />
         </Card>
       </SilentPressable>
     );
@@ -282,9 +287,20 @@ export default function StatsScreen() {
       )}
       refreshing={resource.refreshing}
       onRefresh={() => void refresh()}>
-      <View style={styles.controls} accessibilityLabel="Statistics controls">
-        <ChoiceChips value={dateRange} options={TIME_RANGES} onChange={setDateRange} />
+      <View style={styles.pageHeader}>
+        <View style={styles.pageTitle}>
+          <AppText variant="title">Statistics</AppText>
+          <AppText color="muted">A clearer view of the patterns you track.</AppText>
+        </View>
         <AppButton compact label="Stat" icon="add" onPress={openCreateStat} style={styles.compactAction} />
+      </View>
+      <View style={styles.controls} accessibilityLabel="Statistics controls">
+        <AppText variant="label">Today</AppText>
+        {resource.data && (
+          <AppText variant="caption" color="muted">
+            {resource.data.definitions.filter(definition => entriesByDefinition.has(definition.id)).length} of {resource.data.definitions.length} recorded
+          </AppText>
+        )}
       </View>
       {resource.loading && <LoadingView label="Loading statistics…" />}
       {resource.error && !resource.data && <ErrorView message={resource.error} retry={() => void resource.reload()} />}
@@ -388,7 +404,9 @@ export default function StatsScreen() {
 }
 
 const styles = StyleSheet.create({
-  controls: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 },
+  pageHeader: { minHeight: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  pageTitle: { flex: 1, gap: 2 },
+  controls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 2 },
   compactAction: { paddingHorizontal: 8, gap: 4, flexShrink: 0 },
   logButton: { position: 'absolute', right: 18, minHeight: 48, borderRadius: 24, paddingHorizontal: 17, shadowColor: '#11111A', shadowOffset: { width: 0, height: 5 }, shadowRadius: 12, shadowOpacity: 0.28, elevation: 6 },
   list: { gap: 16 },
@@ -400,9 +418,9 @@ const styles = StyleSheet.create({
   iconAction: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
   groupItems: { gap: 10 },
   emptyGroup: { paddingHorizontal: 12, paddingVertical: 12 },
-  stat: { padding: 14, overflow: 'hidden' },
-  statHeader: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  check: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  grow: { flex: 1 },
+  stat: { minHeight: 82, padding: 13, overflow: 'hidden', flexDirection: 'row', alignItems: 'center', gap: 11 },
+  statMark: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center' },
+  statCopy: { flex: 1, minWidth: 0, gap: 3 },
+  statValue: { maxWidth: 100, minWidth: 65, alignItems: 'flex-end', gap: 2 },
   pressed: { opacity: 0.72 },
 });

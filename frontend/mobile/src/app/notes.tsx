@@ -1,14 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppButton } from '@/components/ui/AppButton';
 import { AppPopup } from '@/components/ui/AppPopup';
 import { AppText } from '@/components/ui/AppText';
 import { Card } from '@/components/ui/Card';
-import { ChoiceChips } from '@/components/ui/ChoiceChips';
 import { Screen } from '@/components/ui/Screen';
 import { SilentPressable } from '@/components/ui/SilentPressable';
 import { EmptyView, ErrorView, LoadingView } from '@/components/ui/StateView';
@@ -53,8 +52,10 @@ export default function NotesScreen() {
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
-  const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
+  const [moveCategoryPickerOpen, setMoveCategoryPickerOpen] = useState(false);
+  const [filterMenuOpen, setFilterMenuOpen] = useState(false);
   const hasFocusedRef = useRef(false);
+  const longPressRef = useRef(false);
 
   useFocusEffect(useCallback(() => {
     if (hasFocusedRef.current) void reload();
@@ -65,11 +66,12 @@ export default function NotesScreen() {
   const categories = resource.data?.categories ?? EMPTY_CATEGORIES;
   const categoryById = useMemo(() => new Map(categories.map(category => [category.id, category])), [categories]);
   const filterOptions = useMemo(() => [
-    { value: 'all', label: 'All notes', color: colors.accent },
-    { value: 'pinned', label: 'Pinned', color: colors.secondary },
-    { value: 'uncategorized', label: 'Uncategorized', color: colors.textMuted },
-    ...categories.map(category => ({ value: category.id, label: category.name, color: category.color })),
-  ], [categories, colors.accent, colors.secondary, colors.textMuted]);
+    { value: 'all' as NotesFilter, label: 'All notes' },
+    { value: 'pinned' as NotesFilter, label: 'Pinned' },
+    { value: 'uncategorized' as NotesFilter, label: 'Uncategorized' },
+    ...categories.map(category => ({ value: category.id as NotesFilter, label: category.name })),
+  ], [categories]);
+  const activeFilterLabel = filterOptions.find(option => option.value === activeFilter)?.label ?? 'All notes';
   const visibleNotes = useMemo(() => [...notes]
     .filter(note => {
       if (activeFilter === 'pinned') return note.pinned;
@@ -88,6 +90,10 @@ export default function NotesScreen() {
   const allSelectedPinned = selectedNotes.length > 0 && selectedNotes.every(note => note.pinned);
 
   function openNote(note: Note) {
+    if (longPressRef.current) {
+      longPressRef.current = false;
+      return;
+    }
     if (selectionMode) {
       toggleNoteSelection(note.id);
       return;
@@ -99,6 +105,12 @@ export default function NotesScreen() {
     setSelectedNoteIds(current => current.includes(noteId)
       ? current.filter(id => id !== noteId)
       : [...current, noteId]);
+  }
+
+  function startNoteSelection(noteId: string) {
+    longPressRef.current = true;
+    setSelectionMode(true);
+    setSelectedNoteIds(current => current.includes(noteId) ? current : [...current, noteId]);
   }
 
   function selectAllVisible() {
@@ -114,7 +126,8 @@ export default function NotesScreen() {
   function clearSelection() {
     setSelectedNoteIds([]);
     setSelectionMode(false);
-    setCategoryPickerOpen(false);
+    setMoveCategoryPickerOpen(false);
+    setFilterMenuOpen(false);
   }
 
   async function updateSelected(updates: Partial<Pick<Note, 'categoryId' | 'pinned'>>) {
@@ -168,42 +181,77 @@ export default function NotesScreen() {
       contentStyle={styles.content}
       overlay={(
         <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
-          <AppButton
-            compact
-            label="New"
-            icon="add"
-            loading={creating}
-            onPress={() => void create()}
-            style={[styles.newButton, { bottom: Math.max(24, insets.bottom + 12) }]}
-          />
+          {filterMenuOpen && !selectionMode && (
+            <>
+              <SilentPressable
+                accessibilityRole="button"
+                accessibilityLabel="Close note filters"
+                style={styles.filterMenuDismiss}
+                onPress={() => setFilterMenuOpen(false)}
+              />
+              <View style={[styles.filterMenu, { backgroundColor: colors.surface, borderColor: colors.border, bottom: Math.max(82, insets.bottom + 70) }]}>
+                <AppText variant="caption" color="muted" style={styles.filterMenuHeading}>SHOW NOTES</AppText>
+                <ScrollView style={styles.filterMenuOptions} keyboardShouldPersistTaps="handled">
+                  {filterOptions.map(option => (
+                    <SilentPressable
+                      key={option.value}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: activeFilter === option.value }}
+                      onPress={() => { setActiveFilter(option.value); setFilterMenuOpen(false); }}
+                      style={({ pressed }) => [styles.filterOption, activeFilter === option.value && { backgroundColor: colors.accentSoft }, pressed && styles.pressed]}
+                    >
+                      <AppText variant="label" numberOfLines={1} style={styles.grow}>{option.label}</AppText>
+                      {activeFilter === option.value && <Ionicons name="checkmark" size={18} color={colors.accent} />}
+                    </SilentPressable>
+                  ))}
+                </ScrollView>
+              </View>
+            </>
+          )}
+          {!selectionMode && (
+            <View style={[styles.floatingActions, { bottom: Math.max(24, insets.bottom + 12) }]}>
+              <SilentPressable
+                accessibilityRole="button"
+                accessibilityLabel={`Filter notes, currently ${activeFilterLabel}`}
+                accessibilityState={{ expanded: filterMenuOpen }}
+                onPress={() => setFilterMenuOpen(open => !open)}
+                style={({ pressed }) => [styles.floatingAction, styles.filterAction, { backgroundColor: colors.surface, borderColor: colors.accent, shadowColor: colors.text }, pressed && styles.pressed]}
+              >
+                <Ionicons name="folder-open-outline" size={18} color={colors.accent} />
+                <AppText variant="label" color="accent" numberOfLines={1} style={styles.filterActionLabel}>{activeFilter === 'all' ? 'All' : activeFilterLabel}</AppText>
+                <Ionicons name={filterMenuOpen ? 'chevron-down' : 'chevron-up'} size={16} color={colors.accent} />
+              </SilentPressable>
+              <SilentPressable
+                accessibilityRole="button"
+                accessibilityLabel="Create a new note"
+                disabled={creating}
+                onPress={() => void create()}
+                style={({ pressed }) => [styles.floatingAction, { backgroundColor: colors.surface, borderColor: colors.accent, shadowColor: colors.text }, creating && styles.disabled, pressed && styles.pressed]}
+              >
+                {creating ? <AppText variant="label" color="accent">Saving…</AppText> : <><Ionicons name="add" size={19} color={colors.accent} /><AppText variant="label" color="accent">New</AppText></>}
+              </SilentPressable>
+            </View>
+          )}
         </View>
       )}
       refreshing={resource.refreshing}
       onRefresh={() => void resource.reload()}>
       {resource.loading && <LoadingView label="Loading notes…" />}
       {resource.error && !resource.data && <ErrorView message={resource.error} retry={() => void resource.reload()} />}
-      <View style={[styles.selectionHeader, { borderColor: colors.border }]}>
-        {selectionMode ? (
-          <>
-            <AppText variant="heading" style={styles.grow}>{selectedNoteIdsForActions.length} selected</AppText>
-            <AppButton compact variant="secondary" label={allVisibleSelected ? 'Clear visible' : 'Select all'} onPress={selectAllVisible} disabled={bulkActionLoading || !visibleNotes.length} />
-            <AppButton compact variant="ghost" label="Done" onPress={clearSelection} disabled={bulkActionLoading} />
-          </>
-        ) : (
-          <>
-            <View style={styles.grow} />
-            <AppButton compact variant="secondary" icon="checkbox-outline" label="Select" onPress={() => setSelectionMode(true)} />
-          </>
-        )}
-      </View>
+      {selectionMode && (
+        <View style={[styles.selectionHeader, { borderColor: colors.border }]}>
+          <AppText variant="heading" style={styles.grow}>{selectedNoteIdsForActions.length} selected</AppText>
+          <AppButton compact variant="secondary" label={allVisibleSelected ? 'Clear visible' : 'Select all'} onPress={selectAllVisible} disabled={bulkActionLoading || !visibleNotes.length} />
+          <AppButton compact variant="ghost" label="Done" onPress={clearSelection} disabled={bulkActionLoading} />
+        </View>
+      )}
       {selectionMode && selectedNoteIdsForActions.length > 0 && (
         <View style={styles.bulkActions}>
           <AppButton compact variant="ghost" icon={allSelectedPinned ? 'pin' : 'pin-outline'} label={allSelectedPinned ? 'Unpin' : 'Pin'} onPress={() => void updateSelected({ pinned: !allSelectedPinned })} loading={bulkActionLoading} />
-          <AppButton compact variant="ghost" icon="folder-open-outline" label="Move" onPress={() => setCategoryPickerOpen(true)} disabled={bulkActionLoading} />
+          <AppButton compact variant="ghost" icon="folder-open-outline" label="Move" onPress={() => setMoveCategoryPickerOpen(true)} disabled={bulkActionLoading} />
           <AppButton compact variant="danger" icon="trash-outline" label="Delete" onPress={() => void deleteSelected()} disabled={bulkActionLoading} />
         </View>
       )}
-      {resource.data && <ChoiceChips value={activeFilter} onChange={setActiveFilter} options={filterOptions} />}
       {!resource.loading && resource.data && !visibleNotes.length && (
         <EmptyView
           title={notes.length ? 'No notes here yet' : 'A quiet notebook'}
@@ -213,10 +261,13 @@ export default function NotesScreen() {
         {visibleNotes.map(note => (
           <SilentPressable
             key={note.id}
+            onPressIn={() => { longPressRef.current = false; }}
             onPress={() => openNote(note)}
+            onLongPress={() => startNoteSelection(note.id)}
+            delayLongPress={350}
             accessibilityRole={selectionMode ? 'checkbox' : 'button'}
             accessibilityState={selectionMode ? { checked: selectedNoteIdSet.has(note.id) } : undefined}
-            accessibilityLabel={selectionMode ? `${selectedNoteIdSet.has(note.id) ? 'Deselect' : 'Select'} ${note.title || 'Untitled'}` : `Open ${note.title || 'Untitled'}`}
+            accessibilityLabel={selectionMode ? `${selectedNoteIdSet.has(note.id) ? 'Deselect' : 'Select'} ${note.title || 'Untitled'}` : `Open ${note.title || 'Untitled'}, or hold to select`}
             style={styles.half}
           >
             <Card style={styles.note}>
@@ -245,12 +296,12 @@ export default function NotesScreen() {
         ))}
       </View>
       <AppPopup
-        visible={categoryPickerOpen}
+        visible={moveCategoryPickerOpen}
         title="Move selected notes"
         message="Choose a category for the selected notes."
         showIcon={false}
-        onClose={() => setCategoryPickerOpen(false)}
-        footer={<AppButton variant="secondary" label="Cancel" onPress={() => setCategoryPickerOpen(false)} />}
+        onClose={() => setMoveCategoryPickerOpen(false)}
+        footer={<AppButton variant="secondary" label="Cancel" onPress={() => setMoveCategoryPickerOpen(false)} />}
       >
         <View style={styles.categoryChoices}>
           <SilentPressable
@@ -281,7 +332,16 @@ const styles = StyleSheet.create({
   content: { paddingTop: 0 },
   selectionHeader: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 8, borderBottomWidth: 1 },
   bulkActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  newButton: { position: 'absolute', right: 18, shadowColor: '#11111A', shadowOffset: { width: 0, height: 5 }, shadowRadius: 12, shadowOpacity: 0.28, elevation: 6 },
+  floatingActions: { position: 'absolute', left: 18, right: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 8 },
+  floatingAction: { minHeight: 48, borderRadius: 24, paddingHorizontal: 16, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, shadowOffset: { width: 0, height: 5 }, shadowRadius: 12, shadowOpacity: 0.28, elevation: 6 },
+  filterAction: { maxWidth: '60%', flexShrink: 1 },
+  filterActionLabel: { flexShrink: 1 },
+  filterMenuDismiss: { ...StyleSheet.absoluteFill },
+  filterMenu: { position: 'absolute', right: 18, width: 240, maxWidth: '75%', borderWidth: 1, borderRadius: 16, padding: 8, gap: 4, shadowColor: '#11111A', shadowOffset: { width: 0, height: 5 }, shadowRadius: 16, shadowOpacity: 0.22, elevation: 8 },
+  filterMenuHeading: { paddingHorizontal: 10, paddingTop: 7, paddingBottom: 3, letterSpacing: 0.7 },
+  filterMenuOptions: { maxHeight: 320 },
+  filterOption: { minHeight: 42, borderRadius: 10, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  disabled: { opacity: 0.55 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -5 }, half: { width: '50%', paddingHorizontal: 5, marginBottom: 10 }, note: { height: 220, gap: 10, padding: 14, overflow: 'hidden' },
   selectionMarker: { position: 'absolute', left: 0, top: 14, bottom: 14, width: 3, borderTopRightRadius: 3, borderBottomRightRadius: 3 },
   grow: { flex: 1 }, spaceBetween: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 }, titleRow: { flex: 1, flexDirection: 'row', alignItems: 'flex-start', gap: 6 }, preview: { flex: 1 }, categorySlot: { height: 24 }, updatedAt: { height: 16 },

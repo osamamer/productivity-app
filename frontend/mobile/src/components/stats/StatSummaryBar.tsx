@@ -72,7 +72,7 @@ export function StatSummaryBar({ definition, dateRange, refreshKey }: Props) {
     return () => { active = false; };
   }, [dataKey, definition.id, period.from, period.to, refreshKey]);
 
-  if (!data || data.key !== dataKey || (definition.type !== 'TIME' && definition.type !== 'DURATION')) return null;
+  if (!data || data.key !== dataKey) return null;
 
   if (definition.type === 'TIME') {
     const values = timePeriodValues(data.entries, definition);
@@ -85,11 +85,33 @@ export function StatSummaryBar({ definition, dateRange, refreshKey }: Props) {
     );
   }
 
+  if (definition.type === 'DURATION') {
+    return (
+      <View style={styles.row}>
+        <SummaryTile label="Highest" value={data.summary.periodHighest != null ? formatDurationValue(data.summary.periodHighest) : '—'} />
+        <SummaryTile label="Average" value={data.summary.periodAverage != null ? formatDurationValue(data.summary.periodAverage) : '—'} />
+        <SummaryTile label="Total" value={data.summary.periodTotal != null ? formatDurationValue(data.summary.periodTotal) : '—'} />
+      </View>
+    );
+  }
+
+  const recordedEntries = data.entries.filter(entry => entry.status !== 'NOT_PLANNED');
+  if (definition.type === 'BOOLEAN') {
+    const yesCount = data.summary.periodYesCount ?? recordedEntries.filter(entry => entry.value === 1).length;
+    return (
+      <View style={styles.row}>
+        <SummaryTile label="Yes days" value={String(yesCount)} />
+        <SummaryTile label="Current streak" value={`${data.summary.booleanStreak ?? 0} days`} />
+        <SummaryTile label="Recorded" value={String(recordedEntries.length)} />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.row}>
-      <SummaryTile label="Highest" value={data.summary.periodHighest != null ? formatDurationValue(data.summary.periodHighest) : '—'} />
-      <SummaryTile label="Average" value={data.summary.periodAverage != null ? formatDurationValue(data.summary.periodAverage) : '—'} />
-      <SummaryTile label="Total" value={data.summary.periodTotal != null ? formatDurationValue(data.summary.periodTotal) : '—'} />
+      <SummaryTile label="Average" value={data.summary.periodAverage != null ? String(Number(data.summary.periodAverage.toFixed(2))) : '—'} />
+      <SummaryTile label="Highest" value={data.summary.periodHighest != null ? String(Number(data.summary.periodHighest.toFixed(2))) : '—'} />
+      <SummaryTile label="Recorded" value={String(recordedEntries.length)} />
     </View>
   );
 }

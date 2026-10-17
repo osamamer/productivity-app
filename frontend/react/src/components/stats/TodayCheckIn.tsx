@@ -126,11 +126,6 @@ export function TodayCheckIn({ definitions, onSaved }: Props) {
                     <Box key={def.id}>
                         {i > 0 && <Divider sx={{ mb: 3 }} />}
                         <Typography variant="subtitle2" sx={{ mb: 0.5 }}>{def.name}</Typography>
-                        {def.description && (
-                            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
-                                {def.description}
-                            </Typography>
-                        )}
                             {def.type === 'BOOLEAN' && (
                                 <ToggleButtonGroup
                                     value={statuses[def.id] === 'NOT_PLANNED'

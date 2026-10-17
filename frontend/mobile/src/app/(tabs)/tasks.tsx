@@ -416,7 +416,7 @@ export default function TasksScreen() {
               label="Add"
               icon="add"
               onPress={() => setComposerOpen(true)}
-              style={styles.addTaskButton} />
+              style={[styles.addTaskButton, { backgroundColor: colors.surface }]} />
           )}
           <TaskSelectionActionsPopup
             visible={selectedTaskIds.length > 1 || selectedGroupIds.length > 0}
@@ -468,6 +468,7 @@ export default function TasksScreen() {
               completedCount={tasks.filter(task => task.completed).length}
               expanded={expandedSections[section]}
               onToggle={() => toggleSection(section)}
+              collapsible={filter === 'all'}
               emptyMessage={section === 'comingUp' ? 'No upcoming tasks' : 'No older tasks'}
               showMore={hasMore ? {
                 label: section === 'comingUp' ? `Show next ${TASK_PAGE_BATCH_SIZE} upcoming tasks` : `Show next ${TASK_PAGE_BATCH_SIZE} older tasks`,

@@ -20,7 +20,7 @@ export function FeatureLinkCard({ title, description, icon, href }: {
       <View style={styles.icon}><Ionicons name={icon} size={24} color={colors.accent} /></View>
       <View style={styles.copy}>
         <AppText variant="heading">{title}</AppText>
-        <AppText color="muted">{description}</AppText>
+        <AppText color="muted" numberOfLines={2}>{description}</AppText>
       </View>
       <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
     </SilentPressable>
@@ -28,7 +28,7 @@ export function FeatureLinkCard({ title, description, icon, href }: {
 }
 
 const styles = StyleSheet.create({
-  card: { minHeight: 104, padding: 16, borderWidth: 1, borderRadius: 20, flexDirection: 'row', alignItems: 'center', gap: 14 },
+  card: { height: 104, padding: 16, borderWidth: 1, borderRadius: 20, flexDirection: 'row', alignItems: 'center', gap: 14 },
   icon: { width: 50, height: 50, alignItems: 'center', justifyContent: 'center' },
   copy: { flex: 1, gap: 3 },
 });

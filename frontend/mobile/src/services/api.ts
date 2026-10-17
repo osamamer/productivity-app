@@ -268,9 +268,9 @@ export const api = {
       invalidateResource('stats');
       return entry;
     },
-    create: (input: Pick<StatDefinition, 'name' | 'description' | 'type' | 'minValue' | 'maxValue'> & { morality?: StatMorality | null; goodThreshold?: number | null }) =>
+    create: (input: Pick<StatDefinition, 'name' | 'type' | 'minValue' | 'maxValue'> & { morality?: StatMorality | null; goodThreshold?: number | null }) =>
       json<StatDefinition>('/api/v1/stats/definitions', 'POST', input),
-    update: (id: string, input: Pick<StatDefinition, 'name' | 'description' | 'morality' | 'goodThreshold'>) =>
+    update: (id: string, input: Pick<StatDefinition, 'name' | 'morality' | 'goodThreshold'>) =>
       json<StatDefinition>(`/api/v1/stats/definitions/${id}`, 'PUT', input),
     summary: (id: string, from: string, to: string) =>
       apiRequest<StatSummary>(`/api/v1/stats/definitions/${id}/summary?from=${from}&to=${to}`),

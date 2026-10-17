@@ -188,8 +188,6 @@ export const StatCard = React.memo(function StatCard({
                 ) : undefined}
                 title={definition.name}
                 titleTypographyProps={{ variant: 'subtitle1', fontWeight: 600 }}
-                subheader={definition.description}
-                subheaderTypographyProps={{ variant: 'caption' }}
                 sx={{ pb: 0, minHeight: 72 }}
             />
             <CardContent>

@@ -14,6 +14,7 @@ interface Props {
   completedCount: number;
   expanded: boolean;
   onToggle: () => void;
+  collapsible?: boolean;
   emptyMessage: string;
   children: ReactNode;
   showMore?: {
@@ -29,6 +30,7 @@ export function TaskSection({
   completedCount,
   expanded,
   onToggle,
+  collapsible = true,
   emptyMessage,
   children,
   showMore,
@@ -41,19 +43,21 @@ export function TaskSection({
 
   return (
     <View style={styles.section}>
-      <SilentPressable
-        accessibilityRole="button"
-        accessibilityLabel={`${expanded ? 'Collapse' : 'Expand'} ${title}`}
-        accessibilityState={{ expanded }}
-        onPress={toggle}
-        style={({ pressed }) => [styles.header, { borderBottomColor: colors.border }, pressed && styles.pressed]}>
-        <GroupChevron collapsed={!expanded} color={colors.accent} />
-        <AppText variant="heading" style={styles.title}>{title}</AppText>
-        <AppText variant="caption" color="muted">{count}</AppText>
-        {count > 0 && <AppText variant="caption" color="muted" style={styles.completed}>{completedCount}/{count} done</AppText>}
-      </SilentPressable>
+      {collapsible && (
+        <SilentPressable
+          accessibilityRole="button"
+          accessibilityLabel={`${expanded ? 'Collapse' : 'Expand'} ${title}`}
+          accessibilityState={{ expanded }}
+          onPress={toggle}
+          style={({ pressed }) => [styles.header, { borderBottomColor: colors.border }, pressed && styles.pressed]}>
+          <GroupChevron collapsed={!expanded} color={colors.accent} />
+          <AppText variant="heading" style={styles.title}>{title}</AppText>
+          <AppText variant="caption" color="muted">{count}</AppText>
+          {count > 0 && <AppText variant="caption" color="muted" style={styles.completed}>{completedCount}/{count} done</AppText>}
+        </SilentPressable>
+      )}
 
-      {expanded && (
+      {(!collapsible || expanded) && (
         <View style={styles.body}>
           {count > 0 ? children : <AppText color="muted" style={styles.empty}>{emptyMessage}</AppText>}
           {showMore && (

@@ -17,7 +17,6 @@ export type StatRecurringTaskDraft = {
 export interface StatDefinition {
     id: string;
     name: string;
-    description?: string;
     type: StatType;
     morality?: StatMorality | null;
     minValue?: number;
@@ -48,7 +47,6 @@ export interface StatFocusTimeEntry {
 
 export interface CreateDefinitionRequest {
     name: string;
-    description?: string;
     type: StatType;
     minValue?: number;
     maxValue?: number;
@@ -63,7 +61,6 @@ export interface CreateDefinitionRequest {
 
 export interface UpdateDefinitionRequest {
     name: string;
-    description?: string;
     morality?: StatMorality;
     goodThreshold?: number;
 }

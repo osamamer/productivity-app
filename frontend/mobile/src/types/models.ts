@@ -185,7 +185,6 @@ export type StatEntryStatus = 'RECORDED' | 'NOT_PLANNED';
 export interface StatDefinition {
   id: string;
   name: string;
-  description?: string;
   type: StatType;
   morality?: StatMorality | null;
   minValue?: number;

@@ -730,14 +730,15 @@ export default function TodayScreen() {
           <View style={styles.spaceBetween}>
             <AppText variant="heading">Today’s tasks</AppText>
             <View style={styles.taskActions}>
-              <AppButton
-                compact
-                label="Group"
-                icon="folder-open-outline"
-                variant="secondary"
-                disabled={groupableTodayTasks.length < 2}
-                onPress={openCreateGroup}
-              />
+              {groupableTodayTasks.length > 1 && (
+                <AppButton
+                  compact
+                  label="Group"
+                  icon="folder-open-outline"
+                  variant="secondary"
+                  onPress={openCreateGroup}
+                />
+              )}
               <AppButton compact label="Add" icon="add" onPress={() => setComposerOpen(true)} />
             </View>
           </View>

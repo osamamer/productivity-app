@@ -47,6 +47,7 @@ function Navigation() {
       <Stack
         screenOptions={{
           headerShown: false,
+          orientation: 'portrait',
           contentStyle: { backgroundColor: colors.background },
         }}>
         <Stack.Screen name="index" options={{ headerShown: false }} />
@@ -63,6 +64,7 @@ function Navigation() {
           <Stack.Screen name="notes" />
           <Stack.Screen name="notes/[id]" options={{ headerShown: false }} />
           <Stack.Screen name="stats" />
+          <Stack.Screen name="stats/[id]" options={{ orientation: 'landscape', headerShown: false }} />
           <Stack.Screen name="settings" />
         </Stack.Protected>
       </Stack>

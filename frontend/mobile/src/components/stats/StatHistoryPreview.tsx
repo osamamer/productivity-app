@@ -1,5 +1,6 @@
+import { Ionicons } from '@expo/vector-icons';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { formatShortDate, formatWeekday, localDate } from '@/lib/date';
 import { useAppTheme } from '@/providers/ThemeProvider';
@@ -33,6 +34,14 @@ const DURATION_TICK_STEPS = [15, 30, 60, 120, 180, 240, 360, 480, 720, 960, 1440
 const THRESHOLD_COLOR_TRANSITION = 0.75;
 const SLEEP_GREEN_BAND_MINUTES = 60;
 const SLEEP_BAD_COLOR_RANGE_MINUTES = 3 * 60;
+const MATURE_GOOD = { light: '#376A4F', dark: '#578469' };
+const MATURE_BAD = { light: '#9B4443', dark: '#B76561' };
+
+function booleanColors(definition: StatDefinition, dark: boolean): { yes: string; no: string } {
+  const good = dark ? MATURE_GOOD.dark : MATURE_GOOD.light;
+  const bad = dark ? MATURE_BAD.dark : MATURE_BAD.light;
+  return definition.morality === 'BAD' ? { yes: bad, no: good } : { yes: good, no: bad };
+}
 
 function isSleepStat(definition: StatDefinition): boolean {
   return definition.systemKey === 'sleep_hours'
@@ -64,8 +73,16 @@ function sleepColorHue(definition: StatDefinition, value: number): number {
 }
 
 type NumericDomain = [number, number];
-interface ChartPoint { x: number; y: number; value: number; date?: string; }
-type DatedChartPoint = ChartPoint & { date: string };
+interface ChartPoint { x: number; y: number; value: number; }
+type DatedChartPoint = ChartPoint & { date: string; from: string; to: string; sampleCount: number };
+
+export interface StatHistoryPoint {
+  from: string;
+  to: string;
+  value?: number;
+  sampleCount: number;
+  status?: StatEntryStatus;
+}
 
 function calendarWeeks(dates: string[]): (string | null)[][] {
   if (dates.length === 0) return [];
@@ -91,46 +108,31 @@ function datesForLastDays(days: number): string[] {
   });
 }
 
-interface BooleanHeatmapBucket {
-  from: string;
-  to: string;
-  average: number | null;
-  notPlannedOnly: boolean;
-}
-
-function weeklyBooleanAverages(
-  dates: string[],
-  entriesByDate: Map<string, number>,
-  statusesByDate: Map<string, StatEntryStatus>,
-): BooleanHeatmapBucket[] {
-  const buckets: BooleanHeatmapBucket[] = [];
-  for (let index = 0; index < dates.length; index += 7) {
-    const bucketDates = dates.slice(index, index + 7);
-    const values = bucketDates
-      .filter(date => statusesByDate.get(date) !== 'NOT_PLANNED')
-      .map(date => entriesByDate.get(date))
-      .filter((value): value is number => value !== undefined);
-    buckets.push({
-      from: bucketDates[0],
-      to: bucketDates[bucketDates.length - 1],
-      average: values.length > 0
-        ? values.reduce((total, value) => total + value, 0) / values.length
-        : null,
-      notPlannedOnly: values.length === 0
-        && bucketDates.some(date => statusesByDate.get(date) === 'NOT_PLANNED'),
-    });
+function datesBetween(from: string, to: string): string[] {
+  const date = new Date(`${from}T12:00:00`);
+  const lastDate = new Date(`${to}T12:00:00`);
+  const dates: string[] = [];
+  while (date <= lastDate) {
+    dates.push(localDate(date));
+    date.setDate(date.getDate() + 1);
   }
-  return buckets;
+  return dates;
 }
 
-function accentHeatmapColor(accent: string, average: number | null, dark: boolean): string {
-  if (average == null) return dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)';
-  const hex = Math.round((0.12 + average * 0.88) * 255).toString(16).padStart(2, '0');
-  return `${accent}${hex}`;
+function monthLabelsForWeeks(weeks: (string | null)[][]): string[] {
+  let previousMonth = '';
+  return weeks.map(week => {
+    const monthDate = week.find(date => date && date.slice(0, 7) !== previousMonth);
+    if (!monthDate) return '';
+    previousMonth = monthDate.slice(0, 7);
+    return new Intl.DateTimeFormat(undefined, { month: 'short' }).format(new Date(`${monthDate}T12:00:00`));
+  });
 }
 
-function chartBuckets(dates: string[], dateRange: number): string[][] {
+function chartBuckets(dates: string[], dateRange: number, showEveryDay: boolean): string[][] {
   if (dateRange <= 7) return dates.map(date => [date]);
+
+  if (showEveryDay && dateRange <= 31) return dates.map(date => [date]);
 
   if (dateRange <= 30) {
     const buckets: string[][] = [];
@@ -276,10 +278,8 @@ function getCircleColor(
   // particular, a BAD stat such as cigarettes should make Yes red and No
   // green instead of flowing through the numeric threshold palette.
   if (definition.type === 'BOOLEAN') {
-    const morality = effectiveMorality(definition);
-    if (morality === 'NEUTRAL') return value === 1 ? colors.accent : colors.secondary;
-    if (morality === 'GOOD') return value === 1 ? colors.success : colors.danger;
-    return value === 1 ? colors.danger : colors.success;
+    const { yes, no } = booleanColors(definition, dark);
+    return value === 1 ? yes : no;
   }
 
   const thresholdColor = thresholdCircleColor(
@@ -376,18 +376,117 @@ function TimeOfDayHistory({
   dates,
   entriesByDate,
   dateRange,
+  detailMode,
+  detailHeight,
+  seriesColor,
   colors,
+  onPointSelected,
 }: {
   definition: StatDefinition;
   dates: string[];
   entriesByDate: Map<string, number>;
   dateRange: number;
+  detailMode: boolean;
+  detailHeight: number;
+  seriesColor: string;
   colors: ReturnType<typeof useAppTheme>['colors'];
+  onPointSelected?: (point: StatHistoryPoint) => void;
 }) {
   const [plotWidth, setPlotWidth] = useState(0);
-  const plotHeight = dates.length * 28;
+  const rowHeight = detailMode ? Math.min(42, Math.max(24, Math.floor(detailHeight / dates.length))) : 28;
+  const plotHeight = dates.length * rowHeight;
   const scaleMaximum = timeDisplayScaleMaximum(definition);
   const timeTicks = timeDisplayScaleTicks(definition);
+
+  if (detailMode && dateRange > 7 && dateRange <= 31) {
+    const observations = dates.flatMap((date, index) => {
+      const value = entriesByDate.get(date);
+      if (value === undefined) return [];
+      return [{ date, value, index }];
+    });
+    const scatterPoints = observations.map(({ value, index }) => ({
+      value,
+      x: PLOT_HORIZONTAL_INSET + (index / Math.max(1, dates.length - 1)) * Math.max(0, plotWidth - PLOT_HORIZONTAL_INSET * 2),
+      y: PLOT_VERTICAL_INSET + (1 - timeValueToDisplayScale(definition, value) / scaleMaximum) * (detailHeight - PLOT_VERTICAL_INSET * 2),
+    }));
+    const scatterSegments = curvedSegments(scatterPoints, detailHeight);
+    return (
+      <View style={styles.timeHistory} accessibilityLabel={`${definition.name} daily time values`}>
+        <View style={styles.timeScatterChart}>
+          <View style={[styles.timeScatterAxis, { height: detailHeight }]}>
+            {timeTicks.map(tick => (
+              <AppText
+                key={tick}
+                variant="caption"
+                color="muted"
+                style={[styles.timeScatterAxisLabel, { top: `${100 - tick / scaleMaximum * 100}%` }]}
+              >
+                {timeAxisLabel(definition, tick)}
+              </AppText>
+            ))}
+          </View>
+          <Pressable
+            pointerEvents="box-only"
+            accessibilityRole="button"
+            accessibilityLabel={`${definition.name} values by day. Tap to select a date.`}
+            onLayout={event => setPlotWidth(event.nativeEvent.layout.width)}
+            onPress={event => {
+              if (plotWidth <= 0 || dates.length === 0) return;
+              const position = Math.max(0, Math.min(1, (event.nativeEvent.locationX - PLOT_HORIZONTAL_INSET) / Math.max(1, plotWidth - PLOT_HORIZONTAL_INSET * 2)));
+              const date = dates[Math.round(position * (dates.length - 1))];
+              const value = entriesByDate.get(date);
+              onPointSelected?.({ from: date, to: date, value, sampleCount: value === undefined ? 0 : 1 });
+            }}
+            style={[styles.timeScatterPlot, { height: detailHeight }]}
+          >
+            {timeTicks.map(tick => (
+              <View
+                key={tick}
+                style={[styles.timeScatterGridLine, { top: `${100 - tick / scaleMaximum * 100}%`, backgroundColor: colors.border }]}
+              />
+            ))}
+            {dates.filter((_, index) => index % 5 === 0).map(date => {
+              const index = dates.indexOf(date);
+              const left = PLOT_HORIZONTAL_INSET + (index / Math.max(1, dates.length - 1)) * Math.max(0, plotWidth - PLOT_HORIZONTAL_INSET * 2);
+              return <View key={date} style={[styles.timeScatterDateGrid, { left, backgroundColor: colors.border }]} />;
+            })}
+            {scatterSegments.map((segment, index) => {
+              const width = Math.hypot(segment.end.x - segment.start.x, segment.end.y - segment.start.y);
+              const angle = Math.atan2(segment.end.y - segment.start.y, segment.end.x - segment.start.x) * (180 / Math.PI);
+              return (
+                <View
+                  key={`time-segment-${index}`}
+                  pointerEvents="none"
+                  style={[styles.timeScatterLineSegment, {
+                    width,
+                    left: (segment.start.x + segment.end.x) / 2 - width / 2,
+                    top: (segment.start.y + segment.end.y) / 2 - 1,
+                    backgroundColor: seriesColor,
+                    transform: [{ rotate: `${angle}deg` }],
+                  }]}
+                />
+              );
+            })}
+            {observations.map(({ date, value, index }) => {
+              const x = PLOT_HORIZONTAL_INSET + (index / Math.max(1, dates.length - 1)) * Math.max(0, plotWidth - PLOT_HORIZONTAL_INSET * 2);
+              const y = PLOT_VERTICAL_INSET + (1 - timeValueToDisplayScale(definition, value) / scaleMaximum) * (detailHeight - PLOT_VERTICAL_INSET * 2);
+              return (
+                <View
+                  key={date}
+                  pointerEvents="none"
+                  style={[styles.timeScatterPoint, { left: x - 4, top: y - 4, backgroundColor: seriesColor }]}
+                />
+              );
+            })}
+          </Pressable>
+        </View>
+        <View style={styles.timeScatterDateLabels}>
+          <AppText variant="caption" color="muted">{formatShortDate(dates[0])}</AppText>
+          <AppText variant="caption" color="muted">{formatShortDate(dates[dates.length - 1])}</AppText>
+        </View>
+      </View>
+    );
+  }
 
   if (dateRange <= 7) {
     const timingPoints = dates.map((date, index) => {
@@ -396,8 +495,10 @@ function TimeOfDayHistory({
       return {
         date,
         value,
+        from: date,
+        to: date,
         x: 7 + (timePosition(definition, value) / 100) * Math.max(0, plotWidth - 14),
-        y: index * 28 + 14,
+        y: index * rowHeight + rowHeight / 2,
       };
     });
     return (
@@ -416,7 +517,7 @@ function TimeOfDayHistory({
         <View style={styles.timePlotRow}>
           <View style={[styles.timeLabelsColumn, { height: plotHeight }]}>
             {dates.map(date => (
-              <View key={date} style={styles.timePlotLabelRow}>
+              <View key={date} style={[styles.timePlotLabelRow, { height: rowHeight }]}>
                 <AppText variant="caption" color="muted" style={styles.timeDateLabel}>{formatWeekday(date)}</AppText>
               </View>
             ))}
@@ -429,24 +530,25 @@ function TimeOfDayHistory({
               <View key={tick} style={[styles.timeVerticalGrid, { left: `${tick / scaleMaximum * 100}%`, backgroundColor: colors.border }]} />
             ))}
             {dates.slice(1).map((date, index) => (
-              <View key={date} style={[styles.timeHorizontalGrid, { top: (index + 1) * 28, backgroundColor: colors.border }]} />
+              <View key={date} style={[styles.timeHorizontalGrid, { top: (index + 1) * rowHeight, backgroundColor: colors.border }]} />
             ))}
             {timingPoints.map(point => point && (
-              <View
+              <Pressable
                 key={point.date}
-                style={[styles.timeTrendDot, {
-                  left: point.x - 4,
-                  top: point.y - 4,
-                  backgroundColor: colors.accent,
-                }]}
-              />
+                accessibilityRole="button"
+                accessibilityLabel={`${point.date}: ${formatTimeValue(point.value)}`}
+                onPress={() => onPointSelected?.({ from: point.date, to: point.date, value: point.value, sampleCount: 1 })}
+                style={({ pressed }) => [styles.timePointHitbox, { left: point.x - 20, top: point.y - 20 }, pressed && styles.pointPressed]}
+              >
+                <View style={[styles.timeTrendDot, { backgroundColor: seriesColor }]} />
+              </Pressable>
             ))}
           </View>
           <View style={[styles.timeLabelsColumn, styles.timeValueColumn, { height: plotHeight }]}>
             {dates.map(date => {
               const value = entriesByDate.get(date);
               return (
-                <View key={date} style={styles.timePlotLabelRow} accessible accessibilityLabel={`${date}: ${value === undefined ? 'No entry' : formatTimeValue(value)}`}>
+                <View key={date} style={[styles.timePlotLabelRow, { height: rowHeight }]} accessible accessibilityLabel={`${date}: ${value === undefined ? 'No entry' : formatTimeValue(value)}`}>
                   <AppText variant="caption" style={[styles.timeValueLabel, { color: value === undefined ? colors.textMuted : colors.text }]}>
                     {value === undefined ? '—' : formatTimeValue(value)}
                   </AppText>
@@ -460,22 +562,49 @@ function TimeOfDayHistory({
   }
 
   const values = dates.map(date => entriesByDate.get(date)).filter((value): value is number => value !== undefined);
+  const observations = dates.flatMap(date => {
+    const value = entriesByDate.get(date);
+    return value === undefined ? [] : [{ date, value }];
+  });
   const density = timeDensity(definition, values);
   const maximumDensity = Math.max(0.0001, ...density);
+  const densityPlotHeight = detailMode ? Math.min(190, Math.max(100, Math.floor(detailHeight * 0.72))) : DENSITY_PLOT_HEIGHT;
   const densityPoints = density.map((sample, index) => ({
     x: density.length === 1
       ? plotWidth / 2
       : DENSITY_VERTICAL_INSET + (index / (density.length - 1)) * Math.max(0, plotWidth - DENSITY_VERTICAL_INSET * 2),
-    y: DENSITY_VERTICAL_INSET + (1 - sample / maximumDensity) * (DENSITY_PLOT_HEIGHT - DENSITY_VERTICAL_INSET * 2),
+    y: DENSITY_VERTICAL_INSET + (1 - sample / maximumDensity) * (densityPlotHeight - DENSITY_VERTICAL_INSET * 2),
     value: sample,
   }));
-  const densitySegments = curvedSegments(densityPoints, DENSITY_PLOT_HEIGHT, DENSITY_VERTICAL_INSET);
+  const densitySegments = curvedSegments(densityPoints, densityPlotHeight, DENSITY_VERTICAL_INSET);
   return (
-    <View style={styles.timeHistory} accessibilityLabel={`${definition.name} time of day density`}>
+    <View
+      pointerEvents={detailMode && dateRange > 31 ? 'none' : 'auto'}
+      style={styles.timeHistory}
+      accessibilityLabel={`${definition.name} time of day density`}
+    >
       <AppText variant="caption" color="muted" style={styles.densityCount}>
         {values.length} {values.length === 1 ? 'entry' : 'entries'}
       </AppText>
-      <View onLayout={event => setPlotWidth(event.nativeEvent.layout.width)} style={[styles.densityPlot, { borderBottomColor: colors.border }]}>
+      <View
+        accessibilityLabel={detailMode && dateRange > 31
+          ? `${definition.name} time distribution.`
+          : `${definition.name} time distribution. Tap the chart to inspect the nearest recorded value.`}
+        pointerEvents={detailMode && dateRange > 31 ? 'none' : 'auto'}
+        onLayout={event => setPlotWidth(event.nativeEvent.layout.width)}
+        onTouchEnd={event => {
+          if (plotWidth <= 0 || observations.length === 0) return;
+          const targetScale = event.nativeEvent.locationX / plotWidth * scaleMaximum;
+          const nearest = observations.reduce((current, candidate) => (
+            Math.abs(timeValueToDisplayScale(definition, candidate.value) - targetScale)
+              < Math.abs(timeValueToDisplayScale(definition, current.value) - targetScale)
+              ? candidate
+              : current
+          ));
+          onPointSelected?.({ from: nearest.date, to: nearest.date, value: nearest.value, sampleCount: 1 });
+        }}
+        style={[styles.densityPlot, { height: densityPlotHeight, borderBottomColor: colors.border }]}
+      >
         {densitySegments.map((segment, index) => {
           const width = Math.hypot(segment.end.x - segment.start.x, segment.end.y - segment.start.y);
           const angle = Math.atan2(segment.end.y - segment.start.y, segment.end.x - segment.start.x) * (180 / Math.PI);
@@ -486,7 +615,7 @@ function TimeOfDayHistory({
                 width,
                 left: (segment.start.x + segment.end.x) / 2 - width / 2,
                 top: (segment.start.y + segment.end.y) / 2 - 1,
-                backgroundColor: colors.accent,
+                backgroundColor: seriesColor,
                 transform: [{ rotate: `${angle}deg` }],
               }]}
             />
@@ -507,20 +636,33 @@ function DurationLineHistory({
   entriesByDate,
   buckets,
   dateRange,
+  plotHeight,
+  weekPlotHeight,
+  seriesColor,
+  targetColor,
   colors,
+  onPointSelected,
 }: {
   definition: StatDefinition;
   entriesByDate: Map<string, number>;
   buckets: string[][];
   dateRange: number;
+  plotHeight: number;
+  weekPlotHeight: number;
+  seriesColor: string;
+  targetColor: string;
   colors: ReturnType<typeof useAppTheme>['colors'];
+  onPointSelected?: (point: StatHistoryPoint) => void;
 }) {
   const [plotWidth, setPlotWidth] = useState(0);
   const bars = buckets.map(bucket => {
     const values = bucket.map(date => entriesByDate.get(date)).filter((value): value is number => value !== undefined);
     return {
       date: bucket[0],
+      from: bucket[0],
+      to: bucket[bucket.length - 1],
       value: values.length > 0 ? values.reduce((total, value) => total + value, 0) / values.length : undefined,
+      sampleCount: values.length,
     };
   });
   const recordedValues = bars.map(bar => bar.value).filter((value): value is number => value !== undefined);
@@ -531,48 +673,79 @@ function DurationLineHistory({
   const isWeekView = dateRange <= 7;
   const trendPoints = bars.map((bar, index) => bar.value === undefined ? undefined : ({
     date: bar.date,
+    from: bar.from,
+    to: bar.to,
+    sampleCount: bar.sampleCount,
     value: bar.value,
     x: bars.length === 1
       ? plotWidth / 2
       : PLOT_HORIZONTAL_INSET + (index / (bars.length - 1)) * Math.max(0, plotWidth - PLOT_HORIZONTAL_INSET * 2),
-    y: PLOT_VERTICAL_INSET + (1 - Math.max(0, Math.min(1, bar.value / maximum))) * (PLOT_HEIGHT - PLOT_VERTICAL_INSET * 2),
+    y: PLOT_VERTICAL_INSET + (1 - Math.max(0, Math.min(1, bar.value / maximum))) * (plotHeight - PLOT_VERTICAL_INSET * 2),
   }));
   const recordedTrendPoints = trendPoints.filter((point): point is DatedChartPoint => point !== undefined);
-  const trendSegments = curvedSegments(recordedTrendPoints);
+  const trendSegments = curvedSegments(recordedTrendPoints, plotHeight);
 
   return (
-    <View style={styles.durationHistory} accessibilityLabel={`${definition.name} duration trend`}>
-      <View style={isWeekView ? styles.durationWeekChart : styles.durationChart}>
-        <View style={styles.durationAxis}>
+    <View
+      pointerEvents={dateRange > 31 ? 'none' : 'auto'}
+      style={styles.durationHistory}
+      accessibilityLabel={`${definition.name} duration trend`}
+    >
+      <View style={[isWeekView ? styles.durationWeekChart : styles.durationChart, { height: isWeekView ? weekPlotHeight : plotHeight }]}>
+        <View style={[styles.durationAxis, { height: plotHeight }]}>
           {gridValues.map(value => <AppText key={value} variant="caption" color="muted" numberOfLines={1}>{formatDurationAxisValue(value)}</AppText>)}
         </View>
         {isWeekView ? (
-          <View style={styles.durationBarPlot}>
-            <View style={styles.durationBarArea}>
+          <View style={[styles.durationBarPlot, { height: weekPlotHeight }]}>
+            <View style={[styles.durationBarArea, { height: plotHeight }]}>
               {axis.ticks.map(value => <View key={value} style={[styles.gridLine, { top: `${100 - value / maximum * 100}%`, backgroundColor: colors.border }]} />)}
-              {target !== undefined && <View style={[styles.targetLine, { bottom: `${target / maximum * 100}%`, borderTopColor: colors.success }]} />}
+              {target !== undefined && <View style={[styles.targetLine, { bottom: `${target / maximum * 100}%`, borderTopColor: targetColor }]} />}
               <View style={styles.durationBars}>
                 {bars.map(bar => (
-                  <View
+                  <Pressable
                     key={bar.date}
+                    disabled={bar.value === undefined}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${bar.from} – ${bar.to}: ${bar.value === undefined ? 'No entry' : formatDurationValue(bar.value)}`}
+                    onPress={() => bar.value !== undefined && onPointSelected?.({ from: bar.from, to: bar.to, value: bar.value, sampleCount: bar.sampleCount })}
                     style={styles.durationBarColumn}
-                    accessible
-                    accessibilityLabel={`${bar.date}: ${bar.value === undefined ? 'No entry' : formatDurationValue(bar.value)}`}>
+                  >
                     {bar.value !== undefined && (
-                      <View style={[styles.durationBar, { height: `${Math.max(3, bar.value / maximum * 100)}%`, backgroundColor: colors.accent }]} />
+                      <View style={[styles.durationBar, { height: `${Math.max(3, bar.value / maximum * 100)}%`, backgroundColor: seriesColor }]} />
                     )}
-                  </View>
+                  </Pressable>
                 ))}
               </View>
             </View>
-            <View style={styles.durationBarLabels}>
+            <View style={[styles.durationBarLabels, { top: plotHeight + 2 }]}>
               {bars.map(bar => <AppText key={bar.date} variant="caption" color="muted" style={styles.durationBarLabel}>{formatWeekday(bar.date)}</AppText>)}
             </View>
           </View>
         ) : (
-          <View onLayout={event => setPlotWidth(event.nativeEvent.layout.width)} style={styles.durationPlot}>
+          <Pressable
+            pointerEvents="box-only"
+            accessibilityRole="button"
+            accessibilityLabel={`${definition.name} duration history`}
+            onLayout={event => setPlotWidth(event.nativeEvent.layout.width)}
+            onPress={event => {
+              if (plotWidth <= 0 || bars.length === 0) return;
+              const x = event.nativeEvent.locationX;
+              if (buckets.every(bucket => bucket.length === 1)) {
+                const position = Math.max(0, Math.min(1, (x - PLOT_HORIZONTAL_INSET) / Math.max(1, plotWidth - PLOT_HORIZONTAL_INSET * 2)));
+                const bar = bars[Math.round(position * (bars.length - 1))];
+                onPointSelected?.({ from: bar.from, to: bar.to, value: bar.value, sampleCount: bar.sampleCount });
+                return;
+              }
+              if (recordedTrendPoints.length === 0) return;
+              const nearest = recordedTrendPoints.reduce((current, candidate) => (
+                Math.abs(candidate.x - x) < Math.abs(current.x - x) ? candidate : current
+              ));
+              onPointSelected?.({ from: nearest.from, to: nearest.to, value: nearest.value, sampleCount: nearest.sampleCount });
+            }}
+            style={[styles.durationPlot, { height: plotHeight }]}
+          >
             {axis.ticks.map(value => <View key={value} style={[styles.gridLine, { top: `${100 - value / maximum * 100}%`, backgroundColor: colors.border }]} />)}
-            {target !== undefined && <View style={[styles.targetLine, { bottom: `${target / maximum * 100}%`, borderTopColor: colors.success }]} />}
+            {target !== undefined && <View style={[styles.targetLine, { bottom: `${target / maximum * 100}%`, borderTopColor: targetColor }]} />}
             {trendSegments.map((segment, index) => {
               const width = Math.hypot(segment.end.x - segment.start.x, segment.end.y - segment.start.y);
               const angle = Math.atan2(segment.end.y - segment.start.y, segment.end.x - segment.start.x) * (180 / Math.PI);
@@ -583,7 +756,7 @@ function DurationLineHistory({
                     width,
                     left: (segment.start.x + segment.end.x) / 2 - width / 2,
                     top: (segment.start.y + segment.end.y) / 2 - 1,
-                    backgroundColor: colors.accent,
+                    backgroundColor: seriesColor,
                     transform: [{ rotate: `${angle}deg` }],
                   }]}
                 />
@@ -592,12 +765,11 @@ function DurationLineHistory({
             {recordedTrendPoints.map((point, index) => (
               <View
                 key={`${index}-${point.x}-point`}
-                accessible
-                accessibilityLabel={`${point.date}: ${formatDurationValue(point.value)}`}
-                style={[styles.durationTrendPoint, { left: point.x - 3, top: point.y - 3, backgroundColor: colors.accent }]}
+                pointerEvents="none"
+                style={[styles.durationTrendPointPosition, { left: point.x - 3, top: point.y - 3, backgroundColor: seriesColor }]}
               />
             ))}
-          </View>
+          </Pressable>
         )}
       </View>
       <View style={styles.durationRangeLabels}>
@@ -755,13 +927,21 @@ function NumericWeekBars({
   dates,
   entriesByDate,
   statusesByDate,
+  plotHeight,
+  seriesColor,
+  targetColor,
   colors,
+  onPointSelected,
 }: {
   definition: StatDefinition;
   dates: string[];
   entriesByDate: Map<string, number>;
   statusesByDate: Map<string, StatEntryStatus>;
+  plotHeight: number;
+  seriesColor: string;
+  targetColor: string;
   colors: ReturnType<typeof useAppTheme>['colors'];
+  onPointSelected?: (point: StatHistoryPoint) => void;
 }) {
   const bars = dates.map(date => ({
     date,
@@ -778,29 +958,31 @@ function NumericWeekBars({
   const target = numericTarget(definition);
 
   return (
-    <View style={styles.numericWeekChart} accessibilityLabel={`${definition.name} for the last seven days`}>
-      <View style={styles.numericWeekAxis}>
+    <View style={[styles.numericWeekChart, { height: plotHeight + 18 }]} accessibilityLabel={`${definition.name} for the last seven days`}>
+      <View style={[styles.numericWeekAxis, { height: plotHeight }]}>
         {[...ticks].reverse().map(value => (
           <AppText key={value} variant="caption" color="muted" numberOfLines={1}>
             {formatAxisValue(value, definition)}
           </AppText>
         ))}
       </View>
-      <View style={styles.numericWeekPlot}>
-        <View style={[styles.numericWeekBarArea, { borderBottomColor: colors.border }]}>
+      <View style={[styles.numericWeekPlot, { height: plotHeight + 18 }]}>
+        <View style={[styles.numericWeekBarArea, { height: plotHeight, borderBottomColor: colors.border }]}>
           {ticks.map(value => (
             <View key={value} style={[styles.gridLine, { top: `${100 - valuePosition(value, domain)}%`, backgroundColor: colors.border }]} />
           ))}
           <View style={[styles.gridLine, { top: `${100 - zeroBottom}%`, backgroundColor: colors.border, opacity: 0.9 }]} />
           {target !== undefined && (
-            <View style={[styles.targetLine, { top: `${100 - valuePosition(target, domain)}%`, borderTopColor: colors.success }]} />
+            <View style={[styles.targetLine, { top: `${100 - valuePosition(target, domain)}%`, borderTopColor: targetColor }]} />
           )}
           <View style={styles.numericWeekBars}>
             {bars.map(bar => (
-              <View
+              <Pressable
                 key={bar.date}
+                disabled={bar.value === undefined}
+                accessibilityRole="button"
+                onPress={() => bar.value !== undefined && onPointSelected?.({ from: bar.date, to: bar.date, value: bar.value, sampleCount: 1 })}
                 style={styles.numericWeekBarColumn}
-                accessible
                 accessibilityLabel={`${bar.date}: ${bar.value === undefined ? bar.status === 'NOT_PLANNED' ? 'Not planned' : 'No entry' : formatChartValue(bar.value)}`}>
                 {bar.value !== undefined && (
                   <View
@@ -809,7 +991,7 @@ function NumericWeekBars({
                       {
                         bottom: `${bar.value >= 0 ? zeroBottom : valuePosition(bar.value, domain)}%`,
                         height: `${Math.max(3, Math.abs(bar.value) / chartSpan * 100)}%`,
-                        backgroundColor: colors.accent,
+                        backgroundColor: seriesColor,
                         ...(bar.value >= 0
                           ? { borderTopLeftRadius: 5, borderTopRightRadius: 5 }
                           : { borderBottomLeftRadius: 5, borderBottomRightRadius: 5 }),
@@ -817,11 +999,11 @@ function NumericWeekBars({
                     ]}
                   />
                 )}
-              </View>
+              </Pressable>
             ))}
           </View>
         </View>
-        <View style={styles.numericWeekBarLabels}>
+        <View style={[styles.numericWeekBarLabels, { top: plotHeight + 2 }]}>
           {bars.map(bar => (
             <AppText key={bar.date} variant="caption" color="muted" style={styles.numericWeekBarLabel}>
               {formatWeekday(bar.date)}
@@ -888,15 +1070,26 @@ function curvedSegments(
   return segments;
 }
 
-export function StatHistoryPreview({ definition, todayEntry, dateRange, refreshKey, header }: {
+export function StatHistoryPreview({ definition, todayEntry, dateRange, dateFrom, dateTo, calendarHeatmap = false, refreshKey, header, detailMode = false, detailHeight, onEntriesLoaded, onPointSelected }: {
   definition: StatDefinition;
   todayEntry?: StatEntry;
   dateRange: number;
+  dateFrom?: string;
+  dateTo?: string;
+  calendarHeatmap?: boolean;
   refreshKey: number;
   header?: ReactNode;
+  detailMode?: boolean;
+  detailHeight?: number;
+  onEntriesLoaded?: (entries: StatEntry[]) => void;
+  onPointSelected?: (point: StatHistoryPoint) => void;
 }) {
   const { colors, dark } = useAppTheme();
-  const dates = useMemo(() => datesForLastDays(dateRange), [dateRange]);
+  const seriesColor = dark ? '#A6B8AB' : '#55745F';
+  const targetColor = dark ? MATURE_GOOD.dark : MATURE_GOOD.light;
+  const plotHeight = detailMode ? detailHeight ?? 210 : PLOT_HEIGHT;
+  const weekPlotHeight = detailMode ? plotHeight + 20 : WEEK_BAR_PLOT_HEIGHT;
+  const dates = useMemo(() => dateFrom && dateTo ? datesBetween(dateFrom, dateTo) : datesForLastDays(dateRange), [dateFrom, dateRange, dateTo]);
   const [entries, setEntries] = useState<StatEntry[]>([]);
   const requestKey = `${definition.id}:${dates[0]}:${dates[dates.length - 1]}:${refreshKey}`;
   const [completedRequestKey, setCompletedRequestKey] = useState<string | null>(null);
@@ -938,6 +1131,7 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, refreshK
     dates[dates.length - 1],
     definition.id,
   ), [dates, definition.id, entries, todayEntry]);
+  useEffect(() => onEntriesLoaded?.(visibleEntries), [onEntriesLoaded, visibleEntries]);
   const entriesByDate = useMemo(() => {
     const map = new Map(visibleEntries.map(entry => [entry.date, entry.value]));
     return map;
@@ -947,7 +1141,7 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, refreshK
     return map;
   }, [visibleEntries]);
   const recentDates = dates.slice(-RECENT_DAYS);
-  const buckets = useMemo(() => chartBuckets(dates, dateRange), [dates, dateRange]);
+  const buckets = useMemo(() => chartBuckets(dates, dateRange, detailMode), [dates, dateRange, detailMode]);
   const recordedValues = Array.from(entriesByDate.values());
   const hasHistory = recordedValues.length > 0;
   const domain = chartDomain(definition, recordedValues);
@@ -967,24 +1161,29 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, refreshK
         if (value === undefined || !hasHistory) return undefined;
         const ratio = Math.max(0, Math.min(1, (value - domainMinimum) / chartSpan));
         return {
+          date: bucket[0],
           x: buckets.length === 1
             ? plotWidth / 2
             : PLOT_HORIZONTAL_INSET + (index / (buckets.length - 1)) * Math.max(0, plotWidth - PLOT_HORIZONTAL_INSET * 2),
-          y: PLOT_VERTICAL_INSET + (1 - ratio) * (PLOT_HEIGHT - PLOT_VERTICAL_INSET * 2),
+          y: PLOT_VERTICAL_INSET + (1 - ratio) * (plotHeight - PLOT_VERTICAL_INSET * 2),
           value,
+        from: bucket[0],
+        to: bucket[bucket.length - 1],
+        sampleCount: values.length,
         };
       })
-      .filter((point): point is ChartPoint => point !== undefined);
-  }, [buckets, chartSpan, definition.type, domainMinimum, entriesByDate, hasHistory, plotWidth, statusesByDate]);
-  const chartSegments = useMemo(() => curvedSegments(chartPoints), [chartPoints]);
+      .filter((point): point is DatedChartPoint => point !== undefined);
+  }, [buckets, chartSpan, definition.type, domainMinimum, entriesByDate, hasHistory, plotHeight, plotWidth, statusesByDate]);
+  const chartSegments = useMemo(() => curvedSegments(chartPoints, plotHeight), [chartPoints, plotHeight]);
   const calendar = useMemo(() => calendarWeeks(dates), [dates]);
+  const heatmapMonthLabels = useMemo(() => monthLabelsForWeeks(calendar), [calendar]);
 
   if (definition.type === 'TIME') {
     return (
       <View style={styles.history}>
         <View style={styles.compactHeader}>
           {header && <View style={styles.headerSlot}>{header}</View>}
-          <RecentValueDots definition={definition} dates={recentDates} entriesByDate={entriesByDate} statusesByDate={statusesByDate} colors={colors} dark={dark} />
+          {!detailMode && <RecentValueDots definition={definition} dates={recentDates} entriesByDate={entriesByDate} statusesByDate={statusesByDate} colors={colors} dark={dark} />}
           {loading && <ActivityIndicator size="small" color={colors.accent} />}
         </View>
         <TimeOfDayHistory
@@ -992,7 +1191,11 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, refreshK
           dates={dates}
           entriesByDate={entriesByDate}
           dateRange={dateRange}
+          detailMode={detailMode}
+          detailHeight={plotHeight}
+          seriesColor={seriesColor}
           colors={colors}
+          onPointSelected={onPointSelected}
         />
         {error && <AppText variant="caption" color="danger">History unavailable</AppText>}
         {!error && dateRange > 7 && <AppText variant="caption" color="muted">{formatShortDate(dates[0])} – {formatShortDate(dates[dates.length - 1])}</AppText>}
@@ -1005,7 +1208,7 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, refreshK
       <View style={styles.history}>
         <View style={styles.compactHeader}>
           {header && <View style={styles.headerSlot}>{header}</View>}
-          <RecentValueDots definition={definition} dates={recentDates} entriesByDate={entriesByDate} statusesByDate={statusesByDate} colors={colors} dark={dark} />
+          {!detailMode && <RecentValueDots definition={definition} dates={recentDates} entriesByDate={entriesByDate} statusesByDate={statusesByDate} colors={colors} dark={dark} />}
           {loading && <ActivityIndicator size="small" color={colors.accent} />}
         </View>
         <DurationLineHistory
@@ -1013,7 +1216,12 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, refreshK
           entriesByDate={entriesByDate}
           buckets={buckets}
           dateRange={dateRange}
+          plotHeight={plotHeight}
+          weekPlotHeight={weekPlotHeight}
+          seriesColor={seriesColor}
+          targetColor={targetColor}
           colors={colors}
+          onPointSelected={onPointSelected}
         />
         {error && <AppText variant="caption" color="danger">History unavailable</AppText>}
       </View>
@@ -1023,9 +1231,38 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, refreshK
   if (definition.type === 'BOOLEAN') {
     const yesColor = getCircleColor(definition, 1, colors, dark);
     const noColor = getCircleColor(definition, 0, colors, dark);
-    const isHeatmap = dateRange > 30;
-    const heatmapBuckets = isHeatmap ? weeklyBooleanAverages(dates, entriesByDate, statusesByDate) : [];
-    const notPlannedColor = colors.notPlanned;
+    const isHeatmapGrid = calendarHeatmap || (!dateFrom && dateRange > 30);
+    const notPlannedColor = dark ? '#A38F63' : '#B49B68';
+    const calendarCellHeight = detailMode
+      ? Math.min(42, Math.max(22, Math.floor((plotHeight - 8) / (calendar.length + 1))))
+      : 27;
+    const gridGap = calendar.length > 30 ? 1 : 2;
+    const dayAxisWidth = 27;
+    const heatmapCellMaximum = Math.min(
+      calendar.length <= 16 ? 40 : 24,
+      detailMode ? Math.max(4, Math.floor(plotHeight / 7)) : Number.POSITIVE_INFINITY,
+    );
+    const heatmapCellSize = calendar.length === 0
+      ? 12
+      : Math.max(4, Math.min(heatmapCellMaximum, Math.floor((plotWidth - dayAxisWidth - 8 - gridGap * (calendar.length - 1)) / calendar.length)));
+    const noEntryColor = dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)';
+
+    function selectHeatmapDate(x: number, y: number) {
+      const columnWidth = heatmapCellSize + gridGap;
+      const weekIndex = Math.floor(x / columnWidth);
+      const dayIndex = Math.floor(y / columnWidth);
+      const date = calendar[weekIndex]?.[dayIndex];
+      if (!date) return;
+      const value = entriesByDate.get(date);
+      const status = statusesByDate.get(date) ?? 'RECORDED';
+      onPointSelected?.({
+        from: date,
+        to: date,
+        value,
+        sampleCount: value === undefined || status === 'NOT_PLANNED' ? 0 : 1,
+        status: status === 'NOT_PLANNED' ? status : undefined,
+      });
+    }
 
     return (
       <View style={styles.history}>
@@ -1033,20 +1270,59 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, refreshK
           {header && <View style={styles.headerSlot}>{header}</View>}
           {loading && <ActivityIndicator size="small" color={colors.accent} />}
         </View>
-        {isHeatmap ? (
-          <View
-            style={[styles.heatmapStrip, { height: dateRange <= 90 ? 32 : 24 }]}
-            accessibilityLabel={`${definition.name} weekly heatmap; darker means more yes entries`}
-            onStartShouldSetResponder={() => true}
-          >
-            {heatmapBuckets.map((bucket, index) => (
-              <View
-                key={`${bucket.from}-${index}`}
-                accessible
-                accessibilityLabel={`${bucket.from} – ${bucket.to}: ${bucket.notPlannedOnly ? 'Not planned' : bucket.average == null ? 'No entries' : `${Math.round(bucket.average * 100)}% yes`}`}
-                style={[styles.heatmapBucket, { backgroundColor: bucket.notPlannedOnly ? `${notPlannedColor}99` : accentHeatmapColor(colors.accent, bucket.average, dark) }]}
-              />
-            ))}
+        {isHeatmapGrid ? (
+          <View style={styles.heatmapCalendar} onLayout={event => setPlotWidth(event.nativeEvent.layout.width)}>
+            <View style={[styles.heatmapMonthRow, { transform: [{ translateX: -(dayAxisWidth + 6) / 2 }] }]}>
+              <View style={{ width: dayAxisWidth + 6 }} />
+              <View style={[styles.heatmapMonthLabels, { gap: gridGap }]}>
+                {heatmapMonthLabels.map((label, index) => (
+                  <View key={`${label}-${index}`} style={[styles.heatmapMonthSlot, { width: heatmapCellSize }]}>
+                    {label && <AppText variant="caption" color="muted" numberOfLines={1} style={styles.heatmapMonthLabel}>{label}</AppText>}
+                  </View>
+                ))}
+              </View>
+            </View>
+            <View style={[styles.heatmapGridBody, { transform: [{ translateX: -(dayAxisWidth + 6) / 2 }] }]}>
+              <View style={[styles.heatmapWeekdayLabels, { width: dayAxisWidth, gap: gridGap }]}>
+                {WEEKDAY_LABELS.map((_, dayIndex) => (
+                  <View key={dayIndex} style={{ width: dayAxisWidth, height: heatmapCellSize, justifyContent: 'center' }}>
+                    {[1, 3, 5].includes(dayIndex) && (
+                      <AppText variant="caption" color="muted" style={styles.heatmapWeekdayLabel}>
+                        {['Mon', 'Wed', 'Fri'][(dayIndex - 1) / 2]}
+                      </AppText>
+                    )}
+                  </View>
+                ))}
+              </View>
+              <Pressable
+                pointerEvents="box-only"
+                accessibilityRole="button"
+                accessibilityLabel={`${definition.name} daily history grid. Tap a day to inspect it.`}
+                onPress={event => selectHeatmapDate(event.nativeEvent.locationX, event.nativeEvent.locationY)}
+                style={[styles.heatmapWeeks, { gap: gridGap }]}
+              >
+                {calendar.map((week, weekIndex) => (
+                  <View key={`heatmap-week-${weekIndex}`} style={[styles.heatmapWeekColumn, { width: heatmapCellSize, gap: gridGap }]}>
+                    {week.map((date, dayIndex) => {
+                      const value = date ? entriesByDate.get(date) : undefined;
+                      const status = date ? statusesByDate.get(date) ?? 'RECORDED' : 'RECORDED';
+                      const backgroundColor = !date
+                        ? 'transparent'
+                        : status === 'NOT_PLANNED'
+                          ? notPlannedColor
+                          : getCircleColor(definition, value, colors, dark, status);
+                      return (
+                        <View
+                          key={date ?? `empty-${weekIndex}-${dayIndex}`}
+                          pointerEvents="none"
+                          style={[styles.heatmapGridCell, { width: heatmapCellSize, height: heatmapCellSize, backgroundColor }]}
+                        />
+                      );
+                    })}
+                  </View>
+                ))}
+              </Pressable>
+            </View>
           </View>
         ) : (
           <View style={styles.booleanCalendar} accessibilityLabel={`${definition.name} calendar`}>
@@ -1063,20 +1339,38 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, refreshK
                   {week.map((date, dayIndex) => {
                     const value = date ? entriesByDate.get(date) : undefined;
                     const status = date ? statusesByDate.get(date) ?? 'RECORDED' : 'RECORDED';
+                    const mark = !date ? null
+                      : status === 'NOT_PLANNED' ? 'remove'
+                        : value === undefined ? 'remove'
+                          : value === 1 ? 'checkmark' : 'close';
+                    const markColor = status === 'NOT_PLANNED'
+                      ? dark ? '#282720' : '#403A2D'
+                      : value === undefined ? colors.textMuted : '#F8F7F3';
                     return (
-                      <View
+                      <Pressable
                         key={date ?? `empty-${weekIndex}-${dayIndex}`}
+                        disabled={!date}
+                        accessibilityRole="button"
                         accessible={Boolean(date)}
                         accessibilityLabel={date ? `${date}: ${value === undefined ? 'Not recorded' : status === 'NOT_PLANNED' ? 'Not planned' : value === 1 ? 'Yes' : 'No'}` : undefined}
+                        onPress={() => date && onPointSelected?.({
+                          from: date,
+                          to: date,
+                          value,
+                          sampleCount: value === undefined || status === 'NOT_PLANNED' ? 0 : 1,
+                          status: status === 'NOT_PLANNED' ? status : undefined,
+                        })}
                         style={[
                           styles.calendarCell,
-                          { height: 27 },
+                          { height: calendarCellHeight },
                           date && value === undefined && { backgroundColor: `${colors.border}35` },
                           date && value === 1 && { backgroundColor: yesColor },
                           date && value === 0 && { backgroundColor: noColor },
                           date && status === 'NOT_PLANNED' && { backgroundColor: notPlannedColor },
                         ]}
-                      />
+                      >
+                        {mark && <Ionicons name={mark} size={detailMode ? 17 : 14} color={markColor} />}
+                      </Pressable>
                     );
                   })}
                 </View>
@@ -1085,30 +1379,23 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, refreshK
           </View>
         )}
         <View style={styles.calendarFooter}>
-          {isHeatmap ? (
-            <View style={styles.calendarLegend}>
-              <View style={[styles.legendSwatch, { backgroundColor: accentHeatmapColor(colors.accent, 0, dark) }]} />
-              <AppText variant="caption" color="muted">Less often</AppText>
-              <View style={[styles.legendSwatch, { backgroundColor: colors.accent }]} />
-              <AppText variant="caption" color="muted">More often</AppText>
-            </View>
-          ) : (
-            <View style={styles.calendarLegend}>
-              <View style={[styles.legendSwatch, { backgroundColor: yesColor }]} />
-              <AppText variant="caption" color="muted">Yes</AppText>
-              <View style={[styles.legendSwatch, { backgroundColor: noColor }]} />
-              <AppText variant="caption" color="muted">No</AppText>
-              <View style={[styles.legendSwatch, { backgroundColor: notPlannedColor }]} />
-              <AppText variant="caption" color="muted">Not planned</AppText>
-            </View>
-          )}
+          <View style={styles.calendarLegend}>
+            <View style={[styles.legendSwatch, { backgroundColor: yesColor }]} />
+            <AppText variant="caption" color="muted">Yes</AppText>
+            <View style={[styles.legendSwatch, { backgroundColor: noColor }]} />
+            <AppText variant="caption" color="muted">No</AppText>
+            {isHeatmapGrid && <View style={[styles.legendSwatch, { backgroundColor: noEntryColor }]} />}
+            {isHeatmapGrid && <AppText variant="caption" color="muted">No entry</AppText>}
+            <View style={[styles.legendSwatch, { backgroundColor: notPlannedColor }]} />
+            <AppText variant="caption" color="muted">Not planned</AppText>
+          </View>
           {error ? (
             <AppText variant="caption" color="danger">History unavailable</AppText>
-          ) : (
+          ) : !isHeatmapGrid ? (
             <AppText variant="caption" color="muted">
               {formatShortDate(dates[0])} – {formatShortDate(dates[dates.length - 1])}
             </AppText>
-          )}
+          ) : null}
         </View>
       </View>
     );
@@ -1119,7 +1406,7 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, refreshK
       <View style={styles.history}>
         <View style={styles.compactHeader}>
           {header && <View style={styles.headerSlot}>{header}</View>}
-          <RecentValueDots definition={definition} dates={recentDates} entriesByDate={entriesByDate} statusesByDate={statusesByDate} colors={colors} dark={dark} />
+          {!detailMode && <RecentValueDots definition={definition} dates={recentDates} entriesByDate={entriesByDate} statusesByDate={statusesByDate} colors={colors} dark={dark} />}
           {loading && <ActivityIndicator size="small" color={colors.accent} />}
         </View>
         <NumericWeekBars
@@ -1127,7 +1414,11 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, refreshK
           dates={dates}
           entriesByDate={entriesByDate}
           statusesByDate={statusesByDate}
+          plotHeight={weekPlotHeight}
+          seriesColor={seriesColor}
+          targetColor={targetColor}
           colors={colors}
+          onPointSelected={onPointSelected}
         />
         {error && <AppText variant="caption" color="danger">History unavailable</AppText>}
         {!error && !hasHistory && <AppText variant="caption" color="muted">No history yet</AppText>}
@@ -1136,14 +1427,14 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, refreshK
   }
 
   return (
-    <View style={styles.history}>
+    <View pointerEvents={detailMode && dateRange > 31 ? 'none' : 'auto'} style={styles.history}>
       <View style={styles.compactHeader}>
         {header && <View style={styles.headerSlot}>{header}</View>}
-        <RecentValueDots definition={definition} dates={recentDates} entriesByDate={entriesByDate} statusesByDate={statusesByDate} colors={colors} dark={dark} />
+        {!detailMode && <RecentValueDots definition={definition} dates={recentDates} entriesByDate={entriesByDate} statusesByDate={statusesByDate} colors={colors} dark={dark} />}
         {loading && <ActivityIndicator size="small" color={colors.accent} />}
       </View>
 
-      <View style={[styles.chart, !hasHistory && styles.chartEmpty]}>
+      <View style={[styles.chart, !hasHistory && styles.chartEmpty, { height: plotHeight }]}>
         <View style={styles.chartAxis}>
           {[...chartTicks].reverse().map(value => (
             <AppText key={value} variant="caption" color="muted" numberOfLines={1}>
@@ -1151,7 +1442,37 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, refreshK
             </AppText>
           ))}
         </View>
-        <View onLayout={event => setPlotWidth(event.nativeEvent.layout.width)} style={styles.plot}>
+        <Pressable
+          pointerEvents="box-only"
+          accessibilityRole="button"
+          accessibilityLabel={`${definition.name} history chart`}
+          onLayout={event => setPlotWidth(event.nativeEvent.layout.width)}
+          onPress={event => {
+            if (plotWidth <= 0) return;
+            const x = event.nativeEvent.locationX;
+            if (buckets.every(bucket => bucket.length === 1)) {
+              const position = Math.max(0, Math.min(1, (x - PLOT_HORIZONTAL_INSET) / Math.max(1, plotWidth - PLOT_HORIZONTAL_INSET * 2)));
+              const date = dates[Math.round(position * (dates.length - 1))];
+              if (!date) return;
+              const value = entriesByDate.get(date);
+              const status = statusesByDate.get(date);
+              onPointSelected?.({
+                from: date,
+                to: date,
+                value,
+                sampleCount: value === undefined || status === 'NOT_PLANNED' ? 0 : 1,
+                status: status === 'NOT_PLANNED' ? status : undefined,
+              });
+              return;
+            }
+            if (chartPoints.length === 0) return;
+            const nearest = chartPoints.reduce((current, candidate) => (
+              Math.abs(candidate.x - x) < Math.abs(current.x - x) ? candidate : current
+            ));
+            onPointSelected?.({ from: nearest.from, to: nearest.to, value: nearest.value, sampleCount: nearest.sampleCount });
+          }}
+          style={[styles.plot, { height: plotHeight }]}
+        >
           {chartTicks.map(value => {
             const position = 100 - ((value - domainMinimum) / chartSpan) * 100;
             return <View key={value} style={[styles.gridLine, { top: `${position}%`, backgroundColor: colors.border }]} />;
@@ -1166,16 +1487,20 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, refreshK
                   width,
                   left: (segment.start.x + segment.end.x) / 2 - width / 2,
                   top: (segment.start.y + segment.end.y) / 2 - 1,
-                  backgroundColor: colors.accent,
+                  backgroundColor: seriesColor,
                   transform: [{ rotate: `${angle}deg` }],
                 }]}
               />
             );
           })}
           {chartPoints.map((point, index) => (
-            <View key={`${index}-${point.x}-point`} style={[styles.plotPoint, { left: point.x - 3, top: point.y - 3, backgroundColor: colors.accent }]} />
+            <View
+              key={`${index}-${point.x}-point`}
+              pointerEvents="none"
+              style={[styles.positionedPlotPoint, { left: point.x - 3, top: point.y - 3, backgroundColor: seriesColor }]}
+            />
           ))}
-        </View>
+        </Pressable>
       </View>
       {error ? (
         <AppText variant="caption" color="danger">History unavailable</AppText>
@@ -1211,7 +1536,18 @@ const styles = StyleSheet.create({
   timePlot: { flex: 1, position: 'relative', overflow: 'hidden', borderRadius: 8 },
   timeVerticalGrid: { position: 'absolute', top: 0, bottom: 0, width: 1, opacity: 0.7 },
   timeHorizontalGrid: { position: 'absolute', left: 0, right: 0, height: 1, opacity: 0.55 },
-  timeTrendDot: { position: 'absolute', width: 8, height: 8, borderRadius: 4 },
+  timePointHitbox: { position: 'absolute', width: 40, height: 40, alignItems: 'center', justifyContent: 'center', zIndex: 2 },
+  timeTrendDot: { width: 8, height: 8, borderRadius: 4 },
+  timeScatterChart: { flexDirection: 'row', alignItems: 'stretch', gap: 8 },
+  timeScatterAxis: { width: 48, position: 'relative' },
+  timeScatterAxisLabel: { position: 'absolute', left: 0, right: 2, textAlign: 'right', fontSize: 8, lineHeight: 11, transform: [{ translateY: -6 }] },
+  timeScatterPlot: { flex: 1, position: 'relative', overflow: 'hidden', borderRadius: 8 },
+  timeScatterGridLine: { position: 'absolute', left: 0, right: 0, height: 1, opacity: 0.55 },
+  timeScatterDateGrid: { position: 'absolute', top: 0, bottom: 0, width: 1, opacity: 0.4 },
+  timeScatterLineSegment: { height: 2, position: 'absolute', borderRadius: 1 },
+  timeScatterPoint: { position: 'absolute', width: 8, height: 8, borderRadius: 4 },
+  timeScatterDateLabels: { flexDirection: 'row', justifyContent: 'space-between', marginLeft: 56 },
+  pointPressed: { opacity: 0.55 },
   densityCount: { alignSelf: 'flex-end' },
   densityPlot: { height: DENSITY_PLOT_HEIGHT, overflow: 'hidden', position: 'relative', borderBottomWidth: 1, borderTopLeftRadius: 8, borderTopRightRadius: 8 },
   densityLineSegment: { height: 2, position: 'absolute', borderRadius: 1 },
@@ -1229,15 +1565,24 @@ const styles = StyleSheet.create({
   durationBarLabels: { position: 'absolute', left: 0, right: 0, top: PLOT_HEIGHT + 2, flexDirection: 'row', gap: 3, paddingHorizontal: 2 },
   durationBarLabel: { flex: 1, textAlign: 'center', fontSize: 9 },
   durationTrendSegment: { position: 'absolute', height: 2, borderRadius: 1 },
-  durationTrendPoint: { position: 'absolute', width: 6, height: 6, borderRadius: 3 },
+  durationTrendPointPosition: { position: 'absolute', width: 6, height: 6, borderRadius: 3 },
   durationRangeLabels: { flexDirection: 'row', justifyContent: 'space-between', marginLeft: 60 },
   booleanCalendar: { gap: 4 },
   calendarGrid: { gap: 4 },
   calendarWeek: { flexDirection: 'row', gap: 4 },
   calendarWeekday: { flex: 1, textAlign: 'center', fontSize: 10, lineHeight: 13 },
-  calendarCell: { flex: 1, borderRadius: 5 },
-  heatmapStrip: { width: '100%', flexDirection: 'row', overflow: 'hidden', borderRadius: 8 },
-  heatmapBucket: { flex: 1, height: '100%' },
+  calendarCell: { flex: 1, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  heatmapCalendar: { width: '100%', gap: 6 },
+  heatmapMonthRow: { height: 16, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center', gap: 6 },
+  heatmapMonthLabels: { flexDirection: 'row' },
+  heatmapMonthSlot: { height: 14, position: 'relative', overflow: 'visible' },
+  heatmapMonthLabel: { position: 'absolute', left: 0, width: 30, fontSize: 9, lineHeight: 11 },
+  heatmapGridBody: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', gap: 6 },
+  heatmapWeekdayLabels: { flexDirection: 'column' },
+  heatmapWeekdayLabel: { fontSize: 9, lineHeight: 11 },
+  heatmapWeeks: { flexDirection: 'row', alignItems: 'flex-start' },
+  heatmapWeekColumn: { alignItems: 'center' },
+  heatmapGridCell: { borderRadius: 2 },
   calendarFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   calendarLegend: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   legendSwatch: { width: 8, height: 8, borderRadius: 3, marginLeft: 4 },
@@ -1257,6 +1602,7 @@ const styles = StyleSheet.create({
   gridLine: { position: 'absolute', left: 0, right: 0, height: 1 },
   targetLine: { position: 'absolute', left: 0, right: 0, borderTopWidth: 2, borderStyle: 'dashed', opacity: 0.75 },
   segment: { height: 2, position: 'absolute', borderRadius: 1 },
-  plotPoint: { position: 'absolute', width: 6, height: 6, borderRadius: 3 },
+  plotPoint: { width: 6, height: 6, borderRadius: 3 },
+  positionedPlotPoint: { position: 'absolute', width: 6, height: 6, borderRadius: 3 },
   dateLabels: { flexDirection: 'row', justifyContent: 'space-between' },
 });

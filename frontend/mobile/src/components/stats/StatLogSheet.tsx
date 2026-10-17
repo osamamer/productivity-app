@@ -46,10 +46,7 @@ export function StatLogSheet({ visible, definitions, onClose, onSelect }: {
   const filteredDefinitions = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
     if (!normalizedQuery) return definitions;
-    return definitions.filter(definition => (
-      definition.name.toLocaleLowerCase().includes(normalizedQuery)
-      || definition.description?.toLocaleLowerCase().includes(normalizedQuery)
-    ));
+    return definitions.filter(definition => definition.name.toLocaleLowerCase().includes(normalizedQuery));
   }, [definitions, query]);
 
   function chooseDate(choice: DateChoice) {
@@ -109,7 +106,6 @@ export function StatLogSheet({ visible, definitions, onClose, onSelect }: {
             </View>
             <View style={styles.resultCopy}>
               <AppText variant="label" numberOfLines={1}>{definition.name}</AppText>
-              {!!definition.description && <AppText variant="caption" color="muted" numberOfLines={1}>{definition.description}</AppText>}
             </View>
             <Ionicons name="chevron-forward" size={17} color={colors.textMuted} />
           </SilentPressable>

@@ -211,7 +211,7 @@ export default function SettingsScreen() {
 
       <Card style={styles.section}>
         <View style={styles.sectionHeading}><Ionicons name="home-outline" size={20} color={colors.textMuted} /><AppText variant="heading">Home screen</AppText></View>
-        <SettingRow label="Show “Today at a glance”" detail="Display the focus and mental state summary card on Today." value={showTodaySnapshot} disabled={!homeDisplayPreferencesReady} onChange={setShowTodaySnapshot} />
+        <SettingRow label="Show mental state" detail="Display your current mental state on Today." value={showTodaySnapshot} disabled={!homeDisplayPreferencesReady} onChange={setShowTodaySnapshot} />
         <View style={[styles.divider, { backgroundColor: colors.border }]} />
         <SettingRow label="Show today’s events" detail="Display the scheduled events card on Today." value={showTodayEvents} disabled={!homeDisplayPreferencesReady} onChange={setShowTodayEvents} />
       </Card>
