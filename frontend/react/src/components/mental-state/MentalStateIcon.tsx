@@ -9,7 +9,8 @@ import RocketLaunchRoundedIcon from '@mui/icons-material/RocketLaunchRounded';
 import TrackChangesRoundedIcon from '@mui/icons-material/TrackChangesRounded';
 import TimelapseRoundedIcon from '@mui/icons-material/TimelapseRounded';
 import { createSvgIcon } from '@mui/material/utils';
-import { type Theme, useTheme } from '@mui/material/styles';
+import { useTheme } from '@mui/material/styles';
+import { getMentalStateColor } from './mentalStateColors';
 
 type Tone = 'warning' | 'error' | 'primary' | 'secondary' | 'info' | 'success';
 type StateIcon = typeof ElectricBoltRoundedIcon;
@@ -30,21 +31,6 @@ const stateVisuals: Record<string, { Icon: StateIcon; tone: Tone }> = {
     Engaged: { Icon: TrackChangesRoundedIcon, tone: 'primary' },
     Mixed: { Icon: BalanceRoundedIcon, tone: 'secondary' },
 };
-
-export function getMentalStateColor(state: string, theme: Theme): string {
-    if (state === 'Stimulation-Seeking') {
-        return theme.palette.mode === 'dark' ? '#A395F2' : '#946AF5';
-    }
-    if (state === 'Almost Ready') {
-        return theme.palette.mode === 'dark' ? '#91B398' : '#56775C';
-    }
-    if (state === 'Ready') {
-        return theme.palette.mode === 'dark' ? '#71AD82' : '#387D4E';
-    }
-
-    const visual = stateVisuals[state];
-    return theme.palette[visual?.tone ?? 'primary'].main;
-}
 
 export function MentalStateIcon({ state, size = 'medium' }: { state: string; size?: 'small' | 'medium' }) {
     const theme = useTheme();

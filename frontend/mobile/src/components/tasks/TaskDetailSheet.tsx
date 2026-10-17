@@ -28,7 +28,7 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
   onSubtaskCreated?: (task: Task) => void;
   availableCalendars?: Calendar[];
 }) {
-  const { confirm, showError } = useAppPopup();
+  const { confirm } = useAppPopup();
   const { colors } = useAppTheme();
   const [name, setName] = useState(task?.name ?? '');
   const [scheduledPerformDateTime, setScheduledPerformDateTime] = useState(task?.scheduledPerformDateTime ?? '');

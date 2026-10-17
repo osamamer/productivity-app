@@ -24,7 +24,7 @@ import MenuRoundedIcon from '@mui/icons-material/MenuRounded';
 import KeyboardDoubleArrowRightRoundedIcon from '@mui/icons-material/KeyboardDoubleArrowRightRounded';
 import KeyboardDoubleArrowLeftRoundedIcon from '@mui/icons-material/KeyboardDoubleArrowLeftRounded';
 import { SideMenuButton } from './button/SideMenuButton';
-import { getMentalStateColor } from './mental-state/MentalStateIcon';
+import { getMentalStateColor } from './mental-state/mentalStateColors';
 import { useAppTheme } from '../hooks/useAppTheme';
 import { useUser } from '../hooks/useUser';
 import { usePomodoro } from '../hooks/usePomodoro';

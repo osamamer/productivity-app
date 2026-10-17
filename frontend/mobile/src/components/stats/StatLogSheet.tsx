@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
 
 import { formatShortDate, localDate } from '@/lib/date';
@@ -35,13 +35,13 @@ export function StatLogSheet({ visible, definitions, onClose, onSelect }: {
   const [entryDate, setEntryDate] = useState(localDate());
   const [datePickerOpen, setDatePickerOpen] = useState(false);
 
-  useEffect(() => {
-    if (!visible) return;
+  function prepareForDisplay() {
     setQuery('');
     setDateChoice('today');
     setEntryDate(localDate());
     setDatePickerOpen(false);
-  }, [visible]);
+    searchInputRef.current?.focus();
+  }
 
   const filteredDefinitions = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
@@ -66,7 +66,7 @@ export function StatLogSheet({ visible, definitions, onClose, onSelect }: {
     <ModalSheet
       visible={visible}
       onClose={onClose}
-      onShow={() => searchInputRef.current?.focus()}
+      onShow={prepareForDisplay}
       title="Log a stat">
       <View style={styles.section}>
         <AppText variant="label">Date</AppText>
