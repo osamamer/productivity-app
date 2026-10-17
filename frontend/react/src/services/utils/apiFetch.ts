@@ -16,12 +16,11 @@ function waitForRetry(delayMs: number, signal: AbortSignal): Promise<boolean> {
             return;
         }
 
-        let timeoutId: ReturnType<typeof setTimeout>;
-        const handleAbort = () => {
+        function handleAbort() {
             clearTimeout(timeoutId);
             resolve(false);
-        };
-        timeoutId = setTimeout(() => {
+        }
+        const timeoutId = setTimeout(() => {
             signal.removeEventListener('abort', handleAbort);
             resolve(true);
         }, delayMs);
@@ -58,7 +57,7 @@ export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {})
     let attempt = 0;
 
     try {
-        while (true) {
+        while (!timedOut) {
             try {
                 const response = await fetch(input, { ...init, signal: controller.signal });
                 if (!isRetryableStatus(response.status)) return response;
@@ -97,6 +96,7 @@ export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {})
                 }
             }
         }
+        throw new Error('API request failed after three seconds');
     } finally {
         clearTimeout(timeoutId);
         callerSignal?.removeEventListener('abort', abortFromCaller);
