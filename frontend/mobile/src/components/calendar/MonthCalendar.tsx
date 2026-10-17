@@ -17,7 +17,6 @@ import { formatDurationValue, formatTimeValue } from '@/lib/statValues';
 import { datesCoveredByOccurrence, expandCalendarEvent } from '@/lib/calendarRecurrence';
 import { createCalendarOptions as getCreateCalendarOptions, filterByVisibleCalendar, initialCalendarId as getInitialCalendarId } from '@/lib/calendarSelection';
 import { reportError } from '@/lib/errors';
-import { taskPriorityColor } from '@/lib/taskPriority';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
 import type { Calendar, CalendarEvent, StatDefinition, StatEntry, Task, TaskGroup } from '@/types/models';
@@ -330,6 +329,35 @@ export function MonthCalendar({
     return preferences.priorityFilters.includes(priorityBucket(task.importance));
   }), [calendars, calendarsLoading, preferences.priorityFilters, preferences.taskStatus, tasks]);
 
+  useEffect(() => {
+    if (!preferences.showTasks || tasksLoading) return undefined;
+    const rangeStart = localDate(range.start);
+    const rangeEnd = localDate(range.end);
+    const visibleTasks = calendarTasks.filter(task => {
+      const date = localDate(new Date(task.scheduledPerformDateTime));
+      return date >= rangeStart && date < rangeEnd;
+    });
+    let active = true;
+    let nextTaskIndex = 0;
+    const prefetchWorker = async () => {
+      while (active) {
+        const task = visibleTasks[nextTaskIndex];
+        nextTaskIndex += 1;
+        if (!task) return;
+        try {
+          await api.tasks.details(task);
+        } catch (cause) {
+          if (active) console.error('Could not prefetch mobile calendar task details:', cause);
+        }
+      }
+    };
+    void Promise.all(Array.from(
+      { length: Math.min(4, visibleTasks.length) },
+      () => prefetchWorker(),
+    ));
+    return () => { active = false; };
+  }, [calendarTasks, preferences.showTasks, range.end, range.start, tasksLoading]);
+
   const taskGroupByTaskId = useMemo(() => {
     const result = new Map<string, TaskGroup>();
     [...groups]
@@ -401,7 +429,6 @@ export function MonthCalendar({
           title: task.name || 'Untitled task',
           kind: 'task',
           completed: task.completed,
-          color: taskPriorityColor(task.importance),
           calendarColor: calendarColorHex(calendarsById.get(task.calendarId)?.color, colors.accent),
         });
       });

@@ -217,7 +217,7 @@ function DurationPicker({ value, onChange }: { value: number; onChange: (value: 
   }
 
   return (
-    <View style={[styles.durationWheel, { borderColor: colors.border, backgroundColor: colors.background }]}>
+    <View style={[styles.durationWheel, { backgroundColor: colors.background }]}>
       <ScrollView
         ref={scrollRef}
         nestedScrollEnabled
@@ -242,7 +242,7 @@ function DurationPicker({ value, onChange }: { value: number; onChange: (value: 
               onPress={() => selectValue(minutes)}
               style={({ pressed }) => [
                 styles.durationOption,
-                { borderWidth: selected ? 1 : 0, borderColor: colors.accent },
+                { backgroundColor: selected ? colors.accentSoft : 'transparent' },
                 pressed && styles.pressed,
               ]}
             >
@@ -254,10 +254,6 @@ function DurationPicker({ value, onChange }: { value: number; onChange: (value: 
           );
         })}
       </ScrollView>
-      <View
-        pointerEvents="none"
-        style={[styles.durationSelectionFrame, { borderColor: colors.accent }]}
-      />
     </View>
   );
 }
@@ -795,7 +791,6 @@ export default function MeditationScreen() {
       </ModalSheet>
 
       <ModalSheet visible={optionSheet === 'duration'} onClose={() => setOptionSheet(null)} title="Session length">
-        <View style={styles.sheetValue}><AppText variant="display">{durationMinutes}</AppText><AppText color="muted">minutes</AppText></View>
         <DurationPicker value={durationMinutes} onChange={setDurationMinutes} />
       </ModalSheet>
 
@@ -841,9 +836,8 @@ const styles = StyleSheet.create({
   center: { textAlign: 'center' },
   sectionHeading: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 },
   sheetValue: { alignItems: 'center', gap: 3 },
-  durationWheel: { height: DURATION_ITEM_HEIGHT * DURATION_VISIBLE_ITEMS, borderWidth: 1, borderRadius: 16, overflow: 'hidden' },
+  durationWheel: { height: DURATION_ITEM_HEIGHT * DURATION_VISIBLE_ITEMS, borderRadius: 16, overflow: 'hidden' },
   durationOptions: { paddingVertical: DURATION_ITEM_HEIGHT * DURATION_CENTER_INDEX },
-  durationSelectionFrame: { position: 'absolute', top: DURATION_ITEM_HEIGHT * DURATION_CENTER_INDEX, left: 8, right: 8, height: DURATION_ITEM_HEIGHT, borderWidth: 1.5, borderRadius: 11 },
   durationOption: { height: DURATION_ITEM_HEIGHT, marginHorizontal: 8, borderRadius: 11, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   soundGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   soundChoice: { width: '100%', minHeight: 60, flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: 15, borderWidth: 1 },

@@ -31,6 +31,17 @@ import type {
 } from '@/types/models';
 import { resolveAccessToken } from './auth-session';
 import { invalidateResource } from '@/lib/resourceInvalidation';
+import {
+  addCachedSubtask,
+  getFreshTaskDetails,
+  loadTaskDetails,
+  markCachedTaskSeriesInactive,
+  removeCachedTask,
+  setCachedTaskSeries,
+  setCachedTaskDetails,
+  updateCachedTask,
+  updateCachedTaskSeries,
+} from '@/lib/taskDetailsCache';
 
 type RequestOptions = Omit<RequestInit, 'body'> & { body?: unknown };
 
@@ -126,6 +137,7 @@ export const api = {
       timeZone: string;
     }) => {
       const series = await json<TaskSeries>(`/api/v1/tasks/${taskId}/recurrence`, 'POST', recurrence);
+      setCachedTaskSeries(taskId, series);
       if (series.statLinked) invalidateResource('stats');
       return series;
     },
@@ -138,17 +150,23 @@ export const api = {
       active?: boolean;
     }) => {
       const updated = await json<TaskSeries>(`/api/v1/task-series/${seriesId}`, 'PATCH', recurrence);
+      updateCachedTaskSeries(updated);
       if (updated.statLinked) invalidateResource('stats');
       return updated;
     },
     updateRecurrenceImportance: async (seriesId: string, importance: number) => {
       const updated = await json<TaskSeries>(`/api/v1/task-series/${seriesId}/importance`, 'PATCH', { importance });
+      updateCachedTaskSeries(updated);
       invalidateResource('tasks');
       return updated;
     },
-    stopRecurrence: (seriesId: string) => apiRequest<void>(`/api/v1/task-series/${seriesId}`, { method: 'DELETE' }),
+    stopRecurrence: async (seriesId: string) => {
+      await apiRequest<void>(`/api/v1/task-series/${seriesId}`, { method: 'DELETE' });
+      markCachedTaskSeriesInactive(seriesId);
+    },
     update: async (id: string, updates: Partial<Task>) => {
       const updated = await json<Task>(`/api/v1/tasks/${id}`, 'PATCH', updates);
+      updateCachedTask(updated);
       if (updates.completed !== undefined || updates.scheduledPerformDateTime !== undefined) {
         invalidateResource('tasks');
         if (updated.statLinked) invalidateResource('stats');
@@ -156,13 +174,49 @@ export const api = {
       return updated;
     },
     subtasks: (taskId: string) => apiRequest<Task[]>(`/api/v1/tasks/${taskId}/subtasks`),
-    createSubtask: (taskId: string, input: Omit<TaskInput, 'parentId'>) =>
-      json<Task>(`/api/v1/tasks/${taskId}/subtasks`, 'POST', {
+    details: async (task: Task) => {
+      const fresh = getFreshTaskDetails(task.taskId);
+      if (fresh) {
+        if (fresh.task !== task) {
+          const updated = { ...fresh, task };
+          setCachedTaskDetails(task.taskId, updated);
+          return updated;
+        }
+        return fresh;
+      }
+
+      const details = await loadTaskDetails(task.taskId, async () => {
+        const [subtasks, taskSeries] = await Promise.all([
+          apiRequest<Task[]>(`/api/v1/tasks/${task.taskId}/subtasks`),
+          task.taskSeriesId
+            ? apiRequest<TaskSeries | undefined>(`/api/v1/tasks/${task.taskId}/recurrence`)
+            : Promise.resolve(null),
+        ]);
+        return { task, subtasks, taskSeries: taskSeries ?? null };
+      });
+      if (details.task !== task) {
+        const updated = { ...details, task };
+        setCachedTaskDetails(task.taskId, updated);
+        return updated;
+      }
+      return details;
+    },
+    createSubtask: async (taskId: string, input: Omit<TaskInput, 'parentId'>) => {
+      const created = await json<Task>(`/api/v1/tasks/${taskId}/subtasks`, 'POST', {
         ...input,
         timeZone: input.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC',
-      }),
-    remove: (id: string) => apiRequest<void>(`/api/v1/tasks/${id}`, { method: 'DELETE' }),
-    removeOccurrence: (id: string) => apiRequest<void>(`/api/v1/tasks/${id}/occurrence`, { method: 'DELETE' }),
+      });
+      addCachedSubtask(taskId, created);
+      return created;
+    },
+    remove: async (id: string) => {
+      await apiRequest<void>(`/api/v1/tasks/${id}`, { method: 'DELETE' });
+      removeCachedTask(id);
+    },
+    removeOccurrence: async (id: string) => {
+      await apiRequest<void>(`/api/v1/tasks/${id}/occurrence`, { method: 'DELETE' });
+      removeCachedTask(id);
+    },
     reorder: (taskIds: string[]) => json<Task[]>('/api/v1/tasks/order', 'PUT', { taskIds }),
   },
   taskGroups: {

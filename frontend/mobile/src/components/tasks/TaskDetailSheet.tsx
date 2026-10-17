@@ -3,6 +3,7 @@ import { StyleSheet, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { reportError } from '@/lib/errors';
+import { getCachedTaskDetails } from '@/lib/taskDetailsCache';
 import { TASK_PRIORITY_OPTIONS, taskPriorityColor, taskPriorityValue } from '@/lib/taskPriority';
 import { useAppPopup } from '@/providers/PopupProvider';
 import { useAppTheme } from '@/providers/ThemeProvider';
@@ -44,8 +45,12 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
   const [error, setError] = useState<string | null>(null);
   const [deletePromptOpen, setDeletePromptOpen] = useState(false);
   const [repeat, setRepeat] = useState<TaskRecurrenceFrequency>('NONE');
-  const [subtasks, setSubtasks] = useState<Task[]>([]);
-  const [subtasksLoading, setSubtasksLoading] = useState(false);
+  const [subtasks, setSubtasks] = useState<Task[]>(() => task && !task.parentId
+    ? getCachedTaskDetails(task.taskId)?.subtasks ?? []
+    : []);
+  const [subtasksLoading, setSubtasksLoading] = useState(() => Boolean(
+    task && !task.parentId && !getCachedTaskDetails(task.taskId),
+  ));
   const [subtaskComposerOpen, setSubtaskComposerOpen] = useState(false);
   const [subtaskName, setSubtaskName] = useState('');
   const [subtaskSaving, setSubtaskSaving] = useState(false);
@@ -66,31 +71,29 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
   useEffect(() => {
     const taskId = task?.taskId;
     const parentId = task?.parentId;
+    const cached = taskId && !parentId ? getCachedTaskDetails(taskId) : undefined;
     let active = true;
-    const resetTimer = setTimeout(() => {
-      setSubtasks([]);
-      setSubtaskComposerOpen(false);
-      setSubtaskName('');
-      setSubtaskError(null);
-      if (!taskId || parentId) return;
+    setSubtasks(cached?.subtasks ?? []);
+    setSubtasksLoading(Boolean(taskId && !parentId && !cached));
+    setSubtaskComposerOpen(false);
+    setSubtaskName('');
+    setSubtaskError(null);
+    if (!taskId || parentId || !task) return () => { active = false; };
 
-      setSubtasksLoading(true);
-      void api.tasks.subtasks(taskId)
-        .then(items => {
-          if (active) setSubtasks(items);
-        })
-        .catch(cause => {
-          if (active) setSubtaskError(reportError('Could not load subtasks', cause));
-        })
-        .finally(() => {
-          if (active) setSubtasksLoading(false);
-        });
-    }, 0);
+    void api.tasks.details(task)
+      .then(details => {
+        if (active) setSubtasks(details.subtasks);
+      })
+      .catch(cause => {
+        if (active) setSubtaskError(reportError('Could not load subtasks', cause));
+      })
+      .finally(() => {
+        if (active) setSubtasksLoading(false);
+      });
     return () => {
       active = false;
-      clearTimeout(resetTimer);
     };
-  }, [task?.parentId, task?.taskId]);
+  }, [task]);
 
   useEffect(() => {
     if (!subtaskComposerOpen) return undefined;
@@ -102,21 +105,31 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
     const taskId = task?.taskId;
     const taskSeriesId = task?.taskSeriesId;
     let cancelled = false;
-    if (!taskSeriesId || !taskId) return () => { cancelled = true; };
+    if (!taskSeriesId || !taskId || !task) return () => { cancelled = true; };
 
-    api.tasks.recurrence(taskId)
-      .then(nextSeries => {
-        if (cancelled || !nextSeries) return;
+    const applySeries = (nextSeries: TaskSeries | null) => {
+      if (!nextSeries) return;
+      seriesRef.current = nextSeries;
+      const nextRepeat = nextSeries.active ? nextSeries.recurrenceFrequency : 'NONE';
+      repeatRef.current = nextRepeat;
+      setRepeat(nextRepeat);
+    };
+    const cached = getCachedTaskDetails(taskId);
+    if (cached) applySeries(cached.taskSeries);
+
+    api.tasks.details(task)
+      .then(details => {
+        if (cancelled) return;
+        const nextSeries = details.taskSeries;
+        if (!nextSeries) return;
         seriesRef.current = nextSeries;
-        const nextRepeat = nextSeries.active ? nextSeries.recurrenceFrequency : 'NONE';
-        repeatRef.current = nextRepeat;
-        setRepeat(nextRepeat);
+        applySeries(nextSeries);
       })
       .catch(cause => {
         if (!cancelled) setError(reportError('Could not load repeat settings', cause));
       });
     return () => { cancelled = true; };
-  }, [task?.taskId, task?.taskSeriesId]);
+  }, [task]);
 
   async function save() {
     if (!task || !name.trim()) return;

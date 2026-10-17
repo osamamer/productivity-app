@@ -60,10 +60,10 @@ function WeekItem({ item, onPress }: { item: CalendarGridItem; onPress: () => vo
       style={({ pressed }) => [
         styles.item,
         {
-          backgroundColor: item.kind === 'calendarEvent' ? accent : `${accent}20`,
-          borderColor: item.kind === 'calendarEvent' ? accent : `${accent}70`,
-          borderLeftWidth: item.calendarColor && item.kind !== 'calendarEvent' ? 4 : 1,
-          borderLeftColor: item.calendarColor ?? (item.kind === 'calendarEvent' ? accent : `${accent}70`),
+          backgroundColor: item.kind === 'calendarEvent' ? accent : item.kind === 'task' ? 'transparent' : `${accent}20`,
+          borderColor: item.kind === 'calendarEvent' ? accent : item.kind === 'task' ? colors.border : `${accent}70`,
+          borderLeftWidth: item.calendarColor && item.kind !== 'calendarEvent' ? 3 : 1,
+          borderLeftColor: item.calendarColor ?? (item.kind === 'calendarEvent' ? accent : item.kind === 'task' ? colors.border : `${accent}70`),
           borderTopLeftRadius: item.calendarColor && item.kind !== 'calendarEvent' ? 0 : undefined,
           borderBottomLeftRadius: item.calendarColor && item.kind !== 'calendarEvent' ? 0 : undefined,
           borderStyle: item.eventStatus === 'TENTATIVE' ? 'dashed' : 'solid',

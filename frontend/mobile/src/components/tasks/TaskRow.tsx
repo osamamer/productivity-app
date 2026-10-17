@@ -7,6 +7,7 @@ import Reanimated from 'react-native-reanimated';
 import { formatShortDate, formatTime } from '@/lib/date';
 import { taskPriorityColor } from '@/lib/taskPriority';
 import { useAppTheme } from '@/providers/ThemeProvider';
+import { api } from '@/services/api';
 import type { Task } from '@/types/models';
 import { AppText } from '../ui/AppText';
 import { SilentPressable } from '../ui/SilentPressable';
@@ -76,7 +77,7 @@ function TaskRowBody({ task, onToggle, onPress, onLongPress, onSelectionToggle, 
   );
 }
 
-export function TaskRow({ task, onToggle, onPress, onLongPress, onSelectionToggle, selected = false, onDelete, dragEnabled = false, dragging = false, dragInProgress = false, dragPreviewOffset = 0, dropTarget = false, dropTargetEdge, onDragLayout, onDragViewRef, onDragStart, onDragMove, onDragEnd, onDragCancel, inGroup = false, groupLast = false, showSelectionBorder = true }: {
+export function TaskRow({ task, onToggle, onPress, onLongPress, onSelectionToggle, selected = false, onDelete, dragEnabled = false, dragging = false, dragInProgress = false, dragPreviewOffset = 0, dropTarget = false, dropTargetEdge, onDragLayout, onDragViewRef, onDragStart, onDragMove, onDragEnd, onDragCancel, inGroup = false, groupLast = false, showSelectionBorder = true, prefetchDetails = false }: {
   task: Task;
   onToggle: () => void;
   onPress?: () => void;
@@ -99,6 +100,7 @@ export function TaskRow({ task, onToggle, onPress, onLongPress, onSelectionToggl
   inGroup?: boolean;
   groupLast?: boolean;
   showSelectionBorder?: boolean;
+  prefetchDetails?: boolean;
 }) {
   const { colors } = useAppTheme();
   const rowRef = useRef<View>(null);
@@ -112,6 +114,12 @@ export function TaskRow({ task, onToggle, onPress, onLongPress, onSelectionToggl
     onCancel: onDragCancel,
     onHold: onLongPress ? () => onLongPress() : undefined,
   });
+  useEffect(() => {
+    if (!prefetchDetails) return;
+    void api.tasks.details(task).catch(cause => {
+      console.error('Could not prefetch mobile task details:', cause);
+    });
+  }, [prefetchDetails, task]);
   useEffect(() => {
     animatedPreviewOffset.stopAnimation();
     if (!dragInProgress) {

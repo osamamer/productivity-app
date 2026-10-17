@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
-import { PropsWithChildren, ReactNode } from 'react';
-import { RefreshControl, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
+import { router, useFocusEffect } from 'expo-router';
+import { PropsWithChildren, ReactNode, useCallback, useRef } from 'react';
+import { Animated, Easing, RefreshControl, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAppTheme } from '@/providers/ThemeProvider';
@@ -35,6 +35,28 @@ export function Screen({
   scrollToTopKey = null,
 }: PropsWithChildren<Props>) {
   const { colors } = useAppTheme();
+  const entryOpacity = useRef(new Animated.Value(1)).current;
+  const entryOffset = useRef(new Animated.Value(0)).current;
+  useFocusEffect(useCallback(() => {
+    entryOpacity.setValue(0.97);
+    entryOffset.setValue(3);
+    const animation = Animated.parallel([
+      Animated.timing(entryOpacity, {
+        toValue: 1,
+        duration: 150,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
+      Animated.timing(entryOffset, {
+        toValue: 0,
+        duration: 180,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
+    ]);
+    animation.start();
+    return () => animation.stop();
+  }, [entryOffset, entryOpacity]));
   const body = (
     <View style={[styles.content, contentStyle]}>
       {(back || action) && (
@@ -57,18 +79,20 @@ export function Screen({
   );
 
   return (
-    <SafeAreaView edges={safeAreaTop ? ['top'] : []} style={[styles.safe, { backgroundColor: colors.background }]}>
-      {scroll ? (
-        <KeyboardAwareScrollView
-          contentContainerStyle={styles.scroll}
-          scrollToTopKey={scrollToTopKey}
-          keyboardShouldPersistTaps="handled"
-          refreshControl={onRefresh ? <RefreshControl enabled={refreshEnabled} refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} /> : undefined}>
-          {body}
-        </KeyboardAwareScrollView>
-      ) : <KeyboardAwareView>{body}</KeyboardAwareView>}
-      {overlay}
-    </SafeAreaView>
+    <Animated.View style={[styles.safe, { opacity: entryOpacity, transform: [{ translateY: entryOffset }] }]}>
+      <SafeAreaView edges={safeAreaTop ? ['top'] : []} style={[styles.safe, { backgroundColor: colors.background }]}>
+        {scroll ? (
+          <KeyboardAwareScrollView
+            contentContainerStyle={styles.scroll}
+            scrollToTopKey={scrollToTopKey}
+            keyboardShouldPersistTaps="handled"
+            refreshControl={onRefresh ? <RefreshControl enabled={refreshEnabled} refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} /> : undefined}>
+            {body}
+          </KeyboardAwareScrollView>
+        ) : <KeyboardAwareView>{body}</KeyboardAwareView>}
+        {overlay}
+      </SafeAreaView>
+    </Animated.View>
   );
 }
 

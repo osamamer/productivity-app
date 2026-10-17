@@ -394,6 +394,7 @@ export default function TasksScreen() {
       <TaskRow
         key={task.taskId}
         task={task}
+        prefetchDetails
         onToggle={() => void toggle(task)}
         onPress={() => selectionMode ? toggleSelection(task.taskId) : setSelected(task)}
         onLongPress={() => startSelection(task.taskId)}

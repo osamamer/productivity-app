@@ -749,6 +749,7 @@ export default function TodayScreen() {
               <TaskRow
                 key={itemKey}
                 task={item.task}
+                prefetchDetails
                 onToggle={() => void toggle(item.task)}
                 onPress={() => selectedTaskIds.length || selectedGroupIds.length ? toggleSelection(item.task.taskId) : setSelected(item.task)}
                 onLongPress={() => startSelection(item.task.taskId)}
@@ -856,6 +857,7 @@ export default function TodayScreen() {
                         <TaskRow
                         key={task.taskId}
                         task={task}
+                        prefetchDetails
                         onToggle={() => void toggle(task)}
                         onPress={() => selectedTaskIds.length || selectedGroupIds.length ? toggleSelection(task.taskId) : setSelected(task)}
                         onLongPress={() => startSelection(task.taskId)}

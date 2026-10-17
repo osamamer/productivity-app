@@ -108,7 +108,7 @@ function TimeColumn({ label, values, selected, onSelect }: { label: string; valu
             <SilentPressable
               key={value}
               onPress={() => onSelect(value)}
-              style={[styles.timeOption, { backgroundColor: 'transparent', borderColor: selectedValue ? colors.accent : colors.border }]}>
+              style={[styles.timeOption, { backgroundColor: selectedValue ? colors.accentSoft : 'transparent' }]}>
               <AppText variant="label" style={{ color: selectedValue ? colors.accent : colors.text }}>{String(value).padStart(2, '0')}</AppText>
             </SilentPressable>
           );
@@ -608,7 +608,7 @@ const styles = StyleSheet.create({
   timeLabel: { textAlign: 'center' },
   timeScroll: { height: 220 },
   timeOptions: { gap: 7 },
-  timeOption: { minHeight: 40, borderWidth: 1, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  timeOption: { minHeight: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   popupActions: { flexDirection: 'row', gap: 10 },
   popupAction: { flex: 1 },
   footerActions: { flexDirection: 'row', gap: 10 },
