@@ -50,23 +50,24 @@ function defaultValue(definition: StatDefinition, rememberedValue: number | null
   return definition.minValue ?? 1;
 }
 
-export function StatEntrySheet({ definition, existing, onClose, onSaved, onReverted }: {
+export function StatEntrySheet({ definition, existing, initialDate, onClose, onSaved, onReverted }: {
   definition: StatDefinition | null;
   existing?: StatEntry;
+  initialDate?: string;
   onClose: () => void;
   onSaved: (entry: StatEntry | null, date?: string) => void;
   onReverted: (entry?: StatEntry, date?: string) => void;
 }) {
   const { colors } = useAppTheme();
   const { user } = useAuth();
-  const initialDate = existing?.date ?? localDate();
+  const firstEntryDate = existing?.date ?? initialDate ?? localDate();
   const [entryForDate, setEntryForDate] = useState<StatEntry | undefined>(existing);
   const [entryStatus, setEntryStatus] = useState<StatEntryStatus>(existing?.status ?? 'RECORDED');
   const [value, setValue] = useState(existing?.value == null ? '' : String(existing.value));
   const [rangeValue, setRangeValue] = useState(existing?.value ?? definition?.minValue ?? 1);
   const [durationValue, setDurationValue] = useState<number | null>(definition?.type === 'DURATION' ? existing?.value ?? null : null);
   const [timeValue, setTimeValue] = useState(() => dateForMinutes(definition?.type === 'TIME' && existing?.value != null ? existing.value : 12 * 60));
-  const [entryDate, setEntryDate] = useState(initialDate);
+  const [entryDate, setEntryDate] = useState(firstEntryDate);
   const [entryLoading, setEntryLoading] = useState(Boolean(definition));
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [timePickerOpen, setTimePickerOpen] = useState(false);

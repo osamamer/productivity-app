@@ -1,4 +1,4 @@
-import { Box, Slider, Stack, Typography } from '@mui/material';
+import { Box, Chip, Slider, Stack, Typography } from '@mui/material';
 
 interface MentalStateScaleProps {
     label: string;
@@ -19,12 +19,12 @@ export function MentalStateScale({
 }: MentalStateScaleProps) {
     return (
         <Box sx={{ textAlign: 'left' }}>
-            <Stack direction="row" justifyContent="space-between" alignItems="baseline" spacing={2}>
+            <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
                 <Box>
                     <Typography fontWeight={600}>{label}</Typography>
                     <Typography variant="body2" color="text.secondary">{description}</Typography>
                 </Box>
-                <Typography variant="h6" color="primary.main" fontWeight={700}>{value}</Typography>
+                <Chip label={`${value}/10`} size="small" color="primary" sx={{ minWidth: 56, fontWeight: 700 }} />
             </Stack>
             <Slider
                 value={value}
@@ -35,7 +35,7 @@ export function MentalStateScale({
                 valueLabelDisplay="auto"
                 aria-label={label}
                 onChange={(_, nextValue) => onChange(nextValue as number)}
-                sx={{ mt: 1.5, mb: 0.25 }}
+                sx={{ mt: 1, mb: 0 }}
             />
             <Stack direction="row" justifyContent="space-between">
                 <Typography variant="caption" color="text.secondary">1 · {lowLabel}</Typography>

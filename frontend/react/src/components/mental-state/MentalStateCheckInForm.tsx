@@ -19,6 +19,30 @@ const INITIAL_STATE: Omit<MentalStateCheckInRequest, 'goal'> = {
     emotionalLoad: 5,
 };
 
+const signalGroups = [
+    {
+        label: 'Energy & pace',
+        signals: [
+            { key: 'energy', label: 'Energy', description: 'Physical and mental energy available.', lowLabel: 'empty', highLabel: 'full' },
+            { key: 'activation', label: 'Activation', description: 'How keyed up or activated your body feels.', lowLabel: 'still', highLabel: 'keyed up' },
+        ],
+    },
+    {
+        label: 'Attention',
+        signals: [
+            { key: 'stimulationHunger', label: 'Stimulation Hunger', description: 'How strongly you want more stimulation.', lowLabel: 'satisfied', highLabel: 'craving' },
+            { key: 'clarity', label: 'Clarity', description: 'How clear and organized your mind feels.', lowLabel: 'foggy', highLabel: 'clear' },
+        ],
+    },
+    {
+        label: 'Emotions',
+        signals: [
+            { key: 'valence', label: 'Emotional tone', description: 'How pleasant or unpleasant this moment feels.', lowLabel: 'unpleasant', highLabel: 'pleasant' },
+            { key: 'emotionalLoad', label: 'Emotional Load', description: 'How much emotional weight you are carrying.', lowLabel: 'light', highLabel: 'heavy' },
+        ],
+    },
+] as const;
+
 export function MentalStateCheckInForm({ onSaved, embedded = false }: MentalStateCheckInFormProps) {
     const [values, setValues] = useState<Omit<MentalStateCheckInRequest, 'goal'>>(INITIAL_STATE);
     const [goal, setGoal] = useState<MentalStateGoal | ''>('');
@@ -47,11 +71,11 @@ export function MentalStateCheckInForm({ onSaved, embedded = false }: MentalStat
     const content = (
         <>
             <Typography variant="h6" fontWeight={700}>How are you right now?</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 2.5 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 1.75 }}>
                 Rate each signal from 1 to 10. Check in again whenever your state changes.
             </Typography>
 
-            <FormControl component="fieldset" sx={{ mb: 2.5 }}>
+            <FormControl component="fieldset" sx={{ mb: 1.75 }}>
                 <FormLabel component="legend" sx={{ color: 'text.primary', fontWeight: 600 }}>
                     What are we doing?
                 </FormLabel>
@@ -59,7 +83,7 @@ export function MentalStateCheckInForm({ onSaved, embedded = false }: MentalStat
                     row
                     value={goal}
                     onChange={event => setGoal(event.target.value as MentalStateGoal)}
-                    sx={{ mt: 0.5, gap: { xs: 0, sm: 1 } }}
+                    sx={{ mt: 0.25, gap: { xs: 0, sm: 1 } }}
                 >
                     {(Object.entries(MENTAL_STATE_GOAL_LABELS) as [MentalStateGoal, string][]).map(([value, label]) => (
                         <FormControlLabel key={value} value={value} control={<Radio />} label={label} />
@@ -67,60 +91,39 @@ export function MentalStateCheckInForm({ onSaved, embedded = false }: MentalStat
                 </RadioGroup>
             </FormControl>
 
-            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: { xs: 2.5, md: 2.25 } }}>
-                <MentalStateScale
-                    label="Energy"
-                    description="Physical and mental energy available."
-                    lowLabel="empty"
-                    highLabel="full"
-                    value={values.energy}
-                    onChange={value => update('energy', value)}
-                />
-                <MentalStateScale
-                    label="Activation"
-                    description="How keyed up or activated your body feels."
-                    lowLabel="still"
-                    highLabel="keyed up"
-                    value={values.activation}
-                    onChange={value => update('activation', value)}
-                />
-                <MentalStateScale
-                    label="Stimulation Hunger"
-                    description="How strongly you want more stimulation."
-                    lowLabel="satisfied"
-                    highLabel="craving"
-                    value={values.stimulationHunger}
-                    onChange={value => update('stimulationHunger', value)}
-                />
-                <MentalStateScale
-                    label="Clarity"
-                    description="How clear and organized your mind feels."
-                    lowLabel="foggy"
-                    highLabel="clear"
-                    value={values.clarity}
-                    onChange={value => update('clarity', value)}
-                />
-                <MentalStateScale
-                    label="Valence"
-                    description="How pleasant or unpleasant this moment feels."
-                    lowLabel="unpleasant"
-                    highLabel="pleasant"
-                    value={values.valence}
-                    onChange={value => update('valence', value)}
-                />
-                <MentalStateScale
-                    label="Emotional Load"
-                    description="How much emotional weight you are carrying."
-                    lowLabel="light"
-                    highLabel="heavy"
-                    value={values.emotionalLoad}
-                    onChange={value => update('emotionalLoad', value)}
-                />
-            </Box>
+            <Stack spacing={1.5}>
+                {signalGroups.map((group, index) => (
+                    <Box
+                        key={group.label}
+                        sx={{
+                            pt: index === 0 ? 0 : 1.25,
+                            borderTop: index === 0 ? 0 : 1,
+                            borderColor: 'divider',
+                        }}
+                    >
+                        <Typography variant="overline" color="text.secondary" fontWeight={700} sx={{ letterSpacing: '0.08em' }}>
+                            {group.label}
+                        </Typography>
+                        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: { xs: 1.75, md: 1.75 }, mt: 0.75 }}>
+                            {group.signals.map(signal => (
+                                <MentalStateScale
+                                    key={signal.key}
+                                    label={signal.label}
+                                    description={signal.description}
+                                    lowLabel={signal.lowLabel}
+                                    highLabel={signal.highLabel}
+                                    value={values[signal.key]}
+                                    onChange={value => update(signal.key, value)}
+                                />
+                            ))}
+                        </Box>
+                    </Box>
+                ))}
+            </Stack>
 
-            {error && <Alert severity="error" sx={{ mt: 3 }}>{error}</Alert>}
+            {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
 
-            <Stack direction="row" justifyContent="flex-end" sx={{ mt: 2.5 }}>
+            <Stack direction="row" justifyContent="flex-end" sx={{ mt: 1.75 }}>
                 <Button
                     type="submit"
                     variant="contained"
@@ -136,7 +139,7 @@ export function MentalStateCheckInForm({ onSaved, embedded = false }: MentalStat
 
     if (embedded) {
         return (
-            <Box component="form" onSubmit={handleSubmit} sx={{ p: { xs: 2, sm: 2.5 } }}>
+            <Box component="form" onSubmit={handleSubmit} sx={{ p: { xs: 1.75, sm: 2.25 } }}>
                 {content}
             </Box>
         );
@@ -147,7 +150,7 @@ export function MentalStateCheckInForm({ onSaved, embedded = false }: MentalStat
             component="form"
             onSubmit={handleSubmit}
             elevation={0}
-            sx={{ p: { xs: 2, sm: 2.5 }, border: 1, borderColor: 'divider', borderRadius: 3, textAlign: 'left' }}
+            sx={{ p: { xs: 1.75, sm: 2.25 }, border: 1, borderColor: 'divider', borderRadius: 3, textAlign: 'left' }}
         >
             {content}
         </Paper>

@@ -11,7 +11,7 @@ import { MentalStateHistory } from '../components/mental-state/MentalStateHistor
 import { BackToMentalButton } from '../components/BackToMentalButton';
 import { mentalStateService } from '../services/api/mentalStateService';
 import { sideNavSnapshotCache } from '../services/cache/sideNavSnapshotCache';
-import { formatMentalStateSummary, MentalStateCheckIn } from '../types/MentalState';
+import { MentalStateCheckIn } from '../types/MentalState';
 
 const CURRENT_STATE_WINDOW_MS = 60 * 60 * 1000;
 
@@ -59,7 +59,7 @@ export function MentalStatePage() {
         setHistory(current => [checkIn, ...current]);
         setSelected(null);
         setError(null);
-        sideNavSnapshotCache.updateMentalState(formatMentalStateSummary(checkIn.state, checkIn.goal));
+        sideNavSnapshotCache.updateMentalState(checkIn.state);
     };
 
     async function handleDelete() {
@@ -77,7 +77,7 @@ export function MentalStatePage() {
                 const next = remaining[0];
                 sideNavSnapshotCache.updateMentalState(
                     next && isCurrentCheckIn(next, Date.now())
-                        ? formatMentalStateSummary(next.state, next.goal)
+                        ? next.state
                         : null,
                 );
             }

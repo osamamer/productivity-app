@@ -5,6 +5,7 @@ import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import SelfImprovementOutlinedIcon from '@mui/icons-material/SelfImprovementOutlined';
 import { useNavigate } from 'react-router-dom';
 import { MENTAL_STATE_GOAL_LABELS, MentalStateCheckIn } from '../../types/MentalState';
+import { MentalStateIcon } from './MentalStateIcon';
 
 interface MentalStateResultProps {
     checkIn: MentalStateCheckIn | null;
@@ -43,17 +44,25 @@ export function MentalStateResult({
 
     const content = (
         <>
-            <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2} flexWrap="wrap">
-                <Box>
-                    <Typography variant="overline" color="text.secondary">
-                        {isCurrent ? 'Your current state' : 'Past state'} · {MENTAL_STATE_GOAL_LABELS[checkIn.goal]}
-                    </Typography>
-                    <Typography variant="h5" fontWeight={750}>{checkIn.state}</Typography>
-                </Box>
-                <Chip
-                    label={new Date(checkIn.recordedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
-                    variant="outlined"
-                />
+            <Stack spacing={0.5}>
+                <Typography variant="overline" color="text.secondary">
+                    {isCurrent ? 'Your current state' : 'Past state'}
+                </Typography>
+                <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1.5} flexWrap="wrap">
+                    <Stack direction="row" alignItems="center" spacing={1.5} sx={{ flex: 1, minWidth: 180 }}>
+                        <MentalStateIcon state={checkIn.state} />
+                        <Typography variant="h5" fontWeight={750} sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+                            {checkIn.state}
+                        </Typography>
+                    </Stack>
+                    <Stack direction="row" alignItems="center" spacing={1} sx={{ flexShrink: 0 }}>
+                        <Chip label={MENTAL_STATE_GOAL_LABELS[checkIn.goal]} color="primary" variant="outlined" />
+                        <Chip
+                            label={new Date(checkIn.recordedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                            variant="outlined"
+                        />
+                    </Stack>
+                </Stack>
             </Stack>
 
             <Alert severity="info" icon={<TipsAndUpdatesOutlinedIcon />} sx={{ mt: 2.5, alignItems: 'flex-start', textAlign: 'left' }}>

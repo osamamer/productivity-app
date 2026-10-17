@@ -6,10 +6,6 @@ export const MENTAL_STATE_GOAL_LABELS: Record<MentalStateGoal, string> = {
     RECOVERY: 'Recovery',
 };
 
-export function formatMentalStateSummary(state: string, goal: MentalStateGoal): string {
-    return `${state} · ${MENTAL_STATE_GOAL_LABELS[goal]}`;
-}
-
 export interface MentalStateCheckInRequest {
     goal: MentalStateGoal;
     energy: number;

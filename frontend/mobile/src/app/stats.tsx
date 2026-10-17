@@ -1,11 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { StatComposerSheet } from '@/components/stats/StatComposerSheet';
 import { StatEntrySheet } from '@/components/stats/StatEntrySheet';
 import { StatGroupComposerSheet } from '@/components/stats/StatGroupComposerSheet';
 import { StatHistoryPreview } from '@/components/stats/StatHistoryPreview';
+import { StatLogSheet } from '@/components/stats/StatLogSheet';
 import { AppButton } from '@/components/ui/AppButton';
 import { AppText } from '@/components/ui/AppText';
 import { Card } from '@/components/ui/Card';
@@ -41,6 +43,7 @@ function isManualDefinition(definition: StatDefinition): boolean {
 
 export default function StatsScreen() {
   const { colors } = useAppTheme();
+  const insets = useSafeAreaInsets();
   const { confirm, showError } = useAppPopup();
   const { user } = useAuth();
   const groupPreferencesKey = statGroupPreferencesStorageKey(user?.id);
@@ -53,6 +56,8 @@ export default function StatsScreen() {
     return { definitions: definitions.filter(isManualDefinition), entries, groups };
   });
   const [selected, setSelected] = useState<StatDefinition | null>(null);
+  const [selectedInitialDate, setSelectedInitialDate] = useState<string | undefined>();
+  const [logSheetOpen, setLogSheetOpen] = useState(false);
   const [composerOpen, setComposerOpen] = useState(false);
   const [editingDefinition, setEditingDefinition] = useState<StatDefinition | null>(null);
   const [groupComposerOpen, setGroupComposerOpen] = useState(false);
@@ -128,14 +133,19 @@ export default function StatsScreen() {
     });
   }
 
-  function openCreateGroup() {
-    setEditingGroup(null);
-    setGroupComposerOpen(true);
-  }
-
   function openCreateStat() {
     setEditingDefinition(null);
     setComposerOpen(true);
+  }
+
+  function openStatEntry(definition: StatDefinition, initialDate?: string) {
+    setSelectedInitialDate(initialDate);
+    setSelected(definition);
+  }
+
+  function closeStatEntry() {
+    setSelected(null);
+    setSelectedInitialDate(undefined);
   }
 
   function openEditStat(definition: StatDefinition) {
@@ -226,7 +236,7 @@ export default function StatsScreen() {
         : colors.success;
 
     return (
-      <SilentPressable key={definition.id} onPress={() => setSelected(definition)}>
+      <SilentPressable key={definition.id} onPress={() => openStatEntry(definition)}>
         <Card style={styles.stat}>
           <StatHistoryPreview
             definition={definition}
@@ -258,14 +268,23 @@ export default function StatsScreen() {
   return (
     <Screen
       back
+      overlay={(
+        <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
+          <AppButton
+            compact
+            label="Log"
+            icon="add"
+            disabled={!resource.data}
+            onPress={() => setLogSheetOpen(true)}
+            style={[styles.logButton, { bottom: Math.max(24, insets.bottom + 12), borderColor: colors.accent, backgroundColor: colors.surface }]}
+          />
+        </View>
+      )}
       refreshing={resource.refreshing}
       onRefresh={() => void refresh()}>
       <View style={styles.controls} accessibilityLabel="Statistics controls">
         <ChoiceChips value={dateRange} options={TIME_RANGES} onChange={setDateRange} />
-        <View style={styles.headerActions}>
-          <AppButton compact variant="secondary" label="Group" icon="folder-open-outline" onPress={openCreateGroup} style={styles.compactAction} />
-          <AppButton compact label="Stat" icon="add" onPress={openCreateStat} style={styles.compactAction} />
-        </View>
+        <AppButton compact label="Stat" icon="add" onPress={openCreateStat} style={styles.compactAction} />
       </View>
       {resource.loading && <LoadingView label="Loading statistics…" />}
       {resource.error && !resource.data && <ErrorView message={resource.error} retry={() => void resource.reload()} />}
@@ -326,10 +345,11 @@ export default function StatsScreen() {
         )}
       </View>
       <StatEntrySheet
-        key={selected?.id ?? 'no-stat'}
+        key={`${selected?.id ?? 'no-stat'}-${selectedInitialDate ?? 'default'}`}
         definition={selected}
-        existing={selected ? entriesByDefinition.get(selected.id) : undefined}
-        onClose={() => setSelected(null)}
+        existing={selected && (!selectedInitialDate || entriesByDefinition.get(selected.id)?.date === selectedInitialDate) ? entriesByDefinition.get(selected.id) : undefined}
+        initialDate={selectedInitialDate}
+        onClose={closeStatEntry}
         onSaved={saveEntry}
         onReverted={(entry, date) => resource.setData(current => {
           if (!current || !selected) return current;
@@ -337,6 +357,15 @@ export default function StatsScreen() {
           const rest = current.entries.filter(item => item.statDefinitionId !== selected.id);
           return { ...current, entries: entry ? [...rest, entry] : rest };
         })}
+      />
+      <StatLogSheet
+        visible={logSheetOpen}
+        definitions={resource.data?.definitions ?? []}
+        onClose={() => setLogSheetOpen(false)}
+        onSelect={(definition, date) => {
+          setLogSheetOpen(false);
+          openStatEntry(definition, date);
+        }}
       />
       <StatComposerSheet
         key={`stat-${editingDefinition?.id ?? 'new'}-${composerOpen ? 'open' : 'closed'}`}
@@ -359,9 +388,9 @@ export default function StatsScreen() {
 }
 
 const styles = StyleSheet.create({
-  controls: { gap: 10 },
-  headerActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 6, flexWrap: 'wrap' },
-  compactAction: { paddingHorizontal: 8, gap: 4, flexShrink: 1 },
+  controls: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 },
+  compactAction: { paddingHorizontal: 8, gap: 4, flexShrink: 0 },
+  logButton: { position: 'absolute', right: 18, minHeight: 48, borderRadius: 24, paddingHorizontal: 17, shadowColor: '#11111A', shadowOffset: { width: 0, height: 5 }, shadowRadius: 12, shadowOpacity: 0.28, elevation: 6 },
   list: { gap: 16 },
   group: { gap: 8 },
   groupHeader: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 3 },

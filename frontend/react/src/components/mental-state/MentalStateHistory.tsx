@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { List, ListItemButton, ListItemText, ListItemIcon, Menu, MenuItem, Paper, Stack, Typography } from '@mui/material';
+import { Chip, List, ListItemButton, ListItemText, ListItemIcon, Menu, MenuItem, Paper, Stack, Typography } from '@mui/material';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import { MENTAL_STATE_GOAL_LABELS, MentalStateCheckIn } from '../../types/MentalState';
+import { MentalStateIcon } from './MentalStateIcon';
 
 interface MentalStateHistoryProps {
     checkIns: MentalStateCheckIn[];
@@ -45,13 +46,22 @@ export function MentalStateHistory({ checkIns, selectedId, onSelect, onDelete }:
                                 event.stopPropagation();
                                 setContextMenu({ checkIn, top: event.clientY, left: event.clientX });
                             }}
-                            sx={{ px: 2, py: 1.25, borderBottom: 1, borderColor: 'divider', alignItems: 'flex-start' }}
+                            sx={{ px: 1.5, py: 1.75, borderBottom: 1, borderColor: 'divider', alignItems: 'center' }}
                         >
+                            <ListItemIcon sx={{ minWidth: 36, alignSelf: 'center' }}>
+                                <MentalStateIcon state={checkIn.state} size="small" />
+                            </ListItemIcon>
                             <ListItemText
+                                sx={{ minWidth: 0, my: 0 }}
                                 primary={checkIn.state}
-                                secondary={`${MENTAL_STATE_GOAL_LABELS[checkIn.goal]} · ${formatRecordedAt(checkIn.recordedAt)}`}
-                                primaryTypographyProps={{ fontWeight: checkIn.id === selectedId ? 700 : 500 }}
+                                secondary={formatRecordedAt(checkIn.recordedAt)}
+                                primaryTypographyProps={{
+                                    fontWeight: checkIn.id === selectedId ? 700 : 500,
+                                    sx: { overflowWrap: 'anywhere', lineHeight: 1.3 },
+                                }}
+                                secondaryTypographyProps={{ component: 'span', variant: 'caption', sx: { mt: 0.25, lineHeight: 1.2 } }}
                             />
+                            <Chip label={MENTAL_STATE_GOAL_LABELS[checkIn.goal]} size="small" color="primary" variant="outlined" sx={{ flexShrink: 0 }} />
                         </ListItemButton>
                     ))}
                 </List>

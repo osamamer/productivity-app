@@ -7,6 +7,7 @@ import { AppButton } from '@/components/ui/AppButton';
 import { AppText } from '@/components/ui/AppText';
 import { Card } from '@/components/ui/Card';
 import { AppSlider } from '@/components/ui/AppSlider';
+import { MentalStateBadge } from '@/components/mind/MentalStateBadge';
 import { Screen } from '@/components/ui/Screen';
 import { SilentPressable } from '@/components/ui/SilentPressable';
 import { ErrorView, LoadingView } from '@/components/ui/StateView';
@@ -18,13 +19,28 @@ import { MENTAL_STATE_GOAL_LABELS, type MentalStateCheckIn, type MentalStateGoal
 
 const goals: MentalStateGoal[] = ['LABOR', 'LEISURE', 'RECOVERY'];
 
-const signals: { key: keyof MentalStateSignals; label: string; low: string; high: string }[] = [
-  { key: 'energy', label: 'Energy', low: 'Drained', high: 'Charged' },
-  { key: 'activation', label: 'Activation', low: 'Still', high: 'Revved up' },
-  { key: 'stimulationHunger', label: 'Stimulation hunger', low: 'Content', high: 'Seeking input' },
-  { key: 'clarity', label: 'Clarity', low: 'Foggy', high: 'Clear' },
-  { key: 'valence', label: 'Emotional tone', low: 'Heavy', high: 'Positive' },
-  { key: 'emotionalLoad', label: 'Emotional load', low: 'Light', high: 'Full' },
+const signalGroups: { label: string; signals: { key: keyof MentalStateSignals; label: string }[] }[] = [
+  {
+    label: 'Energy & pace',
+    signals: [
+      { key: 'energy', label: 'Energy' },
+      { key: 'activation', label: 'Activation' },
+    ],
+  },
+  {
+    label: 'Attention',
+    signals: [
+      { key: 'stimulationHunger', label: 'Stimulation hunger' },
+      { key: 'clarity', label: 'Clarity' },
+    ],
+  },
+  {
+    label: 'Emotions',
+    signals: [
+      { key: 'valence', label: 'Emotional tone' },
+      { key: 'emotionalLoad', label: 'Emotional load' },
+    ],
+  },
 ];
 
 const RECENT_CHECK_IN_LIMIT = 5;
@@ -37,6 +53,13 @@ function isRecentCheckIn(checkIn: MentalStateCheckIn | null, now: number): boole
   return Number.isFinite(recordedAt) && now - recordedAt <= CURRENT_STATE_WINDOW_MS;
 }
 
+function formatCheckInDateTime(recordedAt: string): string {
+  const date = new Date(recordedAt);
+  const time = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const isToday = date.toDateString() === new Date().toDateString();
+  return isToday ? `Today · ${time}` : `${date.toLocaleDateString([], { month: 'short', day: 'numeric' })} · ${time}`;
+}
+
 interface MentalStateResultCardProps {
   checkIn: MentalStateCheckIn;
   selected: boolean;
@@ -47,6 +70,7 @@ interface MentalStateResultCardProps {
 }
 
 function MentalStateResultCard({ checkIn, selected, isCurrent, isMostRecent, onCheckInAgain, onGoToMostRecent }: MentalStateResultCardProps) {
+  const { colors } = useAppTheme();
   const [animations] = useState(() => ({
     opacity: new Animated.Value(0),
     translateY: new Animated.Value(12),
@@ -84,8 +108,16 @@ function MentalStateResultCard({ checkIn, selected, isCurrent, isMostRecent, onC
   return (
     <Animated.View style={{ opacity, transform: [{ translateY }] }}>
       <Card style={styles.result}>
-        <AppText variant="caption" color="muted">{selected ? 'SELECTED CHECK-IN' : 'YOUR STATE'} · {MENTAL_STATE_GOAL_LABELS[checkIn.goal].toUpperCase()}</AppText>
-        <AppText variant="title">{checkIn.state}</AppText>
+        <View style={styles.resultHeading}>
+          <MentalStateBadge state={checkIn.state} plain />
+          <View style={styles.resultHeadingCopy}>
+            <AppText variant="caption" color="muted">{selected ? 'SELECTED CHECK-IN' : 'YOUR STATE'}</AppText>
+            <AppText variant="title">{checkIn.state}</AppText>
+            <View style={[styles.goalPill, { backgroundColor: colors.accentSoft }]}>
+              <AppText variant="caption" color="accent">{MENTAL_STATE_GOAL_LABELS[checkIn.goal]}</AppText>
+            </View>
+          </View>
+        </View>
         <Animated.View style={{ opacity: recommendationOpacity, transform: [{ translateY: recommendationTranslateY }] }}>
           <AppText variant="caption" color="muted">{isCurrent ? 'WHAT MAY HELP NOW' : 'RECOMMENDATION FOR THIS CHECK-IN'}</AppText>
           <View style={styles.recommendations}>
@@ -206,18 +238,30 @@ export default function MentalStateScreen() {
               })}
             </View>
           </View>
-          {signals.map(signal => (
-            <View key={signal.key} style={styles.signal}>
-              <View style={styles.spaceBetween}><AppText variant="label">{signal.label}</AppText><AppText variant="label" color="accent">{values[signal.key]}/10</AppText></View>
-              <AppSlider
-                label={signal.label}
-                value={values[signal.key]}
-                minimumLabel={signal.low}
-                maximumLabel={signal.high}
-                onValueChange={value => setValues(current => ({ ...current, [signal.key]: value }))}
-              />
-            </View>
-          ))}
+          <View style={styles.signalGroups}>
+            {signalGroups.map((group, index) => (
+              <View key={group.label} style={[styles.signalGroup, index > 0 && styles.signalGroupSeparated, index > 0 && { borderColor: `${colors.accent}55` }]}>
+                <AppText variant="label" style={styles.signalGroupTitle}>{group.label.toUpperCase()}</AppText>
+                <View style={styles.signalGroupItems}>
+                  {group.signals.map(signal => (
+                    <View key={signal.key} style={styles.signal}>
+                      <View style={styles.spaceBetween}>
+                        <AppText variant="label">{signal.label}</AppText>
+                        <View style={[styles.ratingPill, { backgroundColor: colors.accentSoft }]}>
+                          <AppText variant="caption" color="accent">{values[signal.key]}/10</AppText>
+                        </View>
+                      </View>
+                      <AppSlider
+                        label={signal.label}
+                        value={values[signal.key]}
+                        onValueChange={value => setValues(current => ({ ...current, [signal.key]: value }))}
+                      />
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ))}
+          </View>
           {error && <AppText color="danger">{error}</AppText>}
           <AppButton label="Check in" icon="sparkles-outline" loading={saving} disabled={!goal} onPress={() => void submit()} />
         </Card>
@@ -238,8 +282,11 @@ export default function MentalStateScreen() {
               selectedHistoryItem?.id === item.id && styles.historyCardSelected,
               pressed && styles.pressed,
             ]}>
-            <View style={styles.grow}><AppText variant="label">{item.state}</AppText><AppText variant="caption" color="muted">{MENTAL_STATE_GOAL_LABELS[item.goal]} · {new Date(item.recordedAt).toLocaleString()}</AppText></View>
-            <AppText variant="caption" color="muted">{item.suggestedActions.length} suggestions</AppText>
+            <MentalStateBadge state={item.state} size="small" plain />
+            <View style={styles.grow}>
+              <AppText variant="label">{item.state}</AppText>
+              <AppText variant="caption" color="muted">{formatCheckInDateTime(item.recordedAt)}</AppText>
+            </View>
             <Ionicons name="chevron-forward" size={17} color={colors.textMuted} />
           </SilentPressable>
         ))}
@@ -250,6 +297,7 @@ export default function MentalStateScreen() {
 
 const styles = StyleSheet.create({
   content: { paddingTop: 0 },
-  form: { gap: 22 }, goalSection: { gap: 10 }, goals: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, goalChoice: { minHeight: 42, paddingHorizontal: 14, borderWidth: 1, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }, signal: { gap: 8 }, spaceBetween: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
-  result: { gap: 9 }, recommendations: { gap: 7, marginTop: 2 }, history: { gap: 10 }, historyCard: { minHeight: 68, borderWidth: 1, borderRadius: 18, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }, historyCardSelected: { borderWidth: 2 }, grow: { flex: 1, gap: 3 }, pressed: { opacity: 0.72 },
+  form: { gap: 18 }, goalSection: { gap: 8 }, goals: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, goalChoice: { minHeight: 42, paddingHorizontal: 14, borderWidth: 1, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  signalGroups: { gap: 14 }, signalGroup: { gap: 10 }, signalGroupSeparated: { borderTopWidth: 1, paddingTop: 12 }, signalGroupTitle: { letterSpacing: 0.8 }, signalGroupItems: { gap: 14 }, signal: { gap: 6 }, spaceBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 }, ratingPill: { minWidth: 48, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 10, alignItems: 'center' },
+  result: { gap: 12 }, resultHeading: { flexDirection: 'row', alignItems: 'center', gap: 12 }, resultHeadingCopy: { flex: 1, gap: 3, minWidth: 0 }, goalPill: { alignSelf: 'flex-start', paddingHorizontal: 9, paddingVertical: 4, borderRadius: 10 }, recommendations: { gap: 7, marginTop: 2 }, history: { gap: 10 }, historyCard: { minHeight: 68, borderWidth: 1, borderRadius: 18, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }, historyCardSelected: { borderWidth: 2 }, grow: { flex: 1, gap: 3, minWidth: 0 }, pressed: { opacity: 0.72 },
 });

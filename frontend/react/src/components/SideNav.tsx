@@ -1,6 +1,6 @@
 import { CompactPopover } from './CompactPopover';
 import {
-    Box, Button, DialogActions, DialogContent,
+    Box, Button, ButtonBase, DialogActions, DialogContent,
     DialogContentText, DialogTitle, Divider, Drawer,
     IconButton, List, ListItemButton, Typography,
     useMediaQuery, useTheme,
@@ -24,6 +24,7 @@ import MenuRoundedIcon from '@mui/icons-material/MenuRounded';
 import KeyboardDoubleArrowRightRoundedIcon from '@mui/icons-material/KeyboardDoubleArrowRightRounded';
 import KeyboardDoubleArrowLeftRoundedIcon from '@mui/icons-material/KeyboardDoubleArrowLeftRounded';
 import { SideMenuButton } from './button/SideMenuButton';
+import { getMentalStateColor } from './mental-state/MentalStateIcon';
 import { useAppTheme } from '../hooks/useAppTheme';
 import { useUser } from '../hooks/useUser';
 import { usePomodoro } from '../hooks/usePomodoro';
@@ -169,7 +170,7 @@ function SideNavSubItem({
     );
 }
 
-type MetricTone = 'bad' | 'caution' | 'good' | 'goodLight' | 'neutral';
+type MetricTone = 'bad' | 'caution' | 'good' | 'goodMuted' | 'neutral';
 
 function getMetricToneStyles(theme: Theme, tone: MetricTone) {
     const accent = tone === 'bad'
@@ -178,8 +179,8 @@ function getMetricToneStyles(theme: Theme, tone: MetricTone) {
             ? theme.palette.warning.main
             : tone === 'good'
                 ? theme.palette.success.main
-                : tone === 'goodLight'
-                    ? theme.palette.success.light
+                : tone === 'goodMuted'
+                    ? getMentalStateColor('Almost Ready', theme)
                 : theme.palette.text.secondary;
     return { accent };
 }
@@ -204,7 +205,7 @@ function getMentalStateTone(state: string | null): MetricTone {
     if (!state) return 'neutral';
     const stateName = state.split(' · ')[0];
     if (stateName === 'Ready' || stateName === 'Engaged') return 'good';
-    if (stateName === 'Almost Ready') return 'goodLight';
+    if (stateName === 'Almost Ready') return 'goodMuted';
     if (stateName === 'Mixed' || stateName === 'Stimulation-Seeking') return 'caution';
     return 'bad';
 }
@@ -246,6 +247,13 @@ function TodaySnapshotCard({ snapshot, onNavigate }: { snapshot: TodaySnapshot |
     const focusLabel = snapshot?.focusSeconds === null || snapshot === null
         ? '—'
         : `${(snapshot.focusSeconds / 3600).toFixed(1)}h`;
+    const openMentalState = () => {
+        if (onNavigate) {
+            onNavigate('/mental-state');
+        } else {
+            navigate('/mental-state');
+        }
+    };
 
     return (
         <Box
@@ -272,7 +280,13 @@ function TodaySnapshotCard({ snapshot, onNavigate }: { snapshot: TodaySnapshot |
                     {snapshot === null ? (
                         <SnapshotMetric value="Checking" label="Mental state" tone="neutral" />
                     ) : snapshot.mentalState ? (
-                        <SnapshotMetric value={snapshot.mentalState} label="Mental state" tone={mentalStateTone} />
+                        <ButtonBase
+                            aria-label={`View mental state: ${snapshot.mentalState}`}
+                            onClick={openMentalState}
+                            sx={{ display: 'block', width: '100%', minHeight: 52, textAlign: 'inherit', borderRadius: 1 }}
+                        >
+                            <SnapshotMetric value={snapshot.mentalState} label="Mental state" tone={mentalStateTone} />
+                        </ButtonBase>
                     ) : (
                         <Box>
                             <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
@@ -280,13 +294,7 @@ function TodaySnapshotCard({ snapshot, onNavigate }: { snapshot: TodaySnapshot |
                             </Typography>
                             <Button
                                 size="small"
-                                onClick={() => {
-                                    if (onNavigate) {
-                                        onNavigate('/mental-state');
-                                    } else {
-                                        navigate('/mental-state');
-                                    }
-                                }}
+                                onClick={openMentalState}
                                 sx={{ minWidth: 0, px: 0, py: 0, justifyContent: 'flex-start' }}
                             >
                                 Check in now

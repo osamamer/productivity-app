@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { addDays, format, startOfDay } from 'date-fns';
 import { keyframes } from '@mui/system';
 import { alpha, type Theme } from '@mui/material/styles';
@@ -7,7 +7,7 @@ import {
     Box,
     Button,
     ButtonBase,
-    Chip,
+    ClickAwayListener,
     Collapse,
     FormControlLabel,
     IconButton,
@@ -18,10 +18,15 @@ import {
     Stack,
     Switch,
     TextField,
+    Tooltip,
     Typography,
 } from '@mui/material';
 import EventNoteOutlinedIcon from '@mui/icons-material/EventNoteOutlined';
 import EventAvailableOutlinedIcon from '@mui/icons-material/EventAvailableOutlined';
+import AccessTimeRoundedIcon from '@mui/icons-material/AccessTimeRounded';
+import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
+import HourglassEmptyRoundedIcon from '@mui/icons-material/HourglassEmptyRounded';
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import NotificationsNoneOutlinedIcon from '@mui/icons-material/NotificationsNoneOutlined';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
@@ -54,6 +59,8 @@ type TodayEventCardProps = {
     item: TodayEvent;
     dayStart: Date;
     pendingCreation: boolean;
+    selected: boolean;
+    onSelect: (itemId: string) => void;
     onEventUpdated: (event: CalendarEvent) => void;
     onEventDeleted: (eventId: string) => void;
 };
@@ -65,6 +72,7 @@ type DeleteRequest = {
 
 const EVENT_STATUSES: CalendarEventStatus[] = ['CONFIRMED', 'TENTATIVE', 'CANCELLED'];
 const NEW_EVENT_STATUSES: CalendarEventStatus[] = ['CONFIRMED', 'TENTATIVE'];
+const NEW_EVENT_POPUP_CONTENT_SELECTOR = '.MuiMenu-paper, .MuiPopover-paper, .MuiPickersPopper-root, .MuiPopper-root, .MuiDialog-paper';
 const OPTIMISTIC_EVENT_ID_PREFIX = 'home-event-optimistic-';
 const HOME_SECTION_AUTO_SCROLL_MS = 320;
 let optimisticEventSequence = 0;
@@ -87,16 +95,16 @@ function eventStatusLabel(status: CalendarEventStatus): string {
     return 'Confirmed';
 }
 
+function EventStatusIcon({ status }: { status: CalendarEventStatus }) {
+    if (status === 'TENTATIVE') return <HourglassEmptyRoundedIcon fontSize="small" />;
+    if (status === 'CANCELLED') return <CloseRoundedIcon fontSize="small" />;
+    return <CheckRoundedIcon fontSize="small" />;
+}
+
 function eventStatusColor(status: CalendarEventStatus, theme: Theme): string {
     if (status === 'TENTATIVE') return theme.palette.mode === 'dark' ? '#d9bc72' : '#ad7c2e';
     if (status === 'CANCELLED') return theme.palette.error.main;
     return theme.palette.primary.main;
-}
-
-function eventTimeColor(theme: Theme): string {
-    return theme.palette.mode === 'light'
-        ? alpha(theme.palette.text.primary, 0.8)
-        : theme.palette.text.secondary;
 }
 
 function eventsForToday(events: CalendarEvent[], dayStart: Date): TodayEvent[] {
@@ -253,7 +261,15 @@ function applyDateAndTime(date: string, time: string): Date | null {
     return Number.isNaN(result.getTime()) ? null : result;
 }
 
-function TodayEventCard({ item, dayStart, pendingCreation, onEventUpdated, onEventDeleted }: TodayEventCardProps) {
+function TodayEventCard({
+    item,
+    dayStart,
+    pendingCreation,
+    selected,
+    onSelect,
+    onEventUpdated,
+    onEventDeleted,
+}: TodayEventCardProps) {
     const [editingName, setEditingName] = useState(false);
     const [localName, setLocalName] = useState(item.event.title ?? '');
     const [nameOverride, setNameOverride] = useState<string | null>(null);
@@ -286,6 +302,7 @@ function TodayEventCard({ item, dayStart, pendingCreation, onEventUpdated, onEve
     const reminderValue = reminderOverride !== undefined
         ? reminderOverride
         : item.event.reminderMinutesBefore;
+    const eventTitle = item.event.title || 'Untitled event';
 
     useEffect(() => {
         if (statusOverride === item.status) setStatusOverride(null);
@@ -515,41 +532,78 @@ function TodayEventCard({ item, dayStart, pendingCreation, onEventUpdated, onEve
 
     return (
         <Box
+            role="group"
+            tabIndex={pendingCreation ? -1 : 0}
+            aria-label={`${selected ? 'Selected event' : 'Select event'}: ${eventTitle}. Press Enter or Space to select.`}
+            aria-keyshortcuts="Enter Space"
+            onClick={() => {
+                if (!pendingCreation) onSelect(item.id);
+            }}
+            onKeyDown={keyEvent => {
+                if (keyEvent.target !== keyEvent.currentTarget || pendingCreation) return;
+                if (keyEvent.key === 'Enter' || keyEvent.key === ' ') {
+                    keyEvent.preventDefault();
+                    onSelect(item.id);
+                }
+            }}
             onContextMenu={contextEvent => {
                 contextEvent.preventDefault();
                 if (pendingCreation) return;
                 setContextMenuPosition({ top: contextEvent.clientY, left: contextEvent.clientX });
             }}
             aria-busy={pendingCreation || undefined}
-            sx={theme => ({
-                minWidth: 0,
-                p: 1.25,
-                pl: 2,
-                border: '1px solid',
-                borderColor: eventStatusColor(displayStatus, theme),
-                borderStyle: displayStatus === 'TENTATIVE'
-                    ? 'dashed'
-                    : displayStatus === 'CANCELLED' ? 'dotted' : 'solid',
-                borderRadius: 2,
-                backgroundColor: theme.palette.background.default,
-            })}
+            sx={theme => {
+                const statusColor = eventStatusColor(displayStatus, theme);
+                const selectedColor = theme.palette.primary.main;
+                const tentative = displayStatus === 'TENTATIVE';
+                return {
+                    minWidth: 0,
+                    p: 1.25,
+                    pl: 1.75,
+                    border: '1px solid',
+                    borderColor: tentative
+                        ? statusColor
+                        : selected ? alpha(selectedColor, 0.58) : alpha(statusColor, 0.28),
+                    borderWidth: tentative ? 1.5 : 1,
+                    borderStyle: tentative
+                        ? 'dashed'
+                        : displayStatus === 'CANCELLED' ? 'dotted' : 'solid',
+                    borderLeft: tentative ? `1.5px dashed ${statusColor}` : `4px solid ${statusColor}`,
+                    borderRadius: '0 12px 12px 0',
+                    backgroundColor: selected
+                        ? alpha(selectedColor, 0.1)
+                        : theme.palette.background.paper,
+                    cursor: pendingCreation ? 'default' : 'pointer',
+                    boxShadow: selected ? `0 2px 10px ${alpha(selectedColor, 0.12)}` : 'none',
+                    transform: selected ? 'translateY(-1px)' : 'none',
+                    transition: 'background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease',
+                    '&:hover': pendingCreation ? undefined : {
+                        boxShadow: `0 4px 14px ${alpha(statusColor, 0.14)}`,
+                        transform: 'translateY(-1px)',
+                    },
+                    '&:focus-visible': {
+                        outline: `2px solid ${selectedColor}`,
+                        outlineOffset: 2,
+                    },
+                };
+            }}
         >
             <Box sx={{
                 display: 'grid',
                 gridTemplateColumns: 'minmax(0, 1fr) auto',
                 gridTemplateRows: 'auto auto',
-                alignItems: 'stretch',
-                columnGap: 1,
-                rowGap: 0.35,
+                alignItems: 'center',
+                columnGap: 1.25,
+                rowGap: 0.75,
                 minWidth: 0,
             }}>
                 <Box sx={{
                     gridColumn: 1,
-                    gridRow: '1 / span 2',
+                    gridRow: 1,
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'flex-start',
-                    justifyContent: 'center',
+                    justifyContent: 'flex-start',
                     minWidth: 0,
                     textAlign: 'left',
                 }}>
@@ -559,6 +613,7 @@ function TodayEventCard({ item, dayStart, pendingCreation, onEventUpdated, onEve
                         onClick={clickEvent => {
                             if (pendingCreation) return;
                             clickEvent.stopPropagation();
+                            onSelect(item.id);
                             setNameError(false);
                             setEditingName(true);
                         }}
@@ -566,7 +621,7 @@ function TodayEventCard({ item, dayStart, pendingCreation, onEventUpdated, onEve
                             display: 'inline-block',
                             position: 'relative',
                             width: 'max-content',
-                            maxWidth: 'calc(100% - 32px)',
+                            maxWidth: 'calc(100% - 14px)',
                             boxSizing: 'border-box',
                             textAlign: 'left',
                             cursor: 'text',
@@ -574,8 +629,8 @@ function TodayEventCard({ item, dayStart, pendingCreation, onEventUpdated, onEve
                                 content: '""',
                                 position: 'absolute',
                                 top: 0,
-                                right: -32,
-                                width: 32,
+                                right: -14,
+                                width: 14,
                                 height: '100%',
                             },
                         }}
@@ -594,7 +649,7 @@ function TodayEventCard({ item, dayStart, pendingCreation, onEventUpdated, onEve
                                 textDecoration: displayStatus === 'CANCELLED' ? 'line-through' : 'none',
                             }}
                         >
-                                {editingName ? localName : (nameOverride ?? (item.event.title || 'Untitled event'))}
+                                {editingName ? localName : (nameOverride ?? eventTitle)}
                         </Typography>
                         {editingName && (
                             <TextField
@@ -629,16 +684,25 @@ function TodayEventCard({ item, dayStart, pendingCreation, onEventUpdated, onEve
                                     bottom: 0,
                                     left: 0,
                                     width: 'auto',
-                                    '& .MuiInputBase-root': { height: '100%', padding: 0 },
+                                    '& .MuiInputBase-root': {
+                                        height: '100%',
+                                        minHeight: '1.35em',
+                                        padding: 0,
+                                        alignItems: 'flex-start',
+                                    },
                                     '& .MuiInputBase-input': {
                                         color: theme.palette.text.primary,
                                         WebkitTextFillColor: theme.palette.text.primary,
                                         fontSize: '1.1rem',
+                                        fontFamily: theme.typography.fontFamily,
+                                        fontWeight: theme.typography.fontWeightRegular,
                                         lineHeight: 1.35,
                                         whiteSpace: 'pre-wrap',
                                         overflowWrap: 'anywhere',
                                         textAlign: 'left',
                                         padding: 0,
+                                        margin: 0,
+                                        boxSizing: 'border-box',
                                     },
                                 })}
                             />
@@ -659,52 +723,54 @@ function TodayEventCard({ item, dayStart, pendingCreation, onEventUpdated, onEve
                         openTimePicker(clickEvent.currentTarget);
                     }}
                     sx={theme => ({
-                        gridColumn: 2,
-                        gridRow: 1,
-                        justifySelf: 'end',
+                        gridColumn: 1,
+                        gridRow: 2,
+                        justifySelf: 'start',
                         flexShrink: 0,
-                        px: 0.75,
-                        py: 0.2,
-                        borderRadius: '16px',
-                        color: eventTimeColor(theme),
-                        fontSize: '0.875rem',
-                        textAlign: 'right',
+                        maxWidth: '100%',
+                        px: 0.85,
+                        py: 0.35,
+                        borderRadius: 1.2,
+                        color: eventStatusColor(displayStatus, theme),
+                        backgroundColor: alpha(eventStatusColor(displayStatus, theme), 0.1),
+                        fontSize: '0.775rem',
+                        fontWeight: 600,
+                        textAlign: 'left',
                         fontVariantNumeric: 'tabular-nums',
-                        whiteSpace: 'nowrap',
-                        transition: 'background-color 140ms ease, color 140ms ease',
-                        '&:hover': {
-                            color: theme.palette.primary.main,
-                            backgroundColor: alpha(theme.palette.primary.main, 0.1),
-                        },
+                        whiteSpace: 'normal',
+                        lineHeight: 1.25,
+                        cursor: 'pointer',
                     })}
                 >
+                    <AccessTimeRoundedIcon sx={{ fontSize: 14, mr: 0.55, flexShrink: 0 }} />
                     {eventTimeLabel(displayedItem, dayStart)}
                 </ButtonBase>
 
-                <Chip
-                    size="small"
-                    label={eventStatusLabel(displayStatus)}
-                    disabled={pendingCreation}
-                    onClick={clickEvent => {
-                        clickEvent.stopPropagation();
-                        setStatusAnchorEl(clickEvent.currentTarget);
-                    }}
-                    aria-label={`Change event status, currently ${eventStatusLabel(displayStatus)}`}
-                    sx={theme => {
-                        const color = eventStatusColor(displayStatus, theme);
-                        return {
-                            gridColumn: 2,
-                            gridRow: 2,
-                            justifySelf: 'center',
-                            flexShrink: 0,
-                            height: 22,
-                            color,
-                            bgcolor: alpha(color, 0.1),
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                        };
-                    }}
-                />
+                <Tooltip title={`${eventStatusLabel(displayStatus)} · Change status`}>
+                    <Box component="span" sx={{ gridColumn: 2, gridRow: 2, justifySelf: 'end', display: 'inline-flex' }}>
+                        <IconButton
+                            size="small"
+                            disabled={pendingCreation}
+                            onClick={clickEvent => {
+                                clickEvent.stopPropagation();
+                                setStatusAnchorEl(clickEvent.currentTarget);
+                            }}
+                            aria-label={`Change event status, currently ${eventStatusLabel(displayStatus)}`}
+                            sx={theme => {
+                                const color = eventStatusColor(displayStatus, theme);
+                                return {
+                                    width: 30,
+                                    height: 30,
+                                    color,
+                                    borderRadius: 0,
+                                    '&:hover': { bgcolor: 'transparent' },
+                                };
+                            }}
+                        >
+                            <EventStatusIcon status={displayStatus} />
+                        </IconButton>
+                    </Box>
+                </Tooltip>
             </Box>
 
             <Menu
@@ -716,14 +782,6 @@ function TodayEventCard({ item, dayStart, pendingCreation, onEventUpdated, onEve
             >
                 {EVENT_STATUSES.map(status => (
                     <MenuItem key={status} selected={status === displayStatus} onClick={() => void updateStatus(status)}>
-                        <ListItemIcon sx={{ minWidth: 28 }}>
-                            <Box sx={theme => ({
-                                width: 9,
-                                height: 9,
-                                borderRadius: '50%',
-                                bgcolor: eventStatusColor(status, theme),
-                            })} />
-                        </ListItemIcon>
                         {eventStatusLabel(status)}
                     </MenuItem>
                 ))}
@@ -952,6 +1010,7 @@ export function TodayEventsSection() {
     });
     const [events, setEvents] = useState<CalendarEvent[]>(() => initialEvents ?? []);
     const [loading, setLoading] = useState(() => initialEvents === undefined);
+    const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
     const [expanded, setExpanded] = useState(getHomeTodayEventsExpanded);
     const [creatingEvent, setCreatingEvent] = useState(false);
     const [newEventTitle, setNewEventTitle] = useState('');
@@ -964,6 +1023,13 @@ export function TodayEventsSection() {
     const [newEventStatusAnchorEl, setNewEventStatusAnchorEl] = useState<HTMLElement | null>(null);
     const [newEventTimeError, setNewEventTimeError] = useState(false);
     const sectionRef = useRef<HTMLElement | null>(null);
+    const newEventDraftRef = useRef<HTMLDivElement | null>(null);
+    const newEventPopupPointerEventsRef = useRef(new WeakSet<Event>());
+    const finishNewEventDraftRef = useRef<() => void>(() => {});
+    const eventRowRefs = useRef(new Map<string, HTMLDivElement>());
+    const previousEventPositionsRef = useRef(new Map<string, DOMRect>());
+    const eventRenderIdAliasesRef = useRef(new Map<string, string>());
+    const newEventAnimationOriginRef = useRef<{ key: string; left: number; top: number } | null>(null);
     const scrollToExpandedSectionRef = useRef(false);
     const scrollAnimationFrameRef = useRef<number | null>(null);
     const newEventTimePickerOpenRef = useRef(false);
@@ -1020,12 +1086,79 @@ export function TodayEventsSection() {
     }, []);
 
     const todayEvents = useMemo(() => eventsForToday(events, dayStart), [dayStart, events]);
+    const todayEventsRef = useRef(todayEvents);
+    todayEventsRef.current = todayEvents;
+    const getEventRenderKey = (item: TodayEvent) =>
+        `${eventRenderIdAliasesRef.current.get(item.event.id) ?? item.event.id}:${item.occurrenceKey}`;
+    const todayEventLayoutKey = todayEvents.map(getEventRenderKey).join('|');
+
+    useLayoutEffect(() => {
+        const nextPositions = new Map<string, DOMRect>();
+        const previousPositions = previousEventPositionsRef.current;
+        const origin = newEventAnimationOriginRef.current;
+        const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+        todayEventsRef.current.forEach(item => {
+            const key = getEventRenderKey(item);
+            const element = eventRowRefs.current.get(key);
+            if (!element) return;
+
+            const nextPosition = element.getBoundingClientRect();
+            nextPositions.set(key, nextPosition);
+            const previousPosition = previousPositions.get(key)
+                ?? (origin?.key === key ? origin : undefined);
+            if (!previousPosition || reducedMotion) return;
+
+            const deltaX = previousPosition.left - nextPosition.left;
+            const deltaY = previousPosition.top - nextPosition.top;
+            if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) return;
+
+            element.animate(
+                [
+                    { transform: `translate3d(${deltaX}px, ${deltaY}px, 0)` },
+                    { transform: 'translate3d(0, 0, 0)' },
+                ],
+                { duration: 320, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
+            );
+        });
+
+        previousEventPositionsRef.current = nextPositions;
+        newEventAnimationOriginRef.current = null;
+    }, [todayEventLayoutKey]);
+
     const updateEventInState = (updatedEvent: CalendarEvent) => {
         setEvents(current => current.map(event => event.id === updatedEvent.id ? updatedEvent : event));
     };
     const removeEventFromState = (eventId: string) => {
         setEvents(current => current.filter(event => event.id !== eventId));
+        setSelectedEventId(current => current?.startsWith(`${eventId}:`) ? null : current);
     };
+
+    const dismissNewEventDraft = useCallback(() => {
+        if (createEventInFlightRef.current) return;
+        newEventTimePickerOpenRef.current = false;
+        setCreatingEvent(false);
+        setNewEventTitle('');
+        setNewEventError(false);
+        setNewEventTimeError(false);
+        setNewEventTimeAnchorEl(null);
+        setNewEventStatusAnchorEl(null);
+    }, []);
+
+    useEffect(() => {
+        if (!creatingEvent) return;
+
+        const dismissOnOutsidePointer = (event: PointerEvent) => {
+            const target = event.target instanceof Element ? event.target : null;
+            if (target && newEventDraftRef.current?.contains(target)) return;
+            if (newEventPopupPointerEventsRef.current.has(event)) return;
+            if (target?.closest(NEW_EVENT_POPUP_CONTENT_SELECTOR)) return;
+            finishNewEventDraftRef.current();
+        };
+
+        document.addEventListener('pointerdown', dismissOnOutsidePointer);
+        return () => document.removeEventListener('pointerdown', dismissOnOutsidePointer);
+    }, [creatingEvent, dismissNewEventDraft]);
 
     const createTodayEvent = async () => {
         if (cancelCreateEventRef.current) {
@@ -1074,6 +1207,22 @@ export function TodayEventsSection() {
             reminderMinutesBefore: null,
         };
         const optimisticEvent = createOptimisticEvent(input);
+        const optimisticOccurrence = eventsForToday([optimisticEvent], dayStart)[0];
+        const currentPositions = new Map<string, DOMRect>();
+        todayEventsRef.current.forEach(item => {
+            const key = getEventRenderKey(item);
+            const element = eventRowRefs.current.get(key);
+            if (element) currentPositions.set(key, element.getBoundingClientRect());
+        });
+        previousEventPositionsRef.current = currentPositions;
+        const draftPosition = newEventDraftRef.current?.getBoundingClientRect();
+        newEventAnimationOriginRef.current = optimisticOccurrence && draftPosition
+            ? {
+                key: getEventRenderKey(optimisticOccurrence),
+                left: draftPosition.left,
+                top: draftPosition.top,
+            }
+            : null;
 
         createEventInFlightRef.current = true;
         setCreatingEventRequest(true);
@@ -1085,6 +1234,7 @@ export function TodayEventsSection() {
         setEvents(current => [...current, optimisticEvent]);
         try {
             const createdEvent = await eventService.createEvent(input);
+            eventRenderIdAliasesRef.current.set(createdEvent.id, optimisticEvent.id);
             setEvents(current => current.map(event => event.id === optimisticEvent.id ? createdEvent : event));
             if (!newEventAllDay) saveEventTimePreferences(newEventTimes.start, newEventTimes.end);
             setCreatingEvent(false);
@@ -1097,6 +1247,15 @@ export function TodayEventsSection() {
             createEventInFlightRef.current = false;
             setCreatingEventRequest(false);
         }
+    };
+
+    finishNewEventDraftRef.current = () => {
+        if (createEventInFlightRef.current) return;
+        if (newEventTitle.trim()) {
+            void createTodayEvent();
+            return;
+        }
+        dismissNewEventDraft();
     };
 
     const scrollExpandedSectionIntoView = () => {
@@ -1279,249 +1438,281 @@ export function TodayEventsSection() {
                         } : {}),
                     }}
                 >
-                    {creatingEvent && !creatingEventRequest && (
+                    {creatingEvent && (
                         <Box
-                            sx={theme => ({
-                                minWidth: 0,
-                                p: 1.25,
-                                pl: 2,
-                                border: '1px solid',
-                                borderColor: eventStatusColor(newEventStatus, theme),
-                                borderStyle: newEventStatus === 'TENTATIVE'
-                                    ? 'dashed'
-                                    : newEventStatus === 'CANCELLED' ? 'dotted' : 'solid',
-                                borderRadius: 2,
-                                backgroundColor: theme.palette.background.default,
-                                animation: `${eventDraftReveal} 180ms ease-out`,
-                            })}
+                            component="div"
+                            onPointerDownCapture={event => {
+                                newEventPopupPointerEventsRef.current.add(event.nativeEvent);
+                            }}
+                            onBlur={event => {
+                                const nextTarget = event.relatedTarget;
+                                if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
+                                if (nextTarget instanceof Element && nextTarget.closest(NEW_EVENT_POPUP_CONTENT_SELECTOR)) return;
+                                if (newEventTimeAnchorEl || newEventStatusAnchorEl || newEventTimePickerOpenRef.current) return;
+                                finishNewEventDraftRef.current();
+                            }}
+                            sx={{ display: 'contents' }}
                         >
-                            <Box sx={{
-                                display: 'grid',
-                                gridTemplateColumns: 'minmax(0, 1fr) auto',
-                                gridTemplateRows: 'auto auto',
-                                alignItems: 'stretch',
-                                columnGap: 1,
-                                rowGap: 0.35,
-                                minWidth: 0,
-                            }}>
-                                <Box sx={{
-                                    gridColumn: 1,
-                                    gridRow: '1 / span 2',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    justifyContent: 'center',
-                                    minWidth: 0,
-                                }}>
-                                    <TextField
-                                        value={newEventTitle}
-                                        autoFocus
-                                        autoComplete="off"
-                                        placeholder="New event"
-                                        onChange={changeEvent => setNewEventTitle(changeEvent.target.value)}
-                                        onKeyDown={keyEvent => {
-                                            if (keyEvent.key === 'Enter' && !keyEvent.shiftKey) {
-                                                keyEvent.preventDefault();
-                                                void createTodayEvent();
-                                            }
-                                            if (keyEvent.key === 'Escape') {
-                                                keyEvent.preventDefault();
-                                                cancelCreateEventRef.current = true;
-                                                setCreatingEvent(false);
-                                                setNewEventTitle('');
-                                                setNewEventError(false);
-                                                setNewEventTimeError(false);
-                                            }
-                                        }}
-                                        variant="standard"
-                                        fullWidth
-                                        multiline
-                                        minRows={1}
-                                        maxRows={3}
-                                        InputProps={{ disableUnderline: true }}
-                                        inputProps={{
-                                            'aria-label': 'New event name',
-                                            draggable: false,
-                                            readOnly: creatingEventRequest,
-                                        }}
-                                        sx={{
-                                            '& .MuiInputBase-root': { padding: 0 },
-                                            '& .MuiInputBase-input': {
-                                                color: 'text.primary',
-                                                fontSize: '1.1rem',
-                                                lineHeight: 1.35,
-                                                whiteSpace: 'pre-wrap',
-                                                overflowWrap: 'anywhere',
-                                                textAlign: 'left',
-                                                padding: 0,
-                                            },
-                                        }}
-                                    />
-                                    {(newEventError || newEventTimeError) && (
-                                        <Typography variant="caption" color="error.main" role="status">
-                                            {newEventError
-                                                ? 'Couldn’t create the event.'
-                                                : 'Finish time must be after the start time.'}
-                                        </Typography>
-                                    )}
-                                </Box>
-
-                                <ButtonBase
-                                    aria-label="Edit new event time"
-                                    onClick={clickEvent => {
-                                        clickEvent.stopPropagation();
-                                        setNewEventTimeAnchorEl(clickEvent.currentTarget);
-                                        setNewEventTimeError(false);
-                                    }}
-                                    sx={theme => ({
-                                        gridColumn: 2,
-                                        gridRow: 1,
-                                        justifySelf: 'end',
-                                        flexShrink: 0,
-                                        px: 0.75,
-                                        py: 0.2,
-                                        borderRadius: '16px',
-                                        color: eventTimeColor(theme),
-                                        fontSize: '0.875rem',
-                                        textAlign: 'right',
-                                        fontVariantNumeric: 'tabular-nums',
-                                        whiteSpace: 'nowrap',
-                                        transition: 'background-color 140ms ease, color 140ms ease',
-                                        '&:hover': {
-                                            color: theme.palette.primary.main,
-                                            backgroundColor: alpha(theme.palette.primary.main, 0.1),
-                                        },
-                                    })}
-                                >
-                                    {newEventAllDay
-                                        ? 'All day'
-                                        : timeRangeLabel(newEventTimes.start, newEventTimes.end)}
-                                </ButtonBase>
-
-                                <Chip
-                                    size="small"
-                                    label={eventStatusLabel(newEventStatus)}
-                                    onClick={clickEvent => {
-                                        clickEvent.stopPropagation();
-                                        setNewEventStatusAnchorEl(clickEvent.currentTarget);
-                                    }}
-                                    aria-label={`Change new event status, currently ${eventStatusLabel(newEventStatus)}`}
+                            {!creatingEventRequest && (
+                                <Box
+                                    ref={newEventDraftRef}
                                     sx={theme => {
-                                        const color = eventStatusColor(newEventStatus, theme);
+                                        const statusColor = eventStatusColor(newEventStatus, theme);
+                                        const tentative = newEventStatus === 'TENTATIVE';
                                         return {
-                                            gridColumn: 2,
-                                            gridRow: 2,
-                                            justifySelf: 'center',
-                                            flexShrink: 0,
-                                            height: 22,
-                                            color,
-                                            bgcolor: alpha(color, 0.1),
-                                            fontWeight: 600,
-                                            cursor: 'pointer',
+                                            minWidth: 0,
+                                            p: 1.25,
+                                            pl: 1.75,
+                                            border: '1px solid',
+                                            borderColor: tentative ? statusColor : alpha(statusColor, 0.28),
+                                            borderWidth: tentative ? 1.5 : 1,
+                                            borderStyle: tentative
+                                                ? 'dashed'
+                                                : newEventStatus === 'CANCELLED' ? 'dotted' : 'solid',
+                                            borderLeft: tentative ? `1.5px dashed ${statusColor}` : `4px solid ${statusColor}`,
+                                            borderRadius: '0 12px 12px 0',
+                                            backgroundColor: theme.palette.background.paper,
+                                            animation: `${eventDraftReveal} 180ms ease-out`,
                                         };
                                     }}
-                                />
-                            </Box>
-
-                            <Menu
-                                anchorEl={newEventStatusAnchorEl}
-                                open={Boolean(newEventStatusAnchorEl)}
-                                onClose={() => setNewEventStatusAnchorEl(null)}
-                                anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
-                                transformOrigin={{ vertical: 'top', horizontal: 'left' }}
-                            >
-                                {NEW_EVENT_STATUSES.map(status => (
-                                    <MenuItem
-                                        key={status}
-                                        selected={status === newEventStatus}
-                                        onClick={() => {
-                                            setNewEventStatus(status);
-                                            setNewEventStatusAnchorEl(null);
-                                        }}
-                                    >
-                                        <ListItemIcon sx={{ minWidth: 28 }}>
-                                            <Box sx={theme => ({
-                                                width: 9,
-                                                height: 9,
-                                                borderRadius: '50%',
-                                                bgcolor: eventStatusColor(status, theme),
-                                            })} />
-                                        </ListItemIcon>
-                                        {eventStatusLabel(status)}
-                                    </MenuItem>
-                                ))}
-                            </Menu>
-
-                            <Popover
-                                open={Boolean(newEventTimeAnchorEl)}
-                                anchorEl={newEventTimeAnchorEl}
-                                onClose={event => {
-                                    if (newEventTimePickerOpenRef.current) return;
-                                    const target = (event as { target?: EventTarget | null }).target;
-                                    if (target instanceof Element
-                                        && target.closest('.MuiPickersPopper-root, .MuiDialog-root')) return;
-                                    newEventTimePickerOpenRef.current = false;
-                                    setNewEventTimeAnchorEl(null);
-                                }}
-                                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-                                transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-                                slotProps={{ paper: { sx: { p: 0, borderRadius: 3, border: '1px solid', borderColor: 'divider' } } }}
-                            >
-                                <Box
-                                    onClick={clickEvent => clickEvent.stopPropagation()}
                                 >
-                                    <Stack direction="column" spacing={1.25} sx={{ p: 1.5, minWidth: 260 }}>
-                                        <FormControlLabel
-                                            control={<Switch
-                                                checked={newEventAllDay}
-                                                onChange={changeEvent => setNewEventAllDay(changeEvent.target.checked)}
-                                            />}
-                                            label="All day"
-                                            sx={{ alignSelf: 'flex-start', m: 0 }}
-                                        />
-                                        {!newEventAllDay && (
-                                            <>
-                                                <AppTimeField
-                                                    label="Start time"
-                                                    value={newEventTimes.start}
-                                                    onChange={value => {
-                                                        setNewEventTimes(current => ({
-                                                            start: value,
-                                                            end: oneHourAfter(value) ?? current.end,
-                                                        }));
+                                    <Box sx={{
+                                        display: 'grid',
+                                        gridTemplateColumns: 'minmax(0, 1fr) auto',
+                                        gridTemplateRows: 'auto auto',
+                                        alignItems: 'center',
+                                        columnGap: 1.25,
+                                        rowGap: 0.75,
+                                        minWidth: 0,
+                                    }}>
+                                        <Box sx={{
+                                            gridColumn: 1,
+                                            gridRow: 1,
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            justifyContent: 'center',
+                                            minWidth: 0,
+                                        }}>
+                                            <TextField
+                                                value={newEventTitle}
+                                                autoFocus
+                                                autoComplete="off"
+                                                placeholder="New event"
+                                                onChange={changeEvent => setNewEventTitle(changeEvent.target.value)}
+                                                onKeyDown={keyEvent => {
+                                                    if (keyEvent.key === 'Enter' && !keyEvent.shiftKey) {
+                                                        keyEvent.preventDefault();
+                                                        void createTodayEvent();
+                                                    }
+                                                    if (keyEvent.key === 'Escape') {
+                                                        keyEvent.preventDefault();
+                                                        cancelCreateEventRef.current = true;
+                                                        setCreatingEvent(false);
+                                                        setNewEventTitle('');
+                                                        setNewEventError(false);
                                                         setNewEventTimeError(false);
-                                                    }}
-                                                    onOpen={() => { newEventTimePickerOpenRef.current = true; }}
-                                                    onClose={() => { newEventTimePickerOpenRef.current = false; }}
+                                                    }
+                                                }}
+                                                variant="standard"
+                                                fullWidth
+                                                multiline
+                                                minRows={1}
+                                                maxRows={3}
+                                                InputProps={{ disableUnderline: true }}
+                                                inputProps={{
+                                                    'aria-label': 'New event name',
+                                                    draggable: false,
+                                                    readOnly: creatingEventRequest,
+                                                }}
+                                                sx={{
+                                                    '& .MuiInputBase-root': { padding: 0 },
+                                                    '& .MuiInputBase-input': {
+                                                        color: 'text.primary',
+                                                        fontSize: '1.1rem',
+                                                        lineHeight: 1.35,
+                                                        whiteSpace: 'pre-wrap',
+                                                        overflowWrap: 'anywhere',
+                                                        textAlign: 'left',
+                                                        padding: 0,
+                                                    },
+                                                }}
+                                            />
+                                            {(newEventError || newEventTimeError) && (
+                                                <Typography variant="caption" color="error.main" role="status">
+                                                    {newEventError
+                                                        ? 'Couldn’t create the event.'
+                                                        : 'Finish time must be after the start time.'}
+                                                </Typography>
+                                            )}
+                                        </Box>
+
+                                        <ButtonBase
+                                            aria-label="Edit new event time"
+                                            onClick={clickEvent => {
+                                                clickEvent.stopPropagation();
+                                                setNewEventTimeAnchorEl(clickEvent.currentTarget);
+                                                setNewEventTimeError(false);
+                                            }}
+                                            sx={theme => ({
+                                                gridColumn: 1,
+                                                gridRow: 2,
+                                                justifySelf: 'start',
+                                                flexShrink: 0,
+                                                maxWidth: '100%',
+                                                px: 0.85,
+                                                py: 0.35,
+                                                borderRadius: 1.2,
+                                                color: eventStatusColor(newEventStatus, theme),
+                                                backgroundColor: alpha(eventStatusColor(newEventStatus, theme), 0.1),
+                                                fontSize: '0.775rem',
+                                                fontWeight: 600,
+                                                textAlign: 'left',
+                                                fontVariantNumeric: 'tabular-nums',
+                                                whiteSpace: 'normal',
+                                                lineHeight: 1.25,
+                                            })}
+                                        >
+                                            <AccessTimeRoundedIcon sx={{ fontSize: 14, mr: 0.55, flexShrink: 0 }} />
+                                            {newEventAllDay
+                                                ? 'All day'
+                                                : timeRangeLabel(newEventTimes.start, newEventTimes.end)}
+                                        </ButtonBase>
+
+                                        <Tooltip title={`${eventStatusLabel(newEventStatus)} · Change status`}>
+                                            <Box component="span" sx={{ gridColumn: 2, gridRow: 2, justifySelf: 'end', display: 'inline-flex' }}>
+                                                <IconButton
                                                     size="small"
-                                                />
-                                                <AppTimeField
-                                                    label="End time"
-                                                    value={newEventTimes.end}
-                                                    onChange={value => {
-                                                        setNewEventTimes(current => ({ ...current, end: value }));
-                                                        setNewEventTimeError(false);
+                                                    onClick={clickEvent => {
+                                                        clickEvent.stopPropagation();
+                                                        setNewEventStatusAnchorEl(clickEvent.currentTarget);
                                                     }}
-                                                    onOpen={() => { newEventTimePickerOpenRef.current = true; }}
-                                                    onClose={() => { newEventTimePickerOpenRef.current = false; }}
-                                                    size="small"
+                                                    aria-label={`Change new event status, currently ${eventStatusLabel(newEventStatus)}`}
+                                                    sx={theme => {
+                                                        const color = eventStatusColor(newEventStatus, theme);
+                                                        return {
+                                                            width: 30,
+                                                            height: 30,
+                                                            color,
+                                                            borderRadius: 0,
+                                                            '&:hover': { bgcolor: 'transparent' },
+                                                        };
+                                                    }}
+                                                >
+                                                    <EventStatusIcon status={newEventStatus} />
+                                                </IconButton>
+                                            </Box>
+                                        </Tooltip>
+                                    </Box>
+
+                                    <Menu
+                                        anchorEl={newEventStatusAnchorEl}
+                                        open={Boolean(newEventStatusAnchorEl)}
+                                        onClose={() => setNewEventStatusAnchorEl(null)}
+                                        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+                                        transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+                                    >
+                                        {NEW_EVENT_STATUSES.map(status => (
+                                            <MenuItem
+                                                key={status}
+                                                selected={status === newEventStatus}
+                                                onClick={() => {
+                                                    setNewEventStatus(status);
+                                                    setNewEventStatusAnchorEl(null);
+                                                }}
+                                            >
+                                                {eventStatusLabel(status)}
+                                            </MenuItem>
+                                        ))}
+                                    </Menu>
+
+                                    <Popover
+                                        open={Boolean(newEventTimeAnchorEl)}
+                                        anchorEl={newEventTimeAnchorEl}
+                                        onClose={event => {
+                                            if (newEventTimePickerOpenRef.current) return;
+                                            const target = (event as { target?: EventTarget | null }).target;
+                                            if (target instanceof Element
+                                                && target.closest('.MuiPickersPopper-root, .MuiDialog-root')) return;
+                                            newEventTimePickerOpenRef.current = false;
+                                            setNewEventTimeAnchorEl(null);
+                                        }}
+                                        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                                        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                                        slotProps={{ paper: { sx: { p: 0, borderRadius: 3, border: '1px solid', borderColor: 'divider' } } }}
+                                    >
+                                        <Box
+                                            onClick={clickEvent => clickEvent.stopPropagation()}
+                                        >
+                                            <Stack direction="column" spacing={1.25} sx={{ p: 1.5, minWidth: 260 }}>
+                                                <FormControlLabel
+                                                    control={<Switch
+                                                        checked={newEventAllDay}
+                                                        onChange={changeEvent => setNewEventAllDay(changeEvent.target.checked)}
+                                                    />}
+                                                    label="All day"
+                                                    sx={{ alignSelf: 'flex-start', m: 0 }}
                                                 />
-                                            </>
-                                        )}
-                                    </Stack>
+                                                {!newEventAllDay && (
+                                                    <>
+                                                        <AppTimeField
+                                                            label="Start time"
+                                                            value={newEventTimes.start}
+                                                            onChange={value => {
+                                                                setNewEventTimes(current => ({
+                                                                    start: value,
+                                                                    end: oneHourAfter(value) ?? current.end,
+                                                                }));
+                                                                setNewEventTimeError(false);
+                                                            }}
+                                                            onOpen={() => { newEventTimePickerOpenRef.current = true; }}
+                                                            onClose={() => { newEventTimePickerOpenRef.current = false; }}
+                                                            size="small"
+                                                        />
+                                                        <AppTimeField
+                                                            label="End time"
+                                                            value={newEventTimes.end}
+                                                            onChange={value => {
+                                                                setNewEventTimes(current => ({ ...current, end: value }));
+                                                                setNewEventTimeError(false);
+                                                            }}
+                                                            onOpen={() => { newEventTimePickerOpenRef.current = true; }}
+                                                            onClose={() => { newEventTimePickerOpenRef.current = false; }}
+                                                            size="small"
+                                                        />
+                                                    </>
+                                                )}
+                                            </Stack>
+                                        </Box>
+                                    </Popover>
                                 </Box>
-                            </Popover>
+                            )}
                         </Box>
                     )}
-                    {todayEvents.map(item => (
-                        <TodayEventCard
-                            key={item.id}
-                            item={item}
-                            dayStart={dayStart}
-                            pendingCreation={item.event.id.startsWith(OPTIMISTIC_EVENT_ID_PREFIX)}
-                            onEventUpdated={updateEventInState}
-                            onEventDeleted={removeEventFromState}
-                        />
-                    ))}
+                    <ClickAwayListener onClickAway={() => setSelectedEventId(null)}>
+                        <Box sx={{ display: 'contents' }}>
+                            {todayEvents.map(item => (
+                                <Box
+                                    key={getEventRenderKey(item)}
+                                    ref={element => {
+                                        const key = getEventRenderKey(item);
+                                        if (element) eventRowRefs.current.set(key, element as HTMLDivElement);
+                                        else eventRowRefs.current.delete(key);
+                                    }}
+                                    sx={{ minWidth: 0 }}
+                                >
+                                    <TodayEventCard
+                                        item={item}
+                                        dayStart={dayStart}
+                                        pendingCreation={item.event.id.startsWith(OPTIMISTIC_EVENT_ID_PREFIX)}
+                                        selected={selectedEventId === item.id}
+                                        onSelect={setSelectedEventId}
+                                        onEventUpdated={updateEventInState}
+                                        onEventDeleted={removeEventFromState}
+                                    />
+                                </Box>
+                            ))}
+                        </Box>
+                    </ClickAwayListener>
                 </Box>
             </Collapse>
         </Box>
