@@ -320,8 +320,25 @@ export default function SettingsScreen() {
 }
 
 function SettingRow({ label, detail, value, disabled, onChange }: { label: string; detail: string; value: boolean; disabled?: boolean; onChange: (value: boolean) => void }) {
-  const { colors } = useAppTheme();
-  return <View style={styles.setting}><View style={styles.grow}><AppText variant="label">{label}</AppText><AppText color="muted">{detail}</AppText></View><Switch value={value} disabled={disabled} onValueChange={onChange} trackColor={{ true: colors.accentSoft }} thumbColor={value ? colors.accent : colors.textMuted} /></View>;
+  const { colors, dark } = useAppTheme();
+  const inactiveTrack = dark ? 'rgba(255,255,255,0.2)' : '#C9CBD1';
+  const inactiveThumb = dark ? '#E2E3E7' : '#FFFFFF';
+  return (
+    <View style={styles.setting}>
+      <View style={styles.grow}>
+        <AppText variant="label">{label}</AppText>
+        <AppText color="muted">{detail}</AppText>
+      </View>
+      <Switch
+        value={value}
+        disabled={disabled}
+        onValueChange={onChange}
+        trackColor={{ false: inactiveTrack, true: colors.accentSoft }}
+        thumbColor={value ? colors.accent : inactiveThumb}
+        ios_backgroundColor={inactiveTrack}
+      />
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({

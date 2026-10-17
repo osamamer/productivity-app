@@ -1,11 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { StatHistoryPreview, type StatHistoryPoint } from '@/components/stats/StatHistoryPreview';
 import { StatEntrySheet } from '@/components/stats/StatEntrySheet';
+import { Card } from '@/components/ui/Card';
 import { AppText } from '@/components/ui/AppText';
 import { LoadingView, ErrorView } from '@/components/ui/StateView';
 import { SilentPressable } from '@/components/ui/SilentPressable';
@@ -177,28 +178,41 @@ export default function StatDetailScreen() {
   const activePeriodLabel = DATE_RANGES.find(period => period.value === dateRange)?.label ?? '30 days';
   const selectedLogDate = selectedPoint && selectedPoint.from === selectedPoint.to ? selectedPoint.from : undefined;
   const logButtonLabel = selectedLogDate ? `Log ${formatLogDate(selectedLogDate)}` : 'Log';
-  const detailPlotHeight = Math.max(100, Math.min(500, height - insets.top - insets.bottom - 175));
+  const detailPlotHeight = Math.max(90, Math.min(500, height - insets.top - insets.bottom - 211));
 
   return (
     <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={[styles.safe, { backgroundColor: colors.background }]}>
       <View style={styles.chartArea}>
         <View style={styles.chartHeader}>
-          <AppText variant="heading" numberOfLines={1} style={styles.chartTitle}>{definition.name}</AppText>
-          <AppText variant="caption" color="muted" numberOfLines={1}>{dateRangeLabel}</AppText>
+          <SilentPressable
+            accessibilityRole="button"
+            accessibilityLabel="Back to statistics"
+            hitSlop={10}
+            onPress={() => router.canGoBack() ? router.back() : router.replace('/stats')}
+            style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
+          >
+            <Ionicons name="arrow-back" size={22} color={colors.text} />
+          </SilentPressable>
+          <View style={styles.chartTitleGroup}>
+            <AppText variant="heading" numberOfLines={1} style={styles.chartTitle}>{definition.name}</AppText>
+            <AppText variant="caption" color="muted" numberOfLines={1}>{dateRangeLabel}</AppText>
+          </View>
         </View>
-        <StatHistoryPreview
-          definition={definition}
-          todayEntry={resource.data?.todayEntry}
-          dateRange={datePeriod.days}
-          dateFrom={datePeriod.from}
-          dateTo={datePeriod.to}
-          calendarHeatmap={calendarHeatmap}
-          refreshKey={historyRefreshKey}
-          detailMode
-          detailHeight={detailPlotHeight}
-          onEntriesLoaded={receiveEntries}
-          onPointSelected={setSelectedPoint}
-        />
+        <Card style={styles.chartCard}>
+          <StatHistoryPreview
+            definition={definition}
+            todayEntry={resource.data?.todayEntry}
+            dateRange={datePeriod.days}
+            dateFrom={datePeriod.from}
+            dateTo={datePeriod.to}
+            calendarHeatmap={calendarHeatmap}
+            refreshKey={historyRefreshKey}
+            detailMode
+            detailHeight={detailPlotHeight}
+            onEntriesLoaded={receiveEntries}
+            onPointSelected={setSelectedPoint}
+          />
+        </Card>
       </View>
 
       <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
@@ -298,8 +312,11 @@ export default function StatDetailScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   chartArea: { flex: 1, minHeight: 0, justifyContent: 'flex-start', paddingHorizontal: 8, paddingTop: 4, paddingBottom: 70 },
-  chartHeader: { minHeight: 50, flexShrink: 0, paddingHorizontal: 6, alignItems: 'center', justifyContent: 'center', gap: 2 },
+  chartHeader: { minHeight: 50, flexShrink: 0, position: 'relative', paddingHorizontal: 6, alignItems: 'center', justifyContent: 'center' },
+  backButton: { position: 'absolute', left: 0, top: 1, width: 36, height: 28, alignItems: 'flex-start', justifyContent: 'center', zIndex: 1 },
+  chartTitleGroup: { alignItems: 'center', justifyContent: 'center', gap: 2, width: '100%', paddingHorizontal: 36 },
   chartTitle: { width: '100%', textAlign: 'center', fontSize: 21, lineHeight: 26 },
+  chartCard: { flex: 1, minHeight: 0, padding: 12, justifyContent: 'center' },
   stickyControls: { position: 'absolute', left: 18, right: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 8 },
   stickyControlBottom: { bottom: 12 },
   stickyButton: { minHeight: 48, borderRadius: 24, paddingHorizontal: 16, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, shadowOffset: { width: 0, height: 5 }, shadowRadius: 12, shadowOpacity: 0.22, elevation: 6 },

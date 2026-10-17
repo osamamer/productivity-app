@@ -200,6 +200,7 @@ export function StatEntrySheet({ definition, existing, initialDate, onClose, onS
             showIcon={false}
             onClose={() => setDatePickerOpen(false)}
             dismissOnBackdrop={false}
+            scrollContent
             footer={<AppButton label="Done" onPress={() => setDatePickerOpen(false)} />}
           >
             <CalendarDatePicker

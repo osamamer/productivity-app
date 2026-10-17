@@ -117,6 +117,7 @@ export function StatLogSheet({ visible, definitions, onClose, onSelect }: {
         showIcon={false}
         onClose={() => setDatePickerOpen(false)}
         dismissOnBackdrop={false}
+        scrollContent
         footer={<AppButton label="Done" onPress={() => setDatePickerOpen(false)} />}>
         <CalendarDatePicker
           key={entryDate}

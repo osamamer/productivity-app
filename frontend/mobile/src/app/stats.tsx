@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -66,7 +66,13 @@ export default function StatsScreen() {
   const [editingGroup, setEditingGroup] = useState<StatGroup | null>(null);
   const [openGroupIds, setOpenGroupIds] = useState<Set<string>>(new Set());
   const [loadedGroupPreferencesKey, setLoadedGroupPreferencesKey] = useState<string | null>(null);
+  const longPressedStatIdRef = useRef<string | null>(null);
+  const longPressResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { reload } = resource;
+
+  useEffect(() => () => {
+    if (longPressResetRef.current) clearTimeout(longPressResetRef.current);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -232,38 +238,50 @@ export default function StatsScreen() {
         : definition.type === 'DURATION' ? 'hourglass-outline'
           : 'stats-chart-outline';
     const iconColor = isBoolean
-      ? !entry || notPlanned ? colors.textMuted : semanticGood ? goodColor : badColor
-      : colors.textMuted;
-    const markerBackground = isBoolean && entry && !notPlanned
-      ? `${iconColor}20`
-      : colors.surfaceRaised;
+      ? !entry ? colors.textMuted : notPlanned ? colors.notPlanned : semanticGood ? goodColor : badColor
+      : !entry ? colors.textMuted : notPlanned ? colors.notPlanned : colors.accent;
     const value = statValue(definition, entry);
 
     return (
       <SilentPressable
         key={definition.id}
         accessibilityRole="button"
-        accessibilityLabel={`${definition.name}, today's value ${value}. Open details.`}
-        onPress={() => router.push(`/stats/${definition.id}`)}
+        accessibilityLabel={`${definition.name}, today's value ${value}.`}
+        accessibilityHint="Tap to view history. Hold to edit this stat."
+        style={({ pressed }) => [pressed && styles.pressed]}
+        delayLongPress={450}
+        onLongPress={() => {
+          longPressedStatIdRef.current = definition.id;
+          if (longPressResetRef.current) clearTimeout(longPressResetRef.current);
+          longPressResetRef.current = setTimeout(() => {
+            if (longPressedStatIdRef.current === definition.id) longPressedStatIdRef.current = null;
+          }, 10000);
+          openEditStat(definition);
+        }}
+        onPressOut={() => {
+          if (longPressedStatIdRef.current !== definition.id) return;
+          if (longPressResetRef.current) clearTimeout(longPressResetRef.current);
+          longPressResetRef.current = setTimeout(() => {
+            if (longPressedStatIdRef.current === definition.id) longPressedStatIdRef.current = null;
+          }, 500);
+        }}
+        onPress={() => {
+          if (longPressedStatIdRef.current === definition.id) {
+            longPressedStatIdRef.current = null;
+            if (longPressResetRef.current) clearTimeout(longPressResetRef.current);
+            longPressResetRef.current = null;
+            return;
+          }
+          router.push(`/stats/${definition.id}`);
+        }}
       >
         <Card style={styles.stat}>
-          <View style={[styles.statMark, { backgroundColor: markerBackground }]}>
+          <View style={styles.statMark}>
             <Ionicons name={icon} size={22} color={iconColor} />
           </View>
           <View style={styles.statCopy}>
             <AppText variant="heading" numberOfLines={1}>{definition.name}</AppText>
           </View>
-          <View style={styles.statValue}>
-            <AppText variant="label" numberOfLines={1} style={{ color: isBoolean && entry && !notPlanned ? iconColor : colors.text }}>{value}</AppText>
-          </View>
-          <SilentPressable
-            accessibilityRole="button"
-            accessibilityLabel={`Edit ${definition.name}`}
-            hitSlop={8}
-            onPress={event => { event.stopPropagation(); openEditStat(definition); }}
-            style={({ pressed }) => [styles.iconAction, pressed && styles.pressed]}>
-            <Ionicons name="create-outline" size={18} color={colors.textMuted} />
-          </SilentPressable>
           <Ionicons name="chevron-forward" size={17} color={colors.textMuted} />
         </Card>
       </SilentPressable>
@@ -296,11 +314,6 @@ export default function StatsScreen() {
       </View>
       <View style={styles.controls} accessibilityLabel="Statistics controls">
         <AppText variant="label">Today</AppText>
-        {resource.data && (
-          <AppText variant="caption" color="muted">
-            {resource.data.definitions.filter(definition => entriesByDefinition.has(definition.id)).length} of {resource.data.definitions.length} recorded
-          </AppText>
-        )}
       </View>
       {resource.loading && <LoadingView label="Loading statistics…" />}
       {resource.error && !resource.data && <ErrorView message={resource.error} retry={() => void resource.reload()} />}
@@ -419,8 +432,7 @@ const styles = StyleSheet.create({
   groupItems: { gap: 10 },
   emptyGroup: { paddingHorizontal: 12, paddingVertical: 12 },
   stat: { minHeight: 82, padding: 13, overflow: 'hidden', flexDirection: 'row', alignItems: 'center', gap: 11 },
-  statMark: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center' },
+  statMark: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
   statCopy: { flex: 1, minWidth: 0, gap: 3 },
-  statValue: { maxWidth: 100, minWidth: 65, alignItems: 'flex-end', gap: 2 },
   pressed: { opacity: 0.72 },
 });

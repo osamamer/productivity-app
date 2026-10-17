@@ -94,8 +94,9 @@ export function StatComposerSheet({ visible, definition, onClose, onCreated, onU
       return;
     }
 
-    const goodThreshold = morality === 'NEUTRAL' || type === 'BOOLEAN' ? null : thresholdValue();
-    if (morality !== 'NEUTRAL' && type !== 'BOOLEAN' && goodThreshold == null) {
+    const effectiveMorality = type === 'TIME' && morality === 'BAD' ? 'GOOD' : morality;
+    const goodThreshold = effectiveMorality === 'NEUTRAL' || type === 'BOOLEAN' ? null : thresholdValue();
+    if (effectiveMorality !== 'NEUTRAL' && type !== 'BOOLEAN' && goodThreshold == null) {
       setError(type === 'DURATION' ? 'Enter a duration threshold.' : type === 'TIME' ? 'Choose a time threshold.' : 'Enter a numeric threshold.');
       return;
     }
@@ -106,7 +107,7 @@ export function StatComposerSheet({ visible, definition, onClose, onCreated, onU
       if (definition) {
         const updated = await api.stats.update(definition.id, {
           name: name.trim(),
-          morality,
+          morality: effectiveMorality,
           goodThreshold,
         });
         onUpdated?.(updated);
@@ -116,7 +117,7 @@ export function StatComposerSheet({ visible, definition, onClose, onCreated, onU
           type,
           minValue,
           maxValue,
-          morality,
+          morality: effectiveMorality,
           goodThreshold,
         });
         onCreated(created);
@@ -140,7 +141,12 @@ export function StatComposerSheet({ visible, definition, onClose, onCreated, onU
       <AppInput ref={nameInputRef} autoFocus label="Name" value={name} onChangeText={setName} error={error ?? undefined} />
       {!editing && <>
         <AppText variant="label">Type</AppText>
-        <ChoiceChips value={type} onChange={next => { setType(next); setMorality(next === 'BOOLEAN' ? 'NEUTRAL' : morality); setThreshold(''); setDurationThreshold(null); }} options={[
+        <ChoiceChips value={type} onChange={next => {
+          setType(next);
+          setMorality(next === 'BOOLEAN' ? 'NEUTRAL' : next === 'TIME' && morality === 'BAD' ? 'GOOD' : morality);
+          setThreshold('');
+          setDurationThreshold(null);
+        }} options={[
           { value: 'BOOLEAN' as const, label: 'Yes / No' },
           { value: 'NUMBER' as const, label: 'Number' },
           { value: 'RANGE' as const, label: 'Range' },
@@ -155,11 +161,18 @@ export function StatComposerSheet({ visible, definition, onClose, onCreated, onU
         </View>
       )}
       <AppText variant="label">Meaning of the value</AppText>
-      <ChoiceChips value={morality} onChange={setMorality} options={[
-        { value: 'GOOD' as const, label: type === 'TIME' ? 'Earlier is better' : 'Higher is better' },
-        { value: 'BAD' as const, label: type === 'TIME' ? 'Later is worse' : 'Lower is better' },
-        { value: 'NEUTRAL' as const, label: 'Neutral' },
-      ]} />
+      <ChoiceChips
+        value={type === 'TIME' && morality === 'BAD' ? 'GOOD' : morality}
+        onChange={setMorality}
+        options={type === 'TIME' ? [
+          { value: 'GOOD' as const, label: 'Earlier is better' },
+          { value: 'NEUTRAL' as const, label: 'Neutral' },
+        ] : [
+          { value: 'GOOD' as const, label: 'Higher is better' },
+          { value: 'BAD' as const, label: 'Lower is better' },
+          { value: 'NEUTRAL' as const, label: 'Neutral' },
+        ]}
+      />
       {thresholdVisible && type === 'TIME' && (
         <>
           <AppText variant="caption" color="muted">Time threshold</AppText>
