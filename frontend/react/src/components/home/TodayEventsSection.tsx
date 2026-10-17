@@ -33,6 +33,7 @@ import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import { expandCalendarEvent } from '../calendar/recurrence';
 import { TaskReminderPicker } from '../task/TaskReminderPicker';
 import { AppTimeField } from '../input/AppPickerFields';
+import { useKeyboardDelete } from '../../hooks/useKeyboardDelete';
 import { eventService } from '../../services/api';
 import { homeTodayEventsSnapshot } from '../../services/cache/homeTodayEventsSnapshot';
 import { getHomeTodayEventsExpanded, setHomeTodayEventsExpanded } from '../../services/utils/homePreferences';
@@ -60,13 +61,18 @@ type TodayEventCardProps = {
     dayStart: Date;
     pendingCreation: boolean;
     selected: boolean;
-    onSelect: (itemId: string) => void;
+    onSelect: (itemId: string, event?: React.MouseEvent<HTMLElement>) => void;
     onEventUpdated: (event: CalendarEvent) => void;
     onEventDeleted: (eventId: string) => void;
 };
 
 type DeleteRequest = {
     scope: 'occurrence' | 'event';
+    anchorPosition: { top: number; left: number };
+};
+
+type BulkDeleteRequest = {
+    items: TodayEvent[];
     anchorPosition: { top: number; left: number };
 };
 
@@ -534,10 +540,10 @@ function TodayEventCard({
         <Box
             role="group"
             tabIndex={pendingCreation ? -1 : 0}
-            aria-label={`${selected ? 'Selected event' : 'Select event'}: ${eventTitle}. Press Enter or Space to select.`}
-            aria-keyshortcuts="Enter Space"
-            onClick={() => {
-                if (!pendingCreation) onSelect(item.id);
+            aria-label={`${selected ? 'Selected event' : 'Select event'}: ${eventTitle}. Press Enter or Space to select${selected ? ', or Delete to remove selected events' : ''}.`}
+            aria-keyshortcuts={selected ? 'Enter Space Delete' : 'Enter Space'}
+            onClick={clickEvent => {
+                if (!pendingCreation) onSelect(item.id, clickEvent);
             }}
             onKeyDown={keyEvent => {
                 if (keyEvent.target !== keyEvent.currentTarget || pendingCreation) return;
@@ -613,7 +619,7 @@ function TodayEventCard({
                         onClick={clickEvent => {
                             if (pendingCreation) return;
                             clickEvent.stopPropagation();
-                            onSelect(item.id);
+                            onSelect(item.id, clickEvent);
                             setNameError(false);
                             setEditingName(true);
                         }}
@@ -1010,7 +1016,10 @@ export function TodayEventsSection() {
     });
     const [events, setEvents] = useState<CalendarEvent[]>(() => initialEvents ?? []);
     const [loading, setLoading] = useState(() => initialEvents === undefined);
-    const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+    const [selectedEventIds, setSelectedEventIds] = useState<string[]>([]);
+    const [bulkDeleteRequest, setBulkDeleteRequest] = useState<BulkDeleteRequest | null>(null);
+    const [bulkDeleteError, setBulkDeleteError] = useState(false);
+    const [bulkDeleting, setBulkDeleting] = useState(false);
     const [expanded, setExpanded] = useState(getHomeTodayEventsExpanded);
     const [creatingEvent, setCreatingEvent] = useState(false);
     const [newEventTitle, setNewEventTitle] = useState('');
@@ -1027,6 +1036,8 @@ export function TodayEventsSection() {
     const newEventPopupPointerEventsRef = useRef(new WeakSet<Event>());
     const finishNewEventDraftRef = useRef<() => void>(() => {});
     const eventRowRefs = useRef(new Map<string, HTMLDivElement>());
+    const selectionAnchorRef = useRef<string | null>(null);
+    const bulkDeleteInFlightRef = useRef(false);
     const previousEventPositionsRef = useRef(new Map<string, DOMRect>());
     const eventRenderIdAliasesRef = useRef(new Map<string, string>());
     const newEventAnimationOriginRef = useRef<{ key: string; left: number; top: number } | null>(null);
@@ -1086,6 +1097,14 @@ export function TodayEventsSection() {
     }, []);
 
     const todayEvents = useMemo(() => eventsForToday(events, dayStart), [dayStart, events]);
+    const selectedEventIdSet = useMemo(() => new Set(selectedEventIds), [selectedEventIds]);
+    useEffect(() => {
+        const visibleEventIds = new Set(todayEvents.map(item => item.id));
+        setSelectedEventIds(current => current.filter(id => visibleEventIds.has(id)));
+        if (selectionAnchorRef.current && !visibleEventIds.has(selectionAnchorRef.current)) {
+            selectionAnchorRef.current = null;
+        }
+    }, [todayEvents]);
     const todayEventsRef = useRef(todayEvents);
     todayEventsRef.current = todayEvents;
     const getEventRenderKey = (item: TodayEvent) =>
@@ -1131,8 +1150,124 @@ export function TodayEventsSection() {
     };
     const removeEventFromState = (eventId: string) => {
         setEvents(current => current.filter(event => event.id !== eventId));
-        setSelectedEventId(current => current?.startsWith(`${eventId}:`) ? null : current);
+        setSelectedEventIds(current => current.filter(id => !id.startsWith(`${eventId}:`)));
+        if (selectionAnchorRef.current?.startsWith(`${eventId}:`)) selectionAnchorRef.current = null;
     };
+
+    const handleEventSelection = useCallback((itemId: string, event?: React.MouseEvent<HTMLElement>) => {
+        const anchorId = selectionAnchorRef.current;
+        if (event?.shiftKey && anchorId) {
+            const anchorIndex = todayEvents.findIndex(item => item.id === anchorId);
+            const itemIndex = todayEvents.findIndex(item => item.id === itemId);
+            if (anchorIndex !== -1 && itemIndex !== -1) {
+                const start = Math.min(anchorIndex, itemIndex);
+                const end = Math.max(anchorIndex, itemIndex);
+                const rangeIds = todayEvents.slice(start, end + 1)
+                    .filter(item => !item.event.id.startsWith(OPTIMISTIC_EVENT_ID_PREFIX))
+                    .map(item => item.id);
+                setSelectedEventIds(current => [...new Set([...current, ...rangeIds])]);
+                return;
+            }
+        }
+
+        if (event?.ctrlKey || event?.metaKey) {
+            setSelectedEventIds(current => current.includes(itemId)
+                ? current.filter(selectedId => selectedId !== itemId)
+                : [...current, itemId]);
+            selectionAnchorRef.current = itemId;
+            return;
+        }
+
+        setSelectedEventIds([itemId]);
+        selectionAnchorRef.current = itemId;
+    }, [todayEvents]);
+
+    const requestBulkDelete = (anchor: HTMLElement) => {
+        const selectedItems = todayEvents.filter(item => selectedEventIdSet.has(item.id)
+            && !item.event.id.startsWith(OPTIMISTIC_EVENT_ID_PREFIX));
+        if (selectedItems.length === 0 || bulkDeleteInFlightRef.current) return;
+        const rect = anchor.getBoundingClientRect();
+        setBulkDeleteError(false);
+        setBulkDeleteRequest({
+            items: selectedItems,
+            anchorPosition: { top: rect.bottom, left: rect.right },
+        });
+    };
+
+    const confirmBulkDelete = async () => {
+        if (!bulkDeleteRequest || bulkDeleteInFlightRef.current) return;
+        bulkDeleteInFlightRef.current = true;
+        setBulkDeleting(true);
+        setBulkDeleteError(false);
+        const itemsByEventId = new Map<string, TodayEvent[]>();
+        bulkDeleteRequest.items.forEach(item => {
+            const items = itemsByEventId.get(item.event.id) ?? [];
+            items.push(item);
+            itemsByEventId.set(item.event.id, items);
+        });
+        const results = await Promise.all([...itemsByEventId].map(async ([eventId, items]) => {
+            const completed: { item: TodayEvent; updated: CalendarEvent | null }[] = [];
+            const failed: { item: TodayEvent; error: unknown }[] = [];
+            for (const item of items) {
+                try {
+                    if (item.event.recurrenceFrequency !== 'NONE') {
+                        const updated = await eventService.deleteEventOccurrence(eventId, item.occurrenceKey);
+                        completed.push({ item, updated });
+                    } else {
+                        await eventService.deleteEvent(eventId);
+                        completed.push({ item, updated: null });
+                    }
+                } catch (error) {
+                    failed.push({ item, error });
+                }
+            }
+            return { completed, failed };
+        }));
+
+        const completed = results.flatMap(result => result.completed);
+        const failedItems = results.flatMap(result => result.failed.map(failure => failure.item));
+        results.forEach(result => result.failed.forEach(failure => {
+            console.error(`Failed to delete calendar event ${failure.item.event.id}:`, failure.error);
+        }));
+
+        if (completed.length > 0) {
+            const deletedEventIds = new Set(completed.filter(result => result.updated === null)
+                .map(result => result.item.event.id));
+            const updatesById = new Map(completed.flatMap(result => result.updated
+                ? [[result.updated.id, result.updated] as const]
+                : []));
+            setEvents(current => current
+                .filter(event => !deletedEventIds.has(event.id))
+                .map(event => updatesById.get(event.id) ?? event));
+        }
+
+        const failedIds = new Set(failedItems.map(item => item.id));
+        setSelectedEventIds(failedItems.map(item => item.id));
+        selectionAnchorRef.current = failedItems[failedItems.length - 1]?.id ?? null;
+        if (failedItems.length > 0) {
+            setBulkDeleteRequest(current => current
+                ? { ...current, items: current.items.filter(item => failedIds.has(item.id)) }
+                : null);
+            setBulkDeleteError(true);
+        } else {
+            setBulkDeleteRequest(null);
+        }
+        bulkDeleteInFlightRef.current = false;
+        setBulkDeleting(false);
+    };
+
+    useKeyboardDelete({
+        enabled: selectedEventIds.length > 0 && !bulkDeleteRequest && !bulkDeleting,
+        onDelete: () => {
+            const lastSelectedItem = [...selectedEventIds].reverse()
+                .map(id => todayEvents.find(item => item.id === id))
+                .find((item): item is TodayEvent => Boolean(item));
+            const anchor = lastSelectedItem
+                ? eventRowRefs.current.get(getEventRenderKey(lastSelectedItem))
+                : null;
+            requestBulkDelete(anchor ?? sectionRef.current ?? document.body);
+        },
+    });
 
     const dismissNewEventDraft = useCallback(() => {
         if (createEventInFlightRef.current) return;
@@ -1688,7 +1823,13 @@ export function TodayEventsSection() {
                             )}
                         </Box>
                     )}
-                    <ClickAwayListener onClickAway={() => setSelectedEventId(null)}>
+                    <ClickAwayListener onClickAway={event => {
+                        if (event.target instanceof Element
+                            && event.target.closest('.MuiPopover-root, .MuiMenu-root')) return;
+                        if (event.target instanceof Node && sectionRef.current?.contains(event.target)) return;
+                        setSelectedEventIds([]);
+                        selectionAnchorRef.current = null;
+                    }}>
                         <Box sx={{ display: 'contents' }}>
                             {todayEvents.map(item => (
                                 <Box
@@ -1704,8 +1845,8 @@ export function TodayEventsSection() {
                                         item={item}
                                         dayStart={dayStart}
                                         pendingCreation={item.event.id.startsWith(OPTIMISTIC_EVENT_ID_PREFIX)}
-                                        selected={selectedEventId === item.id}
-                                        onSelect={setSelectedEventId}
+                                        selected={selectedEventIdSet.has(item.id)}
+                                        onSelect={handleEventSelection}
                                         onEventUpdated={updateEventInState}
                                         onEventDeleted={removeEventFromState}
                                     />
@@ -1715,6 +1856,42 @@ export function TodayEventsSection() {
                     </ClickAwayListener>
                 </Box>
             </Collapse>
+            <Popover
+                open={Boolean(bulkDeleteRequest)}
+                onClose={() => !bulkDeleting && setBulkDeleteRequest(null)}
+                anchorReference="anchorPosition"
+                anchorPosition={bulkDeleteRequest?.anchorPosition}
+                transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                slotProps={{
+                    paper: {
+                        sx: {
+                            p: 1.5,
+                            width: 300,
+                            maxWidth: 'calc(100vw - 32px)',
+                            borderRadius: 2.5,
+                        },
+                    },
+                }}
+            >
+                <Typography variant="body2" sx={{ mb: 1.25 }}>
+                    Delete {bulkDeleteRequest?.items.length ?? 0} selected event{bulkDeleteRequest?.items.length === 1 ? '' : 's'}? Recurring events will be removed from today only.
+                </Typography>
+                {bulkDeleteError && <Alert severity="error" sx={{ mb: 1 }}>Couldn&apos;t delete some selected events.</Alert>}
+                <Stack direction="row" justifyContent="flex-end" spacing={0.5}>
+                    <Button size="small" onClick={() => setBulkDeleteRequest(null)} disabled={bulkDeleting}>
+                        Keep events
+                    </Button>
+                    <Button
+                        size="small"
+                        color="error"
+                        variant="contained"
+                        onClick={() => void confirmBulkDelete()}
+                        disabled={bulkDeleting || !bulkDeleteRequest?.items.length}
+                    >
+                        {bulkDeleting ? 'Deleting…' : 'Delete'}
+                    </Button>
+                </Stack>
+            </Popover>
         </Box>
     );
 }
