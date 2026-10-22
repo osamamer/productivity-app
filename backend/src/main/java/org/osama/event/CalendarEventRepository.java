@@ -8,4 +8,5 @@ import java.util.Optional;
 public interface CalendarEventRepository extends JpaRepository<CalendarEvent, String> {
     List<CalendarEvent> findAllByUserIdOrderByStartDateAscStartTimeAsc(String userId);
     Optional<CalendarEvent> findByIdAndUserId(String id, String userId);
+    List<CalendarEvent> findAllBySourceId(String sourceId);
 }

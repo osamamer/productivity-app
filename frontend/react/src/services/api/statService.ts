@@ -297,6 +297,10 @@ subscribeToResourceInvalidation('stats', origin => {
 });
 
 export const statService = {
+    getCachedDefinitions(): StatDefinition[] | undefined {
+        return definitionsCache.getStale(definitionsCacheKey());
+    },
+
     async getDefinitions(): Promise<StatDefinition[]> {
         const key = definitionsCacheKey();
         const cachedDefinitions = definitionsCache.get(key);

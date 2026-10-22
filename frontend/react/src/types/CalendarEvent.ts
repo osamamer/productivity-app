@@ -33,6 +33,7 @@ export type CalendarEvent = {
     reminderMinutesBefore: number | null;
     createdAt: string;
     updatedAt: string;
+    sourceId?: string | null;
 };
 
 export type CalendarEventInput = {

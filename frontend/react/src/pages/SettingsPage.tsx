@@ -107,7 +107,6 @@ const muteFocusNoiseDuringBreaksDescription = 'Mute focus noise when a running f
 const repeatCheckupNotificationsDescription = 'If you do not check in, remind you again every 30 minutes.';
 const DEFAULT_CHECKUP_INTERVAL_MINUTES = 180;
 const DEFAULT_CHECKUP_START_TIME = '09:00';
-const DEFAULT_CHECKUP_TIMES_PER_DAY = 5;
 
 const checkupIntervalOptions = [
     { value: 60, label: '1 hour' },
@@ -238,32 +237,29 @@ const CheckupSelectField = memo(function CheckupSelectField({
     );
 });
 
-const checkupTimesPerDayOptions = Array.from({ length: 24 }, (_, index) => ({
-    value: index + 1,
-    label: String(index + 1),
-}));
+function checkupTimesPerDay(intervalMinutes: number, startTime: string): number {
+    const start = dateFromTime(startTime);
+    const startMinute = start.getHours() * 60 + start.getMinutes();
+    return Math.min(24, Math.floor((24 * 60 - startMinute) / intervalMinutes) + 1);
+}
 
 interface CheckupScheduleProps {
     intervalMinutes: number;
     startTime: string;
-    timesPerDay: number;
     disabled: boolean;
     saving: boolean;
     onIntervalChange: (value: number) => void;
     onStartTimeChange: (value: string) => void;
-    onTimesPerDayChange: (value: number) => void;
     onSave: () => void;
 }
 
 const CheckupSchedule = memo(function CheckupSchedule({
     intervalMinutes,
     startTime,
-    timesPerDay,
     disabled,
     saving,
     onIntervalChange,
     onStartTimeChange,
-    onTimesPerDayChange,
     onSave,
 }: CheckupScheduleProps) {
     return (
@@ -281,16 +277,9 @@ const CheckupSchedule = memo(function CheckupSchedule({
                     onChange={onStartTimeChange}
                     disabled={disabled}
                 />
-                <CheckupSelectField
-                    label="Times per day"
-                    value={timesPerDay}
-                    options={checkupTimesPerDayOptions}
-                    onChange={onTimesPerDayChange}
-                    disabled={disabled}
-                />
             </Stack>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.25, textAlign: 'left' }}>
-                Notifications are delivered at the start time and then at each interval; midnight can be the final reminder for that day.
+                Notifications start at this time and repeat at this interval until the daily schedule ends.
             </Typography>
             <Button
                 variant="outlined"
@@ -310,7 +299,6 @@ const CheckupSettingsSection = memo(function CheckupSettingsSection() {
     const [repeatCheckupNotificationsEnabled, setRepeatCheckupNotificationsEnabled] = useState(true);
     const [checkupIntervalMinutes, setCheckupIntervalMinutes] = useState(DEFAULT_CHECKUP_INTERVAL_MINUTES);
     const [checkupStartTime, setCheckupStartTime] = useState(DEFAULT_CHECKUP_START_TIME);
-    const [checkupTimesPerDay, setCheckupTimesPerDay] = useState(DEFAULT_CHECKUP_TIMES_PER_DAY);
     const [checkupPreferencesLoading, setCheckupPreferencesLoading] = useState(true);
     const [checkupEnabledSaving, setCheckupEnabledSaving] = useState(false);
     const [repeatCheckupSaving, setRepeatCheckupSaving] = useState(false);
@@ -327,7 +315,6 @@ const CheckupSettingsSection = memo(function CheckupSettingsSection() {
                     setRepeatCheckupNotificationsEnabled(preferences.repeatCheckupNotificationsEnabled !== false);
                     setCheckupIntervalMinutes(preferences.checkupIntervalMinutes || DEFAULT_CHECKUP_INTERVAL_MINUTES);
                     setCheckupStartTime(preferences.checkupStartTime?.slice(0, 5) || DEFAULT_CHECKUP_START_TIME);
-                    setCheckupTimesPerDay(preferences.checkupTimesPerDay || DEFAULT_CHECKUP_TIMES_PER_DAY);
                     const checkupTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
                     if (preferences.checkupTimeZone !== checkupTimeZone) {
                         void userService.updatePreferences({ checkupTimeZone }).catch(error => {
@@ -391,7 +378,7 @@ const CheckupSettingsSection = memo(function CheckupSettingsSection() {
     }, [repeatCheckupNotificationsEnabled]);
 
     const handleCheckupScheduleSave = useCallback(async () => {
-        const previous = { checkupIntervalMinutes, checkupStartTime, checkupTimesPerDay };
+        const previous = { checkupIntervalMinutes, checkupStartTime };
         setCheckupScheduleSaving(true);
         setCheckupPreferenceError(null);
         setCheckupPreferenceSuccess(null);
@@ -400,27 +387,24 @@ const CheckupSettingsSection = memo(function CheckupSettingsSection() {
             const preferences = await userService.updatePreferences({
                 checkupIntervalMinutes,
                 checkupStartTime,
-                checkupTimesPerDay,
+                checkupTimesPerDay: checkupTimesPerDay(checkupIntervalMinutes, checkupStartTime),
                 checkupTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
             });
             setCheckupIntervalMinutes(preferences.checkupIntervalMinutes);
             setCheckupStartTime(preferences.checkupStartTime.slice(0, 5));
-            setCheckupTimesPerDay(preferences.checkupTimesPerDay);
             setCheckupPreferenceSuccess('Check-up schedule saved.');
         } catch (error) {
             console.error('Failed to update check-up notification schedule:', error);
             setCheckupIntervalMinutes(previous.checkupIntervalMinutes);
             setCheckupStartTime(previous.checkupStartTime);
-            setCheckupTimesPerDay(previous.checkupTimesPerDay);
             setCheckupPreferenceError('Could not save this check-up schedule right now.');
         } finally {
             setCheckupScheduleSaving(false);
         }
-    }, [checkupIntervalMinutes, checkupStartTime, checkupTimesPerDay]);
+    }, [checkupIntervalMinutes, checkupStartTime]);
 
     const handleIntervalChange = useCallback((value: number) => setCheckupIntervalMinutes(value), []);
     const handleStartTimeChange = useCallback((value: string) => setCheckupStartTime(value), []);
-    const handleTimesPerDayChange = useCallback((value: number) => setCheckupTimesPerDay(value), []);
     const handleScheduleSave = useCallback(() => {
         void handleCheckupScheduleSave();
     }, [handleCheckupScheduleSave]);
@@ -464,10 +448,8 @@ const CheckupSettingsSection = memo(function CheckupSettingsSection() {
                         <CheckupSchedule
                             intervalMinutes={checkupIntervalMinutes}
                             startTime={checkupStartTime}
-                            timesPerDay={checkupTimesPerDay}
                             onIntervalChange={handleIntervalChange}
                             onStartTimeChange={handleStartTimeChange}
-                            onTimesPerDayChange={handleTimesPerDayChange}
                             onSave={handleScheduleSave}
                             disabled={checkupScheduleSaving}
                             saving={checkupScheduleSaving}

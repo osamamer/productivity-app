@@ -1,10 +1,15 @@
 import { useCallback, useRef, useState } from 'react';
+import * as DocumentPicker from 'expo-document-picker';
+import { useFocusEffect } from 'expo-router';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { CalendarComposerSheet, CalendarManagementContent } from '@/components/calendar/CalendarControls';
 import { CalendarDisplayButton, CalendarManagementButton, MonthCalendar } from '@/components/calendar/MonthCalendar';
 import { AppButton } from '@/components/ui/AppButton';
+import { AppInput } from '@/components/ui/AppInput';
+import { AppText } from '@/components/ui/AppText';
 import { AppPopup } from '@/components/ui/AppPopup';
+import { ModalSheet } from '@/components/ui/ModalSheet';
 import { ErrorView } from '@/components/ui/StateView';
 import { Screen } from '@/components/ui/Screen';
 import { useAsyncData } from '@/hooks/useAsyncData';
@@ -15,13 +20,22 @@ import type { Calendar, CalendarEvent, Task } from '@/types/models';
 export default function CalendarScreen() {
   const [displayOptionsOpen, setDisplayOptionsOpen] = useState(false);
   const [calendarManagerOpen, setCalendarManagerOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importName, setImportName] = useState('');
+  const [importUrl, setImportUrl] = useState('');
+  const [importMode, setImportMode] = useState<'url' | 'file'>('url');
+  const [importFile, setImportFile] = useState<DocumentPicker.DocumentPickerAsset | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importSaving, setImportSaving] = useState(false);
   const [calendarComposerOpen, setCalendarComposerOpen] = useState(false);
   const [calendarComposerSession, setCalendarComposerSession] = useState(0);
   const [calendarBeingEdited, setCalendarBeingEdited] = useState<Calendar | null>(null);
   const eventsResource = useAsyncData(() => api.events.all());
   const calendarsResource = useAsyncData(() => api.calendars.all());
+  const sourcesResource = useAsyncData(() => api.calendarSources.all());
   const definitionsResource = useAsyncData(() => api.stats.definitions());
   const visibilityRequestIds = useRef(new Map<string, number>());
+  const lastSourceRefresh = useRef(Date.now());
   const {
     allTasks,
     groups,
@@ -34,8 +48,70 @@ export default function CalendarScreen() {
   } = useTaskWorkspace();
 
   const refresh = useCallback(async () => {
-    await Promise.all([eventsResource.reload(), calendarsResource.reload(), definitionsResource.reload(), refreshTasks()]);
-  }, [calendarsResource, definitionsResource, eventsResource, refreshTasks]);
+    await Promise.all([eventsResource.reload(), calendarsResource.reload(), sourcesResource.reload(), definitionsResource.reload(), refreshTasks()]);
+  }, [calendarsResource, sourcesResource, definitionsResource, eventsResource, refreshTasks]);
+
+  useFocusEffect(useCallback(() => {
+    const refreshSources = () => {
+      if (Date.now() - lastSourceRefresh.current < 60_000) return;
+      lastSourceRefresh.current = Date.now();
+      void Promise.all([api.events.all(), api.calendarSources.all()])
+        .then(([events, sources]) => {
+          eventsResource.setData(previous => previous?.length === events.length
+            && previous.every((event, index) => event.id === events[index].id
+              && event.updatedAt === events[index].updatedAt) ? previous : events);
+          sourcesResource.setData(sources);
+        })
+        .catch(cause => console.error('Could not refresh calendar sources:', cause));
+    };
+    refreshSources();
+    const timer = setInterval(refreshSources, 300_000);
+    return () => clearInterval(timer);
+  }, [eventsResource.setData, sourcesResource.setData]));
+
+  async function subscribeCalendar() {
+    if (!importName.trim() || (importMode === 'url' ? !importUrl.trim() : !importFile)) {
+      setImportError('Enter a name and choose a calendar source.');
+      return;
+    }
+    setImportSaving(true);
+    setImportError(null);
+    try {
+      if (importMode === 'url') await api.calendarSources.subscribe(importName.trim(), 'accent', importUrl.trim());
+      else await api.calendarSources.upload(importName.trim(), 'accent', importFile!);
+      await Promise.all([calendarsResource.reload(), sourcesResource.reload(), eventsResource.reload()]);
+      setImportOpen(false);
+      setImportName('');
+      setImportUrl('');
+      setImportFile(null);
+    } catch {
+      setImportError('Could not subscribe to this calendar. Check the URL and try again.');
+    } finally {
+      setImportSaving(false);
+    }
+  }
+
+  async function pickCalendarFile() {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true });
+      if (result.canceled) return;
+      const file = result.assets[0];
+      if (!file.name.toLowerCase().endsWith('.ics') || (file.size ?? 0) > 2 * 1024 * 1024) {
+        setImportError('Choose an .ics file smaller than 2 MB.');
+        return;
+      }
+      setImportFile(file);
+      setImportError(null);
+    } catch (cause) {
+      console.error('Could not choose calendar file:', cause);
+      setImportError('Could not choose a calendar file. Try again.');
+    }
+  }
+
+  async function syncCalendar(sourceId: string) {
+    await api.calendarSources.sync(sourceId);
+    await Promise.all([sourcesResource.reload(), eventsResource.reload()]);
+  }
 
   async function updateCalendarVisibility(calendar: Calendar, visible: boolean) {
     const current = calendarsResource.data ?? [];
@@ -69,6 +145,8 @@ export default function CalendarScreen() {
   async function deleteCalendar(calendar: Calendar) {
     await api.calendars.remove(calendar.id);
     calendarsResource.setData(previous => (previous ?? []).filter(item => item.id !== calendar.id));
+    sourcesResource.setData(previous => (previous ?? []).filter(source => source.calendarId !== calendar.id));
+    eventsResource.setData(previous => (previous ?? []).filter(event => event.calendarId !== calendar.id));
   }
 
   function openCalendarComposer(calendar: Calendar | null) {
@@ -183,19 +261,35 @@ export default function CalendarScreen() {
         <ScrollView style={calendarStyles.calendarManagerScroll} keyboardShouldPersistTaps="handled">
           <CalendarManagementContent
             calendars={calendarsResource.data ?? []}
+            sources={sourcesResource.data ?? []}
             loading={calendarsResource.loading}
             onVisibilityChange={updateCalendarVisibility}
             onAdd={() => openCalendarComposer(null)}
+            onImport={() => { setCalendarManagerOpen(false); setTimeout(() => setImportOpen(true), 220); }}
+            onSync={syncCalendar}
             onEdit={calendar => openCalendarComposer(calendar)} />
         </ScrollView>
       </AppPopup>
       <CalendarComposerSheet
         key={`${calendarBeingEdited?.id ?? 'new-calendar'}-${calendarComposerSession}`}
         calendar={calendarBeingEdited}
+        source={sourcesResource.data?.find(source => source.calendarId === calendarBeingEdited?.id)}
         visible={calendarComposerOpen}
         onClose={() => setCalendarComposerOpen(false)}
         onSave={saveCalendar}
         onDelete={deleteCalendar} />
+      <ModalSheet visible={importOpen} onClose={() => setImportOpen(false)} title="Import calendar"
+        footer={<AppButton label="Import" loading={importSaving} onPress={() => void subscribeCalendar()} />}>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <AppButton compact label="Subscribe by URL" onPress={() => setImportMode('url')} />
+          <AppButton compact label="Upload .ics" onPress={() => setImportMode('file')} />
+        </View>
+        <AppInput label="Calendar name" value={importName} onChangeText={setImportName} />
+        {importMode === 'url'
+          ? <AppInput label="HTTPS calendar URL" value={importUrl} onChangeText={setImportUrl} autoCapitalize="none" />
+          : <AppButton label={importFile?.name ?? 'Choose .ics file'} onPress={() => void pickCalendarFile()} />}
+        {importError && <AppText variant="caption" color="danger">{importError}</AppText>}
+      </ModalSheet>
     </Screen>
   );
 }

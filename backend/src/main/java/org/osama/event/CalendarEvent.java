@@ -32,6 +32,12 @@ public class CalendarEvent {
     @Column(name = "calendar_id", nullable = false)
     private String calendarId;
 
+    @Column(name = "source_id")
+    private String sourceId;
+
+    @Column(name = "external_key", length = 512)
+    private String externalKey;
+
     @Column(nullable = false, length = 200)
     private String title;
 

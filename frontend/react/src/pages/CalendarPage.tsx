@@ -20,6 +20,7 @@ import { playAudioFeedback } from '../services/audioFeedback';
 import { useNavigate } from 'react-router-dom';
 import { Calendar, CalendarColor, CalendarUpdate } from '../types/Calendar';
 import { CalendarManager } from '../components/calendar/CalendarManager';
+import { calendarSourceService, CalendarSource } from '../services/api/calendarSourceService';
 
 const RECURRING_TASK_LOOKBACK_DAYS = 365;
 const RECURRING_TASK_HORIZON_DAYS = 90;
@@ -142,6 +143,7 @@ export function CalendarPage() {
     const [dayTemplates, setDayTemplates] = useState<DayTemplate[]>([]);
     const [calendarDataLoading, setCalendarDataLoading] = useState(true);
     const [calendars, setCalendars] = useState<Calendar[]>([]);
+    const [calendarSources, setCalendarSources] = useState<CalendarSource[]>([]);
     const [calendarSettingsLoading, setCalendarSettingsLoading] = useState(true);
     const [calendarSettingsError, setCalendarSettingsError] = useState<string | null>(null);
     const calendarMutationVersions = useRef(new Map<string, number>());
@@ -156,6 +158,9 @@ export function CalendarPage() {
                 if (!cancelled) setCalendarSettingsError('Could not load calendars. Refresh to try again.');
             })
             .finally(() => { if (!cancelled) setCalendarSettingsLoading(false); });
+        calendarSourceService.list()
+            .then(sources => { if (!cancelled) setCalendarSources(sources); })
+            .catch(error => console.error('Failed to load calendar sources:', error));
         Promise.all([
             statService.getDefinitions()
                 .then(definitions => { if (!cancelled) setStatDefinitions(definitions); })
@@ -174,6 +179,37 @@ export function CalendarPage() {
         });
 
         return () => { cancelled = true; };
+    }, []);
+
+    useEffect(() => {
+        let active = true;
+        let lastRefresh = Date.now();
+        const refreshVisibleData = async () => {
+            if (!active || Date.now() - lastRefresh < 60_000) return;
+            lastRefresh = Date.now();
+            try {
+                const [nextEvents, nextSources] = await Promise.all([
+                    eventService.getEvents(), calendarSourceService.list(),
+                ]);
+                if (!active) return;
+                setEvents(current => current.length === nextEvents.length
+                    && current.every((event, index) => event.id === nextEvents[index].id
+                        && event.updatedAt === nextEvents[index].updatedAt) ? current : nextEvents);
+                setCalendarSources(nextSources);
+            } catch (error) {
+                console.error('Failed to refresh calendar data:', error);
+            }
+        };
+        const onVisible = () => { if (document.visibilityState === 'visible') void refreshVisibleData(); };
+        window.addEventListener('focus', refreshVisibleData);
+        document.addEventListener('visibilitychange', onVisible);
+        const timer = window.setInterval(() => void refreshVisibleData(), 300_000);
+        return () => {
+            active = false;
+            window.clearInterval(timer);
+            window.removeEventListener('focus', refreshVisibleData);
+            document.removeEventListener('visibilitychange', onVisible);
+        };
     }, []);
 
     const handleUpdateCalendar = async (calendarId: string, updates: CalendarUpdate) => {
@@ -203,6 +239,32 @@ export function CalendarPage() {
     const handleDeleteCalendar = async (calendarId: string) => {
         await calendarService.deleteCalendar(calendarId);
         setCalendars(current => current.filter(calendar => calendar.id !== calendarId));
+        setCalendarSources(current => current.filter(source => source.calendarId !== calendarId));
+        setEvents(current => current.filter(event => event.calendarId !== calendarId));
+    };
+
+    const refreshImportedCalendar = async () => {
+        const [nextCalendars, nextSources, nextEvents] = await Promise.all([
+            calendarService.getCalendars(), calendarSourceService.list(), eventService.getEvents(),
+        ]);
+        setCalendars(nextCalendars);
+        setCalendarSources(nextSources);
+        setEvents(nextEvents);
+    };
+
+    const handleImportUrl = async (name: string, color: CalendarColor, url: string) => {
+        await calendarSourceService.subscribe(name, color, url);
+        await refreshImportedCalendar();
+    };
+
+    const handleImportFile = async (name: string, color: CalendarColor, file: File) => {
+        await calendarSourceService.upload(name, color, file);
+        await refreshImportedCalendar();
+    };
+
+    const handleSyncSource = async (sourceId: string) => {
+        await calendarSourceService.sync(sourceId);
+        await refreshImportedCalendar();
     };
 
     const handleCreateEvent = async (input: CalendarEventInput) => {
@@ -380,12 +442,10 @@ export function CalendarPage() {
         relatedCalendarSnapshots.forEach(snapshot => {
             updateTaskInState(snapshot.taskId, { calendarId: updates.calendarId });
         });
+        if (!originalTask.completed && updates.completed === true) playAudioFeedback('taskCompleted');
 
         try {
-            const updatedTask = await taskService.updateTask(taskId, updates);
-            if (!originalTask.completed && updates.completed === true && updatedTask.completed) {
-                playAudioFeedback('taskCompleted');
-            }
+            await taskService.updateTask(taskId, updates);
         } catch (err) {
             console.error('Error updating task from calendar:', err);
             updateTaskInState(taskId, originalTask);
@@ -415,6 +475,10 @@ export function CalendarPage() {
                     calendarManager={(
                         <CalendarManager
                             calendars={calendars}
+                            sources={calendarSources}
+                            onImportUrl={handleImportUrl}
+                            onImportFile={handleImportFile}
+                            onSyncSource={handleSyncSource}
                             onUpdate={handleUpdateCalendar}
                             onCreate={handleCreateCalendar}
                             onDelete={handleDeleteCalendar}

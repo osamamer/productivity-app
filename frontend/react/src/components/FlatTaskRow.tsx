@@ -1075,6 +1075,45 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         if (creatingSubtaskNamesRef.current.has(requestKey)) return;
         creatingSubtaskNamesRef.current.add(requestKey);
 
+        const createdAt = new Date().toISOString();
+        const optimisticSubtask: Task = {
+            taskId: `optimistic-subtask-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+            name,
+            description: '',
+            completed: false,
+            creationDateTime: createdAt,
+            creationDate: createdAt.slice(0, 10),
+            scheduledPerformDateTime: null,
+            completionDateTime: '',
+            parentId: task.taskId,
+            tag: '',
+            importance: 0,
+            displayOrder: subtasks.length,
+            mentalThreadId: null,
+            projectId: task.projectId,
+            taskSeriesId: null,
+            seriesOccurrenceAt: null,
+            skipped: false,
+        };
+        const updateSubtasks = (update: (items: Task[]) => Task[]) => {
+            setSubtasks(previous => {
+                const nextSubtasks = sortSubtasks(update(previous));
+                updateCachedTaskDetails(task.taskId, { subtasks: nextSubtasks }, {
+                    task,
+                    subtasks: nextSubtasks,
+                    taskSeries: taskSeriesRef.current,
+                });
+                return nextSubtasks;
+            });
+        };
+
+        updateSubtasks(previous => [...previous, optimisticSubtask]);
+        setSubtaskDraft(previous => previous.taskId === task.taskId
+            && previous.name.trim() === name
+            ? { ...previous, name: '' }
+            : previous);
+        setNewSubtaskId(optimisticSubtask.taskId);
+
         try {
             const createdSubtask = await taskService.createTask({
                 name,
@@ -1084,24 +1123,19 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                 importance: 0,
                 parentId: task.taskId,
             });
-            setSubtasks(previous => {
-                const nextSubtasks = sortSubtasks([...previous, createdSubtask]);
-                updateCachedTaskDetails(task.taskId, { subtasks: nextSubtasks }, {
-                    task,
-                    subtasks: nextSubtasks,
-                    taskSeries: taskSeriesRef.current,
-                });
-                return nextSubtasks;
-            });
-            setSubtaskDraft(previous => previous.taskId === task.taskId
-                && previous.name.trim() === name
-                ? { ...previous, name: '' }
-                : previous);
+            updateSubtasks(previous => previous.map(item => item.taskId === optimisticSubtask.taskId
+                ? createdSubtask
+                : item));
             setNewSubtaskId(createdSubtask.taskId);
             window.setTimeout(() => {
                 setNewSubtaskId(previous => previous === createdSubtask.taskId ? null : previous);
             }, 120);
         } catch (error) {
+            updateSubtasks(previous => previous.filter(item => item.taskId !== optimisticSubtask.taskId));
+            setSubtaskDraft(previous => previous.taskId === task.taskId && !previous.name.trim()
+                ? { ...previous, name }
+                : previous);
+            setNewSubtaskId(null);
             console.error('Error creating Home subtask:', error);
         } finally {
             creatingSubtaskNamesRef.current.delete(requestKey);
@@ -1307,8 +1341,11 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
 
     const cbColor = checkboxColor(task.importance);
     const scheduledLabel = task.scheduledPerformDateTime ? formatScheduledDate(task.scheduledPerformDateTime) : '';
+    const taskHasCachedDetails = Boolean(getStaleTaskDetails(task.taskId));
+    const detailsButtonLoading = detailsLoading && !taskHasCachedDetails;
+    const detailsButtonDisabled = prefetchDetailsOnMount && !detailsReady && !taskHasCachedDetails;
     const detailsPanelOpen = expandedPanel === 'details'
-        && (!prefetchDetailsOnMount || detailsReady);
+        && (!prefetchDetailsOnMount || detailsReady || taskHasCachedDetails);
     const showTimeOnlySchedule = Boolean(scheduledDraft)
         && recurrenceDraft.recurrenceFrequency !== 'NONE';
     const handleRowSelection = (event: React.MouseEvent<HTMLElement>) => {
@@ -1434,15 +1471,15 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                         minWidth: 0,
                         position: 'relative',
                         maxHeight: '6.3em',
-                        overflowY: isEditingName ? 'hidden' : 'auto',
+                        overflowY: 'auto',
                         overflowX: 'hidden',
-                        scrollbarGutter: isEditingName ? 'auto' : 'stable',
+                        scrollbarGutter: 'stable',
                         overflowWrap: 'anywhere',
                         wordBreak: 'break-word',
                         hyphens: 'auto',
                         textAlign: 'left',
                         lineHeight: 1.5,
-                        top: '-1px',
+                        top: 0,
                     }}
                 >
                     <Box
@@ -1593,10 +1630,10 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                         handleRowSelection(e);
                                         togglePanel('details');
                                     }}
-                                    disabled={prefetchDetailsOnMount && !detailsReady}
+                                    disabled={detailsButtonDisabled}
                                     color={detailsPanelOpen ? 'primary' : 'default'}
                                 >
-                                    {detailsLoading
+                                    {detailsButtonLoading
                                         ? <CircularProgress size={17} />
                                         : <TuneIcon sx={{ fontSize: '1.1rem' }} />}
                                 </IconButton>
@@ -1892,7 +1929,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                 <Box sx={{ minWidth: 0 }}>
                                     <Collapse in={showTimeOnlySchedule} timeout={180} unmountOnExit>
                                         <TimePicker
-                                            label="Scheduled"
+                                            label={scheduledDraft ? 'Scheduled' : 'Schedule'}
                                             value={scheduledDraft}
                                             onChange={handleDateChange}
                                             onAccept={commitDateChange}
@@ -1906,7 +1943,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                     </Collapse>
                                     <Collapse in={!showTimeOnlySchedule} timeout={180} unmountOnExit>
                                         <DateTimePicker
-                                            label="Scheduled"
+                                            label={scheduledDraft ? 'Scheduled' : 'Schedule'}
                                             value={scheduledDraft}
                                             onChange={handleDateChange}
                                             onAccept={commitDateChange}

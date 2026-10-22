@@ -24,6 +24,7 @@ public record CalendarEventResponse(
         Integer reminderMinutesBefore,
         Instant createdAt,
         Instant updatedAt,
-        String calendarId
+        String calendarId,
+        String sourceId
 ) {
 }

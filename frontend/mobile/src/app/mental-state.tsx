@@ -60,6 +60,12 @@ function formatCheckInDateTime(recordedAt: string): string {
   return isToday ? `Today · ${time}` : `${date.toLocaleDateString([], { month: 'short', day: 'numeric' })} · ${time}`;
 }
 
+function stateNameStyle(state: string) {
+  if (state.length > 21) return { fontSize: 20, lineHeight: 25 };
+  if (state.length > 16) return { fontSize: 22, lineHeight: 27 };
+  return undefined;
+}
+
 interface MentalStateResultCardProps {
   checkIn: MentalStateCheckIn;
   selected: boolean;
@@ -112,7 +118,7 @@ function MentalStateResultCard({ checkIn, selected, isCurrent, isMostRecent, onC
           <MentalStateBadge state={checkIn.state} plain />
           <View style={styles.resultHeadingCopy}>
             <AppText variant="caption" color="muted">{selected ? 'SELECTED CHECK-IN' : 'YOUR STATE'}</AppText>
-            <AppText variant="title">{checkIn.state}</AppText>
+            <AppText variant="title" numberOfLines={1} style={stateNameStyle(checkIn.state)}>{checkIn.state}</AppText>
             <View style={[styles.goalPill, { backgroundColor: colors.accentSoft }]}>
               <AppText variant="caption" color="accent">{MENTAL_STATE_GOAL_LABELS[checkIn.goal]}</AppText>
             </View>
@@ -284,7 +290,7 @@ export default function MentalStateScreen() {
             ]}>
             <MentalStateBadge state={item.state} size="small" plain />
             <View style={styles.grow}>
-              <AppText variant="label">{item.state}</AppText>
+              <AppText variant="label" numberOfLines={1}>{item.state}</AppText>
               <AppText variant="caption" color="muted">{formatCheckInDateTime(item.recordedAt)}</AppText>
             </View>
             <Ionicons name="chevron-forward" size={17} color={colors.textMuted} />

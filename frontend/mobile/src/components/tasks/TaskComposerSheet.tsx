@@ -142,7 +142,7 @@ export function TaskComposerSheet({ visible, onClose, onCreated, initialDate, ca
         </AppText>
       )}
       <AppText variant="label">Priority</AppText>
-      <ChoiceChips value={importance} onChange={setImportance} options={[...TASK_PRIORITY_OPTIONS]} />
+      <ChoiceChips value={importance} onChange={setImportance} options={[...TASK_PRIORITY_OPTIONS]} fillSelected />
       <TaskReminderField
         value={reminderMinutesBefore}
         scheduledDateTime={schedule === 'custom' ? customSchedule : scheduledDate(schedule)}

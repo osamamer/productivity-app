@@ -71,6 +71,7 @@ public class CalendarEventService {
     public CalendarEventResponse updateEvent(String eventId, CalendarEventRequest request, String userId) {
         CalendarEvent event = eventRepository.findByIdAndUserId(eventId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Calendar event not found: " + eventId));
+        ensureLocalEvent(event);
         if (request.getCalendarId() != null && !request.getCalendarId().isBlank()) {
             event.setCalendarId(calendarService.resolveCalendarId(request.getCalendarId(), userId));
         }
@@ -87,6 +88,7 @@ public class CalendarEventService {
     public void deleteEvent(String eventId, String userId) {
         CalendarEvent event = eventRepository.findByIdAndUserId(eventId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Calendar event not found: " + eventId));
+        ensureLocalEvent(event);
         cancellationRepository.deleteAllByEventId(eventId);
         cancellationRepository.flush();
         reminderRepository.findByEventId(eventId).ifPresent(reminderRepository::delete);
@@ -183,8 +185,16 @@ public class CalendarEventService {
     }
 
     private CalendarEvent findEvent(String eventId, String userId) {
-        return eventRepository.findByIdAndUserId(eventId, userId)
+        CalendarEvent event = eventRepository.findByIdAndUserId(eventId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Calendar event not found: " + eventId));
+        ensureLocalEvent(event);
+        return event;
+    }
+
+    private void ensureLocalEvent(CalendarEvent event) {
+        if (event.getSourceId() != null) {
+            throw new IllegalArgumentException("Imported events are read only.");
+        }
     }
 
     private void ensureRepeatingEvent(CalendarEvent event) {
@@ -409,6 +419,13 @@ public class CalendarEventService {
     }
 
     private CalendarEventResponse toResponse(CalendarEvent event) {
+        if (event.getSourceId() != null) {
+            return new CalendarEventResponse(event.getId(), event.getTitle(), event.getDescription(),
+                    event.isAllDay(), event.getStartDate(), event.getEndDate(), event.getStartTime(),
+                    event.getEndTime(), event.getTimeZone(), event.getStatus(), event.getRecurrenceFrequency(),
+                    null, null, null, List.of(), List.of(), null,
+                    event.getCreatedAt(), event.getUpdatedAt(), event.getCalendarId(), event.getSourceId());
+        }
         Integer reminderMinutes = reminderRepository.findByEventId(event.getId())
                 .map(Reminder::getMinutesBefore)
                 .orElse(null);
@@ -430,6 +447,6 @@ public class CalendarEventService {
                                 override.getOverrideStartTime(), override.getOverrideEndTime()))
                         .toList(),
                 reminderMinutes,
-                event.getCreatedAt(), event.getUpdatedAt(), event.getCalendarId());
+                event.getCreatedAt(), event.getUpdatedAt(), event.getCalendarId(), event.getSourceId());
     }
 }

@@ -322,10 +322,10 @@ export function MentalThreadsPage() {
     const handleToggleTask = async (task: Task) => {
         const nextCompleted = !task.completed;
         updateTaskInState(task.taskId, { completed: nextCompleted });
+        if (!task.completed && nextCompleted) playAudioFeedback('taskCompleted');
         try {
             const updated = await taskService.updateTask(task.taskId, { completed: nextCompleted });
             updateTaskInState(task.taskId, updated);
-            if (!task.completed && updated.completed) playAudioFeedback('taskCompleted');
         } catch (error) {
             updateTaskInState(task.taskId, task);
             throw error;

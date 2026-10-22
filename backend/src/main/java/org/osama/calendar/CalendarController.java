@@ -20,10 +20,13 @@ import java.util.List;
 public class CalendarController {
     private final CalendarService calendarService;
     private final CurrentUserService currentUserService;
+    private final CalendarSourceService sourceService;
 
-    public CalendarController(CalendarService calendarService, CurrentUserService currentUserService) {
+    public CalendarController(CalendarService calendarService, CurrentUserService currentUserService,
+                              CalendarSourceService sourceService) {
         this.calendarService = calendarService;
         this.currentUserService = currentUserService;
+        this.sourceService = sourceService;
     }
 
     @GetMapping
@@ -47,7 +50,7 @@ public class CalendarController {
 
     @DeleteMapping("/{calendarId}")
     public ResponseEntity<Void> deleteCalendar(@PathVariable String calendarId) {
-        calendarService.deleteCalendar(calendarId, currentUserService.getCurrentUserId());
+        sourceService.removeCalendar(currentUserService.getCurrentUserId(), calendarId);
         return ResponseEntity.noContent().build();
     }
 }

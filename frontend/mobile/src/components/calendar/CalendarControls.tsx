@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import { StyleSheet, Switch, View } from 'react-native';
 
-import type { Calendar, CalendarColor, CalendarInput } from '@/types/models';
+import type { Calendar, CalendarColor, CalendarInput, CalendarSource } from '@/types/models';
 import { AppButton } from '../ui/AppButton';
 import { AppInput } from '../ui/AppInput';
 import { AppPopup } from '../ui/AppPopup';
@@ -97,15 +97,21 @@ export function CalendarDestinationField({
 
 export function CalendarManagementContent({
   calendars,
+  sources,
   loading,
   onVisibilityChange,
   onAdd,
+  onImport,
+  onSync,
   onEdit,
 }: {
   calendars: Calendar[];
+  sources: CalendarSource[];
   loading: boolean;
   onVisibilityChange: (calendar: Calendar, visible: boolean) => Promise<void>;
   onAdd: () => void;
+  onImport: () => void;
+  onSync: (sourceId: string) => Promise<void>;
   onEdit: (calendar: Calendar) => void;
 }) {
   const { colors } = useAppTheme();
@@ -128,6 +134,7 @@ export function CalendarManagementContent({
     <>
       <View style={styles.managementHeading}>
         <AppText variant="label">Calendars</AppText>
+        <AppButton compact label="Subscribe" onPress={onImport} />
         <AppButton compact icon="add" label="Add calendar" onPress={onAdd} />
       </View>
       {loading ? <AppText variant="caption" color="muted">Loading calendars…</AppText> : (
@@ -137,6 +144,11 @@ export function CalendarManagementContent({
               <View style={[styles.swatch, styles.rowSwatch, { backgroundColor: calendarColorHex(calendar.color, colors.accent) }]} />
               <View style={styles.calendarCopy}>
                 <AppText variant="label" numberOfLines={1}>{calendar.name}</AppText>
+                {sources.find(source => source.calendarId === calendar.id) && (
+                  <AppText variant="caption" color="muted">
+                    {sources.find(source => source.calendarId === calendar.id)?.lastError ?? 'Read-only calendar'}
+                  </AppText>
+                )}
               </View>
               <Switch
                 accessibilityLabel={`Show ${calendar.name} in calendar`}
@@ -148,6 +160,15 @@ export function CalendarManagementContent({
               <SilentPressable accessibilityRole="button" accessibilityLabel={`Edit ${calendar.name}`} onPress={() => onEdit(calendar)} style={styles.iconButton}>
                 <Ionicons name="pencil-outline" size={18} color={colors.textMuted} />
               </SilentPressable>
+              {sources.find(source => source.calendarId === calendar.id)?.type === 'ICS_URL' && (
+                <SilentPressable accessibilityRole="button" accessibilityLabel={`Sync ${calendar.name}`}
+                  onPress={() => {
+                    const source = sources.find(item => item.calendarId === calendar.id);
+                    if (source) void onSync(source.id).catch(() => setError('Could not refresh calendar. Try again later.'));
+                  }} style={styles.iconButton}>
+                  <Ionicons name="refresh" size={18} color={colors.textMuted} />
+                </SilentPressable>
+              )}
             </View>
           ))}
           {!calendars.length && <AppText variant="caption" color="muted">No calendars are available.</AppText>}
@@ -158,8 +179,9 @@ export function CalendarManagementContent({
   );
 }
 
-export function CalendarComposerSheet({ calendar, visible, onClose, onSave, onDelete }: {
+export function CalendarComposerSheet({ calendar, source, visible, onClose, onSave, onDelete }: {
   calendar: Calendar | null;
+  source?: CalendarSource;
   visible: boolean;
   onClose: () => void;
   onSave: (input: CalendarInput) => Promise<void>;
@@ -234,7 +256,10 @@ export function CalendarComposerSheet({ calendar, visible, onClose, onSave, onDe
       {calendar && !calendar.isDefault && onDelete && (
         confirmDelete ? (
           <View style={styles.deleteCalendarPrompt}>
-            <AppText variant="caption" color="muted">Its tasks and events stay in the app, but disappear from calendar views.</AppText>
+            <AppText variant="caption" color="muted">
+              {source ? 'Imported events from this source will be removed. Local tasks and events stay in the app.'
+                : 'Its tasks and events stay in the app, but disappear from calendar views.'}
+            </AppText>
             <View style={styles.popupActions}>
               <AppButton style={styles.popupAction} label="Keep calendar" variant="secondary" disabled={saving} onPress={() => setConfirmDelete(false)} />
               <AppButton style={styles.popupAction} label="Delete" variant="danger" loading={saving} disabled={saving} onPress={() => void deleteCalendar()} />

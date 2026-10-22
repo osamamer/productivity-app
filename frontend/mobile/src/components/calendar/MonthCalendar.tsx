@@ -672,7 +672,16 @@ export function MonthCalendar({
         definitions={selectedStatDefinitions}
         onClose={() => setCreateTarget(null)}
         onSaved={() => setStatRefreshKey(value => value + 1)} />
-      <EventComposerSheet
+      {editingEvent?.sourceId ? (
+        <AppPopup visible title={editingEvent.title} showIcon={false} onClose={closeEditingEvent}
+          footer={<AppButton label="Done" onPress={closeEditingEvent} />}>
+          <AppText variant="caption" color="muted">Read-only imported event</AppText>
+          <AppText>{editingEvent.allDay
+            ? `${editingEvent.startDate} – ${editingEvent.endDate}`
+            : `${new Date(editingEvent.startTime!).toLocaleString()} – ${new Date(editingEvent.endTime!).toLocaleString()}`}</AppText>
+          {editingEvent.description ? <AppText>{editingEvent.description}</AppText> : null}
+        </AppPopup>
+      ) : <EventComposerSheet
         key={`edit-event-${editingEvent?.id ?? 'closed'}-${editingOccurrence?.occurrenceKey ?? 'series'}`}
         visible={Boolean(editingEvent)}
         event={editingEvent}
@@ -718,7 +727,7 @@ export function MonthCalendar({
             return true;
           }
           : undefined}
-        onDelete={editingEvent ? () => deleteEvent(editingEvent.id) : undefined} />
+        onDelete={editingEvent ? () => deleteEvent(editingEvent.id) : undefined} />}
       <CalendarTaskGroupSheet
         group={selectedGroup}
         tasks={selectedGroupTasks}

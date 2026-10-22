@@ -37,11 +37,14 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import ReplayIcon from '@mui/icons-material/Replay';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import NotificationsNoneIcon from '@mui/icons-material/NotificationsNone';
-import { mergeTaskDeletionReceipts, taskGroupService, taskService } from '../services/api';
+import { mergeTaskDeletionReceipts, statGroupService, statService, taskGroupService, taskService } from '../services/api';
 import type { TaskDeletionReceipt } from '../services/api';
 import { invalidateResource } from '../services/cache/resourceInvalidation';
+import { setCachedTaskDetails } from '../services/cache/taskDetailsCache';
 import { Task } from '../types/Task';
 import { TaskGroup } from '../types/TaskGroup';
+import { StatGroup } from '../types/StatGroup';
+import { StatDefinition } from '../types/Stats';
 import { PageWrapper } from '../components/PageWrapper';
 import { useGlobalTasks } from '../hooks/useGlobalTasks';
 import { useUser } from '../hooks/useUser';
@@ -63,6 +66,7 @@ import { findKeyboardDeleteAnchor, useKeyboardDelete } from '../hooks/useKeyboar
 import { TaskReminderPicker } from '../components/task/TaskReminderPicker';
 import { usePomodoro } from '../hooks/usePomodoro';
 import { TodayEventsSection } from '../components/home/TodayEventsSection';
+import { buildStatTaskGroups } from '../components/task-page/taskPageSectionUtils';
 
 type ActiveExpansion = { taskId: string; panel: 'pomodoro' | 'details' } | null;
 type FocusVisibility = 'all' | 'fading' | 'sliding' | 'hidden' | 'revealing' | 'returning';
@@ -267,13 +271,16 @@ function buildTaskListItems(
     tasks: Task[],
     groups: TaskGroup[],
     getTaskRenderKey: (taskId: string) => string,
+    statTaskGroups: TaskGroup[] = [],
 ): TaskListItem[] {
     const visibleTaskIds = new Set(tasks.map(task => task.taskId));
     const groupByTaskId = new Map<string, TaskGroup>();
     const tasksByGroupId = new Map<string, Task[]>();
 
-    [...groups]
-        .sort((first, second) => first.displayOrder - second.displayOrder)
+    [
+        ...[...groups].sort((first, second) => first.displayOrder - second.displayOrder),
+        ...[...statTaskGroups].sort((first, second) => first.displayOrder - second.displayOrder),
+    ]
         .forEach(group => {
             group.taskIds.forEach(taskId => {
                 if (visibleTaskIds.has(taskId) && !groupByTaskId.has(taskId)) {
@@ -855,9 +862,15 @@ export function HomePage() {
     const [bulkDateAnchorEl, setBulkDateAnchorEl] = useState<HTMLElement | null>(null);
     const [bulkDateDraft, setBulkDateDraft] = useState(() => new Date());
     const cachedGroups = taskGroupService.getCachedGroups();
+    const cachedStatGroups = statGroupService.getCachedGroups();
     const [groups, setGroups] = useState<TaskGroup[] | null>(() => cachedGroups ?? null);
+    const [statGroups, setStatGroups] = useState<StatGroup[]>(() => cachedStatGroups ?? []);
+    const [statDefinitions, setStatDefinitions] = useState<StatDefinition[]>(() => statService.getCachedDefinitions() ?? []);
     const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(
-        () => new Set((cachedGroups ?? []).map(group => group.groupId)),
+        () => new Set([
+            ...(cachedGroups ?? []).map(group => group.groupId),
+            ...(cachedStatGroups ?? []).map(group => `stat-group:${group.groupId}`),
+        ]),
     );
     const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
     const groupNameInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
@@ -1206,13 +1219,17 @@ export function HomePage() {
             : visibleTasks,
         [focusedPomodoroTask, visibleTasks],
     );
+    const statTaskGroups = useMemo(
+        () => buildStatTaskGroups(allTasks, groups ?? [], statGroups, statDefinitions),
+        [allTasks, groups, statDefinitions, statGroups],
+    );
     const taskListItems = useMemo(
-        () => buildTaskListItems(tasksBelowFocus, groups ?? [], getTaskRenderKey),
-        [getTaskRenderKey, groups, tasksBelowFocus],
+        () => buildTaskListItems(tasksBelowFocus, groups ?? [], getTaskRenderKey, statTaskGroups),
+        [getTaskRenderKey, groups, statTaskGroups, tasksBelowFocus],
     );
     const olderTaskListItems = useMemo(
-        () => buildTaskListItems(olderTasks, groups ?? [], getTaskRenderKey),
-        [getTaskRenderKey, groups, olderTasks],
+        () => buildTaskListItems(olderTasks, groups ?? [], getTaskRenderKey, statTaskGroups),
+        [getTaskRenderKey, groups, olderTasks, statTaskGroups],
     );
     const renderedSelectionEntities = useMemo(() => {
         const entities: SelectionEntity[] = focusedPomodoroTask
@@ -1226,7 +1243,7 @@ export function HomePage() {
                     return;
                 }
 
-                entities.push({ kind: 'group', id: item.group.groupId });
+                if (!item.group.isStatGroup) entities.push({ kind: 'group', id: item.group.groupId });
                 if (!collapsedGroupIds.has(item.group.groupId)) {
                     item.tasks.forEach(task => entities.push({ kind: 'task', id: task.taskId }));
                 }
@@ -1362,7 +1379,10 @@ export function HomePage() {
         try {
             const fetchedGroups = await taskGroupService.getGroups();
             setGroups(fetchedGroups);
-            setCollapsedGroupIds(new Set(fetchedGroups.map(group => group.groupId)));
+            setCollapsedGroupIds(previous => new Set([
+                ...fetchedGroups.map(group => group.groupId),
+                ...[...previous].filter(groupId => groupId.startsWith('stat-group:')),
+            ]));
         } catch (err) {
             console.error('Error fetching task groups:', err);
             setGroups([]);
@@ -1372,6 +1392,28 @@ export function HomePage() {
     useEffect(() => {
         void refreshGroups();
     }, [refreshGroups]);
+
+    useEffect(() => {
+        let active = true;
+        void statService.getDefinitions()
+            .then(definitions => { if (active) setStatDefinitions(definitions); })
+            .catch(error => console.error('Error fetching stat definitions for Home task groups:', error));
+        void statGroupService.getGroups()
+            .then(groups => {
+                if (!active) return;
+                setStatGroups(groups);
+                setCollapsedGroupIds(previous => {
+                    const next = new Set(previous);
+                    groups.forEach(group => {
+                        const groupId = `stat-group:${group.groupId}`;
+                        if (!previous.has(groupId)) next.add(groupId);
+                    });
+                    return next;
+                });
+            })
+            .catch(error => console.error('Error fetching stat groups for Home task list:', error));
+        return () => { active = false; };
+    }, []);
 
     useEffect(() => {
         if (!editingGroupId || !groupNameInputRef.current) return;
@@ -1434,6 +1476,13 @@ export function HomePage() {
 
         try {
             const created = await taskService.createTask(task);
+            if (!task.recurrenceFrequency) {
+                setCachedTaskDetails(created.taskId, {
+                    task: created,
+                    subtasks: [],
+                    taskSeries: null,
+                });
+            }
             rememberTaskRenderKey(created.taskId, optimisticTask.taskId);
             replaceTaskInState(optimisticTask.taskId, created);
         } catch (err) {
@@ -1511,6 +1560,10 @@ export function HomePage() {
         const completionOrigin = !wasCompleted ? anchorEl?.getBoundingClientRect() : undefined;
         const previousTaskOrder = allTasks.map(item => item.taskId);
         if (task) updateTaskInState(taskId, { completed: !task.completed });
+        if (!wasCompleted) {
+            celebrateStatLogged(completionOrigin ?? anchorEl);
+            playAudioFeedback('taskCompleted');
+        }
         const nextTaskOrder = task
             ? wasCompleted
                 ? [taskId, ...allTasks.filter(item => item.taskId !== taskId).map(item => item.taskId)]
@@ -1535,8 +1588,6 @@ export function HomePage() {
                 }
             }
             if (!wasCompleted && updatedTask.completed) {
-                celebrateStatLogged(completionOrigin ?? anchorEl);
-                playAudioFeedback('taskCompleted');
                 showUndoFeedback('Task completed', async () => {
                     try {
                         const restoreOrderRevision = manualTaskOrderRevisionRef.current;
@@ -1746,6 +1797,10 @@ export function HomePage() {
         const orderRevision = manualTaskOrderRevisionRef.current;
 
         setBulkActionLoading(true);
+        if (action === 'complete' && tasksToCelebrate.length > 0) {
+            completionOrigins.forEach(origin => celebrateStatLogged(origin));
+            playAudioFeedback('taskCompleted');
+        }
         try {
             const updatedTasks = await Promise.all(tasksToUpdate.map(task => {
                 if (action === 'move-to-today') {
@@ -1794,8 +1849,6 @@ export function HomePage() {
                 );
             }
             if (action === 'complete' && tasksToCelebrate.length > 0) {
-                completionOrigins.forEach(origin => celebrateStatLogged(origin));
-                playAudioFeedback('taskCompleted');
                 showUndoFeedback(
                     `${tasksToCelebrate.length} task${tasksToCelebrate.length === 1 ? '' : 's'} completed`,
                     async () => {
@@ -3238,6 +3291,37 @@ export function HomePage() {
             if (item.kind === 'task') return renderTaskRow(item.task, options);
 
             const collapsed = collapsedGroupIds.has(item.group.groupId);
+            if (item.group.isStatGroup) {
+                return (
+                    <Box key={item.group.groupId} sx={{ mb: 0.4 }}>
+                        <Box
+                            data-stat-task-group-header="true"
+                            sx={{ display: 'flex', alignItems: 'center', minHeight: 52, px: 0.5, color: 'text.secondary' }}
+                        >
+                            <IconButton
+                                size="small"
+                                aria-label={collapsed ? `Expand ${item.group.name}` : `Collapse ${item.group.name}`}
+                                sx={{ width: 38, height: 38, p: 0, mr: 0.5, flexShrink: 0 }}
+                                onClick={() => toggleGroup(item.group.groupId)}
+                            >
+                                {collapsed ? <ChevronRightIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+                            </IconButton>
+                            <Typography variant="body2" sx={{ flex: 1, minWidth: 0, fontWeight: 650, overflowWrap: 'anywhere' }}>
+                                {item.group.name}
+                            </Typography>
+                            <Typography variant="caption" color="text.disabled" sx={{ flexShrink: 0, ml: 1 }}>
+                                {item.tasks.length}
+                            </Typography>
+                        </Box>
+                        <Collapse in={!collapsed} timeout="auto" unmountOnExit>
+                            <Box data-stat-task-group-content={item.group.groupId} sx={{ ml: 1.7, pl: 1.1, borderLeft: '1px solid', borderColor: 'divider' }}>
+                                {item.tasks.map(task => renderTaskRow(task, options))}
+                            </Box>
+                        </Collapse>
+                    </Box>
+                );
+            }
+
             const groupSelected = selectedGroupIdSet.has(item.group.groupId);
             const groupDragging = draggedGroupId === item.group.groupId;
             const groupDragTarget = dragTargetGroupId === item.group.groupId;
@@ -3481,7 +3565,7 @@ export function HomePage() {
                             <DeleteOutlineIcon sx={{ fontSize: '1.1rem' }} />
                         </IconButton>
                     </Box>
-                    <Collapse in={!collapsed} timeout={210} unmountOnExit>
+                    <Collapse in={!collapsed} timeout="auto" unmountOnExit>
                         <Box
                             data-task-group-content={item.group.groupId}
                             onDragOver={reorderable ? (event) => {

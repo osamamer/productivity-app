@@ -730,8 +730,8 @@ export function MonthCalendar({
             textColor: occurrence.status === 'CANCELLED'
                 ? theme.palette.text.secondary
                 : theme.palette.primary.contrastText,
-            editable: true,
-            startEditable: true,
+            editable: !event.sourceId,
+            startEditable: !event.sourceId,
             durationEditable: false,
             classNames: [
                 calendarFillClass,
@@ -1192,6 +1192,7 @@ export function MonthCalendar({
 
         const event = events.find(item => item.id === target.eventId);
         if (!event) return;
+        if (event.sourceId) return;
         if ((event.recurrenceFrequency ?? 'NONE') !== 'NONE') {
             setCalendarDeleteScopeTarget(target);
         } else {
@@ -1334,7 +1335,7 @@ export function MonthCalendar({
         const calendarEvent = typeof calendarEventId === 'string'
             ? events.find(event => event.id === calendarEventId)
             : undefined;
-        if (!calendarEvent || typeof occurrenceKey !== 'string'
+        if (!calendarEvent || calendarEvent.sourceId || typeof occurrenceKey !== 'string'
             || !arg.oldEvent.start || !arg.event.start
             || format(arg.oldEvent.start, 'yyyy-MM-dd') === format(arg.event.start, 'yyyy-MM-dd')) {
             arg.revert();
@@ -1371,15 +1372,14 @@ export function MonthCalendar({
         const viewHarness = dayCell?.closest('.fc-view-harness');
         if (dayCell && viewHarness instanceof HTMLElement) {
             const cellRect = dayCell.getBoundingClientRect();
-            const harnessRect = viewHarness.getBoundingClientRect();
             const pixelRatio = window.devicePixelRatio || 1;
             const snapToPixel = (value: number) => Math.round(value * pixelRatio) / pixelRatio;
             const left = snapToPixel(cellRect.left);
             const right = snapToPixel(cellRect.right);
             const top = snapToPixel(cellRect.top);
             const bottom = snapToPixel(cellRect.bottom);
-            viewHarness.style.setProperty('--calendar-expanded-day-left', `${left - harnessRect.left}px`);
-            viewHarness.style.setProperty('--calendar-expanded-day-top', `${top - harnessRect.top}px`);
+            viewHarness.style.setProperty('--calendar-expanded-day-left', `${left}px`);
+            viewHarness.style.setProperty('--calendar-expanded-day-top', `${top}px`);
             viewHarness.style.setProperty('--calendar-expanded-day-width', `${right - left}px`);
             viewHarness.style.setProperty('--calendar-expanded-day-height', `${bottom - top}px`);
         }
@@ -1805,13 +1805,15 @@ export function MonthCalendar({
                         <MenuItem onClick={() => openCalendarItemEditor(calendarItemContextMenu)}>
                             <ListItemIcon><EditOutlinedIcon fontSize="small" /></ListItemIcon>
                             <ListItemText>
-                                {calendarItemContextMenu.eventType === 'task' ? 'Edit task' : 'Edit event'}
+                                {calendarItemContextMenu.eventType === 'task' ? 'Edit task'
+                                    : events.find(event => event.id === calendarItemContextMenu.eventId)?.sourceId ? 'View event' : 'Edit event'}
                             </ListItemText>
                         </MenuItem>
                         <MenuItem
                             onClick={handleCalendarItemContextDelete}
                             disabled={calendarItemContextMenu.eventType === 'task'
-                                && Boolean(tasks.find(task => task.taskId === calendarItemContextMenu.taskId)?.optimisticRecurrence)}
+                                ? Boolean(tasks.find(task => task.taskId === calendarItemContextMenu.taskId)?.optimisticRecurrence)
+                                : Boolean(events.find(event => event.id === calendarItemContextMenu.eventId)?.sourceId)}
                             sx={{ color: 'error.main' }}
                         >
                             <ListItemIcon sx={{ color: 'inherit' }}>
@@ -2172,6 +2174,7 @@ export function MonthCalendar({
                             overflow: 'hidden',
                         },
                         '& .fc-more-popover': {
+                            position: 'fixed !important',
                             left: 'var(--calendar-expanded-day-left) !important',
                             top: 'var(--calendar-expanded-day-top) !important',
                             width: 'var(--calendar-expanded-day-width) !important',
@@ -2450,7 +2453,18 @@ export function MonthCalendar({
                 maxWidth="sm"
                 slotProps={{ paper: { sx: { borderRadius: '8px', pt: 1 } } }}
             >
-                {selectedCalendarEvent && (
+                {selectedCalendarEvent?.sourceId ? (
+                    <Stack spacing={1} sx={{ p: 2, minWidth: 280 }}>
+                        <Typography variant="subtitle1" fontWeight={700}>{selectedCalendarEvent.title}</Typography>
+                        <Typography variant="body2" color="text.secondary">
+                            {selectedCalendarEvent.allDay
+                                ? `${selectedCalendarEvent.startDate} – ${selectedCalendarEvent.endDate}`
+                                : `${new Date(selectedCalendarEvent.startTime!).toLocaleString()} – ${new Date(selectedCalendarEvent.endTime!).toLocaleString()}`}
+                        </Typography>
+                        {selectedCalendarEvent.description && <Typography variant="body2">{selectedCalendarEvent.description}</Typography>}
+                        <Typography variant="caption" color="text.secondary">Read-only imported event</Typography>
+                    </Stack>
+                ) : selectedCalendarEvent && (
                     <CalendarEventForm
                         key={`${selectedCalendarEvent.id}-${selectedCalendarEventOccurrence?.occurrenceKey ?? 'series'}`}
                         initialDate={selectedCalendarEvent.startDate

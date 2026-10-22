@@ -121,6 +121,7 @@ export function ProjectsPage() {
         updateTaskInState(task.taskId, { completed: nextCompleted });
         replaceProjectTask(projectId, { ...task, completed: nextCompleted });
         adjustProjectCounts(projectId, 0, nextCompleted ? 1 : -1);
+        if (nextCompleted) playAudioFeedback('taskCompleted');
 
         try {
             const updatedTask = await taskService.updateTask(task.taskId, { completed: nextCompleted });
@@ -128,7 +129,6 @@ export function ProjectsPage() {
             updateTaskInState(task.taskId, updatedTask);
             replaceProjectTask(projectId, updatedTask);
             syncProjectCounts();
-            if (nextCompleted) playAudioFeedback('taskCompleted');
         } catch (error) {
             console.error(`Could not update task ${task.taskId}.`, error);
             if (toggleVersionsRef.current.get(task.taskId) !== version) return;

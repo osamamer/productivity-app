@@ -4,6 +4,7 @@ import type {
   CalendarEvent,
   CalendarEventInput,
   Calendar,
+  CalendarSource,
   CalendarInput,
   CalendarUpdate,
   Day,
@@ -115,6 +116,30 @@ export const api = {
     create: async (input: CalendarInput) => normalizeCalendar(await json<CalendarResponsePayload>('/api/v1/calendars', 'POST', input)),
     update: async (id: string, input: CalendarUpdate) => normalizeCalendar(await json<CalendarResponsePayload>(`/api/v1/calendars/${id}`, 'PATCH', input)),
     remove: (id: string) => apiRequest<void>(`/api/v1/calendars/${id}`, { method: 'DELETE' }),
+  },
+  calendarSources: {
+    all: () => apiRequest<CalendarSource[]>('/api/v1/calendar-sources'),
+    subscribe: (name: string, color: Calendar['color'], url: string) =>
+      json<CalendarSource>('/api/v1/calendar-sources/url', 'POST', { name, color, url }),
+    sync: (sourceId: string) =>
+      json<CalendarSource>(`/api/v1/calendar-sources/${sourceId}/sync`, 'POST'),
+    upload: async (name: string, color: Calendar['color'], file: { uri: string; name: string; mimeType?: string }) => {
+      const form = new FormData();
+      form.append('name', name);
+      form.append('color', color);
+      form.append('file', { uri: file.uri, name: file.name, type: file.mimeType ?? 'text/calendar' } as unknown as Blob);
+      const token = await resolveAccessToken(false);
+      const response = await fetch(`${appConfig.apiUrl}/api/v1/calendar-sources/file`, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: form,
+      });
+      if (!response.ok) {
+        console.error('Calendar upload failed:', { status: response.status });
+        throw new Error(GENERIC_ERROR_MESSAGE);
+      }
+      return response.json() as Promise<CalendarSource>;
+    },
   },
   tasks: {
     all: () => apiRequest<Task[]>('/api/v1/tasks/main'),

@@ -35,6 +35,7 @@ import { TaskReminderPicker } from '../task/TaskReminderPicker';
 import { AppTimeField } from '../input/AppPickerFields';
 import { useKeyboardDelete } from '../../hooks/useKeyboardDelete';
 import { eventService } from '../../services/api';
+import { calendarService } from '../../services/api/calendarService';
 import { homeTodayEventsSnapshot } from '../../services/cache/homeTodayEventsSnapshot';
 import { getHomeTodayEventsExpanded, setHomeTodayEventsExpanded } from '../../services/utils/homePreferences';
 import { readEventTimePreferences, saveEventTimePreferences } from '../../services/utils/inputPreferences';
@@ -44,6 +45,8 @@ import {
     CalendarEventOccurrenceMoveInput,
     CalendarEventStatus,
 } from '../../types/CalendarEvent';
+import { Calendar } from '../../types/Calendar';
+import { CalendarSelect } from '../calendar/CalendarSelect';
 
 type TodayEvent = {
     id: string;
@@ -181,6 +184,7 @@ function eventTimeLabel(event: TodayEvent, dayStart: Date): string {
 
 function eventInput(event: CalendarEvent): CalendarEventInput {
     return {
+        calendarId: event.calendarId,
         title: event.title,
         description: event.description ?? '',
         allDay: event.allDay,
@@ -535,6 +539,20 @@ function TodayEventCard({
     };
 
     if (optimisticallyDeleted) return null;
+
+    if (item.event.sourceId) {
+        return (
+            <Box role="group" aria-label={`${eventTitle}, read-only imported event`}
+                 sx={theme => ({ p: 1.25, pl: 1.75, border: `1px solid ${theme.palette.divider}`,
+                     borderLeft: `4px solid ${eventStatusColor(displayStatus, theme)}`,
+                     borderRadius: '0 12px 12px 0', minWidth: 0 })}>
+                <Typography variant="body1" sx={{ overflowWrap: 'anywhere' }}>{eventTitle}</Typography>
+                <Typography variant="caption" color="text.secondary">
+                    {item.allDay ? 'All day' : item.start ? format(item.start, 'HH:mm') : ''} · Imported calendar
+                </Typography>
+            </Box>
+        );
+    }
 
     return (
         <Box
@@ -1015,6 +1033,7 @@ export function TodayEventsSection() {
         return lastKnownEvents ? sourceEventsForToday(lastKnownEvents, dayStart) : undefined;
     });
     const [events, setEvents] = useState<CalendarEvent[]>(() => initialEvents ?? []);
+    const [calendars, setCalendars] = useState<Calendar[]>([]);
     const [loading, setLoading] = useState(() => initialEvents === undefined);
     const [selectedEventIds, setSelectedEventIds] = useState<string[]>([]);
     const [bulkDeleteRequest, setBulkDeleteRequest] = useState<BulkDeleteRequest | null>(null);
@@ -1028,6 +1047,7 @@ export function TodayEventsSection() {
     const [newEventTimes, setNewEventTimes] = useState(defaultEventTimes);
     const [newEventAllDay, setNewEventAllDay] = useState(false);
     const [newEventStatus, setNewEventStatus] = useState<CalendarEventStatus>('CONFIRMED');
+    const [newEventCalendarId, setNewEventCalendarId] = useState('');
     const [newEventTimeAnchorEl, setNewEventTimeAnchorEl] = useState<HTMLElement | null>(null);
     const [newEventStatusAnchorEl, setNewEventStatusAnchorEl] = useState<HTMLElement | null>(null);
     const [newEventTimeError, setNewEventTimeError] = useState(false);
@@ -1093,6 +1113,14 @@ export function TodayEventsSection() {
                 if (!cancelled) setLoading(false);
             });
 
+        return () => { cancelled = true; };
+    }, []);
+
+    useEffect(() => {
+        let cancelled = false;
+        calendarService.getCalendars()
+            .then(result => { if (!cancelled) setCalendars(result); })
+            .catch(error => console.error('Could not load calendars for Home event creation:', error));
         return () => { cancelled = true; };
     }, []);
 
@@ -1326,6 +1354,7 @@ export function TodayEventsSection() {
         }
 
         const input: CalendarEventInput = {
+            calendarId: newEventCalendarId || undefined,
             title,
             description: '',
             allDay: newEventAllDay,
@@ -1520,6 +1549,7 @@ export function TodayEventsSection() {
                         setNewEventTimes(defaultEventTimes());
                         setNewEventAllDay(false);
                         setNewEventStatus('CONFIRMED');
+                        setNewEventCalendarId('');
                         setNewEventTimeAnchorEl(null);
                         setNewEventStatusAnchorEl(null);
                         setCreatingEvent(true);
@@ -1737,6 +1767,15 @@ export function TodayEventsSection() {
                                                 </IconButton>
                                             </Box>
                                         </Tooltip>
+                                    </Box>
+
+                                    <Box sx={{ gridColumn: 1, gridRow: 3, maxWidth: 260 }}>
+                                        <CalendarSelect
+                                            calendars={calendars}
+                                            value={newEventCalendarId}
+                                            onChange={setNewEventCalendarId}
+                                            label="Calendar"
+                                        />
                                     </Box>
 
                                     <Menu

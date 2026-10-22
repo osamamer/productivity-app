@@ -170,6 +170,43 @@ export const TaskPageSection = React.memo(function TaskPageSection({
         if (item.kind === 'task') return renderTask(item.task);
 
         const collapsed = collapsedGroupIds.has(item.group.groupId);
+        if (item.group.isStatGroup) {
+            return (
+                <Box key={item.group.groupId} sx={{ mb: 0.4 }}>
+                    <Box
+                        data-stat-task-group-header="true"
+                        sx={{ display: 'flex', alignItems: 'center', minHeight: 52, px: 0.5, color: 'text.secondary' }}
+                    >
+                        <IconButton
+                            size="small"
+                            aria-label={collapsed ? `Expand ${item.group.name}` : `Collapse ${item.group.name}`}
+                            aria-expanded={!collapsed}
+                            onClick={() => toggleGroup(item.group.groupId)}
+                            sx={{ width: 38, height: 38, p: 0, mr: 0.5, flexShrink: 0, color: 'inherit' }}
+                        >
+                            {collapsed
+                                ? <ChevronRightRoundedIcon fontSize="small" />
+                                : <ExpandMoreRoundedIcon fontSize="small" />}
+                        </IconButton>
+                        <Typography variant="body2" sx={{ flex: 1, minWidth: 0, fontWeight: 650, overflowWrap: 'anywhere' }}>
+                            {item.group.name}
+                        </Typography>
+                        <Typography variant="caption" color="text.disabled" sx={{ flexShrink: 0, ml: 1 }}>
+                            {item.tasks.length}
+                        </Typography>
+                    </Box>
+                    <Collapse in={!collapsed} timeout="auto" unmountOnExit>
+                        <Box
+                            data-stat-task-group-content={item.group.groupId}
+                            sx={{ ml: 1.7, pl: 1.1, borderLeft: '1px solid', borderColor: 'divider' }}
+                        >
+                            {item.tasks.map(renderTask)}
+                        </Box>
+                    </Collapse>
+                </Box>
+            );
+        }
+
         const selected = selectedGroupIds?.has(item.group.groupId) ?? false;
         const dragTarget = dragTargetGroupId === item.group.groupId;
         return (
@@ -340,7 +377,7 @@ export const TaskPageSection = React.memo(function TaskPageSection({
                         </IconButton>
                     )}
                 </Box>
-                <Collapse in={!collapsed} timeout={210} unmountOnExit>
+                <Collapse in={!collapsed} timeout="auto" unmountOnExit>
                     <Box
                         data-task-group-content={item.group.groupId}
                         sx={{

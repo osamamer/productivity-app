@@ -54,9 +54,11 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
   const [subtaskComposerOpen, setSubtaskComposerOpen] = useState(false);
   const [subtaskName, setSubtaskName] = useState('');
   const [subtaskSaving, setSubtaskSaving] = useState(false);
+  const [pendingSubtaskId, setPendingSubtaskId] = useState<string | null>(null);
   const [subtaskError, setSubtaskError] = useState<string | null>(null);
   const taskNameInputRef = useRef<TextInput>(null);
   const subtaskInputRef = useRef<TextInput>(null);
+  const pendingSubtaskIdRef = useRef<string | null>(null);
   const seriesRef = useRef<TaskSeries | null>(null);
   const repeatRef = useRef<TaskRecurrenceFrequency>('NONE');
   const recurrenceMutationRef = useRef<Promise<void>>(Promise.resolve());
@@ -87,7 +89,12 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
 
     void api.tasks.details(task)
       .then(details => {
-        if (active) setSubtasks(details.subtasks);
+        if (active) {
+          setSubtasks(previous => {
+            const pending = previous.filter(subtask => subtask.taskId === pendingSubtaskIdRef.current);
+            return [...details.subtasks, ...pending];
+          });
+        }
       })
       .catch(cause => {
         if (active) setSubtaskError(reportError('Could not load subtasks', cause));
@@ -190,8 +197,34 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
       return;
     }
 
+    const optimisticId = `optimistic-subtask-${Date.now()}`;
+    const now = new Date();
+    const optimisticSubtask: Task = {
+      taskId: optimisticId,
+      calendarId: task.calendarId,
+      name: trimmedName,
+      description: '',
+      completed: false,
+      creationDateTime: now.toISOString(),
+      creationDate: now.toISOString().slice(0, 10),
+      scheduledPerformDateTime: task.scheduledPerformDateTime ?? '',
+      reminderMinutesBefore: null,
+      completionDateTime: '',
+      parentId: task.taskId,
+      tag: task.tag ?? '',
+      importance: task.importance,
+      displayOrder: subtasks.length,
+      mentalThreadId: task.mentalThreadId ?? null,
+      taskSeriesId: null,
+      seriesOccurrenceAt: null,
+      skipped: false,
+    };
+
     setSubtaskSaving(true);
+    pendingSubtaskIdRef.current = optimisticId;
+    setPendingSubtaskId(optimisticId);
     setSubtaskError(null);
+    setSubtasks(previous => [...previous, optimisticSubtask]);
     try {
       const created = await api.tasks.createSubtask(task.taskId, {
         name: trimmedName,
@@ -201,13 +234,16 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
         importance: task.importance,
         reminderMinutesBefore: null,
       });
-      setSubtasks(previous => [...previous, created]);
+      setSubtasks(previous => previous.map(subtask => subtask.taskId === optimisticId ? created : subtask));
       onSubtaskCreated?.(created);
       setSubtaskName('');
       setTimeout(() => subtaskInputRef.current?.focus(), 0);
     } catch (cause) {
+      setSubtasks(previous => previous.filter(subtask => subtask.taskId !== optimisticId));
       setSubtaskError(reportError('Could not add subtask', cause));
     } finally {
+      pendingSubtaskIdRef.current = null;
+      setPendingSubtaskId(null);
       setSubtaskSaving(false);
     }
   }
@@ -354,7 +390,9 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
               key={subtask.taskId}
               accessibilityRole="checkbox"
               accessibilityState={{ checked: subtask.completed }}
-              onPress={() => void toggleSubtask(subtask)}
+              onPress={() => {
+                if (subtask.taskId !== pendingSubtaskId) void toggleSubtask(subtask);
+              }}
               style={({ pressed }) => [styles.subtaskRow, { borderColor: colors.border, backgroundColor: colors.background }, pressed && styles.pressed]}>
               <Ionicons name={subtask.completed ? 'checkmark-circle' : 'ellipse-outline'} size={20} color={subtask.completed ? colors.success : colors.textMuted} />
               <AppText variant="label" numberOfLines={2} style={[styles.subtaskName, subtask.completed && styles.completed]}>{subtask.name}</AppText>
@@ -382,7 +420,6 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
       <TaskScheduleField
         value={scheduledPerformDateTime}
         onChange={handleScheduledChange}
-        timeOnly={repeat !== 'NONE' && Boolean(scheduledPerformDateTime)}
       />
       {!task?.parentId && (
         <View style={styles.repeatSection}>
@@ -401,7 +438,7 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
         onChange={setReminderMinutesBefore}
       />
       <AppText variant="label">Priority</AppText>
-      <ChoiceChips value={importance} onChange={handlePriorityChange} options={[...TASK_PRIORITY_OPTIONS]} />
+          <ChoiceChips value={importance} onChange={handlePriorityChange} options={[...TASK_PRIORITY_OPTIONS]} fillSelected />
       {error && <AppText color="danger">{error}</AppText>}
       <View style={styles.actions}>
         <AppButton label="Delete" icon="trash-outline" variant="danger" onPress={requestDelete} disabled={deleting} style={styles.grow} />

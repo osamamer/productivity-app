@@ -21,7 +21,6 @@ import { api } from '@/services/api';
 
 const DEFAULT_CHECKUP_INTERVAL_MINUTES = 180;
 const DEFAULT_CHECKUP_START_TIME = '09:00';
-const DEFAULT_CHECKUP_TIMES_PER_DAY = 5;
 const checkupIntervalOptions = [
   { value: 60, label: '1h' },
   { value: 120, label: '2h' },
@@ -50,6 +49,12 @@ function startMinute(value: string): number | null {
   return hour < 24 && minute < 60 ? hour * 60 + minute : null;
 }
 
+function checkupTimesPerDay(intervalMinutes: number, startTime: string): number {
+  const firstCheckupMinute = startMinute(startTime);
+  if (firstCheckupMinute === null) return 1;
+  return Math.min(24, Math.floor((24 * 60 - firstCheckupMinute) / intervalMinutes) + 1);
+}
+
 export default function SettingsScreen() {
   const { user, logout } = useAuth();
   const {
@@ -76,18 +81,16 @@ export default function SettingsScreen() {
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [checkupIntervalMinutes, setCheckupIntervalMinutes] = useState(DEFAULT_CHECKUP_INTERVAL_MINUTES);
   const [checkupStartTime, setCheckupStartTime] = useState(DEFAULT_CHECKUP_START_TIME);
-  const [checkupTimesPerDay, setCheckupTimesPerDay] = useState(String(DEFAULT_CHECKUP_TIMES_PER_DAY));
   const [checkupScheduleEdited, setCheckupScheduleEdited] = useState(false);
+  const [checkupScheduleSaved, setCheckupScheduleSaved] = useState(false);
   const [checkupTimePickerOpen, setCheckupTimePickerOpen] = useState(false);
   const [checkupTimeDraft, setCheckupTimeDraft] = useState(() => dateFromTime(DEFAULT_CHECKUP_START_TIME));
   const [checkupScheduleSaving, setCheckupScheduleSaving] = useState(false);
 
   const persistedCheckupIntervalMinutes = resource.data?.checkupIntervalMinutes || DEFAULT_CHECKUP_INTERVAL_MINUTES;
   const persistedCheckupStartTime = resource.data?.checkupStartTime?.slice(0, 5) || DEFAULT_CHECKUP_START_TIME;
-  const persistedCheckupTimesPerDay = String(resource.data?.checkupTimesPerDay || DEFAULT_CHECKUP_TIMES_PER_DAY);
   const displayedCheckupIntervalMinutes = checkupScheduleEdited ? checkupIntervalMinutes : persistedCheckupIntervalMinutes;
   const displayedCheckupStartTime = checkupScheduleEdited ? checkupStartTime : persistedCheckupStartTime;
-  const displayedCheckupTimesPerDay = checkupScheduleEdited ? checkupTimesPerDay : persistedCheckupTimesPerDay;
   const checkupScheduleVisible = resource.data !== null && resource.data.checkupNotificationsEnabled !== false;
 
   async function updatePreference(
@@ -106,14 +109,9 @@ export default function SettingsScreen() {
 
   async function saveCheckupSchedule() {
     if (!resource.data) return;
-    const timesPerDay = Number.parseInt(displayedCheckupTimesPerDay, 10);
     const firstCheckupMinute = startMinute(displayedCheckupStartTime);
-    if (!Number.isInteger(timesPerDay) || timesPerDay < 1 || timesPerDay > 24) {
-      void showError('Invalid schedule', 'Choose between 1 and 24 check-ups per day.');
-      return;
-    }
-    if (firstCheckupMinute === null || firstCheckupMinute + (timesPerDay - 1) * displayedCheckupIntervalMinutes > 24 * 60) {
-      void showError('Invalid schedule', 'The check-up schedule must fit within the same day or end at midnight.');
+    if (firstCheckupMinute === null) {
+      void showError('Invalid schedule', 'Choose a valid starting time.');
       return;
     }
 
@@ -123,23 +121,24 @@ export default function SettingsScreen() {
       ...previous,
       checkupIntervalMinutes: displayedCheckupIntervalMinutes,
       checkupStartTime: displayedCheckupStartTime,
-      checkupTimesPerDay: timesPerDay,
+      checkupTimesPerDay: checkupTimesPerDay(displayedCheckupIntervalMinutes, displayedCheckupStartTime),
       checkupTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
     });
     try {
       const updated = await api.preferences.update({
         checkupIntervalMinutes: displayedCheckupIntervalMinutes,
         checkupStartTime: displayedCheckupStartTime,
-        checkupTimesPerDay: timesPerDay,
+        checkupTimesPerDay: checkupTimesPerDay(displayedCheckupIntervalMinutes, displayedCheckupStartTime),
         checkupTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
       });
       resource.setData(updated);
       setCheckupIntervalMinutes(updated.checkupIntervalMinutes);
       setCheckupStartTime(updated.checkupStartTime.slice(0, 5));
-      setCheckupTimesPerDay(String(updated.checkupTimesPerDay));
       setCheckupScheduleEdited(false);
+      setCheckupScheduleSaved(true);
     } catch (cause) {
       resource.setData(previous);
+      setCheckupScheduleSaved(false);
       void showError('Could not save schedule', reportError('Could not save check-up schedule', cause));
     } finally {
       setCheckupScheduleSaving(false);
@@ -225,28 +224,21 @@ export default function SettingsScreen() {
             <SettingRow label="Keep reminding until check-in" detail="If you do not check in, remind you again every 30 minutes." value={resource.data?.repeatCheckupNotificationsEnabled ?? true} disabled={!resource.data} onChange={value => void updatePreference('repeatCheckupNotificationsEnabled', value)} />
             <View style={[styles.divider, { backgroundColor: colors.border }]} />
             <AppText variant="label">Repeat every</AppText>
-            <ChoiceChips value={displayedCheckupIntervalMinutes} onChange={value => { setCheckupIntervalMinutes(value); setCheckupScheduleEdited(true); }} options={checkupIntervalOptions} />
+            <ChoiceChips value={displayedCheckupIntervalMinutes} onChange={value => { setCheckupIntervalMinutes(value); setCheckupScheduleEdited(true); setCheckupScheduleSaved(false); }} options={checkupIntervalOptions} />
             <AppText variant="label">Starting time</AppText>
             <SilentPressable
               accessibilityRole="button"
               accessibilityLabel={`Check-up starting time: ${displayedCheckupStartTime}`}
-              onPress={openCheckupTimePicker}
+              onPress={() => { openCheckupTimePicker(); setCheckupScheduleSaved(false); }}
               style={({ pressed }) => [styles.timeField, { borderColor: colors.border, backgroundColor: colors.background }, pressed && { opacity: 0.72 }]}
             >
               <Ionicons name="time-outline" size={19} color={colors.accent} />
               <AppText variant="label" style={styles.grow}>{displayedCheckupStartTime}</AppText>
               <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
             </SilentPressable>
-            <AppInput
-              label="Times per day"
-              value={displayedCheckupTimesPerDay}
-              onChangeText={value => { setCheckupTimesPerDay(value); setCheckupScheduleEdited(true); }}
-              keyboardType="number-pad"
-              maxLength={2}
-              editable={!checkupScheduleSaving}
-            />
-            <AppText variant="caption" color="muted">Notifications are delivered at the start time and then at each interval; midnight can be the final reminder for that day.</AppText>
+            <AppText variant="caption" color="muted">Notifications start at this time and repeat at this interval until the daily schedule ends.</AppText>
             <AppButton label="Save check-up schedule" variant="secondary" loading={checkupScheduleSaving} onPress={() => void saveCheckupSchedule()} />
+            {checkupScheduleSaved && <AppText variant="label" color="success">Check-up schedule saved.</AppText>}
             <AppPopup
               visible={checkupTimePickerOpen}
               title="Starting time"
@@ -256,7 +248,7 @@ export default function SettingsScreen() {
               footer={(
                 <View style={styles.popupActions}>
                   <AppButton style={styles.popupAction} variant="secondary" label="Cancel" onPress={() => setCheckupTimePickerOpen(false)} />
-                  <AppButton style={styles.popupAction} label="Done" onPress={() => { setCheckupStartTime(timeFromDate(checkupTimeDraft)); setCheckupScheduleEdited(true); setCheckupTimePickerOpen(false); }} />
+                  <AppButton style={styles.popupAction} label="Done" onPress={() => { setCheckupStartTime(timeFromDate(checkupTimeDraft)); setCheckupScheduleEdited(true); setCheckupScheduleSaved(false); setCheckupTimePickerOpen(false); }} />
                 </View>
               )}
             >

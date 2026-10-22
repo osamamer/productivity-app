@@ -35,6 +35,7 @@ keycloak_dump="${backup_dir}/keycloak-tables-${timestamp}.dump"
 app_tables=(
   app_user
   app_calendar
+  calendar_source
   calendar_event
   day_entity
   meditation_session

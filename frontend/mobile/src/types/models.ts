@@ -83,6 +83,14 @@ export interface Calendar {
 export type CalendarInput = Pick<Calendar, 'name' | 'color'>;
 export type CalendarUpdate = Partial<Pick<Calendar, 'name' | 'color' | 'displayOrder' | 'visible'>>;
 
+export interface CalendarSource {
+  id: string;
+  calendarId: string;
+  type: 'ICS_FILE' | 'ICS_URL';
+  lastSyncedAt: string | null;
+  lastError: string | null;
+}
+
 export interface TaskGroup {
   groupId: string;
   name: string;
@@ -273,6 +281,7 @@ export interface CalendarEvent {
   reminderMinutesBefore: number | null;
   createdAt: string;
   updatedAt: string;
+  sourceId?: string | null;
 }
 
 export type CalendarEventInput = Omit<CalendarEvent, 'id' | 'createdAt' | 'updatedAt'>;

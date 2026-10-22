@@ -24,16 +24,20 @@ import { TaskToCreate } from '../types/TaskToCreate';
 import {
     mergeTaskDeletionReceipts,
     TASK_PAGE_BATCH_SIZE,
+    statGroupService,
+    statService,
     taskGroupService,
     taskService,
 } from '../services/api';
 import type { TaskDeletionReceipt } from '../services/api';
 import { TaskPageComposer } from '../components/task-page/TaskPageComposer';
 import { TaskPageSection } from '../components/task-page/TaskPageSection';
-import { buildTaskListItems } from '../components/task-page/taskPageSectionUtils';
+import { buildStatTaskGroups, buildTaskListItems } from '../components/task-page/taskPageSectionUtils';
 import { TaskDetailsPanel } from '../components/task-page/TaskDetailsPanel';
 import { Task } from '../types/Task';
 import { TaskGroup } from '../types/TaskGroup';
+import { StatGroup } from '../types/StatGroup';
+import { StatDefinition } from '../types/Stats';
 import { getShowCompletedHomeTasks } from '../services/utils/homePreferences';
 import { playAudioFeedback } from '../services/audioFeedback';
 import { createTaskSearchMatcher, normalizeTaskSearchText } from '../services/utils/taskSearch';
@@ -181,6 +185,8 @@ export function TaskPage() {
 
     const [expandedSections, setExpandedSections] = useState<TaskSectionExpansionState>(readTaskSectionExpansion);
     const [taskGroups, setTaskGroups] = useState<TaskGroup[]>(() => taskGroupService.getCachedGroups() ?? []);
+    const [statGroups, setStatGroups] = useState<StatGroup[]>(() => statGroupService.getCachedGroups() ?? []);
+    const [statDefinitions, setStatDefinitions] = useState<StatDefinition[]>(() => statService.getCachedDefinitions() ?? []);
     const [deleteRequest, setDeleteRequest] = useState<DeleteRequest | null>(null);
     const [deleteSubmitting, setDeleteSubmitting] = useState(false);
     const [editRequest, setEditRequest] = useState<EditRequest | null>(null);
@@ -241,6 +247,17 @@ export function TaskPage() {
     }, []);
 
     useEffect(() => {
+        let active = true;
+        void statService.getDefinitions()
+            .then(definitions => { if (active) setStatDefinitions(definitions); })
+            .catch(error => console.error('Error fetching stat definitions for task grouping:', error));
+        void statGroupService.getGroups()
+            .then(groups => { if (active) setStatGroups(groups); })
+            .catch(error => console.error('Error fetching stat groups for Tasks page:', error));
+        return () => { active = false; };
+    }, []);
+
+    useEffect(() => {
         if (initializedTaskLoadVersionRef.current === taskLoadVersion) return;
         initializedTaskLoadVersionRef.current = taskLoadVersion;
         setUpcomingTaskLimit(TASK_PAGE_BATCH_SIZE);
@@ -284,12 +301,12 @@ export function TaskPage() {
             candidate.taskId === taskId ? { ...candidate, completed } : candidate
         ));
         updateTaskInState(taskId, { completed });
+        if (!previousCompleted) playAudioFeedback('taskCompleted');
 
         const persist = async () => {
             try {
                 const updatedTask = await taskService.toggleTaskCompletion(taskId, completed);
                 completionConfirmedStateRef.current.set(taskId, updatedTask.completed);
-                if (!previousCompleted && updatedTask.completed) playAudioFeedback('taskCompleted');
             } catch (error) {
                 console.error('Error toggling task:', error);
                 const isLatestRequest = completionRequestIdRef.current.get(taskId) === requestId;
@@ -517,9 +534,17 @@ export function TaskPage() {
         () => [visibleTodayTasks, futureTasksToShow, visiblePastTasks, visibleUndatedTasks],
         [futureTasksToShow, visiblePastTasks, visibleTodayTasks, visibleUndatedTasks],
     );
+    const statTaskGroups = useMemo(
+        () => buildStatTaskGroups(allTasks, taskGroups, statGroups, statDefinitions),
+        [allTasks, statDefinitions, statGroups, taskGroups],
+    );
+    const displayTaskGroups = useMemo(
+        () => [...taskGroups, ...statTaskGroups],
+        [statTaskGroups, taskGroups],
+    );
     const renderedTaskItems = useMemo(
-        () => renderedTaskLists.flatMap(tasks => buildTaskListItems(tasks, taskGroups)),
-        [renderedTaskLists, taskGroups],
+        () => renderedTaskLists.flatMap(tasks => buildTaskListItems(tasks, displayTaskGroups)),
+        [displayTaskGroups, renderedTaskLists],
     );
     const renderedSelectionEntities = useMemo(() => {
         const entities: SelectionEntity[] = [];
@@ -535,7 +560,7 @@ export function TaskPage() {
                 return;
             }
 
-            if (!seenGroupIds.has(item.group.groupId)) {
+            if (!item.group.isStatGroup && !seenGroupIds.has(item.group.groupId)) {
                 seenGroupIds.add(item.group.groupId);
                 entities.push({ kind: 'group', id: item.group.groupId });
             }
@@ -1144,7 +1169,7 @@ export function TaskPage() {
     };
 
     const sharedSectionProps = {
-        groups: taskGroups,
+        groups: displayTaskGroups,
         onTaskClick: handleTaskSelect,
         onTaskSelection: handleTaskSelection,
         selectedTaskId: selectedTask?.taskId,

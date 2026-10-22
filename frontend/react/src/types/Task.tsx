@@ -19,6 +19,7 @@ export interface Task   {
     projectId: string | null;
     taskSeriesId: string | null;
     calendarId?: string;
+    linkedStatDefinitionId?: string | null;
     seriesOccurrenceAt: string | null;
     skipped: boolean;
     statLinked?: boolean;

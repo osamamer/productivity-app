@@ -43,6 +43,17 @@ function statValue(definition: StatDefinition, entry: StatEntry | undefined): st
   return Number.isInteger(entry.value) ? String(entry.value) : String(Number(entry.value.toFixed(2)));
 }
 
+function todayStatValue(definition: StatDefinition, entry: StatEntry): string {
+  if (definition.type !== 'DURATION' || entry.status === 'NOT_PLANNED') return statValue(definition, entry);
+
+  const minutes = Math.max(0, Math.round(entry.value));
+  if (minutes < 60) return `${minutes}m`;
+
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return remainingMinutes ? `${hours}h${remainingMinutes}m` : `${hours}h`;
+}
+
 export default function StatsScreen() {
   const { colors, dark } = useAppTheme();
   const insets = useSafeAreaInsets();
@@ -240,13 +251,15 @@ export default function StatsScreen() {
     const iconColor = isBoolean
       ? !entry ? colors.textMuted : notPlanned ? colors.notPlanned : semanticGood ? goodColor : badColor
       : !entry ? colors.textMuted : notPlanned ? colors.notPlanned : colors.accent;
-    const value = statValue(definition, entry);
+    const todayValue = entry && entry.status !== 'NOT_PLANNED'
+      ? todayStatValue(definition, entry)
+      : null;
 
     return (
       <SilentPressable
         key={definition.id}
         accessibilityRole="button"
-        accessibilityLabel={`${definition.name}, today's value ${value}.`}
+        accessibilityLabel={`${definition.name}, today's value ${todayValue ?? 'Not logged'}.`}
         accessibilityHint="Tap to view history. Hold to edit this stat."
         style={({ pressed }) => [pressed && styles.pressed]}
         delayLongPress={450}
@@ -280,9 +293,9 @@ export default function StatsScreen() {
             <Ionicons name={icon} size={22} color={iconColor} />
           </View>
           <View style={styles.statCopy}>
-            <AppText variant="heading" numberOfLines={1}>{definition.name}</AppText>
+            <AppText variant="label" numberOfLines={1}>{definition.name}</AppText>
           </View>
-          <Ionicons name="chevron-forward" size={17} color={colors.textMuted} />
+          {todayValue !== null && <AppText variant="label" color="muted" numberOfLines={1} style={styles.todayValue}>{todayValue}</AppText>}
         </Card>
       </SilentPressable>
     );
@@ -434,5 +447,6 @@ const styles = StyleSheet.create({
   stat: { minHeight: 82, padding: 13, overflow: 'hidden', flexDirection: 'row', alignItems: 'center', gap: 11 },
   statMark: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
   statCopy: { flex: 1, minWidth: 0, gap: 3 },
+  todayValue: { flexShrink: 0, textAlign: 'right' },
   pressed: { opacity: 0.72 },
 });

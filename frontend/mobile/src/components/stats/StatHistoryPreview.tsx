@@ -121,14 +121,31 @@ function datesBetween(from: string, to: string): string[] {
   return dates;
 }
 
-function monthLabelsForWeeks(weeks: (string | null)[][]): string[] {
+interface HeatmapMonthLabel {
+  label: string;
+  startWeek: number;
+  weekCount: number;
+}
+
+function monthLabelsForWeeks(weeks: (string | null)[][]): HeatmapMonthLabel[] {
+  const months: { label: string; startWeek: number }[] = [];
   let previousMonth = '';
-  return weeks.map(week => {
+
+  weeks.forEach((week, weekIndex) => {
     const monthDate = week.find(date => date && date.slice(0, 7) !== previousMonth);
-    if (!monthDate) return '';
+    if (!monthDate) return;
+
     previousMonth = monthDate.slice(0, 7);
-    return new Intl.DateTimeFormat(undefined, { month: 'short' }).format(new Date(`${monthDate}T12:00:00`));
+    months.push({
+      label: new Intl.DateTimeFormat(undefined, { month: 'short' }).format(new Date(`${monthDate}T12:00:00`)),
+      startWeek: weekIndex,
+    });
   });
+
+  return months.map((month, index) => ({
+    ...month,
+    weekCount: (months[index + 1]?.startWeek ?? weeks.length) - month.startWeek,
+  }));
 }
 
 function chartBuckets(dates: string[], dateRange: number, showEveryDay: boolean): string[][] {
@@ -1252,10 +1269,10 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, dateFrom
     const calendarCellHeight = detailMode
       ? Math.min(42, Math.max(22, Math.floor((plotHeight - 8) / (calendar.length + 1))))
       : 27;
-    const gridGap = calendar.length > 30 ? 1 : 2;
-    const dayAxisWidth = 27;
+    const gridGap = calendar.length > 10 ? 1 : 2;
+    const dayAxisWidth = 23;
     const heatmapCellMaximum = Math.min(
-      calendar.length <= 16 ? 40 : 24,
+      calendar.length <= 16 ? 32 : 24,
       detailMode ? Math.max(4, Math.floor(plotHeight / 7)) : Number.POSITIVE_INFINITY,
     );
     const heatmapCellSize = calendar.length === 0
@@ -1288,17 +1305,17 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, dateFrom
         </View>
         {isHeatmapGrid ? (
           <View style={styles.heatmapCalendar} onLayout={event => setPlotWidth(event.nativeEvent.layout.width)}>
-            <View style={[styles.heatmapMonthRow, { transform: [{ translateX: -(dayAxisWidth + 6) / 2 }] }]}>
+            <View style={styles.heatmapMonthRow}>
               <View style={{ width: dayAxisWidth + 6 }} />
               <View style={[styles.heatmapMonthLabels, { gap: gridGap }]}>
-                {heatmapMonthLabels.map((label, index) => (
-                  <View key={`${label}-${index}`} style={[styles.heatmapMonthSlot, { width: heatmapCellSize }]}>
-                    {label && <AppText variant="caption" color="muted" numberOfLines={1} style={styles.heatmapMonthLabel}>{label}</AppText>}
+                {heatmapMonthLabels.map((month, index) => (
+                  <View key={`${month.label}-${index}`} style={[styles.heatmapMonthSlot, { width: month.weekCount * heatmapCellSize + (month.weekCount - 1) * gridGap }]}>
+                    <AppText variant="caption" color="muted" numberOfLines={1} style={styles.heatmapMonthLabel}>{month.label}</AppText>
                   </View>
                 ))}
               </View>
             </View>
-            <View style={[styles.heatmapGridBody, { transform: [{ translateX: -(dayAxisWidth + 6) / 2 }] }]}>
+            <View style={styles.heatmapGridBody}>
               <View style={[styles.heatmapWeekdayLabels, { width: dayAxisWidth, gap: gridGap }]}>
                 {WEEKDAY_LABELS.map((_, dayIndex) => (
                   <View key={dayIndex} style={{ width: dayAxisWidth, height: heatmapCellSize, justifyContent: 'center' }}>
@@ -1592,7 +1609,7 @@ const styles = StyleSheet.create({
   heatmapMonthRow: { height: 16, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center', gap: 6 },
   heatmapMonthLabels: { flexDirection: 'row' },
   heatmapMonthSlot: { height: 14, position: 'relative', overflow: 'visible' },
-  heatmapMonthLabel: { position: 'absolute', left: 0, width: 30, fontSize: 9, lineHeight: 11 },
+  heatmapMonthLabel: { position: 'absolute', left: 0, right: 0, textAlign: 'center', fontSize: 10, lineHeight: 12 },
   heatmapGridBody: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', gap: 6 },
   heatmapWeekdayLabels: { flexDirection: 'column' },
   heatmapWeekdayLabel: { fontSize: 9, lineHeight: 11 },

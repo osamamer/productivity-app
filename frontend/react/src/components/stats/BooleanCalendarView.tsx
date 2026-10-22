@@ -112,11 +112,16 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
     const dailyGridGap = 2;
     const dailyGridAxisWidth = 26;
     const dailyGridCellSize = dailyGridWidth > 0
-        ? Math.max(6, Math.min(
-            dateRange <= 90 ? 20 : 14,
-            Math.floor((dailyGridWidth - dailyGridAxisWidth - 6 - dailyGridGap * (dailyWeeks.length - 1)) / dailyWeeks.length),
-        ))
-        : dateRange <= 90 ? 20 : 12;
+        ? dateRange <= 90
+            ? Math.max(21, Math.min(
+                24,
+                Math.floor((dailyGridWidth - dailyGridAxisWidth - 6 - dailyGridGap * (dailyWeeks.length - 1)) / dailyWeeks.length),
+            ))
+            : Math.max(6, Math.min(
+                14,
+                Math.floor((dailyGridWidth - dailyGridAxisWidth - 6 - dailyGridGap * (dailyWeeks.length - 1)) / dailyWeeks.length),
+            ))
+        : dateRange <= 90 ? 24 : 12;
     const startOffset = getDay(from);
     const days: (Date | null)[] = [...Array(startOffset).fill(null), ...allDays];
     while (days.length % 7 !== 0) days.push(null);
@@ -285,7 +290,7 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
                                             <Typography
                                                 variant="caption"
                                                 color="text.secondary"
-                                                sx={{ position: 'absolute', left: 0, fontSize: 10, lineHeight: '16px', whiteSpace: 'nowrap' }}
+                                                sx={{ position: 'absolute', left: 4, fontSize: 11, lineHeight: '16px', whiteSpace: 'nowrap' }}
                                             >
                                                 {label}
                                             </Typography>
@@ -313,7 +318,7 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
                                 {DAY_LABELS.map((label, index) => (
                                     <Box key={label} sx={{ height: dailyGridCellSize, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
                                         {[1, 3, 5].includes(index) && (
-                                            <Typography variant="caption" color="text.secondary" sx={{ fontSize: 9, lineHeight: 1 }}>
+                                            <Typography variant="caption" color="text.secondary" sx={{ fontSize: 10, lineHeight: 1 }}>
                                                 {label}
                                             </Typography>
                                         )}

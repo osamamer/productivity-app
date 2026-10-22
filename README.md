@@ -8,6 +8,18 @@ The repository contains a Spring Boot API, a React web app, a Keycloak identity
 provider, and a PostgreSQL database. The mobile client lives in
 [`frontend/mobile/`](frontend/mobile/) and has its own setup guide.
 
+## External calendars
+
+Open **Calendars → Import** on web or **Calendars → Subscribe** on mobile to
+upload an `.ics` file or subscribe to an HTTPS iCalendar URL. Imported events
+are read-only and do not create Claritard reminders. URL subscriptions refresh
+about every thirty minutes; use **Sync** in calendar management to refresh
+immediately. Uploaded files are snapshots; import the file again to get a new
+snapshot. Both types display occurrences from one year before through two
+years after today, and accept files or feeds up to 2 MB. Removing an imported
+calendar removes its source events while leaving any local tasks or events
+assigned to that calendar in the app.
+
 ## Run locally
 
 ### Prerequisites

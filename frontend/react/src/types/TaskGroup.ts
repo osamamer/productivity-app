@@ -3,4 +3,5 @@ export interface TaskGroup {
     name: string;
     taskIds: string[];
     displayOrder: number;
+    isStatGroup?: boolean;
 }

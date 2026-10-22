@@ -13,6 +13,10 @@ function groupsCacheKey(): string {
 }
 
 export const statGroupService = {
+    getCachedGroups(): StatGroup[] | undefined {
+        return groupsCache.getStale(groupsCacheKey());
+    },
+
     async getGroups(): Promise<StatGroup[]> {
         return groupsCache.get(groupsCacheKey(), async () => {
             const response = await apiFetch(GROUPS_URL, { headers: getAuthHeaders() });

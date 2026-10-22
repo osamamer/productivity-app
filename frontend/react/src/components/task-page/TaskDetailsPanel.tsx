@@ -851,26 +851,60 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
     };
 
     const handleCreateSubtask = useCallback(async (name: string) => {
-        const createdSubtask = await onCreateSubtask({
+        const createdAt = new Date().toISOString();
+        const optimisticSubtask: Task = {
+            taskId: `optimistic-subtask-${Date.now()}-${Math.random().toString(36).slice(2)}`,
             name,
             description: '',
-            scheduledPerformDateTime: '',
+            completed: false,
+            creationDateTime: createdAt,
+            creationDate: createdAt.slice(0, 10),
+            scheduledPerformDateTime: null,
+            completionDateTime: '',
+            parentId: task.taskId,
             tag: '',
             importance: 0,
-            parentId: task.taskId,
-        });
+            displayOrder: visibleSubtaskState.items.length,
+            mentalThreadId: null,
+            projectId: task.projectId,
+            taskSeriesId: null,
+            seriesOccurrenceAt: null,
+            skipped: false,
+        };
         revealSubtaskComposerRef.current = true;
-        setSubtaskState(previous => {
-            if (previous.taskId !== task.taskId) return previous;
-            const items = sortSubtasks([...previous.items, createdSubtask]);
-            updateCachedTaskDetails(task.taskId, { subtasks: items }, {
-                task,
-                subtasks: items,
-                taskSeries: taskSeriesRef.current,
+        const updateSubtasks = (update: (items: Task[]) => Task[]) => {
+            setSubtaskState(previous => {
+                if (previous.taskId !== task.taskId) return previous;
+                const items = sortSubtasks(update(previous.items));
+                updateCachedTaskDetails(task.taskId, { subtasks: items }, {
+                    task,
+                    subtasks: items,
+                    taskSeries: taskSeriesRef.current,
+                });
+                return { ...previous, items };
             });
-            return { ...previous, items };
-        });
-    }, [onCreateSubtask, task]);
+        };
+        updateSubtasks(previous => [...previous, optimisticSubtask]);
+        setSubtaskError(null);
+
+        try {
+            const createdSubtask = await onCreateSubtask({
+                name,
+                description: '',
+                scheduledPerformDateTime: '',
+                tag: '',
+                importance: 0,
+                parentId: task.taskId,
+            });
+            updateSubtasks(previous => previous.map(item => item.taskId === optimisticSubtask.taskId
+                ? createdSubtask
+                : item));
+        } catch (error) {
+            updateSubtasks(previous => previous.filter(item => item.taskId !== optimisticSubtask.taskId));
+            setSubtaskError('Unable to create subtask.');
+            throw error;
+        }
+    }, [onCreateSubtask, task, visibleSubtaskState.items.length]);
 
     const handleDeleteSubtask = useCallback(async (subtask: Task) => {
         setSubtaskState(previous => {
@@ -955,10 +989,10 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
             });
             return { ...previous, items };
         });
+        if (!subtask.completed && completed) playAudioFeedback('taskCompleted');
 
         try {
-            const updatedSubtask = await taskService.toggleTaskCompletion(subtask.taskId, completed);
-            if (!subtask.completed && updatedSubtask.completed) playAudioFeedback('taskCompleted');
+            await taskService.toggleTaskCompletion(subtask.taskId, completed);
         } catch (error) {
             setSubtaskState(previous => {
                 if (previous.taskId !== task.taskId) return previous;
