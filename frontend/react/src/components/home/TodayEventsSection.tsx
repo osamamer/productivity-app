@@ -542,14 +542,101 @@ function TodayEventCard({
 
     if (item.event.sourceId) {
         return (
-            <Box role="group" aria-label={`${eventTitle}, read-only imported event`}
-                 sx={theme => ({ p: 1.25, pl: 1.75, border: `1px solid ${theme.palette.divider}`,
-                     borderLeft: `4px solid ${eventStatusColor(displayStatus, theme)}`,
-                     borderRadius: '0 12px 12px 0', minWidth: 0 })}>
-                <Typography variant="body1" sx={{ overflowWrap: 'anywhere' }}>{eventTitle}</Typography>
-                <Typography variant="caption" color="text.secondary">
-                    {item.allDay ? 'All day' : item.start ? format(item.start, 'HH:mm') : ''} · Imported calendar
-                </Typography>
+            <Box
+                role="group"
+                aria-label={`${eventTitle}, read-only imported event`}
+                sx={theme => {
+                    const statusColor = eventStatusColor(displayStatus, theme);
+                    const tentative = displayStatus === 'TENTATIVE';
+                    return {
+                        minWidth: 0,
+                        p: 1.25,
+                        pl: 1.75,
+                        border: '1px solid',
+                        borderColor: tentative ? statusColor : alpha(statusColor, 0.28),
+                        borderWidth: tentative ? 1.5 : 1,
+                        borderStyle: tentative
+                            ? 'dashed'
+                            : displayStatus === 'CANCELLED' ? 'dotted' : 'solid',
+                        borderLeft: tentative ? `1.5px dashed ${statusColor}` : `4px solid ${statusColor}`,
+                        borderRadius: '0 12px 12px 0',
+                        backgroundColor: theme.palette.background.paper,
+                    };
+                }}
+            >
+                <Box sx={{
+                    display: 'grid',
+                    gridTemplateColumns: 'minmax(0, 1fr) auto',
+                    gridTemplateRows: 'auto auto',
+                    alignItems: 'center',
+                    columnGap: 1.25,
+                    rowGap: 0.75,
+                    minWidth: 0,
+                }}>
+                    <Box sx={{
+                        gridColumn: 1,
+                        gridRow: 1,
+                        minWidth: 0,
+                        textAlign: 'left',
+                    }}>
+                        <Typography
+                            component="span"
+                            sx={{
+                                fontSize: '1.1rem',
+                                lineHeight: 1.35,
+                                whiteSpace: 'pre-wrap',
+                                overflowWrap: 'anywhere',
+                                textAlign: 'left',
+                                color: 'text.primary',
+                                textDecoration: displayStatus === 'CANCELLED' ? 'line-through' : 'none',
+                            }}
+                        >
+                            {eventTitle}
+                        </Typography>
+                    </Box>
+                    <Box
+                        sx={theme => ({
+                            gridColumn: 1,
+                            gridRow: 2,
+                            justifySelf: 'start',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            maxWidth: '100%',
+                            px: 0.85,
+                            py: 0.35,
+                            borderRadius: 1.2,
+                            color: eventStatusColor(displayStatus, theme),
+                            backgroundColor: alpha(eventStatusColor(displayStatus, theme), 0.1),
+                            fontSize: '0.775rem',
+                            fontWeight: 600,
+                            textAlign: 'left',
+                            fontVariantNumeric: 'tabular-nums',
+                            whiteSpace: 'normal',
+                            lineHeight: 1.25,
+                        })}
+                    >
+                        <AccessTimeRoundedIcon sx={{ fontSize: 14, mr: 0.55, flexShrink: 0 }} />
+                        {eventTimeLabel(displayedItem, dayStart)}
+                    </Box>
+                    <Box
+                        component="span"
+                        role="img"
+                        aria-label={eventStatusLabel(displayStatus)}
+                        sx={theme => ({
+                            gridColumn: 2,
+                            gridRow: 2,
+                            justifySelf: 'end',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            width: 30,
+                            height: 30,
+                            color: eventStatusColor(displayStatus, theme),
+                        })}
+                    >
+                        <EventStatusIcon status={displayStatus} />
+                    </Box>
+                </Box>
             </Box>
         );
     }

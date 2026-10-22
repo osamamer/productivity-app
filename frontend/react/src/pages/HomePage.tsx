@@ -3296,7 +3296,16 @@ export function HomePage() {
                     <Box key={item.group.groupId} sx={{ mb: 0.4 }}>
                         <Box
                             data-stat-task-group-header="true"
-                            sx={{ display: 'flex', alignItems: 'center', minHeight: 52, px: 0.5, color: 'text.secondary' }}
+                            sx={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                minHeight: 52,
+                                px: 0.5,
+                                borderRadius: 1.5,
+                                color: 'text.secondary',
+                                textAlign: 'left',
+                                '&:hover': { backgroundColor: 'action.hover' },
+                            }}
                         >
                             <IconButton
                                 size="small"
@@ -3306,7 +3315,7 @@ export function HomePage() {
                             >
                                 {collapsed ? <ChevronRightIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
                             </IconButton>
-                            <Typography variant="body2" sx={{ flex: 1, minWidth: 0, fontWeight: 650, overflowWrap: 'anywhere' }}>
+                            <Typography variant="body2" sx={{ flex: 1, minWidth: 0, fontWeight: 650, overflowWrap: 'anywhere', textAlign: 'left' }}>
                                 {item.group.name}
                             </Typography>
                             <Typography variant="caption" color="text.disabled" sx={{ flexShrink: 0, ml: 1 }}>
