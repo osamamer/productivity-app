@@ -35,7 +35,9 @@ export default function CalendarScreen() {
   const sourcesResource = useAsyncData(() => api.calendarSources.all());
   const definitionsResource = useAsyncData(() => api.stats.definitions());
   const visibilityRequestIds = useRef(new Map<string, number>());
-  const lastSourceRefresh = useRef(Date.now());
+  const lastSourceRefresh = useRef<number | null>(null);
+  const setEventsData = eventsResource.setData;
+  const setSourcesData = sourcesResource.setData;
   const {
     allTasks,
     groups,
@@ -53,21 +55,26 @@ export default function CalendarScreen() {
 
   useFocusEffect(useCallback(() => {
     const refreshSources = () => {
-      if (Date.now() - lastSourceRefresh.current < 60_000) return;
-      lastSourceRefresh.current = Date.now();
+      const now = Date.now();
+      if (lastSourceRefresh.current === null) {
+        lastSourceRefresh.current = now;
+        return;
+      }
+      if (now - lastSourceRefresh.current < 60_000) return;
+      lastSourceRefresh.current = now;
       void Promise.all([api.events.all(), api.calendarSources.all()])
         .then(([events, sources]) => {
-          eventsResource.setData(previous => previous?.length === events.length
+          setEventsData(previous => previous?.length === events.length
             && previous.every((event, index) => event.id === events[index].id
               && event.updatedAt === events[index].updatedAt) ? previous : events);
-          sourcesResource.setData(sources);
+          setSourcesData(sources);
         })
         .catch(cause => console.error('Could not refresh calendar sources:', cause));
     };
     refreshSources();
     const timer = setInterval(refreshSources, 300_000);
     return () => clearInterval(timer);
-  }, [eventsResource.setData, sourcesResource.setData]));
+  }, [setEventsData, setSourcesData]));
 
   async function subscribeCalendar() {
     if (!importName.trim() || (importMode === 'url' ? !importUrl.trim() : !importFile)) {
