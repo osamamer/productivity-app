@@ -871,7 +871,7 @@ export function TaskPage() {
         setHighlightedTask(task);
         selectionAnchorRef.current = taskId;
     }, [applySelection, displayTaskGroups, renderedSelectionEntities, selectedGroupIds, selectedGroupTaskIdSet,
-        selectedTaskIds]);
+        selectedTaskIds, setHighlightedTask]);
 
     const handleGroupSelection = useCallback((group: TaskGroup, event: React.MouseEvent<HTMLElement>) => {
         event.stopPropagation();
