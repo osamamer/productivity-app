@@ -171,7 +171,7 @@ export function CalendarTaskForm({ initialDate, initialName = '', onNameChange, 
                         }}
                     >
                         <DateTimePicker
-                            label="Scheduled"
+                            label="Schedule"
                             value={scheduledPerformDateTime ? new Date(scheduledPerformDateTime) : null}
                             onChange={handleDateChange}
                             closeOnSelect={false}

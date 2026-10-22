@@ -10,18 +10,19 @@ import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin, { DateClickArg } from "@fullcalendar/interaction";
 import FullCalendar from "@fullcalendar/react";
 import React, { useMemo, useState, useCallback, useRef } from "react";
+import { createPortal } from 'react-dom';
 import { keyframes } from '@mui/system';
 import { alpha } from '@mui/material/styles';
 import { Task, TaskUpdate } from "../types/Task.tsx";
 import { useTheme } from "@mui/material";
-import { DayCellContentArg, DayCellMountArg, DatesSetArg, EventClickArg, EventContentArg, EventDropArg, EventMountArg, MoreLinkArg } from '@fullcalendar/core';
+import { DayCellContentArg, DayCellMountArg, DatesSetArg, EventApi, EventClickArg, EventContentArg, EventDropArg, EventMountArg, MoreLinkMountArg } from '@fullcalendar/core';
 import { TaskToCreate } from "../types/TaskToCreate.tsx";
 import { TaskGroup } from "../types/TaskGroup.ts";
 import { StatDefinition, StatEntry } from "../types/Stats.ts";
 import { formatDurationValue, formatTimeValue } from "../services/utils/statValues.ts";
 import { DateStatCheckIn } from "./stats/DateStatCheckIn.tsx";
 import { statService } from "../services/api/statService.ts";
-import { addMonths, format, isAfter, startOfDay, startOfMonth, subDays } from "date-fns";
+import { addDays, addMonths, format, isAfter, startOfDay, startOfMonth, subDays } from "date-fns";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
 import { DateTimePicker } from "@mui/x-date-pickers/DateTimePicker";
@@ -33,6 +34,7 @@ import ViewDayIcon from '@mui/icons-material/ViewDay';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import ReplayIcon from '@mui/icons-material/Replay';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import {
     CalendarEvent,
@@ -307,6 +309,17 @@ type CalendarItemTarget =
     | { eventType: 'task'; taskId: string; top: number; left: number }
     | { eventType: 'calendarEvent'; eventId: string; occurrenceKey: string; top: number; left: number };
 
+type MoreDayPopoverState = {
+    date: string;
+    anchorElement: HTMLElement;
+    viewportElement: HTMLElement;
+    anchorPosition: { top: number; left: number };
+    viewportPosition: { top: number; left: number; width: number; height: number };
+    width: number;
+    height: number;
+    events: EventApi[];
+};
+
 const calendarLoadingReveal = keyframes`
     from {
         opacity: 0;
@@ -489,6 +502,7 @@ export function MonthCalendar({
     const [calendarDeleteConfirmationOpen, setCalendarDeleteConfirmationOpen] = useState(false);
     const [calendarDeleteError, setCalendarDeleteError] = useState<string | null>(null);
     const [calendarDeleting, setCalendarDeleting] = useState(false);
+    const [moreDayPopover, setMoreDayPopover] = useState<MoreDayPopoverState | null>(null);
     const [applyingTemplateId, setApplyingTemplateId] = useState<string | null>(null);
     const [templateFeedback, setTemplateFeedback] = useState<{
         id: number;
@@ -507,6 +521,62 @@ export function MonthCalendar({
         contextMenu: (event: MouseEvent) => void;
     }>());
     const eventContextMenuListenersRef = useRef(new Map<HTMLElement, (event: MouseEvent) => void>());
+    const calendarRef = useRef<FullCalendar | null>(null);
+    const moreLinkClickListenersRef = useRef(new Map<HTMLElement, (event: MouseEvent) => void>());
+    const moreDayPopoverRef = useRef<HTMLDivElement | null>(null);
+    const moreDayViewportRef = useRef<HTMLDivElement | null>(null);
+
+    React.useEffect(() => {
+        if (!moreDayPopover) return;
+
+        const closeOnOutsideClick = (event: MouseEvent) => {
+            if (!moreDayPopoverRef.current?.contains(event.target as Node)) {
+                setMoreDayPopover(null);
+            }
+        };
+        const closeOnEscape = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') setMoreDayPopover(null);
+        };
+
+        document.addEventListener('mousedown', closeOnOutsideClick);
+        document.addEventListener('keydown', closeOnEscape);
+        return () => {
+            document.removeEventListener('mousedown', closeOnOutsideClick);
+            document.removeEventListener('keydown', closeOnEscape);
+        };
+    }, [moreDayPopover]);
+
+    React.useLayoutEffect(() => {
+        if (!moreDayPopover) return;
+
+        const syncToDayCell = () => {
+            if (!moreDayPopover.anchorElement.isConnected || !moreDayPopover.viewportElement.isConnected) {
+                setMoreDayPopover(null);
+                return;
+            }
+            const popover = moreDayPopoverRef.current;
+            const viewport = moreDayViewportRef.current;
+            if (!popover || !viewport) return;
+            const viewportRect = moreDayPopover.viewportElement.getBoundingClientRect();
+            const rect = moreDayPopover.anchorElement.getBoundingClientRect();
+            viewport.style.top = `${viewportRect.top}px`;
+            viewport.style.left = `${viewportRect.left}px`;
+            viewport.style.width = `${viewportRect.width}px`;
+            viewport.style.height = `${viewportRect.height}px`;
+            popover.style.top = `${rect.top - viewportRect.top}px`;
+            popover.style.left = `${rect.left - viewportRect.left}px`;
+            popover.style.width = `${rect.width}px`;
+            popover.style.minHeight = `${rect.height}px`;
+        };
+
+        syncToDayCell();
+        document.addEventListener('scroll', syncToDayCell, true);
+        window.addEventListener('resize', syncToDayCell);
+        return () => {
+            document.removeEventListener('scroll', syncToDayCell, true);
+            window.removeEventListener('resize', syncToDayCell);
+        };
+    }, [moreDayPopover]);
 
     React.useEffect(() => {
         onApplyDayTemplateRef.current = onApplyDayTemplate;
@@ -1366,24 +1436,130 @@ export function MonthCalendar({
             : { start: arg.start, end: arg.end });
     }, []);
 
-    const handleMoreLinkClick = useCallback((arg: MoreLinkArg) => {
-        const target = arg.jsEvent.target;
-        const dayCell = target instanceof Element ? target.closest('.fc-daygrid-day') : null;
-        const viewHarness = dayCell?.closest('.fc-view-harness');
-        if (dayCell && viewHarness instanceof HTMLElement) {
+    const handleMoreLinkDidMount = useCallback((arg: MoreLinkMountArg) => {
+        const interceptMoreLinkClick = (mouseEvent: MouseEvent) => {
+            mouseEvent.preventDefault();
+            mouseEvent.stopImmediatePropagation();
+
+            const dayCell = arg.el.closest<HTMLElement>('.fc-daygrid-day');
+            const date = dayCell?.dataset.date;
+            if (!dayCell || !date) return;
+            const viewportElement = dayCell.closest<HTMLElement>('.fc-scroller');
+            if (!viewportElement) return;
+
+            const dayStart = new Date(`${date}T00:00:00`);
+            const nextDayStart = addDays(dayStart, 1);
             const cellRect = dayCell.getBoundingClientRect();
-            const pixelRatio = window.devicePixelRatio || 1;
-            const snapToPixel = (value: number) => Math.round(value * pixelRatio) / pixelRatio;
-            const left = snapToPixel(cellRect.left);
-            const right = snapToPixel(cellRect.right);
-            const top = snapToPixel(cellRect.top);
-            const bottom = snapToPixel(cellRect.bottom);
-            viewHarness.style.setProperty('--calendar-expanded-day-left', `${left}px`);
-            viewHarness.style.setProperty('--calendar-expanded-day-top', `${top}px`);
-            viewHarness.style.setProperty('--calendar-expanded-day-width', `${right - left}px`);
-            viewHarness.style.setProperty('--calendar-expanded-day-height', `${bottom - top}px`);
+            const viewportRect = viewportElement.getBoundingClientRect();
+            const eventsForDay = (calendarRef.current?.getApi().getEvents() ?? [])
+                .filter(event => {
+                    if (!event.start) return false;
+                    const eventEnd = event.end ?? event.start;
+                    const isZeroDuration = eventEnd.getTime() === event.start.getTime();
+                    return event.start < nextDayStart
+                        && (isZeroDuration ? event.start >= dayStart : eventEnd > dayStart);
+                })
+                .sort((first, second) => {
+                    const typeOrder = Number(first.extendedProps.eventTypeOrder ?? 0)
+                        - Number(second.extendedProps.eventTypeOrder ?? 0);
+                    if (typeOrder !== 0) return typeOrder;
+                    const startOrder = (first.start?.getTime() ?? 0) - (second.start?.getTime() ?? 0);
+                    if (startOrder !== 0) return startOrder;
+                    return first.title.localeCompare(second.title);
+                });
+
+            setMoreDayPopover({
+                date,
+                anchorElement: dayCell,
+                viewportElement,
+                anchorPosition: {
+                    top: cellRect.top - viewportRect.top,
+                    left: cellRect.left - viewportRect.left,
+                },
+                viewportPosition: {
+                    top: viewportRect.top,
+                    left: viewportRect.left,
+                    width: viewportRect.width,
+                    height: viewportRect.height,
+                },
+                width: cellRect.width,
+                height: cellRect.height,
+                events: eventsForDay,
+            });
+        };
+
+        arg.el.addEventListener('click', interceptMoreLinkClick, true);
+        moreLinkClickListenersRef.current.set(arg.el, interceptMoreLinkClick);
+    }, []);
+
+    const handleMoreLinkWillUnmount = useCallback((arg: MoreLinkMountArg) => {
+        const listener = moreLinkClickListenersRef.current.get(arg.el);
+        if (!listener) return;
+        arg.el.removeEventListener('click', listener, true);
+        moreLinkClickListenersRef.current.delete(arg.el);
+    }, []);
+
+    const handleMoreDayEventClick = useCallback((eventApi: EventApi, mouseEvent: React.MouseEvent) => {
+        setMoreDayPopover(null);
+        const anchorPosition = { top: mouseEvent.clientY, left: mouseEvent.clientX };
+        const eventType = eventApi.extendedProps.eventType;
+        if (eventType === 'taskGroup') {
+            setCalendarPopupAnchorPosition(anchorPosition);
+            const groupId = eventApi.extendedProps.groupId;
+            if (typeof groupId === 'string') setSelectedTaskGroupId(groupId);
+            setSelectedTaskGroupDialogOpen(true);
+            return;
         }
-        return 'popover';
+        if (eventType === 'calendarEvent') {
+            const occurrenceKey = eventApi.extendedProps.calendarEventOccurrenceKey;
+            if (typeof occurrenceKey !== 'string') return;
+            const eventId = eventApi.extendedProps.calendarEventId;
+            openCalendarEventEditor(
+                typeof eventId === 'string' ? eventId : eventApi.id,
+                occurrenceKey,
+                anchorPosition,
+            );
+            return;
+        }
+        if (eventType === 'stat') {
+            setCalendarPopupAnchorPosition(anchorPosition);
+            setEditingDate(eventApi.extendedProps.date ?? eventApi.startStr);
+            setActiveTab('stats');
+            setEditingDialogOpen(true);
+            return;
+        }
+
+        const task = tasks.find(item => item.taskId === eventApi.id);
+        if (task) openTaskEditor(task, anchorPosition);
+    }, [openCalendarEventEditor, openTaskEditor, tasks]);
+
+    const handleMoreDayEventContextMenu = useCallback((eventApi: EventApi, mouseEvent: React.MouseEvent) => {
+        const eventType = eventApi.extendedProps.eventType;
+        if (eventType !== 'task' && eventType !== 'calendarEvent') return;
+
+        mouseEvent.preventDefault();
+        mouseEvent.stopPropagation();
+        setMoreDayPopover(null);
+        if (eventType === 'task') {
+            setCalendarItemContextMenu({
+                eventType,
+                taskId: eventApi.id,
+                top: mouseEvent.clientY,
+                left: mouseEvent.clientX,
+            });
+            return;
+        }
+
+        const eventId = eventApi.extendedProps.calendarEventId;
+        const occurrenceKey = eventApi.extendedProps.calendarEventOccurrenceKey;
+        if (typeof eventId !== 'string' || typeof occurrenceKey !== 'string') return;
+        setCalendarItemContextMenu({
+            eventType,
+            eventId,
+            occurrenceKey,
+            top: mouseEvent.clientY,
+            left: mouseEvent.clientX,
+        });
     }, []);
 
     const togglePriority = (priority: number) => {
@@ -1601,6 +1777,127 @@ export function MonthCalendar({
 
     return (
         <>
+            {/* Clip the portal to the calendar's scroll area while keeping it aligned with its day cell. */}
+            {moreDayPopover && createPortal(
+                <div
+                    ref={moreDayViewportRef}
+                    style={{
+                        position: 'fixed',
+                        ...moreDayPopover.viewportPosition,
+                        overflow: 'hidden',
+                        zIndex: 1,
+                        pointerEvents: 'none',
+                    }}
+                >
+                    <Box
+                        ref={moreDayPopoverRef}
+                        role="dialog"
+                        aria-label={`Events for ${format(new Date(`${moreDayPopover.date}T12:00:00`), 'MMMM d, yyyy')}`}
+                        tabIndex={-1}
+                        style={{
+                            position: 'absolute',
+                            top: moreDayPopover.anchorPosition.top,
+                            left: moreDayPopover.anchorPosition.left,
+                        }}
+                        sx={{
+                            pointerEvents: 'auto',
+                            boxSizing: 'border-box',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            width: moreDayPopover.width,
+                            minHeight: moreDayPopover.height,
+                            maxHeight: 'min(80vh, 680px)',
+                            overflow: 'hidden',
+                            border: `2px solid ${theme.palette.primary.main}`,
+                            borderRadius: 0,
+                            backgroundColor: theme.palette.background.default,
+                            backgroundImage: theme.palette.mode === 'dark'
+                                ? 'linear-gradient(rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.03))'
+                                : 'linear-gradient(rgba(0, 0, 0, 0.02), rgba(0, 0, 0, 0.02))',
+                            animation: `${expandDayReveal} 220ms ease-out both`,
+                            '@media (prefers-reduced-motion: reduce)': {
+                                animation: 'none',
+                            },
+                        }}
+                    >
+                        <IconButton
+                            aria-label="Close day events"
+                            size="small"
+                            onClick={() => setMoreDayPopover(null)}
+                            sx={{ position: 'absolute', top: 4, right: 4, zIndex: 1, color: 'text.secondary' }}
+                        >
+                            <CloseRoundedIcon fontSize="small" />
+                        </IconButton>
+                        <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', px: 0.5, pt: 5.5, pb: 0.5 }}>
+                            <Stack spacing={0.25}>
+                                {moreDayPopover.events.map((eventApi, index) => {
+                                    const eventType = eventApi.extendedProps.eventType;
+                                    const isTaskEntity = eventType === 'task' || eventType === 'taskGroup';
+                                    const isTimedEntry = eventType === 'calendarEvent' || eventType === 'task';
+                                    const completed = eventApi.extendedProps.completed === true;
+                                    const isTask = eventType === 'task';
+                                    const isCancelled = eventApi.classNames.includes('calendar-cancelled-event');
+                                    const isTentative = eventApi.classNames.includes('calendar-tentative-event');
+                                    const taskColorClass = eventApi.classNames.find(className => className.startsWith('calendar-task-color-'));
+                                    const taskColor = taskColorClass
+                                        ? calendarColorHex(taskColorClass.replace('calendar-task-color-', ''), theme.palette.primary.main)
+                                        : eventApi.borderColor;
+                                    const eventStartsOnDate = eventApi.start
+                                        ? format(eventApi.start, 'yyyy-MM-dd') === moreDayPopover.date
+                                        : false;
+
+                                    return (
+                                        <Box
+                                            key={`${eventApi.id}-${index}`}
+                                            component="button"
+                                            type="button"
+                                            onClick={mouseEvent => handleMoreDayEventClick(eventApi, mouseEvent)}
+                                            onContextMenu={mouseEvent => handleMoreDayEventContextMenu(eventApi, mouseEvent)}
+                                            className={eventApi.classNames.join(' ')}
+                                            sx={{
+                                                alignItems: 'center',
+                                                backgroundColor: eventApi.backgroundColor || 'transparent',
+                                                border: `1px ${isCancelled ? 'dotted' : isTentative ? 'dashed' : 'solid'} ${isTask ? theme.palette.divider : eventApi.borderColor || theme.palette.divider}`,
+                                                borderLeft: isTask ? `3px solid ${taskColor}` : undefined,
+                                                borderRadius: 1.5,
+                                                color: isCancelled ? theme.palette.text.secondary : eventApi.textColor || theme.palette.text.primary,
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                font: 'inherit',
+                                                gap: 0.5,
+                                                justifyContent: 'flex-start',
+                                                margin: 0,
+                                                minWidth: 0,
+                                                overflow: 'hidden',
+                                                padding: '4px 8px',
+                                                textAlign: 'left',
+                                                textDecoration: isCancelled ? 'line-through' : 'none',
+                                                whiteSpace: 'nowrap',
+                                                width: '100%',
+                                                '&:hover': { filter: theme.palette.mode === 'dark' ? 'brightness(1.12)' : 'brightness(0.96)' },
+                                                '&:focus-visible': { outline: `2px solid ${theme.palette.primary.main}` },
+                                            }}
+                                        >
+                                            {isTaskEntity && completed && (
+                                                <CheckIcon aria-label="Completed" sx={{ color: theme.palette.success.main, flexShrink: 0, fontSize: '1rem' }} />
+                                            )}
+                                            <Box component="span" sx={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                {eventApi.title || 'Untitled'}
+                                            </Box>
+                                            {isTimedEntry && !eventApi.allDay && eventApi.start && eventStartsOnDate && (
+                                                <Box component="span" sx={{ flex: '0 0 auto', fontSize: '0.72rem', fontWeight: 700, ml: 'auto', pl: 0.5 }}>
+                                                    {calendarEventTimeLabel(eventApi.start)}
+                                                </Box>
+                                            )}
+                                        </Box>
+                                    );
+                                })}
+                            </Stack>
+                        </Box>
+                    </Box>
+                </div>,
+                document.body,
+            )}
                 <Box
                     sx={{
                         width: '100%',
@@ -2165,84 +2462,11 @@ export function MonthCalendar({
                             fontSize: '1.2rem',
                             fontWeight: 700,
                         },
-                        '& .fc-popover': {
-                            border: `1px solid ${theme.palette.divider}`,
-                            backgroundColor: `${theme.palette.background.default} !important`,
-                            color: theme.palette.text.primary,
-                            boxShadow: theme.shadows[8],
-                            borderRadius: '8px',
-                            overflow: 'hidden',
-                        },
-                        '& .fc-more-popover': {
-                            position: 'fixed !important',
-                            left: 'var(--calendar-expanded-day-left) !important',
-                            top: 'var(--calendar-expanded-day-top) !important',
-                            width: 'var(--calendar-expanded-day-width) !important',
-                            minHeight: 'var(--calendar-expanded-day-height)',
-                            maxHeight: 'min(80vh, 680px)',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            border: `2px solid ${theme.palette.primary.main} !important`,
-                            borderRadius: '0 !important',
-                            backgroundColor: `${theme.palette.background.default} !important`,
-                            backgroundImage: theme.palette.mode === 'dark'
-                                ? 'linear-gradient(rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.03))'
-                                : 'linear-gradient(rgba(0, 0, 0, 0.02), rgba(0, 0, 0, 0.02))',
-                            animation: `${expandDayReveal} 220ms ease-out both`,
-                            '@media (prefers-reduced-motion: reduce)': {
-                                animation: 'none',
-                            },
-                        },
-                        '& .fc-more-popover.fc-day-today': {
-                            outline: `2px solid ${theme.palette.text.primary}`,
-                            outlineOffset: '-2px',
-                            backgroundImage: theme.palette.mode === 'dark'
-                                ? 'linear-gradient(rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.04))'
-                                : 'linear-gradient(rgba(0, 0, 0, 0.03), rgba(0, 0, 0, 0.03))',
-                        },
-                        '& .fc-more-popover .fc-popover-header': {
-                            position: 'absolute',
-                            right: '6px',
-                            top: '6px',
-                            zIndex: 1,
-                            border: 'none',
-                            background: 'transparent',
-                            padding: '2px',
-                        },
-                        '& .fc-more-popover .fc-popover-title': {
-                            display: 'none',
-                        },
-                        '& .fc-popover-header': {
-                            backgroundColor: theme.palette.mode === 'dark'
-                                ? 'rgba(255, 255, 255, 0.04)'
-                                : 'rgba(0, 0, 0, 0.03)',
-                            color: theme.palette.text.primary,
-                            borderBottom: `1px solid ${theme.palette.divider}`,
-                            padding: '7px 10px',
-                        },
-                        '& .fc-popover-body': {
-                            backgroundColor: `${theme.palette.background.default} !important`,
-                            padding: '3px 4px',
-                        },
-                        '& .fc-more-popover .fc-popover-body': {
-                            flex: 1,
-                            minHeight: 0,
-                            overflowY: 'auto',
-                            backgroundColor: 'transparent !important',
-                        },
-                        '& .fc-more-popover .fc-daygrid-event-harness': {
-                            marginBottom: '2px',
-                        },
-                        '& .fc-more-popover-misc': {
-                            paddingRight: '22px',
-                        },
-                        '& .fc-popover-close': {
-                            color: `${theme.palette.text.secondary} !important`,
-                        },
                         ...calendarEventFillStyles,
                         }}
                     >
                         <FullCalendar
+                            ref={calendarRef}
                             plugins={[dayGridPlugin, interactionPlugin]}
                             initialView="dayGridMonth"
                             height="100%"
@@ -2260,7 +2484,8 @@ export function MonthCalendar({
                             dayCellDidMount={handleDayCellDidMount}
                             dayCellWillUnmount={handleDayCellWillUnmount}
                             dayMaxEvents={isWeekView ? false : 4}
-                            moreLinkClick={handleMoreLinkClick}
+                            moreLinkDidMount={handleMoreLinkDidMount}
+                            moreLinkWillUnmount={handleMoreLinkWillUnmount}
                             headerToolbar={{
                                 left: 'prev,next today',
                                 center: 'title',
@@ -2676,7 +2901,7 @@ export function MonthCalendar({
                                                 unmountOnExit
                                             >
                                                 <TimePicker
-                                                    label="Scheduled"
+                                                    label="Schedule"
                                                     value={taskDraft.scheduledPerformDateTime
                                                         ? new Date(taskDraft.scheduledPerformDateTime)
                                                         : null}
@@ -2695,7 +2920,7 @@ export function MonthCalendar({
                                                 unmountOnExit
                                             >
                                                 <DateTimePicker
-                                                    label="Scheduled"
+                                                    label="Schedule"
                                                     value={taskDraft.scheduledPerformDateTime
                                                         ? new Date(taskDraft.scheduledPerformDateTime)
                                                         : null}

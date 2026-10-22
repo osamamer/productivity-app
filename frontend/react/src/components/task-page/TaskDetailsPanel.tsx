@@ -217,14 +217,18 @@ const SubtaskComposer = React.memo(function SubtaskComposer({
         const requestKey = `${submittedDraft.taskId}\0${trimmedName}`;
         if (submittingDraftsRef.current.has(requestKey)) return;
         submittingDraftsRef.current.add(requestKey);
+        setDraft(previous => previous.taskId === submittedDraft.taskId
+            && previous.name.trim() === trimmedName
+            ? { ...previous, name: '' }
+            : previous);
 
         try {
             await onSubmit(trimmedName);
-            setDraft(previous => previous.taskId === submittedDraft.taskId
-                && previous.name.trim() === trimmedName
-                ? { ...previous, name: '' }
-                : previous);
         } catch (error) {
+            setDraft(previous => previous.taskId === submittedDraft.taskId
+                && !previous.name.trim()
+                ? { ...previous, name: trimmedName }
+                : previous);
             console.error('Error creating task-page subtask:', error);
         } finally {
             submittingDraftsRef.current.delete(requestKey);
@@ -336,6 +340,7 @@ const SubtaskList = React.memo(function SubtaskList({
                         onContextMenu={event => {
                             event.preventDefault();
                             event.stopPropagation();
+                            if (subtask.mentalThreadId) return;
                             setContextMenu({
                                 subtask,
                                 top: event.clientY,
@@ -425,7 +430,7 @@ const SubtaskList = React.memo(function SubtaskList({
                     onClick: event => event.stopPropagation(),
                 }}
             >
-                {contextMenu && (
+                {contextMenu && !contextMenu.subtask.mentalThreadId && (
                     <MenuItem
                         onClick={event => {
                             event.stopPropagation();
@@ -784,6 +789,7 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
     };
 
     const commitDateChange = async (date: Date | null) => {
+        if (task.mentalThreadId) return;
         const scheduledPerformDateTime = formatTaskDateTime(date);
         await onUpdate(task.taskId, {
             scheduledPerformDateTime,
@@ -796,6 +802,7 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
     };
 
     const handleDateChange = (date: Date | null) => {
+        if (task.mentalThreadId) return;
         setScheduledDraft(date);
         if (!date) commitDateChange(null);
     };
@@ -907,6 +914,7 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
     }, [onCreateSubtask, task, visibleSubtaskState.items.length]);
 
     const handleDeleteSubtask = useCallback(async (subtask: Task) => {
+        if (subtask.mentalThreadId) return;
         setSubtaskState(previous => {
             if (previous.taskId !== task.taskId) return previous;
             const items = previous.items.filter(item => item.taskId !== subtask.taskId);
@@ -1029,15 +1037,17 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
                     Task details
                 </Typography>
                 <Box sx={{ display: 'flex', gap: 0.25, ml: 'auto' }}>
-                    <IconButton
-                        size="small"
-                        color="error"
-                        onClick={event => onDelete(task, event.currentTarget)}
-                        aria-label={`Delete ${task.name}`}
-                        title="Delete task"
-                    >
-                        <DeleteOutlineRoundedIcon fontSize="small" />
-                    </IconButton>
+                    {!task.mentalThreadId && (
+                        <IconButton
+                            size="small"
+                            color="error"
+                            onClick={event => onDelete(task, event.currentTarget)}
+                            aria-label={`Delete ${task.name}`}
+                            title="Delete task"
+                        >
+                            <DeleteOutlineRoundedIcon fontSize="small" />
+                        </IconButton>
+                    )}
                     <IconButton size="small" onClick={onClose} aria-label="Close task details">
                         <CloseRoundedIcon fontSize="small" />
                     </IconButton>
@@ -1200,10 +1210,11 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
                                 <Box sx={{ minWidth: 0 }}>
                                     <Collapse in={showTimeOnlySchedule} timeout={180} unmountOnExit>
                                         <TimePicker
-                                            label="Scheduled"
+                                            label="Schedule"
                                             value={scheduledDraft}
                                             onChange={handleDateChange}
                                             onAccept={commitDateChange}
+                                            disabled={Boolean(task.mentalThreadId)}
                                             ampm={false}
                                             slotProps={{
                                                 field: { clearable: false },
@@ -1214,10 +1225,11 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
                                     </Collapse>
                                     <Collapse in={!showTimeOnlySchedule} timeout={180} unmountOnExit>
                                         <DateTimePicker
-                                            label="Scheduled"
+                                            label="Schedule"
                                             value={scheduledDraft}
                                             onChange={handleDateChange}
                                             onAccept={commitDateChange}
+                                            disabled={Boolean(task.mentalThreadId)}
                                             closeOnSelect={false}
                                             ampm={false}
                                             slotProps={{

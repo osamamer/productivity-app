@@ -72,7 +72,10 @@ export function buildTaskListItems(tasks: Task[], groups: TaskGroup[]): TaskList
     const groupByTaskId = new Map<string, TaskGroup>();
     const tasksByGroupId = new Map<string, Task[]>();
     [...groups]
-        .filter(group => group.taskIds.length >= 2)
+        .map(group => group.linkedToMentalThread || group.taskIds.some(taskId => (
+            tasks.some(task => task.taskId === taskId && Boolean(task.mentalThreadId))
+        )) ? { ...group, linkedToMentalThread: true } : group)
+        .filter(group => group.taskIds.length >= 2 || group.linkedToMentalThread)
         .sort((first, second) => first.displayOrder - second.displayOrder)
         .forEach(group => group.taskIds.forEach(taskId => {
             if (visibleTaskIds.has(taskId) && !groupByTaskId.has(taskId)) groupByTaskId.set(taskId, group);

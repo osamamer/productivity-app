@@ -96,6 +96,7 @@ export interface TaskGroup {
   name: string;
   taskIds: string[];
   displayOrder: number;
+  linkedToMentalThread?: boolean;
 }
 
 export interface TodayFocusSummary {

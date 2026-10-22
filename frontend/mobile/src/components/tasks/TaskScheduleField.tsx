@@ -113,11 +113,12 @@ export function TaskDateTimePicker({ value, onChange, timeOnly = false }: {
   );
 }
 
-export function TaskScheduleField({ value, onChange, timeOnly = false, style }: {
+export function TaskScheduleField({ value, onChange, timeOnly = false, style, disabled = false }: {
   value: string | null | undefined;
   onChange: (value: string) => void;
   timeOnly?: boolean;
   style?: StyleProp<ViewStyle>;
+  disabled?: boolean;
 }) {
   const { colors } = useAppTheme();
   const [open, setOpen] = useState(false);
@@ -146,7 +147,7 @@ export function TaskScheduleField({ value, onChange, timeOnly = false, style }: 
     <View style={[styles.container, style]}>
       <View style={styles.heading}>
         <AppText variant="label">{timeOnly ? 'Scheduled time' : 'Scheduled'}</AppText>
-        {hasSchedule && !timeOnly && (
+        {hasSchedule && !timeOnly && !disabled && (
           <SilentPressable
             accessibilityRole="button"
             accessibilityLabel="Clear scheduled date and time"
@@ -161,16 +162,18 @@ export function TaskScheduleField({ value, onChange, timeOnly = false, style }: 
       <SilentPressable
         accessibilityRole="button"
         accessibilityLabel={`Scheduled: ${displayedValue}`}
+        accessibilityState={{ disabled }}
+        disabled={disabled}
         onPress={openPicker}
-        style={({ pressed }) => [styles.field, { borderColor: colors.border, backgroundColor: colors.background }, pressed && styles.pressed]}>
-        <Ionicons name="calendar-outline" size={19} color={colors.accent} />
+        style={({ pressed }) => [styles.field, { borderColor: colors.border, backgroundColor: colors.background }, disabled && styles.disabled, pressed && styles.pressed]}>
+        <Ionicons name="calendar-outline" size={19} color={disabled ? colors.textMuted : colors.accent} />
         <AppText variant="label" color={hasSchedule ? 'default' : 'muted'} style={styles.fieldValue}>
           {displayedValue}
         </AppText>
-        <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+        {!disabled && <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />}
       </SilentPressable>
       <AppPopup
-        visible={open}
+        visible={open && !disabled}
         title={timeOnly ? 'Scheduled time' : 'Scheduled'}
         showIcon={false}
         onClose={() => setOpen(false)}
@@ -203,4 +206,5 @@ const styles = StyleSheet.create({
   popupActions: { flexDirection: 'row', gap: 10 },
   popupAction: { flex: 1 },
   pressed: { opacity: 0.72 },
+  disabled: { opacity: 0.65 },
 });

@@ -31,6 +31,7 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
 }) {
   const { confirm } = useAppPopup();
   const { colors } = useAppTheme();
+  const linkedTask = Boolean(task?.mentalThreadId);
   const [name, setName] = useState(task?.name ?? '');
   const [scheduledPerformDateTime, setScheduledPerformDateTime] = useState(task?.scheduledPerformDateTime ?? '');
   const [reminderMinutesBefore, setReminderMinutesBefore] = useState<number | null>(task?.reminderMinutesBefore ?? null);
@@ -151,7 +152,7 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
     try {
       const updated = await api.tasks.update(task.taskId, {
         name: name.trim(),
-        scheduledPerformDateTime,
+        scheduledPerformDateTime: linkedTask ? task.scheduledPerformDateTime : scheduledPerformDateTime,
         importance: updatePriorityForSeries ? task.importance : importance,
         completed,
         reminderMinutesBefore,
@@ -190,7 +191,7 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
   }
 
   async function submitSubtask() {
-    if (!task || task.parentId || subtaskSaving) return;
+    if (!task || task.parentId || linkedTask || subtaskSaving) return;
     const trimmedName = subtaskName.trim();
     if (!trimmedName) {
       setSubtaskError('Give the subtask a name.');
@@ -261,7 +262,7 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
   }
 
   async function confirmDelete(scope: 'occurrence' | 'series') {
-    if (!task) return;
+    if (!task || linkedTask) return;
     setDeletePromptOpen(false);
     const deletingOccurrence = scope === 'occurrence';
     const title = deletingOccurrence ? 'Delete this occurrence?' : task.taskSeriesId ? 'Delete task series?' : 'Delete task?';
@@ -288,6 +289,7 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
   }
 
   function requestDelete() {
+    if (linkedTask) return;
     if (task?.taskSeriesId && onDeletedOccurrence) {
       setDeletePromptOpen(true);
       return;
@@ -398,7 +400,7 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
               <AppText variant="label" numberOfLines={2} style={[styles.subtaskName, subtask.completed && styles.completed]}>{subtask.name}</AppText>
             </SilentPressable>
           ))}
-          {subtaskComposerOpen ? (
+          {!linkedTask && subtaskComposerOpen ? (
             <View style={styles.subtaskComposer}>
               <AppInput
                 ref={subtaskInputRef}
@@ -411,7 +413,7 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
               />
               <AppButton compact label="Add" icon="add" loading={subtaskSaving} onPress={() => void submitSubtask()} style={styles.subtaskButton} />
             </View>
-          ) : (
+          ) : !linkedTask && (
             <AppButton compact variant="ghost" label="Add subtask" icon="add" onPress={() => setSubtaskComposerOpen(true)} style={styles.addSubtaskButton} />
           )}
           {subtaskError && <AppText variant="caption" color="danger">{subtaskError}</AppText>}
@@ -420,8 +422,9 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
       <TaskScheduleField
         value={scheduledPerformDateTime}
         onChange={handleScheduledChange}
+        disabled={linkedTask}
       />
-      {!task?.parentId && (
+      {!task?.parentId && !linkedTask && (
         <View style={styles.repeatSection}>
           <AppText variant="label">Repeat</AppText>
           <ChoiceChips value={repeat} onChange={changeRepeat} options={[
@@ -441,7 +444,7 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
           <ChoiceChips value={importance} onChange={handlePriorityChange} options={[...TASK_PRIORITY_OPTIONS]} fillSelected />
       {error && <AppText color="danger">{error}</AppText>}
       <View style={styles.actions}>
-        <AppButton label="Delete" icon="trash-outline" variant="danger" onPress={requestDelete} disabled={deleting} style={styles.grow} />
+        {!linkedTask && <AppButton label="Delete" icon="trash-outline" variant="danger" onPress={requestDelete} disabled={deleting} style={styles.grow} />}
       </View>
       <AppPopup
         visible={priorityScopeOpen}

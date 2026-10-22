@@ -44,7 +44,10 @@ function buildTaskListItems(tasks: Task[], groups: TaskGroup[]): TaskListItem[] 
   const visibleTaskIds = new Set(tasks.map(task => task.taskId));
   const groupByTaskId = new Map<string, TaskGroup>();
   [...groups]
-    .filter(group => group.taskIds.length >= 2)
+    .map(group => group.linkedToMentalThread || group.taskIds.some(taskId => (
+      tasks.some(task => task.taskId === taskId && task.mentalThreadId)
+    )) ? { ...group, linkedToMentalThread: true } : group)
+    .filter(group => group.taskIds.length >= 2 || group.linkedToMentalThread)
     .sort((first, second) => first.displayOrder - second.displayOrder)
     .forEach(group => group.taskIds.forEach(taskId => {
       if (visibleTaskIds.has(taskId) && !groupByTaskId.has(taskId)) groupByTaskId.set(taskId, group);
@@ -179,7 +182,9 @@ export default function TasksScreen() {
   const selectedPastTaskIds = selectedTasks
     .filter(task => pastTasks.some(pastTask => pastTask.taskId === task.taskId))
     .map(task => task.taskId);
-  const canGroupSelectedTasks = selectedGroupIds.length === 0 && selectedTaskIds.length >= 2;
+  const hasLinkedSelection = selectedTasks.some(task => Boolean(task.mentalThreadId))
+    || groups.some(group => selectedGroupIdSet.has(group.groupId) && group.linkedToMentalThread);
+  const canGroupSelectedTasks = !hasLinkedSelection && selectedGroupIds.length === 0 && selectedTaskIds.length >= 2;
 
   const loadMoreUpcoming = useCallback(async () => {
     if (loadingMoreFutureTasks || !hasMoreFutureTasks) return;
@@ -250,7 +255,7 @@ export default function TasksScreen() {
   }
 
   async function performBulkAction(action: 'complete' | 'move-to-today') {
-    if (bulkActionLoading || selectedTasks.length === 0) return;
+    if (bulkActionLoading || selectedTasks.length === 0 || (action === 'move-to-today' && hasLinkedSelection)) return;
     setBulkActionLoading(true);
     try {
       if (action === 'move-to-today') {
@@ -270,7 +275,7 @@ export default function TasksScreen() {
   }
 
   async function moveSelectedToDate(scheduledPerformDateTime: string) {
-    if (bulkActionLoading || selectedTasks.length === 0) return;
+    if (bulkActionLoading || selectedTasks.length === 0 || hasLinkedSelection) return;
     setBulkDateSaving(true);
     try {
       await moveTasksToDate(selectedTasks.map(task => task.taskId), scheduledPerformDateTime);
@@ -283,7 +288,7 @@ export default function TasksScreen() {
   }
 
   async function confirmBulkDelete() {
-    if (!selectedTasks.length) return;
+    if (!selectedTasks.length || hasLinkedSelection) return;
     if (!await confirm('Delete selected tasks?', `${selectedTasks.length} tasks will be deleted.`, 'Delete')) return;
     setBulkActionLoading(true);
     try {
@@ -423,7 +428,9 @@ export default function TasksScreen() {
             visible={selectedTaskIds.length > 1 || selectedGroupIds.length > 0}
             taskCount={selectedTasks.length}
             loading={bulkActionLoading || bulkDateSaving}
-            canMoveToToday={selectedPastTaskIds.length > 0}
+            canMoveToToday={!hasLinkedSelection && selectedPastTaskIds.length > 0}
+            canMoveToDate={!hasLinkedSelection}
+            canDelete={!hasLinkedSelection}
             canReorder={selectedTaskIds.length === 1 && selectedGroupIds.length === 0}
             canGroup={canGroupSelectedTasks}
             onComplete={() => void performBulkAction('complete')}

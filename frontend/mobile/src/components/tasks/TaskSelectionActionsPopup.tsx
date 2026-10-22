@@ -38,6 +38,8 @@ export function TaskSelectionActionsPopup({
   taskCount,
   loading = false,
   canMoveToToday = false,
+  canMoveToDate = true,
+  canDelete = true,
   canReorder = false,
   canGroup = false,
   onComplete,
@@ -53,6 +55,8 @@ export function TaskSelectionActionsPopup({
   taskCount: number;
   loading?: boolean;
   canMoveToToday?: boolean;
+  canMoveToDate?: boolean;
+  canDelete?: boolean;
   canReorder?: boolean;
   canGroup?: boolean;
   onComplete: () => void;
@@ -87,7 +91,7 @@ export function TaskSelectionActionsPopup({
           {canMoveToToday && onMoveToToday && (
             <ActionButton label="Move selected tasks to today" icon="today-outline" onPress={onMoveToToday} disabled={loading} />
           )}
-          <ActionButton label="Move selected tasks to a date" icon="calendar-outline" onPress={onMoveToDate} disabled={loading} />
+          {canMoveToDate && <ActionButton label="Move selected tasks to a date" icon="calendar-outline" onPress={onMoveToDate} disabled={loading} />}
           {canReorder && onMoveUp && onMoveDown && (
             <>
               <ActionButton label="Move selected task up" icon="arrow-up" onPress={onMoveUp} disabled={loading} />
@@ -97,7 +101,7 @@ export function TaskSelectionActionsPopup({
           {canGroup && onGroup && (
             <ActionButton label="Group selected tasks" icon="folder-open-outline" onPress={onGroup} disabled={loading} />
           )}
-          <ActionButton label="Delete selected tasks" icon="trash-outline" onPress={onDelete} disabled={loading} danger />
+          {canDelete && <ActionButton label="Delete selected tasks" icon="trash-outline" onPress={onDelete} disabled={loading} danger />}
         </View>
       </View>
     </View>

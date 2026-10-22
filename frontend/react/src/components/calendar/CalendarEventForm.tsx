@@ -9,7 +9,7 @@ import { alpha, useTheme } from '@mui/material/styles';
 import type { Theme } from '@mui/material/styles';
 import { useRef, useState } from 'react';
 import { CalendarEvent, CalendarEventInput, CalendarEventStatus, RecurrenceFrequency, RecurrenceUnit } from '../../types/CalendarEvent';
-import { Calendar } from '../../types/Calendar';
+import { Calendar, calendarColorHex } from '../../types/Calendar';
 import { readEventTimePreferences, saveEventTimePreferences } from '../../services/utils/inputPreferences';
 import { AppDateField, AppTimeField } from '../input/AppPickerFields';
 import { AppNumberField } from '../input/AppNumberField';
@@ -68,10 +68,11 @@ function eventStatusLabel(status: CalendarEventStatus): string {
     return 'Confirmed';
 }
 
-function eventStatusColor(status: CalendarEventStatus, theme: Theme): string {
+function eventStatusColor(status: CalendarEventStatus, theme: Theme, confirmedColor: string): string {
+    if (status === 'CONFIRMED') return confirmedColor;
     if (status === 'TENTATIVE') return theme.palette.mode === 'dark' ? '#d9bc72' : '#ad7c2e';
     if (status === 'CANCELLED') return theme.palette.error.main;
-    return theme.palette.primary.main;
+    return confirmedColor;
 }
 
 function localDatePart(value: string | null | undefined, fallback: string): string {
@@ -130,6 +131,9 @@ export function CalendarEventForm({
     const [title, setTitle] = useState(event?.title ?? initialTitle);
     const [calendarId, setCalendarId] = useState(event?.calendarId
         ?? (visibleCalendars.length === 1 ? visibleCalendars[0].id : ''));
+    const selectedCalendar = calendars.find(calendar => calendar.id === calendarId)
+        ?? calendars.find(calendar => calendar.defaultCalendar);
+    const selectedCalendarColor = calendarColorHex(selectedCalendar?.color, theme.palette.primary.main);
     const description = event?.description ?? '';
     const [allDay, setAllDay] = useState(event?.allDay ?? false);
     const [startDate, setStartDate] = useState(event?.startDate ?? localDatePart(event?.startTime, initialDate));
@@ -431,7 +435,7 @@ export function CalendarEventForm({
                     onClick={clickEvent => setStatusMenuAnchor(clickEvent.currentTarget)}
                     aria-label={`Change event status, currently ${eventStatusLabel(status)}`}
                     sx={theme => {
-                        const color = eventStatusColor(status, theme);
+                        const color = eventStatusColor(status, theme, selectedCalendarColor);
                         return {
                             height: 30,
                             borderRadius: '8px',
@@ -439,7 +443,7 @@ export function CalendarEventForm({
                             bgcolor: alpha(color, 0.1),
                             fontWeight: 600,
                             cursor: 'pointer',
-                            '&:hover': { bgcolor: alpha(color, 0.18) },
+                            '&:hover': { bgcolor: alpha(color, 0.13) },
                         };
                     }}
                 />
@@ -551,11 +555,19 @@ export function CalendarEventForm({
                 slotProps={{ paper: { sx: { borderRadius: '8px' } } }}
             >
                 {STATUS_OPTIONS.map(option => {
-                    const color = eventStatusColor(option.value, theme);
+                    const color = eventStatusColor(option.value, theme, selectedCalendarColor);
                     return (
                         <MenuItem
                             key={option.value}
                             selected={option.value === status}
+                            sx={menuTheme => ({
+                                '&.Mui-selected': {
+                                    backgroundColor: alpha(selectedCalendarColor, menuTheme.palette.mode === 'dark' ? 0.16 : 0.08),
+                                },
+                                '&.Mui-selected:hover': {
+                                    backgroundColor: alpha(selectedCalendarColor, menuTheme.palette.mode === 'dark' ? 0.22 : 0.12),
+                                },
+                            })}
                             onClick={() => {
                                 markAutoSaveDirty();
                                 setStatus(option.value);

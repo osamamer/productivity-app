@@ -67,9 +67,17 @@ type CalendarChipSelectProps = {
     calendars: Calendar[];
     value: string;
     onChange: (calendarId: string, anchorEl?: HTMLElement | null) => void;
+    readOnly?: boolean;
+    onMenuOpenChange?: (open: boolean) => void;
 };
 
-export function CalendarChipSelect({ calendars, value, onChange }: CalendarChipSelectProps) {
+export function CalendarChipSelect({
+    calendars,
+    value,
+    onChange,
+    readOnly = false,
+    onMenuOpenChange,
+}: CalendarChipSelectProps) {
     const theme = useTheme();
     const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
     const selectedCalendar = calendars.find(calendar => calendar.id === value)
@@ -82,62 +90,73 @@ export function CalendarChipSelect({ calendars, value, onChange }: CalendarChipS
             <Chip
                 size="medium"
                 label={label}
-                onClick={event => setAnchorEl(event.currentTarget)}
-                aria-label={`Change calendar, currently ${label}`}
+                data-calendar-chip-select="true"
+                onClick={readOnly ? undefined : event => {
+                    event.stopPropagation();
+                    setAnchorEl(event.currentTarget);
+                    onMenuOpenChange?.(true);
+                }}
+                aria-label={readOnly ? `Calendar: ${label}` : `Change calendar, currently ${label}`}
                 sx={theme => ({
                     height: 30,
                     borderRadius: '8px',
                     color,
-                    bgcolor: alpha(color, theme.palette.mode === 'dark' ? 0.18 : 0.08),
+                    bgcolor: alpha(color, theme.palette.mode === 'dark' ? 0.12 : 0.04),
                     border: '1px solid',
                     borderColor: color,
                     fontWeight: 600,
                     fontSize: '0.875rem',
-                    cursor: 'pointer',
+                    cursor: readOnly ? 'default' : 'pointer',
                     '& .MuiChip-label': { px: 1.25, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis' },
-                    '&:hover': { bgcolor: alpha(color, 0.2) },
+                    ...(readOnly ? {} : { '&:hover': { bgcolor: alpha(color, 0.08) } }),
                 })}
             />
-            <Menu
-                anchorEl={anchorEl}
-                open={Boolean(anchorEl)}
-                onClose={() => setAnchorEl(null)}
-                MenuListProps={{ disablePadding: true }}
-                slotProps={{ paper: { sx: { borderRadius: '8px' } } }}
-                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-                transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-            >
-                {calendars.map(calendar => {
-                    const optionColor = calendarColorHex(calendar.color, theme.palette.primary.main);
-                    const selected = calendar.id === value || (!value && calendar.defaultCalendar);
-                    return (
-                        <MenuItem
-                            key={calendar.id}
-                            selected={selected}
-                            sx={{ pl: 1.25 }}
-                            onClick={() => {
-                                onChange(calendar.id, anchorEl);
-                                setAnchorEl(null);
-                            }}
-                        >
-                            <ListItemIcon sx={{ minWidth: 24 }}>
-                                <Checkbox
-                                    size="small"
-                                    checked={selected}
-                                    disableRipple
-                                    onChange={() => {}}
-                                    sx={{
-                                        p: 0,
-                                        color: optionColor,
-                                        '&.Mui-checked': { color: optionColor },
-                                    }}
-                                />
-                            </ListItemIcon>
-                            {calendar.name}
-                        </MenuItem>
-                    );
-                })}
-            </Menu>
+            {!readOnly && (
+                <Menu
+                    anchorEl={anchorEl}
+                    open={Boolean(anchorEl)}
+                    onClose={() => {
+                        setAnchorEl(null);
+                        onMenuOpenChange?.(false);
+                    }}
+                    MenuListProps={{ disablePadding: true }}
+                    slotProps={{ paper: { sx: { borderRadius: '8px' } } }}
+                    anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                    transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                >
+                    {calendars.map(calendar => {
+                        const optionColor = calendarColorHex(calendar.color, theme.palette.primary.main);
+                        const selected = calendar.id === value || (!value && calendar.defaultCalendar);
+                        return (
+                            <MenuItem
+                                key={calendar.id}
+                                selected={selected}
+                                sx={{ pl: 1.25 }}
+                                onClick={() => {
+                                    onChange(calendar.id, anchorEl);
+                                    setAnchorEl(null);
+                                    onMenuOpenChange?.(false);
+                                }}
+                            >
+                                <ListItemIcon sx={{ minWidth: 24 }}>
+                                    <Checkbox
+                                        size="small"
+                                        checked={selected}
+                                        disableRipple
+                                        onChange={() => {}}
+                                        sx={{
+                                            p: 0,
+                                            color: optionColor,
+                                            '&.Mui-checked': { color: optionColor },
+                                        }}
+                                    />
+                                </ListItemIcon>
+                                {calendar.name}
+                            </MenuItem>
+                        );
+                    })}
+                </Menu>
+            )}
         </>
     );
 }

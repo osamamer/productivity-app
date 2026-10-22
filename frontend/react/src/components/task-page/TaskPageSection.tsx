@@ -26,8 +26,9 @@ type TaskPageSectionProps = {
     onTaskSelection?: (task: Task, event: React.MouseEvent<HTMLElement>) => void;
     selectedTaskId?: string | null;
     selectedTaskIds?: ReadonlySet<string>;
-    selectedGroupTaskIds?: ReadonlySet<string>;
     selectedGroupIds?: ReadonlySet<string>;
+    collapsedGroupIds: ReadonlySet<string>;
+    onToggleGroup: (groupId: string) => void;
     onGroupSelection?: (group: TaskGroup, event: React.MouseEvent<HTMLElement>) => void;
     onRenameGroup?: (group: TaskGroup, name: string) => Promise<void>;
     onCreateTaskInGroup?: (group: TaskGroup, task: TaskToCreate) => void;
@@ -64,8 +65,9 @@ export const TaskPageSection = React.memo(function TaskPageSection({
     onTaskSelection,
     selectedTaskId,
     selectedTaskIds,
-    selectedGroupTaskIds,
     selectedGroupIds,
+    collapsedGroupIds,
+    onToggleGroup,
     onGroupSelection,
     onRenameGroup,
     onCreateTaskInGroup,
@@ -87,7 +89,6 @@ export const TaskPageSection = React.memo(function TaskPageSection({
 }: TaskPageSectionProps) {
     const visibleTasks = useMemo(() => tasks.filter(task => !task.parentId), [tasks]);
     const listItems = useMemo(() => buildTaskListItems(visibleTasks, groups), [groups, visibleTasks]);
-    const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(new Set());
     const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
     const [localGroupName, setLocalGroupName] = useState('');
     const [addingGroupId, setAddingGroupId] = useState<string | null>(null);
@@ -107,15 +108,6 @@ export const TaskPageSection = React.memo(function TaskPageSection({
             {showMore.loading ? 'Loading…' : showMore.label}
         </Button>
     ) : null;
-
-    const toggleGroup = (groupId: string) => {
-        setCollapsedGroupIds(previous => {
-            const next = new Set(previous);
-            if (next.has(groupId)) next.delete(groupId);
-            else next.add(groupId);
-            return next;
-        });
-    };
 
     useEffect(() => {
         if (!editingGroupId || !groupNameInputRef.current) return;
@@ -145,8 +137,13 @@ export const TaskPageSection = React.memo(function TaskPageSection({
         setEditingGroupId(null);
     };
 
-    const renderTask = (task: Task) => (
-        <Box key={task.taskId} sx={{ contentVisibility: 'auto', containIntrinsicSize: '52px' }}>
+    const renderTask = (task: Task, grouped = false) => (
+        <Box
+            key={task.taskId}
+            sx={grouped
+                ? { contentVisibility: 'visible' }
+                : { contentVisibility: 'auto', containIntrinsicSize: '52px' }}
+        >
             <TaskPageListRow
                 task={task}
                 onToggle={toggleTaskCompletion}
@@ -154,7 +151,6 @@ export const TaskPageSection = React.memo(function TaskPageSection({
                 onSelect={onTaskSelection ? undefined : onTaskClick}
                 onSelectionClick={onTaskSelection}
                 selected={selectedTaskIds?.has(task.taskId)
-                    || selectedGroupTaskIds?.has(task.taskId)
                     || selectedTaskId === task.taskId}
                 editRequestId={selectedTaskId === task.taskId ? editRequestId : null}
                 showScheduledDate={showScheduledDate}
@@ -171,8 +167,20 @@ export const TaskPageSection = React.memo(function TaskPageSection({
 
         const collapsed = collapsedGroupIds.has(item.group.groupId);
         if (item.group.isStatGroup) {
+            const selected = selectedGroupIds?.has(item.group.groupId) ?? false;
             return (
-                <Box key={item.group.groupId} sx={{ mb: 0.4 }}>
+                <Box
+                    key={item.group.groupId}
+                    data-task-group-id={item.group.groupId}
+                    sx={{
+                        mb: 0.4,
+                        borderRadius: 1.5,
+                        boxShadow: selected
+                            ? theme => `inset 0 0 0 2px ${alpha(theme.palette.primary.main, 0.38)}`
+                            : 'none',
+                        transition: 'box-shadow 0.18s',
+                    }}
+                >
                     <Box
                         data-stat-task-group-header="true"
                         sx={{
@@ -190,26 +198,63 @@ export const TaskPageSection = React.memo(function TaskPageSection({
                             size="small"
                             aria-label={collapsed ? `Expand ${item.group.name}` : `Collapse ${item.group.name}`}
                             aria-expanded={!collapsed}
-                            onClick={() => toggleGroup(item.group.groupId)}
+                            onClick={() => onToggleGroup(item.group.groupId)}
                             sx={{ width: 38, height: 38, p: 0, mr: 0.5, flexShrink: 0, color: 'inherit' }}
                         >
                             {collapsed
                                 ? <ChevronRightRoundedIcon fontSize="small" />
                                 : <ExpandMoreRoundedIcon fontSize="small" />}
                         </IconButton>
-                        <Typography variant="body2" sx={{ flex: 1, minWidth: 0, fontWeight: 650, overflowWrap: 'anywhere', textAlign: 'left' }}>
-                            {item.group.name}
-                        </Typography>
-                        <Typography variant="caption" color="text.disabled" sx={{ flexShrink: 0, ml: 1 }}>
-                            {item.tasks.length}
-                        </Typography>
+                        <Box sx={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
+                            <Typography component="span" variant="body2" sx={{ fontWeight: 650, overflowWrap: 'anywhere' }}>
+                                {item.group.name}
+                            </Typography>
+                            <Typography component="span" variant="caption" color="text.disabled" sx={{ ml: 1 }}>
+                                {item.tasks.length}
+                            </Typography>
+                        </Box>
+                        {onGroupSelection && (
+                            <IconButton
+                                size="small"
+                                color={selected ? 'primary' : 'inherit'}
+                                aria-label={selected
+                                    ? `Deselect group ${item.group.name}`
+                                    : `Select group ${item.group.name}`}
+                                title={selected ? 'Deselect group' : 'Select group'}
+                                onClick={event => onGroupSelection(item.group, event)}
+                            >
+                                <AdsClickRoundedIcon fontSize="small" />
+                            </IconButton>
+                        )}
+                        {onCreateTaskInGroup && (
+                            <IconButton
+                                size="small"
+                                color="inherit"
+                                aria-label={`Add task to ${item.group.name}`}
+                                title="Add task to group"
+                                disabled
+                            >
+                                <AddRoundedIcon fontSize="small" />
+                            </IconButton>
+                        )}
+                        {onDeleteGroup && (
+                            <IconButton
+                                size="small"
+                                color="error"
+                                aria-label={`Delete group ${item.group.name}`}
+                                title="Delete group"
+                                disabled
+                            >
+                                <DeleteOutlineRoundedIcon sx={{ fontSize: '1.1rem' }} />
+                            </IconButton>
+                        )}
                     </Box>
                     <Collapse in={!collapsed} timeout="auto" unmountOnExit>
                         <Box
                             data-stat-task-group-content={item.group.groupId}
                             sx={{ ml: 1.7, pl: 1.1, borderLeft: '1px solid', borderColor: 'divider' }}
                         >
-                            {item.tasks.map(renderTask)}
+                            {item.tasks.map(task => renderTask(task, true))}
                         </Box>
                     </Collapse>
                 </Box>
@@ -218,6 +263,8 @@ export const TaskPageSection = React.memo(function TaskPageSection({
 
         const selected = selectedGroupIds?.has(item.group.groupId) ?? false;
         const dragTarget = dragTargetGroupId === item.group.groupId;
+        const linkedGroup = Boolean(item.group.linkedToMentalThread)
+            || item.tasks.some(task => Boolean(task.mentalThreadId));
         return (
             <Box
                 key={item.group.groupId}
@@ -227,6 +274,10 @@ export const TaskPageSection = React.memo(function TaskPageSection({
                 sx={{
                     mb: 0.4,
                     borderRadius: 1.5,
+                    boxShadow: selected
+                        ? theme => `inset 0 0 0 2px ${alpha(theme.palette.primary.main, 0.38)}`
+                        : 'none',
+                    transition: 'box-shadow 0.18s, background-color 0.18s',
                     backgroundColor: dragTarget
                         ? theme => alpha(theme.palette.primary.main, 0.045)
                         : 'transparent',
@@ -244,7 +295,7 @@ export const TaskPageSection = React.memo(function TaskPageSection({
                         px: 0.5,
                         border: 0,
                         color: 'text.secondary',
-                        backgroundColor: selected ? theme => alpha(theme.palette.primary.main, 0.09) : 'transparent',
+                        backgroundColor: 'transparent',
                         textAlign: 'left',
                         transition: 'opacity 0.16s, transform 0.16s, background-color 0.18s',
                         '&:hover': { backgroundColor: 'action.hover' },
@@ -255,7 +306,7 @@ export const TaskPageSection = React.memo(function TaskPageSection({
                         aria-label={collapsed ? `Expand ${item.group.name}` : `Collapse ${item.group.name}`}
                         onClick={event => {
                             event.stopPropagation();
-                            toggleGroup(item.group.groupId);
+                            onToggleGroup(item.group.groupId);
                         }}
                         sx={{ width: 38, height: 38, p: 0, mr: 0.5, flexShrink: 0, color: 'inherit' }}
                     >
@@ -358,15 +409,11 @@ export const TaskPageSection = React.memo(function TaskPageSection({
                                 event.stopPropagation();
                                 setAddingGroupId(item.group.groupId);
                                 setGroupTaskInputGeneration(previous => previous + 1);
-                                setCollapsedGroupIds(previous => {
-                                    if (!previous.has(item.group.groupId)) return previous;
-
-                                    const next = new Set(previous);
-                                    next.delete(item.group.groupId);
-                                    return next;
-                                });
+                                if (collapsedGroupIds.has(item.group.groupId)) {
+                                    onToggleGroup(item.group.groupId);
+                                }
                             }}
-                            disabled={addingGroupId === item.group.groupId}
+                            disabled={linkedGroup || addingGroupId === item.group.groupId}
                         >
                             <AddRoundedIcon fontSize="small" />
                         </IconButton>
@@ -381,6 +428,7 @@ export const TaskPageSection = React.memo(function TaskPageSection({
                                 event.stopPropagation();
                                 onDeleteGroup(item.group, event.currentTarget);
                             }}
+                            disabled={linkedGroup}
                         >
                             <DeleteOutlineRoundedIcon sx={{ fontSize: '1.1rem' }} />
                         </IconButton>
@@ -400,7 +448,7 @@ export const TaskPageSection = React.memo(function TaskPageSection({
                         }}
                     >
                         <Collapse
-                            in={addingGroupId === item.group.groupId}
+                            in={!linkedGroup && addingGroupId === item.group.groupId}
                             timeout={180}
                             unmountOnExit
                             sx={{
@@ -408,7 +456,7 @@ export const TaskPageSection = React.memo(function TaskPageSection({
                                 '& .MuiCollapse-wrapper': { willChange: 'height' },
                             }}
                         >
-                            <Fade in={addingGroupId === item.group.groupId} timeout={150}>
+                            <Fade in={!linkedGroup && addingGroupId === item.group.groupId} timeout={150}>
                                 <GroupTaskInputRow
                                     key={`${item.group.groupId}:${groupTaskInputGeneration}`}
                                     contextName={item.group.name}
@@ -421,7 +469,7 @@ export const TaskPageSection = React.memo(function TaskPageSection({
                                 />
                             </Fade>
                         </Collapse>
-                        {item.tasks.map(renderTask)}
+                        {item.tasks.map(task => renderTask(task, true))}
                     </Box>
                 </Collapse>
             </Box>

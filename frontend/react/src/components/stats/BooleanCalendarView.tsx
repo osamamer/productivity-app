@@ -45,10 +45,15 @@ function calendarWeeks(days: Date[]): (Date | null)[][] {
 
 function monthLabelsForWeeks(weeks: (Date | null)[][], showYear: boolean): string[] {
     let previousMonth = '';
+    let firstMonth = true;
     return weeks.map(week => {
         const monthStart = week.find(day => day && format(day, 'yyyy-MM') !== previousMonth);
         if (!monthStart) return '';
         previousMonth = format(monthStart, 'yyyy-MM');
+        if (firstMonth) {
+            firstMonth = false;
+            return '';
+        }
         return format(monthStart, showYear && getMonth(monthStart) === 0 ? 'MMM yyyy' : 'MMM');
     });
 }
@@ -112,16 +117,11 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
     const dailyGridGap = 2;
     const dailyGridAxisWidth = 26;
     const dailyGridCellSize = dailyGridWidth > 0
-        ? dateRange <= 90
-            ? Math.max(21, Math.min(
-                24,
-                Math.floor((dailyGridWidth - dailyGridAxisWidth - 6 - dailyGridGap * (dailyWeeks.length - 1)) / dailyWeeks.length),
-            ))
-            : Math.max(6, Math.min(
-                14,
-                Math.floor((dailyGridWidth - dailyGridAxisWidth - 6 - dailyGridGap * (dailyWeeks.length - 1)) / dailyWeeks.length),
-            ))
-        : dateRange <= 90 ? 24 : 12;
+        ? Math.max(21, Math.min(
+            24,
+            Math.floor((dailyGridWidth - dailyGridAxisWidth - 6 - dailyGridGap * (dailyWeeks.length - 1)) / dailyWeeks.length),
+        ))
+        : 24;
     const startOffset = getDay(from);
     const days: (Date | null)[] = [...Array(startOffset).fill(null), ...allDays];
     while (days.length % 7 !== 0) days.push(null);
@@ -261,7 +261,7 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
             {isDailyGrid ? (
                 <Box
                     ref={dailyGridRef}
-                    sx={{ width: '100%', overflowX: 'auto' }}
+                    sx={{ width: '100%', overflowX: 'auto', pb: 0.5 }}
                     role="group"
                     aria-label={`${definition.name} daily history grid`}
                 >

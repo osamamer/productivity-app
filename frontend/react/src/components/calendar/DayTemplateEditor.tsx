@@ -246,7 +246,7 @@ export function DayTemplateEditor({
                             </Box>
                         </Box>
                         <AppTimeField
-                            label="Scheduled"
+                            label="Schedule"
                             value={task.scheduledTime ?? ''}
                             onChange={value => onUpdateTask(index, { scheduledTime: value || null })}
                         />

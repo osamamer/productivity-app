@@ -22,6 +22,7 @@ export function TaskGroupComposerSheet({ visible, taskIds, availableTasks, group
 }) {
   const { createGroup, renameGroup, replaceGroupTasks } = useTaskWorkspace();
   const { colors } = useAppTheme();
+  const linkedGroup = Boolean(group?.linkedToMentalThread);
   const nameInputRef = useRef<TextInput>(null);
   const [name, setName] = useState('');
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>(taskIds);
@@ -51,7 +52,7 @@ export function TaskGroupComposerSheet({ visible, taskIds, availableTasks, group
       setError('Give the group a name.');
       return;
     }
-    if (selectedTaskIds.length < 2) {
+    if (!linkedGroup && selectedTaskIds.length < 2) {
       setError('Choose at least two tasks.');
       return;
     }
@@ -60,8 +61,8 @@ export function TaskGroupComposerSheet({ visible, taskIds, availableTasks, group
     try {
       if (group) {
         await renameGroup(group.groupId, name.trim());
-        if (selectedTaskIds.length !== group.taskIds.length
-          || selectedTaskIds.some((taskId, index) => taskId !== group.taskIds[index])) {
+        if (!linkedGroup && (selectedTaskIds.length !== group.taskIds.length
+          || selectedTaskIds.some((taskId, index) => taskId !== group.taskIds[index]))) {
           await replaceGroupTasks(group.groupId, selectedTaskIds);
         }
       } else {
@@ -83,10 +84,12 @@ export function TaskGroupComposerSheet({ visible, taskIds, availableTasks, group
       title={group ? 'Edit group' : 'Group tasks'}
       footer={<AppButton label={group ? 'Save group' : 'Create group'} icon="folder-open-outline" loading={saving} onPress={() => void submit()} />}>
       <AppText color="muted">
-        {availableTasks ? 'Choose at least two tasks to keep together.' : `Keep these ${selectedTaskIds.length} tasks together in your workspace.`}
+        {linkedGroup
+          ? 'This group is linked to a mental thread. You can change its name.'
+          : availableTasks ? 'Choose at least two tasks to keep together.' : `Keep these ${selectedTaskIds.length} tasks together in your workspace.`}
       </AppText>
       <AppInput ref={nameInputRef} autoFocus label="Group name" value={name} onChangeText={setName} error={error ?? undefined} />
-      {availableTasks && (
+      {availableTasks && !linkedGroup && (
         <View style={styles.taskList}>
           {availableTasks.map(task => {
             const selected = selectedTaskIds.includes(task.taskId);

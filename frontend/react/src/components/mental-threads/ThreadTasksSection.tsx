@@ -96,7 +96,7 @@ export function ThreadTasksSection({
     };
 
     const handleDeleteRequest = (task: Task, anchorEl: HTMLElement) => {
-        if (!readOnly && !deleteSubmitting) setDeleteRequest({ task, anchorEl });
+        if (!readOnly && !task.mentalThreadId && !deleteSubmitting) setDeleteRequest({ task, anchorEl });
     };
 
     const handleDelete = async () => {
@@ -196,7 +196,7 @@ export function ThreadTasksSection({
                             onAutoExpand={() => undefined}
                             showPomodoroButton={false}
                             showDetailsButton={!readOnly}
-                            onDelete={readOnly ? undefined : handleDeleteRequest}
+                            onDelete={readOnly || task.mentalThreadId ? undefined : handleDeleteRequest}
                             readOnly={readOnly}
                             deferPomodoroHydration
                         />

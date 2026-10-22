@@ -206,7 +206,10 @@ function buildTaskListItems(tasks: Task[], groups: TaskGroup[]): TaskListItem[] 
   const visibleTaskIds = new Set(tasks.map(task => task.taskId));
   const groupByTaskId = new Map<string, TaskGroup>();
   [...groups]
-    .filter(group => group.taskIds.length >= 2)
+    .map(group => group.linkedToMentalThread || group.taskIds.some(taskId => (
+      tasks.some(task => task.taskId === taskId && task.mentalThreadId)
+    )) ? { ...group, linkedToMentalThread: true } : group)
+    .filter(group => group.taskIds.length >= 2 || group.linkedToMentalThread)
     .sort((first, second) => first.displayOrder - second.displayOrder)
     .forEach(group => group.taskIds.forEach(taskId => {
       if (visibleTaskIds.has(taskId) && !groupByTaskId.has(taskId)) groupByTaskId.set(taskId, group);
@@ -341,7 +344,15 @@ export default function TodayScreen() {
     () => allTasks.filter(task => selectedTaskActionIds.includes(task.taskId)),
     [allTasks, selectedTaskActionIds],
   );
-  const canGroupSelectedTasks = selectedGroupIds.length === 0 && selectedTaskIds.length >= 2;
+  const hasLinkedSelection = selectedTasks.some(task => Boolean(task.mentalThreadId))
+    || groups.some(group => selectedGroupIds.includes(group.groupId) && group.linkedToMentalThread);
+  const canGroupSelectedTasks = !hasLinkedSelection && selectedGroupIds.length === 0 && selectedTaskIds.length >= 2;
+
+  function isLinkedGroup(group: TaskGroup) {
+    return group.linkedToMentalThread || group.taskIds.some(taskId => (
+      allTasks.some(task => task.taskId === taskId && task.mentalThreadId)
+    ));
+  }
 
   function toggleSelection(taskId: string) {
     setSelectedTaskIds(previous => previous.includes(taskId)
@@ -448,8 +459,11 @@ export default function TodayScreen() {
     if (!source || source.id !== id) return;
 
     if (source.kind === 'task') {
+      const sourceTask = allTasks.find(task => task.taskId === source.id);
       const groupTarget = [...groupLayoutsRef.current.entries()].find(([groupId, layout]) => {
         if (groupId === source.groupId) return false;
+        const group = groups.find(candidate => candidate.groupId === groupId);
+        if (sourceTask?.mentalThreadId || (group && isLinkedGroup(group))) return false;
         const edgeZone = Math.min(40, (layout.bottom - layout.top) * 0.22);
         return moveY >= layout.top + edgeZone && moveY <= layout.bottom - edgeZone;
       });
@@ -493,7 +507,8 @@ export default function TodayScreen() {
     if (target.groupId && source.kind === 'task') {
       const group = groups.find(candidate => candidate.groupId === target.groupId);
       resetDrag();
-      if (group && !group.taskIds.includes(source.id)) {
+      const sourceTask = allTasks.find(task => task.taskId === source.id);
+      if (group && !isLinkedGroup(group) && !sourceTask?.mentalThreadId && !group.taskIds.includes(source.id)) {
         try {
           animateLayout();
           await replaceGroupTasks(group.groupId, [...group.taskIds, source.id]);
@@ -532,7 +547,7 @@ export default function TodayScreen() {
   async function addTaskToGroup(task: Task) {
     const group = groupTaskComposer;
     addTask(task);
-    if (!group) return;
+    if (!group || isLinkedGroup(group) || task.mentalThreadId) return;
     try {
       await replaceGroupTasks(group.groupId, [...group.taskIds, task.taskId]);
     } catch (cause) {
@@ -574,7 +589,7 @@ export default function TodayScreen() {
   }
 
   async function moveSelectedToDate(scheduledPerformDateTime: string) {
-    if (bulkActionLoading || selectedTasks.length === 0) return;
+    if (bulkActionLoading || selectedTasks.length === 0 || hasLinkedSelection) return;
     setBulkDateSaving(true);
     try {
       await moveTasksToDate(selectedTaskActionIds, scheduledPerformDateTime);
@@ -587,7 +602,7 @@ export default function TodayScreen() {
   }
 
   async function confirmBulkDelete() {
-    if (!selectedTasks.length) return;
+    if (!selectedTasks.length || hasLinkedSelection) return;
     if (!await confirm('Delete selected tasks?', `${selectedTasks.length} tasks will be deleted.`, 'Delete')) return;
     setBulkActionLoading(true);
     try {
@@ -619,7 +634,7 @@ export default function TodayScreen() {
     groups,
   );
   const groupableTodayTasks = todayTasks.filter(
-    task => !task.parentId && (showCompletedTasks || !task.completed),
+    task => !task.parentId && !task.mentalThreadId && (showCompletedTasks || !task.completed),
   );
   const selectionActive = selectedTaskIds.length > 0 || selectedGroupIds.length > 0;
   const draggedTaskId = dragSource?.kind === 'task' ? dragSource.id : null;
@@ -677,6 +692,8 @@ export default function TodayScreen() {
           taskCount={selectedTasks.length}
           loading={bulkActionLoading || bulkDateSaving}
           canGroup={canGroupSelectedTasks}
+          canMoveToDate={!hasLinkedSelection}
+          canDelete={!hasLinkedSelection}
           onComplete={() => void performBulkCompletion(true)}
           onMoveToDate={() => setBulkDateOpen(true)}
           onGroup={openCreateGroup}
@@ -818,10 +835,12 @@ export default function TodayScreen() {
                     <SilentPressable
                       accessibilityRole="button"
                       accessibilityLabel={`Add task to ${item.group.name}`}
+                      accessibilityState={{ disabled: isLinkedGroup(item.group) }}
                       hitSlop={8}
+                      disabled={isLinkedGroup(item.group)}
                       onPress={event => { event.stopPropagation(); setGroupTaskComposer(item.group); }}
-                      style={({ pressed }) => [styles.groupSelect, pressed && styles.pressed]}>
-                      <Ionicons name="add-circle-outline" size={22} color={selectedGroupIdSet.has(item.group.groupId) ? colors.accent : colors.textMuted} />
+                      style={({ pressed }) => [styles.groupSelect, isLinkedGroup(item.group) && styles.disabledControl, pressed && styles.pressed]}>
+                      <Ionicons name="add-circle-outline" size={22} color={isLinkedGroup(item.group) ? colors.border : selectedGroupIdSet.has(item.group.groupId) ? colors.accent : colors.textMuted} />
                     </SilentPressable>
                     <SilentPressable
                       accessibilityRole="button"
@@ -971,5 +990,6 @@ const styles = StyleSheet.create({
   groupDropIndicatorBefore: { top: -6.5 },
   groupDropIndicatorAfter: { bottom: -6.5 },
   pressed: { opacity: 0.7 },
+  disabledControl: { opacity: 0.48 },
   emptyCard: { alignItems: 'center', gap: 6 },
 });

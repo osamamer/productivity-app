@@ -332,9 +332,6 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     const [pomodoroConfig, setPomodoroConfig] = useState<PomodoroConfig>(NORMAL_POMODORO_CONFIG);
     const [pomodoroFeedback, setPomodoroFeedback] = useState<PomodoroFeedback | null>(null);
     const [pomodoroHydrated, setPomodoroHydrated] = useState(!deferPomodoroHydration);
-    const [detailsLoading, setDetailsLoading] = useState(
-        () => prefetchDetailsOnMount && !getStaleTaskDetails(task.taskId),
-    );
     const taskRef = useRef(task);
     taskRef.current = task;
     const initialTaskDetails = getStaleTaskDetails(task.taskId);
@@ -437,7 +434,6 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         if (fresh) return Promise.resolve();
         if (detailsRequestRef.current) return detailsRequestRef.current;
 
-        setDetailsLoading(!cached);
         const request = taskService.getTaskDetails(taskSnapshot)
             .then(details => {
                 applyTaskDetails(details);
@@ -451,7 +447,6 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
             })
             .finally(() => {
                 if (detailsRequestRef.current === request) detailsRequestRef.current = null;
-                setDetailsLoading(false);
             });
         detailsRequestRef.current = request;
         return request;
@@ -739,7 +734,6 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         // blocked while the panel has nothing useful to render yet.
         onTogglePanel(task.taskId, panel);
         if (detailsRequestRef.current) return;
-        setDetailsLoading(true);
         const request = taskService.getTaskDetails(task)
             .then(details => {
                 applyTaskDetails(details);
@@ -750,7 +744,6 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
             })
             .finally(() => {
                 if (detailsRequestRef.current === request) detailsRequestRef.current = null;
-                setDetailsLoading(false);
             });
         detailsRequestRef.current = request;
     }, [applyTaskDetails, detailsReady, expandedPanel, onTogglePanel, prefetchDetailsOnMount,
@@ -973,6 +966,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     };
 
     const handleSubtaskDelete = async (subtask: Task) => {
+        if (subtask.mentalThreadId) return;
         setSubtasks(previous => {
             const nextSubtasks = previous.filter(item => item.taskId !== subtask.taskId);
             updateCachedTaskDetails(task.taskId, { subtasks: nextSubtasks }, {
@@ -1155,7 +1149,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     }, [onScheduledDateEditComplete, task.taskId]);
 
     const commitDateChange = async (newDate: Date | null) => {
-        if (readOnly) return;
+        if (readOnly || task.mentalThreadId) return;
         if (!scheduledDateEditActiveRef.current) {
             scheduledDateBlurNotifiedRef.current = false;
         }
@@ -1186,7 +1180,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     };
 
     const handleDateChange = (newDate: Date | null) => {
-        if (readOnly) return;
+        if (readOnly || task.mentalThreadId) return;
         if (!scheduledDateEditActiveRef.current) {
             scheduledDateBlurNotifiedRef.current = false;
         }
@@ -1342,7 +1336,6 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     const cbColor = checkboxColor(task.importance);
     const scheduledLabel = task.scheduledPerformDateTime ? formatScheduledDate(task.scheduledPerformDateTime) : '';
     const taskHasCachedDetails = Boolean(getStaleTaskDetails(task.taskId));
-    const detailsButtonLoading = detailsLoading && !taskHasCachedDetails;
     const detailsButtonDisabled = prefetchDetailsOnMount && !detailsReady && !taskHasCachedDetails;
     const detailsPanelOpen = expandedPanel === 'details'
         && (!prefetchDetailsOnMount || detailsReady || taskHasCachedDetails);
@@ -1542,7 +1535,6 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             }}
                             variant="standard"
                             autoFocus
-                            fullWidth
                             multiline
                             minRows={1}
                             maxRows={4}
@@ -1554,7 +1546,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             sx={{
                                 position: 'absolute',
                                 top: 0,
-                                right: TASK_NAME_TRAILING_SPACE,
+                                right: `calc(${TASK_NAME_TRAILING_SPACE} + 8px)`,
                                 bottom: 0,
                                 left: 0,
                                 width: 'auto',
@@ -1633,9 +1625,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                     disabled={detailsButtonDisabled}
                                     color={detailsPanelOpen ? 'primary' : 'default'}
                                 >
-                                    {detailsButtonLoading
-                                        ? <CircularProgress size={17} />
-                                        : <TuneIcon sx={{ fontSize: '1.1rem' }} />}
+                                    <TuneIcon sx={{ fontSize: '1.1rem' }} />
                                 </IconButton>
                             </Tooltip>
                         )}
@@ -1933,6 +1923,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                             value={scheduledDraft}
                                             onChange={handleDateChange}
                                             onAccept={commitDateChange}
+                                            disabled={readOnly || Boolean(task.mentalThreadId)}
                                             ampm={false}
                                             slotProps={{
                                                 field: { clearable: false },
@@ -1947,6 +1938,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                             value={scheduledDraft}
                                             onChange={handleDateChange}
                                             onAccept={commitDateChange}
+                                            disabled={readOnly || Boolean(task.mentalThreadId)}
                                             closeOnSelect={false}
                                             ampm={false}
                                             slotProps={{
@@ -2031,7 +2023,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                     key={subtask.taskId}
                                     onContextMenu={event => {
                                         event.stopPropagation();
-                                        if (!subtaskDeletionContextMenu || readOnly) return;
+                                        if (!subtaskDeletionContextMenu || readOnly || subtask.mentalThreadId) return;
                                         event.preventDefault();
                                         setSubtaskContextMenu({
                                             subtask,

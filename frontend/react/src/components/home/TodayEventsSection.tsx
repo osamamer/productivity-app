@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { addDays, format, startOfDay } from 'date-fns';
 import { keyframes } from '@mui/system';
-import { alpha, type Theme } from '@mui/material/styles';
+import { alpha } from '@mui/material/styles';
 import {
     Alert,
     Box,
@@ -45,8 +45,8 @@ import {
     CalendarEventOccurrenceMoveInput,
     CalendarEventStatus,
 } from '../../types/CalendarEvent';
-import { Calendar } from '../../types/Calendar';
-import { CalendarSelect } from '../calendar/CalendarSelect';
+import { Calendar, calendarColorHex } from '../../types/Calendar';
+import { CalendarChipSelect } from '../calendar/CalendarSelect';
 
 type TodayEvent = {
     id: string;
@@ -61,6 +61,7 @@ type TodayEvent = {
 
 type TodayEventCardProps = {
     item: TodayEvent;
+    calendars: Calendar[];
     dayStart: Date;
     pendingCreation: boolean;
     selected: boolean;
@@ -81,7 +82,25 @@ type BulkDeleteRequest = {
 
 const EVENT_STATUSES: CalendarEventStatus[] = ['CONFIRMED', 'TENTATIVE', 'CANCELLED'];
 const NEW_EVENT_STATUSES: CalendarEventStatus[] = ['CONFIRMED', 'TENTATIVE'];
-const NEW_EVENT_POPUP_CONTENT_SELECTOR = '.MuiMenu-paper, .MuiPopover-paper, .MuiPickersPopper-root, .MuiPopper-root, .MuiDialog-paper';
+const NEW_EVENT_POPUP_CONTENT_SELECTOR = [
+    '.MuiMenu-root',
+    '.MuiPopover-root',
+    '.MuiModal-root',
+    '.MuiMenu-paper',
+    '.MuiPopover-paper',
+    '.MuiPickersPopper-root',
+    '.MuiAutocomplete-popper',
+    '.MuiPopper-root',
+    '.MuiDialog-root',
+    '[role="menu"]',
+    '[role="listbox"]',
+    '[role="dialog"]',
+].join(', ');
+const NEW_EVENT_POPUP_TRIGGER_SELECTOR = [
+    '[data-calendar-chip-select="true"]',
+    'button[aria-label^="Edit new event time"]',
+    'button[aria-label^="Change new event status"]',
+].join(', ');
 const OPTIMISTIC_EVENT_ID_PREFIX = 'home-event-optimistic-';
 const HOME_SECTION_AUTO_SCROLL_MS = 320;
 let optimisticEventSequence = 0;
@@ -110,10 +129,10 @@ function EventStatusIcon({ status }: { status: CalendarEventStatus }) {
     return <CheckRoundedIcon fontSize="small" />;
 }
 
-function eventStatusColor(status: CalendarEventStatus, theme: Theme): string {
-    if (status === 'TENTATIVE') return theme.palette.mode === 'dark' ? '#d9bc72' : '#ad7c2e';
-    if (status === 'CANCELLED') return theme.palette.error.main;
-    return theme.palette.primary.main;
+function eventCalendarColor(calendars: Calendar[], calendarId: string, accentColor: string): string {
+    const calendar = calendars.find(candidate => candidate.id === calendarId)
+        ?? calendars.find(candidate => candidate.defaultCalendar);
+    return calendarColorHex(calendar?.color, accentColor);
 }
 
 function eventsForToday(events: CalendarEvent[], dayStart: Date): TodayEvent[] {
@@ -273,6 +292,7 @@ function applyDateAndTime(date: string, time: string): Date | null {
 
 function TodayEventCard({
     item,
+    calendars,
     dayStart,
     pendingCreation,
     selected,
@@ -287,6 +307,7 @@ function TodayEventCard({
     const [nameError, setNameError] = useState(false);
     const [statusAnchorEl, setStatusAnchorEl] = useState<HTMLElement | null>(null);
     const [statusOverride, setStatusOverride] = useState<CalendarEventStatus | null>(null);
+    const [calendarOverride, setCalendarOverride] = useState<string | null>(null);
     const [reminderOverride, setReminderOverride] = useState<number | null | undefined>(undefined);
     const [contextMenuPosition, setContextMenuPosition] = useState<{ top: number; left: number } | null>(null);
     const [reminderEditorPosition, setReminderEditorPosition] = useState<{ top: number; left: number } | null>(null);
@@ -306,6 +327,8 @@ function TodayEventCard({
     const savingNameRef = useRef(false);
     const titleRequestIdRef = useRef(0);
     const statusRequestIdRef = useRef(0);
+    const calendarRequestIdRef = useRef(0);
+    const calendarUpdateQueueRef = useRef<Promise<void>>(Promise.resolve());
     const reminderRequestIdRef = useRef(0);
     const displayStatus = statusOverride ?? item.status;
     const displayedItem = timeOverride ? { ...item, ...timeOverride } : item;
@@ -313,6 +336,11 @@ function TodayEventCard({
         ? reminderOverride
         : item.event.reminderMinutesBefore;
     const eventTitle = item.event.title || 'Untitled event';
+    const displayedCalendarId = calendarOverride ?? item.event.calendarId;
+
+    useEffect(() => {
+        if (calendarOverride === item.event.calendarId) setCalendarOverride(null);
+    }, [calendarOverride, item.event.calendarId]);
 
     useEffect(() => {
         if (statusOverride === item.status) setStatusOverride(null);
@@ -489,6 +517,30 @@ function TodayEventCard({
         }
     };
 
+    const updateCalendar = (calendarId: string) => {
+        if (item.event.sourceId || calendarId === displayedCalendarId) return;
+        const requestId = calendarRequestIdRef.current + 1;
+        calendarRequestIdRef.current = requestId;
+        setCalendarOverride(calendarId);
+        calendarUpdateQueueRef.current = calendarUpdateQueueRef.current
+            .catch(() => {})
+            .then(async () => {
+                try {
+                    const updated = await eventService.updateEvent(item.event.id, {
+                        ...eventInput(item.event),
+                        calendarId,
+                    });
+                    onEventUpdated(updated);
+                    if (calendarRequestIdRef.current === requestId) {
+                        setCalendarOverride(null);
+                    }
+                } catch (error) {
+                    console.error('Failed to update calendar event calendar:', error);
+                    if (calendarRequestIdRef.current === requestId) setCalendarOverride(null);
+                }
+            });
+    };
+
     const updateReminder = async (minutes: number | null) => {
         setContextMenuPosition(null);
         setReminderEditorPosition(null);
@@ -546,21 +598,22 @@ function TodayEventCard({
                 role="group"
                 aria-label={`${eventTitle}, read-only imported event`}
                 sx={theme => {
-                    const statusColor = eventStatusColor(displayStatus, theme);
                     const tentative = displayStatus === 'TENTATIVE';
+                    const calendarColor = eventCalendarColor(calendars, displayedCalendarId, theme.palette.primary.main);
                     return {
                         minWidth: 0,
                         p: 1.25,
+                        py: 1.5,
                         pl: 1.75,
                         border: '1px solid',
-                        borderColor: tentative ? statusColor : alpha(statusColor, 0.28),
+                        borderColor: alpha(calendarColor, 0.38),
                         borderWidth: tentative ? 1.5 : 1,
                         borderStyle: tentative
                             ? 'dashed'
                             : displayStatus === 'CANCELLED' ? 'dotted' : 'solid',
-                        borderLeft: tentative ? `1.5px dashed ${statusColor}` : `4px solid ${statusColor}`,
+                        borderLeft: tentative ? `1.5px dashed ${calendarColor}` : `4px solid ${calendarColor}`,
                         borderRadius: '0 12px 12px 0',
-                        backgroundColor: theme.palette.background.paper,
+                        backgroundColor: alpha(calendarColor, theme.palette.mode === 'dark' ? 0.06 : 0.025),
                     };
                 }}
             >
@@ -568,9 +621,9 @@ function TodayEventCard({
                     display: 'grid',
                     gridTemplateColumns: 'minmax(0, 1fr) auto',
                     gridTemplateRows: 'auto auto',
-                    alignItems: 'center',
+                    alignItems: 'start',
                     columnGap: 1.25,
-                    rowGap: 0.75,
+                    rowGap: 0.9,
                     minWidth: 0,
                 }}>
                     <Box sx={{
@@ -595,25 +648,28 @@ function TodayEventCard({
                         </Typography>
                     </Box>
                     <Box
-                        sx={theme => ({
-                            gridColumn: 1,
-                            gridRow: 2,
-                            justifySelf: 'start',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            maxWidth: '100%',
-                            px: 0.85,
-                            py: 0.35,
-                            borderRadius: 1.2,
-                            color: eventStatusColor(displayStatus, theme),
-                            backgroundColor: alpha(eventStatusColor(displayStatus, theme), 0.1),
-                            fontSize: '0.775rem',
-                            fontWeight: 600,
-                            textAlign: 'left',
-                            fontVariantNumeric: 'tabular-nums',
-                            whiteSpace: 'normal',
-                            lineHeight: 1.25,
-                        })}
+                        sx={theme => {
+                            const color = eventCalendarColor(calendars, displayedCalendarId, theme.palette.primary.main);
+                            return {
+                                gridColumn: 1,
+                                gridRow: 2,
+                                justifySelf: 'start',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                maxWidth: '100%',
+                                px: 0.85,
+                                py: 0.35,
+                                borderRadius: 1.2,
+                                color,
+                                backgroundColor: alpha(color, 0.03),
+                                fontSize: '0.775rem',
+                                fontWeight: 600,
+                                textAlign: 'left',
+                                fontVariantNumeric: 'tabular-nums',
+                                whiteSpace: 'normal',
+                                lineHeight: 1.25,
+                            };
+                        }}
                     >
                         <AccessTimeRoundedIcon sx={{ fontSize: 14, mr: 0.55, flexShrink: 0 }} />
                         {eventTimeLabel(displayedItem, dayStart)}
@@ -631,10 +687,18 @@ function TodayEventCard({
                             justifyContent: 'center',
                             width: 30,
                             height: 30,
-                            color: eventStatusColor(displayStatus, theme),
+                            color: eventCalendarColor(calendars, displayedCalendarId, theme.palette.primary.main),
                         })}
                     >
                         <EventStatusIcon status={displayStatus} />
+                    </Box>
+                    <Box sx={{ gridColumn: 2, gridRow: 1, justifySelf: 'end', minWidth: 0, maxWidth: '100%' }}>
+                        <CalendarChipSelect
+                            calendars={calendars}
+                            value={displayedCalendarId}
+                            onChange={() => {}}
+                            readOnly
+                        />
                     </Box>
                 </Box>
             </Box>
@@ -664,33 +728,30 @@ function TodayEventCard({
             }}
             aria-busy={pendingCreation || undefined}
             sx={theme => {
-                const statusColor = eventStatusColor(displayStatus, theme);
                 const selectedColor = theme.palette.primary.main;
                 const tentative = displayStatus === 'TENTATIVE';
+                const calendarColor = eventCalendarColor(calendars, displayedCalendarId, theme.palette.primary.main);
                 return {
                     minWidth: 0,
                     p: 1.25,
+                    py: 1.5,
                     pl: 1.75,
                     border: '1px solid',
-                    borderColor: tentative
-                        ? statusColor
-                        : selected ? alpha(selectedColor, 0.58) : alpha(statusColor, 0.28),
+                    borderColor: selected ? alpha(calendarColor, 0.5) : alpha(calendarColor, 0.32),
                     borderWidth: tentative ? 1.5 : 1,
                     borderStyle: tentative
                         ? 'dashed'
                         : displayStatus === 'CANCELLED' ? 'dotted' : 'solid',
-                    borderLeft: tentative ? `1.5px dashed ${statusColor}` : `4px solid ${statusColor}`,
+                    borderLeft: tentative ? `1.5px dashed ${calendarColor}` : `4px solid ${calendarColor}`,
                     borderRadius: '0 12px 12px 0',
                     backgroundColor: selected
-                        ? alpha(selectedColor, 0.1)
-                        : theme.palette.background.paper,
+                        ? alpha(calendarColor, theme.palette.mode === 'dark' ? 0.14 : 0.09)
+                        : alpha(calendarColor, theme.palette.mode === 'dark' ? 0.04 : 0.02),
                     cursor: pendingCreation ? 'default' : 'pointer',
-                    boxShadow: selected ? `0 2px 10px ${alpha(selectedColor, 0.12)}` : 'none',
-                    transform: selected ? 'translateY(-1px)' : 'none',
-                    transition: 'background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease',
+                    boxShadow: selected ? `0 1px 5px ${alpha(calendarColor, 0.1)}` : 'none',
+                    transition: 'background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease',
                     '&:hover': pendingCreation ? undefined : {
-                        boxShadow: `0 4px 14px ${alpha(statusColor, 0.14)}`,
-                        transform: 'translateY(-1px)',
+                        boxShadow: `0 2px 7px ${alpha(calendarColor, 0.12)}`,
                     },
                     '&:focus-visible': {
                         outline: `2px solid ${selectedColor}`,
@@ -703,9 +764,9 @@ function TodayEventCard({
                 display: 'grid',
                 gridTemplateColumns: 'minmax(0, 1fr) auto',
                 gridTemplateRows: 'auto auto',
-                alignItems: 'center',
+                alignItems: 'start',
                 columnGap: 1.25,
-                rowGap: 0.75,
+                rowGap: 0.9,
                 minWidth: 0,
             }}>
                 <Box sx={{
@@ -833,25 +894,28 @@ function TodayEventCard({
                         clickEvent.stopPropagation();
                         openTimePicker(clickEvent.currentTarget);
                     }}
-                    sx={theme => ({
-                        gridColumn: 1,
-                        gridRow: 2,
-                        justifySelf: 'start',
-                        flexShrink: 0,
-                        maxWidth: '100%',
-                        px: 0.85,
-                        py: 0.35,
-                        borderRadius: 1.2,
-                        color: eventStatusColor(displayStatus, theme),
-                        backgroundColor: alpha(eventStatusColor(displayStatus, theme), 0.1),
-                        fontSize: '0.775rem',
-                        fontWeight: 600,
-                        textAlign: 'left',
-                        fontVariantNumeric: 'tabular-nums',
-                        whiteSpace: 'normal',
-                        lineHeight: 1.25,
-                        cursor: 'pointer',
-                    })}
+                    sx={theme => {
+                        const color = eventCalendarColor(calendars, displayedCalendarId, theme.palette.primary.main);
+                        return {
+                            gridColumn: 1,
+                            gridRow: 2,
+                            justifySelf: 'start',
+                            flexShrink: 0,
+                            maxWidth: '100%',
+                            px: 0.85,
+                            py: 0.35,
+                            borderRadius: 1.2,
+                            color,
+                            backgroundColor: alpha(color, selected ? 0.07 : 0.03),
+                            fontSize: '0.775rem',
+                            fontWeight: 600,
+                            textAlign: 'left',
+                            fontVariantNumeric: 'tabular-nums',
+                            whiteSpace: 'normal',
+                            lineHeight: 1.25,
+                            cursor: 'pointer',
+                        };
+                    }}
                 >
                     <AccessTimeRoundedIcon sx={{ fontSize: 14, mr: 0.55, flexShrink: 0 }} />
                     {eventTimeLabel(displayedItem, dayStart)}
@@ -868,7 +932,7 @@ function TodayEventCard({
                             }}
                             aria-label={`Change event status, currently ${eventStatusLabel(displayStatus)}`}
                             sx={theme => {
-                                const color = eventStatusColor(displayStatus, theme);
+                                const color = eventCalendarColor(calendars, displayedCalendarId, theme.palette.primary.main);
                                 return {
                                     width: 30,
                                     height: 30,
@@ -882,6 +946,14 @@ function TodayEventCard({
                         </IconButton>
                     </Box>
                 </Tooltip>
+
+                <Box sx={{ gridColumn: 2, gridRow: 1, justifySelf: 'end', minWidth: 0, maxWidth: '100%' }}>
+                    <CalendarChipSelect
+                        calendars={calendars}
+                        value={displayedCalendarId}
+                        onChange={updateCalendar}
+                    />
+                </Box>
             </Box>
 
             <Menu
@@ -892,7 +964,22 @@ function TodayEventCard({
                 transformOrigin={{ vertical: 'top', horizontal: 'left' }}
             >
                 {EVENT_STATUSES.map(status => (
-                    <MenuItem key={status} selected={status === displayStatus} onClick={() => void updateStatus(status)}>
+                    <MenuItem
+                        key={status}
+                        selected={status === displayStatus}
+                        sx={theme => {
+                            const color = eventCalendarColor(calendars, displayedCalendarId, theme.palette.primary.main);
+                            return {
+                                '&.Mui-selected': {
+                                    backgroundColor: alpha(color, theme.palette.mode === 'dark' ? 0.16 : 0.08),
+                                },
+                                '&.Mui-selected:hover': {
+                                    backgroundColor: alpha(color, theme.palette.mode === 'dark' ? 0.22 : 0.12),
+                                },
+                            };
+                        }}
+                        onClick={() => void updateStatus(status)}
+                    >
                         {eventStatusLabel(status)}
                     </MenuItem>
                 ))}
@@ -1141,6 +1228,7 @@ export function TodayEventsSection() {
     const sectionRef = useRef<HTMLElement | null>(null);
     const newEventDraftRef = useRef<HTMLDivElement | null>(null);
     const newEventPopupPointerEventsRef = useRef(new WeakSet<Event>());
+    const newEventPopupInteractionUntilRef = useRef(0);
     const finishNewEventDraftRef = useRef<() => void>(() => {});
     const eventRowRefs = useRef(new Map<string, HTMLDivElement>());
     const selectionAnchorRef = useRef<string | null>(null);
@@ -1395,6 +1483,10 @@ export function TodayEventsSection() {
         setNewEventStatusAnchorEl(null);
     }, []);
 
+    const preserveNewEventDraftAfterPopupInteraction = useCallback(() => {
+        newEventPopupInteractionUntilRef.current = Date.now() + 800;
+    }, []);
+
     useEffect(() => {
         if (!creatingEvent) return;
 
@@ -1402,13 +1494,16 @@ export function TodayEventsSection() {
             const target = event.target instanceof Element ? event.target : null;
             if (target && newEventDraftRef.current?.contains(target)) return;
             if (newEventPopupPointerEventsRef.current.has(event)) return;
-            if (target?.closest(NEW_EVENT_POPUP_CONTENT_SELECTOR)) return;
+            if (target?.closest(NEW_EVENT_POPUP_CONTENT_SELECTOR)) {
+                preserveNewEventDraftAfterPopupInteraction();
+                return;
+            }
             finishNewEventDraftRef.current();
         };
 
-        document.addEventListener('pointerdown', dismissOnOutsidePointer);
-        return () => document.removeEventListener('pointerdown', dismissOnOutsidePointer);
-    }, [creatingEvent, dismissNewEventDraft]);
+        document.addEventListener('pointerdown', dismissOnOutsidePointer, true);
+        return () => document.removeEventListener('pointerdown', dismissOnOutsidePointer, true);
+    }, [creatingEvent, dismissNewEventDraft, preserveNewEventDraftAfterPopupInteraction]);
 
     const createTodayEvent = async () => {
         if (cancelCreateEventRef.current) {
@@ -1695,13 +1790,27 @@ export function TodayEventsSection() {
                             component="div"
                             onPointerDownCapture={event => {
                                 newEventPopupPointerEventsRef.current.add(event.nativeEvent);
+                                const target = event.target instanceof Element ? event.target : null;
+                                if (target?.closest(NEW_EVENT_POPUP_TRIGGER_SELECTOR)) {
+                                    preserveNewEventDraftAfterPopupInteraction();
+                                }
                             }}
                             onBlur={event => {
                                 const nextTarget = event.relatedTarget;
                                 if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
-                                if (nextTarget instanceof Element && nextTarget.closest(NEW_EVENT_POPUP_CONTENT_SELECTOR)) return;
-                                if (newEventTimeAnchorEl || newEventStatusAnchorEl || newEventTimePickerOpenRef.current) return;
-                                finishNewEventDraftRef.current();
+                                const wrapper = event.currentTarget;
+                                window.setTimeout(() => {
+                                    const activeElement = document.activeElement;
+                                    if (activeElement instanceof Node && wrapper.contains(activeElement)) return;
+                                    if (nextTarget instanceof Element
+                                        && nextTarget.closest(NEW_EVENT_POPUP_CONTENT_SELECTOR)
+                                        && Date.now() < newEventPopupInteractionUntilRef.current) return;
+                                    if (activeElement instanceof Element
+                                        && activeElement.closest(NEW_EVENT_POPUP_CONTENT_SELECTOR)) return;
+                                    if (Date.now() < newEventPopupInteractionUntilRef.current) return;
+                                    if (newEventTimeAnchorEl || newEventStatusAnchorEl || newEventTimePickerOpenRef.current) return;
+                                    finishNewEventDraftRef.current();
+                                }, 0);
                             }}
                             sx={{ display: 'contents' }}
                         >
@@ -1709,21 +1818,26 @@ export function TodayEventsSection() {
                                 <Box
                                     ref={newEventDraftRef}
                                     sx={theme => {
-                                        const statusColor = eventStatusColor(newEventStatus, theme);
+                                        const calendarColor = eventCalendarColor(
+                                            calendars,
+                                            newEventCalendarId,
+                                            theme.palette.primary.main,
+                                        );
                                         const tentative = newEventStatus === 'TENTATIVE';
                                         return {
                                             minWidth: 0,
                                             p: 1.25,
+                                            py: 1.5,
                                             pl: 1.75,
                                             border: '1px solid',
-                                            borderColor: tentative ? statusColor : alpha(statusColor, 0.28),
+                                            borderColor: alpha(calendarColor, 0.38),
                                             borderWidth: tentative ? 1.5 : 1,
                                             borderStyle: tentative
                                                 ? 'dashed'
                                                 : newEventStatus === 'CANCELLED' ? 'dotted' : 'solid',
-                                            borderLeft: tentative ? `1.5px dashed ${statusColor}` : `4px solid ${statusColor}`,
+                                            borderLeft: tentative ? `1.5px dashed ${calendarColor}` : `4px solid ${calendarColor}`,
                                             borderRadius: '0 12px 12px 0',
-                                            backgroundColor: theme.palette.background.paper,
+                                            backgroundColor: alpha(calendarColor, theme.palette.mode === 'dark' ? 0.06 : 0.025),
                                             animation: `${eventDraftReveal} 180ms ease-out`,
                                         };
                                     }}
@@ -1732,9 +1846,9 @@ export function TodayEventsSection() {
                                         display: 'grid',
                                         gridTemplateColumns: 'minmax(0, 1fr) auto',
                                         gridTemplateRows: 'auto auto',
-                                        alignItems: 'center',
+                                        alignItems: 'start',
                                         columnGap: 1.25,
-                                        rowGap: 0.75,
+                                        rowGap: 0.9,
                                         minWidth: 0,
                                     }}>
                                         <Box sx={{
@@ -1805,24 +1919,31 @@ export function TodayEventsSection() {
                                                 setNewEventTimeAnchorEl(clickEvent.currentTarget);
                                                 setNewEventTimeError(false);
                                             }}
-                                            sx={theme => ({
-                                                gridColumn: 1,
-                                                gridRow: 2,
-                                                justifySelf: 'start',
-                                                flexShrink: 0,
-                                                maxWidth: '100%',
-                                                px: 0.85,
-                                                py: 0.35,
-                                                borderRadius: 1.2,
-                                                color: eventStatusColor(newEventStatus, theme),
-                                                backgroundColor: alpha(eventStatusColor(newEventStatus, theme), 0.1),
-                                                fontSize: '0.775rem',
-                                                fontWeight: 600,
-                                                textAlign: 'left',
-                                                fontVariantNumeric: 'tabular-nums',
-                                                whiteSpace: 'normal',
-                                                lineHeight: 1.25,
-                                            })}
+                                            sx={theme => {
+                                                const color = eventCalendarColor(
+                                                    calendars,
+                                                    newEventCalendarId,
+                                                    theme.palette.primary.main,
+                                                );
+                                                return {
+                                                    gridColumn: 1,
+                                                    gridRow: 2,
+                                                    justifySelf: 'start',
+                                                    flexShrink: 0,
+                                                    maxWidth: '100%',
+                                                    px: 0.85,
+                                                    py: 0.35,
+                                                    borderRadius: 1.2,
+                                                    color,
+                                                    backgroundColor: alpha(color, 0.03),
+                                                    fontSize: '0.775rem',
+                                                    fontWeight: 600,
+                                                    textAlign: 'left',
+                                                    fontVariantNumeric: 'tabular-nums',
+                                                    whiteSpace: 'normal',
+                                                    lineHeight: 1.25,
+                                                };
+                                            }}
                                         >
                                             <AccessTimeRoundedIcon sx={{ fontSize: 14, mr: 0.55, flexShrink: 0 }} />
                                             {newEventAllDay
@@ -1836,11 +1957,16 @@ export function TodayEventsSection() {
                                                     size="small"
                                                     onClick={clickEvent => {
                                                         clickEvent.stopPropagation();
+                                                        preserveNewEventDraftAfterPopupInteraction();
                                                         setNewEventStatusAnchorEl(clickEvent.currentTarget);
                                                     }}
                                                     aria-label={`Change new event status, currently ${eventStatusLabel(newEventStatus)}`}
                                                     sx={theme => {
-                                                        const color = eventStatusColor(newEventStatus, theme);
+                                                        const color = eventCalendarColor(
+                                                            calendars,
+                                                            newEventCalendarId,
+                                                            theme.palette.primary.main,
+                                                        );
                                                         return {
                                                             width: 30,
                                                             height: 30,
@@ -1854,21 +1980,27 @@ export function TodayEventsSection() {
                                                 </IconButton>
                                             </Box>
                                         </Tooltip>
-                                    </Box>
 
-                                    <Box sx={{ gridColumn: 1, gridRow: 3, maxWidth: 260 }}>
-                                        <CalendarSelect
-                                            calendars={calendars}
-                                            value={newEventCalendarId}
-                                            onChange={setNewEventCalendarId}
-                                            label="Calendar"
-                                        />
+                                        <Box sx={{ gridColumn: 2, gridRow: 1, justifySelf: 'end', minWidth: 0, maxWidth: '100%' }}>
+                                            <CalendarChipSelect
+                                                calendars={calendars}
+                                                value={newEventCalendarId}
+                                                onChange={calendarId => {
+                                                    preserveNewEventDraftAfterPopupInteraction();
+                                                    setNewEventCalendarId(calendarId);
+                                                }}
+                                                onMenuOpenChange={preserveNewEventDraftAfterPopupInteraction}
+                                            />
+                                        </Box>
                                     </Box>
 
                                     <Menu
                                         anchorEl={newEventStatusAnchorEl}
                                         open={Boolean(newEventStatusAnchorEl)}
-                                        onClose={() => setNewEventStatusAnchorEl(null)}
+                                        onClose={() => {
+                                            preserveNewEventDraftAfterPopupInteraction();
+                                            setNewEventStatusAnchorEl(null);
+                                        }}
                                         anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
                                         transformOrigin={{ vertical: 'top', horizontal: 'left' }}
                                     >
@@ -1876,7 +2008,23 @@ export function TodayEventsSection() {
                                             <MenuItem
                                                 key={status}
                                                 selected={status === newEventStatus}
+                                                sx={theme => {
+                                                    const color = eventCalendarColor(
+                                                        calendars,
+                                                        newEventCalendarId,
+                                                        theme.palette.primary.main,
+                                                    );
+                                                    return {
+                                                        '&.Mui-selected': {
+                                                            backgroundColor: alpha(color, theme.palette.mode === 'dark' ? 0.16 : 0.08),
+                                                        },
+                                                        '&.Mui-selected:hover': {
+                                                            backgroundColor: alpha(color, theme.palette.mode === 'dark' ? 0.22 : 0.12),
+                                                        },
+                                                    };
+                                                }}
                                                 onClick={() => {
+                                                    preserveNewEventDraftAfterPopupInteraction();
                                                     setNewEventStatus(status);
                                                     setNewEventStatusAnchorEl(null);
                                                 }}
@@ -1895,6 +2043,7 @@ export function TodayEventsSection() {
                                             if (target instanceof Element
                                                 && target.closest('.MuiPickersPopper-root, .MuiDialog-root')) return;
                                             newEventTimePickerOpenRef.current = false;
+                                            preserveNewEventDraftAfterPopupInteraction();
                                             setNewEventTimeAnchorEl(null);
                                         }}
                                         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
@@ -1919,6 +2068,7 @@ export function TodayEventsSection() {
                                                             label="Start time"
                                                             value={newEventTimes.start}
                                                             onChange={value => {
+                                                                preserveNewEventDraftAfterPopupInteraction();
                                                                 setNewEventTimes(current => ({
                                                                     start: value,
                                                                     end: oneHourAfter(value) ?? current.end,
@@ -1926,18 +2076,25 @@ export function TodayEventsSection() {
                                                                 setNewEventTimeError(false);
                                                             }}
                                                             onOpen={() => { newEventTimePickerOpenRef.current = true; }}
-                                                            onClose={() => { newEventTimePickerOpenRef.current = false; }}
+                                                            onClose={() => {
+                                                                newEventTimePickerOpenRef.current = false;
+                                                                preserveNewEventDraftAfterPopupInteraction();
+                                                            }}
                                                             size="small"
                                                         />
                                                         <AppTimeField
                                                             label="End time"
                                                             value={newEventTimes.end}
                                                             onChange={value => {
+                                                                preserveNewEventDraftAfterPopupInteraction();
                                                                 setNewEventTimes(current => ({ ...current, end: value }));
                                                                 setNewEventTimeError(false);
                                                             }}
                                                             onOpen={() => { newEventTimePickerOpenRef.current = true; }}
-                                                            onClose={() => { newEventTimePickerOpenRef.current = false; }}
+                                                            onClose={() => {
+                                                                newEventTimePickerOpenRef.current = false;
+                                                                preserveNewEventDraftAfterPopupInteraction();
+                                                            }}
                                                             size="small"
                                                         />
                                                     </>
@@ -1969,6 +2126,7 @@ export function TodayEventsSection() {
                                 >
                                     <TodayEventCard
                                         item={item}
+                                        calendars={calendars}
                                         dayStart={dayStart}
                                         pendingCreation={item.event.id.startsWith(OPTIMISTIC_EVENT_ID_PREFIX)}
                                         selected={selectedEventIdSet.has(item.id)}

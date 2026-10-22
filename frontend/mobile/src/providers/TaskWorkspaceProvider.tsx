@@ -62,10 +62,15 @@ function appendUniqueTasks(current: Task[], additions: Task[]): Task[] {
 function usableGroups(taskGroups: TaskGroup[], tasks?: Task[]): TaskGroup[] {
   const liveTaskIds = tasks ? new Set(tasks.map(task => task.taskId)) : null;
   return taskGroups
-    .map(group => liveTaskIds
-      ? { ...group, taskIds: group.taskIds.filter(taskId => liveTaskIds.has(taskId)) }
-      : group)
-    .filter(group => group.taskIds.length >= 2);
+    .map(group => {
+      const taskIds = liveTaskIds
+        ? group.taskIds.filter(taskId => liveTaskIds.has(taskId))
+        : group.taskIds;
+      const linkedToMentalThread = Boolean(group.linkedToMentalThread)
+        || Boolean(tasks?.some(task => taskIds.includes(task.taskId) && task.mentalThreadId));
+      return { ...group, taskIds, linkedToMentalThread };
+    })
+    .filter(group => group.taskIds.length >= 2 || group.linkedToMentalThread);
 }
 
 type TaskDateUpdate = { task: Task; scheduledPerformDateTime: string };
@@ -141,7 +146,7 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
         );
         animateLayout();
         setAllTasks(tasks);
-        setGroups(usableGroups(taskGroups));
+        setGroups(usableGroups(taskGroups, tasks));
         futureOffsetRef.current = future.length;
         pastOffsetRef.current = past.length;
         setHasMoreFutureTasks(future.length === TASK_PAGE_BATCH_SIZE && futureProbe.length > 0);
