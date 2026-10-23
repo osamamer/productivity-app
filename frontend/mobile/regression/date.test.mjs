@@ -4,6 +4,7 @@ import {
   calendarDateParts,
   clock,
   eventDateInTimeZone,
+  formatCalendarTime,
   greeting,
   localDate,
   localDateTime,
@@ -23,6 +24,16 @@ test('keeps event dates in the requested time zone across midnight', () => {
 
   assert.equal(eventDateInTimeZone(instant, 'America/Los_Angeles'), '2025-12-31');
   assert.equal(eventDateInTimeZone('2026-01-01', 'America/Los_Angeles'), '2026-01-01');
+});
+
+test('formats event times when the platform does not recognize the event time zone', () => {
+  const instant = '2026-10-07T09:05:00.000Z';
+  const deviceLocalTime = new Intl.DateTimeFormat(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(instant));
+
+  assert.equal(formatCalendarTime(instant, 'Invalid/Timezone'), deviceLocalTime);
 });
 
 test('returns calendar parts for the event time zone and preserves date-only values', () => {

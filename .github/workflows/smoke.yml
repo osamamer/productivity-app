@@ -1,0 +1,127 @@
+name: App smoke tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    name: Web app smoke test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend/react
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: frontend/react/package-lock.json
+      - run: npm ci
+      - run: npm run build -- --mode=production
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:smoke
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: web-smoke-failure-artifacts
+          path: frontend/react/test-results
+          if-no-files-found: ignore
+
+  mobile:
+    name: Android app smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: frontend/mobile/package-lock.json
+      - name: Install mobile dependencies
+        working-directory: frontend/mobile
+        run: npm ci
+      - name: Generate Android project
+        working-directory: frontend/mobile
+        env:
+          EXPO_NO_DOTENV: '1'
+          EXPO_PUBLIC_APP_ENV: development
+          EXPO_PUBLIC_API_URL: http://10.0.2.2:8080
+          EXPO_PUBLIC_KEYCLOAK_URL: http://10.0.2.2:7070/auth
+        run: npx expo prebuild --platform android --no-install --clean
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: gradle
+          cache-dependency-path: frontend/mobile/android/gradle/wrapper/gradle-wrapper.properties
+      - name: Build debug APK
+        working-directory: frontend/mobile
+        run: ./android/gradlew -p android --no-daemon --max-workers=2 -PreactNativeArchitectures=x86_64 :app:assembleDebug
+      - name: Launch app in Android emulator and verify sign-in screen
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          script: |
+            cd "$GITHUB_WORKSPACE/frontend/mobile"
+            EXPO_NO_DOTENV=1 \
+              EXPO_PUBLIC_APP_ENV=development \
+              EXPO_PUBLIC_API_URL=http://10.0.2.2:8080 \
+              EXPO_PUBLIC_KEYCLOAK_URL=http://10.0.2.2:7070/auth \
+              npx expo start --host localhost --port 8081 --non-interactive \
+              > "$RUNNER_TEMP/mobile-smoke-metro.log" 2>&1 &
+            metro_pid=$!
+            trap 'kill "$metro_pid" 2>/dev/null || true' EXIT
+
+            for attempt in $(seq 1 60); do
+              if curl --silent --fail http://127.0.0.1:8081/status | grep -q 'packager-status:running'; then
+                break
+              fi
+              if [ "$attempt" -eq 60 ]; then
+                cat "$RUNNER_TEMP/mobile-smoke-metro.log"
+                printf '%s\n' 'Metro did not start for the Android smoke test.' >&2
+                exit 1
+              fi
+              sleep 2
+            done
+
+            adb reverse tcp:8081 tcp:8081
+            apk="$GITHUB_WORKSPACE/frontend/mobile/android/app/build/outputs/apk/debug/app-debug.apk"
+            adb install "$apk"
+            adb logcat -c
+            adb shell monkey -p org.osama.solife 1
+
+            visible=false
+            for attempt in $(seq 1 45); do
+              adb shell uiautomator dump /sdcard/window.xml >/dev/null 2>&1 || true
+              screen="$(adb shell cat /sdcard/window.xml 2>/dev/null || true)"
+              if printf '%s' "$screen" | grep -q 'text="Welcome back"' && \
+                 printf '%s' "$screen" | grep -q 'text="Email"' && \
+                 printf '%s' "$screen" | grep -q 'text="Password"' && \
+                 printf '%s' "$screen" | grep -q 'text="Sign in"'; then
+                visible=true
+                break
+              fi
+              sleep 2
+            done
+
+            if [ "$visible" != true ]; then
+              adb logcat -d -v brief -s AndroidRuntime:E ReactNativeJS:E
+              printf '%s\n' 'The Android app did not render its sign-in screen.' >&2
+              exit 1
+            fi
+
+            if adb logcat -d -v brief -s AndroidRuntime:E | grep -q 'FATAL EXCEPTION'; then
+              adb logcat -d -v brief -s AndroidRuntime:E
+              exit 1
+            fi

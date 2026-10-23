@@ -35,6 +35,7 @@ cd frontend/react && npm run test:regression
 cd frontend/mobile && npm run test:regression
 ```
 The standalone GitHub Actions workflow `.github/workflows/regression.yml` runs this focused cross-stack regression suite on every push, independently from build/deploy. See [REGRESSION_TESTING.md](REGRESSION_TESTING.md) for its coverage.
+The `.github/workflows/smoke.yml` workflow also runs on every push and pull request: it exercises the web sign-in/registration screen in a browser and boots the native Android app in an emulator to verify its sign-in screen renders. Keep smoke checks independent of production accounts and services.
 
 ### Dev Coach CLI
 ```bash

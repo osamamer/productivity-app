@@ -3,6 +3,7 @@ import { StyleSheet, unstable_batchedUpdates, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 
+import { calendarColorHex } from '@/components/calendar/CalendarControls';
 import { TaskComposerSheet } from '@/components/tasks/TaskComposerSheet';
 import { TaskDetailSheet } from '@/components/tasks/TaskDetailSheet';
 import { TaskBulkDateSheet } from '@/components/tasks/TaskBulkDateSheet';
@@ -29,7 +30,7 @@ import { usePreferences } from '@/providers/PreferencesProvider';
 import { useTaskWorkspace } from '@/providers/TaskWorkspaceProvider';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
-import { MENTAL_STATE_GOAL_LABELS, type CalendarEvent, type Day, type MentalStateGoal, type Task, type TaskGroup } from '@/types/models';
+import { MENTAL_STATE_GOAL_LABELS, type Calendar, type CalendarEvent, type Day, type MentalStateGoal, type Task, type TaskGroup } from '@/types/models';
 
 interface TodayData { day: Day }
 
@@ -237,8 +238,10 @@ export default function TodayScreen() {
   const { confirm, showError } = useAppPopup();
   const resource = useAsyncData<TodayData>(async () => ({ day: await api.day.today() }));
   const eventsResource = useAsyncData<CalendarEvent[]>(() => api.events.all());
+  const calendarsResource = useAsyncData<Calendar[]>(() => api.calendars.all());
   const snapshotResource = useAsyncData<TodaySnapshot>(loadTodaySnapshot);
   const { reload: reloadEvents } = eventsResource;
+  const { reload: reloadCalendars } = calendarsResource;
   const { reload: reloadSnapshot } = snapshotResource;
   const eventFocusLoadedRef = useRef(false);
   const snapshotLoadedRef = useRef(false);
@@ -285,9 +288,12 @@ export default function TodayScreen() {
   const dragTargetRef = useRef<DragTarget>({ itemKey: null, edge: null, groupId: null });
 
   useFocusEffect(useCallback(() => {
-    if (eventFocusLoadedRef.current) void reloadEvents();
+    if (eventFocusLoadedRef.current) {
+      void reloadEvents();
+      void reloadCalendars();
+    }
     else eventFocusLoadedRef.current = true;
-  }, [reloadEvents]));
+  }, [reloadCalendars, reloadEvents]));
 
   useFocusEffect(useCallback(() => {
     if (snapshotLoadedRef.current) void reloadSnapshot();
@@ -677,14 +683,18 @@ export default function TodayScreen() {
           || first.event.title.localeCompare(second.event.title);
       });
   }, [eventsResource.data]);
+  const calendarsById = useMemo(
+    () => new Map((calendarsResource.data ?? []).map(calendar => [calendar.id, calendar])),
+    [calendarsResource.data],
+  );
 
   async function refreshToday() {
-    await Promise.all([resource.reload(), eventsResource.reload(), reloadSnapshot(), refreshTasks()]);
+    await Promise.all([resource.reload(), eventsResource.reload(), calendarsResource.reload(), reloadSnapshot(), refreshTasks()]);
   }
 
   return (
     <Screen
-      refreshing={resource.refreshing || eventsResource.refreshing || snapshotResource.refreshing || tasksLoading}
+      refreshing={resource.refreshing || eventsResource.refreshing || calendarsResource.refreshing || snapshotResource.refreshing || tasksLoading}
       refreshEnabled={dragSource === null}
       onRefresh={() => void refreshToday()}
       overlay={(
@@ -729,7 +739,7 @@ export default function TodayScreen() {
                       accessibilityLabel={`${event.title}, ${occurrence.allDay ? 'all day' : formatCalendarTime(occurrence.start, event.timeZone)}`}
                       onPress={() => router.push('/calendar')}
                       style={({ pressed }) => [styles.eventRow, pressed && styles.pressed]}>
-                      <View style={[styles.eventDot, { backgroundColor: colors.accent }]} />
+                      <View style={[styles.eventDot, { backgroundColor: calendarColorHex(calendarsById.get(event.calendarId)?.color, colors.accent) }]} />
                       <View style={styles.eventCopy}>
                         <AppText variant="label" numberOfLines={2} style={occurrence.status === 'CANCELLED' && styles.cancelled}>{event.title}</AppText>
                         <AppText variant="caption" color="muted">

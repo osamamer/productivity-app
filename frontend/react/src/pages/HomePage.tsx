@@ -1926,7 +1926,7 @@ export function HomePage() {
         selectableGroups.forEach(group => {
             if (nextGroupIds.has(group.groupId)) {
                 group.taskIds.forEach(taskId => nextTaskIds.delete(taskId));
-            } else if (group.taskIds.length > 0 && group.taskIds.every(taskId => nextTaskIds.has(taskId))) {
+            } else if (group.taskIds.length > 1 && group.taskIds.every(taskId => nextTaskIds.has(taskId))) {
                 nextGroupIds.add(group.groupId);
                 group.taskIds.forEach(taskId => nextTaskIds.delete(taskId));
             }

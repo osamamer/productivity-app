@@ -198,6 +198,7 @@ export const TaskPageListRow = React.memo(function TaskPageListRow({
                         <Typography
                             component="span"
                             sx={{
+                                display: 'block',
                                 fontSize: '1.05rem',
                                 lineHeight: 1.5,
                                 whiteSpace: 'pre-wrap',

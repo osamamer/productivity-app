@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "test:regression": "TZ=UTC node --experimental-strip-types --experimental-transform-types --test regression/*.test.mjs",
+    "test:smoke": "playwright test",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -36,6 +37,7 @@
     "yup": "^1.4.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "@types/canvas-confetti": "^1.9.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",

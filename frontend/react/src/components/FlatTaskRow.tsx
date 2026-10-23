@@ -938,6 +938,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
             subtasks: optimisticSubtasks,
             taskSeries: taskSeriesRef.current,
         });
+        if (!subtask.completed && completed) playAudioFeedback('taskCompleted');
 
         try {
             const updatedSubtask = await taskService.toggleTaskCompletion(subtask.taskId, completed);
@@ -1505,8 +1506,8 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                     >
                         <Typography
                             component="span"
-                            display="inline"
                             sx={{
+                                display: 'block',
                                 fontSize: '1.05rem',
                                 lineHeight: 1.5,
                                 whiteSpace: 'pre-wrap',
