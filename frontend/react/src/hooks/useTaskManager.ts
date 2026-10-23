@@ -67,12 +67,19 @@ function reuseTaskList(previous: Task[], next: Task[]): Task[] {
     return previous;
 }
 
+function uniqueTasksById(tasks: Task[]): Task[] {
+    const tasksById = new Map<string, Task>();
+    tasks.forEach(task => tasksById.set(task.taskId, task));
+    return [...tasksById.values()];
+}
+
 function withTaskBuckets(previous: TaskState, allTasks: Task[]): TaskState {
-    const grouped = splitTasksByDate(allTasks);
+    const uniqueTasks = uniqueTasksById(allTasks);
+    const grouped = splitTasksByDate(uniqueTasks);
 
     return {
         ...previous,
-        allTasks,
+        allTasks: uniqueTasks,
         todayTasks: reuseTaskList(previous.todayTasks, grouped.today),
         futureTasks: reuseTaskList(previous.futureTasks, grouped.future),
         pastTasks: reuseTaskList(previous.pastTasks, grouped.past),
@@ -231,7 +238,7 @@ export function useTaskManager() {
     const fetchTodayTasks = useCallback(async () => {
         const requestDataGeneration = taskDataGenerationRef.current;
         try {
-            const tasks = await taskService.getTodayTasks();
+            const tasks = uniqueTasksById(await taskService.getTodayTasks());
             if (taskDataGenerationRef.current !== requestDataGeneration) return;
             todayTasksLoadedRef.current = true;
             setTaskState(prev => {
@@ -240,7 +247,24 @@ export function useTaskManager() {
                 if (prev.allTasks.length === 0) {
                     return withTaskBuckets(prev, tasks);
                 }
-                const nextTodayTasks = reuseTaskList(prev.todayTasks, tasks);
+                // A Today request can race a schedule update; trust the canonical snapshot for known task IDs.
+                const allTasksById = new Map(prev.allTasks.map(task => [task.taskId, task] as const));
+                const todayTasksById = new Map(
+                    splitTasksByDate(prev.allTasks).today.map(task => [task.taskId, task] as const),
+                );
+                const reconciledTodayTasks = new Map<string, Task>();
+                tasks.forEach(task => {
+                    const currentTask = allTasksById.get(task.taskId);
+                    if (!currentTask) {
+                        reconciledTodayTasks.set(task.taskId, task);
+                    } else if (todayTasksById.has(task.taskId)) {
+                        reconciledTodayTasks.set(task.taskId, currentTask);
+                    }
+                });
+                todayTasksById.forEach((task, taskId) => {
+                    if (!reconciledTodayTasks.has(taskId)) reconciledTodayTasks.set(taskId, task);
+                });
+                const nextTodayTasks = reuseTaskList(prev.todayTasks, [...reconciledTodayTasks.values()]);
                 return nextTodayTasks === prev.todayTasks
                     ? prev
                     : { ...prev, todayTasks: nextTodayTasks };

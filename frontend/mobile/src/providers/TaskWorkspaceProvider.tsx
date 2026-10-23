@@ -60,12 +60,9 @@ function appendUniqueTasks(current: Task[], additions: Task[]): Task[] {
 }
 
 function usableGroups(taskGroups: TaskGroup[], tasks?: Task[]): TaskGroup[] {
-  const liveTaskIds = tasks ? new Set(tasks.map(task => task.taskId)) : null;
   return taskGroups
     .map(group => {
-      const taskIds = liveTaskIds
-        ? group.taskIds.filter(taskId => liveTaskIds.has(taskId))
-        : group.taskIds;
+      const taskIds = group.taskIds;
       const linkedToMentalThread = Boolean(group.linkedToMentalThread)
         || Boolean(tasks?.some(task => taskIds.includes(task.taskId) && task.mentalThreadId));
       return { ...group, taskIds, linkedToMentalThread };
@@ -94,6 +91,7 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
   const { isAuthenticated } = useAuth();
   const { showCompletedTasks } = usePreferences();
   const [allTasks, setAllTasks] = useState<Task[]>([]);
+  const allTasksRef = useRef<Task[]>([]);
   const [groups, setGroups] = useState<TaskGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [ready, setReady] = useState(false);
@@ -103,7 +101,7 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
   const loadedAtRef = useRef(0);
   const requestRef = useRef<Promise<void> | null>(null);
   const loadedCompletedFilterRef = useRef<boolean | null>(null);
-  const loadRef = useRef<(force?: boolean) => Promise<void>>(async () => undefined);
+  const loadRef = useRef<(force?: boolean, includeGroups?: boolean) => Promise<void>>(async () => undefined);
   const taskPageQueryVersionRef = useRef(0);
   const futureOffsetRef = useRef(0);
   const pastOffsetRef = useRef(0);
@@ -112,13 +110,17 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
   const reorderVersionRef = useRef(0);
   const reorderSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
 
-  const load = useCallback(async (force = false): Promise<void> => {
+  useEffect(() => {
+    allTasksRef.current = allTasks;
+  }, [allTasks]);
+
+  const load = useCallback(async (force = false, includeGroups = true): Promise<void> => {
     if (!isAuthenticated) return;
     if (requestRef.current) {
       await requestRef.current;
       // A preference change during a request needs one fresh page with the new completion filter.
       if (force && loadedCompletedFilterRef.current !== showCompletedTasks) {
-        await loadRef.current(true);
+        await loadRef.current(true, includeGroups);
       }
       return;
     }
@@ -137,7 +139,7 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
           api.tasks.future(1, TASK_PAGE_BATCH_SIZE, completedFilter),
           api.tasks.past(1, TASK_PAGE_BATCH_SIZE, completedFilter),
           api.tasks.undated(),
-          api.taskGroups.all(),
+          includeGroups ? api.taskGroups.all() : Promise.resolve(null),
         ]);
         if (queryVersion !== taskPageQueryVersionRef.current) return;
         const tasks = appendUniqueTasks(
@@ -146,7 +148,7 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
         );
         animateLayout();
         setAllTasks(tasks);
-        setGroups(usableGroups(taskGroups, tasks));
+        if (taskGroups) setGroups(usableGroups(taskGroups, tasks));
         futureOffsetRef.current = future.length;
         pastOffsetRef.current = past.length;
         setHasMoreFutureTasks(future.length === TASK_PAGE_BATCH_SIZE && futureProbe.length > 0);
@@ -197,9 +199,21 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
     void load(true);
   }, [isAuthenticated, load]);
 
-  useEffect(() => subscribeToResourceInvalidation('stats', () => {
-    void load(true);
-  }), [load]);
+  const refreshGroups = useCallback(async () => {
+    try {
+      setGroups(usableGroups(await api.taskGroups.all(), allTasksRef.current));
+    } catch (cause) {
+      console.error('Could not refresh mobile task groups:', cause);
+    }
+  }, []);
+
+  useEffect(() => subscribeToResourceInvalidation('stats', origin => {
+    if (origin === 'stat-group' || origin === 'stat-definition') {
+      void refreshGroups();
+      return;
+    }
+    void load(true, origin !== 'stat');
+  }), [load, refreshGroups]);
 
   const loadMore = useCallback(async (period: 'PAST' | 'FUTURE') => {
     const requestReference = period === 'FUTURE' ? futureRequestRef : pastRequestRef;

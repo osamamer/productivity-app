@@ -37,14 +37,12 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import ReplayIcon from '@mui/icons-material/Replay';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import NotificationsNoneIcon from '@mui/icons-material/NotificationsNone';
-import { mergeTaskDeletionReceipts, statGroupService, statService, taskGroupService, taskService } from '../services/api';
+import { mergeTaskDeletionReceipts, taskGroupService, taskService } from '../services/api';
 import type { TaskDeletionReceipt } from '../services/api';
 import { invalidateResource } from '../services/cache/resourceInvalidation';
 import { setCachedTaskDetails } from '../services/cache/taskDetailsCache';
 import { Task } from '../types/Task';
 import { TaskGroup } from '../types/TaskGroup';
-import { StatGroup } from '../types/StatGroup';
-import { StatDefinition } from '../types/Stats';
 import { PageWrapper } from '../components/PageWrapper';
 import { useGlobalTasks } from '../hooks/useGlobalTasks';
 import { useUser } from '../hooks/useUser';
@@ -66,7 +64,6 @@ import { findKeyboardDeleteAnchor, useKeyboardDelete } from '../hooks/useKeyboar
 import { TaskReminderPicker } from '../components/task/TaskReminderPicker';
 import { usePomodoro } from '../hooks/usePomodoro';
 import { TodayEventsSection } from '../components/home/TodayEventsSection';
-import { buildStatTaskGroups } from '../components/task-page/taskPageSectionUtils';
 
 type ActiveExpansion = { taskId: string; panel: 'pomodoro' | 'details' } | null;
 type FocusVisibility = 'all' | 'fading' | 'sliding' | 'hidden' | 'revealing' | 'returning';
@@ -271,23 +268,17 @@ function buildTaskListItems(
     tasks: Task[],
     groups: TaskGroup[],
     getTaskRenderKey: (taskId: string) => string,
-    statTaskGroups: TaskGroup[] = [],
 ): TaskListItem[] {
     const visibleTaskIds = new Set(tasks.map(task => task.taskId));
     const groupByTaskId = new Map<string, TaskGroup>();
     const tasksByGroupId = new Map<string, Task[]>();
 
-    [
-        ...[...groups].sort((first, second) => first.displayOrder - second.displayOrder),
-        ...[...statTaskGroups].sort((first, second) => first.displayOrder - second.displayOrder),
-    ]
-        .forEach(group => {
-            group.taskIds.forEach(taskId => {
-                if (visibleTaskIds.has(taskId) && !groupByTaskId.has(taskId)) {
-                    groupByTaskId.set(taskId, group);
-                }
-            });
-        });
+    [...groups].sort((first, second) => first.displayOrder - second.displayOrder)
+        .forEach(group => group.taskIds.forEach(taskId => {
+            if (visibleTaskIds.has(taskId) && !groupByTaskId.has(taskId)) {
+                groupByTaskId.set(taskId, group);
+            }
+        }));
 
     tasks.forEach(task => {
         const groupId = groupByTaskId.get(task.taskId)?.groupId;
@@ -862,15 +853,11 @@ export function HomePage() {
     const [groupTaskInputGeneration, setGroupTaskInputGeneration] = useState(0);
     const [bulkDateAnchorEl, setBulkDateAnchorEl] = useState<HTMLElement | null>(null);
     const [bulkDateDraft, setBulkDateDraft] = useState(() => new Date());
-    const cachedGroups = taskGroupService.getCachedGroups();
-    const cachedStatGroups = statGroupService.getCachedGroups();
+    const [cachedGroups] = useState(() => taskGroupService.getCachedGroups());
     const [groups, setGroups] = useState<TaskGroup[] | null>(() => cachedGroups ?? null);
-    const [statGroups, setStatGroups] = useState<StatGroup[]>(() => cachedStatGroups ?? []);
-    const [statDefinitions, setStatDefinitions] = useState<StatDefinition[]>(() => statService.getCachedDefinitions() ?? []);
     const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(
         () => new Set([
             ...(cachedGroups ?? []).map(group => group.groupId),
-            ...(cachedStatGroups ?? []).map(group => `stat-group:${group.groupId}`),
         ]),
     );
     const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
@@ -1013,10 +1000,15 @@ export function HomePage() {
     const homeTodayTasks = useMemo(() => {
         const seenTaskIds = new Set<string>();
         const mergedTasks: Task[] = [];
+        const taskById = new Map(allTasks.map(task => [task.taskId, task] as const));
         const addMainTask = (task: Task) => {
-            if (task.parentId || seenTaskIds.has(task.taskId)) return;
+            const latestTask = taskById.get(task.taskId);
+            const taskToAdd = latestTask ?? task;
+            if (taskToAdd.parentId || seenTaskIds.has(taskToAdd.taskId)) return;
+            if (latestTask && !isScheduledForToday(latestTask)
+                && latestTask.taskId !== activePomodoroTaskIdForHome) return;
             seenTaskIds.add(task.taskId);
-            mergedTasks.push(task);
+            mergedTasks.push(taskToAdd);
         };
 
         todayTasks.forEach(addMainTask);
@@ -1063,15 +1055,11 @@ export function HomePage() {
             && !task.parentId && !task.completed),
         [pastTasks, pendingDeletedTaskIdSet],
     );
-    const statTaskGroups = useMemo(
-        () => buildStatTaskGroups(allTasks, groups ?? [], statGroups, statDefinitions),
-        [allTasks, groups, statDefinitions, statGroups],
-    );
     const selectedTaskIdSet = useMemo(() => new Set(selectedTaskIds), [selectedTaskIds]);
     const selectedGroupIdSet = useMemo(() => new Set(selectedGroupIds), [selectedGroupIds]);
     const selectableGroups = useMemo(
-        () => [...(groups ?? []), ...statTaskGroups],
-        [groups, statTaskGroups],
+        () => groups ?? [],
+        [groups],
     );
     const protectedTaskIdSet = useMemo(() => {
         const protectedTaskIds = new Set(
@@ -1249,12 +1237,12 @@ export function HomePage() {
         [focusedPomodoroTask, visibleTasks],
     );
     const taskListItems = useMemo(
-        () => buildTaskListItems(tasksBelowFocus, groups ?? [], getTaskRenderKey, statTaskGroups),
-        [getTaskRenderKey, groups, statTaskGroups, tasksBelowFocus],
+        () => buildTaskListItems(tasksBelowFocus, groups ?? [], getTaskRenderKey),
+        [getTaskRenderKey, groups, tasksBelowFocus],
     );
     const olderTaskListItems = useMemo(
-        () => buildTaskListItems(olderTasks, groups ?? [], getTaskRenderKey, statTaskGroups),
-        [getTaskRenderKey, groups, olderTasks, statTaskGroups],
+        () => buildTaskListItems(olderTasks, groups ?? [], getTaskRenderKey),
+        [getTaskRenderKey, groups, olderTasks],
     );
     const renderedSelectionEntities = useMemo(() => {
         const entities: SelectionEntity[] = focusedPomodoroTask
@@ -1280,13 +1268,11 @@ export function HomePage() {
         return entities;
     }, [focusedPomodoroTask, collapsedGroupIds, olderTaskListItems, showOlderTasks, taskListItems]);
 
-    // Task groups are optional decoration; they must not blank the task list
-    // while their separate request is still loading.
     const homeContentReady = tasksLoaded || todayTasksLoaded || focusedPomodoroTask !== null;
     // A task refresh temporarily clears allTasksSynchronized. Home already has
     // a usable snapshot once tasksLoaded is true, so keep these controls mounted
     // during later refreshes instead of collapsing and reopening the older list.
-    const homeTaskControlsReady = homeContentReady && tasksLoaded && pomodoroStatusResolved;
+    const homeTaskControlsReady = homeContentReady && tasksLoaded && pomodoroStatusResolved && groups !== null;
 
     useEffect(() => {
         const navigationState = location.state as { openPomodoroTaskId?: unknown } | null;
@@ -1404,10 +1390,7 @@ export function HomePage() {
         try {
             const fetchedGroups = await taskGroupService.getGroups();
             setGroups(fetchedGroups);
-            setCollapsedGroupIds(previous => new Set([
-                ...fetchedGroups.map(group => group.groupId),
-                ...[...previous].filter(groupId => groupId.startsWith('stat-group:')),
-            ]));
+            setCollapsedGroupIds(new Set(fetchedGroups.map(group => group.groupId)));
         } catch (err) {
             console.error('Error fetching task groups:', err);
             setGroups([]);
@@ -1417,28 +1400,6 @@ export function HomePage() {
     useEffect(() => {
         void refreshGroups();
     }, [refreshGroups]);
-
-    useEffect(() => {
-        let active = true;
-        void statService.getDefinitions()
-            .then(definitions => { if (active) setStatDefinitions(definitions); })
-            .catch(error => console.error('Error fetching stat definitions for Home task groups:', error));
-        void statGroupService.getGroups()
-            .then(groups => {
-                if (!active) return;
-                setStatGroups(groups);
-                setCollapsedGroupIds(previous => {
-                    const next = new Set(previous);
-                    groups.forEach(group => {
-                        const groupId = `stat-group:${group.groupId}`;
-                        if (!previous.has(groupId)) next.add(groupId);
-                    });
-                    return next;
-                });
-            })
-            .catch(error => console.error('Error fetching stat groups for Home task list:', error));
-        return () => { active = false; };
-    }, []);
 
     useEffect(() => {
         if (!editingGroupId || !groupNameInputRef.current) return;
@@ -3330,6 +3291,7 @@ export function HomePage() {
                     onContextMenu={handleTaskContextMenu}
                     onDelete={task.mentalThreadId ? undefined : deleteTask}
                     showScheduledDate={options.showScheduledDate}
+                    allowThreadTaskScheduling
                     pomodoroDisabled={Boolean(activePomodoroTaskIdForRender) && !rowHasActivePomodoro}
                     reorderable={reorderable}
                     draggable={rowDraggable}
@@ -4048,7 +4010,7 @@ export function HomePage() {
 
                     <Box ref={taskListTopRef} sx={{ height: 0 }} />
 
-                    {homeContentReady && hasHomeTaskRows ? (
+                    {homeContentReady && groups !== null && hasHomeTaskRows ? (
                         <>
                             {/* Keep the live Pomodoro row mounted while the surrounding task list animates. */}
                             {focusedPomodoroTask && (
@@ -4184,7 +4146,7 @@ export function HomePage() {
                                 </Box>
                             </Collapse>
                         </>
-                    ) : homeContentReady ? (
+                    ) : homeContentReady && groups !== null ? (
                         <Typography
                             variant="body1"
                             color="text.secondary"
@@ -4210,6 +4172,10 @@ export function HomePage() {
                         >
                             Nothing scheduled for today.
                         </Typography>
+                    ) : homeContentReady ? (
+                        <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
+                            <CircularProgress size={20} aria-label="Loading task groups" />
+                        </Box>
                     ) : null}
 
                     {(focusVisibility === 'all' || focusVisibility === 'fading') && (

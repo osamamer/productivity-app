@@ -53,7 +53,7 @@ Package root: `org.osama`
 Feature packages follow a consistent pattern — each has an entity, repository, service, and controller:
 - `task/` — Task CRUD with filtering via JPA Specifications (`TaskSpecifications.java`); tasks may optionally originate from a mental thread
 - `task/recurrence/` — Recurring task series can optionally copy the anchor occurrence's subtasks into other occurrences; each copied checklist remains independently completable
-- `taskgroup/` — User-owned groups that relate multiple tasks independently of subtasks
+- `taskgroup/` — User-owned groups that relate multiple tasks independently of subtasks; the task-groups API also returns read-only stat-backed groups, which clients cache with the regular group list
 - `project/` — User-owned containers for organizing tasks; deleting a project leaves its tasks intact and unassigned
 - `mentalthread/` — User-owned unresolved concerns with acting/ruminating/planned/pending attention states, subjective load history, closure outcomes, daily capacity check-ins, and connected next-action tasks
 - `day/` — Daily rating/plan/summary (`DayEntity`, one per user per date)

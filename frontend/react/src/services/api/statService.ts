@@ -51,7 +51,7 @@ let optimisticWriteSequence = 0;
 let statCacheGeneration = 0;
 
 function invalidateRecurringTaskResources(): void {
-    invalidateResource('stats', 'stat');
+    invalidateResource('stats', 'stat-definition');
 }
 
 function definitionsCacheKey(): string {
@@ -383,7 +383,7 @@ export const statService = {
         if (!response.ok) throw new Error('Failed to create stat definition');
         const definition = await response.json() as StatDefinition;
         invalidateDefinitionsCache();
-        if (req.createRecurringTask) invalidateRecurringTaskResources();
+        invalidateResource('stats', 'stat-definition');
         return definition;
     },
 
@@ -397,6 +397,7 @@ export const statService = {
         invalidateEntryCache(id);
         invalidateSummaryCache(id);
         invalidateInsightsCache();
+        invalidateResource('stats', 'stat-definition');
     },
 
     async updateDefinition(id: string, req: UpdateDefinitionRequest): Promise<StatDefinition> {
@@ -477,7 +478,7 @@ export const statService = {
         });
         if (!response.ok) throw new Error('Failed to disconnect recurring task');
         invalidateDefinitionsCache();
-        invalidateResource('stats', 'stat');
+        invalidateResource('stats', 'stat-definition');
         return response.json();
     },
 
@@ -489,7 +490,7 @@ export const statService = {
         });
         if (!response.ok) throw new Error('Failed to link task focus time');
         invalidateDefinitionsCache();
-        invalidateResource('stats', 'stat');
+        invalidateResource('stats', 'stat-definition');
         return response.json();
     },
 
@@ -525,7 +526,7 @@ export const statService = {
         });
         if (!response.ok) throw new Error('Failed to unlink task focus time');
         invalidateDefinitionsCache();
-        invalidateResource('stats', 'stat');
+        invalidateResource('stats', 'stat-definition');
         return response.json();
     },
 

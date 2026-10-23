@@ -789,7 +789,6 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
     };
 
     const commitDateChange = async (date: Date | null) => {
-        if (task.mentalThreadId) return;
         const scheduledPerformDateTime = formatTaskDateTime(date);
         await onUpdate(task.taskId, {
             scheduledPerformDateTime,
@@ -802,7 +801,6 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
     };
 
     const handleDateChange = (date: Date | null) => {
-        if (task.mentalThreadId) return;
         setScheduledDraft(date);
         if (!date) commitDateChange(null);
     };
@@ -1214,7 +1212,6 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
                                             value={scheduledDraft}
                                             onChange={handleDateChange}
                                             onAccept={commitDateChange}
-                                            disabled={Boolean(task.mentalThreadId)}
                                             ampm={false}
                                             slotProps={{
                                                 field: { clearable: false },
@@ -1229,7 +1226,6 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
                                             value={scheduledDraft}
                                             onChange={handleDateChange}
                                             onAccept={commitDateChange}
-                                            disabled={Boolean(task.mentalThreadId)}
                                             closeOnSelect={false}
                                             ampm={false}
                                             slotProps={{

@@ -163,7 +163,7 @@ export const api = {
     }) => {
       const series = await json<TaskSeries>(`/api/v1/tasks/${taskId}/recurrence`, 'POST', recurrence);
       setCachedTaskSeries(taskId, series);
-      if (series.statLinked) invalidateResource('stats');
+      if (series.statLinked) invalidateResource('stats', 'task');
       return series;
     },
     updateRecurrence: async (seriesId: string, recurrence: {
@@ -176,7 +176,7 @@ export const api = {
     }) => {
       const updated = await json<TaskSeries>(`/api/v1/task-series/${seriesId}`, 'PATCH', recurrence);
       updateCachedTaskSeries(updated);
-      if (updated.statLinked) invalidateResource('stats');
+      if (updated.statLinked) invalidateResource('stats', 'task');
       return updated;
     },
     updateRecurrenceImportance: async (seriesId: string, importance: number) => {
@@ -194,7 +194,7 @@ export const api = {
       updateCachedTask(updated);
       if (updates.completed !== undefined || updates.scheduledPerformDateTime !== undefined) {
         invalidateResource('tasks');
-        if (updated.statLinked) invalidateResource('stats');
+        if (updated.statLinked) invalidateResource('stats', 'task');
       }
       return updated;
     },
@@ -328,14 +328,25 @@ export const api = {
   stats: {
     definitions: () => apiRequest<StatDefinition[]>('/api/v1/stats/definitions'),
     groups: () => apiRequest<StatGroup[]>('/api/v1/stats/groups'),
-    createGroup: (name: string, statDefinitionIds: string[] = []) =>
-      json<StatGroup>('/api/v1/stats/groups', 'POST', { name, statDefinitionIds }),
-    renameGroup: (groupId: string, name: string) =>
-      json<StatGroup>(`/api/v1/stats/groups/${groupId}`, 'PATCH', { name }),
-    replaceGroupDefinitions: (groupId: string, statDefinitionIds: string[]) =>
-      json<StatGroup>(`/api/v1/stats/groups/${groupId}/definitions`, 'PUT', { statDefinitionIds }),
-    removeGroup: (groupId: string) =>
-      apiRequest<void>(`/api/v1/stats/groups/${groupId}`, { method: 'DELETE' }),
+    createGroup: async (name: string, statDefinitionIds: string[] = []) => {
+      const group = await json<StatGroup>('/api/v1/stats/groups', 'POST', { name, statDefinitionIds });
+      invalidateResource('stats', 'stat-group');
+      return group;
+    },
+    renameGroup: async (groupId: string, name: string) => {
+      const group = await json<StatGroup>(`/api/v1/stats/groups/${groupId}`, 'PATCH', { name });
+      invalidateResource('stats', 'stat-group');
+      return group;
+    },
+    replaceGroupDefinitions: async (groupId: string, statDefinitionIds: string[]) => {
+      const group = await json<StatGroup>(`/api/v1/stats/groups/${groupId}/definitions`, 'PUT', { statDefinitionIds });
+      invalidateResource('stats', 'stat-group');
+      return group;
+    },
+    removeGroup: async (groupId: string) => {
+      await apiRequest<void>(`/api/v1/stats/groups/${groupId}`, { method: 'DELETE' });
+      invalidateResource('stats', 'stat-group');
+    },
     today: () => apiRequest<StatEntry[]>('/api/v1/stats/entries/today'),
     entries: (statDefinitionId: string, from: string, to: string) => {
       const params = new URLSearchParams({ statDefinitionId, from, to });
@@ -344,13 +355,19 @@ export const api = {
     entriesByDate: (date: string) => apiRequest<StatEntry[]>(`/api/v1/stats/entries/by-date?date=${encodeURIComponent(date)}`),
     record: async (statDefinitionId: string, value: number | null, date?: string, status?: StatEntryStatus) => {
       const entry = await json<StatEntry | undefined>('/api/v1/stats/entries', 'POST', { statDefinitionId, value, date, status });
-      invalidateResource('stats');
+      invalidateResource('stats', 'stat');
       return entry;
     },
-    create: (input: Pick<StatDefinition, 'name' | 'type' | 'minValue' | 'maxValue'> & { morality?: StatMorality | null; goodThreshold?: number | null }) =>
-      json<StatDefinition>('/api/v1/stats/definitions', 'POST', input),
-    update: (id: string, input: Pick<StatDefinition, 'name' | 'morality' | 'goodThreshold'>) =>
-      json<StatDefinition>(`/api/v1/stats/definitions/${id}`, 'PUT', input),
+    create: async (input: Pick<StatDefinition, 'name' | 'type' | 'minValue' | 'maxValue'> & { morality?: StatMorality | null; goodThreshold?: number | null }) => {
+      const definition = await json<StatDefinition>('/api/v1/stats/definitions', 'POST', input);
+      invalidateResource('stats', 'stat-definition');
+      return definition;
+    },
+    update: async (id: string, input: Pick<StatDefinition, 'name' | 'morality' | 'goodThreshold'>) => {
+      const definition = await json<StatDefinition>(`/api/v1/stats/definitions/${id}`, 'PUT', input);
+      invalidateResource('stats', 'stat-definition');
+      return definition;
+    },
     summary: (id: string, from: string, to: string) =>
       apiRequest<StatSummary>(`/api/v1/stats/definitions/${id}/summary?from=${from}&to=${to}`),
   },

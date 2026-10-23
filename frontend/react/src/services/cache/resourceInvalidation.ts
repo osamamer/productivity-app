@@ -1,5 +1,5 @@
 export type InvalidatedResource = 'tasks' | 'stats' | 'projects';
-export type ResourceInvalidationOrigin = 'task' | 'stat';
+export type ResourceInvalidationOrigin = 'task' | 'stat' | 'stat-group' | 'stat-definition';
 
 type ResourceInvalidationListener = (origin?: ResourceInvalidationOrigin) => void;
 

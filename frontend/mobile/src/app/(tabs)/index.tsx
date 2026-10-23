@@ -344,12 +344,13 @@ export default function TodayScreen() {
     () => allTasks.filter(task => selectedTaskActionIds.includes(task.taskId)),
     [allTasks, selectedTaskActionIds],
   );
-  const hasLinkedSelection = selectedTasks.some(task => Boolean(task.mentalThreadId))
-    || groups.some(group => selectedGroupIds.includes(group.groupId) && group.linkedToMentalThread);
+  const hasLinkedSelection = selectedTasks.some(task => Boolean(task.mentalThreadId || task.statLinked))
+    || groups.some(group => selectedGroupIds.includes(group.groupId)
+      && (group.linkedToMentalThread || group.isStatGroup));
   const canGroupSelectedTasks = !hasLinkedSelection && selectedGroupIds.length === 0 && selectedTaskIds.length >= 2;
 
   function isLinkedGroup(group: TaskGroup) {
-    return group.linkedToMentalThread || group.taskIds.some(taskId => (
+    return group.isStatGroup || group.linkedToMentalThread || group.taskIds.some(taskId => (
       allTasks.some(task => task.taskId === taskId && task.mentalThreadId)
     ));
   }
@@ -434,7 +435,7 @@ export default function TodayScreen() {
 
   function startGroupDrag(groupId: string, _startY: number) {
     const group = groups.find(candidate => candidate.groupId === groupId);
-    if (!group) return;
+    if (!group || isLinkedGroup(group)) return;
     beginDrag({
       kind: 'group',
       id: groupId,
@@ -789,7 +790,7 @@ export default function TodayScreen() {
               <DraggableTaskGroup
                 key={itemKey}
                 groupId={item.group.groupId}
-                enabled={!selectionActive}
+                enabled={!selectionActive && !item.group.isStatGroup}
                 dragging={draggedGroupId === item.group.groupId}
                 dragInProgress={Boolean(dragSource)}
                 dragPreviewOffset={dragPreviewOffsets.get(itemKey) ?? 0}
@@ -842,14 +843,16 @@ export default function TodayScreen() {
                       style={({ pressed }) => [styles.groupSelect, isLinkedGroup(item.group) && styles.disabledControl, pressed && styles.pressed]}>
                       <Ionicons name="add-circle-outline" size={22} color={isLinkedGroup(item.group) ? colors.border : selectedGroupIdSet.has(item.group.groupId) ? colors.accent : colors.textMuted} />
                     </SilentPressable>
-                    <SilentPressable
-                      accessibilityRole="button"
-                      accessibilityLabel={`Edit ${item.group.name}`}
-                      hitSlop={8}
-                      onPress={event => { event.stopPropagation(); openEditGroup(item.group); }}
-                      style={({ pressed }) => [styles.groupSelect, pressed && styles.pressed]}>
-                      <Ionicons name="create-outline" size={20} color={colors.textMuted} />
-                    </SilentPressable>
+                    {!item.group.isStatGroup && (
+                      <SilentPressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Edit ${item.group.name}`}
+                        hitSlop={8}
+                        onPress={event => { event.stopPropagation(); openEditGroup(item.group); }}
+                        style={({ pressed }) => [styles.groupSelect, pressed && styles.pressed]}>
+                        <Ionicons name="create-outline" size={20} color={colors.textMuted} />
+                      </SilentPressable>
+                    )}
                     <SilentPressable
                       accessibilityRole="button"
                       accessibilityLabel={`${selectedGroupIdSet.has(item.group.groupId) ? 'Deselect' : 'Select'} ${item.group.name}`}
@@ -882,7 +885,7 @@ export default function TodayScreen() {
                         onLongPress={() => startSelection(task.taskId)}
                         onSelectionToggle={selectedTaskIds.length || selectedGroupIds.length ? () => toggleSelection(task.taskId) : undefined}
                         selected={selectedTaskIdSet.has(task.taskId) || selectedGroupTaskIdSet.has(task.taskId)}
-                        dragEnabled={!selectionActive}
+                        dragEnabled={!selectionActive && !item.group.isStatGroup}
                         dragging={draggedTaskId === task.taskId}
                         dragInProgress={Boolean(dragSource)}
                         dragPreviewOffset={dragPreviewOffsets.get(taskItemKey(task.taskId)) ?? 0}

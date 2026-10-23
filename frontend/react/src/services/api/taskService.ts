@@ -305,7 +305,7 @@ function cacheMainTasks(tasks: Task[]): void {
 }
 
 subscribeToResourceInvalidation('stats', origin => {
-    if (origin === 'task') return;
+    if (origin === 'task' || origin === 'stat-group') return;
     clearTaskDataCaches();
     // Stat writes can change linked task state, so fan them into task views and derived task caches.
     invalidateResource('tasks', 'stat');

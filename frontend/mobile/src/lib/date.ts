@@ -1,5 +1,20 @@
 const pad = (value: number) => String(value).padStart(2, '0');
 
+export function safeDateTimeFormatter(
+  options: Intl.DateTimeFormatOptions,
+  timeZone?: string,
+  locales?: string | string[],
+): Intl.DateTimeFormat {
+  if (timeZone) {
+    try {
+      return new Intl.DateTimeFormat(locales, { ...options, timeZone });
+    } catch (error) {
+      if (!(error instanceof RangeError)) throw error;
+    }
+  }
+  return new Intl.DateTimeFormat(locales, options);
+}
+
 export function localDate(date = new Date()): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
@@ -39,7 +54,7 @@ export function formatWeekday(value: string | null | undefined): string {
 function formatInTimeZone(value: string, timeZone: string | undefined, options: Intl.DateTimeFormatOptions): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
-  return new Intl.DateTimeFormat(undefined, { ...options, ...(timeZone ? { timeZone } : {}) }).format(date);
+  return safeDateTimeFormatter(options, timeZone).format(date);
 }
 
 export function calendarDateParts(value: string | null | undefined, timeZone?: string): {
@@ -94,12 +109,11 @@ export function eventDateInTimeZone(value: string | null | undefined, timeZone?:
 
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return localDate();
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: timeZone || undefined,
+  const parts = safeDateTimeFormatter({
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).formatToParts(date);
+  }, timeZone, 'en-US').formatToParts(date);
   const part = (type: string) => parts.find(item => item.type === type)?.value ?? '';
   return `${part('year')}-${part('month')}-${part('day')}`;
 }

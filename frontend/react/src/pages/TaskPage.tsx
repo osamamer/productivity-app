@@ -24,20 +24,16 @@ import { TaskToCreate } from '../types/TaskToCreate';
 import {
     mergeTaskDeletionReceipts,
     TASK_PAGE_BATCH_SIZE,
-    statGroupService,
-    statService,
     taskGroupService,
     taskService,
 } from '../services/api';
 import type { TaskDeletionReceipt } from '../services/api';
 import { TaskPageComposer } from '../components/task-page/TaskPageComposer';
 import { TaskPageSection } from '../components/task-page/TaskPageSection';
-import { buildStatTaskGroups, buildTaskListItems } from '../components/task-page/taskPageSectionUtils';
+import { buildTaskListItems } from '../components/task-page/taskPageSectionUtils';
 import { TaskDetailsPanel } from '../components/task-page/TaskDetailsPanel';
 import { Task } from '../types/Task';
 import { TaskGroup } from '../types/TaskGroup';
-import { StatGroup } from '../types/StatGroup';
-import { StatDefinition } from '../types/Stats';
 import { getShowCompletedHomeTasks } from '../services/utils/homePreferences';
 import { playAudioFeedback } from '../services/audioFeedback';
 import { createTaskSearchMatcher, normalizeTaskSearchText } from '../services/utils/taskSearch';
@@ -185,9 +181,9 @@ export function TaskPage() {
     } = useGlobalTasks({ taskPageMode: true });
 
     const [expandedSections, setExpandedSections] = useState<TaskSectionExpansionState>(readTaskSectionExpansion);
-    const [taskGroups, setTaskGroups] = useState<TaskGroup[]>(() => taskGroupService.getCachedGroups() ?? []);
-    const [statGroups, setStatGroups] = useState<StatGroup[]>(() => statGroupService.getCachedGroups() ?? []);
-    const [statDefinitions, setStatDefinitions] = useState<StatDefinition[]>(() => statService.getCachedDefinitions() ?? []);
+    const [cachedTaskGroups] = useState(() => taskGroupService.getCachedGroups());
+    const [taskGroups, setTaskGroups] = useState<TaskGroup[]>(() => cachedTaskGroups ?? []);
+    const [taskGroupsLoaded, setTaskGroupsLoaded] = useState(() => cachedTaskGroups !== undefined);
     const [deleteRequest, setDeleteRequest] = useState<DeleteRequest | null>(null);
     const [deleteSubmitting, setDeleteSubmitting] = useState(false);
     const [editRequest, setEditRequest] = useState<EditRequest | null>(null);
@@ -238,25 +234,17 @@ export function TaskPage() {
         let active = true;
         void taskGroupService.getGroups()
             .then(groups => {
-                if (active) setTaskGroups(groups);
+                if (!active) return;
+                setTaskGroups(groups);
+                setTaskGroupsLoaded(true);
             })
             .catch(error => {
                 console.error('Error fetching task groups for Tasks page:', error);
+                if (active) setTaskGroupsLoaded(true);
             });
         return () => {
             active = false;
         };
-    }, []);
-
-    useEffect(() => {
-        let active = true;
-        void statService.getDefinitions()
-            .then(definitions => { if (active) setStatDefinitions(definitions); })
-            .catch(error => console.error('Error fetching stat definitions for task grouping:', error));
-        void statGroupService.getGroups()
-            .then(groups => { if (active) setStatGroups(groups); })
-            .catch(error => console.error('Error fetching stat groups for Tasks page:', error));
-        return () => { active = false; };
     }, []);
 
     useEffect(() => {
@@ -554,17 +542,9 @@ export function TaskPage() {
         () => [visibleTodayTasks, futureTasksToShow, visiblePastTasks, visibleUndatedTasks],
         [futureTasksToShow, visiblePastTasks, visibleTodayTasks, visibleUndatedTasks],
     );
-    const statTaskGroups = useMemo(
-        () => buildStatTaskGroups(allTasks, taskGroups, statGroups, statDefinitions),
-        [allTasks, statDefinitions, statGroups, taskGroups],
-    );
-    const displayTaskGroups = useMemo(
-        () => [...taskGroups, ...statTaskGroups],
-        [statTaskGroups, taskGroups],
-    );
     const renderedTaskItemsBySection = useMemo(
-        () => renderedTaskLists.map(tasks => buildTaskListItems(tasks, displayTaskGroups)),
-        [displayTaskGroups, renderedTaskLists],
+        () => renderedTaskLists.map(tasks => buildTaskListItems(tasks, taskGroups)),
+        [renderedTaskLists, taskGroups],
     );
     const renderedTaskItems = useMemo(
         () => renderedTaskItemsBySection.flat(),
@@ -610,23 +590,23 @@ export function TaskPage() {
     const draggedTaskIdSet = useMemo(() => new Set(draggedTaskIds), [draggedTaskIds]);
     const selectedGroupIdSet = useMemo(() => new Set(selectedGroupIds), [selectedGroupIds]);
     const selectedGroupTaskIdSet = useMemo(
-        () => new Set(displayTaskGroups
+        () => new Set(taskGroups
             .filter(group => selectedGroupIdSet.has(group.groupId))
             .flatMap(group => group.taskIds)),
-        [displayTaskGroups, selectedGroupIdSet],
+        [taskGroups, selectedGroupIdSet],
     );
     const protectedTaskIdSet = useMemo(() => {
         const protectedTaskIds = new Set(
             allTasks.filter(task => Boolean(task.mentalThreadId)).map(task => task.taskId),
         );
-        displayTaskGroups.forEach(group => {
+        taskGroups.forEach(group => {
             if (group.isStatGroup || group.linkedToMentalThread
                 || group.taskIds.some(taskId => protectedTaskIds.has(taskId))) {
                 group.taskIds.forEach(taskId => protectedTaskIds.add(taskId));
             }
         });
         return protectedTaskIds;
-    }, [allTasks, displayTaskGroups]);
+    }, [allTasks, taskGroups]);
     const selectedActionTaskIdSet = useMemo(
         () => new Set([...selectedTaskIds, ...selectedGroupTaskIdSet]),
         [selectedGroupTaskIdSet, selectedTaskIds],
@@ -636,7 +616,7 @@ export function TaskPage() {
         [allTasks, selectedActionTaskIdSet],
     );
     const hasLinkedSelection = selectedTasks.some(task => protectedTaskIdSet.has(task.taskId))
-        || selectedGroupIds.some(groupId => displayTaskGroups.some(group => (
+        || selectedGroupIds.some(groupId => taskGroups.some(group => (
             group.groupId === groupId && (group.isStatGroup || group.linkedToMentalThread)
         )));
     const selectionEntityCount = selectedTaskIds.length + selectedGroupIds.length;
@@ -713,10 +693,10 @@ export function TaskPage() {
             return next.length === previous.length ? previous : next;
         });
         setSelectedGroupIds(previous => {
-            const next = previous.filter(groupId => displayTaskGroups.some(group => group.groupId === groupId));
+            const next = previous.filter(groupId => taskGroups.some(group => group.groupId === groupId));
             return next.length === previous.length ? previous : next;
         });
-    }, [allTasks, displayTaskGroups]);
+    }, [allTasks, taskGroups]);
 
     const createTaskInGroup = useCallback(async (group: TaskGroup, taskToCreate: TaskToCreate) => {
         if (!taskToCreate.name.trim() || group.linkedToMentalThread || group.taskIds.some(taskId => (
@@ -800,7 +780,7 @@ export function TaskPage() {
         const nextTaskIds = new Set(taskIds);
         const nextGroupIds = new Set(groupIds);
 
-        displayTaskGroups.forEach(group => {
+        taskGroups.forEach(group => {
             if (nextGroupIds.has(group.groupId)) {
                 group.taskIds.forEach(taskId => nextTaskIds.delete(taskId));
             } else if (group.taskIds.length > 0 && group.taskIds.every(taskId => nextTaskIds.has(taskId))) {
@@ -811,7 +791,7 @@ export function TaskPage() {
 
         setSelectedTaskIds([...nextTaskIds]);
         setSelectedGroupIds([...nextGroupIds]);
-    }, [displayTaskGroups]);
+    }, [taskGroups]);
 
     const handleTaskSelection = useCallback((task: Task, event: React.MouseEvent<HTMLElement>) => {
         event.stopPropagation();
@@ -843,7 +823,7 @@ export function TaskPage() {
 
         if (event.ctrlKey || event.metaKey) {
             if (selectedGroupTaskIdSet.has(taskId)) {
-                const selectedGroupsContainingTask = displayTaskGroups.filter(group => (
+                const selectedGroupsContainingTask = taskGroups.filter(group => (
                     selectedGroupIds.includes(group.groupId) && group.taskIds.includes(taskId)
                 ));
                 const expandedGroupIds = new Set(selectedGroupsContainingTask.map(group => group.groupId));
@@ -870,7 +850,7 @@ export function TaskPage() {
         applySelection([taskId], []);
         setHighlightedTask(task);
         selectionAnchorRef.current = taskId;
-    }, [applySelection, displayTaskGroups, renderedSelectionEntities, selectedGroupIds, selectedGroupTaskIdSet,
+    }, [applySelection, taskGroups, renderedSelectionEntities, selectedGroupIds, selectedGroupTaskIdSet,
         selectedTaskIds, setHighlightedTask]);
 
     const handleGroupSelection = useCallback((group: TaskGroup, event: React.MouseEvent<HTMLElement>) => {
@@ -1296,7 +1276,7 @@ export function TaskPage() {
     };
 
     const sharedSectionProps = {
-        groups: displayTaskGroups,
+        groups: taskGroups,
         onTaskClick: handleTaskSelect,
         onTaskSelection: handleTaskSelection,
         selectedTaskId: selectedTask?.taskId,
@@ -1467,11 +1447,11 @@ export function TaskPage() {
                             </Portal>
                         )}
 
-                        {loading && !tasksLoaded && (
+                        {(loading && !tasksLoaded) || (tasksLoaded && !taskGroupsLoaded) ? (
                             <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
                                 <CircularProgress size={22} aria-label="Loading tasks" />
                             </Box>
-                        )}
+                        ) : null}
 
                         {!loading && !tasksLoaded && error && (
                             <Alert severity="error" sx={{ mt: 2 }}>
@@ -1479,7 +1459,7 @@ export function TaskPage() {
                             </Alert>
                         )}
 
-                        {tasksLoaded && (
+                        {tasksLoaded && taskGroupsLoaded && (
                         <Box>
                             {(!isSearchActive || hasTodayTasks) && (
                                 <TaskPageSection
@@ -1553,7 +1533,7 @@ export function TaskPage() {
                         </Box>
                         )}
 
-                        {tasksLoaded && !loading && !hasTasks && (
+                        {tasksLoaded && taskGroupsLoaded && !loading && !hasTasks && (
                             <Typography variant="body1" color="text.secondary" sx={{ py: 2 }}>
                                 {isSearchActive
                                     ? `No tasks match “${searchQuery.trim()}”.`

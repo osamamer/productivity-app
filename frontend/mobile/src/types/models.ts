@@ -24,6 +24,7 @@ export interface Task {
   displayOrder: number;
   mentalThreadId: string | null;
   taskSeriesId: string | null;
+  linkedStatDefinitionId?: string | null;
   seriesOccurrenceAt: string | null;
   skipped: boolean;
   statLinked?: boolean;
@@ -97,6 +98,7 @@ export interface TaskGroup {
   taskIds: string[];
   displayOrder: number;
   linkedToMentalThread?: boolean;
+  isStatGroup?: boolean;
 }
 
 export interface TodayFocusSummary {

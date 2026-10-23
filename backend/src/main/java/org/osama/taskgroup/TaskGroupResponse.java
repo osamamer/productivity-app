@@ -10,7 +10,8 @@ public record TaskGroupResponse(
         String name,
         List<String> taskIds,
         int displayOrder,
-        boolean linkedToMentalThread
+        boolean linkedToMentalThread,
+        boolean isStatGroup
 ) {
     static TaskGroupResponse from(TaskGroup group) {
         List<String> taskIds = group.getTasks().stream()
@@ -22,7 +23,12 @@ public record TaskGroupResponse(
                 group.getName(),
                 taskIds,
                 group.getDisplayOrder(),
-                group.getMentalThreadId() != null
+                group.getMentalThreadId() != null,
+                false
         );
+    }
+
+    static TaskGroupResponse statGroup(String groupId, String name, List<String> taskIds, int displayOrder) {
+        return new TaskGroupResponse(groupId, name, taskIds, displayOrder, false, true);
     }
 }

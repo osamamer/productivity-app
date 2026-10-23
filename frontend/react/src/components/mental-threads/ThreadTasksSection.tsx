@@ -196,6 +196,7 @@ export function ThreadTasksSection({
                             onAutoExpand={() => undefined}
                             showPomodoroButton={false}
                             showDetailsButton={!readOnly}
+                            allowThreadTaskScheduling
                             onDelete={readOnly || task.mentalThreadId ? undefined : handleDeleteRequest}
                             readOnly={readOnly}
                             deferPomodoroHydration

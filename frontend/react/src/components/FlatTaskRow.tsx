@@ -115,6 +115,7 @@ export type FlatTaskRowProps = {
     initialPomodoroStatus?: PomodoroStatus | null;
     expectedPomodoroActive?: boolean;
     readOnly?: boolean;
+    allowThreadTaskScheduling?: boolean;
     onRefreshTasks?: () => Promise<void>;
     onScheduledDateEditComplete?: (taskId: string) => void;
     subtaskDeletionContextMenu?: boolean;
@@ -311,12 +312,14 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     initialPomodoroStatus = null,
     expectedPomodoroActive = false,
     readOnly = false,
+    allowThreadTaskScheduling = false,
     onRefreshTasks,
     onScheduledDateEditComplete,
     subtaskDeletionContextMenu = false,
     prefetchDetailsOnMount = false,
 }: FlatTaskRowProps) {
     const theme = useTheme();
+    const canEditSchedule = !readOnly && (!task.mentalThreadId || allowThreadTaskScheduling);
     const accent = theme.palette.primary.light;
     const activeAccent = theme.palette.primary.main;
     const pomodoroGreen = theme.palette.mode === 'dark' ? '#9BC5A3' : '#7EA88A';
@@ -1149,7 +1152,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     }, [onScheduledDateEditComplete, task.taskId]);
 
     const commitDateChange = async (newDate: Date | null) => {
-        if (readOnly || task.mentalThreadId) return;
+        if (!canEditSchedule) return;
         if (!scheduledDateEditActiveRef.current) {
             scheduledDateBlurNotifiedRef.current = false;
         }
@@ -1180,7 +1183,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     };
 
     const handleDateChange = (newDate: Date | null) => {
-        if (readOnly || task.mentalThreadId) return;
+        if (!canEditSchedule) return;
         if (!scheduledDateEditActiveRef.current) {
             scheduledDateBlurNotifiedRef.current = false;
         }
@@ -1923,7 +1926,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                             value={scheduledDraft}
                                             onChange={handleDateChange}
                                             onAccept={commitDateChange}
-                                            disabled={readOnly || Boolean(task.mentalThreadId)}
+                                            disabled={!canEditSchedule}
                                             ampm={false}
                                             slotProps={{
                                                 field: { clearable: false },
@@ -1938,7 +1941,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                             value={scheduledDraft}
                                             onChange={handleDateChange}
                                             onAccept={commitDateChange}
-                                            disabled={readOnly || Boolean(task.mentalThreadId)}
+                                            disabled={!canEditSchedule}
                                             closeOnSelect={false}
                                             ampm={false}
                                             slotProps={{

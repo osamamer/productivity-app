@@ -182,8 +182,9 @@ export default function TasksScreen() {
   const selectedPastTaskIds = selectedTasks
     .filter(task => pastTasks.some(pastTask => pastTask.taskId === task.taskId))
     .map(task => task.taskId);
-  const hasLinkedSelection = selectedTasks.some(task => Boolean(task.mentalThreadId))
-    || groups.some(group => selectedGroupIdSet.has(group.groupId) && group.linkedToMentalThread);
+  const hasLinkedSelection = selectedTasks.some(task => Boolean(task.mentalThreadId || task.statLinked))
+    || groups.some(group => selectedGroupIdSet.has(group.groupId)
+      && (group.linkedToMentalThread || group.isStatGroup));
   const canGroupSelectedTasks = !hasLinkedSelection && selectedGroupIds.length === 0 && selectedTaskIds.length >= 2;
 
   const loadMoreUpcoming = useCallback(async () => {
@@ -357,14 +358,16 @@ export default function TasksScreen() {
             <AppText variant="label" style={[styles.groupTitle, selectedGroupIdSet.has(item.group.groupId) && { color: colors.accent }]}>{item.group.name}</AppText>
             <AppText variant="caption" color="muted">{item.tasks.length}</AppText>
           </View>
-          <SilentPressable
-            accessibilityRole="button"
-            accessibilityLabel={`Edit ${item.group.name}`}
-            hitSlop={8}
-            onPress={event => { event.stopPropagation(); openEditGroup(item.group); }}
-            style={({ pressed }) => [styles.groupSelect, pressed && styles.pressed]}>
-            <Ionicons name="create-outline" size={20} color={colors.textMuted} />
-          </SilentPressable>
+          {!item.group.isStatGroup && (
+            <SilentPressable
+              accessibilityRole="button"
+              accessibilityLabel={`Edit ${item.group.name}`}
+              hitSlop={8}
+              onPress={event => { event.stopPropagation(); openEditGroup(item.group); }}
+              style={({ pressed }) => [styles.groupSelect, pressed && styles.pressed]}>
+              <Ionicons name="create-outline" size={20} color={colors.textMuted} />
+            </SilentPressable>
+          )}
           <SilentPressable
             accessibilityRole="button"
             accessibilityLabel={`${selectedGroupIdSet.has(item.group.groupId) ? 'Deselect' : 'Select'} ${item.group.name}`}

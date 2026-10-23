@@ -11,6 +11,9 @@ public interface StatFocusTaskLinkRepository extends JpaRepository<StatFocusTask
 
     List<StatFocusTaskLink> findAllByStatDefinitionIdOrderByTaskNameAsc(String statDefinitionId);
 
+    @Query("select link from StatFocusTaskLink link where link.statDefinition.user.id = :userId")
+    List<StatFocusTaskLink> findAllByUserId(@Param("userId") String userId);
+
     Optional<StatFocusTaskLink> findByStatDefinitionIdAndTaskNameIgnoreCase(
             String statDefinitionId, String taskName);
 

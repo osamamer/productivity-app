@@ -178,6 +178,7 @@ export function TaskScheduleField({ value, onChange, timeOnly = false, style, di
         showIcon={false}
         onClose={() => setOpen(false)}
         dismissOnBackdrop={false}
+        scrollContent
         footer={(
           <View style={styles.popupActions}>
             <AppButton style={styles.popupAction} variant="secondary" label="Cancel" onPress={() => setOpen(false)} />

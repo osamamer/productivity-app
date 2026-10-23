@@ -20,16 +20,22 @@ import java.util.List;
 @RequestMapping("/api/v1/task-groups")
 public class TaskGroupController {
     private final TaskGroupService groupService;
+    private final StatTaskGroupService statTaskGroupService;
     private final CurrentUserService currentUserService;
 
-    public TaskGroupController(TaskGroupService groupService, CurrentUserService currentUserService) {
+    public TaskGroupController(TaskGroupService groupService, StatTaskGroupService statTaskGroupService,
+                               CurrentUserService currentUserService) {
         this.groupService = groupService;
+        this.statTaskGroupService = statTaskGroupService;
         this.currentUserService = currentUserService;
     }
 
     @GetMapping
     public List<TaskGroupResponse> getGroups() {
-        return groupService.getGroups(currentUserService.getCurrentUserId());
+        String userId = currentUserService.getCurrentUserId();
+        List<TaskGroupResponse> groups = groupService.getGroups(userId);
+        return java.util.stream.Stream.concat(groups.stream(),
+                statTaskGroupService.getGroups(userId, groups).stream()).toList();
     }
 
     @PostMapping

@@ -1,7 +1,7 @@
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
 
-import { eventDateInTimeZone, localDate, localDateTimeToInstant } from '@/lib/date';
+import { eventDateInTimeZone, localDate, localDateTimeToInstant, safeDateTimeFormatter } from '@/lib/date';
 import { playAudioFeedback } from '@/lib/audioFeedback';
 import { reportError } from '@/lib/errors';
 import { readEventTimePreferences, saveEventTimePreferences } from '@/lib/inputPreferences';
@@ -139,12 +139,11 @@ function eventTimeInDeviceZone(value: string | null, timeZone: string | undefine
   if (!value) return fallback;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return fallback;
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: timeZone || undefined,
+  const parts = safeDateTimeFormatter({
     hour: '2-digit',
     minute: '2-digit',
     hourCycle: 'h23',
-  }).formatToParts(date);
+  }, timeZone, 'en-US').formatToParts(date);
   const hour = parts.find(part => part.type === 'hour')?.value;
   const minute = parts.find(part => part.type === 'minute')?.value;
   return hour && minute ? `${hour}:${minute}` : fallback;
