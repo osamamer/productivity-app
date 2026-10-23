@@ -3,7 +3,7 @@ import { Screen } from '@/components/ui/Screen';
 
 export default function MoreScreen() {
   return (
-    <Screen>
+    <Screen contentStyle={{ paddingTop: 12 }}>
       <FeatureLinkCard title="Notes" description="Capture and revisit what matters." icon="document-text-outline" href="/notes" />
       <FeatureLinkCard title="Statistics" description="Log habits and spot personal patterns." icon="bar-chart-outline" href="/stats" />
       <FeatureLinkCard title="Settings" description="Adjust appearance, behavior, and your account." icon="settings-outline" href="/settings" />

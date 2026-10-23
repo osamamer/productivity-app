@@ -694,6 +694,7 @@ export default function TodayScreen() {
 
   return (
     <Screen
+      contentStyle={{ paddingTop: 12 }}
       refreshing={resource.refreshing || eventsResource.refreshing || calendarsResource.refreshing || snapshotResource.refreshing || tasksLoading}
       refreshEnabled={dragSource === null}
       onRefresh={() => void refreshToday()}

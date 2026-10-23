@@ -104,6 +104,7 @@ const NEW_EVENT_POPUP_TRIGGER_SELECTOR = [
 const OPTIMISTIC_EVENT_ID_PREFIX = 'home-event-optimistic-';
 const HOME_SECTION_AUTO_SCROLL_MS = 320;
 let optimisticEventSequence = 0;
+let todayEventsSectionHasMounted = false;
 
 function findVerticalScrollContainer(element: HTMLElement): HTMLElement | null {
     let ancestor = element.parentElement;
@@ -130,6 +131,7 @@ function EventStatusIcon({ status }: { status: CalendarEventStatus }) {
 }
 
 function eventCalendarColor(calendars: Calendar[], calendarId: string, accentColor: string): string {
+    if (calendars.length === 0) return 'rgba(0, 0, 0, 0)';
     const calendar = calendars.find(candidate => candidate.id === calendarId)
         ?? calendars.find(candidate => candidate.defaultCalendar);
     return calendarColorHex(calendar?.color, accentColor);
@@ -692,7 +694,14 @@ function TodayEventCard({
                     >
                         <EventStatusIcon status={displayStatus} />
                     </Box>
-                    <Box sx={{ gridColumn: 2, gridRow: 1, justifySelf: 'end', minWidth: 0, maxWidth: '100%' }}>
+                    <Box sx={{
+                        gridColumn: 2,
+                        gridRow: 1,
+                        justifySelf: 'end',
+                        minWidth: 0,
+                        maxWidth: '100%',
+                        visibility: calendars.length > 0 ? 'visible' : 'hidden',
+                    }}>
                         <CalendarChipSelect
                             calendars={calendars}
                             value={displayedCalendarId}
@@ -947,7 +956,14 @@ function TodayEventCard({
                     </Box>
                 </Tooltip>
 
-                <Box sx={{ gridColumn: 2, gridRow: 1, justifySelf: 'end', minWidth: 0, maxWidth: '100%' }}>
+                <Box sx={{
+                    gridColumn: 2,
+                    gridRow: 1,
+                    justifySelf: 'end',
+                    minWidth: 0,
+                    maxWidth: '100%',
+                    visibility: calendars.length > 0 ? 'visible' : 'hidden',
+                }}>
                     <CalendarChipSelect
                         calendars={calendars}
                         value={displayedCalendarId}
@@ -1199,6 +1215,7 @@ function TodayEventCard({
 export function TodayEventsSection() {
     const [dayStart] = useState(() => startOfDay(new Date()));
     const todayKey = format(dayStart, 'yyyy-MM-dd');
+    const [animateInitialExpansion] = useState(() => !todayEventsSectionHasMounted);
     const [initialEvents] = useState(() => {
         const snapshot = homeTodayEventsSnapshot.get(todayKey);
         if (snapshot !== undefined) return snapshot;
@@ -1206,8 +1223,10 @@ export function TodayEventsSection() {
         const lastKnownEvents = eventService.getLastKnownEvents();
         return lastKnownEvents ? sourceEventsForToday(lastKnownEvents, dayStart) : undefined;
     });
+    const [initialCalendars] = useState(() => calendarService.getCachedCalendars());
     const [events, setEvents] = useState<CalendarEvent[]>(() => initialEvents ?? []);
-    const [calendars, setCalendars] = useState<Calendar[]>([]);
+    const [calendars, setCalendars] = useState<Calendar[]>(() => initialCalendars ?? []);
+    const [calendarsLoaded, setCalendarsLoaded] = useState(() => initialCalendars !== undefined);
     const [loading, setLoading] = useState(() => initialEvents === undefined);
     const [selectedEventIds, setSelectedEventIds] = useState<string[]>([]);
     const [bulkDeleteRequest, setBulkDeleteRequest] = useState<BulkDeleteRequest | null>(null);
@@ -1241,6 +1260,10 @@ export function TodayEventsSection() {
     const newEventTimePickerOpenRef = useRef(false);
     const createEventInFlightRef = useRef(false);
     const cancelCreateEventRef = useRef(false);
+
+    useEffect(() => {
+        todayEventsSectionHasMounted = true;
+    }, []);
 
     useEffect(() => {
         setHomeTodayEventsExpanded(expanded);
@@ -1294,8 +1317,12 @@ export function TodayEventsSection() {
     useEffect(() => {
         let cancelled = false;
         calendarService.getCalendars()
-            .then(result => { if (!cancelled) setCalendars(result); })
-            .catch(error => console.error('Could not load calendars for Home event creation:', error));
+            .then(result => {
+                if (cancelled) return;
+                setCalendars(result);
+            })
+            .catch(error => console.error('Could not load calendars for Home event creation:', error))
+            .finally(() => { if (!cancelled) setCalendarsLoaded(true); });
         return () => { cancelled = true; };
     }, []);
 
@@ -1652,7 +1679,7 @@ export function TodayEventsSection() {
             ref={sectionRef}
             component="section"
             aria-labelledby="today-events-heading"
-            aria-busy={loading || undefined}
+            aria-busy={loading || !calendarsLoaded || undefined}
             sx={{ mt: 2, mb: 1 }}
         >
             <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
@@ -1749,7 +1776,7 @@ export function TodayEventsSection() {
                 in={expanded}
                 timeout={{ enter: 420, exit: 440 }}
                 easing={{ enter: 'cubic-bezier(0.4, 0, 0.2, 1)', exit: 'cubic-bezier(0.4, 0, 0.2, 1)' }}
-                appear
+                appear={animateInitialExpansion}
                 mountOnEnter
                 onEntered={() => {
                     if (!scrollToExpandedSectionRef.current) return;
@@ -1981,7 +2008,14 @@ export function TodayEventsSection() {
                                             </Box>
                                         </Tooltip>
 
-                                        <Box sx={{ gridColumn: 2, gridRow: 1, justifySelf: 'end', minWidth: 0, maxWidth: '100%' }}>
+                                        <Box sx={{
+                                            gridColumn: 2,
+                                            gridRow: 1,
+                                            justifySelf: 'end',
+                                            minWidth: 0,
+                                            maxWidth: '100%',
+                                            visibility: calendars.length > 0 ? 'visible' : 'hidden',
+                                        }}>
                                             <CalendarChipSelect
                                                 calendars={calendars}
                                                 value={newEventCalendarId}

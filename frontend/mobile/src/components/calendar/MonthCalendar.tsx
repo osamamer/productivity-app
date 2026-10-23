@@ -132,8 +132,8 @@ function addCalendarItem(items: Map<string, CalendarGridItem[]>, item: CalendarG
 }
 
 export function CalendarDisplayButton({ onPress, disabled = false }: { onPress: () => void; disabled?: boolean }) {
-  const { colors } = useAppTheme();
-    return (
+  const { colors, dark } = useAppTheme();
+  return (
     <SilentPressable
       accessibilityRole="button"
       accessibilityLabel="Calendar display options"
@@ -141,7 +141,8 @@ export function CalendarDisplayButton({ onPress, disabled = false }: { onPress: 
       onPress={onPress}
       style={({ pressed }) => [
         styles.floatingActionButton,
-        { backgroundColor: colors.surface, borderColor: colors.accent, borderWidth: 1, shadowColor: colors.text },
+        dark && styles.darkFloatingActionButton,
+        { backgroundColor: colors.surface, borderColor: colors.accent, borderWidth: 1, shadowColor: '#000000' },
         disabled && styles.disabled,
         pressed && styles.pressed,
       ]}>
@@ -152,7 +153,7 @@ export function CalendarDisplayButton({ onPress, disabled = false }: { onPress: 
 }
 
 export function CalendarManagementButton({ onPress, disabled = false }: { onPress: () => void; disabled?: boolean }) {
-  const { colors } = useAppTheme();
+  const { colors, dark } = useAppTheme();
   return (
     <SilentPressable
       accessibilityRole="button"
@@ -161,7 +162,8 @@ export function CalendarManagementButton({ onPress, disabled = false }: { onPres
       onPress={onPress}
       style={({ pressed }) => [
         styles.floatingActionButton,
-        { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, shadowColor: colors.text },
+        dark && styles.darkFloatingActionButton,
+        { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, shadowColor: '#000000' },
         disabled && styles.disabled,
         pressed && styles.pressed,
       ]}>
@@ -749,7 +751,8 @@ export function MonthCalendar({
 }
 
 const styles = StyleSheet.create({
-  floatingActionButton: { minHeight: 48, borderRadius: 24, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 7, shadowOffset: { width: 0, height: 5 }, shadowRadius: 12, shadowOpacity: 0.28, elevation: 6 },
+  floatingActionButton: { minHeight: 48, borderRadius: 24, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 7, shadowOffset: { width: 0, height: 2 }, shadowRadius: 6, shadowOpacity: 0.12, elevation: 2 },
+  darkFloatingActionButton: { shadowRadius: 4, shadowOpacity: 0.08, elevation: 1 },
   viewToggle: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   filterScroll: { maxHeight: 460 },
   filterContent: { gap: 14, paddingBottom: 2 },

@@ -44,6 +44,7 @@ import {
 } from "../types/CalendarEvent.ts";
 import { DayTemplate, DayTemplateApplication, DayTemplateRequest } from "../types/DayTemplate.ts";
 import { CalendarEventForm } from "./calendar/CalendarEventForm.tsx";
+import { importedEventPresentation } from "./calendar/importedEventPresentation.ts";
 import { DayTemplateCreationDialog } from "./calendar/DayTemplateCreationDialog.tsx";
 import { DAY_TEMPLATE_DRAG_TYPE, DayTemplatePanel, DayTemplatePreviewPopover } from "./calendar/DayTemplatePanel.tsx";
 import { CalendarEventOccurrence, expandCalendarEvent } from "./calendar/recurrence.ts";
@@ -633,6 +634,12 @@ export function MonthCalendar({
         () => events.find(event => event.id === selectedEventSelection?.eventId) ?? null,
         [events, selectedEventSelection]
     );
+    const selectedImportedEventPresentation = useMemo(
+        () => selectedCalendarEvent?.sourceId
+            ? importedEventPresentation(selectedCalendarEvent.title, selectedCalendarEvent.description)
+            : null,
+        [selectedCalendarEvent]
+    );
     const selectedCalendarEventOccurrence = useMemo<CalendarEventOccurrence | null>(() => {
         if (!selectedCalendarEvent || !selectedEventSelection) return null;
         return expandCalendarEvent(selectedCalendarEvent, calendarRange.start, calendarRange.end)
@@ -819,7 +826,9 @@ export function MonthCalendar({
                 calendarEventOccurrenceDate: occurrence.occurrenceDate,
                 calendarEventOccurrenceStatus: occurrence.status,
                 status: occurrence.status,
-                fullDescription: `${event.description || event.title} · ${occurrence.status.toLowerCase()}`,
+                fullDescription: event.sourceId
+                    ? `${event.title} · ${occurrence.status.toLowerCase()}`
+                    : `${event.description || event.title} · ${occurrence.status.toLowerCase()}`,
             },
             }));
         });
@@ -2680,13 +2689,45 @@ export function MonthCalendar({
             >
                 {selectedCalendarEvent?.sourceId ? (
                     <Stack spacing={1} sx={{ p: 2, minWidth: 280 }}>
-                        <Typography variant="subtitle1" fontWeight={700}>{selectedCalendarEvent.title}</Typography>
+                        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                            <Typography
+                                variant="subtitle1"
+                                fontWeight={700}
+                                sx={{ textDecoration: selectedCalendarEvent.status === 'CANCELLED' ? 'line-through' : 'none' }}
+                            >
+                                {selectedCalendarEvent.title}
+                            </Typography>
+                            {selectedCalendarEvent.status === 'CANCELLED' && (
+                                <Chip size="small" label="Cancelled" color="error" variant="outlined" />
+                            )}
+                        </Stack>
                         <Typography variant="body2" color="text.secondary">
                             {selectedCalendarEvent.allDay
                                 ? `${selectedCalendarEvent.startDate} – ${selectedCalendarEvent.endDate}`
                                 : `${new Date(selectedCalendarEvent.startTime!).toLocaleString()} – ${new Date(selectedCalendarEvent.endTime!).toLocaleString()}`}
                         </Typography>
-                        {selectedCalendarEvent.description && <Typography variant="body2">{selectedCalendarEvent.description}</Typography>}
+                        {selectedImportedEventPresentation?.meetingUrl && (
+                            <Button
+                                component="a"
+                                href={selectedImportedEventPresentation.meetingUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                variant="outlined"
+                                size="small"
+                                sx={{ alignSelf: 'flex-start', textTransform: 'none' }}
+                                aria-label={`Join meeting for ${selectedCalendarEvent.title}`}
+                            >
+                                Join meeting
+                            </Button>
+                        )}
+                        {selectedImportedEventPresentation?.description && (
+                            <Typography
+                                variant="body2"
+                                sx={{ maxHeight: 140, overflowY: 'auto', overflowWrap: 'anywhere', whiteSpace: 'pre-wrap' }}
+                            >
+                                {selectedImportedEventPresentation.description}
+                            </Typography>
+                        )}
                         <Typography variant="caption" color="text.secondary">Read-only imported event</Typography>
                     </Stack>
                 ) : selectedCalendarEvent && (

@@ -13,21 +13,27 @@ import java.io.StringReader;
 import java.time.*;
 import java.time.temporal.Temporal;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Component
 @Slf4j
 public class IcsCalendarParser {
     private static final int MAX_OCCURRENCES = 5000;
     private static final Set<String> JAVA_TIME_ZONES = ZoneId.getAvailableZoneIds();
+    private static final Pattern CANCELLED_TITLE_PREFIX = Pattern.compile(
+            "^\\s*cancel(?:l)?ed\\s*:\\s*", Pattern.CASE_INSENSITIVE);
 
     public List<ImportedCalendarEvent> parse(String ics, LocalDate today) {
         try {
             var calendar = new CalendarBuilder().build(new StringReader(ics));
             List<VEvent> events = calendar.getComponents(VEvent.VEVENT);
             Map<String, VEvent> exceptions = new HashMap<>();
+            Map<String, VEvent> masters = new HashMap<>();
             for (VEvent event : events) {
                 String recurrenceId = recurrenceId(event);
                 if (recurrenceId != null) exceptions.put(key(uid(event), recurrenceId), event);
+                else masters.put(uid(event), event);
             }
 
             LocalDate windowStart = today.minusYears(1);
@@ -63,10 +69,16 @@ public class IcsCalendarParser {
             // A moved exception can fall inside the window even when its original start does not.
             for (VEvent exception : exceptions.values()) {
                 String exceptionKey = key(uid(exception), Objects.requireNonNull(recurrenceId(exception)));
+                if (exception.getDateTimeStart() == null && imported.containsKey(exceptionKey)) continue;
                 imported.remove(exceptionKey);
-                if ("CANCELLED".equals(value(exception, Property.STATUS))) continue;
-                ImportedCalendarEvent occurrence = describe(exception, exceptionKey, null, null, zone(exception.getDateTimeStart()));
-                if (inWindow(occurrence, windowStart, windowEnd) && occurrence.status() != CalendarEventStatus.CANCELLED) {
+                DateProperty<?> startProperty = exception.getDateTimeStart();
+                DateProperty<?> recurrenceProperty = recurrenceIdProperty(exception);
+                Temporal fallbackStart = startProperty == null && recurrenceProperty != null
+                        ? recurrenceProperty.getDate() : null;
+                ZoneId exceptionZone = zone(startProperty == null ? recurrenceProperty : startProperty);
+                ImportedCalendarEvent occurrence = describe(exception, exceptionKey, fallbackStart, null,
+                        exceptionZone, masters.get(uid(exception)));
+                if (inWindow(occurrence, windowStart, windowEnd)) {
                     imported.put(exceptionKey, occurrence);
                 }
             }
@@ -86,27 +98,44 @@ public class IcsCalendarParser {
         String occurrenceKey = key(uid(master), start.toString());
         VEvent exception = exceptions.get(occurrenceKey);
         if (exception != null) {
-            if ("CANCELLED".equals(value(exception, Property.STATUS))) return;
-            ImportedCalendarEvent override = describe(exception, occurrenceKey, null, null, zone);
-            if (override.status() != CalendarEventStatus.CANCELLED) imported.put(occurrenceKey, override);
+            ImportedCalendarEvent override = describe(exception, occurrenceKey, start, end, zone, master);
+            imported.put(occurrenceKey, override);
         } else {
-            ImportedCalendarEvent occurrence = describe(master, occurrenceKey, start, end, zone);
-            if (occurrence.status() != CalendarEventStatus.CANCELLED) imported.put(occurrenceKey, occurrence);
+            ImportedCalendarEvent occurrence = describe(master, occurrenceKey, start, end, zone, null);
+            imported.put(occurrenceKey, occurrence);
         }
     }
 
     private ImportedCalendarEvent describe(VEvent event, String key, Temporal occurrenceStart,
-                                            Temporal occurrenceEnd, ZoneId zone) {
-        Temporal start = occurrenceStart == null ? event.getDateTimeStart().getDate() : occurrenceStart;
-        Temporal end = occurrenceEnd == null ? endOf(event, start) : occurrenceEnd;
-        String title = Optional.ofNullable(value(event, Property.SUMMARY)).filter(s -> !s.isBlank()).orElse("Untitled event");
+                                            Temporal occurrenceEnd, ZoneId zone, VEvent fallbackEvent) {
+        DateProperty<?> startProperty = event.getDateTimeStart();
+        boolean useOccurrenceRange = fallbackEvent == null && occurrenceStart != null;
+        Temporal start = useOccurrenceRange || startProperty == null ? occurrenceStart : startProperty.getDate();
+        if (start == null) throw new IllegalArgumentException("A calendar event has no start time.");
+        Temporal end = useOccurrenceRange && occurrenceEnd != null
+                ? occurrenceEnd
+                : startProperty == null && occurrenceEnd == null && fallbackEvent != null
+                    ? endOf(fallbackEvent, start, null, false)
+                    : endOf(event, start, occurrenceEnd, startProperty == null);
+        String title = Optional.ofNullable(value(event, Property.SUMMARY)).filter(s -> !s.isBlank())
+                .or(() -> fallbackEvent == null ? Optional.empty()
+                        : Optional.ofNullable(value(fallbackEvent, Property.SUMMARY)).filter(s -> !s.isBlank()))
+                .orElse("Untitled event");
+        Matcher cancelledTitle = CANCELLED_TITLE_PREFIX.matcher(title);
+        boolean titleMarksCancelled = cancelledTitle.find();
+        if (titleMarksCancelled) title = title.substring(cancelledTitle.end()).strip();
+        if (title.isBlank()) title = "Untitled event";
         if (title.length() > 200) title = title.substring(0, 200);
-        String description = Optional.ofNullable(value(event, Property.DESCRIPTION)).orElse("");
-        CalendarEventStatus status = switch (Optional.ofNullable(value(event, Property.STATUS)).orElse("CONFIRMED")) {
+        String description = Optional.ofNullable(value(event, Property.DESCRIPTION))
+                .orElseGet(() -> fallbackEvent == null
+                        ? "" : Optional.ofNullable(value(fallbackEvent, Property.DESCRIPTION)).orElse(""));
+        CalendarEventStatus status = switch (Optional.ofNullable(value(event, Property.STATUS))
+                .orElse("CONFIRMED").toUpperCase(Locale.ROOT)) {
             case "CANCELLED" -> CalendarEventStatus.CANCELLED;
             case "TENTATIVE" -> CalendarEventStatus.TENTATIVE;
             default -> CalendarEventStatus.CONFIRMED;
         };
+        if (titleMarksCancelled) status = CalendarEventStatus.CANCELLED;
         if (start instanceof LocalDate startDate) {
             LocalDate endDate = end instanceof LocalDate d ? d : startDate.plusDays(1);
             return new ImportedCalendarEvent(key, title, description, true, startDate, endDate.minusDays(1),
@@ -116,11 +145,12 @@ public class IcsCalendarParser {
                 instant(start, zone), instant(end, zone), zone.getId(), status);
     }
 
-    private Temporal endOf(VEvent event, Temporal start) {
+    private Temporal endOf(VEvent event, Temporal start, Temporal fallbackEnd, boolean useFallbackEnd) {
         DateProperty<?> end = event.getDateTimeEnd();
         if (end != null) return end.getDate();
         var duration = event.getDuration();
         if (duration != null) return (Temporal) duration.getDuration().addTo(start);
+        if (useFallbackEnd && fallbackEnd != null) return fallbackEnd;
         return start instanceof LocalDate date ? date.plusDays(1) : (Temporal) Duration.ofHours(1).addTo(start);
     }
 
@@ -162,7 +192,11 @@ public class IcsCalendarParser {
     }
 
     private String recurrenceId(VEvent event) {
-        return event.<DateProperty<?>>getProperty(Property.RECURRENCE_ID)
-                .map(property -> property.getDate().toString()).orElse(null);
+        DateProperty<?> recurrenceId = recurrenceIdProperty(event);
+        return recurrenceId == null ? null : recurrenceId.getDate().toString();
+    }
+
+    private DateProperty<?> recurrenceIdProperty(VEvent event) {
+        return event.<DateProperty<?>>getProperty(Property.RECURRENCE_ID).orElse(null);
     }
 }
