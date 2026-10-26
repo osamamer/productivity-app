@@ -349,6 +349,42 @@ export function CreateStatForm({
         }
     };
 
+    const deleteFutureRecurringTasks = async () => {
+        if (!initialDefinition?.recurringTaskSeriesId || deletingRecurringTask) return;
+
+        setDeletingRecurringTask(true);
+        setDisconnectError(null);
+        const previousDefinition = initialDefinition;
+        const optimisticDefinition: StatDefinition = {
+            ...previousDefinition,
+            recurringTaskSeriesId: null,
+        };
+        const operationId = `stat-recurring-future-delete-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        if (onUpdatedOptimistically && onUpdateFailed) {
+            onUpdatedOptimistically(optimisticDefinition, operationId, previousDefinition);
+            setDeleteRecurringTaskOpen(false);
+            onCancel();
+            void statService.deleteRecurringTaskFutureOccurrences(initialDefinition.id)
+                .then(definition => onUpdated?.(definition, operationId))
+                .catch(error => {
+                    console.error('Failed to delete future recurring stat tasks:', error);
+                    onUpdateFailed(operationId, previousDefinition);
+                });
+            setDeletingRecurringTask(false);
+            return;
+        }
+        try {
+            const definition = await statService.deleteRecurringTaskFutureOccurrences(initialDefinition.id);
+            setDeleteRecurringTaskOpen(false);
+            onUpdated?.(definition);
+        } catch (error) {
+            console.error('Failed to delete future recurring stat tasks:', error);
+            setDisconnectError('Could not delete future recurring tasks. Please try again.');
+        } finally {
+            setDeletingRecurringTask(false);
+        }
+    };
+
     return (
         <Box
             component="form"
@@ -608,9 +644,13 @@ export function CreateStatForm({
             >
                 <DialogTitle>Remove recurring tasks?</DialogTitle>
                 <DialogContent>
+                    <Typography variant="body2" color="text.secondary">
+                        Delete upcoming tasks and stop the schedule, while keeping past tasks. You can also disconnect
+                        the schedule or delete the whole series.
+                    </Typography>
                     {disconnectError && <FormHelperText error sx={{ mt: 1 }}>{disconnectError}</FormHelperText>}
                 </DialogContent>
-                <DialogActions>
+                <DialogActions sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
                     <Button
                         onClick={() => setDeleteRecurringTaskOpen(false)}
                         disabled={deletingRecurringTask || disconnecting}
@@ -622,6 +662,14 @@ export function CreateStatForm({
                         disabled={deletingRecurringTask || disconnecting}
                     >
                         {disconnecting ? 'Disconnecting…' : 'Disconnect'}
+                    </Button>
+                    <Button
+                        color="error"
+                        variant="outlined"
+                        onClick={() => { void deleteFutureRecurringTasks(); }}
+                        disabled={deletingRecurringTask || disconnecting}
+                    >
+                        {deletingRecurringTask ? 'Deleting…' : 'Delete future tasks'}
                     </Button>
                     <Button
                         color="error"

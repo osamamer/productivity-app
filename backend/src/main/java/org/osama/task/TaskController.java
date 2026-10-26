@@ -68,8 +68,58 @@ public class TaskController {
             @RequestParam(defaultValue = "0")
             Integer offset
     ) {
-        String userId = currentUserService.getCurrentUserId();
-        TaskQuery query = TaskQuery.builder()
+        TaskQuery query = buildTaskQuery(date, period, completed, parentId, minImportance,
+                tag, projectId, scheduled);
+
+        List<Task> tasks = limit == null
+                ? taskService.findTasks(query)
+                : taskService.findTasks(query, limit, offset);
+        return ResponseEntity.ok(tasks);
+    }
+
+    @GetMapping("/page")
+    public ResponseEntity<List<TaskPageTaskDto>> getTaskPageTasks(
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+            LocalDate date,
+
+            @RequestParam(required = false)
+            TaskQuery.DatePeriod period,
+
+            @RequestParam(required = false)
+            Boolean completed,
+
+            @RequestParam(required = false)
+            String parentId,
+
+            @RequestParam(required = false)
+            Integer minImportance,
+
+            @RequestParam(required = false)
+            String tag,
+
+            @RequestParam(required = false)
+            String projectId,
+
+            @RequestParam(required = false)
+            Boolean scheduled,
+
+            @RequestParam(required = false)
+            Integer limit,
+
+            @RequestParam(defaultValue = "0")
+            Integer offset
+    ) {
+        TaskQuery query = buildTaskQuery(date, period, completed, parentId, minImportance,
+                tag, projectId, scheduled);
+
+        return ResponseEntity.ok(taskService.findTaskPageTasks(query, limit, offset));
+    }
+
+    private TaskQuery buildTaskQuery(LocalDate date, TaskQuery.DatePeriod period, Boolean completed,
+                                     String parentId, Integer minImportance, String tag, String projectId,
+                                     Boolean scheduled) {
+        return TaskQuery.builder()
                 .date(date)
                 .period(period)
                 .completed(completed)
@@ -78,13 +128,8 @@ public class TaskController {
                 .tag(tag)
                 .projectId(projectId)
                 .scheduled(scheduled)
-                .userId(userId)
+                .userId(currentUserService.getCurrentUserId())
                 .build();
-
-        List<Task> tasks = limit == null
-                ? taskService.findTasks(query)
-                : taskService.findTasks(query, limit, offset);
-        return ResponseEntity.ok(tasks);
     }
 
     @PutMapping("/order")
@@ -183,6 +228,12 @@ public class TaskController {
     @DeleteMapping("/{taskId}/occurrence")
     public ResponseEntity<TaskDeletionReceipt> deleteTaskOccurrence(@PathVariable String taskId) {
         return ResponseEntity.ok(taskService.deleteTaskOccurrence(taskId, currentUserService.getCurrentUserId()));
+    }
+
+    @DeleteMapping("/{taskId}/future-occurrences")
+    public ResponseEntity<TaskDeletionReceipt> deleteTaskFutureOccurrences(@PathVariable String taskId) {
+        return ResponseEntity.ok(taskService.deleteTaskFutureOccurrences(
+                taskId, currentUserService.getCurrentUserId()));
     }
 
     @PostMapping("/deletions/restore")

@@ -38,3 +38,7 @@ cd backend && ./mvnw -B -ntp -Dtest=EndToEndTest,TaskProjectAssignmentTest,Menta
 - **Mobile background audio** (`audio-mode.test.mjs`): silent-mode/background playback settings, interruption mode, and safe handling when native configuration is unavailable or fails.
 
 The client suites use Node's built-in test runner. Web recurrence tests use Vite's SSR transformer, so the web job installs its existing npm dependencies; other cases import production TypeScript helpers directly. They need Node 22 but do not launch a browser or emulator, or start backend services.
+
+## Calendar popup browser regression
+
+Run `cd frontend/react && npx playwright test -c playwright.calendar.config.ts` after installing Playwright Chromium (`npx playwright install chromium`). This separate browser suite starts Vite and renders the real `MonthCalendar` with fixture tasks and intercepted API responses; it needs no backend or account. It follows a lower-row Stat group → task editor click, delays recurrence loading until after the initial measurement, checks that the expanded editor retains a 12px bottom margin and its horizontal anchor without centering or internal clipping, and repeats after reopening. It runs both in the page and in a shorter embedded frame to check frame-local bounds. Busy-calendar cases also check initial centering on today without resetting later manual scrolling, and a tall day expansion staying below the calendar header during scrolling and window resizing.

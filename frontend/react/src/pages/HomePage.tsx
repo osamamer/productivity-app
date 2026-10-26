@@ -74,7 +74,7 @@ type BulkAction = 'complete' | 'reopen' | 'move-to-today' | 'move-to-date' | 'cl
 type DeleteRequest =
     | { kind: 'single' | 'bulk'; tasks: Task[]; anchorEl: HTMLElement }
     | { kind: 'group'; group: TaskGroup; tasks: Task[]; anchorEl: HTMLElement };
-type DeleteScope = 'occurrence' | 'series';
+type DeleteScope = 'occurrence' | 'future' | 'series';
 type TaskContextMenuState = { task: Task; top: number; left: number; anchorEl: HTMLElement };
 type TaskReminderEditorState = { taskId: string; top: number; left: number };
 type TaskFeedback = {
@@ -93,9 +93,11 @@ type PendingHomeDateEdit = {
     originalIndex: number;
 };
 
+type HomeTaskListScope = 'today' | 'older';
+
 type TaskListItem =
     | { kind: 'task'; task: Task; renderKey: string }
-    | { kind: 'group'; group: TaskGroup; tasks: Task[]; renderKey: string };
+    | { kind: 'group'; group: TaskGroup; tasks: Task[]; renderKey: string; expansionId: string };
 type SelectionEntity =
     | { kind: 'task'; id: string }
     | { kind: 'group'; id: string };
@@ -107,6 +109,40 @@ type TodayDropPlacement =
     | { kind: 'task'; targetTaskId: string; edge: DropEdge }
     | { kind: 'group'; targetGroup: TaskGroup; edge: DropEdge }
     | { kind: 'edge'; edge: 'top' | 'bottom' };
+
+function groupExpansionId(group: TaskGroup, scope: HomeTaskListScope): string {
+    return group.isStatGroup ? `stat-group:${scope}:${group.groupId}` : group.groupId;
+}
+
+function collapsedHomeGroupIds(groups: TaskGroup[]): Set<string> {
+    return new Set(groups.flatMap(group => group.isStatGroup
+        ? [groupExpansionId(group, 'today'), groupExpansionId(group, 'older')]
+        : [group.groupId]));
+}
+
+function reconcileCollapsedHomeGroupIds(
+    previousCollapsed: Set<string>,
+    previousGroups: TaskGroup[],
+    nextGroups: TaskGroup[],
+): Set<string> {
+    const knownExpansionIds = new Set(previousGroups.flatMap(group => group.isStatGroup
+        ? [groupExpansionId(group, 'today'), groupExpansionId(group, 'older')]
+        : [group.groupId]));
+    const nextCollapsed = new Set<string>();
+
+    nextGroups.forEach(group => {
+        const expansionIds = group.isStatGroup
+            ? [groupExpansionId(group, 'today'), groupExpansionId(group, 'older')]
+            : [group.groupId];
+        expansionIds.forEach(expansionId => {
+            if (!knownExpansionIds.has(expansionId) || previousCollapsed.has(expansionId)) {
+                nextCollapsed.add(expansionId);
+            }
+        });
+    });
+
+    return nextCollapsed;
+}
 
 function requestHasRecurringTasks(request: DeleteRequest): boolean {
     return request.tasks.some(task => Boolean(task.taskSeriesId));
@@ -121,7 +157,29 @@ function tasksForDeleteScope(request: DeleteRequest, scope: DeleteScope, allTask
             .map(task => task.taskSeriesId)
             .filter((seriesId): seriesId is string => Boolean(seriesId)),
     );
-    const affectedTasks = new Map(request.tasks.map(task => [task.taskId, task]));
+    const affectedTasks = new Map<string, Task>();
+    if (scope === 'future') {
+        const boundaryBySeries = new Map<string, string>();
+        request.tasks.forEach(task => {
+            if (!task.taskSeriesId) return;
+            const boundary = task.seriesOccurrenceAt ?? task.scheduledPerformDateTime;
+            if (!boundary) return;
+            const existing = boundaryBySeries.get(task.taskSeriesId);
+            if (!existing || boundary < existing) boundaryBySeries.set(task.taskSeriesId, boundary);
+        });
+        [...request.tasks, ...allTasks].forEach(task => {
+            if (!task.taskSeriesId) {
+                if (selectedTaskIds.has(task.taskId)) affectedTasks.set(task.taskId, task);
+                return;
+            }
+            const boundary = boundaryBySeries.get(task.taskSeriesId);
+            const occurrenceAt = task.seriesOccurrenceAt ?? task.scheduledPerformDateTime;
+            if (boundary && occurrenceAt && occurrenceAt > boundary) affectedTasks.set(task.taskId, task);
+        });
+        return [...affectedTasks.values()];
+    }
+
+    request.tasks.forEach(task => affectedTasks.set(task.taskId, task));
     allTasks.forEach(task => {
         if (selectedSeriesIds.has(task.taskSeriesId ?? '')) affectedTasks.set(task.taskId, task);
     });
@@ -135,10 +193,17 @@ async function deleteTasksForScope(tasks: Task[], scope: DeleteScope): Promise<T
     const deletedSeriesIds = new Set<string>();
     const options = { notifyResource: false };
     const operations = tasks.flatMap(task => {
-        if (scope === 'series' && task.taskSeriesId) {
+        if ((scope === 'series' || scope === 'future') && task.taskSeriesId) {
             if (deletedSeriesIds.has(task.taskSeriesId)) return [];
             deletedSeriesIds.add(task.taskSeriesId);
-            return [() => taskService.deleteTask(task.taskId, options)];
+            const seriesTasks = tasks.filter(candidate => candidate.taskSeriesId === task.taskSeriesId);
+            const boundaryTask = seriesTasks.sort((first, second) => (
+                (first.seriesOccurrenceAt ?? first.scheduledPerformDateTime ?? '')
+                    .localeCompare(second.seriesOccurrenceAt ?? second.scheduledPerformDateTime ?? '')
+            ))[0] ?? task;
+            return [() => scope === 'future'
+                ? taskService.deleteTaskFutureOccurrences(boundaryTask.taskId, options)
+                : taskService.deleteTask(task.taskId, options)];
         }
 
         return [() => scope === 'occurrence'
@@ -268,12 +333,20 @@ function buildTaskListItems(
     tasks: Task[],
     groups: TaskGroup[],
     getTaskRenderKey: (taskId: string) => string,
+    scope: HomeTaskListScope,
+    anchorTasks: Task[] = tasks,
 ): TaskListItem[] {
     const visibleTaskIds = new Set(tasks.map(task => task.taskId));
+    const visibleTasksById = new Map(tasks.map(task => [task.taskId, task]));
+    const anchorIndexByTaskId = new Map(anchorTasks.map((task, index) => [task.taskId, index] as const));
     const groupByTaskId = new Map<string, TaskGroup>();
     const tasksByGroupId = new Map<string, Task[]>();
 
-    [...groups].sort((first, second) => first.displayOrder - second.displayOrder)
+    groups
+        .map(group => group.linkedToMentalThread || group.taskIds.some(taskId => (
+            visibleTasksById.get(taskId)?.mentalThreadId
+        )) ? { ...group, linkedToMentalThread: true } : group)
+        .sort((first, second) => first.displayOrder - second.displayOrder)
         .forEach(group => group.taskIds.forEach(taskId => {
             if (visibleTaskIds.has(taskId) && !groupByTaskId.has(taskId)) {
                 groupByTaskId.set(taskId, group);
@@ -294,21 +367,82 @@ function buildTaskListItems(
     tasks.forEach(task => {
         const group = groupByTaskId.get(task.taskId);
         if (!group) {
-            items.push({ kind: 'task', task, renderKey: getTaskRenderKey(task.taskId) });
+            items.push({
+                kind: 'task',
+                task,
+                renderKey: getTaskRenderKey(task.taskId),
+            });
             return;
         }
         if (emittedGroupIds.has(group.groupId)) return;
 
         emittedGroupIds.add(group.groupId);
+        const groupTasks = tasksByGroupId.get(group.groupId) ?? [];
+        if ((group.linkedToMentalThread || group.isStatGroup) && groupTasks.length === 1) {
+            const singletonTask = groupTasks[0];
+            items.push({
+                kind: 'task',
+                task: singletonTask,
+                renderKey: getTaskRenderKey(singletonTask.taskId),
+            });
+            return;
+        }
+
         items.push({
             kind: 'group',
             group,
-            tasks: tasksByGroupId.get(group.groupId) ?? [],
+            tasks: groupTasks,
             renderKey: `group:${group.groupId}`,
+            expansionId: groupExpansionId(group, scope),
         });
     });
 
-    return items;
+    return items
+        .map((item, index) => {
+            const anchorIndex = item.kind === 'task'
+                ? anchorIndexByTaskId.get(item.task.taskId)
+                : item.group.taskIds
+                    .map(taskId => anchorIndexByTaskId.get(taskId))
+                    .filter((taskIndex): taskIndex is number => taskIndex !== undefined)
+                    .reduce<number | undefined>(
+                        (earliest, taskIndex) => earliest === undefined ? taskIndex : Math.min(earliest, taskIndex),
+                        undefined,
+                    );
+            return { item, index, anchorIndex: anchorIndex ?? index };
+        })
+        .sort((first, second) => first.anchorIndex - second.anchorIndex || first.index - second.index)
+        .map(({ item }) => item);
+}
+
+function buildCompletionGroupTaskIdsByTaskId(
+    items: TaskListItem[],
+    scopeTasks: Task[],
+): Map<string, string[]> {
+    const scopeTaskIds = new Set([
+        ...scopeTasks.map(task => task.taskId),
+        ...items.flatMap(item => item.kind === 'task'
+            ? [item.task.taskId]
+            : item.tasks.map(task => task.taskId)),
+    ]);
+    const groupTaskIdsByTaskId = new Map<string, string[]>();
+
+    items.forEach(item => {
+        if (item.kind !== 'group') return;
+
+        const groupTaskIds = item.group.taskIds.filter(taskId => scopeTaskIds.has(taskId));
+        if (groupTaskIds.length < 2) return;
+        groupTaskIds.forEach(taskId => groupTaskIdsByTaskId.set(taskId, groupTaskIds));
+    });
+
+    return groupTaskIdsByTaskId;
+}
+
+function mergeCompletionGroupTaskIdsByTaskId(
+    ...groupMaps: Map<string, string[]>[]
+): Map<string, string[]> {
+    const merged = new Map<string, string[]>();
+    groupMaps.forEach(groupMap => groupMap.forEach((taskIds, taskId) => merged.set(taskId, taskIds)));
+    return merged;
 }
 
 function taskListItemId(item: TaskListItem): string {
@@ -366,12 +500,86 @@ type AnimatedTaskListProps = {
     animateRemovals?: boolean;
     immediateRemovalTaskIds?: Set<string>;
     entrySource?: { taskId: string; top: number } | null;
+    layoutVisibilityKey?: unknown;
+    layoutScope: HomeTaskListScope;
+    layoutSnapshotRef: React.MutableRefObject<HomeTaskLayoutSnapshot | null>;
 };
 
-const TASK_EXIT_DURATION_MS = 240;
-const TASK_REORDER_DURATION_MS = 280;
+type HomeTaskLayoutSnapshot = {
+    itemRects: Map<string, DOMRect>;
+    taskRectsById: Map<string, DOMRect>;
+    completionChange: boolean;
+};
+
+const TASK_EXIT_DURATION_MS = 360;
+const TASK_REORDER_DURATION_MS = 340;
+const TASK_COMPLETION_REORDER_DURATION_MS = 440;
+const TASK_REORDER_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
+const TASK_COMPLETION_REORDER_EASING = 'cubic-bezier(0.4, 0, 0.2, 1)';
 const EDGE_DROP_ZONE_OUTSIDE_REACH = 72;
 const EDGE_DROP_ZONE_LIST_OVERLAP = 16;
+
+type AnimatedGroupTaskRowsProps = {
+    tasks: Task[];
+    renderTask: (task: Task) => React.ReactNode;
+};
+
+function AnimatedGroupTaskRows({ tasks, renderTask }: AnimatedGroupTaskRowsProps) {
+    const [exitingTasks, setExitingTasks] = useState<Array<{ task: Task; index: number }>>([]);
+    const previousTasksRef = useRef(tasks);
+    const exitingTasksRef = useRef<Array<{ task: Task; index: number }>>([]);
+    const currentTaskIdsRef = useRef(new Set(tasks.map(task => task.taskId)));
+
+    useLayoutEffect(() => {
+        const nextTaskIds = new Set(tasks.map(task => task.taskId));
+        const previousTasks = previousTasksRef.current;
+        const nextExitingTasks = exitingTasksRef.current.filter(({ task }) => !nextTaskIds.has(task.taskId));
+        previousTasks.forEach((task, index) => {
+            if (!nextTaskIds.has(task.taskId)
+                && !nextExitingTasks.some(exiting => exiting.task.taskId === task.taskId)) {
+                nextExitingTasks.push({ task, index });
+            }
+        });
+
+        const exitingChanged = nextExitingTasks.length !== exitingTasksRef.current.length
+            || nextExitingTasks.some((exiting, index) => {
+                const previous = exitingTasksRef.current[index];
+                return !previous || previous.task.taskId !== exiting.task.taskId || previous.index !== exiting.index;
+            });
+        exitingTasksRef.current = nextExitingTasks;
+        previousTasksRef.current = tasks;
+        currentTaskIdsRef.current = nextTaskIds;
+        if (exitingChanged) setExitingTasks(nextExitingTasks);
+    }, [tasks]);
+
+    const currentTaskIdSet = new Set(tasks.map(task => task.taskId));
+    const displayedRows = tasks.map(task => ({ task, exiting: false }));
+    [...exitingTasks]
+        .filter(({ task }) => !currentTaskIdSet.has(task.taskId))
+        .sort((first, second) => first.index - second.index)
+        .forEach(({ task, index }) => {
+            displayedRows.splice(Math.min(index, displayedRows.length), 0, { task, exiting: true });
+        });
+
+    return displayedRows.map(({ task, exiting }) => (
+        <Collapse
+            key={task.taskId}
+            in={!exiting}
+            timeout={TASK_EXIT_DURATION_MS}
+            unmountOnExit
+            onExited={() => {
+                if (currentTaskIdsRef.current.has(task.taskId)) return;
+                const remainingTasks = exitingTasksRef.current.filter(item => item.task.taskId !== task.taskId);
+                exitingTasksRef.current = remainingTasks;
+                setExitingTasks(remainingTasks);
+            }}
+        >
+            <Box data-task-exiting={exiting ? 'true' : undefined}>
+                {renderTask(task)}
+            </Box>
+        </Collapse>
+    ));
+}
 
 function AnimatedTaskList({
     items,
@@ -380,6 +588,9 @@ function AnimatedTaskList({
     animateRemovals = true,
     immediateRemovalTaskIds,
     entrySource = null,
+    layoutVisibilityKey,
+    layoutScope,
+    layoutSnapshotRef,
 }: AnimatedTaskListProps) {
     const [displayedItems, setDisplayedItems] = useState(items);
     const [exitingItemIds, setExitingItemIds] = useState<Set<string>>(() => new Set());
@@ -389,14 +600,17 @@ function AnimatedTaskList({
     const itemElementsRef = useRef(new Map<string, HTMLDivElement>());
     const previousItemRectsRef = useRef(new Map<string, DOMRect>());
     const previousGroupTaskRectsRef = useRef(new Map<string, Map<string, DOMRect>>());
+    const previousTaskRectsByIdRef = useRef(new Map<string, DOMRect>());
     const previousLayoutRef = useRef<{
         itemIds: string[];
         groupTaskIds: Map<string, string[]>;
+        taskCompletionById: Map<string, boolean>;
+        taskOwnerById: Map<string, string>;
     } | null>(null);
     const previousLayoutSignatureRef = useRef<string | null>(null);
     const animationTimersRef = useRef(new Map<string, number>());
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         if (!animateRemovals) {
             exitingItemIdsRef.current.clear();
             currentItemIdsRef.current = new Set(items.map(taskListItemId));
@@ -490,13 +704,76 @@ function AnimatedTaskList({
     );
 
     useLayoutEffect(() => {
-        if (previousLayoutSignatureRef.current === layoutSignature) return;
+        const measureTaskRects = () => {
+            const groupTaskRects = new Map<string, Map<string, DOMRect>>();
+            const taskRectsById = new Map<string, DOMRect>();
+            renderedItems.forEach(item => {
+                const itemElement = itemElementsRef.current.get(taskListItemId(item));
+                if (!itemElement) return;
+
+                const taskRects = new Map<string, DOMRect>();
+                itemElement.querySelectorAll<HTMLElement>('[data-task-id]').forEach(taskElement => {
+                    if (taskElement.closest('[data-task-exiting="true"]')) return;
+                    const taskId = taskElement.dataset.taskId;
+                    if (!taskId) return;
+                    const rect = taskElement.getBoundingClientRect();
+                    taskRects.set(taskId, rect);
+                    taskRectsById.set(taskId, rect);
+                });
+                if (item.kind === 'group') groupTaskRects.set(item.renderKey, taskRects);
+            });
+            return { groupTaskRects, taskRectsById };
+        };
+
+        const signatureChanged = previousLayoutSignatureRef.current !== layoutSignature;
+        if (!signatureChanged) {
+            if (animationTimersRef.current.size > 0) return;
+
+            const currentItemRects = new Map<string, DOMRect>();
+            renderedItems.forEach(item => {
+                const itemId = taskListItemId(item);
+                const itemElement = itemElementsRef.current.get(itemId);
+                if (!itemElement) return;
+
+                currentItemRects.set(itemId, itemElement.getBoundingClientRect());
+            });
+            previousItemRectsRef.current = currentItemRects;
+            const measuredGroupTaskRects = measureTaskRects();
+            previousGroupTaskRectsRef.current = measuredGroupTaskRects.groupTaskRects;
+            previousTaskRectsByIdRef.current = measuredGroupTaskRects.taskRectsById;
+            return;
+        }
         previousLayoutSignatureRef.current = layoutSignature;
         const nextItemIds = renderedItems.map(taskListItemId);
         const nextGroupTaskIds = new Map<string, string[]>(renderedItems
             .filter((item): item is Extract<TaskListItem, { kind: 'group' }> => item.kind === 'group')
             .map(item => [item.renderKey, item.tasks.map(task => task.taskId)] as const));
+        const nextTaskCompletionById = new Map<string, boolean>();
+        const nextTaskOwnerById = new Map<string, string>();
+        renderedItems.forEach(item => {
+            if (item.kind === 'task') {
+                nextTaskCompletionById.set(item.task.taskId, item.task.completed);
+                nextTaskOwnerById.set(item.task.taskId, taskListItemId(item));
+            } else {
+                item.tasks.forEach(task => {
+                    nextTaskCompletionById.set(task.taskId, task.completed);
+                    nextTaskOwnerById.set(task.taskId, item.renderKey);
+                });
+            }
+        });
         const previousLayout = previousLayoutRef.current;
+        const layoutSnapshot = layoutSnapshotRef.current;
+        const completionStatusChanged = layoutSnapshot?.completionChange === true
+            || (previousLayout !== null && Array.from(nextTaskCompletionById).some(([taskId, completed]) => (
+                previousLayout.taskCompletionById.has(taskId)
+                && previousLayout.taskCompletionById.get(taskId) !== completed
+            )));
+        const layoutAnimationDuration = completionStatusChanged
+            ? TASK_COMPLETION_REORDER_DURATION_MS
+            : TASK_REORDER_DURATION_MS;
+        const layoutAnimationEasing = completionStatusChanged
+            ? TASK_COMPLETION_REORDER_EASING
+            : TASK_REORDER_EASING;
         const previousItemIdSet = new Set(previousLayout?.itemIds ?? []);
         const nextItemIdSet = new Set(nextItemIds);
         const sameItemSet = previousLayout !== null
@@ -508,18 +785,18 @@ function AnimatedTaskList({
         const onlyItemAdditions = previousLayout !== null
             && nextItemIds.length > previousLayout.itemIds.length
             && previousLayout.itemIds.every(itemId => nextItemIdSet.has(itemId));
-        const previousGroupTaskIdsByItem = previousLayout?.groupTaskIds;
-        const groupTaskStructureChanged = previousGroupTaskIdsByItem !== undefined
-            && Array.from(nextGroupTaskIds).some(([groupId, taskIds]) => {
-                const previousTaskIds = previousGroupTaskIdsByItem.get(groupId);
-                return previousTaskIds !== undefined
-                    && (previousTaskIds.length !== taskIds.length
-                        || previousTaskIds.some((taskId, index) => taskId !== taskIds[index]));
-            });
         const nextItemRects = new Map<string, DOMRect>();
         const nextGroupTaskRects = new Map<string, Map<string, DOMRect>>();
+        const nextTaskRectsById = new Map<string, DOMRect>();
 
-        const animateElement = (key: string, element: HTMLElement, previousRect: DOMRect, nextRect: DOMRect) => {
+        const animateElement = (
+            key: string,
+            element: HTMLElement,
+            previousRect: DOMRect,
+            nextRect: DOMRect,
+            duration = layoutAnimationDuration,
+            easing = layoutAnimationEasing,
+        ) => {
             const deltaX = previousRect.left - nextRect.left;
             const deltaY = previousRect.top - nextRect.top;
             if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) return;
@@ -528,18 +805,26 @@ function AnimatedTaskList({
             if (previousTimer !== undefined) window.clearTimeout(previousTimer);
             element.style.transition = 'none';
             element.style.transform = `translate3d(${deltaX}px, ${deltaY}px, 0)`;
+            element.dataset.homeFlipActive = 'true';
             void element.offsetHeight;
-            element.style.transition = `transform ${TASK_REORDER_DURATION_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`;
+            element.style.transition = `transform ${duration}ms ${easing}`;
             element.style.transform = 'translate3d(0, 0, 0)';
             const timer = window.setTimeout(() => {
                 element.style.transition = '';
                 element.style.transform = '';
+                delete element.dataset.homeFlipActive;
                 animationTimersRef.current.delete(key);
-            }, TASK_REORDER_DURATION_MS);
+            }, duration);
             animationTimersRef.current.set(key, timer);
         };
 
-        const animateEntry = (key: string, element: HTMLElement, sourceTop: number | null = null) => {
+        const animateEntry = (
+            key: string,
+            element: HTMLElement,
+            sourceTop: number | null = null,
+            duration = layoutAnimationDuration,
+            easing = layoutAnimationEasing,
+        ) => {
             const previousTimer = animationTimersRef.current.get(key);
             if (previousTimer !== undefined) window.clearTimeout(previousTimer);
             const offsetY = sourceTop === null
@@ -548,16 +833,18 @@ function AnimatedTaskList({
             element.style.transition = 'none';
             element.style.opacity = sourceTop === null ? '0' : '1';
             element.style.transform = `translate3d(0, ${offsetY}px, 0)`;
+            element.dataset.homeFlipActive = 'true';
             void element.offsetHeight;
-            element.style.transition = `opacity ${TASK_REORDER_DURATION_MS}ms ease-out, transform ${TASK_REORDER_DURATION_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`;
+            element.style.transition = `opacity ${duration}ms ease-out, transform ${duration}ms ${easing}`;
             element.style.opacity = '1';
             element.style.transform = 'translate3d(0, 0, 0)';
             const timer = window.setTimeout(() => {
                 element.style.transition = '';
                 element.style.opacity = '';
                 element.style.transform = '';
+                delete element.dataset.homeFlipActive;
                 animationTimersRef.current.delete(key);
-            }, TASK_REORDER_DURATION_MS);
+            }, duration);
             animationTimersRef.current.set(key, timer);
         };
 
@@ -568,9 +855,10 @@ function AnimatedTaskList({
 
             const itemRect = itemElement.getBoundingClientRect();
             nextItemRects.set(itemId, itemRect);
-            const previousItemRect = previousItemRectsRef.current.get(itemId);
+            const previousItemRect = layoutSnapshot?.itemRects.get(itemId)
+                ?? previousItemRectsRef.current.get(itemId);
             const itemOrderChanged = sameItemSet && !sameItemOrder;
-            if (itemOrderChanged || onlyItemAdditions || (sameItemOrder && groupTaskStructureChanged)) {
+            if (itemOrderChanged || onlyItemAdditions) {
                 if (previousItemRect) animateElement(`item:${itemId}`, itemElement, previousItemRect, itemRect);
                 else if (onlyItemAdditions) {
                     const containsReturnTask = item.kind === 'group'
@@ -584,41 +872,90 @@ function AnimatedTaskList({
                 }
             }
 
-            if (item.kind !== 'group') return;
+            if (item.kind === 'task') {
+                const taskElement = itemElement.querySelector<HTMLElement>('[data-task-id]');
+                const previousOwner = previousLayout?.taskOwnerById.get(item.task.taskId);
+                const previousTaskRect = layoutSnapshot?.taskRectsById.get(item.task.taskId)
+                    ?? previousTaskRectsByIdRef.current.get(item.task.taskId);
+                if (taskElement) {
+                    const taskRect = taskElement.getBoundingClientRect();
+                    nextTaskRectsById.set(item.task.taskId, taskRect);
+                    if (previousOwner && previousOwner !== itemId && previousTaskRect) {
+                        animateElement(`task:${item.task.taskId}`, taskElement, previousTaskRect, taskRect);
+                    }
+                }
+                return;
+            }
+
             const groupTaskRects = new Map<string, DOMRect>();
             const previousGroupTaskIds = previousLayout?.groupTaskIds.get(itemId) ?? [];
             const nextGroupTaskIdsForItem = nextGroupTaskIds.get(itemId) ?? [];
             const nextGroupTaskIdSet = new Set(nextGroupTaskIdsForItem);
             const groupTaskOrderChanged = previousGroupTaskIds.length === nextGroupTaskIdsForItem.length
-                && previousGroupTaskIds.some((id, index) => id !== nextGroupTaskIdsForItem[index]);
+                && previousGroupTaskIds.some((taskId, index) => taskId !== nextGroupTaskIdsForItem[index]);
             const onlyGroupTaskAdditions = previousGroupTaskIds.length > 0
                 && nextGroupTaskIdsForItem.length > previousGroupTaskIds.length
-                && previousGroupTaskIds.every(id => nextGroupTaskIdSet.has(id));
-            const groupTaskLayoutChanged = groupTaskOrderChanged || onlyGroupTaskAdditions;
-            const groupMoved = previousItemRect
+                && previousGroupTaskIds.every(taskId => nextGroupTaskIdSet.has(taskId));
+            const previousGroupTaskIdSet = new Set(previousGroupTaskIds);
+            const onlyGroupTaskRemovals = nextGroupTaskIdsForItem.length > 0
+                && nextGroupTaskIdsForItem.length < previousGroupTaskIds.length
+                && nextGroupTaskIdsForItem.every(taskId => previousGroupTaskIdSet.has(taskId));
+            const groupTaskLayoutChanged = groupTaskOrderChanged || onlyGroupTaskAdditions || onlyGroupTaskRemovals;
+            const groupMoved = previousItemRect !== undefined
                 && (Math.abs(previousItemRect.left - itemRect.left) >= 1
                     || Math.abs(previousItemRect.top - itemRect.top) >= 1);
+            const previousGroupTaskRects = previousGroupTaskRectsRef.current.get(itemId);
+            const groupCompletionChanged = nextGroupTaskIdsForItem.some(taskId => (
+                previousLayout?.taskCompletionById.has(taskId)
+                && previousLayout.taskCompletionById.get(taskId) !== nextTaskCompletionById.get(taskId)
+            ));
+            const taskAnimationDuration = groupCompletionChanged
+                ? TASK_COMPLETION_REORDER_DURATION_MS
+                : TASK_REORDER_DURATION_MS;
+            const taskAnimationEasing = groupCompletionChanged
+                ? TASK_COMPLETION_REORDER_EASING
+                : TASK_REORDER_EASING;
+
             itemElement.querySelectorAll<HTMLElement>('[data-task-id]').forEach(taskElement => {
+                if (taskElement.closest('[data-task-exiting="true"]')) return;
                 const taskId = taskElement.dataset.taskId;
                 if (!taskId) return;
                 const taskRect = taskElement.getBoundingClientRect();
                 groupTaskRects.set(taskId, taskRect);
-                const previousTaskRect = previousGroupTaskRectsRef.current.get(itemId)?.get(taskId);
+                nextTaskRectsById.set(taskId, taskRect);
+                const previousTaskRect = layoutSnapshot?.taskRectsById.get(taskId)
+                    ?? previousTaskRectsByIdRef.current.get(taskId)
+                    ?? previousGroupTaskRects?.get(taskId);
                 const isReturnEntry = entrySource?.taskId === taskId && !previousTaskRect;
+                const previousOwner = previousLayout?.taskOwnerById.get(taskId);
                 if (isReturnEntry) {
-                    animateEntry(`task:${taskId}`, taskElement, entrySource.top);
+                    animateEntry(`task:${taskId}`, taskElement, entrySource.top, taskAnimationDuration, taskAnimationEasing);
+                } else if (previousOwner && previousOwner !== itemId && previousTaskRect) {
+                    animateElement(`task:${taskId}`, taskElement, previousTaskRect, taskRect,
+                        taskAnimationDuration, taskAnimationEasing);
                 } else if (sameItemOrder && !groupMoved && groupTaskLayoutChanged) {
-                    if (previousTaskRect) animateElement(`task:${taskId}`, taskElement, previousTaskRect, taskRect);
-                    else if (onlyGroupTaskAdditions) animateEntry(`task:${taskId}`, taskElement);
+                    if (previousTaskRect) {
+                        animateElement(`task:${taskId}`, taskElement, previousTaskRect, taskRect,
+                            taskAnimationDuration, taskAnimationEasing);
+                    } else if (onlyGroupTaskAdditions) {
+                        animateEntry(`task:${taskId}`, taskElement, null, taskAnimationDuration, taskAnimationEasing);
+                    }
                 }
             });
             nextGroupTaskRects.set(itemId, groupTaskRects);
         });
 
-        previousLayoutRef.current = { itemIds: nextItemIds, groupTaskIds: nextGroupTaskIds };
+        previousLayoutRef.current = {
+            itemIds: nextItemIds,
+            groupTaskIds: nextGroupTaskIds,
+            taskCompletionById: nextTaskCompletionById,
+            taskOwnerById: nextTaskOwnerById,
+        };
         previousItemRectsRef.current = nextItemRects;
         previousGroupTaskRectsRef.current = nextGroupTaskRects;
-    }, [entrySource, layoutSignature, renderedItems]);
+        previousTaskRectsByIdRef.current = nextTaskRectsById;
+        if (layoutSnapshotRef.current === layoutSnapshot) layoutSnapshotRef.current = null;
+    }, [entrySource, layoutSignature, layoutSnapshotRef, layoutVisibilityKey, renderedItems]);
 
     useEffect(() => () => {
         animationTimersRef.current.forEach(timer => window.clearTimeout(timer));
@@ -658,6 +995,9 @@ function AnimatedTaskList({
                                 if (element) itemElementsRef.current.set(itemId, element);
                                 else itemElementsRef.current.delete(itemId);
                             }}
+                            data-home-task-layout-scope={layoutScope}
+                            data-home-task-layout-item={itemId}
+                            data-home-list-exiting={exiting ? 'true' : undefined}
                             sx={{
                                 opacity: exiting ? 0 : 1,
                                 transform: exiting ? 'translateY(-4px)' : 'translateY(0)',
@@ -782,6 +1122,88 @@ function moveTaskDateToToday(task: Task): string {
     return formatLocalDateTime(nextDate);
 }
 
+function reorderTaskIdsForCompletion(
+    taskIds: string[],
+    taskId: string,
+    completed: boolean,
+    tasks: Task[],
+    completionGroupTaskIdsByTaskId: Map<string, string[]>,
+): string[] {
+    const insertAtCompletionBoundary = (remainingTaskIds: string[], movedTaskIds: string[]) => {
+        const taskById = new Map(tasks.map(candidate => [candidate.taskId, candidate]));
+        const openTaskIds = remainingTaskIds.filter(id => !taskById.get(id)?.completed);
+        const completedTaskIds = remainingTaskIds.filter(id => taskById.get(id)?.completed);
+        return [...openTaskIds, ...movedTaskIds, ...completedTaskIds];
+    };
+    const renderedGroupTaskIds = completionGroupTaskIdsByTaskId.get(taskId);
+    if (!renderedGroupTaskIds) {
+        const remainingTaskIds = taskIds.filter(id => id !== taskId);
+        return insertAtCompletionBoundary(remainingTaskIds, [taskId]);
+    }
+
+    const taskIdSet = new Set(taskIds);
+    const groupTaskIdsInCurrentOrder = renderedGroupTaskIds.filter(groupTaskId => taskIdSet.has(groupTaskId));
+    if (groupTaskIdsInCurrentOrder.length < 2) {
+        const remainingTaskIds = taskIds.filter(id => id !== taskId);
+        return insertAtCompletionBoundary(remainingTaskIds, [taskId]);
+    }
+
+    const tasksById = new Map(tasks.map(task => [task.taskId, task]));
+    const groupTasks = groupTaskIdsInCurrentOrder.map(groupTaskId => tasksById.get(groupTaskId));
+    if (groupTasks.some(groupTask => !groupTask)) return taskIds;
+
+    const allCompleted = groupTasks.every(groupTask => (
+        groupTask!.taskId === taskId ? completed : groupTask!.completed
+    ));
+    const allReopened = groupTasks.every(groupTask => (
+        groupTask!.taskId === taskId ? !completed : !groupTask!.completed
+    ));
+    // Keep a mixed group in its current position until it reaches a uniform completion state.
+    if (!allCompleted && !allReopened) return taskIds;
+
+    const groupTaskIds = new Set(groupTaskIdsInCurrentOrder);
+    const groupIdsInOrder = taskIds.filter(id => groupTaskIds.has(id));
+    if (groupIdsInOrder.length !== groupTaskIdsInCurrentOrder.length) return taskIds;
+
+    const remainingTaskIds = taskIds.filter(id => !groupTaskIds.has(id));
+    const nextTaskIds = insertAtCompletionBoundary(remainingTaskIds, groupIdsInOrder);
+    return nextTaskIds.every((id, index) => id === taskIds[index]) ? taskIds : nextTaskIds;
+}
+
+function reorderTaskIdsForCompletionChanges(
+    taskIds: string[],
+    changes: Array<{ taskId: string; completed: boolean }>,
+    tasks: Task[],
+    completionGroupTaskIdsByTaskId: Map<string, string[]>,
+): string[] {
+    let nextTaskIds = taskIds;
+    let nextTasks = tasks;
+    changes.forEach(({ taskId, completed }) => {
+        nextTaskIds = reorderTaskIdsForCompletion(
+            nextTaskIds,
+            taskId,
+            completed,
+            nextTasks,
+            completionGroupTaskIdsByTaskId,
+        );
+        nextTasks = nextTasks.map(task => task.taskId === taskId ? { ...task, completed } : task);
+    });
+    return nextTaskIds;
+}
+
+function reorderTaskSnapshot(tasks: Task[], orderedTaskIds: string[]): Task[] {
+    const taskIdSet = new Set(orderedTaskIds);
+    const orderedTasks = tasks.filter(task => taskIdSet.has(task.taskId));
+    const taskById = new Map(orderedTasks.map(task => [task.taskId, task]));
+    let nextOrderedTask = 0;
+    return tasks.map(task => {
+        if (!taskIdSet.has(task.taskId)) return task;
+        const orderedTask = taskById.get(orderedTaskIds[nextOrderedTask]);
+        nextOrderedTask += 1;
+        return orderedTask ?? task;
+    });
+}
+
 function createOptimisticTask(taskToCreate: TaskToCreate): Task {
     const now = new Date();
     const createdAt = formatLocalDateTime(now);
@@ -855,10 +1277,10 @@ export function HomePage() {
     const [bulkDateDraft, setBulkDateDraft] = useState(() => new Date());
     const [cachedGroups] = useState(() => taskGroupService.getCachedGroups());
     const [groups, setGroups] = useState<TaskGroup[] | null>(() => cachedGroups ?? null);
+    const groupsRef = useRef(groups);
+    groupsRef.current = groups;
     const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(
-        () => new Set([
-            ...(cachedGroups ?? []).map(group => group.groupId),
-        ]),
+        () => collapsedHomeGroupIds(cachedGroups ?? []),
     );
     const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
     const groupNameInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
@@ -894,6 +1316,54 @@ export function HomePage() {
     const groupTaskSubmissionRef = useRef(false);
     const activeDragRef = useRef<ActiveDrag | null>(null);
     const taskRenderKeysRef = useRef(new Map<string, string>());
+    const todayLayoutSnapshotRef = useRef<HomeTaskLayoutSnapshot | null>(null);
+    const olderLayoutSnapshotRef = useRef<HomeTaskLayoutSnapshot | null>(null);
+
+    const captureHomeTaskLayout = useCallback(() => {
+        const todaySnapshot: HomeTaskLayoutSnapshot = {
+            itemRects: new Map(),
+            taskRectsById: new Map(),
+            completionChange: true,
+        };
+        const olderSnapshot: HomeTaskLayoutSnapshot = {
+            itemRects: new Map(),
+            taskRectsById: new Map(),
+            completionChange: true,
+        };
+
+        document.querySelectorAll<HTMLElement>(
+            '[data-home-task-layout-scope][data-home-task-layout-item]',
+        ).forEach(itemElement => {
+            if (itemElement.dataset.homeListExiting === 'true') return;
+            const snapshot = itemElement.dataset.homeTaskLayoutScope === 'older'
+                ? olderSnapshot
+                : todaySnapshot;
+            const itemId = itemElement.dataset.homeTaskLayoutItem;
+            if (!itemId) return;
+
+            snapshot.itemRects.set(itemId, itemElement.getBoundingClientRect());
+            itemElement.querySelectorAll<HTMLElement>('[data-task-id]').forEach(taskElement => {
+                if (taskElement.closest('[data-task-exiting="true"]')) return;
+                const taskId = taskElement.dataset.taskId;
+                if (taskId) snapshot.taskRectsById.set(taskId, taskElement.getBoundingClientRect());
+            });
+        });
+
+        todayLayoutSnapshotRef.current = todaySnapshot;
+        olderLayoutSnapshotRef.current = olderSnapshot;
+        window.setTimeout(() => {
+            if (todayLayoutSnapshotRef.current === todaySnapshot) todayLayoutSnapshotRef.current = null;
+            if (olderLayoutSnapshotRef.current === olderSnapshot) olderLayoutSnapshotRef.current = null;
+        }, TASK_COMPLETION_REORDER_DURATION_MS + 80);
+
+        document.querySelectorAll<HTMLElement>('[data-home-flip-active="true"]').forEach(element => {
+            element.style.transition = 'none';
+            element.style.transform = '';
+            delete element.dataset.homeFlipActive;
+            void element.offsetHeight;
+            element.style.transition = '';
+        });
+    }, []);
 
     const rememberTaskRenderKey = useCallback((taskId: string, renderKey: string) => {
         if (!taskRenderKeysRef.current.has(taskId)) {
@@ -949,6 +1419,18 @@ export function HomePage() {
         setTaskFeedback({ id: taskFeedbackIdRef.current, severity, message });
     }, []);
 
+    function showTaskCreationDateFeedback(scheduledPerformDateTime?: string) {
+        if (!scheduledPerformDateTime) return;
+
+        const scheduledDate = new Date(scheduledPerformDateTime);
+        if (Number.isNaN(scheduledDate.getTime()) || isSameLocalDay(scheduledDate, new Date())) return;
+
+        showTaskFeedback(
+            'success',
+            `Task was created for ${formatTaskDateForFeedback(scheduledPerformDateTime)}`,
+        );
+    }
+
     const showUndoFeedback = useCallback((
         message: string,
         undo: () => void | Promise<void>,
@@ -983,12 +1465,41 @@ export function HomePage() {
         addTaskToState,
         replaceTaskInState,
         updateTaskInState,
+        updateTasksInState,
         removeTaskFromState,
         reorderTasksInState,
     } = useGlobalTasks({ prioritizeToday: true });
     const allTasksRef = useRef(allTasks);
     allTasksRef.current = allTasks;
     const manualTaskOrderRevisionRef = useRef(0);
+    const taskOrderMutationRef = useRef(Promise.resolve());
+    const completionMutationRef = useRef(new Map<string, Promise<void>>());
+    const completionRequestIdRef = useRef(new Map<string, number>());
+    const completionConfirmedStateRef = useRef(new Map<string, boolean>());
+
+    const saveTaskOrder = useCallback(async (
+        orderedTaskIds: string[],
+        expectedRevision = manualTaskOrderRevisionRef.current,
+        failOnError = false,
+    ) => {
+        const request = taskOrderMutationRef.current
+            .catch(() => {})
+            .then(async () => {
+                if (expectedRevision !== manualTaskOrderRevisionRef.current) return;
+                await taskService.reorderTasks(orderedTaskIds);
+            });
+        taskOrderMutationRef.current = request.then(() => {}, () => {});
+
+        try {
+            await request;
+        } catch (error) {
+            console.error('Error reordering tasks:', error);
+            if (expectedRevision === manualTaskOrderRevisionRef.current) {
+                await refreshTaskBuckets(true);
+            }
+            if (failOnError) throw error;
+        }
+    }, [refreshTaskBuckets]);
 
     const pendingDeletedTaskIdSet = useMemo(
         () => new Set(pendingDeletedTaskIds),
@@ -1237,13 +1748,23 @@ export function HomePage() {
         [focusedPomodoroTask, visibleTasks],
     );
     const taskListItems = useMemo(
-        () => buildTaskListItems(tasksBelowFocus, groups ?? [], getTaskRenderKey),
-        [getTaskRenderKey, groups, tasksBelowFocus],
+        () => buildTaskListItems(tasksBelowFocus, groups ?? [], getTaskRenderKey, 'today', homeTodayTasks),
+        [getTaskRenderKey, groups, homeTodayTasks, tasksBelowFocus],
     );
     const olderTaskListItems = useMemo(
-        () => buildTaskListItems(olderTasks, groups ?? [], getTaskRenderKey),
-        [getTaskRenderKey, groups, olderTasks],
+        () => buildTaskListItems(olderTasks, groups ?? [], getTaskRenderKey, 'older', pastTasks),
+        [getTaskRenderKey, groups, olderTasks, pastTasks],
     );
+    const focusedPomodoroTaskId = focusedPomodoroTask?.taskId;
+    const completionGroupTaskIdsByTaskId = useMemo(() => mergeCompletionGroupTaskIdsByTaskId(
+        buildCompletionGroupTaskIdsByTaskId(
+            taskListItems,
+            homeTodayTasks.filter(task => task.taskId !== focusedPomodoroTaskId),
+        ),
+        buildCompletionGroupTaskIdsByTaskId(olderTaskListItems, pastTasks),
+    ), [focusedPomodoroTaskId, homeTodayTasks, olderTaskListItems, pastTasks, taskListItems]);
+    const completionGroupTaskIdsByTaskIdRef = useRef(completionGroupTaskIdsByTaskId);
+    completionGroupTaskIdsByTaskIdRef.current = completionGroupTaskIdsByTaskId;
     const renderedSelectionEntities = useMemo(() => {
         const entities: SelectionEntity[] = focusedPomodoroTask
             ? [{ kind: 'task', id: focusedPomodoroTask.taskId }]
@@ -1257,7 +1778,7 @@ export function HomePage() {
                 }
 
                 entities.push({ kind: 'group', id: item.group.groupId });
-                if (!collapsedGroupIds.has(item.group.groupId)) {
+                if (!collapsedGroupIds.has(item.expansionId)) {
                     item.tasks.forEach(task => entities.push({ kind: 'task', id: task.taskId }));
                 }
             });
@@ -1389,11 +1910,18 @@ export function HomePage() {
     const refreshGroups = useCallback(async () => {
         try {
             const fetchedGroups = await taskGroupService.getGroups();
+            const previousGroups = groupsRef.current ?? [];
+            groupsRef.current = fetchedGroups;
             setGroups(fetchedGroups);
-            setCollapsedGroupIds(new Set(fetchedGroups.map(group => group.groupId)));
+            setCollapsedGroupIds(previous => reconcileCollapsedHomeGroupIds(
+                previous,
+                previousGroups,
+                fetchedGroups,
+            ));
         } catch (err) {
             console.error('Error fetching task groups:', err);
             setGroups([]);
+            groupsRef.current = [];
         }
     }, []);
 
@@ -1471,6 +1999,7 @@ export function HomePage() {
             }
             rememberTaskRenderKey(created.taskId, optimisticTask.taskId);
             replaceTaskInState(optimisticTask.taskId, created);
+            showTaskCreationDateFeedback(task.scheduledPerformDateTime);
         } catch (err) {
             console.error('Error creating task:', err);
             removeTaskFromState(optimisticTask.taskId);
@@ -1541,70 +2070,154 @@ export function HomePage() {
     }, [refreshTaskBuckets, showUndoFeedback, taskListItems, updateTaskInState]);
 
     const toggleTaskCompletion = useCallback(async (taskId: string, anchorEl?: HTMLElement) => {
-        const task = allTasks.find(existingTask => existingTask.taskId === taskId);
+        const task = allTasksRef.current.find(existingTask => existingTask.taskId === taskId);
+        if (task) captureHomeTaskLayout();
         const wasCompleted = task?.completed ?? false;
+        const completed = !wasCompleted;
         const completionOrigin = !wasCompleted ? anchorEl?.getBoundingClientRect() : undefined;
-        const previousTaskOrder = allTasks.map(item => item.taskId);
-        if (task) updateTaskInState(taskId, { completed: !task.completed });
+        const previousTaskOrder = allTasksRef.current.map(item => item.taskId);
+        const nextTaskOrder = task
+            ? reorderTaskIdsForCompletion(
+                previousTaskOrder,
+                taskId,
+                completed,
+                allTasksRef.current,
+                completionGroupTaskIdsByTaskIdRef.current,
+            )
+            : null;
+        const requestId = (completionRequestIdRef.current.get(taskId) ?? 0) + 1;
+        if (!completionMutationRef.current.has(taskId)) {
+            completionConfirmedStateRef.current.set(taskId, wasCompleted);
+        }
+        completionRequestIdRef.current.set(taskId, requestId);
+
+        if (task && nextTaskOrder) {
+            const optimisticTasks = allTasksRef.current.map(candidate => (
+                candidate.taskId === taskId ? { ...candidate, completed } : candidate
+            ));
+            allTasksRef.current = reorderTaskSnapshot(optimisticTasks, nextTaskOrder);
+            updateTasksInState([{ taskId, updates: { completed } }], nextTaskOrder);
+        }
         if (!wasCompleted) {
             celebrateStatLogged(completionOrigin ?? anchorEl);
             playAudioFeedback('taskCompleted');
         }
-        const nextTaskOrder = task
-            ? wasCompleted
-                ? [taskId, ...allTasks.filter(item => item.taskId !== taskId).map(item => item.taskId)]
-                : [...allTasks.filter(item => item.taskId !== taskId).map(item => item.taskId), taskId]
-            : null;
         const orderRevision = manualTaskOrderRevisionRef.current;
-        if (nextTaskOrder) reorderTasksInState(nextTaskOrder);
-        try {
-            const updatedTask = await taskService.toggleTaskCompletion(
-                taskId,
-                task ? !task.completed : undefined,
-                { notifyResource: !task },
-            );
-            updateTaskInState(taskId, updatedTask);
-            if (nextTaskOrder && updatedTask.completed !== wasCompleted
-                && orderRevision === manualTaskOrderRevisionRef.current) {
-                try {
-                    await taskService.reorderTasks(nextTaskOrder);
-                } catch (error) {
-                    console.error('Could not save task order after completion changed:', error);
-                    await refreshTaskBuckets(true);
+        const persist = async () => {
+            try {
+                const updatedTask = await taskService.toggleTaskCompletion(
+                    taskId,
+                    task ? completed : undefined,
+                    { notifyResource: !task },
+                );
+                completionConfirmedStateRef.current.set(taskId, updatedTask.completed);
+                if (completionRequestIdRef.current.get(taskId) === requestId) {
+                    const currentTask = allTasksRef.current.find(candidate => candidate.taskId === taskId);
+                    if (currentTask) {
+                        allTasksRef.current = allTasksRef.current.map(candidate => (
+                            candidate.taskId === taskId
+                                ? { ...candidate, completed: updatedTask.completed,
+                                    completionDateTime: updatedTask.completionDateTime }
+                                : candidate
+                        ));
+                        updateTasksInState([{
+                            taskId,
+                            updates: {
+                                completed: updatedTask.completed,
+                                completionDateTime: updatedTask.completionDateTime,
+                            },
+                        }]);
+                    }
+                }
+                if (nextTaskOrder && nextTaskOrder !== previousTaskOrder && updatedTask.completed !== wasCompleted
+                    && orderRevision === manualTaskOrderRevisionRef.current) {
+                    await saveTaskOrder(nextTaskOrder, orderRevision);
+                }
+                if (!wasCompleted && updatedTask.completed) {
+                    showUndoFeedback('Task completed', async () => {
+                        try {
+                            const restoreOrderRevision = manualTaskOrderRevisionRef.current;
+                            const currentOrder = allTasksRef.current.map(item => item.taskId);
+                            const restoredOrder = reorderTaskIdsForCompletion(
+                                currentOrder,
+                                taskId,
+                                false,
+                                allTasksRef.current,
+                                completionGroupTaskIdsByTaskIdRef.current,
+                            );
+                            const restoredTask = await taskService.updateTask(
+                                taskId,
+                                { completed: wasCompleted },
+                                { notifyResource: false },
+                            );
+                            captureHomeTaskLayout();
+                            allTasksRef.current = reorderTaskSnapshot(
+                                allTasksRef.current.map(item => item.taskId === taskId
+                                    ? { ...item, completed: wasCompleted,
+                                        completionDateTime: restoredTask.completionDateTime }
+                                    : item),
+                                restoreOrderRevision === manualTaskOrderRevisionRef.current
+                                    ? restoredOrder
+                                    : allTasksRef.current.map(item => item.taskId),
+                            );
+                            updateTasksInState([{
+                                taskId,
+                                updates: {
+                                    completed: wasCompleted,
+                                    completionDateTime: restoredTask.completionDateTime,
+                                },
+                            }], restoreOrderRevision === manualTaskOrderRevisionRef.current
+                                ? restoredOrder
+                                : undefined);
+                            if (restoredOrder !== currentOrder
+                                && restoreOrderRevision === manualTaskOrderRevisionRef.current) {
+                                await saveTaskOrder(restoredOrder, restoreOrderRevision);
+                            }
+                        } catch (error) {
+                            console.error('Error undoing task completion:', error);
+                            await refreshTaskBuckets(true);
+                        }
+                    });
+                }
+            } catch (error) {
+                console.error('Error toggling task:', error);
+                if (completionRequestIdRef.current.get(taskId) === requestId) {
+                    const rollbackCompleted = completionConfirmedStateRef.current.get(taskId) ?? wasCompleted;
+                    const currentTasks = allTasksRef.current.map(candidate => (
+                        candidate.taskId === taskId
+                            ? { ...candidate, completed: rollbackCompleted }
+                            : candidate
+                    ));
+                    const rollbackOrder = nextTaskOrder
+                        && orderRevision === manualTaskOrderRevisionRef.current
+                        ? reorderTaskIdsForCompletion(
+                            currentTasks.map(candidate => candidate.taskId),
+                            taskId,
+                            rollbackCompleted,
+                            currentTasks,
+                            completionGroupTaskIdsByTaskIdRef.current,
+                        )
+                        : undefined;
+                    captureHomeTaskLayout();
+                    allTasksRef.current = rollbackOrder
+                        ? reorderTaskSnapshot(currentTasks, rollbackOrder)
+                        : currentTasks;
+                    updateTasksInState([{ taskId, updates: { completed: rollbackCompleted } }], rollbackOrder);
                 }
             }
-            if (!wasCompleted && updatedTask.completed) {
-                showUndoFeedback('Task completed', async () => {
-                    try {
-                        const restoreOrderRevision = manualTaskOrderRevisionRef.current;
-                        const restoredOrder = [
-                            taskId,
-                            ...allTasksRef.current.filter(item => item.taskId !== taskId).map(item => item.taskId),
-                        ];
-                        const restoredTask = await taskService.updateTask(
-                            taskId,
-                            { completed: wasCompleted },
-                            { notifyResource: false },
-                        );
-                        updateTaskInState(taskId, restoredTask);
-                        if (restoreOrderRevision === manualTaskOrderRevisionRef.current) {
-                            reorderTasksInState(restoredOrder);
-                            await taskService.reorderTasks(restoredOrder);
-                        }
-                    } catch (error) {
-                        console.error('Error undoing task completion:', error);
-                        await refreshTaskBuckets(true);
-                    }
-                });
+
+        };
+
+        const queuedMutation = (completionMutationRef.current.get(taskId) ?? Promise.resolve())
+            .then(persist, persist);
+        completionMutationRef.current.set(taskId, queuedMutation);
+        void queuedMutation.finally(() => {
+            if (completionMutationRef.current.get(taskId) === queuedMutation) {
+                completionMutationRef.current.delete(taskId);
+                completionConfirmedStateRef.current.delete(taskId);
             }
-        } catch (err) {
-            console.error('Error toggling task:', err);
-            if (task) updateTaskInState(taskId, { completed: task.completed });
-            if (nextTaskOrder && orderRevision === manualTaskOrderRevisionRef.current) {
-                reorderTasksInState(previousTaskOrder);
-            }
-        }
-    }, [allTasks, refreshTaskBuckets, reorderTasksInState, showUndoFeedback, updateTaskInState]);
+        });
+    }, [captureHomeTaskLayout, refreshTaskBuckets, saveTaskOrder, showUndoFeedback, updateTasksInState]);
 
     function removeTasksFromGroups(taskIds: string[]) {
         const taskIdSet = new Set(taskIds);
@@ -1617,7 +2230,6 @@ export function HomePage() {
     }
 
     const deleteTask = useCallback((task: Task, anchorEl: HTMLElement) => {
-        if (task.mentalThreadId) return;
         setDeleteRequest({ kind: 'single', tasks: [task], anchorEl });
     }, []);
 
@@ -1647,10 +2259,11 @@ export function HomePage() {
         if (!deleteRequest || deleteSubmitting) return;
 
         const request = deleteRequest;
-        if (request.tasks.some(task => Boolean(task.mentalThreadId))
-            || (request.kind === 'group' && request.group.linkedToMentalThread)) return;
+        if (request.kind !== 'single'
+            && (request.tasks.some(task => Boolean(task.mentalThreadId))
+                || (request.kind === 'group' && request.group.linkedToMentalThread))) return;
         const tasksToDelete = tasksForDeleteScope(request, scope, allTasks);
-        if (tasksToDelete.some(task => Boolean(task.mentalThreadId))) return;
+        if (request.kind !== 'single' && tasksToDelete.some(task => Boolean(task.mentalThreadId))) return;
         const deletedTaskIds = new Set(tasksToDelete.map(task => task.taskId));
         const deletedActivePomodoroTaskId = activePomodoroTaskIdRef.current
             && tasksToDelete.some(task => task.taskId === activePomodoroTaskIdRef.current)
@@ -1688,7 +2301,9 @@ export function HomePage() {
             setGroups(previousGroups);
             setCollapsedGroupIds(previousCollapsedGroupIds);
         };
-        const message = request.kind === 'group'
+        const message = scope === 'future'
+            ? 'Future task occurrences deleted'
+            : request.kind === 'group'
             ? 'Group deleted'
             : request.kind === 'bulk'
                 ? `${request.tasks.length} tasks deleted`
@@ -1700,7 +2315,10 @@ export function HomePage() {
                 if (request.kind === 'group') {
                     receipts.push(await taskGroupService.deleteGroup(request.group.groupId));
                 }
-                receipts.push(await deleteTasksForScope(tasksToDelete, scope));
+                const operationTasks = scope === 'future'
+                    ? [...new Map([...request.tasks, ...tasksToDelete].map(task => [task.taskId, task])).values()]
+                    : tasksToDelete;
+                receipts.push(await deleteTasksForScope(operationTasks, scope));
                 const receipt = mergeTaskDeletionReceipts(receipts);
                 const activeTaskIdToRefresh = activePomodoro?.active
                     ? activePomodoro.associatedTaskId
@@ -1799,19 +2417,19 @@ export function HomePage() {
                 if (action === 'move-to-today') {
                     return taskService.updateTask(task.taskId, {
                         scheduledPerformDateTime: moveTaskDateToToday(task),
-                    });
+                    }, { notifyResource: false });
                 }
 
                 if (action === 'move-to-date') {
                     return taskService.updateTask(task.taskId, {
                         scheduledPerformDateTime: scheduledDateTime,
-                    });
+                    }, { notifyResource: false });
                 }
 
                 if (action === 'clear-date') {
                     return taskService.updateTask(task.taskId, {
                         scheduledPerformDateTime: '',
-                    });
+                    }, { notifyResource: false });
                 }
 
                 return taskService.updateTask(
@@ -1820,21 +2438,28 @@ export function HomePage() {
                     { notifyResource: action !== 'complete' && action !== 'reopen' },
                 );
             }));
-            updatedTasks.forEach(updatedTask => updateTaskInState(updatedTask.taskId, updatedTask));
             const tasksToMove = action === 'complete' ? tasksToCelebrate : tasksToReopen;
+            let nextTaskOrder: string[] | undefined;
             if (tasksToMove.length > 0 && orderRevision === manualTaskOrderRevisionRef.current) {
-                const movedTaskIds = new Set(tasksToMove.map(task => task.taskId));
-                const movedIdsInListOrder = allTasks
-                    .filter(task => movedTaskIds.has(task.taskId))
-                    .map(task => task.taskId);
-                const remainingIds = allTasks
-                    .filter(task => !movedTaskIds.has(task.taskId))
-                    .map(task => task.taskId);
-                const nextTaskOrder = action === 'complete'
-                    ? [...remainingIds, ...movedIdsInListOrder]
-                    : [...movedIdsInListOrder, ...remainingIds];
-                reorderTasksInState(nextTaskOrder);
-                await taskService.reorderTasks(nextTaskOrder);
+                const currentTaskOrder = allTasks.map(task => task.taskId);
+                const reorderedTaskIds = reorderTaskIdsForCompletionChanges(
+                    currentTaskOrder,
+                    tasksToMove.map(task => ({
+                        taskId: task.taskId,
+                        completed: action === 'complete',
+                    })),
+                    allTasks,
+                    completionGroupTaskIdsByTaskIdRef.current,
+                );
+                if (reorderedTaskIds !== currentTaskOrder) nextTaskOrder = reorderedTaskIds;
+            }
+            if (tasksToMove.length > 0) captureHomeTaskLayout();
+            updateTasksInState(updatedTasks.map(updatedTask => ({
+                taskId: updatedTask.taskId,
+                updates: updatedTask,
+            })), nextTaskOrder);
+            if (nextTaskOrder) {
+                await saveTaskOrder(nextTaskOrder, orderRevision);
             }
             if (action === 'move-to-date' && scheduledDateTime && isSameLocalDay(new Date(scheduledDateTime), new Date())) {
                 await appendTasksToTodayOrder(
@@ -1851,20 +2476,28 @@ export function HomePage() {
                                 .map(task => task.taskId));
                             const reopenedOrderRevision = manualTaskOrderRevisionRef.current;
                             const currentOrder = allTasksRef.current.map(task => task.taskId);
-                            const reopenedOrder = [
-                                ...currentOrder.filter(taskId => reopenedIds.has(taskId)),
-                                ...currentOrder.filter(taskId => !reopenedIds.has(taskId)),
-                            ];
+                            const reopenedOrder = reorderTaskIdsForCompletionChanges(
+                                currentOrder,
+                                [...reopenedIds].map(taskId => ({ taskId, completed: false })),
+                                allTasksRef.current,
+                                completionGroupTaskIdsByTaskIdRef.current,
+                            );
                             const restoredTasks = await Promise.all(tasksToUpdate.map(task =>
                                 taskService.updateTask(task.taskId, {
                                     completed: previousCompletion.get(task.taskId) ?? task.completed,
                                 }, { notifyResource: false }),
                             ));
-                            restoredTasks.forEach(restoredTask => updateTaskInState(restoredTask.taskId, restoredTask));
-                            if (reopenedIds.size > 0
+                            if (reopenedIds.size > 0) captureHomeTaskLayout();
+                            const restoredChanges = restoredTasks.map(restoredTask => ({
+                                taskId: restoredTask.taskId,
+                                updates: restoredTask,
+                            }));
+                            if (reopenedIds.size > 0 && reopenedOrder !== currentOrder
                                 && reopenedOrderRevision === manualTaskOrderRevisionRef.current) {
-                                reorderTasksInState(reopenedOrder);
-                                await taskService.reorderTasks(reopenedOrder);
+                                updateTasksInState(restoredChanges, reopenedOrder);
+                                await saveTaskOrder(reopenedOrder, reopenedOrderRevision);
+                            } else {
+                                updateTasksInState(restoredChanges);
                             }
                         } catch (error) {
                             console.error('Error undoing bulk task completion:', error);
@@ -2295,16 +2928,10 @@ export function HomePage() {
     }, []);
 
     const persistTaskOrder = useCallback(async (orderedTaskIds: string[], failOnError = false) => {
-        manualTaskOrderRevisionRef.current += 1;
+        const orderRevision = ++manualTaskOrderRevisionRef.current;
         reorderTasksInState(orderedTaskIds);
-        try {
-            await taskService.reorderTasks(orderedTaskIds);
-        } catch (err) {
-            console.error('Error reordering tasks:', err);
-            await refreshTaskBuckets(true);
-            if (failOnError) throw err;
-        }
-    }, [refreshTaskBuckets, reorderTasksInState]);
+        await saveTaskOrder(orderedTaskIds, orderRevision, failOnError);
+    }, [reorderTasksInState, saveTaskOrder]);
 
     const placeTasksAfterGroup = useCallback(async (targetGroup: TaskGroup, taskIds: string[]) => {
         const taskIdSet = new Set(taskIds);
@@ -2364,14 +2991,15 @@ export function HomePage() {
         await persistTaskOrder(orderWithoutMovedTasks);
     }, [allTasks, persistTaskOrder, todayTasks]);
 
-    const placeTasksInTodayOrder = useCallback(async (taskIds: string[], placement: TodayDropPlacement) => {
+    const getTaskOrderInToday = useCallback((taskIds: string[], placement: TodayDropPlacement) => {
         const movedTaskIdSet = new Set(taskIds);
-        const movedTaskIds = allTasks
+        const currentTasks = allTasksRef.current;
+        const movedTaskIds = currentTasks
             .map(task => task.taskId)
             .filter(taskId => movedTaskIdSet.has(taskId));
-        if (movedTaskIds.length === 0) return;
+        if (movedTaskIds.length === 0) return null;
 
-        const orderWithoutMovedTasks = allTasks
+        const orderWithoutMovedTasks = currentTasks
             .map(task => task.taskId)
             .filter(taskId => !movedTaskIdSet.has(taskId));
         const todayTaskIdSet = new Set(todayTasks.map(task => task.taskId));
@@ -2408,8 +3036,8 @@ export function HomePage() {
         }
 
         orderWithoutMovedTasks.splice(insertionIndex, 0, ...movedTaskIds);
-        await persistTaskOrder(orderWithoutMovedTasks);
-    }, [allTasks, persistTaskOrder, todayTasks, visibleTasks]);
+        return orderWithoutMovedTasks;
+    }, [todayTasks, visibleTasks]);
 
     const moveTasksToToday = useCallback(async (
         taskIds: string[],
@@ -2424,18 +3052,37 @@ export function HomePage() {
             task,
             scheduledPerformDateTime: moveTaskDateToToday(task),
         }));
-        updates.forEach(({ task, scheduledPerformDateTime }) => {
-            updateTaskInState(task.taskId, { scheduledPerformDateTime });
+        const movedTaskIds = tasksToMove.map(task => task.taskId);
+        const orderedTaskIds = placement
+            ? getTaskOrderInToday(movedTaskIds, placement)
+            : null;
+        const orderRevision = orderedTaskIds ? ++manualTaskOrderRevisionRef.current : null;
+        const dateByTaskId = new Map(updates.map(update => [update.task.taskId, update.scheduledPerformDateTime]));
+        const optimisticTasks = allTasksRef.current.map(task => {
+            const scheduledPerformDateTime = dateByTaskId.get(task.taskId);
+            return scheduledPerformDateTime !== undefined
+                ? { ...task, scheduledPerformDateTime }
+                : task;
         });
+        allTasksRef.current = orderedTaskIds
+            ? reorderTaskSnapshot(optimisticTasks, orderedTaskIds)
+            : optimisticTasks;
+        updateTasksInState(updates.map(({ task, scheduledPerformDateTime }) => ({
+            taskId: task.taskId,
+            updates: { scheduledPerformDateTime },
+        })), orderedTaskIds ?? undefined);
 
         try {
             const updatedTasks = await Promise.all(updates.map(({ task, scheduledPerformDateTime }) =>
-                taskService.updateTask(task.taskId, { scheduledPerformDateTime }),
+                taskService.updateTask(task.taskId, { scheduledPerformDateTime }, { notifyResource: false }),
             ));
-            updatedTasks.forEach(updatedTask => updateTaskInState(updatedTask.taskId, updatedTask));
+            updateTasksInState(updatedTasks.map(updatedTask => ({
+                taskId: updatedTask.taskId,
+                updates: updatedTask,
+            })));
             // The reorder endpoint saves full task rows, so let the date PATCHes commit first.
-            if (placement) {
-                await placeTasksInTodayOrder(tasksToMove.map(task => task.taskId), placement);
+            if (orderedTaskIds && orderRevision === manualTaskOrderRevisionRef.current) {
+                await saveTaskOrder(orderedTaskIds, orderRevision);
             }
             return true;
         } catch (err) {
@@ -2443,7 +3090,7 @@ export function HomePage() {
             await refreshTaskBuckets(true);
             return false;
         }
-    }, [allTasks, olderTasks, placeTasksInTodayOrder, protectedTaskIdSet, refreshTaskBuckets, updateTaskInState]);
+    }, [allTasks, getTaskOrderInToday, olderTasks, protectedTaskIdSet, refreshTaskBuckets, saveTaskOrder, updateTasksInState]);
 
     const moveGroupToToday = useCallback(async (group: TaskGroup, placement?: TodayDropPlacement) => {
         const groupTaskIdSet = new Set(group.taskIds);
@@ -2456,20 +3103,39 @@ export function HomePage() {
             task,
             scheduledPerformDateTime: moveTaskDateToToday(task),
         }));
-        updates.forEach(({ task, scheduledPerformDateTime }) => {
-            updateTaskInState(task.taskId, { scheduledPerformDateTime });
+        const movedTaskIds = tasksToMove.map(task => task.taskId);
+        const orderedTaskIds = placement
+            ? getTaskOrderInToday(movedTaskIds, placement)
+            : null;
+        const orderRevision = orderedTaskIds ? ++manualTaskOrderRevisionRef.current : null;
+        const dateByTaskId = new Map(updates.map(update => [update.task.taskId, update.scheduledPerformDateTime]));
+        const optimisticTasks = allTasksRef.current.map(task => {
+            const scheduledPerformDateTime = dateByTaskId.get(task.taskId);
+            return scheduledPerformDateTime !== undefined
+                ? { ...task, scheduledPerformDateTime }
+                : task;
         });
+        allTasksRef.current = orderedTaskIds
+            ? reorderTaskSnapshot(optimisticTasks, orderedTaskIds)
+            : optimisticTasks;
+        updateTasksInState(updates.map(({ task, scheduledPerformDateTime }) => ({
+            taskId: task.taskId,
+            updates: { scheduledPerformDateTime },
+        })), orderedTaskIds ?? undefined);
         try {
             const updatedTasks = await taskGroupService.moveToToday(group.groupId);
-            updatedTasks.forEach(updatedTask => updateTaskInState(updatedTask.taskId, updatedTask));
-            if (placement) {
-                await placeTasksInTodayOrder(tasksToMove.map(task => task.taskId), placement);
+            updateTasksInState(updatedTasks.map(updatedTask => ({
+                taskId: updatedTask.taskId,
+                updates: updatedTask,
+            })));
+            if (orderedTaskIds && orderRevision === manualTaskOrderRevisionRef.current) {
+                await saveTaskOrder(orderedTaskIds, orderRevision);
             }
         } catch (err) {
             console.error('Error moving task group to today:', err);
             await refreshTaskBuckets(true);
         }
-    }, [allTasks, placeTasksInTodayOrder, protectedTaskIdSet, refreshTaskBuckets, updateTaskInState]);
+    }, [allTasks, getTaskOrderInToday, protectedTaskIdSet, refreshTaskBuckets, saveTaskOrder, updateTasksInState]);
 
     const moveDraggedGroupToToday = useCallback((placement?: TodayDropPlacement) => {
         const draggedGroupId = getDraggedGroupId();
@@ -3058,6 +3724,7 @@ export function HomePage() {
         try {
             const createdTask = await taskService.createTask(taskToCreate);
             createdTaskId = createdTask.taskId;
+            showTaskCreationDateFeedback(taskToCreate.scheduledPerformDateTime);
             rememberTaskRenderKey(createdTask.taskId, optimisticTaskId);
             const nextTaskIds = optimisticTaskIds.map(taskId =>
                 taskId === optimisticTaskId ? createdTask.taskId : taskId,
@@ -3071,9 +3738,11 @@ export function HomePage() {
                 optimisticTaskId,
                 createdTask.taskId,
             ));
-            replaceTaskInState(optimisticTaskId, createdTask);
-            reorderTasksInState(nextTaskOrder);
-            await taskService.reorderTasks(nextTaskOrder);
+            updateTasksInState([{
+                taskId: optimisticTaskId,
+                updates: createdTask,
+            }], nextTaskOrder);
+            await persistTaskOrder(nextTaskOrder);
 
             const updatedGroup = await taskGroupService.replaceTasks(group.groupId, nextTaskIds);
             setGroups(previous => replaceTaskGroupIfChanged(previous, updatedGroup));
@@ -3257,7 +3926,12 @@ export function HomePage() {
 
     function renderTaskRow(
         task: Task,
-        options: { reorderable?: boolean; draggable?: boolean; showScheduledDate?: boolean; grouped?: boolean } = {},
+        options: {
+            reorderable?: boolean;
+            draggable?: boolean;
+            showScheduledDate?: boolean;
+            grouped?: boolean;
+        } = {},
     ) {
         const reorderable = options.reorderable ?? true;
         // content-visibility:auto can skip a transform-animated focus row and cause a one-frame repaint.
@@ -3289,7 +3963,7 @@ export function HomePage() {
                     editRequestId={editRequest?.taskId === task.taskId ? editRequest.requestId : null}
                     onSelectionClick={handleTaskSelection}
                     onContextMenu={handleTaskContextMenu}
-                    onDelete={task.mentalThreadId ? undefined : deleteTask}
+                    onDelete={deleteTask}
                     showScheduledDate={options.showScheduledDate}
                     allowThreadTaskScheduling
                     pomodoroDisabled={Boolean(activePomodoroTaskIdForRender) && !rowHasActivePomodoro}
@@ -3327,7 +4001,7 @@ export function HomePage() {
         return items.map(item => {
             if (item.kind === 'task') return renderTaskRow(item.task, options);
 
-            const collapsed = collapsedGroupIds.has(item.group.groupId);
+            const collapsed = collapsedGroupIds.has(item.expansionId);
             const linkedGroup = Boolean(item.group.linkedToMentalThread)
                 || Boolean(item.group.isStatGroup)
                 || item.tasks.some(task => Boolean(task.mentalThreadId));
@@ -3392,8 +4066,8 @@ export function HomePage() {
                                 setDraggedTaskId(primaryTaskId || null);
                                 setDraggedGroupId(null);
                                 if (!collapsed) {
-                                    temporarilyCollapsedGroupIdRef.current = item.group.groupId;
-                                    setCollapsedGroupIds(previous => new Set(previous).add(item.group.groupId));
+                                    temporarilyCollapsedGroupIdRef.current = item.expansionId;
+                                    setCollapsedGroupIds(previous => new Set(previous).add(item.expansionId));
                                 } else {
                                     temporarilyCollapsedGroupIdRef.current = null;
                                 }
@@ -3464,7 +4138,7 @@ export function HomePage() {
                                 size="small"
                                 aria-label={collapsed ? `Expand ${item.group.name}` : `Collapse ${item.group.name}`}
                                 sx={{ width: 38, height: 38, p: 0, mr: 0.5, flexShrink: 0 }}
-                                onClick={() => toggleGroup(item.group.groupId)}
+                                onClick={() => toggleGroup(item.expansionId)}
                             >
                                 {collapsed ? <ChevronRightIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
                             </IconButton>
@@ -3508,7 +4182,10 @@ export function HomePage() {
                         </Box>
                         <Collapse in={!collapsed} timeout="auto" unmountOnExit>
                             <Box data-stat-task-group-content={item.group.groupId} sx={{ ml: 1.7, pl: 1.1, borderLeft: '1px solid', borderColor: 'divider' }}>
-                                {item.tasks.map(task => renderTaskRow(task, { ...options, grouped: true }))}
+                                <AnimatedGroupTaskRows
+                                    tasks={item.tasks}
+                                    renderTask={task => renderTaskRow(task, { ...options, grouped: true })}
+                                />
                             </Box>
                         </Collapse>
                     </Box>
@@ -3541,7 +4218,7 @@ export function HomePage() {
                             if (event.shiftKey || event.ctrlKey || event.metaKey) {
                                 handleGroupSelection(item.group.groupId, event);
                             } else {
-                                toggleGroup(item.group.groupId);
+                                toggleGroup(item.expansionId);
                             }
                         }}
                         onMouseDownCapture={event => {
@@ -3587,8 +4264,8 @@ export function HomePage() {
                                 setDraggedTaskId(null);
                             }
                             if (!collapsed) {
-                                temporarilyCollapsedGroupIdRef.current = item.group.groupId;
-                                setCollapsedGroupIds(previous => new Set(previous).add(item.group.groupId));
+                                temporarilyCollapsedGroupIdRef.current = item.expansionId;
+                                setCollapsedGroupIds(previous => new Set(previous).add(item.expansionId));
                             } else {
                                 temporarilyCollapsedGroupIdRef.current = null;
                             }
@@ -3663,7 +4340,7 @@ export function HomePage() {
                             sx={{ width: 38, height: 38, p: 0, mr: 0.5, flexShrink: 0 }}
                             onClick={event => {
                                 event.stopPropagation();
-                                toggleGroup(item.group.groupId);
+                                toggleGroup(item.expansionId);
                             }}
                         >
                             {collapsed ? <ChevronRightIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
@@ -3846,7 +4523,10 @@ export function HomePage() {
                                     />
                                 </Fade>
                             </Collapse>
-                            {item.tasks.map(task => renderTaskRow(task, { ...options, grouped: true }))}
+                            <AnimatedGroupTaskRows
+                                tasks={item.tasks}
+                                renderTask={task => renderTaskRow(task, { ...options, grouped: true })}
+                            />
                         </Box>
                     </Collapse>
                 </Box>
@@ -4115,6 +4795,9 @@ export function HomePage() {
                                         animateRemovals={focusVisibility !== 'fading' && focusVisibility !== 'sliding'}
                                         immediateRemovalTaskIds={pendingDeletedTaskIdSet}
                                         entrySource={taskReturnEntry}
+                                        layoutVisibilityKey={collapsedGroupIds}
+                                        layoutScope="today"
+                                        layoutSnapshotRef={todayLayoutSnapshotRef}
                                     />
                                     {dragInProgress && (
                                         <Box
@@ -4232,6 +4915,9 @@ export function HomePage() {
                                         showScheduledDate: true,
                                     })}
                                     immediateRemovalTaskIds={pendingDeletedTaskIdSet}
+                                    layoutVisibilityKey={collapsedGroupIds}
+                                    layoutScope="older"
+                                    layoutSnapshotRef={olderLayoutSnapshotRef}
                                 />
                             </Box>
                         </Box>
@@ -4365,21 +5051,19 @@ export function HomePage() {
                                         : 'Edit reminder'}
                                 </ListItemText>
                             </MenuItem>
-                            {!taskContextMenu.task.mentalThreadId && (
-                                <MenuItem onClick={() => {
-                                    const menu = taskContextMenu;
-                                    setTaskContextMenu(null);
-                                    deleteTask(menu.task, menu.anchorEl);
-                                }} sx={{
-                                    '&:hover': {
-                                        color: 'error.main',
-                                        '& .MuiListItemIcon-root': { color: 'inherit' },
-                                    },
-                                }}>
-                                    <ListItemIcon><DeleteOutlineIcon fontSize="small" /></ListItemIcon>
-                                    <ListItemText>Delete task</ListItemText>
-                                </MenuItem>
-                            )}
+                            <MenuItem onClick={() => {
+                                const menu = taskContextMenu;
+                                setTaskContextMenu(null);
+                                deleteTask(menu.task, menu.anchorEl);
+                            }} sx={{
+                                '&:hover': {
+                                    color: 'error.main',
+                                    '& .MuiListItemIcon-root': { color: 'inherit' },
+                                },
+                            }}>
+                                <ListItemIcon><DeleteOutlineIcon fontSize="small" /></ListItemIcon>
+                                <ListItemText>Delete task</ListItemText>
+                            </MenuItem>
                         </>
                     )}
                 </Menu>
@@ -4394,7 +5078,9 @@ export function HomePage() {
                         paper: {
                             sx: {
                                 p: 1.5,
-                                width: 270,
+                                width: deleteRequest && requestHasRecurringTasks(deleteRequest)
+                                    ? deleteRequest.kind === 'group' ? 480 : 380
+                                    : 270,
                                 maxWidth: 'calc(100vw - 32px)',
                                 borderRadius: 2.5,
                             },
@@ -4407,42 +5093,79 @@ export function HomePage() {
                                 {deleteRequest.kind === 'group'
                                     ? `Delete “${deleteRequest.group.name}” and its ${deleteRequest.tasks.length} task${deleteRequest.tasks.length === 1 ? '' : 's'}?`
                                     : deleteRequest.kind === 'bulk'
-                                    ? `Delete ${deleteRequest.tasks.length} selected task${deleteRequest.tasks.length > 1 ? 's' : ''}?`
-                                    : deleteRequest.tasks[0].taskSeriesId
-                                    ? `Delete instance of “${deleteRequest.tasks[0].name}”?`
-                                    : `Delete “${deleteRequest.tasks[0].name}” and its subtasks?`}
+                                        ? `Delete ${deleteRequest.tasks.length} selected task${deleteRequest.tasks.length > 1 ? 's' : ''}?`
+                                        : deleteRequest.tasks[0].taskSeriesId
+                                            ? `Choose which occurrences of “${deleteRequest.tasks[0].name}” to delete?`
+                                            : `Delete “${deleteRequest.tasks[0].name}” and its subtasks?`}
                             </Typography>
-                            <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 0.5 }}>
-                                <Button size="small" onClick={closeDeleteRequest} disabled={deleteSubmitting}>Cancel</Button>
-                                {deleteRequest.kind === 'group' && (
+                            {requestHasRecurringTasks(deleteRequest) ? (
+                                <Box
+                                    sx={{
+                                        display: 'grid',
+                                        gridTemplateColumns: deleteRequest.kind === 'group'
+                                            ? 'repeat(3, minmax(0, 1fr))'
+                                            : 'repeat(2, minmax(0, 1fr))',
+                                        gap: 0.5,
+                                        '& .MuiButton-root': {
+                                            width: '100%',
+                                            minWidth: 0,
+                                            minHeight: 38,
+                                            px: 0.75,
+                                            py: 0.5,
+                                            lineHeight: 1.2,
+                                            whiteSpace: 'normal',
+                                        },
+                                    }}
+                                >
                                     <Button
                                         size="small"
-                                        onClick={() => void confirmUngroup()}
+                                        onClick={() => void confirmDelete('occurrence')}
                                         disabled={deleteSubmitting}
                                     >
-                                        Ungroup
+                                        {deleteRequest.kind === 'single' ? 'This occurrence' : 'Selected occurrences'}
                                     </Button>
-                                )}
-                                {requestHasRecurringTasks(deleteRequest) ? (
-                                    <>
-                                        <Button
-                                            size="small"
-                                            onClick={() => void confirmDelete('occurrence')}
-                                            disabled={deleteSubmitting}
-                                        >
-                                            Delete instance(s)
+                                    <Button
+                                        size="small"
+                                        onClick={() => void confirmDelete('future')}
+                                        disabled={deleteSubmitting}
+                                    >
+                                        Future occurrences
+                                    </Button>
+                                    {deleteRequest.kind !== 'group' && (
+                                        <Button size="small" onClick={closeDeleteRequest} disabled={deleteSubmitting}>
+                                            Cancel
                                         </Button>
-                                        <Button
-                                            size="small"
-                                            color="error"
-                                            variant="contained"
-                                            onClick={() => void confirmDelete('series')}
-                                            disabled={deleteSubmitting}
-                                        >
-                                            {deleteSubmitting ? 'Deleting…' : 'Delete series'}
+                                    )}
+                                    <Button
+                                        size="small"
+                                        color="error"
+                                        variant="contained"
+                                        onClick={() => void confirmDelete('series')}
+                                        disabled={deleteSubmitting}
+                                    >
+                                        {deleteSubmitting ? 'Deleting…' : 'Delete series'}
+                                    </Button>
+                                    {deleteRequest.kind === 'group' && (
+                                        <Button size="small" onClick={() => void confirmUngroup()} disabled={deleteSubmitting}>
+                                            Ungroup
                                         </Button>
-                                    </>
-                                ) : (
+                                    )}
+                                    {deleteRequest.kind === 'group' && (
+                                        <Button size="small" onClick={closeDeleteRequest} disabled={deleteSubmitting}>
+                                            Cancel
+                                        </Button>
+                                    )}
+                                </Box>
+                            ) : (
+                                <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 0.5 }}>
+                                    <Button size="small" onClick={closeDeleteRequest} disabled={deleteSubmitting}>
+                                        Cancel
+                                    </Button>
+                                    {deleteRequest.kind === 'group' && (
+                                        <Button size="small" onClick={() => void confirmUngroup()} disabled={deleteSubmitting}>
+                                            Ungroup
+                                        </Button>
+                                    )}
                                     <Button
                                         size="small"
                                         color="error"
@@ -4452,8 +5175,8 @@ export function HomePage() {
                                     >
                                         {deleteSubmitting ? <CircularProgress size={16} color="inherit" /> : 'Delete'}
                                     </Button>
-                                )}
-                            </Box>
+                                </Box>
+                            )}
                         </Box>
                     )}
                 </Popover>

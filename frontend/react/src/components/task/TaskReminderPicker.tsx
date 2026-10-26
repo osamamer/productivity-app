@@ -4,8 +4,7 @@ import { AppDateField, AppTimeField } from '../input/AppPickerFields';
 import { formatReminderDateTime } from './taskReminderFormatting';
 
 const TASK_REMINDER_OPTIONS = [
-    { value: 5, label: '5 minutes before' },
-    { value: 30, label: '30 minutes before' },
+    { value: 15, label: '15 minutes before' },
     { value: 60, label: '1 hour before' },
     { value: 1440, label: '1 day before' },
 ];
@@ -121,7 +120,7 @@ export function TaskReminderPicker({
                 onClose={event => {
                     const target = (event as { target?: EventTarget | null }).target;
                     if (target instanceof Element
-                        && target.closest('.MuiPickersPopper-root, .MuiPickersLayout-root, .MuiDialog-root')) return;
+                        && target.closest('.MuiPickerPopper-root, .MuiPickersPopper-root, .MuiPickersLayout-root, .MuiDialog-root')) return;
                     setCustomReminderOpen(false);
                 }}
                 anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
@@ -132,7 +131,13 @@ export function TaskReminderPicker({
                             p: 1.5,
                             width: 300,
                             maxWidth: 'calc(100vw - 32px)',
+                            maxHeight: 'calc(100vh - 32px)',
+                            overflowY: 'auto',
+                            overscrollBehavior: 'contain',
                             borderRadius: '8px',
+                            '@supports (height: 100dvh)': {
+                                maxHeight: 'calc(100dvh - 32px)',
+                            },
                         },
                     },
                 }}

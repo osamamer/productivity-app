@@ -2,6 +2,7 @@ package org.osama.task;
 
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.datatype.jsr310.deser.LocalDateDeserializer;
 import com.fasterxml.jackson.datatype.jsr310.deser.LocalDateTimeDeserializer;
 import com.fasterxml.jackson.datatype.jsr310.ser.LocalDateSerializer;
@@ -79,6 +80,10 @@ public class Task {
     @Column(name = "linked_stat_definition_id")
     @com.fasterxml.jackson.annotation.JsonProperty(access = com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
     private String linkedStatDefinitionId;
+
+    @JsonIgnore
+    @Column(name = "stat_schedule_week_start")
+    private LocalDate statScheduleWeekStart;
 
     @Column(name = "calendar_id", nullable = false)
     private String calendarId;

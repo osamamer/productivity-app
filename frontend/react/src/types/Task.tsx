@@ -1,4 +1,5 @@
 import type { TaskRecurrenceDraft } from './TaskRecurrence';
+import type { TaskPomodoroStats } from './TaskPomodoroStats';
 
 export interface Task   {
     taskId: string;
@@ -23,6 +24,7 @@ export interface Task   {
     seriesOccurrenceAt: string | null;
     skipped: boolean;
     statLinked?: boolean;
+    focusHistory?: TaskPomodoroStats;
     optimisticRecurrence?: TaskRecurrenceDraft;
 }
 

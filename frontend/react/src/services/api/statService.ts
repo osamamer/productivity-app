@@ -1,5 +1,9 @@
 import { apiFetch } from '../utils/apiFetch';
-import { StatBootstrapResponse, StatDefinition, StatEntry, StatEntryStatus, StatSummary, StatInsights, StatFocusTimeEntry, CreateDefinitionRequest, RecordEntryRequest, UpdateDefinitionRequest, StatRecurringTaskDraft } from '../../types/Stats';
+import {
+    StatBootstrapResponse, StatDefinition, StatEntry, StatEntryStatus, StatSummary, StatInsights,
+    StatFocusTimeEntry, CreateDefinitionRequest, RecordEntryRequest, UpdateDefinitionRequest,
+    StatRecurringTaskDraft, StatWeeklyTaskSchedule, StatWeeklyTaskScheduleDraft,
+} from '../../types/Stats';
 import { TaskSeries } from '../../types/TaskSeries';
 import { getAuthCacheScope, getAuthHeaders } from '../utils/authHeaders';
 import { CachedResource, TtlCache } from '../cache/ttlCache';
@@ -415,6 +419,18 @@ export const statService = {
         return response.json();
     },
 
+    async updateStatsPageVisibility(id: string, showOnStatsPage: boolean): Promise<StatDefinition> {
+        const response = await apiFetch(`${STATS_URL}/definitions/${id}/stats-page-visibility`, {
+            method: 'PUT',
+            body: JSON.stringify({ showOnStatsPage }),
+            headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getAuthHeaders() },
+        });
+        if (!response.ok) throw new Error('Failed to update Stats page visibility');
+        invalidateDefinitionsCache();
+        invalidateResource('stats', 'stat-definition');
+        return response.json();
+    },
+
     async createRecurringTask(definitionId: string, recurrence: StatRecurringTaskDraft): Promise<StatDefinition> {
         const response = await apiFetch(`${STATS_URL}/definitions/${definitionId}/recurring-task`, {
             method: 'POST',
@@ -431,6 +447,8 @@ export const statService = {
         if (!response.ok) throw new Error('Failed to create recurring task');
         invalidateDefinitionsCache();
         invalidateRecurringTaskResources();
+        invalidateResource('tasks');
+        invalidateResource('stats', 'task');
         return response.json();
     },
 
@@ -439,6 +457,36 @@ export const statService = {
             headers: getAuthHeaders(),
         });
         if (!response.ok) throw new Error('Failed to fetch recurring task');
+        return response.json();
+    },
+
+    async getWeeklyTaskSchedule(definitionId: string): Promise<StatWeeklyTaskSchedule> {
+        const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+        const params = new URLSearchParams({ timeZone });
+        const response = await apiFetch(
+            `${STATS_URL}/definitions/${definitionId}/weekly-task-schedule?${params}`,
+            { headers: getAuthHeaders() },
+        );
+        if (!response.ok) throw new Error('Failed to fetch this week\'s task schedule');
+        return response.json();
+    },
+
+    async replaceWeeklyTaskSchedule(
+        definitionId: string,
+        schedule: StatWeeklyTaskScheduleDraft,
+    ): Promise<StatWeeklyTaskSchedule> {
+        const response = await apiFetch(`${STATS_URL}/definitions/${definitionId}/weekly-task-schedule`, {
+            method: 'PUT',
+            body: JSON.stringify({
+                ...schedule,
+                timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+            }),
+            headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getAuthHeaders() },
+        });
+        if (!response.ok) throw new Error('Failed to update this week\'s task schedule');
+        invalidateDefinitionsCache();
+        invalidateResource('tasks');
+        invalidateResource('stats', 'task');
         return response.json();
     },
 
@@ -451,12 +499,15 @@ export const statService = {
                 recurrenceDaysOfWeek: recurrence.recurrenceDaysOfWeek,
                 timeOfDay: recurrence.timeOfDay,
                 importance: recurrence.importance,
+                taskName: recurrence.taskName,
             }),
             headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getAuthHeaders() },
         });
         if (!response.ok) throw new Error('Failed to update recurring task');
         invalidateDefinitionsCache();
         invalidateRecurringTaskResources();
+        invalidateResource('tasks');
+        invalidateResource('stats', 'task');
         return response.json();
     },
 
@@ -468,6 +519,18 @@ export const statService = {
         if (!response.ok) throw new Error('Failed to delete recurring task series');
         invalidateDefinitionsCache();
         invalidateRecurringTaskResources();
+        return response.json();
+    },
+
+    async deleteRecurringTaskFutureOccurrences(definitionId: string): Promise<StatDefinition> {
+        const response = await apiFetch(`${STATS_URL}/definitions/${definitionId}/recurring-task/future`, {
+            method: 'DELETE',
+            headers: getAuthHeaders(),
+        });
+        if (!response.ok) throw new Error('Failed to delete future recurring tasks');
+        invalidateDefinitionsCache();
+        invalidateRecurringTaskResources();
+        invalidateResource('tasks');
         return response.json();
     },
 

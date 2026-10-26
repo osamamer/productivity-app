@@ -18,6 +18,7 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { addMonths, eachDayOfInterval, endOfMonth, format, getDay, isAfter, startOfMonth } from 'date-fns';
 import { statService } from '../../services/api/statService';
 import { StatDefinition, StatEntry, StatSummary } from '../../types/Stats';
+import { MeditationPracticeOptions } from './MeditationPracticeOptions';
 
 const MEDITATED_SYSTEM_KEY = 'meditated';
 const MEDITATION_MINUTES_SYSTEM_KEY = 'meditation_minutes';
@@ -77,12 +78,18 @@ interface MeditationStatsProps {
     refreshKey: number;
 }
 
+type MeditationDefinitions = {
+    meditated: StatDefinition;
+    minutes: StatDefinition;
+};
+
 export function MeditationStats({ refreshKey }: MeditationStatsProps) {
     const theme = useTheme();
     const [data, setData] = useState<MeditationStatsData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
     const [monthOffset, setMonthOffset] = useState(0);
+    const [definitions, setDefinitions] = useState<MeditationDefinitions | null>(null);
     const period = useMemo<MeditationPeriod>(() => {
         const today = new Date();
         const from = addMonths(startOfMonth(today), monthOffset);
@@ -106,6 +113,7 @@ export function MeditationStats({ refreshKey }: MeditationStatsProps) {
                 const meditated = findSystemDefinition(definitions, MEDITATED_SYSTEM_KEY);
                 const minutes = findSystemDefinition(definitions, MEDITATION_MINUTES_SYSTEM_KEY);
                 if (!meditated || !minutes) return;
+                if (!cancelled) setDefinitions({ meditated, minutes });
 
                 const [meditatedSummary, minutesSummary, meditatedEntries, minutesEntries] = await Promise.all([
                     statService.getSummary(meditated.id, period.from, period.to),
@@ -125,6 +133,13 @@ export function MeditationStats({ refreshKey }: MeditationStatsProps) {
 
         return () => { cancelled = true; };
     }, [period, refreshKey]);
+
+    const updateDefinition = (updated: StatDefinition) => {
+        setDefinitions(current => current ? {
+            meditated: updated.systemKey === MEDITATED_SYSTEM_KEY ? updated : current.meditated,
+            minutes: updated.systemKey === MEDITATION_MINUTES_SYSTEM_KEY ? updated : current.minutes,
+        } : current);
+    };
 
     if (loading && !data) {
         return (
@@ -247,7 +262,7 @@ export function MeditationStats({ refreshKey }: MeditationStatsProps) {
                 }}>
                     <Metric
                         icon={<CheckCircleOutlineIcon fontSize="small" />}
-                        label="Meditated"
+                        label="Meditate"
                         value={`${yesCount} ${yesCount === 1 ? 'day' : 'days'}`}
                         tint={theme.palette.success.main}
                     />
@@ -345,7 +360,7 @@ export function MeditationStats({ refreshKey }: MeditationStatsProps) {
                     <Stack direction="row" spacing={1.5} sx={{ mt: 1.25 }}>
                         <Stack direction="row" spacing={0.5} alignItems="center">
                             <Box sx={{ width: 12, height: 12, borderRadius: 0.75, bgcolor: alpha(theme.palette.success.main, theme.palette.mode === 'dark' ? 0.28 : 0.18) }} />
-                            <Typography variant="caption" color="text.secondary">Meditated</Typography>
+                            <Typography variant="caption" color="text.secondary">Meditate</Typography>
                         </Stack>
                         <Stack direction="row" spacing={0.5} alignItems="center">
                             <Box sx={{ width: 12, height: 12, border: `1px solid ${theme.palette.divider}` }} />
@@ -353,6 +368,13 @@ export function MeditationStats({ refreshKey }: MeditationStatsProps) {
                         </Stack>
                     </Stack>
                 </Box>
+
+                {definitions && (
+                    <MeditationPracticeOptions
+                        definitions={definitions}
+                        onDefinitionUpdated={updateDefinition}
+                    />
+                )}
             </Stack>
         </Box>
     );

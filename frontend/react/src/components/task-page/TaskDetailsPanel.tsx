@@ -528,14 +528,14 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
             items: sortSubtasks(cachedTaskDetails?.subtasks ?? EMPTY_SUBTASKS),
             loading: !cachedTaskDetails,
         };
-    const initialPomodoroStats = getStaleTaskPomodoroStats(task.taskId) ?? null;
+    const initialPomodoroStats = task.focusHistory ?? getStaleTaskPomodoroStats(task.taskId) ?? null;
     const [pomodoroStatsState, setPomodoroStatsState] = useState<PomodoroStatsState>({
         taskId: task.taskId,
         stats: initialPomodoroStats,
         loading: !initialPomodoroStats,
         error: false,
     });
-    const cachedPomodoroStats = getStaleTaskPomodoroStats(task.taskId) ?? null;
+    const cachedPomodoroStats = task.focusHistory ?? getStaleTaskPomodoroStats(task.taskId) ?? null;
     const visiblePomodoroStatsState = pomodoroStatsState.taskId === task.taskId
         ? pomodoroStatsState
         : {
@@ -644,7 +644,7 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
     useEffect(() => {
         let cancelled = false;
         const taskId = task.taskId;
-        const cached = getStaleTaskPomodoroStats(taskId) ?? null;
+        const cached = task.focusHistory ?? getStaleTaskPomodoroStats(taskId) ?? null;
         setPomodoroStatsState({
             taskId,
             stats: cached,
@@ -694,7 +694,7 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
             unsubscribe();
             window.clearInterval(refreshInterval);
         };
-    }, [task.taskId]);
+    }, [task.focusHistory, task.taskId]);
 
     const scheduledDate = task.scheduledPerformDateTime
         ? new Date(task.scheduledPerformDateTime)

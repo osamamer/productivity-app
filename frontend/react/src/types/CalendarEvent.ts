@@ -36,6 +36,11 @@ export type CalendarEvent = {
     sourceId?: string | null;
 };
 
+export type CalendarEventFutureDeletionResponse = {
+    eventDeleted: boolean;
+    event: CalendarEvent | null;
+};
+
 export type CalendarEventInput = {
     calendarId?: string;
     title: string;

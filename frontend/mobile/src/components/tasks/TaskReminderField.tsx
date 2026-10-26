@@ -9,15 +9,16 @@ import { ChoiceChips } from '../ui/ChoiceChips';
 import { TaskDateTimePicker } from './TaskScheduleField';
 
 const PRESET_REMINDER_OPTIONS = [
+  { value: 15, label: '15 minutes before' },
   { value: 60, label: '1 hour before' },
   { value: 1440, label: '1 day before' },
 ] as const;
 const MAX_REMINDER_MINUTES = 8 * 7 * 24 * 60;
 
-type ReminderChoice = 'none' | 'custom' | 60 | 1440;
+type ReminderChoice = 'none' | 'custom' | 15 | 60 | 1440;
 
-function isPreset(value: number | null | undefined): value is 60 | 1440 {
-  return value === 60 || value === 1440;
+function isPreset(value: number | null | undefined): value is 15 | 60 | 1440 {
+  return value === 15 || value === 60 || value === 1440;
 }
 
 function scheduledDate(value: string | null | undefined): Date | null {

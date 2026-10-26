@@ -1,5 +1,10 @@
 import { apiFetch } from '../utils/apiFetch';
-import { CalendarEvent, CalendarEventInput, CalendarEventOccurrenceMoveInput } from '../../types/CalendarEvent';
+import {
+    CalendarEvent,
+    CalendarEventFutureDeletionResponse,
+    CalendarEventInput,
+    CalendarEventOccurrenceMoveInput,
+} from '../../types/CalendarEvent';
 import { getAuthCacheScope, getAuthHeaders } from '../utils/authHeaders';
 import { CachedResource } from '../cache/ttlCache';
 
@@ -109,6 +114,20 @@ export const eventService = {
             body: JSON.stringify({ occurrenceKey }),
         });
         if (!response.ok) throw await parseError(response, 'Failed to delete event occurrence');
+        eventsCache.invalidate(eventsCacheKey());
+        return response.json();
+    },
+
+    async deleteFutureEventOccurrences(
+        eventId: string,
+        occurrenceKey: string,
+    ): Promise<CalendarEventFutureDeletionResponse> {
+        const response = await apiFetch(`${EVENT_URL}/${eventId}/occurrences/future`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify({ occurrenceKey }),
+        });
+        if (!response.ok) throw await parseError(response, 'Failed to delete future event occurrences');
         eventsCache.invalidate(eventsCacheKey());
         return response.json();
     },

@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.osama.exceptions.ResourceNotFoundException;
 import org.osama.requests.NewTaskRequest;
 import org.osama.task.Task;
+import org.osama.task.TaskRepository;
 import org.osama.task.TaskService;
 import org.osama.task.recurrence.TaskRecurrenceFrequency;
 import org.osama.task.recurrence.TaskRecurrenceUnit;
@@ -22,6 +23,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
+import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -45,6 +47,7 @@ public class StatService {
     private final TaskSeriesService taskSeriesService;
     private final StatTaskLinkService statTaskLinkService;
     private final TaskService taskService;
+    private final TaskRepository taskRepository;
 
     public StatService(StatDefinitionRepository definitionRepository,
                        StatFocusTaskLinkRepository focusTaskLinkRepository,
@@ -53,7 +56,8 @@ public class StatService {
                        StatGroupService statGroupService,
                        TaskSeriesService taskSeriesService,
                        StatTaskLinkService statTaskLinkService,
-                       TaskService taskService) {
+                       TaskService taskService,
+                       TaskRepository taskRepository) {
         this.definitionRepository = definitionRepository;
         this.focusTaskLinkRepository = focusTaskLinkRepository;
         this.entryRepository = entryRepository;
@@ -62,6 +66,7 @@ public class StatService {
         this.taskSeriesService = taskSeriesService;
         this.statTaskLinkService = statTaskLinkService;
         this.taskService = taskService;
+        this.taskRepository = taskRepository;
     }
 
     @Transactional
@@ -170,6 +175,21 @@ public class StatService {
         log.info("Stat definition updated: userId={} statDefinitionId={} name={} morality={} goodThreshold={}",
                 userId, savedDefinition.getId(), savedDefinition.getName(),
                 savedDefinition.getMorality(), savedDefinition.getGoodThreshold());
+        return withFocusTaskNames(savedDefinition);
+    }
+
+    @Transactional
+    public StatDefinition updateStatsPageVisibility(String definitionId, boolean showOnStatsPage,
+                                                    String userId) {
+        StatDefinition definition = definitionRepository.findByIdAndUserId(definitionId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("No such stat."));
+        if (!SystemStatCatalog.MEDITATED_SYSTEM_KEY.equals(definition.getSystemKey())) {
+            throw new IllegalArgumentException("Stats page visibility is only configurable for Meditate.");
+        }
+        definition.setShowOnStatsPage(showOnStatsPage);
+        StatDefinition savedDefinition = definitionRepository.save(definition);
+        log.info("Stat page visibility updated: userId={} statDefinitionId={} showOnStatsPage={}",
+                userId, savedDefinition.getId(), savedDefinition.isShowOnStatsPage());
         return withFocusTaskNames(savedDefinition);
     }
 
@@ -285,6 +305,210 @@ public class StatService {
         return taskSeriesService.getSeries(definition.getRecurringTaskSeriesId(), userId);
     }
 
+    @Transactional(readOnly = true)
+    public StatWeeklyTaskScheduleResponse getWeeklyTaskSchedule(String definitionId,
+                                                                 String requestedTimeZone,
+                                                                 String userId) {
+        StatDefinition definition = requireBooleanTaskStat(definitionId, userId);
+        ZoneId timeZone = resolveTaskTimeZone(requestedTimeZone);
+        LocalDate today = LocalDate.now(timeZone);
+        LocalDate weekStart = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY));
+        LocalDateTime now = LocalDateTime.now(timeZone);
+        LocalDateTime weekEnd = weekStart.plusWeeks(1).atStartOfDay();
+
+        Map<String, Task> upcomingTasks = taskRepository
+                .findAllByLinkedStatDefinitionIdAndStatScheduleWeekStartAndUserId(
+                        definitionId, weekStart, userId)
+                .stream()
+                .filter(task -> isUpcomingTask(task, now, weekEnd))
+                .collect(Collectors.toMap(Task::getTaskId, task -> task, (first, ignored) -> first,
+                        LinkedHashMap::new));
+
+        if (definition.getRecurringTaskSeriesId() != null) {
+            taskRepository.findAllByTaskSeriesIdAndUserIdOrderBySeriesOccurrenceAtAsc(
+                            definition.getRecurringTaskSeriesId(), userId)
+                    .stream()
+                    .filter(task -> task.getSeriesOccurrenceAt() != null)
+                    .filter(task -> isUpcomingTask(task, now, weekEnd))
+                    .forEach(task -> upcomingTasks.putIfAbsent(task.getTaskId(), task));
+        }
+
+        List<Task> sortedTasks = upcomingTasks.values().stream()
+                .sorted((left, right) -> taskScheduledAt(left).compareTo(taskScheduledAt(right)))
+                .toList();
+        List<DayOfWeek> days = sortedTasks.stream()
+                .map(task -> taskScheduledAt(task).getDayOfWeek())
+                .distinct()
+                .toList();
+        Task firstTask = sortedTasks.isEmpty() ? null : sortedTasks.get(0);
+        LocalTime defaultTime = LocalDateTime.now(timeZone).plusMinutes(5).toLocalTime();
+        return new StatWeeklyTaskScheduleResponse(
+                weekStart,
+                days,
+                firstTask == null ? definition.getName() : firstTask.getName(),
+                (firstTask == null ? defaultTime : taskScheduledAt(firstTask).toLocalTime()).toString().substring(0, 5),
+                firstTask == null ? 3 : firstTask.getImportance());
+    }
+
+    @Transactional
+    public StatWeeklyTaskScheduleResponse replaceWeeklyTaskSchedule(String definitionId,
+                                                                     String requestedTaskName,
+                                                                     List<DayOfWeek> requestedDays,
+                                                                     String requestedTimeOfDay,
+                                                                     Integer requestedImportance,
+                                                                     String requestedTimeZone,
+                                                                     String userId) {
+        StatDefinition definition = requireBooleanTaskStat(definitionId, userId);
+        ZoneId timeZone = resolveTaskTimeZone(requestedTimeZone);
+        LocalDate today = LocalDate.now(timeZone);
+        LocalDate weekStart = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY));
+        LocalDateTime now = LocalDateTime.now(timeZone);
+        LocalDateTime weekEnd = weekStart.plusWeeks(1).atStartOfDay();
+        LocalTime timeOfDay = parseWeeklyTaskTime(requestedTimeOfDay);
+        int importance = resolveTaskImportance(requestedImportance);
+        String taskName = normalizeName(requestedTaskName);
+        if (taskName == null || taskName.isBlank()) taskName = definition.getName();
+        validateFocusTaskName(taskName);
+
+        List<DayOfWeek> days = requestedDays == null ? List.of() : requestedDays;
+        if (days.stream().anyMatch(day -> day == null)
+                || days.size() != days.stream().distinct().count()) {
+            throw new IllegalArgumentException("Weekly task days must be unique and valid.");
+        }
+        for (DayOfWeek day : days) {
+            LocalDate scheduledDate = nextDateInCurrentWeek(weekStart, day);
+            if (scheduledDate.isBefore(today)) {
+                throw new IllegalArgumentException("A weekly task cannot be scheduled on a past day.");
+            }
+            if (scheduledDate.equals(today) && !scheduledDate.atTime(timeOfDay).isAfter(now)) {
+                throw new IllegalArgumentException("Choose a future time for today's task.");
+            }
+        }
+
+        deleteUpcomingWeeklyTasks(definition, weekStart, now, weekEnd, userId);
+        createWeeklyTasks(definition, taskName, days, weekStart, timeOfDay, importance, timeZone, userId);
+        definitionRepository.save(definition);
+        log.info("This week's stat task schedule replaced: userId={} statDefinitionId={} weekStart={} days={} importance={}",
+                userId, definitionId, weekStart, days, importance);
+        return getWeeklyTaskSchedule(definitionId, timeZone.getId(), userId);
+    }
+
+    @Transactional
+    public StatDefinition deleteRecurringTaskFutureOccurrences(String definitionId, String userId) {
+        StatDefinition definition = definitionRepository.findByIdAndUserId(definitionId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("No such stat."));
+        String seriesId = definition.getRecurringTaskSeriesId();
+        if (seriesId == null) return withFocusTaskNames(definition);
+
+        TaskSeriesResponse series = taskSeriesService.getSeries(seriesId, userId);
+        ZoneId timeZone = resolveTaskTimeZone(series.timeZone());
+        LocalDateTime now = LocalDateTime.now(timeZone);
+        List<String> futureTaskIds = taskRepository
+                .findAllByTaskSeriesIdAndUserIdOrderBySeriesOccurrenceAtAsc(seriesId, userId)
+                .stream()
+                .filter(task -> task.getSeriesOccurrenceAt() != null
+                        && task.getSeriesOccurrenceAt().isAfter(now))
+                .map(Task::getTaskId)
+                .toList();
+        futureTaskIds.forEach(taskId -> taskService.deleteTaskOccurrence(taskId, userId));
+        taskSeriesService.deactivateSeries(seriesId, userId);
+        statTaskLinkService.preserveRecurringTaskLinks(seriesId, definitionId, userId);
+        definition.setRecurringTaskSeriesId(null);
+        StatDefinition savedDefinition = definitionRepository.save(definition);
+        log.info("Future stat recurring tasks removed: userId={} statDefinitionId={} seriesId={} deletedCount={}",
+                userId, definitionId, seriesId, futureTaskIds.size());
+        return withFocusTaskNames(savedDefinition);
+    }
+
+    private StatDefinition requireBooleanTaskStat(String definitionId, String userId) {
+        StatDefinition definition = definitionRepository.findByIdAndUserId(definitionId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("No such stat."));
+        if (definition.getSystemKey() != null) {
+            throw new IllegalArgumentException("Only user statistics can have linked tasks.");
+        }
+        if (definition.getType() != StatType.BOOLEAN) {
+            throw new IllegalArgumentException("Only true/false statistics can have scheduled tasks.");
+        }
+        return definition;
+    }
+
+    private boolean isUpcomingTask(Task task, LocalDateTime now, LocalDateTime weekEnd) {
+        LocalDateTime scheduledAt = taskScheduledAt(task);
+        return scheduledAt != null && scheduledAt.isAfter(now) && scheduledAt.isBefore(weekEnd)
+                && !task.isCompleted() && !task.isSkipped();
+    }
+
+    private LocalDateTime taskScheduledAt(Task task) {
+        return task.getScheduledPerformDateTime() != null
+                ? task.getScheduledPerformDateTime() : task.getSeriesOccurrenceAt();
+    }
+
+    private void deleteUpcomingWeeklyTasks(StatDefinition definition, LocalDate weekStart,
+                                          LocalDateTime now, LocalDateTime weekEnd, String userId) {
+        taskRepository.findAllByLinkedStatDefinitionIdAndStatScheduleWeekStartAndUserId(
+                        definition.getId(), weekStart, userId)
+                .stream()
+                .filter(task -> task.getScheduledPerformDateTime() != null
+                        && task.getScheduledPerformDateTime().isAfter(now)
+                        && !task.isCompleted() && !task.isSkipped())
+                .map(Task::getTaskId)
+                .toList()
+                .forEach(taskId -> taskService.deleteTask(taskId, userId));
+
+        if (definition.getRecurringTaskSeriesId() == null) return;
+        taskRepository.findAllByTaskSeriesIdAndUserIdOrderBySeriesOccurrenceAtAsc(
+                        definition.getRecurringTaskSeriesId(), userId)
+                .stream()
+                .filter(task -> task.getSeriesOccurrenceAt() != null
+                        && task.getSeriesOccurrenceAt().isAfter(now)
+                        && task.getSeriesOccurrenceAt().isBefore(weekEnd)
+                        && !task.isCompleted() && !task.isSkipped())
+                .map(Task::getTaskId)
+                .toList()
+                .forEach(taskId -> taskService.deleteTaskOccurrence(taskId, userId));
+    }
+
+    private void createWeeklyTasks(StatDefinition definition, String taskName, List<DayOfWeek> days,
+                                   LocalDate weekStart, LocalTime timeOfDay, int importance,
+                                   ZoneId timeZone, String userId) {
+        for (DayOfWeek day : days) {
+            LocalDate scheduledDate = nextDateInCurrentWeek(weekStart, day);
+            NewTaskRequest request = new NewTaskRequest();
+            request.setName(taskName);
+            request.setDescription("");
+            request.setScheduledPerformDateTime(scheduledDate.atTime(timeOfDay).toString());
+            request.setImportance(importance);
+            request.setTimeZone(timeZone.getId());
+            Task task = taskService.createTask(request, userId);
+            statTaskLinkService.linkCreatedWeeklyTaskToStat(task, definition, weekStart);
+            linkFocusTaskInternal(definition, taskName);
+        }
+    }
+
+    private LocalDate nextDateInCurrentWeek(LocalDate weekStart, DayOfWeek day) {
+        return weekStart.with(TemporalAdjusters.nextOrSame(day));
+    }
+
+    private ZoneId resolveTaskTimeZone(String requestedTimeZone) {
+        try {
+            return requestedTimeZone == null || requestedTimeZone.isBlank()
+                    ? ZoneId.systemDefault() : ZoneId.of(requestedTimeZone);
+        } catch (java.time.DateTimeException exception) {
+            throw new IllegalArgumentException("The task time zone is invalid.", exception);
+        }
+    }
+
+    private LocalTime parseWeeklyTaskTime(String value) {
+        if (value == null || !value.matches("\\d{2}:\\d{2}")) {
+            throw new IllegalArgumentException("Choose a valid task time.");
+        }
+        try {
+            return LocalTime.parse(value);
+        } catch (java.time.DateTimeException exception) {
+            throw new IllegalArgumentException("Choose a valid task time.", exception);
+        }
+    }
+
     @Transactional
     public StatDefinition updateRecurringTask(String definitionId, String userId, String requestedTimeZone,
                                               TaskRecurrenceFrequency recurrenceFrequency,
@@ -308,6 +532,17 @@ public class StatService {
                                               List<DayOfWeek> recurrenceDaysOfWeek,
                                               String requestedTimeOfDay,
                                               Integer requestedImportance) {
+        return updateRecurringTask(definitionId, userId, requestedTimeZone, recurrenceFrequency,
+                recurrenceDaysOfWeek, requestedTimeOfDay, requestedImportance, null);
+    }
+
+    @Transactional
+    public StatDefinition updateRecurringTask(String definitionId, String userId, String requestedTimeZone,
+                                              TaskRecurrenceFrequency recurrenceFrequency,
+                                              List<DayOfWeek> recurrenceDaysOfWeek,
+                                              String requestedTimeOfDay,
+                                              Integer requestedImportance,
+                                              String requestedTaskName) {
         StatDefinition definition = definitionRepository.findByIdAndUserId(definitionId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("No such stat."));
         if (definition.getType() != StatType.BOOLEAN || definition.getRecurringTaskSeriesId() == null) {
@@ -317,6 +552,15 @@ public class StatService {
         TaskRecurrenceFrequency frequency = recurrenceFrequency == null
                 ? TaskRecurrenceFrequency.DAILY : recurrenceFrequency;
         TaskSeriesResponse currentSeries = taskSeriesService.getSeries(definition.getRecurringTaskSeriesId(), userId);
+        String normalizedTaskName = normalizeName(requestedTaskName);
+        boolean taskNameChanged = normalizedTaskName != null
+                && !normalizedTaskName.isBlank()
+                && !normalizedTaskName.equals(currentSeries.name());
+        if (taskNameChanged) {
+            validateFocusTaskName(normalizedTaskName);
+            taskSeriesService.renameSeries(definition.getRecurringTaskSeriesId(), normalizedTaskName, userId);
+            renameRecurringFocusTaskLink(definition, currentSeries.name(), normalizedTaskName);
+        }
         LocalDateTime currentStart = currentSeries.startDateTime();
         LocalTime timeOfDay = resolveTimeOfDay(requestedTimeOfDay, currentStart.toLocalTime());
         TaskSeriesUpdateRequest request = new TaskSeriesUpdateRequest();
@@ -336,8 +580,8 @@ public class StatService {
             request.setRecurrenceUnit(TaskRecurrenceUnit.WEEKS);
         }
         taskSeriesService.updateSeries(definition.getRecurringTaskSeriesId(), request, userId);
-        log.info("Recurring task schedule updated: userId={} statDefinitionId={} seriesId={} frequency={}",
-                userId, definitionId, definition.getRecurringTaskSeriesId(), frequency);
+        log.info("Recurring task schedule updated: userId={} statDefinitionId={} seriesId={} frequency={} taskNameChanged={}",
+                userId, definitionId, definition.getRecurringTaskSeriesId(), frequency, taskNameChanged);
         return withFocusTaskNames(definition);
     }
 
@@ -758,8 +1002,9 @@ public class StatService {
             throw new IllegalArgumentException("Only boolean statistics can be marked as not planned.");
         }
 
-        if (!automatic && SystemStatCatalog.isAutomaticallyLoggedSystemKey(definition.getSystemKey())) {
-            throw new IllegalArgumentException("Meditation stats are recorded automatically when a session ends.");
+        if (!automatic && SystemStatCatalog.isAutomaticallyLoggedSystemKey(definition.getSystemKey())
+                && !SystemStatCatalog.MEDITATED_SYSTEM_KEY.equals(definition.getSystemKey())) {
+            throw new IllegalArgumentException("Meditation minutes are recorded automatically when a session ends.");
         }
         if (!isDailyStatDefinition(definition)) {
             throw new IllegalArgumentException("Mental state ratings must be recorded as a combined check-in.");

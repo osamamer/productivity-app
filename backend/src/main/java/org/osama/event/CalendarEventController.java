@@ -70,6 +70,14 @@ public class CalendarEventController {
                 eventId, request, currentUserService.getCurrentUserId());
     }
 
+    @DeleteMapping("/{eventId}/occurrences/future")
+    public CalendarEventFutureDeletionResponse deleteFutureEventOccurrences(
+            @PathVariable String eventId,
+            @RequestBody CalendarEventOccurrenceRequest request
+    ) {
+        return eventService.deleteFutureOccurrences(eventId, request, currentUserService.getCurrentUserId());
+    }
+
     @DeleteMapping("/{eventId}/occurrences/cancel")
     public CalendarEventResponse restoreEventOccurrence(@PathVariable String eventId,
                                                         @RequestParam String occurrenceKey) {

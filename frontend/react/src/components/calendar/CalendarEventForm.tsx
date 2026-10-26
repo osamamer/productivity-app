@@ -35,12 +35,13 @@ type Props = {
     onCancel: () => void;
     onDelete?: () => Promise<void>;
     onDeleteOccurrence?: () => Promise<void>;
+    onDeleteFutureOccurrences?: () => Promise<void>;
     onCancelOccurrence?: () => Promise<void>;
     onRestoreOccurrence?: () => Promise<void>;
     onUpdateOccurrenceStatus?: (status: CalendarEventStatus) => Promise<void>;
 };
 
-type DeleteScope = 'occurrence' | 'all';
+type DeleteScope = 'occurrence' | 'future' | 'all';
 
 const RECURRENCE_OPTIONS: { value: RecurrenceFrequency; label: string }[] = [
     { value: 'NONE', label: 'Does not repeat' },
@@ -122,6 +123,7 @@ export function CalendarEventForm({
     onCancel,
     onDelete,
     onDeleteOccurrence,
+    onDeleteFutureOccurrences,
     onCancelOccurrence,
     onRestoreOccurrence,
     onUpdateOccurrenceStatus,
@@ -322,12 +324,16 @@ export function CalendarEventForm({
     };
 
     const remove = async () => {
-        if (!deleteScope || (deleteScope === 'occurrence' ? !onDeleteOccurrence : !onDelete)) return;
+        if (!deleteScope
+            || (deleteScope === 'occurrence' && !onDeleteOccurrence)
+            || (deleteScope === 'future' && !onDeleteFutureOccurrences)
+            || (deleteScope === 'all' && !onDelete)) return;
         setDeleteConfirmationOpen(false);
         setDeleting(true);
         setError(null);
         try {
             if (deleteScope === 'occurrence') await onDeleteOccurrence!();
+            else if (deleteScope === 'future') await onDeleteFutureOccurrences!();
             else await onDelete!();
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Failed to delete the event.');
@@ -626,6 +632,15 @@ export function CalendarEventForm({
                     This occurrence
                 </MenuItem>
                 <MenuItem
+                    disabled={!canDeleteOccurrence || !onDeleteFutureOccurrences}
+                    onClick={() => {
+                        setDeleteMenuAnchor(null);
+                        openDeleteConfirmation('future', deleteMenuAnchor);
+                    }}
+                >
+                    Future occurrences
+                </MenuItem>
+                <MenuItem
                     onClick={() => {
                         setDeleteMenuAnchor(null);
                         openDeleteConfirmation('all', deleteMenuAnchor);
@@ -652,12 +667,16 @@ export function CalendarEventForm({
                 }}
             >
                 <DialogTitle sx={{ px: 1.5, pt: 1.25, pb: 0.5, fontSize: '0.9rem', lineHeight: 1.3 }}>
-                    {deleteScope === 'occurrence' ? 'Delete this occurrence?' : 'Delete event?'}
+                    {deleteScope === 'occurrence'
+                        ? 'Delete this occurrence?'
+                        : deleteScope === 'future' ? 'Delete future occurrences?' : 'Delete event?'}
                 </DialogTitle>
                 <DialogContent sx={{ px: 1.5, py: 0.5 }}>
                     <DialogContentText sx={{ fontSize: '0.8rem', lineHeight: 1.4 }}>
                         {deleteScope === 'occurrence'
                             ? 'This occurrence will be removed from your calendar. This cannot be undone.'
+                            : deleteScope === 'future'
+                                ? 'All later occurrences will be removed from your calendar. This occurrence will remain.'
                             : event && recurrenceFrequency !== 'NONE'
                                 ? 'All occurrences of this event will be removed from your calendar. This cannot be undone.'
                                 : 'This event will be removed from your calendar. This cannot be undone.'}

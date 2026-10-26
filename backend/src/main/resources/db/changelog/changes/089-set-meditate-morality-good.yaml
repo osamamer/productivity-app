@@ -1,0 +1,20 @@
+databaseChangeLog:
+  - changeSet:
+      id: 089-set-meditate-morality-good
+      author: codex
+      changes:
+        - sql:
+            sql: >
+              UPDATE stat_definition
+              SET morality = 'GOOD',
+                  good_threshold = NULL
+              WHERE system_key = 'meditated'
+                AND soft_deleted = FALSE;
+      rollback:
+        - sql:
+            sql: >
+              UPDATE stat_definition
+              SET morality = NULL,
+                  good_threshold = NULL
+              WHERE system_key = 'meditated'
+                AND soft_deleted = FALSE;

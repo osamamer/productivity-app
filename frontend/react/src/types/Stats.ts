@@ -14,6 +14,17 @@ export type StatRecurringTaskDraft = {
     taskName?: string;
 };
 
+export type StatWeeklyTaskScheduleDraft = {
+    taskName: string;
+    daysOfWeek: StatRecurrenceDay[];
+    timeOfDay: string;
+    importance: number;
+};
+
+export type StatWeeklyTaskSchedule = StatWeeklyTaskScheduleDraft & {
+    weekStartDate: string;
+};
+
 export interface StatDefinition {
     id: string;
     name: string;
@@ -23,6 +34,7 @@ export interface StatDefinition {
     maxValue?: number;
     goodThreshold?: number | null;
     systemKey?: string;
+    showOnStatsPage?: boolean;
     recurringTaskSeriesId?: string | null;
     focusTaskName?: string | null;
     focusTaskNames?: string[];

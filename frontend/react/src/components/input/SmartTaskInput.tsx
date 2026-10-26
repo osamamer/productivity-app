@@ -323,7 +323,7 @@ export function SmartTaskInput({
             const reminderLabel = formatReminderDateTime(reminderDateTime);
             return reminderLabel ? `Custom · ${reminderLabel}` : 'Custom reminder';
         }
-        if (minutesBefore === 60) return '1h before';
+        if (minutesBefore === 60) return '1 hour before';
         if (minutesBefore === 1440) return '1 day before';
         return `${minutesBefore} minutes before`;
     };
@@ -659,7 +659,8 @@ export function SmartTaskInput({
                                 </Typography>
                             </ListItem>
                             {[
-                                { label: '1h before', value: 60 },
+                                { label: '15 minutes before', value: 15 },
+                                { label: '1 hour before', value: 60 },
                                 { label: '1 day before', value: 1440 },
                             ].map((option, index) => (
                                 <ListItemButton

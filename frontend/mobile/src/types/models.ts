@@ -287,6 +287,11 @@ export interface CalendarEvent {
   sourceId?: string | null;
 }
 
+export interface CalendarEventFutureDeletionResponse {
+  eventDeleted: boolean;
+  event: CalendarEvent | null;
+}
+
 export type CalendarEventInput = Omit<CalendarEvent, 'id' | 'createdAt' | 'updatedAt'>;
 
 export interface MeditationSession {

@@ -118,6 +118,34 @@ public class TaskService {
         return tasks;
     }
 
+    @Transactional(readOnly = true)
+    public List<TaskPageTaskDto> findTaskPageTasks(TaskQuery query, Integer limit, Integer offset) {
+        List<Task> tasks = limit == null
+                ? findTasks(query)
+                : findTasks(query, limit, offset == null ? 0 : offset);
+        if (tasks.isEmpty()) return List.of();
+
+        List<String> taskIds = tasks.stream().map(Task::getTaskId).toList();
+        Map<String, List<TaskSession>> sessionsByTaskId = taskSessionRepository
+                .findAllByAssociatedTaskIdIn(taskIds)
+                .stream()
+                .collect(Collectors.groupingBy(TaskSession::getAssociatedTaskId));
+        LocalDateTime now = LocalDateTime.now();
+        LocalDate today = now.toLocalDate();
+
+        return tasks.stream()
+                .map(task -> new TaskPageTaskDto(
+                        task,
+                        TaskPomodoroStatsCalculator.calculate(
+                                task.getTaskId(),
+                                sessionsByTaskId.getOrDefault(task.getTaskId(), List.of()),
+                                today,
+                                now
+                        )
+                ))
+                .toList();
+    }
+
     private Sort taskSort(TaskQuery query) {
         if (query.getPeriod() == TaskQuery.DatePeriod.FUTURE) {
             return Sort.by(
@@ -751,6 +779,49 @@ public class TaskService {
     }
 
     @Transactional
+    public TaskDeletionReceipt deleteTaskFutureOccurrences(String taskId, String userId) {
+        Task selectedTask = taskRepository.findTaskByTaskIdAndUserId(taskId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("Task not found: " + taskId));
+        String seriesId = selectedTask.getTaskSeriesId();
+        if (seriesId == null || selectedTask.getSeriesOccurrenceAt() == null) {
+            throw new IllegalArgumentException("Only a recurring task occurrence can delete future occurrences.");
+        }
+
+        var series = taskSeriesRepository.lockBySeriesIdAndUserId(seriesId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("Task series not found: " + seriesId));
+        LocalDateTime boundary = selectedTask.getSeriesOccurrenceAt();
+        List<Task> occurrences = taskRepository
+                .findAllByTaskSeriesIdAndUserIdOrderBySeriesOccurrenceAtAsc(seriesId, userId)
+                .stream()
+                .filter(task -> task.getSeriesOccurrenceAt() != null
+                        && task.getSeriesOccurrenceAt().isAfter(boundary))
+                .toList();
+        List<Task> subtasks = findTaskDescendants(
+                occurrences.stream().map(Task::getTaskId).toList(), userId);
+        List<Task> tasks = new ArrayList<>(occurrences);
+        tasks.addAll(subtasks);
+        List<String> taskIds = tasks.stream().map(Task::getTaskId).toList();
+        TaskGroupService.TaskGroupDeletionState groups = taskGroupService.snapshotDeletionState(taskIds, userId);
+        List<String> reminderIds = reminderIdsForTasks(taskIds, userId);
+        TaskDeletionReceipt.TaskSeriesState previousSeriesState = new TaskDeletionReceipt.TaskSeriesState(
+                series.getRecurrenceEndDate(), series.isActive());
+
+        taskGroupService.removeTasksFromGroups(taskIds, userId);
+        deleteTaskReminders(taskIds, userId);
+        RuntimeDeletionState runtime = deleteTaskRuntimeState(taskIds);
+        taskRepository.deleteAll(subtasks);
+        taskRepository.deleteAll(occurrences);
+        series.setRecurrenceEndDate(boundary.toLocalDate());
+        series.setActive(false);
+        taskSeriesRepository.save(series);
+
+        log.info("Future recurring task occurrences deleted: userId={} taskId={} seriesId={} boundary={} occurrenceCount={}",
+                userId, taskId, seriesId, boundary, occurrences.size());
+        return deletionReceipt(tasks, List.of(), groups, reminderIds, runtime, Map.of(),
+                Map.of(seriesId, previousSeriesState));
+    }
+
+    @Transactional
     public TaskDeletionReceipt deleteRecurringSeriesCompletely(String seriesId, String userId) {
         var series = taskSeriesRepository.findBySeriesIdAndUserId(seriesId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Task series not found: " + seriesId));
@@ -791,6 +862,13 @@ public class TaskService {
         restoreSoftDeletedRows("task_group", "group_id", receipt.taskGroupIds(), userId);
         restoreGroupMemberships(receipt.taskGroupMembershipIds(), userId);
         entityManager.clear();
+
+        receipt.taskSeriesStatesToRestore().forEach((seriesId, state) ->
+                taskSeriesRepository.findBySeriesIdAndUserId(seriesId, userId).ifPresent(series -> {
+                    series.setRecurrenceEndDate(state.recurrenceEndDate());
+                    series.setActive(state.active());
+                    taskSeriesRepository.save(series);
+                }));
 
         receipt.linkedStatDefinitionsBySeries().forEach((seriesId, definitionId) ->
                 statTaskLinkService.restoreRecurringSeriesLink(seriesId, definitionId, userId));
@@ -835,10 +913,18 @@ public class TaskService {
                                                 TaskGroupService.TaskGroupDeletionState groups,
                                                 List<String> reminderIds, RuntimeDeletionState runtime,
                                                 Map<String, String> linkedDefinitions) {
+        return deletionReceipt(tasks, seriesIds, groups, reminderIds, runtime, linkedDefinitions, Map.of());
+    }
+
+    private TaskDeletionReceipt deletionReceipt(List<Task> tasks, List<String> seriesIds,
+                                                TaskGroupService.TaskGroupDeletionState groups,
+                                                List<String> reminderIds, RuntimeDeletionState runtime,
+                                                Map<String, String> linkedDefinitions,
+                                                Map<String, TaskDeletionReceipt.TaskSeriesState> seriesStates) {
         return new TaskDeletionReceipt(
                 tasks.stream().map(Task::getTaskId).distinct().toList(), seriesIds,
                 runtime.sessionIds(), runtime.scheduledJobIds(), runtime.pomodoroIds(), reminderIds,
-                groups.groupIds(), groups.membershipIds(), linkedDefinitions);
+                groups.groupIds(), groups.membershipIds(), linkedDefinitions, seriesStates);
     }
 
     private List<String> reminderIdsForTasks(Collection<String> taskIds, String userId) {

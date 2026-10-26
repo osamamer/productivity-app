@@ -4,7 +4,7 @@ import { TaskToCreate } from '../../types/TaskToCreate';
 import { getAuthHeaders } from '../utils/authHeaders';
 import { PomodoroStatus } from '../../types/PomodoroStatus';
 import { TaskPomodoroStats, TodayFocusSummary } from '../../types/TaskPomodoroStats';
-import { invalidateTaskPomodoroStats } from '../cache/taskPomodoroStatsCache';
+import { invalidateTaskPomodoroStats, setCachedTaskPomodoroStats } from '../cache/taskPomodoroStatsCache';
 import { CachedResource } from '../cache/ttlCache';
 import { getAuthCacheScope } from '../utils/authHeaders';
 import { clearTaskSubtasksCache, invalidateTaskSubtasks, loadTaskSubtasks } from '../cache/taskSubtasksCache';
@@ -41,6 +41,11 @@ export type TaskPageInitialSnapshot = {
     hasMorePastTasks: boolean;
 };
 
+type TaskPageTaskDto = {
+    task: Task;
+    focusHistory: TaskPomodoroStats;
+};
+
 type DeleteTaskOptions = {
     notifyResource?: boolean;
 };
@@ -59,6 +64,7 @@ export type TaskDeletionReceipt = {
     taskGroupIds: string[];
     taskGroupMembershipIds: string[];
     linkedStatDefinitionsBySeries: Record<string, string>;
+    taskSeriesStatesToRestore: Record<string, { recurrenceEndDate: string | null; active: boolean }>;
 };
 
 export async function readTaskDeletionReceipt(response: Response): Promise<TaskDeletionReceipt | null> {
@@ -84,7 +90,10 @@ export async function readTaskDeletionReceipt(response: Response): Promise<TaskD
             console.warn('Delete succeeded but returned no usable undo receipt.');
             return null;
         }
-        return receipt as TaskDeletionReceipt;
+        return {
+            ...receipt,
+            taskSeriesStatesToRestore: receipt.taskSeriesStatesToRestore ?? {},
+        } as TaskDeletionReceipt;
     } catch (error) {
         console.error('Task deletion succeeded but its undo receipt could not be read:', error);
         return null;
@@ -106,6 +115,7 @@ function emptyTaskDeletionReceipt(): TaskDeletionReceipt {
         taskGroupIds: [],
         taskGroupMembershipIds: [],
         linkedStatDefinitionsBySeries: {},
+        taskSeriesStatesToRestore: {},
     };
 }
 
@@ -123,6 +133,7 @@ export function mergeTaskDeletionReceipts(
             merged[key] = [...new Set([...merged[key], ...receipt[key]])];
         });
         Object.assign(merged.linkedStatDefinitionsBySeries, receipt.linkedStatDefinitionsBySeries);
+        Object.assign(merged.taskSeriesStatesToRestore, receipt.taskSeriesStatesToRestore ?? {});
     });
     return merged;
 }
@@ -336,15 +347,7 @@ async function fetchTaskPeriod(
         params.set('offset', String(offset));
     }
 
-    const load = async () => {
-        const response = await apiFetch(`${TASK_URL}?${params.toString()}`, {
-            headers: getAuthHeaders(),
-        });
-        if (!response.ok) {
-            throw new Error(`Failed to fetch ${period.toLowerCase()} tasks`);
-        }
-        return response.json() as Promise<Task[]>;
-    };
+    const load = () => fetchTaskPageTasks(params, `Failed to fetch ${period.toLowerCase()} tasks`);
 
     const tasks = limit === undefined
         ? await load()
@@ -355,12 +358,21 @@ async function fetchTaskPeriod(
 async function fetchUndatedTasks(completed?: boolean): Promise<Task[]> {
     const params = new URLSearchParams({ scheduled: 'false' });
     if (completed !== undefined) params.set('completed', String(completed));
+    return fetchTaskPageTasks(params, 'Failed to fetch undated tasks');
+}
 
-    const response = await apiFetch(`${TASK_URL}?${params.toString()}`, {
+async function fetchTaskPageTasks(params: URLSearchParams, errorMessage: string): Promise<Task[]> {
+    const response = await apiFetch(`${TASK_URL}/page?${params.toString()}`, {
         headers: getAuthHeaders(),
     });
-    if (!response.ok) throw new Error('Failed to fetch undated tasks');
-    const tasks = await response.json() as Task[];
+    if (!response.ok) throw new Error(errorMessage);
+
+    const responses = await response.json() as TaskPageTaskDto[];
+    const tasks = responses.map(({ task, focusHistory }) => {
+        setCachedTaskPomodoroStats(task.taskId, focusHistory);
+        return { ...task, focusHistory };
+    });
+    cacheMainTasks(tasks);
     return filterDeletedTasks(tasks);
 }
 
@@ -440,7 +452,7 @@ export const taskService = {
 
         const snapshot = await taskPageInitialCache.get(cacheKey, async () => {
             const [today, future, past, undated] = await Promise.all([
-                this.getTodayTasks(),
+                fetchTaskPageTasks(new URLSearchParams({ period: 'TODAY' }), 'Failed to fetch today tasks'),
                 fetchTaskPeriod('FUTURE', batchSize + 1, 0, completed),
                 fetchTaskPeriod('PAST', batchSize + 1, 0, completed),
                 fetchUndatedTasks(completed),
@@ -848,6 +860,35 @@ export const taskService = {
             if (notifyResource) invalidateResource('tasks');
         } catch (error) {
             console.error('Task occurrence was deleted but local task caches could not be refreshed:', error);
+        }
+        return receipt;
+    },
+
+    async deleteTaskFutureOccurrences(taskId: string, { notifyResource = true }: DeleteTaskOptions = {}): Promise<TaskDeletionReceipt | null> {
+        let response: Response;
+        try {
+            response = await apiFetch(`${TASK_URL}/${taskId}/future-occurrences`, {
+                method: 'DELETE',
+                headers: getAuthHeaders(),
+            });
+            if (!response.ok) {
+                throw new Error('Failed to delete future task occurrences');
+            }
+        } catch (error) {
+            throw error;
+        }
+
+        const receipt = await readTaskDeletionReceipt(response);
+        try {
+            if (receipt) {
+                markTasksDeleted(receipt.taskIds);
+                receipt.taskIds.forEach(invalidateTaskPomodoroStats);
+            }
+            invalidateTaskListCaches();
+            clearTaskSeriesCache();
+            if (notifyResource) invalidateResource('tasks');
+        } catch (error) {
+            console.error('Future task occurrences were deleted but local task caches could not be refreshed:', error);
         }
         return receipt;
     },

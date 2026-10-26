@@ -1,0 +1,20 @@
+databaseChangeLog:
+  - changeSet:
+      id: 086-add-stat-weekly-task-schedule
+      author: codex
+      changes:
+        - addColumn:
+            tableName: task
+            columns:
+              - column:
+                  name: stat_schedule_week_start
+                  type: DATE
+        - createIndex:
+            tableName: task
+            indexName: idx_app_task_stat_week_start
+            ifNotExists: true
+            columns:
+              - column:
+                  name: linked_stat_definition_id
+              - column:
+                  name: stat_schedule_week_start

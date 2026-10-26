@@ -79,11 +79,14 @@ import {
     createOptimisticPomodoroStatus,
     getOptimisticPomodoroStatus,
 } from '../services/utils/optimisticPomodoro';
+import { TaskOriginAdornment } from './task/TaskOriginAdornment';
+import type { TaskOriginKind } from './task/TaskOriginAdornment';
 
 // ─── types ─────────────────────────────────────────────────────────────────
 
 export type FlatTaskRowProps = {
     task: Task;
+    originKind?: TaskOriginKind | null;
     onToggle: (taskId: string, anchorEl?: HTMLElement) => void;
     onUpdate: (taskId: string, updates: Partial<Task>) => Promise<void>;
     expandedPanel: 'pomodoro' | 'details' | null;
@@ -281,6 +284,7 @@ function isEditableDragOrigin(target: EventTarget | null): boolean {
 
 export const FlatTaskRow = React.memo(function FlatTaskRow({
     task,
+    originKind,
     onToggle,
     onUpdate,
     expandedPanel,
@@ -1517,6 +1521,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             }}
                         >
                             {localName}
+                            <TaskOriginAdornment kind={originKind} />
                         </Typography>
                     </Box>
                     {isEditingName && (

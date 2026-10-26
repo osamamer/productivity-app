@@ -223,14 +223,87 @@ function buildTaskListItems(tasks: Task[], groups: TaskGroup[]): TaskListItem[] 
       items.push({ kind: 'task', task });
     } else if (!emittedGroupIds.has(group.groupId)) {
       emittedGroupIds.add(group.groupId);
+      const groupTasks = tasks.filter(candidate => groupByTaskId.get(candidate.taskId)?.groupId === group.groupId);
+      if ((group.isStatGroup || group.linkedToMentalThread) && groupTasks.length === 1) {
+        items.push({ kind: 'task', task: groupTasks[0] });
+        return items;
+      }
       items.push({
         kind: 'group',
         group,
-        tasks: tasks.filter(candidate => groupByTaskId.get(candidate.taskId)?.groupId === group.groupId),
+        tasks: groupTasks,
       });
     }
     return items;
   }, []);
+}
+
+function insertAtCompletionBoundary(
+  remainingTaskIds: string[],
+  movedTaskIds: string[],
+  tasks: Task[],
+): string[] {
+  const taskById = new Map(tasks.map(task => [task.taskId, task]));
+  const openTaskIds = remainingTaskIds.filter(taskId => !taskById.get(taskId)?.completed);
+  const completedTaskIds = remainingTaskIds.filter(taskId => taskById.get(taskId)?.completed);
+  return [...openTaskIds, ...movedTaskIds, ...completedTaskIds];
+}
+
+function reorderTaskIdsForCompletion(
+  taskIds: string[],
+  taskId: string,
+  completed: boolean,
+  tasks: Task[],
+  groups: TaskGroup[],
+  homeTaskIds: Set<string>,
+): string[] {
+  const group = groups.find(candidate => candidate.taskIds.length > 1 && candidate.taskIds.includes(taskId));
+  if (!group) {
+    return insertAtCompletionBoundary(taskIds.filter(id => id !== taskId), [taskId], tasks);
+  }
+
+  const taskIdSet = new Set(taskIds);
+  const visibleGroupTaskIds = group.taskIds.filter(groupTaskId => (
+    taskIdSet.has(groupTaskId) && (homeTaskIds.has(groupTaskId) || groupTaskId === taskId)
+  ));
+  if (visibleGroupTaskIds.length < 2) {
+    return insertAtCompletionBoundary(taskIds.filter(id => id !== taskId), [taskId], tasks);
+  }
+
+  const taskById = new Map(tasks.map(task => [task.taskId, task]));
+  const groupTasks = visibleGroupTaskIds.map(groupTaskId => taskById.get(groupTaskId));
+  if (groupTasks.some(groupTask => !groupTask)) return taskIds;
+
+  const allCompleted = groupTasks.every(groupTask => (
+    groupTask!.taskId === taskId ? completed : groupTask!.completed
+  ));
+  const allReopened = groupTasks.every(groupTask => (
+    groupTask!.taskId === taskId ? !completed : !groupTask!.completed
+  ));
+  if (!allCompleted && !allReopened) return taskIds;
+
+  const groupTaskIdSet = new Set(visibleGroupTaskIds);
+  const groupIdsInOrder = taskIds.filter(id => groupTaskIdSet.has(id));
+  if (groupIdsInOrder.length !== visibleGroupTaskIds.length) return taskIds;
+
+  const remainingTaskIds = taskIds.filter(id => !groupTaskIdSet.has(id));
+  return insertAtCompletionBoundary(remainingTaskIds, groupIdsInOrder, tasks);
+}
+
+function reorderTaskIdsForCompletionChanges(
+  taskIds: string[],
+  changes: Array<{ taskId: string; completed: boolean }>,
+  tasks: Task[],
+  groups: TaskGroup[],
+  homeTaskIds: Set<string>,
+): string[] {
+  let nextTaskIds = taskIds;
+  let nextTasks = tasks;
+  changes.forEach(({ taskId, completed }) => {
+    nextTaskIds = reorderTaskIdsForCompletion(nextTaskIds, taskId, completed, nextTasks, groups, homeTaskIds);
+    nextTasks = nextTasks.map(task => task.taskId === taskId ? { ...task, completed } : task);
+  });
+  return nextTaskIds;
 }
 
 export default function TodayScreen() {
@@ -582,13 +655,33 @@ export default function TodayScreen() {
   async function performBulkCompletion(completed: boolean) {
     if (bulkActionLoading || selectedTasks.length === 0) return;
     const tasksToComplete = selectedTasks.filter(task => !task.completed);
+    const currentTaskOrder = allTasks.filter(task => !task.parentId).map(task => task.taskId);
+    const homeTaskIds = new Set(todayTasks.filter(task => !task.parentId).map(task => task.taskId));
+    const nextTaskOrder = reorderTaskIdsForCompletionChanges(
+      currentTaskOrder,
+      selectedTasks.map(task => ({ taskId: task.taskId, completed })),
+      allTasks,
+      groups,
+      homeTaskIds,
+    );
     setBulkActionLoading(true);
     try {
       const updated = await Promise.all(selectedTasks.map(task => api.tasks.update(task.taskId, { completed })));
       updated.forEach(updateTask);
+      if (nextTaskOrder.some((taskId, index) => taskId !== currentTaskOrder[index])) {
+        try {
+          await reorderTasks(nextTaskOrder);
+        } catch (cause) {
+          await refreshTasks();
+          clearSelection();
+          void showError('Could not reorder tasks', reportError('Could not reorder tasks', cause));
+          return;
+        }
+      }
       if (completed && tasksToComplete.length > 0) playAudioFeedback('taskCompleted');
       clearSelection();
     } catch (cause) {
+      await refreshTasks();
       void showError('Could not update tasks', reportError('Could not update tasks', cause));
     } finally {
       setBulkActionLoading(false);
@@ -625,12 +718,42 @@ export default function TodayScreen() {
 
   async function toggle(task: Task) {
     const optimistic = { ...task, completed: !task.completed };
+    const currentTaskOrder = allTasks.filter(candidate => !candidate.parentId).map(candidate => candidate.taskId);
+    const homeTaskIds = new Set(todayTasks.filter(candidate => !candidate.parentId).map(candidate => candidate.taskId));
+    const nextTaskOrder = reorderTaskIdsForCompletion(
+      currentTaskOrder,
+      task.taskId,
+      optimistic.completed,
+      allTasks,
+      groups,
+      homeTaskIds,
+    );
+    const orderChanged = nextTaskOrder.some((taskId, index) => taskId !== currentTaskOrder[index]);
     updateTask(optimistic);
+    const reorderPromise = orderChanged ? reorderTasks(nextTaskOrder) : null;
     try {
       const updated = await api.tasks.update(task.taskId, { completed: optimistic.completed });
       updateTask(updated);
+      if (reorderPromise) {
+        try {
+          await reorderPromise;
+        } catch (cause) {
+          void showError('Could not reorder tasks', reportError('Could not reorder tasks', cause));
+          return;
+        }
+      }
       if (optimistic.completed) playAudioFeedback('taskCompleted');
     } catch (cause) {
+      if (reorderPromise) {
+        const orderResult = await Promise.allSettled([reorderPromise]);
+        if (orderResult[0].status === 'fulfilled') {
+          try {
+            await reorderTasks(currentTaskOrder);
+          } catch {
+            await refreshTasks();
+          }
+        }
+      }
       updateTask(task);
       void showError('Could not update task', reportError('Could not update task', cause));
     }

@@ -207,9 +207,23 @@ export default function CalendarScreen() {
     return updated;
   }
 
+  async function deleteEventFutureOccurrences(eventId: string, occurrenceKey: string) {
+    const result = await api.events.deleteFutureOccurrences(eventId, occurrenceKey);
+    if (result.eventDeleted) {
+      eventsResource.setData(previous => (previous ?? []).filter(event => event.id !== eventId));
+    } else if (result.event) {
+      saveEvent(result.event);
+    }
+  }
+
   async function deleteTaskOccurrence(taskId: string) {
     await api.tasks.removeOccurrence(taskId);
     removeTask(taskId);
+  }
+
+  async function deleteTaskFutureOccurrences(taskId: string) {
+    await api.tasks.removeFutureOccurrences(taskId);
+    await refreshTasks();
   }
 
   function saveTask(task: Task) {
@@ -249,6 +263,7 @@ export default function CalendarScreen() {
         onEventOccurrenceRestored={restoreEventOccurrence}
         onEventOccurrenceStatusUpdated={updateEventOccurrenceStatus}
         onEventOccurrenceDeleted={deleteEventOccurrence}
+        onEventFutureOccurrencesDeleted={deleteEventFutureOccurrences}
         onEventDeleted={deleteEvent}
         onTaskCreated={saveTask}
         onTaskUpdated={updateTask}
@@ -257,6 +272,7 @@ export default function CalendarScreen() {
           void refreshTasks();
         }}
         onTaskOccurrenceDeleted={deleteTaskOccurrence}
+        onTaskFutureOccurrencesDeleted={deleteTaskFutureOccurrences}
         displayOptionsOpen={displayOptionsOpen}
         onDisplayOptionsOpenChange={setDisplayOptionsOpen} />
       <AppPopup

@@ -3,8 +3,11 @@ import {
     Alert, Box, Button, Chip, DialogActions, DialogContent, DialogTitle,
     Popover, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material';
-import { StatDefinition, StatRecurringTaskDraft } from '../../types/Stats';
-import { defaultStatRecurringTaskDraft } from './statRecurringTaskUtils';
+import { StatDefinition, StatRecurringTaskDraft, StatWeeklyTaskScheduleDraft } from '../../types/Stats';
+import {
+    defaultStatRecurringTaskDraft, defaultStatWeeklyTaskScheduleDraft, STAT_RECURRENCE_DAYS,
+    isStatScheduleDayAvailable,
+} from './statRecurringTaskUtils';
 import { StatRecurringTaskOptions } from './StatRecurringTaskDialog';
 import { AppTimeField } from '../input/AppPickerFields';
 import { TaskReminderPicker } from '../task/TaskReminderPicker';
@@ -25,6 +28,7 @@ type Props = {
         reminderMinutesBefore: number | null,
     ) => void;
     onCreateRecurring: (taskName: string, recurrence: StatRecurringTaskDraft) => void;
+    onCreateThisWeek: (schedule: StatWeeklyTaskScheduleDraft) => void;
 };
 
 const PRIORITY_OPTIONS = [
@@ -48,13 +52,17 @@ export function StatCreateLinkedTaskDialog({
     onClose,
     onCreate,
     onCreateRecurring,
+    onCreateThisWeek,
 }: Props) {
     const [taskName, setTaskName] = useState('');
     const [importance, setImportance] = useState(3);
-    const [mode, setMode] = useState<'once' | 'recurring'>('once');
+    const [mode, setMode] = useState<'once' | 'week' | 'recurring'>('once');
     const [timeOfDay, setTimeOfDay] = useState('');
     const [reminderMinutesBefore, setReminderMinutesBefore] = useState<number | null>(null);
     const [recurrence, setRecurrence] = useState<StatRecurringTaskDraft>(defaultStatRecurringTaskDraft);
+    const [weeklySchedule, setWeeklySchedule] = useState<StatWeeklyTaskScheduleDraft>(
+        defaultStatWeeklyTaskScheduleDraft(),
+    );
 
     useEffect(() => {
         if (!open) return;
@@ -65,15 +73,21 @@ export function StatCreateLinkedTaskDialog({
         setTimeOfDay(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
         setReminderMinutesBefore(null);
         setRecurrence(defaultStatRecurringTaskDraft());
+        setWeeklySchedule(defaultStatWeeklyTaskScheduleDraft(definition?.name ?? ''));
     }, [definition?.id, definition?.name, open]);
 
     const trimmedTaskName = taskName.trim();
     const customDaysMissing = recurrence.recurrenceFrequency === 'CUSTOM'
         && recurrence.recurrenceDaysOfWeek.length === 0;
     const timeMissing = !/^\d{2}:\d{2}$/.test(recurrence.timeOfDay);
+    const weeklyTimeMissing = !/^\d{2}:\d{2}$/.test(weeklySchedule.timeOfDay);
     const oneTimeMissing = !/^\d{2}:\d{2}$/.test(timeOfDay);
     const canCreate = Boolean(definition && trimmedTaskName && !saving
-        && (mode === 'once' ? !oneTimeMissing : (!customDaysMissing && !timeMissing)));
+        && (mode === 'once'
+            ? !oneTimeMissing
+            : mode === 'week'
+                ? weeklySchedule.daysOfWeek.length > 0 && !weeklyTimeMissing
+                : !customDaysMissing && !timeMissing));
 
     return (
         <Popover
@@ -131,21 +145,69 @@ export function StatCreateLinkedTaskDialog({
                             })}
                         </Stack>
                     </Box>
-                    {definition?.type === 'BOOLEAN' && !definition.recurringTaskSeriesId && (
+                    {definition?.type === 'BOOLEAN' && (
                         <>
                             <ToggleButtonGroup
                                 exclusive
                                 fullWidth
                                 size="small"
                                 value={mode}
-                                onChange={(_, value: 'once' | 'recurring' | null) => {
+                                onChange={(_, value: 'once' | 'week' | 'recurring' | null) => {
                                     if (value) setMode(value);
                                 }}
                                 disabled={saving}
                             >
                                 <ToggleButton value="once">One-time</ToggleButton>
-                                <ToggleButton value="recurring">Recurring</ToggleButton>
+                                <ToggleButton value="week">This week</ToggleButton>
+                                {!definition.recurringTaskSeriesId && (
+                                    <ToggleButton value="recurring">Recurring</ToggleButton>
+                                )}
                             </ToggleButtonGroup>
+                            {mode === 'week' && (
+                                <>
+                                    <Box>
+                                        <Typography variant="body2" color="text.secondary" sx={{ mb: 0.75 }}>
+                                            Days this week
+                                        </Typography>
+                                        <ToggleButtonGroup
+                                            value={weeklySchedule.daysOfWeek}
+                                            onChange={(_event, daysOfWeek) => setWeeklySchedule(current => ({
+                                                ...current,
+                                                daysOfWeek,
+                                            }))}
+                                            aria-label="Days this week"
+                                            disabled={saving}
+                                            fullWidth
+                                            size="small"
+                                        >
+                                            {STAT_RECURRENCE_DAYS.map(day => (
+                                                <ToggleButton
+                                                    key={day.value}
+                                                    value={day.value}
+                                                    aria-label={day.value}
+                                                    disabled={!isStatScheduleDayAvailable(day.value, weeklySchedule.timeOfDay)}
+                                                >
+                                                    {day.label}
+                                                </ToggleButton>
+                                            ))}
+                                        </ToggleButtonGroup>
+                                    </Box>
+                                    <AppTimeField
+                                        label="Task time"
+                                        value={weeklySchedule.timeOfDay}
+                                        onChange={timeOfDay => setWeeklySchedule(current => ({
+                                            ...current,
+                                            timeOfDay,
+                                            daysOfWeek: current.daysOfWeek.filter(day =>
+                                                isStatScheduleDayAvailable(day, timeOfDay),
+                                            ),
+                                        }))}
+                                        disabled={saving}
+                                        error={weeklyTimeMissing}
+                                        helperText={weeklyTimeMissing ? 'Choose a task time.' : undefined}
+                                    />
+                                </>
+                            )}
                             {mode === 'recurring' && (
                                 <StatRecurringTaskOptions
                                     value={{ ...recurrence, importance }}
@@ -184,10 +246,18 @@ export function StatCreateLinkedTaskDialog({
                     variant="contained"
                     onClick={() => mode === 'recurring'
                         ? onCreateRecurring(trimmedTaskName, { ...recurrence, importance, taskName: trimmedTaskName })
-                        : onCreate(trimmedTaskName, importance, timeOfDay, reminderMinutesBefore)}
+                        : mode === 'week'
+                            ? onCreateThisWeek({
+                                ...weeklySchedule,
+                                taskName: trimmedTaskName,
+                                importance,
+                            })
+                            : onCreate(trimmedTaskName, importance, timeOfDay, reminderMinutesBefore)}
                     disabled={!canCreate}
                 >
-                    {saving ? 'Creating…' : mode === 'recurring' ? 'Create recurring task' : 'Create task'}
+                    {saving ? 'Creating…' : mode === 'recurring'
+                        ? 'Create recurring task'
+                        : mode === 'week' ? 'Schedule this week' : 'Create task'}
                 </Button>
             </DialogActions>
             </Box>

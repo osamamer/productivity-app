@@ -1,0 +1,80 @@
+databaseChangeLog:
+  - changeSet:
+      id: 088-rename-meditated-stat
+      author: codex
+      changes:
+        - sql:
+            sql: >
+              UPDATE stat_definition meditate_stat
+              SET show_on_stats_page = TRUE
+              FROM stat_definition minutes_stat
+              WHERE meditate_stat.user_id = minutes_stat.user_id
+                AND meditate_stat.system_key = 'meditated'
+                AND minutes_stat.system_key = 'meditation_minutes'
+                AND meditate_stat.soft_deleted = FALSE
+                AND minutes_stat.soft_deleted = FALSE
+                AND minutes_stat.show_on_stats_page = TRUE;
+        - sql:
+            sql: >
+              UPDATE stat_definition
+              SET show_on_stats_page = FALSE
+              WHERE system_key = 'meditation_minutes'
+                AND show_on_stats_page = TRUE;
+        - sql:
+            sql: >
+              UPDATE stat_definition personal_stat
+              SET name = 'Meditate (custom)'
+              WHERE personal_stat.soft_deleted = FALSE
+                AND personal_stat.system_key IS NULL
+                AND lower(personal_stat.name) = lower('Meditate')
+                AND EXISTS (
+                  SELECT 1
+                  FROM stat_definition meditate_stat
+                  WHERE meditate_stat.user_id = personal_stat.user_id
+                    AND meditate_stat.system_key = 'meditated'
+                    AND meditate_stat.soft_deleted = FALSE
+                );
+        - sql:
+            sql: >
+              UPDATE stat_definition
+              SET name = 'Meditate'
+              WHERE system_key = 'meditated'
+                AND soft_deleted = FALSE;
+      rollback:
+        - sql:
+            sql: >
+              UPDATE stat_definition
+              SET name = 'Meditated'
+              WHERE system_key = 'meditated'
+                AND soft_deleted = FALSE;
+        - sql:
+            sql: >
+              UPDATE stat_definition minutes_stat
+              SET show_on_stats_page = TRUE
+              FROM stat_definition meditate_stat
+              WHERE meditate_stat.user_id = minutes_stat.user_id
+                AND meditate_stat.system_key = 'meditated'
+                AND minutes_stat.system_key = 'meditation_minutes'
+                AND meditate_stat.soft_deleted = FALSE
+                AND minutes_stat.soft_deleted = FALSE
+                AND meditate_stat.show_on_stats_page = TRUE;
+        - sql:
+            sql: >
+              UPDATE stat_definition
+              SET show_on_stats_page = FALSE
+              WHERE system_key = 'meditated'
+                AND show_on_stats_page = TRUE;
+        - sql:
+            sql: >
+              UPDATE stat_definition personal_stat
+              SET name = 'Meditate'
+              WHERE personal_stat.soft_deleted = FALSE
+                AND personal_stat.system_key IS NULL
+                AND personal_stat.name = 'Meditate (custom)'
+                AND EXISTS (
+                  SELECT 1
+                  FROM stat_definition meditate_stat
+                  WHERE meditate_stat.user_id = personal_stat.user_id
+                    AND meditate_stat.system_key = 'meditated'
+                    AND meditate_stat.soft_deleted = FALSE
+                );

@@ -9,6 +9,11 @@ import { Calendar } from '../../types/Calendar';
 import { CalendarSelect } from './CalendarSelect';
 
 const TEMPLATE_MAX_REMINDER_MINUTES = 8 * 7 * 24 * 60;
+const TEMPLATE_REMINDER_PRESETS = [
+    { value: 15, label: '15 minutes before' },
+    { value: 60, label: '1 hour before' },
+    { value: 1440, label: '1 day before' },
+] as const;
 
 const STATUS_OPTIONS = [
     { value: 'CONFIRMED', label: 'Confirmed' },
@@ -158,18 +163,51 @@ export function DayTemplateEditor({
                                 fullWidth
                             />
                             <TextField
-                                label="Reminder (minutes before)"
-                                type="number"
-                                value={event.reminderMinutesBefore ?? ''}
-                                onChange={inputEvent => onUpdateEvent(index, {
-                                    reminderMinutesBefore: inputEvent.target.value === ''
-                                        ? null
-                                        : Number(inputEvent.target.value),
-                                })}
-                                inputProps={{ min: 0, max: TEMPLATE_MAX_REMINDER_MINUTES, step: 1 }}
+                                select
+                                label="Reminder"
+                                value={event.reminderMinutesBefore == null
+                                    ? 'none'
+                                    : TEMPLATE_REMINDER_PRESETS.some(option => option.value === event.reminderMinutesBefore)
+                                        ? String(event.reminderMinutesBefore)
+                                        : 'custom'}
+                                onChange={inputEvent => {
+                                    const value = inputEvent.target.value;
+                                    onUpdateEvent(index, {
+                                        reminderMinutesBefore: value === 'none'
+                                            ? null
+                                            : value === 'custom'
+                                                ? (event.reminderMinutesBefore != null
+                                                    && !TEMPLATE_REMINDER_PRESETS.some(option => option.value === event.reminderMinutesBefore)
+                                                    ? event.reminderMinutesBefore
+                                                    : 30)
+                                                : Number(value),
+                                    });
+                                }}
                                 size="small"
                                 fullWidth
-                            />
+                            >
+                                <MenuItem value="none">No reminder</MenuItem>
+                                {TEMPLATE_REMINDER_PRESETS.map(option => (
+                                    <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                                ))}
+                                <MenuItem value="custom">Custom</MenuItem>
+                            </TextField>
+                            {event.reminderMinutesBefore != null
+                                && !TEMPLATE_REMINDER_PRESETS.some(option => option.value === event.reminderMinutesBefore) && (
+                                    <TextField
+                                        label="Custom reminder (minutes before)"
+                                        type="number"
+                                        value={event.reminderMinutesBefore}
+                                        onChange={inputEvent => onUpdateEvent(index, {
+                                            reminderMinutesBefore: inputEvent.target.value === ''
+                                                ? null
+                                                : Number(inputEvent.target.value),
+                                        })}
+                                        inputProps={{ min: 0, max: TEMPLATE_MAX_REMINDER_MINUTES, step: 1 }}
+                                        size="small"
+                                        fullWidth
+                                    />
+                                )}
                         </Stack>
                     </Stack>
                 </Box>

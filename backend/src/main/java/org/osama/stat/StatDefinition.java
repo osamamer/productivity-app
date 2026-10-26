@@ -55,6 +55,9 @@ public class StatDefinition {
     @Column(name = "recurring_task_series_id")
     private String recurringTaskSeriesId;
 
+    @Column(name = "show_on_stats_page", nullable = false)
+    private boolean showOnStatsPage;
+
     // Legacy mirror of the first linked task name. New code uses focusTaskNames.
     @Column(name = "focus_task_name")
     private String focusTaskName;

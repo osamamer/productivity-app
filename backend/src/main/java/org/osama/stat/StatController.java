@@ -79,6 +79,13 @@ public class StatController {
         );
     }
 
+    @PutMapping("/definitions/{id}/stats-page-visibility")
+    public StatDefinition updateStatsPageVisibility(@PathVariable String id,
+                                                   @RequestBody StatsPageVisibilityRequest request) {
+        return statService.updateStatsPageVisibility(
+                id, request.showOnStatsPage, currentUserService.getCurrentUserId());
+    }
+
     @PostMapping("/definitions/{id}/recurring-task")
     public StatDefinition createRecurringTask(@PathVariable String id,
                                               @RequestBody(required = false) CreateRecurringTaskRequest request) {
@@ -101,6 +108,27 @@ public class StatController {
         return statService.getRecurringTask(id, currentUserService.getCurrentUserId());
     }
 
+    @GetMapping("/definitions/{id}/weekly-task-schedule")
+    public StatWeeklyTaskScheduleResponse getWeeklyTaskSchedule(
+            @PathVariable String id,
+            @RequestParam(required = false) String timeZone) {
+        return statService.getWeeklyTaskSchedule(id, timeZone, currentUserService.getCurrentUserId());
+    }
+
+    @PutMapping("/definitions/{id}/weekly-task-schedule")
+    public StatWeeklyTaskScheduleResponse replaceWeeklyTaskSchedule(
+            @PathVariable String id,
+            @RequestBody WeeklyTaskScheduleRequest request) {
+        return statService.replaceWeeklyTaskSchedule(
+                id,
+                request == null ? null : request.taskName,
+                request == null ? null : request.daysOfWeek,
+                request == null ? null : request.timeOfDay,
+                request == null ? null : request.importance,
+                request == null ? null : request.timeZone,
+                currentUserService.getCurrentUserId());
+    }
+
     @PutMapping("/definitions/{id}/recurring-task")
     public StatDefinition updateRecurringTask(@PathVariable String id,
                                               @RequestBody CreateRecurringTaskRequest request) {
@@ -112,7 +140,8 @@ public class StatController {
                         ? TaskRecurrenceFrequency.DAILY : request.recurrenceFrequency,
                 request == null ? null : request.recurrenceDaysOfWeek,
                 request == null ? null : request.timeOfDay,
-                request == null ? null : request.importance
+                request == null ? null : request.importance,
+                request == null ? null : request.taskName
         );
     }
 
@@ -152,6 +181,11 @@ public class StatController {
     @DeleteMapping("/definitions/{id}/recurring-task/series")
     public StatDefinition deleteRecurringTaskSeries(@PathVariable String id) {
         return statService.deleteRecurringTaskSeries(id, currentUserService.getCurrentUserId());
+    }
+
+    @DeleteMapping("/definitions/{id}/recurring-task/future")
+    public StatDefinition deleteRecurringTaskFutureOccurrences(@PathVariable String id) {
+        return statService.deleteRecurringTaskFutureOccurrences(id, currentUserService.getCurrentUserId());
     }
 
     @PutMapping("/definitions/order")
@@ -245,6 +279,11 @@ public class StatController {
     }
 
     @Data
+    public static class StatsPageVisibilityRequest {
+        boolean showOnStatsPage;
+    }
+
+    @Data
     public static class RecordEntryRequest {
         String statDefinitionId;
         @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
@@ -266,6 +305,15 @@ public class StatController {
         String timeOfDay;
         Integer importance;
         String taskName;
+    }
+
+    @Data
+    public static class WeeklyTaskScheduleRequest {
+        String taskName;
+        List<DayOfWeek> daysOfWeek;
+        String timeOfDay;
+        Integer importance;
+        String timeZone;
     }
 
     @Data

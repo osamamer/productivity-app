@@ -51,7 +51,7 @@ import {
 type DeleteRequest =
     | { kind: 'single' | 'bulk'; tasks: Task[]; anchorEl: HTMLElement }
     | { kind: 'group'; group: TaskGroup; tasks: Task[]; anchorEl: HTMLElement };
-type DeleteScope = 'occurrence' | 'series';
+type DeleteScope = 'occurrence' | 'future' | 'series';
 type EditRequest = { taskId: string; requestId: number };
 type BulkAction = 'complete' | 'reopen' | 'move-to-date' | 'clear-date';
 type SelectionEntity =
@@ -111,7 +111,29 @@ function tasksForDeleteScope(request: DeleteRequest, scope: DeleteScope, allTask
             .map(task => task.taskSeriesId)
             .filter((seriesId): seriesId is string => Boolean(seriesId)),
     );
-    const affectedTasks = new Map(request.tasks.map(task => [task.taskId, task]));
+    const affectedTasks = new Map<string, Task>();
+    if (scope === 'future') {
+        const boundaryBySeries = new Map<string, string>();
+        request.tasks.forEach(task => {
+            if (!task.taskSeriesId) return;
+            const boundary = task.seriesOccurrenceAt ?? task.scheduledPerformDateTime;
+            if (!boundary) return;
+            const existing = boundaryBySeries.get(task.taskSeriesId);
+            if (!existing || boundary < existing) boundaryBySeries.set(task.taskSeriesId, boundary);
+        });
+        [...request.tasks, ...allTasks].forEach(task => {
+            if (!task.taskSeriesId) {
+                if (selectedTaskIds.has(task.taskId)) affectedTasks.set(task.taskId, task);
+                return;
+            }
+            const boundary = boundaryBySeries.get(task.taskSeriesId);
+            const occurrenceAt = task.seriesOccurrenceAt ?? task.scheduledPerformDateTime;
+            if (boundary && occurrenceAt && occurrenceAt > boundary) affectedTasks.set(task.taskId, task);
+        });
+        return [...affectedTasks.values()];
+    }
+
+    request.tasks.forEach(task => affectedTasks.set(task.taskId, task));
     allTasks.forEach(task => {
         if (selectedSeriesIds.has(task.taskSeriesId ?? '')) affectedTasks.set(task.taskId, task);
     });
@@ -125,10 +147,17 @@ async function deleteTasksForScope(tasks: Task[], scope: DeleteScope): Promise<T
     const deletedSeriesIds = new Set<string>();
     const options = { notifyResource: false };
     const operations = tasks.flatMap(task => {
-        if (scope === 'series' && task.taskSeriesId) {
+        if ((scope === 'series' || scope === 'future') && task.taskSeriesId) {
             if (deletedSeriesIds.has(task.taskSeriesId)) return [];
             deletedSeriesIds.add(task.taskSeriesId);
-            return [() => taskService.deleteTask(task.taskId, options)];
+            const seriesTasks = tasks.filter(candidate => candidate.taskSeriesId === task.taskSeriesId);
+            const boundaryTask = seriesTasks.sort((first, second) => (
+                (first.seriesOccurrenceAt ?? first.scheduledPerformDateTime ?? '')
+                    .localeCompare(second.seriesOccurrenceAt ?? second.scheduledPerformDateTime ?? '')
+            ))[0] ?? task;
+            return [() => scope === 'future'
+                ? taskService.deleteTaskFutureOccurrences(boundaryTask.taskId, options)
+                : taskService.deleteTask(task.taskId, options)];
         }
 
         return [() => scope === 'occurrence'
@@ -177,6 +206,7 @@ export function TaskPage() {
         appendTasksToState,
         replaceTaskInState,
         updateTaskInState,
+        updateTasksInState,
         removeTaskFromState,
     } = useGlobalTasks({ taskPageMode: true });
 
@@ -290,13 +320,32 @@ export function TaskPage() {
         allTasksRef.current = allTasksRef.current.map(candidate => (
             candidate.taskId === taskId ? { ...candidate, completed } : candidate
         ));
-        updateTaskInState(taskId, { completed });
+        updateTasksInState([{ taskId, updates: { completed } }]);
         if (!previousCompleted) playAudioFeedback('taskCompleted');
 
         const persist = async () => {
             try {
-                const updatedTask = await taskService.toggleTaskCompletion(taskId, completed);
+                const updatedTask = await taskService.toggleTaskCompletion(
+                    taskId,
+                    completed,
+                    { notifyResource: false },
+                );
                 completionConfirmedStateRef.current.set(taskId, updatedTask.completed);
+                if (completionRequestIdRef.current.get(taskId) === requestId) {
+                    allTasksRef.current = allTasksRef.current.map(candidate => (
+                        candidate.taskId === taskId
+                            ? { ...candidate, completed: updatedTask.completed,
+                                completionDateTime: updatedTask.completionDateTime }
+                            : candidate
+                    ));
+                    updateTasksInState([{
+                        taskId,
+                        updates: {
+                            completed: updatedTask.completed,
+                            completionDateTime: updatedTask.completionDateTime,
+                        },
+                    }]);
+                }
             } catch (error) {
                 console.error('Error toggling task:', error);
                 const isLatestRequest = completionRequestIdRef.current.get(taskId) === requestId;
@@ -309,7 +358,7 @@ export function TaskPage() {
                             ? { ...candidate, completed: rollbackCompleted }
                             : candidate
                     ));
-                    updateTaskInState(taskId, { completed: rollbackCompleted });
+                    updateTasksInState([{ taskId, updates: { completed: rollbackCompleted } }]);
                 }
             }
         };
@@ -323,7 +372,7 @@ export function TaskPage() {
                 completionConfirmedStateRef.current.delete(taskId);
             }
         });
-    }, [updateTaskInState]);
+    }, [updateTasksInState]);
 
     const showTaskFeedback = useCallback((severity: TaskFeedback['severity'], message: string) => {
         taskFeedbackIdRef.current += 1;
@@ -401,7 +450,10 @@ export function TaskPage() {
             if (request.kind === 'group') {
                 receipts.push(await taskGroupService.deleteGroup(request.group.groupId));
             }
-            receipts.push(await deleteTasksForScope(tasksToDelete, scope));
+            const operationTasks = scope === 'future'
+                ? [...new Map([...request.tasks, ...tasksToDelete].map(task => [task.taskId, task])).values()]
+                : tasksToDelete;
+            receipts.push(await deleteTasksForScope(operationTasks, scope));
             tasksToDelete.forEach(task => removeTaskFromState(task.taskId));
             const deletedTaskIds = new Set(tasksToDelete.map(task => task.taskId));
             setTaskGroups(previous => previous
@@ -1576,7 +1628,9 @@ export function TaskPage() {
                     paper: {
                         sx: {
                             p: 1.5,
-                            width: 270,
+                            width: deleteRequest && requestHasRecurringTasks(deleteRequest)
+                                ? deleteRequest.kind === 'group' ? 480 : 380
+                                : 270,
                             maxWidth: 'calc(100vw - 32px)',
                             borderRadius: 2.5,
                         },
@@ -1585,59 +1639,84 @@ export function TaskPage() {
             >
                 {deleteRequest && (
                     <Box>
-                            <Typography variant="body2" sx={{ mb: 1.25 }}>
-                                {deleteRequest.kind === 'group'
+                        <Typography variant="body2" sx={{ mb: 1.25 }}>
+                            {deleteRequest.kind === 'group'
                                 ? `Delete “${deleteRequest.group.name}” and its ${deleteRequest.tasks.length} tasks?`
                                 : deleteRequest.kind === 'bulk'
                                     ? `Delete ${deleteRequest.tasks.length} selected tasks?`
                                     : deleteRequest.tasks[0].taskSeriesId
-                                        ? `Delete instance of “${deleteRequest.tasks[0].name}”?`
+                                        ? `Choose which occurrences of “${deleteRequest.tasks[0].name}” to delete?`
                                         : `Delete “${deleteRequest.tasks[0].name}” and its subtasks?`}
-                            </Typography>
+                        </Typography>
+                        {requestHasRecurringTasks(deleteRequest) ? (
                             <Box
                                 sx={{
-                                    display: 'flex',
-                                    justifyContent: 'flex-end',
+                                    display: 'grid',
+                                    gridTemplateColumns: deleteRequest.kind === 'group'
+                                        ? 'repeat(3, minmax(0, 1fr))'
+                                        : 'repeat(2, minmax(0, 1fr))',
                                     gap: 0.5,
                                     '& .MuiButton-root': {
-                                        fontSize: '0.7rem',
+                                        width: '100%',
                                         minWidth: 0,
+                                        minHeight: 38,
                                         px: 0.75,
+                                        py: 0.5,
+                                        fontSize: '0.7rem',
+                                        lineHeight: 1.2,
+                                        whiteSpace: 'normal',
                                     },
                                 }}
                             >
-                            <Button size="small" onClick={closeDeleteRequest} disabled={deleteSubmitting}>
-                                Cancel
-                            </Button>
-                            {deleteRequest.kind === 'group' && (
                                 <Button
                                     size="small"
-                                    onClick={() => void confirmUngroup()}
+                                    onClick={() => void confirmDelete('occurrence')}
                                     disabled={deleteSubmitting}
                                 >
-                                    Ungroup
+                                    {deleteRequest.kind === 'single' ? 'This occurrence' : 'Selected occurrences'}
                                 </Button>
-                            )}
-                            {requestHasRecurringTasks(deleteRequest) ? (
-                                <>
-                                    <Button
-                                        size="small"
-                                        onClick={() => void confirmDelete('occurrence')}
-                                        disabled={deleteSubmitting}
-                                    >
-                                        Delete instance(s)
+                                <Button
+                                    size="small"
+                                    onClick={() => void confirmDelete('future')}
+                                    disabled={deleteSubmitting}
+                                >
+                                    Future occurrences
+                                </Button>
+                                {deleteRequest.kind !== 'group' && (
+                                    <Button size="small" onClick={closeDeleteRequest} disabled={deleteSubmitting}>
+                                        Cancel
                                     </Button>
-                                    <Button
-                                        size="small"
-                                        color="error"
-                                        variant="contained"
-                                        onClick={() => void confirmDelete('series')}
-                                        disabled={deleteSubmitting}
-                                    >
-                                        {deleteSubmitting ? 'Deleting…' : 'Delete series'}
+                                )}
+                                <Button
+                                    size="small"
+                                    color="error"
+                                    variant="contained"
+                                    onClick={() => void confirmDelete('series')}
+                                    disabled={deleteSubmitting}
+                                >
+                                    {deleteSubmitting ? 'Deleting…' : 'Delete series'}
+                                </Button>
+                                {deleteRequest.kind === 'group' && (
+                                    <Button size="small" onClick={() => void confirmUngroup()} disabled={deleteSubmitting}>
+                                        Ungroup
                                     </Button>
-                                </>
-                            ) : (
+                                )}
+                                {deleteRequest.kind === 'group' && (
+                                    <Button size="small" onClick={closeDeleteRequest} disabled={deleteSubmitting}>
+                                        Cancel
+                                    </Button>
+                                )}
+                            </Box>
+                        ) : (
+                            <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 0.5 }}>
+                                <Button size="small" onClick={closeDeleteRequest} disabled={deleteSubmitting}>
+                                    Cancel
+                                </Button>
+                                {deleteRequest.kind === 'group' && (
+                                    <Button size="small" onClick={() => void confirmUngroup()} disabled={deleteSubmitting}>
+                                        Ungroup
+                                    </Button>
+                                )}
                                 <Button
                                     size="small"
                                     color="error"
@@ -1647,8 +1726,8 @@ export function TaskPage() {
                                 >
                                     {deleteSubmitting ? 'Deleting…' : 'Delete'}
                                 </Button>
-                            )}
-                        </Box>
+                            </Box>
+                        )}
                     </Box>
                 )}
             </Popover>

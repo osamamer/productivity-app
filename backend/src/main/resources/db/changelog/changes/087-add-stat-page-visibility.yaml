@@ -1,0 +1,14 @@
+databaseChangeLog:
+  - changeSet:
+      id: 087-add-stat-page-visibility
+      author: codex
+      changes:
+        - addColumn:
+            tableName: stat_definition
+            columns:
+              - column:
+                  name: show_on_stats_page
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false

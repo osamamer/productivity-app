@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Calendar popup regression fixture</title></head>
+<body><div id="root"></div>
+<script type="module">
+    import React from 'react';
+    import { createRoot } from 'react-dom/client';
+    import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
+    import { MonthCalendar } from '/src/components/MonthCalendar';
+
+    const noop = async () => {};
+    const tasks = [1, 2].map(i => ({
+        taskId: `stat-${i}`, name: `Stat ${i}`, description: '', completed: false,
+        creationDateTime: '2026-10-26T19:36:00', scheduledPerformDateTime: '2026-10-26T19:36:00',
+        calendarId: 'default', importance: 3, displayOrder: i, taskSeriesId: `series-${i}`, parentId: null,
+    }));
+    if (new URLSearchParams(location.search).has('dense')) {
+        for (let day = 1; day <= 31; day++) {
+            const count = day === 28 ? 35 : 6;
+            for (let i = 0; i < count; i++) {
+                tasks.push({ ...tasks[0], taskId: `task-${day}-${i}`, name: `Task ${day}-${i}`,
+                    taskSeriesId: null, scheduledPerformDateTime: `2026-10-${String(day).padStart(2, '0')}T09:00:00` });
+            }
+        }
+    }
+    const props = {
+        tasks,
+        groups: [{ groupId: 'stat-group', name: 'Stat group', taskIds: ['stat-1', 'stat-2'], displayOrder: 0, isStatGroup: true }],
+        events: [], calendars: [{ id: 'default', name: 'Default', visible: true, color: 'SAGE' }], dayTemplates: [],
+        onCreateTask: noop, onDeleteTask: noop, onDeleteTaskOccurrence: noop, onUpdateTask: noop,
+        onCreateEvent: noop, onUpdateEvent: noop, onMoveEventOccurrence: noop, onDeleteEvent: noop,
+        onCancelEventOccurrence: noop, onRestoreEventOccurrence: noop, onUpdateEventOccurrenceStatus: noop,
+        onDeleteEventOccurrence: noop, onCreateDayTemplate: noop, onUpdateDayTemplate: noop,
+        onDeleteDayTemplate: noop, onApplyDayTemplate: noop, onUndoDayTemplate: noop,
+    };
+    createRoot(document.getElementById('root')).render(
+        React.createElement(ThemeProvider, { theme: createTheme({ palette: { mode: 'dark' } }) },
+            React.createElement(CssBaseline),
+            React.createElement('div', { style: { height: '100vh', padding: 16, overflow: 'hidden' } },
+                React.createElement(MonthCalendar, props))),
+    );
+</script>
+</body></html>

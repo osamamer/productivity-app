@@ -1,7 +1,7 @@
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
 
-import { eventDateInTimeZone, localDate, localDateTimeToInstant, safeDateTimeFormatter } from '@/lib/date';
+import { eventDateInTimeZone, formatShortDate, formatTime, localDate, localDateTimeToInstant, safeDateTimeFormatter } from '@/lib/date';
 import { playAudioFeedback } from '@/lib/audioFeedback';
 import { reportError } from '@/lib/errors';
 import { readEventTimePreferences, saveEventTimePreferences } from '@/lib/inputPreferences';
@@ -17,18 +17,17 @@ import { AppText } from '../ui/AppText';
 import { ChoiceChips } from '../ui/ChoiceChips';
 import { ModalSheet } from '../ui/ModalSheet';
 import { SilentPressable } from '../ui/SilentPressable';
+import { TaskDateTimePicker } from '../tasks/TaskScheduleField';
 import { CalendarDestinationField } from './CalendarControls';
 
 type ReminderValue = string;
 
 const REMINDER_OPTIONS = [
-  { value: '5', label: '5 min' },
-  { value: '15', label: '15 min' },
-  { value: '30', label: '30 min' },
-  { value: '60', label: '1 hour' },
-  { value: '1440', label: '1 day' },
-  { value: '10080', label: '1 week' },
+  { value: '15', label: '15 minutes before' },
+  { value: '60', label: '1 hour before' },
+  { value: '1440', label: '1 day before' },
 ];
+const MAX_REMINDER_MINUTES = 8 * 7 * 24 * 60;
 
 function isCalendarDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -71,6 +70,17 @@ function addDay(value: string): string {
   const date = dateFromCalendarDate(value);
   date.setDate(date.getDate() + 1);
   return calendarDateFromDate(date);
+}
+
+function eventStartForReminder(date: string, time: string, allDay: boolean): Date {
+  const instant = localDateTimeToInstant(date, allDay ? '00:00' : time);
+  return instant ? new Date(instant) : dateFromCalendarDate(date);
+}
+
+function reminderTimeForEvent(date: string, time: string, allDay: boolean, minutesBefore: number): Date {
+  const reminderTime = eventStartForReminder(date, time, allDay);
+  reminderTime.setMinutes(reminderTime.getMinutes() - minutesBefore);
+  return reminderTime;
 }
 
 function displayDate(value: string): string {
@@ -169,7 +179,13 @@ function eventDefaults(event: CalendarEvent | null | undefined, initialDate?: st
     recurrenceInterval: event?.recurrenceInterval ?? 1,
     recurrenceUnit: event?.recurrenceUnit ?? 'WEEKS' as RecurrenceUnit,
     status: selectedOccurrenceStatus ?? event?.status ?? 'CONFIRMED' as CalendarEventStatus,
-    reminder: event ? event.reminderMinutesBefore === null ? 'none' : String(event.reminderMinutesBefore) : '1440',
+    reminder: event
+      ? event.reminderMinutesBefore === null
+        ? 'none'
+        : REMINDER_OPTIONS.some(option => Number(option.value) === event.reminderMinutesBefore)
+          ? String(event.reminderMinutesBefore)
+          : 'custom'
+      : '1440',
   };
 }
 
@@ -232,6 +248,7 @@ export function EventComposerSheet({
   onSaved,
   onDelete,
   onDeleteOccurrence,
+  onDeleteFutureOccurrences,
   onCancelOccurrence,
   onRestoreOccurrence,
   onUpdateOccurrenceStatus,
@@ -248,6 +265,7 @@ export function EventComposerSheet({
   onSaved: (event: CalendarEvent) => void;
   onDelete?: () => Promise<boolean>;
   onDeleteOccurrence?: () => Promise<boolean>;
+  onDeleteFutureOccurrences?: () => Promise<boolean>;
   onCancelOccurrence?: () => Promise<void>;
   onRestoreOccurrence?: () => Promise<void>;
   onUpdateOccurrenceStatus?: (status: CalendarEventStatus) => Promise<void>;
@@ -266,13 +284,25 @@ export function EventComposerSheet({
   const [recurrenceUnit, setRecurrenceUnit] = useState<RecurrenceUnit>(defaults.recurrenceUnit);
   const [status, setStatus] = useState<CalendarEventStatus>(defaults.status);
   const [reminder, setReminder] = useState<ReminderValue>(defaults.reminder);
+  const initialCustomReminderTime = () => reminderTimeForEvent(
+    defaults.date,
+    defaults.startTime,
+    defaults.allDay === 'yes',
+    event?.reminderMinutesBefore != null
+      && !REMINDER_OPTIONS.some(option => Number(option.value) === event.reminderMinutesBefore)
+      ? event.reminderMinutesBefore
+      : 60,
+  );
+  const [customReminderValue, setCustomReminderValue] = useState(initialCustomReminderTime);
+  const [customReminderOpen, setCustomReminderOpen] = useState(false);
+  const [customReminderDraft, setCustomReminderDraft] = useState(initialCustomReminderTime);
   const [calendarId, setCalendarId] = useState(event?.calendarId ?? initialCalendarId ?? '');
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [cancelPromptOpen, setCancelPromptOpen] = useState(false);
   const [deletePromptOpen, setDeletePromptOpen] = useState(false);
   const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
-  const [deleteScope, setDeleteScope] = useState<'occurrence' | 'all' | null>(null);
+  const [deleteScope, setDeleteScope] = useState<'occurrence' | 'future' | 'all' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const timeFieldsChanged = useRef(false);
   const isRepeatingOccurrence = Boolean(
@@ -306,6 +336,10 @@ export function EventComposerSheet({
     setRecurrenceUnit(next.recurrenceUnit);
     setStatus(next.status);
     setReminder(next.reminder);
+    setCustomReminderOpen(false);
+    const nextCustomReminderTime = reminderTimeForEvent(next.date, next.startTime, next.allDay === 'yes', 60);
+    setCustomReminderValue(nextCustomReminderTime);
+    setCustomReminderDraft(nextCustomReminderTime);
     setCalendarId(event?.calendarId ?? initialCalendarId ?? '');
     setCancelPromptOpen(false);
     setDeletePromptOpen(false);
@@ -342,6 +376,18 @@ export function EventComposerSheet({
     setEndDate(adjustedEnd.crossesMidnight ? addDay(nextDate) : nextDate);
   }
 
+  function chooseReminder(nextReminder: ReminderValue) {
+    if (nextReminder === 'custom') {
+      setCustomReminderDraft(reminder === 'custom'
+        ? customReminderValue
+        : reminderTimeForEvent(date, startTime, allDay === 'yes', 60));
+      setCustomReminderOpen(true);
+      return;
+    }
+
+    setReminder(nextReminder);
+  }
+
   async function submit(statusOverride?: CalendarEventStatus) {
     if (!title.trim()) return setError('Give the event a title.');
     if (!calendarId) return setError('Your calendars are still loading. Refresh and try again.');
@@ -364,6 +410,19 @@ export function EventComposerSheet({
       return setError('The end time must be after the start time.');
     }
 
+    let reminderMinutesBefore: number | null = reminder === 'none' ? null : Number(reminder);
+    if (reminder === 'custom') {
+      const eventStart = eventStartForReminder(date, startTime, allDay === 'yes');
+      const minutesBefore = (eventStart.getTime() - customReminderDraft.getTime()) / 60_000;
+      if (!Number.isInteger(minutesBefore) || minutesBefore < 0) {
+        return setError('The reminder must be at or before the event time.');
+      }
+      if (minutesBefore > MAX_REMINDER_MINUTES) {
+        return setError('The reminder can be at most eight weeks before the event.');
+      }
+      reminderMinutesBefore = minutesBefore;
+    }
+
     setSaving(true);
     setError(null);
     const input: CalendarEventInput = {
@@ -382,7 +441,7 @@ export function EventComposerSheet({
       recurrenceEndDate: recurrence === 'NONE' ? null : recurrenceEndDate || null,
       recurrenceInterval: recurrence === 'CUSTOM' ? recurrenceInterval : null,
       recurrenceUnit: recurrence === 'CUSTOM' ? recurrenceUnit : null,
-      reminderMinutesBefore: reminder === 'none' ? null : Number(reminder),
+      reminderMinutesBefore,
       calendarId,
     };
 
@@ -405,7 +464,9 @@ export function EventComposerSheet({
 
   async function remove() {
     if (!deleteScope || deleting) return;
-    const deleteAction = deleteScope === 'occurrence' ? onDeleteOccurrence : onDelete;
+    const deleteAction = deleteScope === 'occurrence'
+      ? onDeleteOccurrence
+      : deleteScope === 'future' ? onDeleteFutureOccurrences : onDelete;
     if (!deleteAction) return;
     setDeleteConfirmationOpen(false);
     setDeleting(true);
@@ -457,7 +518,7 @@ export function EventComposerSheet({
     event && recurrence !== 'NONE' && occurrenceKey && onDeleteOccurrence,
   );
 
-  function openDeleteConfirmation(scope: 'occurrence' | 'all') {
+  function openDeleteConfirmation(scope: 'occurrence' | 'future' | 'all') {
     setDeleteScope(scope);
     setDeleteConfirmationOpen(true);
   }
@@ -465,9 +526,7 @@ export function EventComposerSheet({
   const reminderOptions = [
     { value: 'none', label: 'No reminder' },
     ...REMINDER_OPTIONS,
-    ...(reminder !== 'none' && !REMINDER_OPTIONS.some(option => option.value === reminder)
-      ? [{ value: reminder, label: `${reminder} min` }]
-      : []),
+    { value: 'custom', label: 'Custom' },
   ];
 
   return (
@@ -531,7 +590,27 @@ export function EventComposerSheet({
       )}
       {recurrence !== 'NONE' && <DateTimeField label="Repeat until (optional)" value={recurrenceEndDate || date} mode="date" onChange={setRecurrenceEndDate} />}
       <AppText variant="label">Reminder</AppText>
-      <ChoiceChips value={reminder} onChange={setReminder} options={reminderOptions} />
+      <ChoiceChips value={reminder} onChange={chooseReminder} options={reminderOptions} />
+      {reminder === 'custom' && (
+        <AppText variant="caption" color="muted">
+          {`Custom · ${formatShortDate(customReminderValue.toISOString())} at ${formatTime(customReminderValue.toISOString())}`}
+        </AppText>
+      )}
+      <AppPopup
+        visible={customReminderOpen}
+        title="Custom reminder"
+        showIcon={false}
+        onClose={() => setCustomReminderOpen(false)}
+        dismissOnBackdrop={false}
+        scrollContent
+        footer={(
+          <View style={styles.popupActions}>
+            <AppButton style={styles.popupAction} variant="secondary" label="Cancel" onPress={() => setCustomReminderOpen(false)} />
+            <AppButton style={styles.popupAction} label="Set reminder" onPress={() => { setCustomReminderValue(customReminderDraft); setReminder('custom'); setCustomReminderOpen(false); }} />
+          </View>
+        )}>
+        <TaskDateTimePicker value={customReminderDraft} onChange={setCustomReminderDraft} />
+      </AppPopup>
       <AppPopup
         visible={cancelPromptOpen}
         title="Cancel repeating event?"
@@ -572,6 +651,14 @@ export function EventComposerSheet({
               openDeleteConfirmation('occurrence');
             }} />
           <AppButton
+            label="Future occurrences"
+            variant="danger"
+            disabled={!canDeleteOccurrence || !onDeleteFutureOccurrences}
+            onPress={() => {
+              setDeletePromptOpen(false);
+              openDeleteConfirmation('future');
+            }} />
+          <AppButton
             label="All occurrences"
             variant="danger"
             onPress={() => {
@@ -582,9 +669,13 @@ export function EventComposerSheet({
       </AppPopup>
       <AppPopup
         visible={deleteConfirmationOpen}
-        title={deleteScope === 'occurrence' ? 'Delete this occurrence?' : 'Delete event?'}
+        title={deleteScope === 'occurrence'
+          ? 'Delete this occurrence?'
+          : deleteScope === 'future' ? 'Delete future occurrences?' : 'Delete event?'}
         message={deleteScope === 'occurrence'
           ? 'This occurrence will be removed from your calendar. This cannot be undone.'
+          : deleteScope === 'future'
+            ? 'All later occurrences will be removed from your calendar. This occurrence will remain.'
           : recurrence !== 'NONE'
             ? 'All occurrences of this event will be removed from your calendar. This cannot be undone.'
             : 'This event will be removed from your calendar. This cannot be undone.'}

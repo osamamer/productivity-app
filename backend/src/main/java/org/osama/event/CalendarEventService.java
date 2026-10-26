@@ -172,6 +172,45 @@ public class CalendarEventService {
     }
 
     @Transactional
+    public CalendarEventFutureDeletionResponse deleteFutureOccurrences(
+            String eventId, CalendarEventOccurrenceRequest request, String userId
+    ) {
+        CalendarEvent event = findEvent(eventId, userId);
+        ensureRepeatingEvent(event);
+
+        String occurrenceKey = normalizeOccurrenceKey(request);
+        LocalDate boundary = occurrenceDate(event, occurrenceKey);
+        LocalDate seriesStart = event.isAllDay()
+                ? event.getStartDate()
+                : event.getStartTime().atZone(ZoneId.of(event.getTimeZone())).toLocalDate();
+        if (boundary.isBefore(seriesStart)) {
+            throw new IllegalArgumentException("The selected occurrence is outside the recurring event.");
+        }
+
+        event.setRecurrenceEndDate(boundary);
+        CalendarEvent saved = eventRepository.save(event);
+        List<CalendarEventCancellation> futureOverrides = cancellationRepository
+                .findAllByEventIdOrderByOccurrenceKeyAsc(eventId).stream()
+                .filter(override -> occurrenceDate(event, override.getOccurrenceKey()).isAfter(boundary))
+                .toList();
+        if (!futureOverrides.isEmpty()) {
+            cancellationRepository.deleteAll(futureOverrides);
+            cancellationRepository.flush();
+        }
+        reminderRepository.findByEventId(eventId)
+                .filter(reminder -> reminder.getEventOccurrenceStart() != null
+                        && occurrenceDate(event, eventOccurrenceKey(event, reminder.getEventOccurrenceStart()))
+                        .isAfter(boundary))
+                .ifPresent(reminder -> {
+                    reminderRepository.delete(reminder);
+                    reminderRepository.flush();
+                });
+        log.info("Future calendar event occurrences deleted: userId={} eventId={} occurrenceKey={} recurrenceEndDate={} deletedOverrideCount={}",
+                userId, eventId, occurrenceKey, saved.getRecurrenceEndDate(), futureOverrides.size());
+        return new CalendarEventFutureDeletionResponse(false, toResponse(saved));
+    }
+
+    @Transactional
     public CalendarEventResponse restoreEventOccurrence(String eventId, String requestedOccurrenceKey, String userId) {
         CalendarEvent event = findEvent(eventId, userId);
         ensureRepeatingEvent(event);
@@ -361,6 +400,14 @@ public class CalendarEventService {
             throw new IllegalArgumentException("Event occurrence is invalid.", exception);
         }
         throw new IllegalArgumentException("Event occurrence is invalid.");
+    }
+
+    private LocalDate occurrenceDate(CalendarEvent event, String occurrenceKey) {
+        if (event.isAllDay()) {
+            return LocalDate.parse(occurrenceKey.substring("date:".length()));
+        }
+        Instant occurrenceStart = Instant.parse(occurrenceKey.substring("instant:".length()));
+        return occurrenceStart.atZone(ZoneId.of(event.getTimeZone())).toLocalDate();
     }
 
     private Integer requestedReminderMinutes(CalendarEventRequest request) {

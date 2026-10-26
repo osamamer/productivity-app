@@ -316,6 +316,15 @@ export function CalendarPage() {
         setEvents(current => current.map(event => event.id === eventId ? updated : event));
     };
 
+    const handleDeleteEventFutureOccurrences = async (eventId: string, occurrenceKey: string) => {
+        const result = await eventService.deleteFutureEventOccurrences(eventId, occurrenceKey);
+        if (result.eventDeleted) {
+            setEvents(current => current.filter(event => event.id !== eventId));
+        } else if (result.event) {
+            setEvents(current => current.map(event => event.id === eventId ? result.event! : event));
+        }
+    };
+
     const handleCreateDayTemplate = async (request: DayTemplateRequest) => {
         const created = await dayTemplateService.createTemplate(request);
         setDayTemplates(current => [...current, created].sort((first, second) => first.name.localeCompare(second.name)));
@@ -424,6 +433,17 @@ export function CalendarPage() {
         }
     };
 
+    const handleDeleteTaskFutureOccurrences = async (taskId: string) => {
+        try {
+            await taskService.deleteTaskFutureOccurrences(taskId);
+            await fetchAllTasks(true);
+        } catch (error) {
+            console.error('Error deleting future task occurrences from calendar:', error);
+            await fetchAllTasks(true);
+            throw error;
+        }
+    };
+
     const handleUpdateTask = async (taskId: string, updates: TaskUpdate) => {
         const originalTask = allTasks.find(task => task.taskId === taskId);
         if (!originalTask) return;
@@ -487,6 +507,7 @@ export function CalendarPage() {
                     onCreateTask={handleCreateTask}
                     onDeleteTask={handleDeleteTask}
                     onDeleteTaskOccurrence={handleDeleteTaskOccurrence}
+                    onDeleteTaskFutureOccurrences={handleDeleteTaskFutureOccurrences}
                     onUpdateTask={handleUpdateTask}
                     onCreateEvent={handleCreateEvent}
                     onUpdateEvent={handleUpdateEvent}
@@ -496,6 +517,7 @@ export function CalendarPage() {
                     onRestoreEventOccurrence={handleRestoreEventOccurrence}
                     onUpdateEventOccurrenceStatus={handleUpdateEventOccurrenceStatus}
                     onDeleteEventOccurrence={handleDeleteEventOccurrence}
+                    onDeleteEventFutureOccurrences={handleDeleteEventFutureOccurrences}
                     dayTemplates={dayTemplates}
                     onCreateDayTemplate={handleCreateDayTemplate}
                     onUpdateDayTemplate={handleUpdateDayTemplate}

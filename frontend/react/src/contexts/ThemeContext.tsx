@@ -210,7 +210,7 @@ export const AppThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => 
                         '*::-webkit-scrollbar-thumb:hover': {
                             backgroundColor: darkMode ? 'rgba(255,255,255,0.48)' : 'rgba(26,26,46,0.34)',
                         },
-                        '.MuiPickersPopper-root .MuiPaper-root, .MuiPickerStaticWrapper-root .MuiPaper-root': {
+                        '.MuiPickerPopper-root .MuiPaper-root, .MuiPickersPopper-root .MuiPaper-root, .MuiPickerStaticWrapper-root .MuiPaper-root': {
                             backgroundImage: 'none',
                             backgroundColor: darkMode ? '#1e2124' : '#FFFFFF',
                             border: darkMode ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(26,26,46,0.1)',
@@ -219,6 +219,14 @@ export const AppThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => 
                                 ? '0 18px 48px rgba(0,0,0,0.42)'
                                 : '0 18px 48px rgba(26,26,46,0.16)',
                             overflow: 'hidden',
+                        },
+                        '.MuiPickerPopper-root .MuiPaper-root, .MuiPickersPopper-root .MuiPaper-root': {
+                            maxHeight: 'calc(100vh - 32px)',
+                            overflowY: 'auto',
+                            overscrollBehavior: 'contain',
+                            '@supports (height: 100dvh)': {
+                                maxHeight: 'calc(100dvh - 32px)',
+                            },
                         },
                         '.MuiPickersLayout-root': {
                             display: 'flex',

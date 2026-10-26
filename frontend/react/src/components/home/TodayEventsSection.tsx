@@ -71,7 +71,7 @@ type TodayEventCardProps = {
 };
 
 type DeleteRequest = {
-    scope: 'occurrence' | 'event';
+    scope: 'occurrence' | 'future' | 'event';
     anchorPosition: { top: number; left: number };
 };
 
@@ -88,6 +88,7 @@ const NEW_EVENT_POPUP_CONTENT_SELECTOR = [
     '.MuiModal-root',
     '.MuiMenu-paper',
     '.MuiPopover-paper',
+    '.MuiPickerPopper-root',
     '.MuiPickersPopper-root',
     '.MuiAutocomplete-popper',
     '.MuiPopper-root',
@@ -573,11 +574,15 @@ function TodayEventCard({
         if (!deleteRequest || deleting) return;
         setDeleting(true);
         setDeleteError(false);
-        setOptimisticallyDeleted(true);
+        if (deleteRequest.scope !== 'future') setOptimisticallyDeleted(true);
         try {
             if (deleteRequest.scope === 'occurrence') {
                 const updated = await eventService.deleteEventOccurrence(item.event.id, item.occurrenceKey);
                 onEventUpdated(updated);
+            } else if (deleteRequest.scope === 'future') {
+                const result = await eventService.deleteFutureEventOccurrences(item.event.id, item.occurrenceKey);
+                if (result.eventDeleted) onEventDeleted(item.event.id);
+                else if (result.event) onEventUpdated(result.event);
             } else {
                 await eventService.deleteEvent(item.event.id);
                 onEventDeleted(item.event.id);
@@ -1033,6 +1038,20 @@ function TodayEventCard({
                         Delete occurrence
                     </MenuItem>
                 )}
+                {item.event.recurrenceFrequency !== 'NONE' && (
+                    <MenuItem
+                        onClick={clickEvent => requestDelete('future', clickEvent.currentTarget)}
+                        sx={{
+                            '&:hover': {
+                                color: 'error.main',
+                                '& .MuiListItemIcon-root': { color: 'inherit' },
+                            },
+                        }}
+                    >
+                        <ListItemIcon><DeleteOutlineRoundedIcon fontSize="small" /></ListItemIcon>
+                        Delete future occurrences
+                    </MenuItem>
+                )}
                 <MenuItem
                     onClick={clickEvent => requestDelete('event', clickEvent.currentTarget)}
                     sx={{
@@ -1083,7 +1102,7 @@ function TodayEventCard({
                 anchorEl={timeAnchorEl}
                 onClose={event => {
                     const target = (event as { target?: EventTarget | null }).target;
-                    if (target instanceof Element && target.closest('.MuiPickersPopper-root, .MuiDialog-root')) return;
+                    if (target instanceof Element && target.closest('.MuiPickerPopper-root, .MuiPickersPopper-root, .MuiDialog-root')) return;
                     setTimeAnchorEl(null);
                     setTimeError(false);
                 }}
@@ -1188,6 +1207,8 @@ function TodayEventCard({
                 <Typography variant="body2" sx={{ mb: 1.25 }}>
                     {deleteRequest?.scope === 'occurrence'
                         ? 'Delete this occurrence from your calendar?'
+                        : deleteRequest?.scope === 'future'
+                            ? 'Delete all occurrences after this one from your calendar? This occurrence will remain.'
                         : item.event.recurrenceFrequency !== 'NONE'
                             ? 'Delete all occurrences of this event?'
                             : 'Delete this event from your calendar?'}
@@ -2075,7 +2096,7 @@ export function TodayEventsSection() {
                                             if (newEventTimePickerOpenRef.current) return;
                                             const target = (event as { target?: EventTarget | null }).target;
                                             if (target instanceof Element
-                                                && target.closest('.MuiPickersPopper-root, .MuiDialog-root')) return;
+                                                && target.closest('.MuiPickerPopper-root, .MuiPickersPopper-root, .MuiDialog-root')) return;
                                             newEventTimePickerOpenRef.current = false;
                                             preserveNewEventDraftAfterPopupInteraction();
                                             setNewEventTimeAnchorEl(null);

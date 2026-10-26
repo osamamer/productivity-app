@@ -14,6 +14,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 
 public interface TaskRepository extends JpaRepository<Task, String>,
                                         JpaSpecificationExecutor<Task> {
@@ -53,6 +54,9 @@ public interface TaskRepository extends JpaRepository<Task, String>,
     List<Task> findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(String taskSeriesId);
 
     List<Task> findAllByTaskSeriesIdAndUserIdOrderBySeriesOccurrenceAtAsc(String taskSeriesId, String userId);
+
+    List<Task> findAllByLinkedStatDefinitionIdAndStatScheduleWeekStartAndUserId(
+            String linkedStatDefinitionId, LocalDate statScheduleWeekStart, String userId);
 
     @Modifying
     @Query(value = "UPDATE task SET calendar_id = :calendarId WHERE task_series_id = :seriesId AND user_id = :userId",

@@ -14,6 +14,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.DayOfWeek;
+import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -56,18 +58,28 @@ public class StatTaskLinkService {
                                      Double value, StatEntryStatus status, String userId) {
         if (!isBoolean(definition)) return;
 
+        Map<String, Task> tasksById = new LinkedHashMap<>();
         if (definition.getRecurringTaskSeriesId() != null) {
             taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(
                             definition.getRecurringTaskSeriesId())
                     .stream()
                     .filter(task -> date.equals(taskDate(task)))
-                    .forEach(task -> setTaskState(task, value, status));
+                    .forEach(task -> tasksById.put(task.getTaskId(), task));
         } else {
             List<String> taskNames = linkedTaskNames(definition);
-            if (taskNames.isEmpty()) return;
-            findNamedTasks(taskNames, userId, date)
-                    .forEach(task -> setTaskState(task, value, status));
+            if (!taskNames.isEmpty()) {
+                findNamedTasks(taskNames, userId, date)
+                        .forEach(task -> tasksById.put(task.getTaskId(), task));
+            }
         }
+
+        LocalDate weekStart = date.with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY));
+        taskRepository.findAllByLinkedStatDefinitionIdAndStatScheduleWeekStartAndUserId(
+                        definition.getId(), weekStart, userId)
+                .stream()
+                .filter(task -> date.equals(taskDate(task)))
+                .forEach(task -> tasksById.putIfAbsent(task.getTaskId(), task));
+        tasksById.values().forEach(task -> setTaskState(task, value, status));
 
         log.info("Linked stat occurrence synchronized to task: userId={} statDefinitionId={} date={} value={} status={}",
                 userId, definition.getId(), date, value, status);
@@ -91,6 +103,17 @@ public class StatTaskLinkService {
         Map<String, StatDefinition> definitions = linkedBooleanDefinitions(task, userId);
         if (definitions.isEmpty()) return;
 
+        if (!task.isCompleted()) {
+            definitions.values().forEach(definition -> entryRepository
+                    .findByStatDefinitionIdAndUserIdAndDate(definition.getId(), userId, date)
+                    .ifPresent(entry -> {
+                        entryRepository.delete(entry);
+                        log.info("Linked task reopening cleared stat entry: userId={} taskId={} statDefinitionId={} date={}",
+                                userId, task.getTaskId(), definition.getId(), date);
+                    }));
+            return;
+        }
+
         User user = userRepository.findUserById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
         definitions.values().forEach(definition -> {
@@ -102,11 +125,11 @@ public class StatTaskLinkService {
                             .date(date)
                             .user(user)
                             .build());
-            entry.setValue(task.isCompleted() ? 1.0 : 0.0);
+            entry.setValue(1.0);
             entry.setStatus(StatEntryStatus.RECORDED);
             entryRepository.save(entry);
-            log.info("Linked task completion synchronized to stat: userId={} taskId={} statDefinitionId={} date={} completed={}",
-                    userId, task.getTaskId(), definition.getId(), date, task.isCompleted());
+            log.info("Linked task completion synchronized to stat: userId={} taskId={} statDefinitionId={} date={}",
+                    userId, task.getTaskId(), definition.getId(), date);
         });
     }
 
@@ -115,6 +138,22 @@ public class StatTaskLinkService {
         task.setLinkedStatDefinitionId(definition.getId());
         task.setStatLinked(true);
         taskRepository.save(task);
+    }
+
+    @Transactional
+    public void linkCreatedWeeklyTaskToStat(Task task, StatDefinition definition, LocalDate weekStart) {
+        task.setLinkedStatDefinitionId(definition.getId());
+        task.setStatScheduleWeekStart(weekStart);
+        task.setStatLinked(true);
+        taskRepository.save(task);
+    }
+
+    @Transactional
+    public void preserveRecurringTaskLinks(String seriesId, String definitionId, String userId) {
+        List<Task> occurrences = taskRepository.findAllByTaskSeriesIdAndUserIdOrderBySeriesOccurrenceAtAsc(
+                seriesId, userId);
+        occurrences.forEach(task -> task.setLinkedStatDefinitionId(definitionId));
+        taskRepository.saveAll(occurrences);
     }
 
     /**

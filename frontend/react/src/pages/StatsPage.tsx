@@ -20,6 +20,7 @@ import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
 import FolderIcon from '@mui/icons-material/Folder';
 import GroupWorkIcon from '@mui/icons-material/GroupWork';
 import LinkOutlinedIcon from '@mui/icons-material/LinkOutlined';
+import SelfImprovementIcon from '@mui/icons-material/SelfImprovement';
 import ViewDayIcon from '@mui/icons-material/ViewDay';
 import { PageWrapper } from '../components/PageWrapper';
 import { CreateStatForm } from '../components/stats/CreateStatForm';
@@ -27,12 +28,15 @@ import { StatRecentDots } from '../components/stats/StatRecentDots';
 import { StatCard } from '../components/stats/StatCard';
 import { StatCreateLinkedTaskDialog } from '../components/stats/StatCreateLinkedTaskDialog';
 import { StatRecurringTaskDialog } from '../components/stats/StatRecurringTaskDialog';
+import { StatWeeklyTaskScheduleDialog } from '../components/stats/StatWeeklyTaskScheduleDialog';
 import { StatFocusTaskDialog } from '../components/stats/StatFocusTaskDialog';
 import {
     defaultStatRecurringTaskDraft,
     timeOfDayFromDateTime,
 } from '../components/stats/statRecurringTaskUtils';
-import { StatDefinition, StatRecurringTaskDraft } from '../types/Stats';
+import {
+    StatDefinition, StatRecurringTaskDraft, StatWeeklyTaskScheduleDraft,
+} from '../types/Stats';
 import { StatGroup } from '../types/StatGroup';
 import { useUser } from '../hooks/useUser';
 import { useKeyboardDelete } from '../hooks/useKeyboardDelete';
@@ -104,7 +108,11 @@ const selectionActionsReveal = keyframes`
 `;
 
 function isDedicatedStat(definition: StatDefinition): boolean {
-    return definition.systemKey !== undefined && DEDICATED_SYSTEM_KEYS.has(definition.systemKey);
+    const isOptionalMeditationStat = definition.systemKey === 'meditated'
+        && definition.showOnStatsPage;
+    return definition.systemKey !== undefined
+        && DEDICATED_SYSTEM_KEYS.has(definition.systemKey)
+        && !isOptionalMeditationStat;
 }
 
 function StatsLoadingState() {
@@ -234,6 +242,12 @@ export function StatsPage() {
     const [recurringTaskFeedback, setRecurringTaskFeedback] = useState<string | null>(null);
     const [recurringTaskMode, setRecurringTaskMode] = useState<'create' | 'update'>('create');
     const [recurringTaskInitialDraft, setRecurringTaskInitialDraft] = useState<StatRecurringTaskDraft | null>(null);
+    const [weeklyTaskTarget, setWeeklyTaskTarget] = useState<StatDefinition | null>(null);
+    const [weeklyTaskAnchorPosition, setWeeklyTaskAnchorPosition] = useState<PopupPosition | null>(null);
+    const [weeklyTaskInitialDraft, setWeeklyTaskInitialDraft] = useState<StatWeeklyTaskScheduleDraft | null>(null);
+    const [weeklyTaskLoading, setWeeklyTaskLoading] = useState(false);
+    const [weeklyTaskSaving, setWeeklyTaskSaving] = useState(false);
+    const [weeklyTaskError, setWeeklyTaskError] = useState<string | null>(null);
     const [createLinkedTaskSavingId] = useState<string | null>(null);
     const [createLinkedTaskError, setCreateLinkedTaskError] = useState<string | null>(null);
     const [createLinkedTaskTarget, setCreateLinkedTaskTarget] = useState<StatDefinition | null>(null);
@@ -656,6 +670,70 @@ export function StatsPage() {
                 rollbackDefinition(operationId, previous, 'Could not create the recurring linked task.');
                 setCreateLinkedTaskError('Could not create the recurring linked task. Please try again.');
             });
+    };
+
+    const handleCreateWeeklyLinkedTask = (
+        definition: StatDefinition,
+        schedule: StatWeeklyTaskScheduleDraft,
+    ) => {
+        setCreateLinkedTaskTarget(null);
+        setCreateLinkedTaskAnchorPosition(null);
+        setCreateLinkedTaskError(null);
+        void statService.replaceWeeklyTaskSchedule(definition.id, schedule)
+            .then(() => {
+                setRecurringTaskFeedback(`Tasks scheduled for this week for “${schedule.taskName}”.`);
+                setResourceRefreshKey(previous => previous + 1);
+                void loadDefinitions();
+            })
+            .catch(error => {
+                console.error('Failed to schedule linked tasks for this week:', error);
+                setCreateLinkedTaskError('Could not schedule tasks for this week. Please try again.');
+                showErrorSnackbar('Could not schedule tasks for this week.');
+            });
+    };
+
+    const openWeeklyTaskEditor = (definition: StatDefinition, anchorPosition: PopupPosition) => {
+        setWeeklyTaskTarget(definition);
+        setWeeklyTaskAnchorPosition(anchorPosition);
+        setWeeklyTaskInitialDraft(null);
+        setWeeklyTaskError(null);
+        setWeeklyTaskLoading(true);
+        void statService.getWeeklyTaskSchedule(definition.id)
+            .then(schedule => {
+                setWeeklyTaskInitialDraft({
+                    taskName: schedule.taskName,
+                    daysOfWeek: schedule.daysOfWeek,
+                    timeOfDay: schedule.timeOfDay,
+                    importance: schedule.importance,
+                });
+            })
+            .catch(error => {
+                console.error('Failed to load this week\'s stat task schedule:', error);
+                setWeeklyTaskError('Could not load this week\'s task schedule. Please try again.');
+                showErrorSnackbar('Could not load this week\'s task schedule.');
+            })
+            .finally(() => setWeeklyTaskLoading(false));
+    };
+
+    const handleSaveWeeklyTaskSchedule = (schedule: StatWeeklyTaskScheduleDraft) => {
+        if (!weeklyTaskTarget || weeklyTaskSaving) return;
+        setWeeklyTaskSaving(true);
+        setWeeklyTaskError(null);
+        void statService.replaceWeeklyTaskSchedule(weeklyTaskTarget.id, schedule)
+            .then(() => {
+                setWeeklyTaskTarget(null);
+                setWeeklyTaskAnchorPosition(null);
+                setWeeklyTaskInitialDraft(null);
+                setRecurringTaskFeedback('This week\'s schedule updated.');
+                setResourceRefreshKey(previous => previous + 1);
+                void loadDefinitions();
+            })
+            .catch(error => {
+                console.error('Failed to change this week\'s stat task schedule:', error);
+                setWeeklyTaskError('Could not update this week\'s task schedule. Please try again.');
+                showErrorSnackbar('Could not update this week\'s task schedule.');
+            })
+            .finally(() => setWeeklyTaskSaving(false));
     };
 
     const handleRemoveFocusTask = (definition: StatDefinition, taskName: string) => {
@@ -1526,6 +1604,29 @@ export function StatsPage() {
                             handleCreateRecurringLinkedTask(createLinkedTaskTarget, taskName, recurrence);
                         }
                     }}
+                    onCreateThisWeek={schedule => {
+                        if (createLinkedTaskTarget) {
+                            handleCreateWeeklyLinkedTask(createLinkedTaskTarget, schedule);
+                        }
+                    }}
+                />
+
+                <StatWeeklyTaskScheduleDialog
+                    open={Boolean(weeklyTaskTarget)}
+                    definition={weeklyTaskTarget}
+                    anchorPosition={weeklyTaskAnchorPosition}
+                    initialDraft={weeklyTaskInitialDraft}
+                    loading={weeklyTaskLoading}
+                    saving={weeklyTaskSaving}
+                    error={weeklyTaskError}
+                    onClose={() => {
+                        if (weeklyTaskSaving) return;
+                        setWeeklyTaskTarget(null);
+                        setWeeklyTaskAnchorPosition(null);
+                        setWeeklyTaskInitialDraft(null);
+                        setWeeklyTaskError(null);
+                    }}
+                    onConfirm={handleSaveWeeklyTaskSchedule}
                 />
 
                 <StatRecurringTaskDialog
@@ -1914,6 +2015,32 @@ export function StatsPage() {
                     : undefined}
                 MenuListProps={{ dense: true }}
             >
+                {contextMenu?.kind === 'stat'
+                    && contextMenu.definition.systemKey === 'meditated' && (
+                    <MenuItem onClick={() => {
+                        closeContextMenu();
+                        navigate('/meditation');
+                    }}>
+                        <ListItemIcon><SelfImprovementIcon fontSize="small" /></ListItemIcon>
+                        <ListItemText>Go to meditation page</ListItemText>
+                    </MenuItem>
+                )}
+                {contextMenu?.kind === 'stat'
+                    && !contextMenu.definition.systemKey
+                    && contextMenu.definition.type === 'BOOLEAN' && (
+                    <MenuItem
+                        onClick={() => {
+                            const definition = contextMenu.definition;
+                            const anchorPosition = { top: contextMenu.top, left: contextMenu.left };
+                            closeContextMenu();
+                            openWeeklyTaskEditor(definition, anchorPosition);
+                        }}
+                        disabled={weeklyTaskLoading || weeklyTaskSaving}
+                    >
+                        <ListItemIcon><ViewDayIcon fontSize="small" /></ListItemIcon>
+                        <ListItemText>Change this week's schedule</ListItemText>
+                    </MenuItem>
+                )}
                 {contextMenu?.kind === 'stat' && !contextMenu.definition.systemKey && (
                     <MenuItem
                         onClick={() => {
@@ -1973,6 +2100,7 @@ export function StatsPage() {
                 )}
                 {contextMenu?.kind === 'stat'
                     && contextMenu.definition.systemKey
+                    && contextMenu.definition.systemKey !== 'meditated'
                     && !isEditableSystemStat(contextMenu.definition) && (
                     <MenuItem disabled>Built-in statistic</MenuItem>
                 )}

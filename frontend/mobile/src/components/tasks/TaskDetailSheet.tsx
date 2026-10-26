@@ -20,12 +20,13 @@ import { TaskScheduleField } from './TaskScheduleField';
 import { TaskReminderField } from './TaskReminderField';
 import { CalendarDestinationField } from '../calendar/CalendarControls';
 
-export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeletedOccurrence, onSubtaskCreated, availableCalendars }: {
+export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeletedOccurrence, onDeletedFutureOccurrences, onSubtaskCreated, availableCalendars }: {
   task: Task | null;
   onClose: () => void;
   onUpdated: (task: Task) => void;
   onDeleted: (taskId: string) => void;
   onDeletedOccurrence?: (taskId: string) => Promise<void>;
+  onDeletedFutureOccurrences?: (taskId: string) => Promise<void>;
   onSubtaskCreated?: (task: Task) => void;
   availableCalendars?: Calendar[];
 }) {
@@ -261,14 +262,18 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
     }
   }
 
-  async function confirmDelete(scope: 'occurrence' | 'series') {
+  async function confirmDelete(scope: 'occurrence' | 'future' | 'series') {
     if (!task || linkedTask) return;
     setDeletePromptOpen(false);
     const deletingOccurrence = scope === 'occurrence';
-    const title = deletingOccurrence ? 'Delete this occurrence?' : task.taskSeriesId ? 'Delete task series?' : 'Delete task?';
+    const title = deletingOccurrence
+      ? 'Delete this occurrence?'
+      : scope === 'future' ? 'Delete future occurrences?' : task.taskSeriesId ? 'Delete task series?' : 'Delete task?';
     const message = deletingOccurrence
       ? `${task.name} will be removed from this date.`
-      : task.taskSeriesId
+      : scope === 'future'
+        ? `Later occurrences of ${task.name} will be removed. This occurrence will remain.`
+        : task.taskSeriesId
         ? `${task.name} and all occurrences in its series will be removed.`
         : task.name;
     if (!await confirm(title, message, 'Delete')) return;
@@ -276,6 +281,8 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
     try {
       if (deletingOccurrence) {
         await onDeletedOccurrence!(task.taskId);
+      } else if (scope === 'future') {
+        await onDeletedFutureOccurrences!(task.taskId);
       } else {
         await api.tasks.remove(task.taskId);
         onDeleted(task.taskId);
@@ -474,7 +481,7 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
         visible={deletePromptOpen}
         showIcon={false}
         title="Delete recurring task?"
-        message="Choose whether to remove just this occurrence or the whole series."
+        message="Choose which occurrences to remove."
         onClose={() => setDeletePromptOpen(false)}
         dismissOnBackdrop={false}
         footer={(
@@ -485,6 +492,12 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
               variant="secondary"
               disabled={deleting}
               onPress={() => void confirmDelete('occurrence')} />
+            <AppButton
+              style={styles.deleteChoice}
+              label="Future occurrences"
+              variant="secondary"
+              disabled={deleting || !onDeletedFutureOccurrences}
+              onPress={() => void confirmDelete('future')} />
             <AppButton
               style={styles.deleteChoice}
               label="All occurrences"

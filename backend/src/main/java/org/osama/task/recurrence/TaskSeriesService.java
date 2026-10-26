@@ -232,6 +232,16 @@ public class TaskSeriesService {
         log.info("Task series stopped and future occurrences hidden: userId={} seriesId={}", userId, seriesId);
     }
 
+    @Transactional
+    public void deactivateSeries(String seriesId, String userId) {
+        TaskSeries series = seriesRepository.lockBySeriesIdAndUserId(seriesId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("Task series not found: " + seriesId));
+        if (!series.isActive()) return;
+        series.setActive(false);
+        seriesRepository.save(series);
+        log.info("Task series deactivated: userId={} seriesId={}", userId, seriesId);
+    }
+
     @Scheduled(
             fixedDelayString = "${app.task-series.expansion-delay-ms:21600000}",
             initialDelayString = "${app.task-series.expansion-initial-delay-ms:10000}"

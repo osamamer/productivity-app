@@ -795,8 +795,8 @@ public class StatServiceTest {
         UpdateTaskRequest reopenTask = new UpdateTaskRequest();
         reopenTask.setCompleted(false);
         taskService.updateTask(todayTask.getTaskId(), reopenTask, TEST_USER_ID);
-        assertEquals(0.0, entryRepository.findByStatDefinitionIdAndUserIdAndDate(
-                definition.getId(), TEST_USER_ID, today).orElseThrow().getValue());
+        assertTrue(entryRepository.findByStatDefinitionIdAndUserIdAndDate(
+                definition.getId(), TEST_USER_ID, today).isEmpty());
 
         statService.recordEntry(definition.getId(), today, null,
                 StatEntryStatus.NOT_PLANNED, TEST_USER_ID);
@@ -841,8 +841,8 @@ public class StatServiceTest {
         UpdateTaskRequest reopenTask = new UpdateTaskRequest();
         reopenTask.setCompleted(false);
         taskService.updateTask(task.getTaskId(), reopenTask, TEST_USER_ID);
-        assertEquals(0.0, entryRepository.findByStatDefinitionIdAndUserIdAndDate(
-                definition.getId(), TEST_USER_ID, taskDate).orElseThrow().getValue());
+        assertTrue(entryRepository.findByStatDefinitionIdAndUserIdAndDate(
+                definition.getId(), TEST_USER_ID, taskDate).isEmpty());
 
         LocalDate movedDate = taskDate.plusDays(2);
         UpdateTaskRequest moveTask = new UpdateTaskRequest();
@@ -851,8 +851,8 @@ public class StatServiceTest {
         assertTrue(movedTask.isStatLinked());
         assertTrue(entryRepository.findByStatDefinitionIdAndUserIdAndDate(
                 definition.getId(), TEST_USER_ID, taskDate).isEmpty());
-        assertEquals(0.0, entryRepository.findByStatDefinitionIdAndUserIdAndDate(
-                definition.getId(), TEST_USER_ID, movedDate).orElseThrow().getValue());
+        assertTrue(entryRepository.findByStatDefinitionIdAndUserIdAndDate(
+                definition.getId(), TEST_USER_ID, movedDate).isEmpty());
 
         statService.recordEntry(definition.getId(), movedDate, 1.0, TEST_USER_ID);
         assertTrue(taskRepository.findTaskByTaskId(task.getTaskId()).orElseThrow().isCompleted());

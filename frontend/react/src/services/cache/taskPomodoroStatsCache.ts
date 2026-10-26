@@ -25,6 +25,10 @@ export function getStaleTaskPomodoroStats(taskId: string): TaskPomodoroStats | u
     return taskPomodoroStatsResource.getStale(cacheKey(taskId));
 }
 
+export function setCachedTaskPomodoroStats(taskId: string, stats: TaskPomodoroStats): void {
+    taskPomodoroStatsResource.set(cacheKey(taskId), stats, TASK_POMODORO_STATS_TTL_MS);
+}
+
 export function loadTaskPomodoroStats(
     taskId: string,
     loader: () => Promise<TaskPomodoroStats>,

@@ -36,7 +36,8 @@ public final class SystemStatCatalog {
             .collect(java.util.stream.Collectors.toUnmodifiableSet());
 
     public static final List<SystemStatDefinition> MEDITATION_STATS = List.of(
-            yesNo(MEDITATED_SYSTEM_KEY, "Meditated", "Whether you completed a meditation session that day."),
+            yesNo(MEDITATED_SYSTEM_KEY, "Meditate", "Whether you completed a meditation session that day.",
+                    StatMorality.GOOD),
             number(MEDITATION_MINUTES_SYSTEM_KEY, "Meditation minutes", "Total meditation time completed that day, in minutes.")
     );
 
@@ -75,9 +76,10 @@ public final class SystemStatCatalog {
                 1.0, 10.0, null, null);
     }
 
-    private static SystemStatDefinition yesNo(String systemKey, String name, String description) {
+    private static SystemStatDefinition yesNo(String systemKey, String name, String description,
+                                             StatMorality morality) {
         return new SystemStatDefinition(systemKey, name, description, StatType.BOOLEAN,
-                null, null, null, null);
+                null, null, morality, null);
     }
 
     private static SystemStatDefinition number(String systemKey, String name, String description) {

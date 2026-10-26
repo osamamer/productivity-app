@@ -2,6 +2,7 @@ import { appConfig } from '@/lib/config';
 import { GENERIC_ERROR_MESSAGE } from '@/lib/errors';
 import type {
   CalendarEvent,
+  CalendarEventFutureDeletionResponse,
   CalendarEventInput,
   Calendar,
   CalendarSource,
@@ -242,6 +243,9 @@ export const api = {
       await apiRequest<void>(`/api/v1/tasks/${id}/occurrence`, { method: 'DELETE' });
       removeCachedTask(id);
     },
+    removeFutureOccurrences: async (id: string) => {
+      await apiRequest<void>(`/api/v1/tasks/${id}/future-occurrences`, { method: 'DELETE' });
+    },
     reorder: (taskIds: string[]) => json<Task[]>('/api/v1/tasks/order', 'PUT', { taskIds }),
   },
   taskGroups: {
@@ -303,6 +307,8 @@ export const api = {
       json<CalendarEvent>(`/api/v1/events/${id}/occurrences/status`, 'POST', { occurrenceKey, status }),
     deleteOccurrence: (id: string, occurrenceKey: string) =>
       json<CalendarEvent>(`/api/v1/events/${id}/occurrences`, 'DELETE', { occurrenceKey }),
+    deleteFutureOccurrences: (id: string, occurrenceKey: string) =>
+      json<CalendarEventFutureDeletionResponse>(`/api/v1/events/${id}/occurrences/future`, 'DELETE', { occurrenceKey }),
     restoreOccurrence: (id: string, occurrenceKey: string) =>
       apiRequest<CalendarEvent>(`/api/v1/events/${id}/occurrences/cancel?occurrenceKey=${encodeURIComponent(occurrenceKey)}`, { method: 'DELETE' }),
   },

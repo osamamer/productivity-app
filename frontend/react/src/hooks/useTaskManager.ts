@@ -13,7 +13,15 @@ type TaskState = {
     pastTasks: Task[];
     undatedTasks: Task[];
     highlightedTask: Task | null;
+    bucketDateKey: string;
 };
+
+function localDateKey(date = new Date()): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
 
 function startOfToday(): Date {
     const today = new Date();
@@ -84,7 +92,55 @@ function withTaskBuckets(previous: TaskState, allTasks: Task[]): TaskState {
         futureTasks: reuseTaskList(previous.futureTasks, grouped.future),
         pastTasks: reuseTaskList(previous.pastTasks, grouped.past),
         undatedTasks: reuseTaskList(previous.undatedTasks, grouped.undated),
+        bucketDateKey: localDateKey(),
     };
+}
+
+function withStableTaskBuckets(previous: TaskState, allTasks: Task[]): TaskState {
+    if (previous.bucketDateKey !== localDateKey()) return withTaskBuckets(previous, allTasks);
+
+    const reorderBucket = (bucket: Task[]) => {
+        const taskIds = new Set(bucket.map(task => task.taskId));
+        return reuseTaskList(bucket, allTasks.filter(task => taskIds.has(task.taskId)));
+    };
+
+    return {
+        ...previous,
+        allTasks,
+        todayTasks: reorderBucket(previous.todayTasks),
+        futureTasks: reorderBucket(previous.futureTasks),
+        pastTasks: reorderBucket(previous.pastTasks),
+        undatedTasks: reorderBucket(previous.undatedTasks),
+    };
+}
+
+function reorderTaskSnapshot(tasks: Task[], orderedTaskIds: string[]): Task[] {
+    const taskIdSet = new Set(orderedTaskIds);
+    const reorderedTasks = tasks.filter(task => taskIdSet.has(task.taskId));
+    const taskById = new Map(reorderedTasks.map(task => [task.taskId, task]));
+    let nextSelectedTask = 0;
+    let changed = false;
+
+    const nextTasks = tasks.map(task => {
+        if (!taskIdSet.has(task.taskId)) return task;
+
+        const reorderedTask = taskById.get(orderedTaskIds[nextSelectedTask]);
+        nextSelectedTask += 1;
+        if (reorderedTask && reorderedTask !== task) changed = true;
+        return reorderedTask ?? task;
+    });
+
+    return changed ? nextTasks : tasks;
+}
+
+type TaskStateChange = { taskId: string; updates: Partial<Task> };
+
+function mergeTaskUpdates(task: Task, updates: Partial<Task>): Task {
+    if (Object.entries(updates).every(([key, value]) => Object.is(task[key as keyof Task], value))) {
+        return task;
+    }
+
+    return { ...task, ...updates };
 }
 
 function createInitialTaskState(): TaskState {
@@ -98,6 +154,7 @@ function createInitialTaskState(): TaskState {
         pastTasks: [],
         undatedTasks: [],
         highlightedTask: null,
+        bucketDateKey: localDateKey(),
     } satisfies TaskState;
     const next = withTaskBuckets(state, cachedTasks);
 
@@ -366,42 +423,55 @@ export function useTaskManager() {
         });
     }, []);
 
-    const replaceTaskInState = useCallback((taskId: string, replacement: Task) => {
-        setTaskState(prev => {
-            const taskIndex = prev.allTasks.findIndex(task => task.taskId === taskId);
-            if (taskIndex === -1) return prev;
+    const updateTasksInState = useCallback((changes: TaskStateChange[], orderedTaskIds?: string[]) => {
+        if (changes.length === 0 && !orderedTaskIds) return;
 
-            const updatedTasks = [...prev.allTasks];
-            updatedTasks[taskIndex] = replacement;
-            const next = withTaskBuckets(prev, updatedTasks);
+        setTaskState(prev => {
+            const updatesByTaskId = new Map(changes.map(change => [change.taskId, change.updates]));
+            let scheduleChanged = false;
+            const updatedTasks = prev.allTasks.map(task => {
+                const updates = updatesByTaskId.get(task.taskId);
+                if (!updates) return task;
+
+                const updatedTask = mergeTaskUpdates(task, updates);
+                if (updatedTask !== task
+                    && updatedTask.scheduledPerformDateTime !== task.scheduledPerformDateTime) {
+                    scheduleChanged = true;
+                }
+                return updatedTask;
+            });
+            const taskRecordsChanged = updatedTasks.some((task, index) => task !== prev.allTasks[index]);
+            if (!taskRecordsChanged && !orderedTaskIds) return prev;
+
+            const orderedTasks = orderedTaskIds
+                ? reorderTaskSnapshot(updatedTasks, orderedTaskIds)
+                : updatedTasks;
+            const orderChanged = orderedTasks.some((task, index) => task !== updatedTasks[index]);
+            if (!taskRecordsChanged && !orderChanged) return prev;
+
+            const next = scheduleChanged
+                ? withTaskBuckets(prev, orderedTasks)
+                : withStableTaskBuckets(prev, orderedTasks);
+            const highlightedTask = prev.highlightedTask
+                ? updatesByTaskId.has(prev.highlightedTask.taskId)
+                    ? mergeTaskUpdates(prev.highlightedTask, updatesByTaskId.get(prev.highlightedTask.taskId)!)
+                    : prev.highlightedTask
+                : null;
 
             return {
                 ...next,
-                highlightedTask: prev.highlightedTask?.taskId === taskId
-                    ? replacement
-                    : prev.highlightedTask,
+                highlightedTask,
             };
         });
     }, []);
+
+    const replaceTaskInState = useCallback((taskId: string, replacement: Task) => {
+        updateTasksInState([{ taskId, updates: replacement }]);
+    }, [updateTasksInState]);
 
     const updateTaskInState = useCallback((taskId: string, updates: Partial<Task>) => {
-        setTaskState(prev => {
-            const taskIndex = prev.allTasks.findIndex(task => task.taskId === taskId);
-            if (taskIndex === -1) return prev;
-
-            const updatedTask = { ...prev.allTasks[taskIndex], ...updates };
-            const updatedTasks = [...prev.allTasks];
-            updatedTasks[taskIndex] = updatedTask;
-            const next = withTaskBuckets(prev, updatedTasks);
-
-            return {
-                ...next,
-                highlightedTask: prev.highlightedTask?.taskId === taskId
-                    ? { ...prev.highlightedTask, ...updates }
-                    : prev.highlightedTask,
-            };
-        });
-    }, []);
+        updateTasksInState([{ taskId, updates }]);
+    }, [updateTasksInState]);
 
     const removeTasksFromState = useCallback((taskIds: string[]) => {
         if (taskIds.length === 0) return;
@@ -426,22 +496,8 @@ export function useTaskManager() {
     }, [removeTasksFromState]);
 
     const reorderTasksInState = useCallback((orderedTaskIds: string[]) => {
-        setTaskState(prev => {
-            const orderedTaskIdSet = new Set(orderedTaskIds);
-            const reorderedTasks = prev.allTasks.filter(task => orderedTaskIdSet.has(task.taskId));
-            const taskById = new Map(reorderedTasks.map(task => [task.taskId, task]));
-            let nextSelectedTask = 0;
-
-            const updatedTasks = prev.allTasks.map(task => {
-                if (!orderedTaskIdSet.has(task.taskId)) return task;
-                const reorderedTask = taskById.get(orderedTaskIds[nextSelectedTask]);
-                nextSelectedTask += 1;
-                return reorderedTask ?? task;
-            });
-
-            return withTaskBuckets(prev, updatedTasks);
-        });
-    }, []);
+        updateTasksInState([], orderedTaskIds);
+    }, [updateTasksInState]);
 
     return useMemo(() => ({
         // State
@@ -473,6 +529,7 @@ export function useTaskManager() {
         appendTasksToState,
         replaceTaskInState,
         updateTaskInState,
+        updateTasksInState,
         removeTasksFromState,
         removeTaskFromState,
         reorderTasksInState,
@@ -502,6 +559,7 @@ export function useTaskManager() {
         appendTasksToState,
         replaceTaskInState,
         updateTaskInState,
+        updateTasksInState,
         removeTasksFromState,
         removeTaskFromState,
         reorderTasksInState,

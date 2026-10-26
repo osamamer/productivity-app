@@ -296,3 +296,11 @@ databaseChangeLog:
       file: db/changelog/changes/084-add-mental-state-goal.yaml
   - include:
       file: db/changelog/changes/085-external-calendar-sources.yaml
+  - include:
+      file: db/changelog/changes/086-add-stat-weekly-task-schedule.yaml
+  - include:
+      file: db/changelog/changes/087-add-stat-page-visibility.yaml
+  - include:
+      file: db/changelog/changes/088-rename-meditated-stat.yaml
+  - include:
+      file: db/changelog/changes/089-set-meditate-morality-good.yaml

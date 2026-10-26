@@ -188,11 +188,13 @@ export function MonthCalendar({
   onEventOccurrenceRestored,
   onEventOccurrenceStatusUpdated,
   onEventOccurrenceDeleted,
+  onEventFutureOccurrencesDeleted,
   onEventDeleted,
   onTaskCreated,
   onTaskUpdated,
   onTaskDeleted,
   onTaskOccurrenceDeleted,
+  onTaskFutureOccurrencesDeleted,
   displayOptionsOpen,
   onDisplayOptionsOpenChange,
 }: {
@@ -210,11 +212,13 @@ export function MonthCalendar({
   onEventOccurrenceRestored: (eventId: string, occurrenceKey: string) => Promise<CalendarEvent>;
   onEventOccurrenceStatusUpdated: (eventId: string, occurrenceKey: string, status: CalendarEvent['status']) => Promise<CalendarEvent>;
   onEventOccurrenceDeleted: (eventId: string, occurrenceKey: string) => Promise<CalendarEvent>;
+  onEventFutureOccurrencesDeleted: (eventId: string, occurrenceKey: string) => Promise<void>;
   onEventDeleted: (eventId: string) => Promise<void>;
   onTaskCreated: (task: Task) => void;
   onTaskUpdated: (task: Task) => void;
   onTaskDeleted: (taskId: string) => void;
   onTaskOccurrenceDeleted: (taskId: string) => Promise<void>;
+  onTaskFutureOccurrencesDeleted: (taskId: string) => Promise<void>;
   displayOptionsOpen: boolean;
   onDisplayOptionsOpenChange: (open: boolean) => void;
 }) {
@@ -729,6 +733,13 @@ export function MonthCalendar({
             return true;
           }
           : undefined}
+        onDeleteFutureOccurrences={editingEvent && editingOccurrence
+          ? async () => {
+            await onEventFutureOccurrencesDeleted(editingEvent.id, editingOccurrence.occurrenceKey);
+            closeEditingEvent();
+            return true;
+          }
+          : undefined}
         onDelete={editingEvent ? () => deleteEvent(editingEvent.id) : undefined} />}
       <CalendarTaskGroupSheet
         group={selectedGroup}
@@ -744,6 +755,10 @@ export function MonthCalendar({
         onDeleted={taskId => { onTaskDeleted(taskId); setSelectedTask(null); }}
         onDeletedOccurrence={async taskId => {
           await onTaskOccurrenceDeleted(taskId);
+          setSelectedTask(null);
+        }}
+        onDeletedFutureOccurrences={async taskId => {
+          await onTaskFutureOccurrencesDeleted(taskId);
           setSelectedTask(null);
         }} />
     </>

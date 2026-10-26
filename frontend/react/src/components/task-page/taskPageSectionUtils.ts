@@ -11,15 +11,18 @@ export function buildTaskListItems(tasks: Task[], groups: TaskGroup[]): TaskList
     const visibleTaskIds = new Set(uniqueTasks.map(task => task.taskId));
     const groupByTaskId = new Map<string, TaskGroup>();
     const tasksByGroupId = new Map<string, Task[]>();
-    [...groups]
+    const groupCandidates = [...groups]
         .map(group => group.linkedToMentalThread || group.taskIds.some(taskId => (
             uniqueTasks.some(task => task.taskId === taskId && Boolean(task.mentalThreadId))
         )) ? { ...group, linkedToMentalThread: true } : group)
-        .filter(group => group.taskIds.length >= 2 || group.linkedToMentalThread)
-        .sort((first, second) => first.displayOrder - second.displayOrder)
-        .forEach(group => group.taskIds.forEach(taskId => {
+        .filter(group => group.taskIds.length >= 2 || group.linkedToMentalThread || group.isStatGroup)
+        .sort((first, second) => first.displayOrder - second.displayOrder);
+
+    groupCandidates.forEach(group => {
+        group.taskIds.forEach(taskId => {
             if (visibleTaskIds.has(taskId) && !groupByTaskId.has(taskId)) groupByTaskId.set(taskId, group);
-        }));
+        });
+    });
 
     uniqueTasks.forEach(task => {
         const groupId = groupByTaskId.get(task.taskId)?.groupId;
@@ -29,10 +32,20 @@ export function buildTaskListItems(tasks: Task[], groups: TaskGroup[]): TaskList
         else tasksByGroupId.set(groupId, [task]);
     });
 
+    const singletonLinkedGroups = new Map<string, TaskGroup>();
+    groupCandidates.forEach(group => {
+        if (!group.linkedToMentalThread && !group.isStatGroup) return;
+        const groupTasks = tasksByGroupId.get(group.groupId) ?? [];
+        if (groupTasks.length === 1) singletonLinkedGroups.set(groupTasks[0].taskId, group);
+    });
+
     const emittedGroupIds = new Set<string>();
     return uniqueTasks.reduce<TaskListItem[]>((items, task) => {
         const group = groupByTaskId.get(task.taskId);
+        const singletonGroup = singletonLinkedGroups.get(task.taskId);
         if (!group) {
+            items.push({ kind: 'task', task });
+        } else if (singletonGroup?.groupId === group.groupId) {
             items.push({ kind: 'task', task });
         } else if (!emittedGroupIds.has(group.groupId)) {
             emittedGroupIds.add(group.groupId);
