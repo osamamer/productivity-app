@@ -80,7 +80,7 @@ import {
     getOptimisticPomodoroStatus,
 } from '../services/utils/optimisticPomodoro';
 import { TaskOriginAdornment } from './task/TaskOriginAdornment';
-import type { TaskOriginKind } from './task/TaskOriginAdornment';
+import type { TaskOriginKind } from './task/TaskOriginUtils';
 
 // ─── types ─────────────────────────────────────────────────────────────────
 

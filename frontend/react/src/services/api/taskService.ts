@@ -865,17 +865,12 @@ export const taskService = {
     },
 
     async deleteTaskFutureOccurrences(taskId: string, { notifyResource = true }: DeleteTaskOptions = {}): Promise<TaskDeletionReceipt | null> {
-        let response: Response;
-        try {
-            response = await apiFetch(`${TASK_URL}/${taskId}/future-occurrences`, {
-                method: 'DELETE',
-                headers: getAuthHeaders(),
-            });
-            if (!response.ok) {
-                throw new Error('Failed to delete future task occurrences');
-            }
-        } catch (error) {
-            throw error;
+        const response = await apiFetch(`${TASK_URL}/${taskId}/future-occurrences`, {
+            method: 'DELETE',
+            headers: getAuthHeaders(),
+        });
+        if (!response.ok) {
+            throw new Error('Failed to delete future task occurrences');
         }
 
         const receipt = await readTaskDeletionReceipt(response);

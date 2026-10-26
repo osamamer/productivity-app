@@ -390,20 +390,22 @@ public class StatServiceTest {
     }
 
     @Test
-    void meditationStats_rejectManualEntries() {
+    void meditatedStatAllowsManualEntries_butMeditationMinutesRemainAutomatic() {
         User user = userRepository.findUserById(TEST_USER_ID).orElseThrow();
         provisioningService.createMissingSystemStatsFor(user);
 
-        for (String systemKey : List.of(
-                SystemStatCatalog.MEDITATED_SYSTEM_KEY,
-                SystemStatCatalog.MEDITATION_MINUTES_SYSTEM_KEY)) {
-            StatDefinition definition = definitionRepository
-                    .findByUserIdAndSystemKey(TEST_USER_ID, systemKey)
-                    .orElseThrow();
+        StatDefinition meditatedDefinition = definitionRepository
+                .findByUserIdAndSystemKey(TEST_USER_ID, SystemStatCatalog.MEDITATED_SYSTEM_KEY)
+                .orElseThrow();
+        StatDefinition meditationMinutesDefinition = definitionRepository
+                .findByUserIdAndSystemKey(TEST_USER_ID, SystemStatCatalog.MEDITATION_MINUTES_SYSTEM_KEY)
+                .orElseThrow();
 
-            assertThrows(IllegalArgumentException.class, () ->
-                    statService.recordEntry(definition.getId(), LocalDate.now(), 1.0, TEST_USER_ID));
-        }
+        StatEntry meditatedEntry = assertDoesNotThrow(() ->
+                statService.recordEntry(meditatedDefinition.getId(), LocalDate.now(), 1.0, TEST_USER_ID));
+        assertEquals(1.0, meditatedEntry.getValue());
+        assertThrows(IllegalArgumentException.class, () ->
+                statService.recordEntry(meditationMinutesDefinition.getId(), LocalDate.now(), 1.0, TEST_USER_ID));
     }
 
     @Test

@@ -52,7 +52,7 @@ export function StatWeeklyTaskScheduleDialog({
     useEffect(() => {
         if (!open) return;
         setDraft(initialDraft ?? defaultStatWeeklyTaskScheduleDraft(definition?.name ?? ''));
-    }, [open, definition?.id, initialDraft]);
+    }, [open, definition?.id, definition?.name, initialDraft]);
 
     const timeMissing = !/^\d{2}:\d{2}$/.test(draft.timeOfDay);
     const nameMissing = !draft.taskName.trim();
