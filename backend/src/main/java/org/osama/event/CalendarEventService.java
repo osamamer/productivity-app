@@ -3,9 +3,7 @@ package org.osama.event;
 import lombok.extern.slf4j.Slf4j;
 import org.osama.calendar.CalendarService;
 import org.osama.exceptions.ResourceNotFoundException;
-import org.osama.reminder.Reminder;
 import org.osama.reminder.ReminderRepository;
-import org.osama.reminder.NotificationType;
 import org.osama.user.User;
 import org.osama.user.UserRepository;
 import org.springframework.stereotype.Service;
@@ -28,17 +26,20 @@ public class CalendarEventService {
     private final CalendarEventRepository eventRepository;
     private final CalendarEventCancellationRepository cancellationRepository;
     private final ReminderRepository reminderRepository;
+    private final CalendarEventReminderService eventReminderService;
     private final UserRepository userRepository;
     private final CalendarService calendarService;
 
     public CalendarEventService(CalendarEventRepository eventRepository,
                                 CalendarEventCancellationRepository cancellationRepository,
                                 ReminderRepository reminderRepository,
+                                CalendarEventReminderService eventReminderService,
                                 UserRepository userRepository,
                                 CalendarService calendarService) {
         this.eventRepository = eventRepository;
         this.cancellationRepository = cancellationRepository;
         this.reminderRepository = reminderRepository;
+        this.eventReminderService = eventReminderService;
         this.userRepository = userRepository;
         this.calendarService = calendarService;
     }
@@ -61,7 +62,7 @@ public class CalendarEventService {
         applyRequest(event, request);
         CalendarEvent saved = eventRepository.save(event);
         Integer reminderMinutes = reminderMinutesForEvent(request, saved);
-        replaceReminder(saved, reminderMinutes, user);
+        eventReminderService.replaceReminder(saved, reminderMinutes, user);
         log.info("Calendar event created: userId={} eventId={} allDay={} status={} reminderMinutesBefore={}",
                 userId, saved.getId(), saved.isAllDay(), saved.getStatus(), reminderMinutes);
         return toResponse(saved);
@@ -78,7 +79,7 @@ public class CalendarEventService {
         applyRequest(event, request);
         CalendarEvent saved = eventRepository.save(event);
         Integer reminderMinutes = reminderMinutesForEvent(request, saved);
-        replaceReminder(saved, reminderMinutes, event.getUser());
+        eventReminderService.replaceReminder(saved, reminderMinutes, event.getUser());
         log.info("Calendar event updated: userId={} eventId={} allDay={} status={} reminderMinutesBefore={}",
                 userId, eventId, saved.isAllDay(), saved.getStatus(), reminderMinutes);
         return toResponse(saved);
@@ -95,6 +96,20 @@ public class CalendarEventService {
         reminderRepository.flush();
         eventRepository.delete(event);
         log.info("Calendar event deleted: userId={} eventId={}", userId, eventId);
+    }
+
+    @Transactional
+    public List<CalendarEventResponse> updateImportedEventReminder(
+            String eventId, Integer minutesBefore, CalendarEventReminderScope scope, String userId
+    ) {
+        CalendarEvent event = eventRepository.findByIdAndUserId(eventId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("Calendar event not found: " + eventId));
+        List<CalendarEvent> affectedEvents = eventReminderService
+                .setImportedEventReminder(event, minutesBefore, scope, userId);
+        log.info("Imported calendar event reminder updated: userId={} eventId={} scope={} minutesBefore={} affectedEventCount={}",
+                userId, eventId, scope == null ? CalendarEventReminderScope.EVENT : scope,
+                minutesBefore, affectedEvents.size());
+        return affectedEvents.stream().map(this::toResponse).toList();
     }
 
     @Transactional
@@ -425,57 +440,15 @@ public class CalendarEventService {
         return event.getStatus() == CalendarEventStatus.CANCELLED ? null : requestedReminderMinutes(request);
     }
 
-    private void replaceReminder(CalendarEvent event, Integer minutesBefore, User user) {
-        var existingReminder = reminderRepository.findByEventId(event.getId());
-        existingReminder.ifPresent(reminderRepository::delete);
-        if (minutesBefore == null) {
-            return;
-        }
-
-        if (existingReminder.isPresent()) {
-            reminderRepository.flush();
-        }
-
-        Instant eventStart = event.isAllDay()
-                ? event.getStartDate().atStartOfDay(ZoneId.of(event.getTimeZone())).toInstant()
-                : event.getStartTime();
-        Instant now = Instant.now();
-        Instant reminderAt = eventStart.minusSeconds(minutesBefore.longValue() * 60);
-        boolean reminderWindowMissed = !eventStart.isAfter(now) || !reminderAt.isAfter(now);
-        boolean recurring = event.getRecurrenceFrequency() != RecurrenceFrequency.NONE;
-        if (!recurring && reminderWindowMissed) {
-            return;
-        }
-        Reminder reminder = new Reminder();
-        reminder.setReminderId(UUID.randomUUID().toString());
-        reminder.setRepeat(0);
-        reminder.setUser(user);
-        reminder.setEvent(event);
-        reminder.setNotificationType(NotificationType.CALENDAR_EVENT);
-        reminder.setTitle(event.getTitle());
-        reminder.setBody("Event reminder");
-        reminder.setTargetUrl("/calendar");
-        reminder.setDateTime(recurring && reminderWindowMissed
-                ? now.minusSeconds(MISSED_REMINDER_MARKER_AGE_SECONDS)
-                : reminderAt);
-        reminder.setEventOccurrenceStart(eventStart);
-        reminder.setMinutesBefore(minutesBefore);
-        reminder.setDispatchedAt(null);
-        reminder.setAcknowledgedAt(null);
-        reminderRepository.save(reminder);
-    }
-
     private CalendarEventResponse toResponse(CalendarEvent event) {
+        Integer reminderMinutes = eventReminderService.minutesBefore(event.getId());
         if (event.getSourceId() != null) {
             return new CalendarEventResponse(event.getId(), event.getTitle(), event.getDescription(),
                     event.isAllDay(), event.getStartDate(), event.getEndDate(), event.getStartTime(),
                     event.getEndTime(), event.getTimeZone(), event.getStatus(), event.getRecurrenceFrequency(),
-                    null, null, null, List.of(), List.of(), null,
+                    null, null, null, List.of(), List.of(), reminderMinutes,
                     event.getCreatedAt(), event.getUpdatedAt(), event.getCalendarId(), event.getSourceId());
         }
-        Integer reminderMinutes = reminderRepository.findByEventId(event.getId())
-                .map(Reminder::getMinutesBefore)
-                .orElse(null);
         List<CalendarEventCancellation> occurrenceOverrides = cancellationRepository
                 .findAllByEventIdOrderByOccurrenceKeyAsc(event.getId());
         return new CalendarEventResponse(event.getId(), event.getTitle(), event.getDescription(),

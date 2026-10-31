@@ -74,7 +74,7 @@ function createValidationSchema(existingDefinitions: StatDefinition[], currentDe
                 }),
             otherwise: schema => schema.optional(),
         }),
-        morality: Yup.mixed<StatMorality>().oneOf(['GOOD', 'BAD', 'NEUTRAL']).required(),
+        morality: Yup.mixed<StatMorality>().oneOf(['GOOD', 'BAD', 'NEUTRAL', 'NICE_TO_HAVE', 'NICE_TO_AVOID']).required(),
         goodThreshold: Yup.string().test(
             'threshold',
             'A threshold is required for a non-neutral numeric stat',
@@ -414,7 +414,9 @@ export function CreateStatForm({
                             const type = event.target.value as StatType;
                             formik.setFieldValue('type', type);
                             formik.setFieldValue('goodThreshold', '');
-                            if (type === 'BOOLEAN') {
+                            if (type === 'BOOLEAN'
+                                || formik.values.morality === 'NICE_TO_HAVE'
+                                || formik.values.morality === 'NICE_TO_AVOID') {
                                 formik.setFieldValue('morality', 'NEUTRAL');
                             } else {
                                 formik.setFieldValue('createRecurringTask', false);
@@ -440,8 +442,16 @@ export function CreateStatForm({
                             if (morality === 'NEUTRAL') formik.setFieldValue('goodThreshold', '');
                         }}
                     >
-                        <MenuItem value="GOOD">{formik.values.type === 'TIME' ? 'Earlier is better' : 'Higher is better'}</MenuItem>
-                        <MenuItem value="BAD">{formik.values.type === 'TIME' ? 'Later is better' : 'Lower is better'}</MenuItem>
+                        <MenuItem value="GOOD">{formik.values.type === 'BOOLEAN'
+                            ? 'A must'
+                            : formik.values.type === 'TIME' ? 'Earlier is better' : 'Higher is better'}</MenuItem>
+                        <MenuItem value="BAD">{formik.values.type === 'BOOLEAN'
+                            ? 'A must-avoid'
+                            : formik.values.type === 'TIME' ? 'Later is better' : 'Lower is better'}</MenuItem>
+                        {formik.values.type === 'BOOLEAN' ? [
+                            <MenuItem key="NICE_TO_HAVE" value="NICE_TO_HAVE">Nice to have</MenuItem>,
+                            <MenuItem key="NICE_TO_AVOID" value="NICE_TO_AVOID">Nice to avoid</MenuItem>,
+                        ] : null}
                         <MenuItem value="NEUTRAL">Neutral</MenuItem>
                     </Select>
                 </FormControl>

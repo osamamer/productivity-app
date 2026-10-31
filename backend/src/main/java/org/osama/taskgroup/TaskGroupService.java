@@ -11,8 +11,6 @@ import org.osama.user.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -64,6 +62,9 @@ public class TaskGroupService {
 
     @Transactional
     public TaskGroupResponse addTaskToDefaultMentalThreadGroup(Task task, MentalThread mentalThread, String userId) {
+        if (!mentalThread.getId().equals(task.getMentalThreadId())) {
+            throw new IllegalArgumentException("A mental-thread group can only contain tasks linked to that thread.");
+        }
         TaskGroup group = groupRepository
                 .findByUserIdAndMentalThreadId(userId, mentalThread.getId())
                 .orElseGet(() -> createDefaultGroup(mentalThread, userId));
@@ -88,6 +89,7 @@ public class TaskGroupService {
     public TaskGroupResponse replaceTasks(String groupId, List<String> taskIds, String userId) {
         TaskGroup group = getGroupOrThrow(groupId, userId);
         List<Task> tasks = findOwnedTasks(taskIds, userId);
+        validateMentalThreadGroupMembers(group, tasks);
         detachTasksFromOtherGroups(taskIds, userId, groupId);
         group.replaceTasks(tasks);
         TaskGroup savedGroup = groupRepository.save(group);
@@ -96,23 +98,9 @@ public class TaskGroupService {
         return TaskGroupResponse.from(savedGroup);
     }
 
-    @Transactional
-    public List<Task> moveGroupToToday(String groupId, String userId) {
-        TaskGroup group = getGroupOrThrow(groupId, userId);
-        LocalDateTime now = LocalDateTime.now();
-        LocalDate today = now.toLocalDate();
-
-        List<Task> tasks = group.getTasks().stream().toList();
-        tasks.forEach(task -> task.setScheduledPerformDateTime(
-                task.getScheduledPerformDateTime() == null
-                        ? now
-                        : LocalDateTime.of(today, task.getScheduledPerformDateTime().toLocalTime())
-        ));
-
-        List<Task> savedTasks = taskRepository.saveAll(tasks);
-        log.info("Task group moved to today: userId={} groupId={} taskCount={}",
-                userId, groupId, savedTasks.size());
-        return savedTasks;
+    @Transactional(readOnly = true)
+    public List<Task> getGroupTasks(String groupId, String userId) {
+        return getGroupOrThrow(groupId, userId).getTasks().stream().toList();
     }
 
     @Transactional
@@ -233,6 +221,15 @@ public class TaskGroupService {
                         groupRepository.save(group);
                     }
                 });
+    }
+
+    private void validateMentalThreadGroupMembers(TaskGroup group, List<Task> tasks) {
+        if (group.getMentalThreadId() == null) return;
+        boolean containsUnlinkedTask = tasks.stream()
+                .anyMatch(task -> !group.getMentalThreadId().equals(task.getMentalThreadId()));
+        if (containsUnlinkedTask) {
+            throw new IllegalArgumentException("A mental-thread group can only contain tasks linked to that thread.");
+        }
     }
 
     private String validateName(String name) {

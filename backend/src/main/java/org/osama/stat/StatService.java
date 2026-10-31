@@ -39,6 +39,8 @@ import java.util.stream.Collectors;
 @Slf4j
 public class StatService {
 
+    private static final int MAX_STAT_TASK_SCHEDULE_WEEKS = 104;
+
     private final StatDefinitionRepository definitionRepository;
     private final StatFocusTaskLinkRepository focusTaskLinkRepository;
     private final StatEntryRepository entryRepository;
@@ -272,6 +274,7 @@ public class StatService {
         String taskName = normalizeName(requestedTaskName);
         if (taskName == null || taskName.isBlank()) taskName = definition.getName();
         validateFocusTaskName(taskName);
+        deleteUpcomingStatWeeklyTasks(definition, now, userId);
         NewTaskRequest request = new NewTaskRequest();
         request.setName(taskName);
         request.setScheduledPerformDateTime(start.toString());
@@ -309,10 +312,18 @@ public class StatService {
     public StatWeeklyTaskScheduleResponse getWeeklyTaskSchedule(String definitionId,
                                                                  String requestedTimeZone,
                                                                  String userId) {
+        return getWeeklyTaskSchedule(definitionId, requestedTimeZone, null, userId);
+    }
+
+    @Transactional(readOnly = true)
+    public StatWeeklyTaskScheduleResponse getWeeklyTaskSchedule(String definitionId,
+                                                                 String requestedTimeZone,
+                                                                 LocalDate requestedWeekStartDate,
+                                                                 String userId) {
         StatDefinition definition = requireBooleanTaskStat(definitionId, userId);
         ZoneId timeZone = resolveTaskTimeZone(requestedTimeZone);
         LocalDate today = LocalDate.now(timeZone);
-        LocalDate weekStart = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY));
+        LocalDate weekStart = resolveScheduleWeekStart(requestedWeekStartDate, today);
         LocalDateTime now = LocalDateTime.now(timeZone);
         LocalDateTime weekEnd = weekStart.plusWeeks(1).atStartOfDay();
 
@@ -358,12 +369,27 @@ public class StatService {
                                                                      Integer requestedImportance,
                                                                      String requestedTimeZone,
                                                                      String userId) {
+        return replaceWeeklyTaskSchedule(definitionId, requestedTaskName, requestedDays, requestedTimeOfDay,
+                requestedImportance, requestedTimeZone, null, 1, userId);
+    }
+
+    @Transactional
+    public StatWeeklyTaskScheduleResponse replaceWeeklyTaskSchedule(String definitionId,
+                                                                     String requestedTaskName,
+                                                                     List<DayOfWeek> requestedDays,
+                                                                     String requestedTimeOfDay,
+                                                                     Integer requestedImportance,
+                                                                     String requestedTimeZone,
+                                                                     LocalDate requestedWeekStartDate,
+                                                                     Integer requestedWeekCount,
+                                                                     String userId) {
         StatDefinition definition = requireBooleanTaskStat(definitionId, userId);
         ZoneId timeZone = resolveTaskTimeZone(requestedTimeZone);
         LocalDate today = LocalDate.now(timeZone);
-        LocalDate weekStart = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY));
+        LocalDate weekStart = resolveScheduleWeekStart(requestedWeekStartDate, today);
+        int weekCount = resolveScheduleWeekCount(requestedWeekCount);
         LocalDateTime now = LocalDateTime.now(timeZone);
-        LocalDateTime weekEnd = weekStart.plusWeeks(1).atStartOfDay();
+        LocalDateTime scheduleEnd = weekStart.plusWeeks(weekCount).atStartOfDay();
         LocalTime timeOfDay = parseWeeklyTaskTime(requestedTimeOfDay);
         int importance = resolveTaskImportance(requestedImportance);
         String taskName = normalizeName(requestedTaskName);
@@ -377,20 +403,19 @@ public class StatService {
         }
         for (DayOfWeek day : days) {
             LocalDate scheduledDate = nextDateInCurrentWeek(weekStart, day);
-            if (scheduledDate.isBefore(today)) {
-                throw new IllegalArgumentException("A weekly task cannot be scheduled on a past day.");
-            }
-            if (scheduledDate.equals(today) && !scheduledDate.atTime(timeOfDay).isAfter(now)) {
+            if (weekCount == 1 && weekStart.equals(today.with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY)))
+                    && scheduledDate.equals(today) && !scheduledDate.atTime(timeOfDay).isAfter(now)) {
                 throw new IllegalArgumentException("Choose a future time for today's task.");
             }
         }
 
-        deleteUpcomingWeeklyTasks(definition, weekStart, now, weekEnd, userId);
-        createWeeklyTasks(definition, taskName, days, weekStart, timeOfDay, importance, timeZone, userId);
+        deleteUpcomingWeeklyTasks(definition, weekStart, scheduleEnd, now, weekCount, userId);
+        createWeeklyTasks(definition, taskName, days, weekStart, weekCount,
+                timeOfDay, importance, timeZone, now, userId);
         definitionRepository.save(definition);
-        log.info("This week's stat task schedule replaced: userId={} statDefinitionId={} weekStart={} days={} importance={}",
-                userId, definitionId, weekStart, days, importance);
-        return getWeeklyTaskSchedule(definitionId, timeZone.getId(), userId);
+        log.info("Stat task schedule replaced: userId={} statDefinitionId={} weekStart={} weekCount={} days={} importance={}",
+                userId, definitionId, weekStart, weekCount, days, importance);
+        return getWeeklyTaskSchedule(definitionId, timeZone.getId(), weekStart, userId);
     }
 
     @Transactional
@@ -443,17 +468,21 @@ public class StatService {
                 ? task.getScheduledPerformDateTime() : task.getSeriesOccurrenceAt();
     }
 
-    private void deleteUpcomingWeeklyTasks(StatDefinition definition, LocalDate weekStart,
-                                          LocalDateTime now, LocalDateTime weekEnd, String userId) {
-        taskRepository.findAllByLinkedStatDefinitionIdAndStatScheduleWeekStartAndUserId(
-                        definition.getId(), weekStart, userId)
-                .stream()
-                .filter(task -> task.getScheduledPerformDateTime() != null
-                        && task.getScheduledPerformDateTime().isAfter(now)
-                        && !task.isCompleted() && !task.isSkipped())
-                .map(Task::getTaskId)
-                .toList()
-                .forEach(taskId -> taskService.deleteTask(taskId, userId));
+    private void deleteUpcomingWeeklyTasks(StatDefinition definition, LocalDate firstWeekStart,
+                                          LocalDateTime scheduleEnd, LocalDateTime now,
+                                          int weekCount, String userId) {
+        for (int week = 0; week < weekCount; week++) {
+            LocalDate weekStart = firstWeekStart.plusWeeks(week);
+            taskRepository.findAllByLinkedStatDefinitionIdAndStatScheduleWeekStartAndUserId(
+                            definition.getId(), weekStart, userId)
+                    .stream()
+                    .filter(task -> task.getScheduledPerformDateTime() != null
+                            && task.getScheduledPerformDateTime().isAfter(now)
+                            && !task.isCompleted() && !task.isSkipped())
+                    .map(Task::getTaskId)
+                    .toList()
+                    .forEach(taskId -> taskService.deleteTask(taskId, userId));
+        }
 
         if (definition.getRecurringTaskSeriesId() == null) return;
         taskRepository.findAllByTaskSeriesIdAndUserIdOrderBySeriesOccurrenceAtAsc(
@@ -461,28 +490,63 @@ public class StatService {
                 .stream()
                 .filter(task -> task.getSeriesOccurrenceAt() != null
                         && task.getSeriesOccurrenceAt().isAfter(now)
-                        && task.getSeriesOccurrenceAt().isBefore(weekEnd)
+                        && task.getSeriesOccurrenceAt().isBefore(scheduleEnd)
                         && !task.isCompleted() && !task.isSkipped())
                 .map(Task::getTaskId)
                 .toList()
                 .forEach(taskId -> taskService.deleteTaskOccurrence(taskId, userId));
     }
 
+    private void deleteUpcomingStatWeeklyTasks(StatDefinition definition, LocalDateTime now, String userId) {
+        taskRepository.findAllByLinkedStatDefinitionIdAndUserId(definition.getId(), userId)
+                .stream()
+                .filter(task -> task.getStatScheduleWeekStart() != null)
+                .filter(task -> task.getScheduledPerformDateTime() != null
+                        && task.getScheduledPerformDateTime().isAfter(now))
+                .filter(task -> !task.isCompleted() && !task.isSkipped())
+                .map(Task::getTaskId)
+                .toList()
+                .forEach(taskId -> taskService.deleteTask(taskId, userId));
+    }
+
     private void createWeeklyTasks(StatDefinition definition, String taskName, List<DayOfWeek> days,
-                                   LocalDate weekStart, LocalTime timeOfDay, int importance,
-                                   ZoneId timeZone, String userId) {
-        for (DayOfWeek day : days) {
-            LocalDate scheduledDate = nextDateInCurrentWeek(weekStart, day);
-            NewTaskRequest request = new NewTaskRequest();
-            request.setName(taskName);
-            request.setDescription("");
-            request.setScheduledPerformDateTime(scheduledDate.atTime(timeOfDay).toString());
-            request.setImportance(importance);
-            request.setTimeZone(timeZone.getId());
-            Task task = taskService.createTask(request, userId);
-            statTaskLinkService.linkCreatedWeeklyTaskToStat(task, definition, weekStart);
-            linkFocusTaskInternal(definition, taskName);
+                                   LocalDate firstWeekStart, int weekCount,
+                                   LocalTime timeOfDay, int importance,
+                                   ZoneId timeZone, LocalDateTime now, String userId) {
+        for (int week = 0; week < weekCount; week++) {
+            LocalDate weekStart = firstWeekStart.plusWeeks(week);
+            for (DayOfWeek day : days) {
+                LocalDate scheduledDate = nextDateInCurrentWeek(weekStart, day);
+                if (!scheduledDate.atTime(timeOfDay).isAfter(now)) continue;
+                NewTaskRequest request = new NewTaskRequest();
+                request.setName(taskName);
+                request.setDescription("");
+                request.setScheduledPerformDateTime(scheduledDate.atTime(timeOfDay).toString());
+                request.setImportance(importance);
+                request.setTimeZone(timeZone.getId());
+                Task task = taskService.createTask(request, userId);
+                statTaskLinkService.linkCreatedWeeklyTaskToStat(task, definition, weekStart);
+                linkFocusTaskInternal(definition, taskName);
+            }
         }
+    }
+
+    private LocalDate resolveScheduleWeekStart(LocalDate requestedWeekStartDate, LocalDate today) {
+        LocalDate currentWeekStart = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY));
+        LocalDate requested = requestedWeekStartDate == null ? currentWeekStart : requestedWeekStartDate;
+        LocalDate weekStart = requested.with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY));
+        if (weekStart.isBefore(currentWeekStart)) {
+            throw new IllegalArgumentException("A stat task schedule cannot start in a past week.");
+        }
+        return weekStart;
+    }
+
+    private int resolveScheduleWeekCount(Integer requestedWeekCount) {
+        int weekCount = requestedWeekCount == null ? 1 : requestedWeekCount;
+        if (weekCount < 1 || weekCount > MAX_STAT_TASK_SCHEDULE_WEEKS) {
+            throw new IllegalArgumentException("Choose a schedule length between 1 and 104 weeks.");
+        }
+        return weekCount;
     }
 
     private LocalDate nextDateInCurrentWeek(LocalDate weekStart, DayOfWeek day) {
@@ -551,6 +615,10 @@ public class StatService {
 
         TaskRecurrenceFrequency frequency = recurrenceFrequency == null
                 ? TaskRecurrenceFrequency.DAILY : recurrenceFrequency;
+        if (frequency == TaskRecurrenceFrequency.CUSTOM
+                && (recurrenceDaysOfWeek == null || recurrenceDaysOfWeek.isEmpty())) {
+            throw new IllegalArgumentException("A custom stat task needs at least one day of the week.");
+        }
         TaskSeriesResponse currentSeries = taskSeriesService.getSeries(definition.getRecurringTaskSeriesId(), userId);
         String normalizedTaskName = normalizeName(requestedTaskName);
         boolean taskNameChanged = normalizedTaskName != null
@@ -563,22 +631,30 @@ public class StatService {
         }
         LocalDateTime currentStart = currentSeries.startDateTime();
         LocalTime timeOfDay = resolveTimeOfDay(requestedTimeOfDay, currentStart.toLocalTime());
+        ZoneId timeZone = resolveTaskTimeZone(requestedTimeZone);
+        LocalDateTime startDateTime = frequency == TaskRecurrenceFrequency.CUSTOM
+                ? LocalDate.now(timeZone).atTime(timeOfDay)
+                : currentStart.toLocalDate().atTime(timeOfDay);
+        if (frequency == TaskRecurrenceFrequency.CUSTOM) {
+            LocalDateTime now = LocalDateTime.now(timeZone);
+            while (!recurrenceDaysOfWeek.contains(startDateTime.getDayOfWeek()) || !startDateTime.isAfter(now)) {
+                startDateTime = startDateTime.plusDays(1);
+            }
+        }
         TaskSeriesUpdateRequest request = new TaskSeriesUpdateRequest();
         request.setRecurrenceFrequency(frequency);
-        request.setTimeZone(requestedTimeZone);
+        request.setTimeZone(timeZone.getId());
         if (requestedImportance != null) {
             request.setImportance(resolveTaskImportance(requestedImportance));
         }
-        request.setStartDateTime(currentStart.toLocalDate().atTime(timeOfDay));
+        request.setStartDateTime(startDateTime);
         request.setRecurrenceDaysOfWeek(frequency == TaskRecurrenceFrequency.CUSTOM
                 ? recurrenceDaysOfWeek : null);
         if (frequency == TaskRecurrenceFrequency.CUSTOM) {
-            if (recurrenceDaysOfWeek == null || recurrenceDaysOfWeek.isEmpty()) {
-                throw new IllegalArgumentException("A custom stat task needs at least one day of the week.");
-            }
             request.setRecurrenceInterval(1);
             request.setRecurrenceUnit(TaskRecurrenceUnit.WEEKS);
         }
+        deleteUpcomingStatWeeklyTasks(definition, LocalDateTime.now(timeZone), userId);
         taskSeriesService.updateSeries(definition.getRecurringTaskSeriesId(), request, userId);
         log.info("Recurring task schedule updated: userId={} statDefinitionId={} seriesId={} frequency={} taskNameChanged={}",
                 userId, definitionId, definition.getRecurringTaskSeriesId(), frequency, taskNameChanged);
@@ -828,6 +904,10 @@ public class StatService {
         }
         if (type == null) {
             throw new IllegalArgumentException("A stat must have a type.");
+        }
+        if ((morality == StatMorality.NICE_TO_HAVE || morality == StatMorality.NICE_TO_AVOID)
+                && type != StatType.BOOLEAN) {
+            throw new IllegalArgumentException("Nice-to-have and nice-to-avoid morality is only valid for Boolean stats.");
         }
         Optional<StatDefinition> sameName = definitionRepository.findByUserIdAndNameIgnoreCase(userId, name);
         if (sameName.isPresent() && !sameName.get().getId().equals(excludedDefinitionId)) {

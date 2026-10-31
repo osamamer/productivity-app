@@ -2,6 +2,7 @@ package org.osama.scheduling;
 
 import lombok.extern.slf4j.Slf4j;
 import org.osama.pomodoro.Pomodoro;
+import org.osama.pomodoro.PomodoroPhase;
 import org.osama.pomodoro.PomodoroRepository;
 import org.osama.pomodoro.PomodoroSettings;
 import org.osama.user.User;
@@ -16,6 +17,8 @@ import java.util.UUID;
 @Slf4j
 @Service
 public class ScheduleService {
+    public record PhaseTimeAdjustment(long remainingSeconds, long appliedDeltaSeconds) {}
+
     private final ScheduledJobRepository scheduledJobRepository;
     private final PomodoroRepository pomodoroRepository;
     private final PomodoroSettings pomodoroSettings;
@@ -94,6 +97,54 @@ public class ScheduleService {
                 LocalDateTime.now().plusSeconds(breakDuration), taskId, pomodoro.getUser());
         log.info("Scheduled manual Pomodoro break end: userId={} taskId={} durationSeconds={}",
                 pomodoro.getUser().getId(), taskId, breakDuration);
+    }
+
+    public PhaseTimeAdjustment adjustCurrentPhaseEnd(String taskId, PomodoroPhase phase, LocalDateTime pausedAt,
+                                                     long pausedRemainingSeconds, int deltaSeconds) {
+        List<ScheduledJob> candidates = pausedAt == null
+                ? scheduledJobRepository.lockScheduledJobsByTaskId(taskId)
+                : scheduledJobRepository.lockPausedJobsByTaskId(taskId, pausedAt);
+        List<ScheduledJob> phaseTransitions = candidates.stream()
+                .filter(job -> isTransitionForPhase(job, phase))
+                .sorted(Comparator.comparing(ScheduledJob::getDueDate))
+                .toList();
+        if (phaseTransitions.isEmpty()) {
+            throw new IllegalStateException("Pomodoro phase does not have a pending end.");
+        }
+
+        ScheduledJob currentTransition = phaseTransitions.get(0);
+        long currentRemainingSeconds = pausedAt == null
+                ? calculateSecondsUntil(currentTransition.getDueDate(), LocalDateTime.now())
+                : pausedRemainingSeconds;
+        long adjustedRemainingSeconds = Math.max(0, currentRemainingSeconds + deltaSeconds);
+        long appliedDeltaSeconds = adjustedRemainingSeconds - currentRemainingSeconds;
+        LocalDateTime previousDueDate = currentTransition.getDueDate();
+        LocalDateTime adjustedDueDate = previousDueDate.plusSeconds(appliedDeltaSeconds);
+        if (pausedAt != null && adjustedDueDate.isBefore(pausedAt)) {
+            adjustedDueDate = pausedAt;
+        }
+        currentTransition.setDueDate(adjustedDueDate);
+
+        for (ScheduledJob futureJob : candidates) {
+            if (futureJob != currentTransition && futureJob.getDueDate().isAfter(previousDueDate)) {
+                futureJob.setDueDate(futureJob.getDueDate().plusSeconds(appliedDeltaSeconds));
+            }
+        }
+        scheduledJobRepository.saveAll(candidates);
+        return new PhaseTimeAdjustment(adjustedRemainingSeconds, appliedDeltaSeconds);
+    }
+
+    private boolean isTransitionForPhase(ScheduledJob job, PomodoroPhase phase) {
+        return switch (phase) {
+            case FOCUS -> job.getJobType() == JobType.END_SESSION || job.getJobType() == JobType.END_POMODORO;
+            case BREAK -> job.getJobType() == JobType.START_SESSION;
+            default -> false;
+        };
+    }
+
+    private long calculateSecondsUntil(LocalDateTime dueDate, LocalDateTime now) {
+        long millisUntilDue = Duration.between(now, dueDate).toMillis();
+        return millisUntilDue <= 0 ? 0 : (millisUntilDue + 999) / 1000;
     }
 
     public void startBreakEarly(String taskId) {

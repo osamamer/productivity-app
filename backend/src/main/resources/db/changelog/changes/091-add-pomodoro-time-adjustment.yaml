@@ -1,0 +1,31 @@
+databaseChangeLog:
+  - changeSet:
+      id: 091-add-pomodoro-time-adjustment
+      author: codex
+      comment: Store the per-click Pomodoro time adjustment and current phase adjustment
+      changes:
+        - addColumn:
+            tableName: app_user
+            columns:
+              - column:
+                  name: pomodoro_time_adjustment_minutes
+                  type: int
+                  defaultValueNumeric: 5
+                  constraints:
+                    nullable: false
+        - addColumn:
+            tableName: pomodoro
+            columns:
+              - column:
+                  name: phase_duration_adjustment_seconds
+                  type: int
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+      rollback:
+        - dropColumn:
+            tableName: pomodoro
+            columnName: phase_duration_adjustment_seconds
+        - dropColumn:
+            tableName: app_user
+            columnName: pomodoro_time_adjustment_minutes

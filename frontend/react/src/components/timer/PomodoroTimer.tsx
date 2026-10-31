@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useSyncExternalStore } from 'react';
 import { Client } from '@stomp/stompjs';
 import {
     Box,
@@ -23,8 +23,10 @@ import StopIcon from '@mui/icons-material/Stop';
 import TimerIcon from '@mui/icons-material/Timer';
 import FreeBreakfastIcon from '@mui/icons-material/FreeBreakfast';
 import SkipNextIcon from '@mui/icons-material/SkipNext';
+import AddIcon from '@mui/icons-material/Add';
+import RemoveIcon from '@mui/icons-material/Remove';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
-import { taskService } from '../../services/api/index.ts'; // Import the service
+import { PomodoroAdjustmentConflictError, taskService } from '../../services/api/index.ts';
 import { requestSystemNotificationPermission } from '../../services/systemNotifications';
 import { primePomodoroTransitionSound } from '../../services/pomodoroTransitionSound';
 import {
@@ -44,6 +46,7 @@ import { GENERIC_ERROR_MESSAGE } from '../../services/utils/userMessages';
 import { PomodoroNumberField } from './PomodoroNumberField';
 import { createAuthenticatedStompClient } from '../../services/authenticatedStompClient';
 import { usePomodoro } from '../../hooks/usePomodoro';
+import { getRuntimeUserPreferences, subscribeToUserPreferences } from '../../services/userPreferenceStore';
 import { PomodoroStatus } from '../../types/PomodoroStatus';
 import { WhiteNoiseControl } from './WhiteNoiseControl';
 import {
@@ -91,8 +94,15 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
     ));
     const [endOptionsAnchor, setEndOptionsAnchor] = useState<HTMLElement | null>(null);
     const [pomodoroConfig, setPomodoroConfig] = useState<PomodoroConfig>(NORMAL_POMODORO_CONFIG);
+    const userPreferences = useSyncExternalStore(
+        subscribeToUserPreferences,
+        getRuntimeUserPreferences,
+        getRuntimeUserPreferences,
+    );
     const lastPomodoroStatusRef = useRef<PomodoroStatus | null>(status);
     const pomodoroMutationRevisionRef = useRef(0);
+    const timeAdjustmentRevisionRef = useRef(0);
+    const timeAdjustmentQueueRef = useRef<Promise<void>>(Promise.resolve());
 
     useEffect(() => {
         onActiveChange?.(Boolean(status?.active));
@@ -332,6 +342,55 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
         handleStartBreakEarly();
     };
 
+    const handleTimeAdjustment = (deltaSeconds: number) => {
+        if (!task) return;
+        const previousStatus = lastPomodoroStatusRef.current?.active
+            ? lastPomodoroStatusRef.current
+            : status?.active ? status : null;
+        if (!previousStatus || waitingForPhase || previousStatus.pomodoroId.startsWith('optimistic-pomodoro-')) return;
+
+        const optimisticStatus = {
+            ...previousStatus,
+            secondsUntilNextTransition: Math.max(0, previousStatus.secondsUntilNextTransition + deltaSeconds),
+        };
+        if (!applyLocalPomodoroStatus(optimisticStatus, false, true)) return;
+
+        const revision = ++timeAdjustmentRevisionRef.current;
+        const request = timeAdjustmentQueueRef.current
+            .catch(() => undefined)
+            .then(() => taskService.adjustPomodoroTime(task.taskId, {
+                pomodoroId: previousStatus.pomodoroId,
+                phase: previousStatus.phase === 'BREAK'
+                    || (!previousStatus.phase && !previousStatus.sessionActive) ? 'BREAK' : 'FOCUS',
+                currentFocusNumber: previousStatus.currentFocusNumber,
+                deltaSeconds,
+            }));
+        timeAdjustmentQueueRef.current = request.then(() => undefined, () => undefined);
+
+        void request.then(serverStatus => {
+            if (timeAdjustmentRevisionRef.current === revision) {
+                applyLocalPomodoroStatus(serverStatus, true);
+            }
+        }).catch(error => {
+            if (error instanceof PomodoroAdjustmentConflictError) {
+                if (timeAdjustmentRevisionRef.current === revision) {
+                    clearPomodoroMutation();
+                    void refreshActivePomodoro(true).catch(refreshError => {
+                        console.error('Could not refresh the Pomodoro after its phase changed:', refreshError);
+                    });
+                }
+                return;
+            }
+            console.error('Could not adjust the Pomodoro timer:', error);
+            if (timeAdjustmentRevisionRef.current !== revision) return;
+            clearPomodoroMutation();
+            showPomodoroError();
+            void refreshActivePomodoro(true).catch(refreshError => {
+                console.error('Could not restore the Pomodoro timer after a failed adjustment:', refreshError);
+            });
+        });
+    };
+
     const connectWebSocket = useCallback(() => {
         if (stompClientRef.current?.active) {
             console.log('STOMP client already active');
@@ -477,6 +536,11 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
     const durationUnitLabel = pomodoroConfig.durationUnit;
     const durationLimits = POMODORO_DURATION_LIMITS[pomodoroConfig.durationUnit];
     const canStartPomodoro = isPomodoroFormValid(formData, pomodoroConfig);
+    const timeAdjustmentMinutes = userPreferences.pomodoroTimeAdjustmentMinutes;
+    const timeAdjustmentLabel = `${timeAdjustmentMinutes} ${timeAdjustmentMinutes === 1 ? 'minute' : 'minutes'}`;
+    const canAdjustTime = Boolean(status?.active
+        && !waitingForPhase
+        && !status.pomodoroId.startsWith('optimistic-pomodoro-'));
 
     if (!task) {
         return (
@@ -591,26 +655,80 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
                                     ) : (
                                         <TimerIcon sx={{ fontSize: 32, color: 'primary.main', mb: 1 }} />
                                     )}
-                                    <Typography
-                                        variant={waitingForPhase ? 'h5' : 'h3'}
-                                        component="div"
-                                        fontWeight="bold"
-                                        sx={waitingForPhase ? {
-                                            letterSpacing: 1.1,
-                                            lineHeight: 0.95,
-                                            textAlign: 'center',
-                                            whiteSpace: 'normal',
-                                            color: status.phase === 'WAITING_FOR_BREAK' ? pomodoroGreen : undefined,
-                                        } : undefined}
-                                    >
-                                        {waitingForPhase
-                                            ? (status.phase === 'WAITING_FOR_BREAK' ? ['BREAK', 'TIME'] : ['WORK', 'TIME']).map(word => (
+                                    {waitingForPhase ? (
+                                        <Typography
+                                            variant="h5"
+                                            component="div"
+                                            fontWeight="bold"
+                                            sx={{
+                                                letterSpacing: 1.1,
+                                                lineHeight: 0.95,
+                                                textAlign: 'center',
+                                                whiteSpace: 'normal',
+                                                color: status.phase === 'WAITING_FOR_BREAK' ? pomodoroGreen : undefined,
+                                            }}
+                                        >
+                                            {(status.phase === 'WAITING_FOR_BREAK' ? ['BREAK', 'TIME'] : ['WORK', 'TIME']).map(word => (
                                                 <Box component="span" key={word} sx={{ display: 'block' }}>
                                                     {word}
                                                 </Box>
-                                            ))
-                                            : formatTime(status.secondsUntilNextTransition)}
-                                    </Typography>
+                                            ))}
+                                        </Typography>
+                                    ) : (
+                                        <Box
+                                            sx={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                gap: 0.25,
+                                                '& .pomodoro-time-adjustment': {
+                                                    opacity: 0,
+                                                    transition: 'opacity 140ms ease',
+                                                },
+                                                '&:hover .pomodoro-time-adjustment, &:focus-within .pomodoro-time-adjustment': {
+                                                    opacity: 1,
+                                                },
+                                            }}
+                                        >
+                                            <Tooltip title={`Remove ${timeAdjustmentLabel}`} placement="left">
+                                                <span>
+                                                    <IconButton
+                                                        className="pomodoro-time-adjustment"
+                                                        size="small"
+                                                        disabled={!canAdjustTime}
+                                                        aria-label={`Remove ${timeAdjustmentLabel} from the current Pomodoro phase`}
+                                                        onClick={event => {
+                                                            event.stopPropagation();
+                                                            handleTimeAdjustment(-timeAdjustmentMinutes * 60);
+                                                        }}
+                                                        sx={{ width: 32, height: 32, color: 'text.secondary' }}
+                                                    >
+                                                        <RemoveIcon fontSize="small" />
+                                                    </IconButton>
+                                                </span>
+                                            </Tooltip>
+                                            <Typography variant="h3" component="div" fontWeight="bold">
+                                                {formatTime(status.secondsUntilNextTransition)}
+                                            </Typography>
+                                            <Tooltip title={`Add ${timeAdjustmentLabel}`} placement="right">
+                                                <span>
+                                                    <IconButton
+                                                        className="pomodoro-time-adjustment"
+                                                        size="small"
+                                                        disabled={!canAdjustTime}
+                                                        aria-label={`Add ${timeAdjustmentLabel} to the current Pomodoro phase`}
+                                                        onClick={event => {
+                                                            event.stopPropagation();
+                                                            handleTimeAdjustment(timeAdjustmentMinutes * 60);
+                                                        }}
+                                                        sx={{ width: 32, height: 32, color: 'text.secondary' }}
+                                                    >
+                                                        <AddIcon fontSize="small" />
+                                                    </IconButton>
+                                                </span>
+                                            </Tooltip>
+                                        </Box>
+                                    )}
                                 </Box>
                             </Box>
 

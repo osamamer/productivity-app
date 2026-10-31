@@ -27,6 +27,7 @@ public record UserPreferenceUpdates(
         Integer pomodoroShortBreakDuration,
         Integer pomodoroLongBreakDuration,
         Integer pomodoroNumFocuses,
+        Integer pomodoroTimeAdjustmentMinutes,
         String themeMode,
         String accentColor,
         Integer meditationDurationMinutes,
@@ -55,6 +56,7 @@ public record UserPreferenceUpdates(
                 && pomodoroShortBreakDuration == null
                 && pomodoroLongBreakDuration == null
                 && pomodoroNumFocuses == null
+                && pomodoroTimeAdjustmentMinutes == null
                 && themeMode == null
                 && accentColor == null
                 && meditationDurationMinutes == null

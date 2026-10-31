@@ -14,6 +14,7 @@ import { TaskComposerSheet } from '@/components/tasks/TaskComposerSheet';
 import { TaskDetailSheet } from '@/components/tasks/TaskDetailSheet';
 import { formatCalendarTime, localDate } from '@/lib/date';
 import { formatDurationValue, formatTimeValue } from '@/lib/statValues';
+import { booleanStatColor } from '@/lib/statMorality';
 import { datesCoveredByOccurrence, expandCalendarEvent } from '@/lib/calendarRecurrence';
 import { createCalendarOptions as getCreateCalendarOptions, filterByVisibleCalendar, initialCalendarId as getInitialCalendarId } from '@/lib/calendarSelection';
 import { reportError } from '@/lib/errors';
@@ -84,10 +85,7 @@ function statValue(definition: StatDefinition, value: number, status?: StatEntry
 function statColor(definition: StatDefinition, value: number, colors: ReturnType<typeof useAppTheme>['colors'], status?: StatEntry['status']): string {
   if (definition.type !== 'BOOLEAN') return colors.secondary;
   if (status === 'NOT_PLANNED') return colors.notPlanned;
-  const morality = definition.morality ?? 'NEUTRAL';
-  if (morality === 'NEUTRAL') return value === 1 ? colors.accent : colors.secondary;
-  if (morality === 'GOOD') return value === 1 ? colors.success : colors.danger;
-  return value === 1 ? colors.danger : colors.success;
+  return booleanStatColor(definition, value === 1 ? 1 : 0, colors);
 }
 
 function readPreferences(value: string | null): CalendarDisplayPreferences {

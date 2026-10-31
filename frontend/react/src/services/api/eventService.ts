@@ -4,6 +4,7 @@ import {
     CalendarEventFutureDeletionResponse,
     CalendarEventInput,
     CalendarEventOccurrenceMoveInput,
+    CalendarEventReminderScope,
 } from '../../types/CalendarEvent';
 import { getAuthCacheScope, getAuthHeaders } from '../utils/authHeaders';
 import { CachedResource } from '../cache/ttlCache';
@@ -53,6 +54,21 @@ export const eventService = {
             body: JSON.stringify(event),
         });
         if (!response.ok) throw await parseError(response, 'Failed to update event');
+        eventsCache.invalidate(eventsCacheKey());
+        return response.json();
+    },
+
+    async updateImportedEventReminder(
+        eventId: string,
+        minutesBefore: number | null,
+        scope: CalendarEventReminderScope,
+    ): Promise<CalendarEvent[]> {
+        const response = await apiFetch(`${EVENT_URL}/${eventId}/reminder`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify({ minutesBefore, scope }),
+        });
+        if (!response.ok) throw await parseError(response, 'Failed to update event reminder');
         eventsCache.invalidate(eventsCacheKey());
         return response.json();
     },

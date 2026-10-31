@@ -1,0 +1,27 @@
+databaseChangeLog:
+  - changeSet:
+      id: 090-add-external-event-reminder-preferences
+      author: codex
+      changes:
+        - createTable:
+            tableName: calendar_event_reminder_preference
+            columns:
+              - column: { name: preference_id, type: varchar(255), constraints: { primaryKey: true, nullable: false } }
+              - column: { name: source_id, type: varchar(255), constraints: { nullable: false } }
+              - column: { name: series_key, type: varchar(36), constraints: { nullable: false } }
+              - column: { name: external_key, type: varchar(36) }
+              - column: { name: minutes_before, type: int }
+              - column: { name: soft_deleted, type: boolean, defaultValueBoolean: false, constraints: { nullable: false } }
+        - addForeignKeyConstraint:
+            baseTableName: calendar_event_reminder_preference
+            baseColumnNames: source_id
+            referencedTableName: calendar_source
+            referencedColumnNames: source_id
+            constraintName: fk_app_event_reminder_preference_source
+        - sql:
+            sql: CREATE UNIQUE INDEX IF NOT EXISTS idx_app_calendar_event_reminder_preference_series_scope ON calendar_event_reminder_preference (source_id, series_key) WHERE soft_deleted = FALSE AND external_key IS NULL
+        - sql:
+            sql: CREATE UNIQUE INDEX IF NOT EXISTS idx_app_calendar_event_reminder_preference_event_scope ON calendar_event_reminder_preference (source_id, external_key) WHERE soft_deleted = FALSE AND external_key IS NOT NULL
+      rollback:
+        - dropTable:
+            tableName: calendar_event_reminder_preference

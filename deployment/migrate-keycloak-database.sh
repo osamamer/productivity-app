@@ -37,6 +37,7 @@ app_tables=(
   app_calendar
   calendar_source
   calendar_event
+  calendar_event_reminder_preference
   day_entity
   meditation_session
   mental_capacity_check_in

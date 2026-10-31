@@ -36,13 +36,13 @@ export function PageWrapper({ children, hideNavigation = false, flush = false }:
     }
 
     return (
-        <Box data-context-menu-space sx={{ display: 'flex', height: '100vh', minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
+        <Box data-context-menu-space sx={{ display: 'flex', height: '100%', minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
             {!hideNavigation && <SideNav />}
             <Box data-context-menu-space sx={{
                 flexGrow: 1,
                 display: 'flex',
                 flexDirection: 'column',
-                height: '100vh',
+                height: '100%',
                 minWidth: 0,
                 minHeight: 0,
                 overflowY: 'auto',

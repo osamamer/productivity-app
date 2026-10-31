@@ -43,8 +43,7 @@ function buildPoints(
     for (let index = 0; index < days.length; index += 7) {
         const week = days.slice(index, index + 7);
         const values = week
-            .map(day => focusByDate.get(format(day, 'yyyy-MM-dd')))
-            .filter((value): value is number => value !== undefined);
+            .map(day => focusByDate.get(format(day, 'yyyy-MM-dd')) ?? 0);
         points.push({
             date: format(week[0], 'yyyy-MM-dd'),
             bucketLabel: formatStatBucketRange(week[0], week[week.length - 1]),

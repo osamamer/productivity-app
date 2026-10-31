@@ -25,7 +25,10 @@ export function isNotPlanned(status?: StatEntryStatus): boolean {
 
 function meetsGoodThreshold(definition: StatDefinition, value: number): boolean | null {
     if (definition.type === 'BOOLEAN') {
-        return effectiveStatMorality(definition) === 'GOOD' ? value === 1 : value === 0;
+        const morality = effectiveStatMorality(definition);
+        return morality === 'GOOD' || morality === 'NICE_TO_HAVE'
+            ? value === 1
+            : value === 0;
     }
 
     if (definition.goodThreshold == null) return null;
@@ -44,7 +47,10 @@ function meetsGoodThreshold(definition: StatDefinition, value: number): boolean 
 /** Neutral or unconfigured stats stay quiet; every judged result gets a clear outcome. */
 export function getStatFeedback(definition: StatDefinition, value: number): StatFeedback {
     const morality = effectiveStatMorality(definition);
-    if (morality === 'NEUTRAL') return 'NONE';
+    if (morality === 'NEUTRAL'
+        || (definition.type !== 'BOOLEAN' && (morality === 'NICE_TO_HAVE' || morality === 'NICE_TO_AVOID'))) {
+        return 'NONE';
+    }
 
     const isGood = meetsGoodThreshold(definition, value);
     if (isGood == null) return 'NONE';
@@ -61,10 +67,21 @@ export function getBooleanChoiceColor(
         return value === 1 ? 'primary' : 'secondary';
     }
 
-    const feedback = getStatFeedback(definition, value);
-    if (feedback === 'CELEBRATE') return 'success';
-    if (feedback === 'SAD') return 'error';
-    return value === 1 ? 'success' : 'error';
+    const preferredChoice = getStatFeedback(definition, value) === 'CELEBRATE';
+    const morality = effectiveStatMorality(definition);
+    if (morality === 'NICE_TO_HAVE' || morality === 'NICE_TO_AVOID') {
+        return preferredChoice ? 'success' : 'notPlanned';
+    }
+    return preferredChoice ? 'success' : 'error';
+}
+
+export function getBooleanChoiceTextColor(
+    definition: StatDefinition,
+    value: 0 | 1,
+): 'white' | 'notPlanned.contrastText' {
+    return getBooleanChoiceColor(definition, value) === 'notPlanned'
+        ? 'notPlanned.contrastText'
+        : 'white';
 }
 
 export function getStatFeedbackColor(
@@ -105,7 +122,9 @@ export function showStatFeedback(
         }
         else celebrateStatLogged(anchor);
     }
-    if (feedback === 'SAD') {
+    const morality = effectiveStatMorality(definition);
+    const nicePreference = morality === 'NICE_TO_HAVE' || morality === 'NICE_TO_AVOID';
+    if (feedback === 'SAD' && !nicePreference) {
         playAudioFeedback('statBad');
         reprimandStatLogged(anchor, {
             mark: getStatFeedbackMark(definition, value),

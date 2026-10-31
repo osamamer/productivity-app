@@ -95,6 +95,10 @@ public class User {
     @Column(name = "pomodoro_num_focuses")
     private Integer pomodoroNumFocuses;
 
+    @Builder.Default
+    @Column(name = "pomodoro_time_adjustment_minutes", nullable = false)
+    private Integer pomodoroTimeAdjustmentMinutes = 5;
+
     @Column(name = "theme_mode")
     private String themeMode;
 

@@ -27,6 +27,17 @@ public interface ScheduledJobRepository extends JpaRepository<ScheduledJob, Stri
     List<ScheduledJob> findAllByScheduledIsTrueAndAssociatedTaskId(String taskId);
     List<ScheduledJob> findAllByScheduledIsFalseAndAssociatedTaskId(String taskId);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select job from ScheduledJob job where job.scheduled = true "
+            + "and job.associatedTaskId = :taskId order by job.dueDate asc")
+    List<ScheduledJob> lockScheduledJobsByTaskId(@Param("taskId") String taskId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select job from ScheduledJob job where job.scheduled = false "
+            + "and job.associatedTaskId = :taskId and job.dueDate >= :pausedAt order by job.dueDate asc")
+    List<ScheduledJob> lockPausedJobsByTaskId(@Param("taskId") String taskId,
+                                              @Param("pausedAt") LocalDateTime pausedAt);
+
 
 
 }

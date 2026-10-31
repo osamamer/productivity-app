@@ -404,6 +404,40 @@ public class TaskService {
         return createTaskInternal(request, userId, true, false);
     }
 
+    @Transactional
+    public List<Task> moveTaskGroupToToday(String groupId, String userId) {
+        LocalDateTime now = LocalDateTime.now();
+        LocalDate today = now.toLocalDate();
+        List<Task> updatedTasks = new ArrayList<>();
+
+        taskGroupService.getGroupTasks(groupId, userId).forEach(task -> {
+            LocalDate previousTaskDate = taskDate(task);
+            LocalDate previousCompletionDate = task.getCompletionDateTime() == null
+                    ? null : task.getCompletionDateTime().toLocalDate();
+            boolean wasCompleted = task.isCompleted();
+            task.setScheduledPerformDateTime(task.getScheduledPerformDateTime() == null
+                    ? now
+                    : LocalDateTime.of(today, task.getScheduledPerformDateTime().toLocalTime()));
+
+            Task savedTask = taskRepository.save(task);
+            Integer reminderMinutesBefore = findTaskReminder(savedTask.getTaskId())
+                    .map(Reminder::getMinutesBefore)
+                    .orElse(null);
+            replaceTaskReminder(savedTask, reminderMinutesBefore, savedTask.getUser());
+            synchronizeTaskReminderCompletion(savedTask, wasCompleted);
+            statTaskLinkService.synchronizeTaskSchedule(savedTask, previousTaskDate, userId);
+            if (savedTask.isCompleted()) {
+                statTaskLinkService.synchronizeTaskCompletion(savedTask, userId, previousCompletionDate);
+            }
+            savedTask.setStatLinked(statTaskLinkService.isStatLinkedTask(savedTask, userId));
+            updatedTasks.add(savedTask);
+        });
+
+        log.info("Task group moved to today: userId={} groupId={} taskCount={}",
+                userId, groupId, updatedTasks.size());
+        return updatedTasks;
+    }
+
     private Task createTaskInternal(NewTaskRequest request, String userId, boolean allowClosedMentalThread,
                                     boolean prependToTaskOrder) {
         // Validate required field

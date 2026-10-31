@@ -1,4 +1,9 @@
-export { taskService, mergeTaskDeletionReceipts, TASK_PAGE_BATCH_SIZE } from './taskService';
+export {
+    taskService,
+    mergeTaskDeletionReceipts,
+    PomodoroAdjustmentConflictError,
+    TASK_PAGE_BATCH_SIZE,
+} from './taskService';
 export type { TaskDeletionReceipt } from './taskService';
 export { dayService } from './dayService';
 export { userService } from './userService.ts';

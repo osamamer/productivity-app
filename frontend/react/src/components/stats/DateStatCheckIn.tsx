@@ -6,7 +6,7 @@ import {
 import { useTheme } from '@mui/material/styles';
 import { StatDefinition, StatEntryStatus } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
-import { getBooleanChoiceColor, getStatFeedbackColor, showStatFeedback } from '../../services/statFeedback';
+import { getBooleanChoiceColor, getBooleanChoiceTextColor, getStatFeedbackColor, showStatFeedback } from '../../services/statFeedback';
 import { minutesToTimeValue, timeValueToMinutes } from '../../services/utils/statValues';
 import { DurationInput } from './DurationInput';
 import { AppTimeField } from '../input/AppPickerFields';
@@ -160,7 +160,7 @@ export function DateStatCheckIn({ date, definitions, onSaved }: Props) {
                                     <ToggleButton
                                         value="yes"
                                         onClick={event => { feedbackAnchorRef.current = event.currentTarget; }}
-                                        sx={{ '&.Mui-selected': { bgcolor: `${getBooleanChoiceColor(def, 1)}.main`, color: 'white', '&:hover': { bgcolor: `${getBooleanChoiceColor(def, 1)}.dark` } } }}
+                                        sx={{ '&.Mui-selected': { bgcolor: `${getBooleanChoiceColor(def, 1)}.main`, color: getBooleanChoiceTextColor(def, 1), '&:hover': { bgcolor: `${getBooleanChoiceColor(def, 1)}.dark` } } }}
                                 >
                                     Yes
                                 </ToggleButton>
@@ -173,7 +173,7 @@ export function DateStatCheckIn({ date, definitions, onSaved }: Props) {
                                 <ToggleButton
                                     value="no"
                                     onClick={event => { feedbackAnchorRef.current = event.currentTarget; }}
-                                        sx={{ '&.Mui-selected': { bgcolor: `${getBooleanChoiceColor(def, 0)}.main`, color: 'white', '&:hover': { bgcolor: `${getBooleanChoiceColor(def, 0)}.dark` } } }}
+                                        sx={{ '&.Mui-selected': { bgcolor: `${getBooleanChoiceColor(def, 0)}.main`, color: getBooleanChoiceTextColor(def, 0), '&:hover': { bgcolor: `${getBooleanChoiceColor(def, 0)}.dark` } } }}
                                 >
                                     No
                                 </ToggleButton>

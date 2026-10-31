@@ -15,6 +15,14 @@
     color: var(--notes-toolbar-foreground);
 }
 
+@media (max-width: 600px) {
+    .notes-rich-editor .ql-toolbar.ql-snow {
+        border-color: var(--notes-toolbar-border);
+        backdrop-filter: none;
+        box-shadow: var(--notes-toolbar-shadow);
+    }
+}
+
 .notes-rich-editor .ql-container.ql-snow {
     border: 0;
     font-family: Raleway, Arial, sans-serif;

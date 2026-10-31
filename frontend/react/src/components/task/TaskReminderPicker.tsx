@@ -15,6 +15,8 @@ type Props = {
     value: number | null | undefined;
     scheduledAt?: string | null;
     disabled?: boolean;
+    preventPastReminders?: boolean;
+    disableNewReminders?: boolean;
     targetLabel?: 'task' | 'event';
     onChange: (value: number | null) => void;
 };
@@ -31,6 +33,8 @@ export function TaskReminderPicker({
     value,
     scheduledAt,
     disabled = false,
+    preventPastReminders = false,
+    disableNewReminders = false,
     targetLabel = 'task',
     onChange,
 }: Props) {
@@ -39,7 +43,19 @@ export function TaskReminderPicker({
     const [customReminderTime, setCustomReminderTime] = useState('');
     const [customReminderError, setCustomReminderError] = useState<string | null>(null);
     const reminderFieldRef = useRef<HTMLDivElement | null>(null);
+    const canScheduleMinutesBefore = (minutesBefore: number) => {
+        if (disableNewReminders) return false;
+        if (!preventPastReminders) return true;
+        const eventDate = scheduledAt ? new Date(scheduledAt) : null;
+        return Boolean(eventDate
+            && !Number.isNaN(eventDate.getTime())
+            && eventDate.getTime() - minutesBefore * 60_000 > Date.now());
+    };
     const hasCustomReminder = value != null && !TASK_REMINDER_OPTIONS.some(option => option.value === value);
+    const customReminderDateTime = new Date(`${customReminderDate}T${customReminderTime}:00`);
+    const customReminderTimeHasPassed = preventPastReminders
+        && (!customReminderDate || !customReminderTime || Number.isNaN(customReminderDateTime.getTime())
+            || customReminderDateTime.getTime() <= Date.now());
     const customReminderLabel = hasCustomReminder && value != null
         ? scheduledAt && !Number.isNaN(new Date(scheduledAt).getTime())
             ? formatReminderDateTime(new Date(new Date(scheduledAt).getTime() - value * 60_000))
@@ -62,6 +78,10 @@ export function TaskReminderPicker({
         const reminderDate = new Date(`${customReminderDate}T${customReminderTime}:00`);
         if (!taskDate || Number.isNaN(taskDate.getTime()) || Number.isNaN(reminderDate.getTime())) {
             setCustomReminderError('Choose a valid reminder time.');
+            return;
+        }
+        if (preventPastReminders && reminderDate.getTime() <= Date.now()) {
+            setCustomReminderError('Choose a reminder time in the future.');
             return;
         }
 
@@ -107,9 +127,15 @@ export function TaskReminderPicker({
                 >
                     <MenuItem value="">No reminder</MenuItem>
                     {TASK_REMINDER_OPTIONS.map(option => (
-                        <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                        <MenuItem
+                            key={option.value}
+                            value={option.value}
+                            disabled={!canScheduleMinutesBefore(option.value)}
+                        >
+                            {option.label}
+                        </MenuItem>
                     ))}
-                    <MenuItem value="CUSTOM" disabled={disabled}>
+                    <MenuItem value="CUSTOM" disabled={disabled || !canScheduleMinutesBefore(0)}>
                         {hasCustomReminder ? `Custom · ${customReminderLabel}` : 'Custom…'}
                     </MenuItem>
                 </TextField>
@@ -144,12 +170,35 @@ export function TaskReminderPicker({
             >
                 <Stack spacing={1.25} onClick={event => event.stopPropagation()}>
                     <Typography variant="subtitle2">Custom reminder</Typography>
-                    <AppDateField label="Reminder date" value={customReminderDate} onChange={setCustomReminderDate} />
-                    <AppTimeField label="Reminder time" value={customReminderTime} onChange={setCustomReminderTime} />
+                    <AppDateField
+                        label="Reminder date"
+                        value={customReminderDate}
+                        onChange={setCustomReminderDate}
+                        minDate={preventPastReminders ? localDateString(new Date()) : undefined}
+                        disabled={disabled || disableNewReminders}
+                    />
+                    <AppTimeField
+                        label="Reminder time"
+                        value={customReminderTime}
+                        onChange={setCustomReminderTime}
+                        disabled={disabled || disableNewReminders}
+                    />
+                    {customReminderTimeHasPassed && (
+                        <Typography variant="caption" color="text.secondary">
+                            Choose a reminder time in the future.
+                        </Typography>
+                    )}
                     {customReminderError && <Alert severity="error">{customReminderError}</Alert>}
                     <Stack direction="row" justifyContent="flex-end" spacing={1}>
                         <Button size="small" onClick={() => setCustomReminderOpen(false)}>Cancel</Button>
-                        <Button size="small" variant="contained" onClick={confirmCustomReminder}>Set reminder</Button>
+                        <Button
+                            size="small"
+                            variant="contained"
+                            onClick={confirmCustomReminder}
+                            disabled={disabled || disableNewReminders || customReminderTimeHasPassed}
+                        >
+                            Set reminder
+                        </Button>
                     </Stack>
                 </Stack>
             </Popover>

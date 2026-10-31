@@ -33,6 +33,7 @@ export interface UserPreferences {
     pomodoroShortBreakDuration?: number | null;
     pomodoroLongBreakDuration?: number | null;
     pomodoroNumFocuses?: number | null;
+    pomodoroTimeAdjustmentMinutes?: number | null;
     themeMode?: 'light' | 'dark' | null;
     accentColor?: string | null;
     meditationDurationMinutes?: number | null;

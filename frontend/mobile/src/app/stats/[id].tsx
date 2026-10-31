@@ -246,7 +246,7 @@ export default function StatDetailScreen() {
               <View style={styles.pointSummaryCopy}>
                 <AppText variant="caption" color="muted" numberOfLines={1}>
                   {selectedPoint.from !== selectedPoint.to
-                    ? `Average of ${selectedPoint.sampleCount} ${selectedPoint.sampleCount === 1 ? 'entry' : 'entries'} · ${selectedPointDate}`
+                    ? `Average across ${selectedPoint.sampleCount} ${selectedPoint.sampleCount === 1 ? 'day' : 'days'} · ${selectedPointDate}`
                     : selectedPointDate}
                 </AppText>
                 <AppText variant="label" numberOfLines={1}>{selectedPointValue}</AppText>

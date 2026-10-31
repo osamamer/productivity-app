@@ -111,8 +111,10 @@ public class StatController {
     @GetMapping("/definitions/{id}/weekly-task-schedule")
     public StatWeeklyTaskScheduleResponse getWeeklyTaskSchedule(
             @PathVariable String id,
-            @RequestParam(required = false) String timeZone) {
-        return statService.getWeeklyTaskSchedule(id, timeZone, currentUserService.getCurrentUserId());
+            @RequestParam(required = false) String timeZone,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate weekStartDate) {
+        return statService.getWeeklyTaskSchedule(
+                id, timeZone, weekStartDate, currentUserService.getCurrentUserId());
     }
 
     @PutMapping("/definitions/{id}/weekly-task-schedule")
@@ -126,6 +128,8 @@ public class StatController {
                 request == null ? null : request.timeOfDay,
                 request == null ? null : request.importance,
                 request == null ? null : request.timeZone,
+                request == null ? null : request.weekStartDate,
+                request == null ? null : request.weekCount,
                 currentUserService.getCurrentUserId());
     }
 
@@ -314,6 +318,8 @@ public class StatController {
         String timeOfDay;
         Integer importance;
         String timeZone;
+        LocalDate weekStartDate;
+        Integer weekCount;
     }
 
     @Data

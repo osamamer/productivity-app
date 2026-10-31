@@ -166,6 +166,7 @@ export const TaskPageSection = React.memo(function TaskPageSection({
         if (item.kind === 'task') return renderTask(item.task);
 
         const collapsed = collapsedGroupIds.has(item.group.groupId);
+        const groupCompleted = item.tasks.length > 0 && item.tasks.every(task => task.completed);
         if (item.group.isStatGroup) {
             const selected = selectedGroupIds?.has(item.group.groupId) ?? false;
             return (
@@ -206,7 +207,11 @@ export const TaskPageSection = React.memo(function TaskPageSection({
                                 : <ExpandMoreRoundedIcon fontSize="small" />}
                         </IconButton>
                         <Box sx={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
-                            <Typography component="span" variant="body2" sx={{ fontWeight: 650, overflowWrap: 'anywhere' }}>
+                            <Typography component="span" variant="body2" sx={{
+                                fontWeight: 650,
+                                overflowWrap: 'anywhere',
+                                textDecoration: groupCompleted ? 'line-through' : 'none',
+                            }}>
                                 {item.group.name}
                             </Typography>
                             <Typography component="span" variant="caption" color="text.disabled" sx={{ ml: 1 }}>
@@ -263,8 +268,7 @@ export const TaskPageSection = React.memo(function TaskPageSection({
 
         const selected = selectedGroupIds?.has(item.group.groupId) ?? false;
         const dragTarget = dragTargetGroupId === item.group.groupId;
-        const linkedGroup = Boolean(item.group.linkedToMentalThread)
-            || item.tasks.some(task => Boolean(task.mentalThreadId));
+        const linkedGroup = Boolean(item.group.linkedToMentalThread);
         return (
             <Box
                 key={item.group.groupId}
@@ -376,7 +380,11 @@ export const TaskPageSection = React.memo(function TaskPageSection({
                                     cursor: onRenameGroup ? 'text' : 'default',
                                 }}
                             >
-                                <Typography component="span" variant="body2" sx={{ fontWeight: 650, overflowWrap: 'anywhere' }}>
+                                <Typography component="span" variant="body2" sx={{
+                                    fontWeight: 650,
+                                    overflowWrap: 'anywhere',
+                                    textDecoration: groupCompleted ? 'line-through' : 'none',
+                                }}>
                                     {item.group.name}
                                 </Typography>
                             </Box>
@@ -428,7 +436,6 @@ export const TaskPageSection = React.memo(function TaskPageSection({
                                 event.stopPropagation();
                                 onDeleteGroup(item.group, event.currentTarget);
                             }}
-                            disabled={linkedGroup}
                         >
                             <DeleteOutlineRoundedIcon sx={{ fontSize: '1.1rem' }} />
                         </IconButton>
@@ -523,7 +530,7 @@ export const TaskPageSection = React.memo(function TaskPageSection({
                 )}
             </Box>
 
-            <Collapse in={expanded} timeout={180} unmountOnExit>
+            <Collapse in={expanded} timeout="auto" unmountOnExit>
                 <Box sx={{ pt: 1 }}>
                     {visibleTasks.length > 0 ? (
                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>

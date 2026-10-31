@@ -100,6 +100,7 @@ const numericStatsAverageDescription = 'Include days without a logged numeric va
 const pomodoroAutoStartDescription = 'Start each break and focus session automatically, or wait for you to start the next phase.';
 const pomodoroSecondsModeDescription = 'Use 10-second focus and break durations instead of the normal 25/5/15-minute defaults.';
 const pomodoroLongBreakDescription = 'Take a long break after this many completed focus sessions in every Pomodoro.';
+const pomodoroTimeAdjustmentDescription = 'Minutes added or removed each time you adjust the timer.';
 const pomodoroSoundDescription = 'Use brown noise or one of your uploaded MP3 files during focus sessions.';
 const showClosedMentalThreadsDescription = 'Keep closed threads visible in the mental threads list.';
 const soundEffectsDescription = 'Play short musical cues when you complete, capture, schedule, or rate something.';
@@ -654,6 +655,13 @@ export function SettingsPage() {
     const [longBreakCooldown, setLongBreakCooldown] = useState(() => (
         readPomodoroFormPreferences()?.longBreakCooldown ?? DEFAULT_LONG_BREAK_COOLDOWN
     ));
+    const [pomodoroTimeAdjustmentMinutes, setPomodoroTimeAdjustmentMinutes] = useState(
+        () => getRuntimeUserPreference('pomodoroTimeAdjustmentMinutes'),
+    );
+    const [pomodoroTimeAdjustmentDraft, setPomodoroTimeAdjustmentDraft] = useState(
+        () => String(getRuntimeUserPreference('pomodoroTimeAdjustmentMinutes')),
+    );
+    const pomodoroTimeAdjustmentRevision = useRef(0);
     const [autoStartPomodoroSessions, setAutoStartPomodoroSessions] = useState(true);
     const [pomodoroPreferenceSaving, setPomodoroPreferenceSaving] = useState(false);
     const [pomodoroConfigLoading, setPomodoroConfigLoading] = useState(true);
@@ -700,6 +708,9 @@ export function SettingsPage() {
                         setPomodoroSecondsMode(preferences.pomodoroSecondsMode);
                     }
                     setLongBreakCooldown(preferences.pomodoroLongBreakCooldown ?? DEFAULT_LONG_BREAK_COOLDOWN);
+                    const timeAdjustmentMinutes = preferences.pomodoroTimeAdjustmentMinutes ?? 5;
+                    setPomodoroTimeAdjustmentMinutes(timeAdjustmentMinutes);
+                    setPomodoroTimeAdjustmentDraft(String(timeAdjustmentMinutes));
                 }
             })
             .catch(error => {
@@ -956,6 +967,30 @@ export function SettingsPage() {
             setLongBreakCooldown(previousValue);
             const rollbackForm = readPomodoroFormPreferences() ?? createPomodoroFormDefaults(pomodoroConfig);
             savePomodoroFormPreferences({ ...rollbackForm, longBreakCooldown: previousValue });
+            setUserPreferenceError('Could not save this preference right now.');
+        });
+    }
+
+    function handlePomodoroTimeAdjustmentChange(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) {
+        const rawValue = event.target.value;
+        setPomodoroTimeAdjustmentDraft(rawValue);
+        if (rawValue === '') return;
+
+        const nextValue = Number(rawValue);
+        if (!Number.isInteger(nextValue) || nextValue < 1 || nextValue > 60) return;
+        if (nextValue === pomodoroTimeAdjustmentMinutes) return;
+
+        const previousValue = pomodoroTimeAdjustmentMinutes;
+        const revision = ++pomodoroTimeAdjustmentRevision.current;
+        setPomodoroTimeAdjustmentMinutes(nextValue);
+        updateRuntimeUserPreferences({ pomodoroTimeAdjustmentMinutes: nextValue });
+        setUserPreferenceError(null);
+        void userService.updatePreferences({ pomodoroTimeAdjustmentMinutes: nextValue }).catch(error => {
+            console.error('Failed to update Pomodoro time adjustment:', error);
+            if (pomodoroTimeAdjustmentRevision.current !== revision) return;
+            setPomodoroTimeAdjustmentMinutes(previousValue);
+            setPomodoroTimeAdjustmentDraft(String(previousValue));
+            updateRuntimeUserPreferences({ pomodoroTimeAdjustmentMinutes: previousValue });
             setUserPreferenceError('Could not save this preference right now.');
         });
     }
@@ -1312,6 +1347,37 @@ export function SettingsPage() {
                                                 </MenuItem>
                                             ))}
                                         </TextField>
+                                    </Box>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mb: 2 }}>
+                                        <Box sx={{ textAlign: 'left' }}>
+                                            <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                                                Timer adjustment
+                                            </Typography>
+                                            <Typography variant="body2" color="text.secondary">
+                                                {pomodoroTimeAdjustmentDescription}
+                                            </Typography>
+                                        </Box>
+                                        <TextField
+                                            type="number"
+                                            size="small"
+                                            label="Minutes"
+                                            value={pomodoroTimeAdjustmentDraft}
+                                            onChange={handlePomodoroTimeAdjustmentChange}
+                                            onBlur={() => {
+                                                const value = Number(pomodoroTimeAdjustmentDraft);
+                                                if (!Number.isInteger(value) || value < 1 || value > 60) {
+                                                    setPomodoroTimeAdjustmentDraft(String(pomodoroTimeAdjustmentMinutes));
+                                                }
+                                            }}
+                                            disabled={userPreferencesLoading}
+                                            inputProps={{
+                                                min: 1,
+                                                max: 60,
+                                                step: 1,
+                                                'aria-label': 'Pomodoro timer adjustment per click in minutes',
+                                            }}
+                                            sx={{ width: 112, flexShrink: 0 }}
+                                        />
                                     </Box>
                                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
                                         <Box sx={{ textAlign: 'left' }}>

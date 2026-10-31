@@ -295,7 +295,8 @@ export function useTaskManager() {
     const fetchTodayTasks = useCallback(async () => {
         const requestDataGeneration = taskDataGenerationRef.current;
         try {
-            const tasks = uniqueTasksById(await taskService.getTodayTasks());
+            const mainTasks = uniqueTasksById(await taskService.getAllMainTasks());
+            const tasks = splitTasksByDate(mainTasks).today;
             if (taskDataGenerationRef.current !== requestDataGeneration) return;
             todayTasksLoadedRef.current = true;
             setTaskState(prev => {
@@ -429,11 +430,13 @@ export function useTaskManager() {
         setTaskState(prev => {
             const updatesByTaskId = new Map(changes.map(change => [change.taskId, change.updates]));
             let scheduleChanged = false;
+            let taskIdChanged = false;
             const updatedTasks = prev.allTasks.map(task => {
                 const updates = updatesByTaskId.get(task.taskId);
                 if (!updates) return task;
 
                 const updatedTask = mergeTaskUpdates(task, updates);
+                if (updatedTask.taskId !== task.taskId) taskIdChanged = true;
                 if (updatedTask !== task
                     && updatedTask.scheduledPerformDateTime !== task.scheduledPerformDateTime) {
                     scheduleChanged = true;
@@ -449,7 +452,7 @@ export function useTaskManager() {
             const orderChanged = orderedTasks.some((task, index) => task !== updatedTasks[index]);
             if (!taskRecordsChanged && !orderChanged) return prev;
 
-            const next = scheduleChanged
+            const next = scheduleChanged || taskIdChanged
                 ? withTaskBuckets(prev, orderedTasks)
                 : withStableTaskBuckets(prev, orderedTasks);
             const highlightedTask = prev.highlightedTask

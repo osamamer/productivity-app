@@ -182,10 +182,7 @@ export default function TasksScreen() {
   const selectedPastTaskIds = selectedTasks
     .filter(task => pastTasks.some(pastTask => pastTask.taskId === task.taskId))
     .map(task => task.taskId);
-  const hasLinkedSelection = selectedTasks.some(task => Boolean(task.mentalThreadId || task.statLinked))
-    || groups.some(group => selectedGroupIdSet.has(group.groupId)
-      && (group.linkedToMentalThread || group.isStatGroup));
-  const canGroupSelectedTasks = !hasLinkedSelection && selectedGroupIds.length === 0 && selectedTaskIds.length >= 2;
+  const canGroupSelectedTasks = selectedGroupIds.length === 0 && selectedTaskIds.length >= 2;
 
   const loadMoreUpcoming = useCallback(async () => {
     if (loadingMoreFutureTasks || !hasMoreFutureTasks) return;
@@ -256,7 +253,7 @@ export default function TasksScreen() {
   }
 
   async function performBulkAction(action: 'complete' | 'move-to-today') {
-    if (bulkActionLoading || selectedTasks.length === 0 || (action === 'move-to-today' && hasLinkedSelection)) return;
+    if (bulkActionLoading || selectedTasks.length === 0) return;
     setBulkActionLoading(true);
     try {
       if (action === 'move-to-today') {
@@ -276,7 +273,7 @@ export default function TasksScreen() {
   }
 
   async function moveSelectedToDate(scheduledPerformDateTime: string) {
-    if (bulkActionLoading || selectedTasks.length === 0 || hasLinkedSelection) return;
+    if (bulkActionLoading || selectedTasks.length === 0) return;
     setBulkDateSaving(true);
     try {
       await moveTasksToDate(selectedTasks.map(task => task.taskId), scheduledPerformDateTime);
@@ -289,7 +286,7 @@ export default function TasksScreen() {
   }
 
   async function confirmBulkDelete() {
-    if (!selectedTasks.length || hasLinkedSelection) return;
+    if (!selectedTasks.length) return;
     if (!await confirm('Delete selected tasks?', `${selectedTasks.length} tasks will be deleted.`, 'Delete')) return;
     setBulkActionLoading(true);
     try {
@@ -431,9 +428,9 @@ export default function TasksScreen() {
             visible={selectedTaskIds.length > 1 || selectedGroupIds.length > 0}
             taskCount={selectedTasks.length}
             loading={bulkActionLoading || bulkDateSaving}
-            canMoveToToday={!hasLinkedSelection && selectedPastTaskIds.length > 0}
-            canMoveToDate={!hasLinkedSelection}
-            canDelete={!hasLinkedSelection}
+            canMoveToToday={selectedPastTaskIds.length > 0}
+            canMoveToDate
+            canDelete
             canReorder={selectedTaskIds.length === 1 && selectedGroupIds.length === 0}
             canGroup={canGroupSelectedTasks}
             onComplete={() => void performBulkAction('complete')}

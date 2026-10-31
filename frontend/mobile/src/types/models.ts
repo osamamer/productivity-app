@@ -190,7 +190,7 @@ export interface MentalStateCheckIn {
 }
 
 export type StatType = 'NUMBER' | 'BOOLEAN' | 'RANGE' | 'TIME' | 'DURATION';
-export type StatMorality = 'GOOD' | 'BAD' | 'NEUTRAL';
+export type StatMorality = 'GOOD' | 'BAD' | 'NEUTRAL' | 'NICE_TO_HAVE' | 'NICE_TO_AVOID';
 export type StatEntryStatus = 'RECORDED' | 'NOT_PLANNED';
 
 export interface StatDefinition {

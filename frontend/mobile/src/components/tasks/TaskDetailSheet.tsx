@@ -32,7 +32,6 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
 }) {
   const { confirm } = useAppPopup();
   const { colors } = useAppTheme();
-  const linkedTask = Boolean(task?.mentalThreadId);
   const [name, setName] = useState(task?.name ?? '');
   const [scheduledPerformDateTime, setScheduledPerformDateTime] = useState(task?.scheduledPerformDateTime ?? '');
   const [reminderMinutesBefore, setReminderMinutesBefore] = useState<number | null>(task?.reminderMinutesBefore ?? null);
@@ -61,6 +60,7 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
   const taskNameInputRef = useRef<TextInput>(null);
   const subtaskInputRef = useRef<TextInput>(null);
   const pendingSubtaskIdRef = useRef<string | null>(null);
+  const deletingSubtaskIdRef = useRef<string | null>(null);
   const seriesRef = useRef<TaskSeries | null>(null);
   const repeatRef = useRef<TaskRecurrenceFrequency>('NONE');
   const recurrenceMutationRef = useRef<Promise<void>>(Promise.resolve());
@@ -153,7 +153,7 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
     try {
       const updated = await api.tasks.update(task.taskId, {
         name: name.trim(),
-        scheduledPerformDateTime: linkedTask ? task.scheduledPerformDateTime : scheduledPerformDateTime,
+        scheduledPerformDateTime,
         importance: updatePriorityForSeries ? task.importance : importance,
         completed,
         reminderMinutesBefore,
@@ -192,7 +192,7 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
   }
 
   async function submitSubtask() {
-    if (!task || task.parentId || linkedTask || subtaskSaving) return;
+    if (!task || task.parentId || subtaskSaving) return;
     const trimmedName = subtaskName.trim();
     if (!trimmedName) {
       setSubtaskError('Give the subtask a name.');
@@ -262,8 +262,31 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
     }
   }
 
+  async function deleteSubtask(subtask: Task) {
+    if (deletingSubtaskIdRef.current) return;
+    if (!await confirm('Delete subtask?', `“${subtask.name}” will be deleted.`, 'Delete')) return;
+    if (deletingSubtaskIdRef.current) return;
+    deletingSubtaskIdRef.current = subtask.taskId;
+    const originalIndex = subtasks.findIndex(item => item.taskId === subtask.taskId);
+    setSubtasks(current => current.filter(item => item.taskId !== subtask.taskId));
+    setSubtaskError(null);
+    try {
+      await api.tasks.remove(subtask.taskId);
+    } catch (cause) {
+      setSubtasks(current => {
+        if (current.some(item => item.taskId === subtask.taskId)) return current;
+        const restored = [...current];
+        restored.splice(Math.min(originalIndex, restored.length), 0, subtask);
+        return restored;
+      });
+      setSubtaskError(reportError('Could not delete subtask', cause));
+    } finally {
+      deletingSubtaskIdRef.current = null;
+    }
+  }
+
   async function confirmDelete(scope: 'occurrence' | 'future' | 'series') {
-    if (!task || linkedTask) return;
+    if (!task) return;
     setDeletePromptOpen(false);
     const deletingOccurrence = scope === 'occurrence';
     const title = deletingOccurrence
@@ -296,7 +319,6 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
   }
 
   function requestDelete() {
-    if (linkedTask) return;
     if (task?.taskSeriesId && onDeletedOccurrence) {
       setDeletePromptOpen(true);
       return;
@@ -382,7 +404,7 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
           containerStyle={styles.taskNameInput}
           value={name}
           onChangeText={setName}
-          style={[styles.taskTitleInput, completed && styles.completed]}
+          style={[styles.taskTitleInput, styles.taskNameDirection, completed && styles.completed]}
           accessibilityLabel="Task name"
           autoFocus />
       </View>
@@ -402,12 +424,14 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
               onPress={() => {
                 if (subtask.taskId !== pendingSubtaskId) void toggleSubtask(subtask);
               }}
+              onLongPress={() => { if (subtask.taskId !== pendingSubtaskId) void deleteSubtask(subtask); }}
+              accessibilityHint="Tap to update completion. Hold to delete."
               style={({ pressed }) => [styles.subtaskRow, { borderColor: colors.border, backgroundColor: colors.background }, pressed && styles.pressed]}>
               <Ionicons name={subtask.completed ? 'checkmark-circle' : 'ellipse-outline'} size={20} color={subtask.completed ? colors.success : colors.textMuted} />
-              <AppText variant="label" numberOfLines={2} style={[styles.subtaskName, subtask.completed && styles.completed]}>{subtask.name}</AppText>
+              <AppText variant="label" numberOfLines={2} style={[styles.subtaskName, styles.taskNameDirection, subtask.completed && styles.completed]}>{subtask.name}</AppText>
             </SilentPressable>
           ))}
-          {!linkedTask && subtaskComposerOpen ? (
+          {subtaskComposerOpen ? (
             <View style={styles.subtaskComposer}>
               <AppInput
                 ref={subtaskInputRef}
@@ -417,10 +441,11 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
                 onChangeText={value => { setSubtaskName(value); setSubtaskError(null); }}
                 onSubmitEditing={() => void submitSubtask()}
                 returnKeyType="done"
+                style={styles.taskNameDirection}
               />
               <AppButton compact label="Add" icon="add" loading={subtaskSaving} onPress={() => void submitSubtask()} style={styles.subtaskButton} />
             </View>
-          ) : !linkedTask && (
+          ) : (
             <AppButton compact variant="ghost" label="Add subtask" icon="add" onPress={() => setSubtaskComposerOpen(true)} style={styles.addSubtaskButton} />
           )}
           {subtaskError && <AppText variant="caption" color="danger">{subtaskError}</AppText>}
@@ -429,9 +454,8 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
       <TaskScheduleField
         value={scheduledPerformDateTime}
         onChange={handleScheduledChange}
-        disabled={linkedTask}
       />
-      {!task?.parentId && !linkedTask && (
+      {!task?.parentId && (
         <View style={styles.repeatSection}>
           <AppText variant="label">Repeat</AppText>
           <ChoiceChips value={repeat} onChange={changeRepeat} options={[
@@ -451,7 +475,7 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
           <ChoiceChips value={importance} onChange={handlePriorityChange} options={[...TASK_PRIORITY_OPTIONS]} fillSelected />
       {error && <AppText color="danger">{error}</AppText>}
       <View style={styles.actions}>
-        {!linkedTask && <AppButton label="Delete" icon="trash-outline" variant="danger" onPress={requestDelete} disabled={deleting} style={styles.grow} />}
+        <AppButton label="Delete" icon="trash-outline" variant="danger" onPress={requestDelete} disabled={deleting} style={styles.grow} />
       </View>
       <AppPopup
         visible={priorityScopeOpen}
@@ -517,6 +541,7 @@ const styles = StyleSheet.create({
   deleteChoice: { width: '100%' },
   taskNameRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   taskNameInput: { flex: 1, minWidth: 0 },
+  taskNameDirection: { writingDirection: 'auto', textAlign: 'auto' },
   taskTitleInput: { minHeight: 0, paddingHorizontal: 0, paddingVertical: 0, borderWidth: 0, borderRadius: 0, backgroundColor: 'transparent', fontSize: 22, fontWeight: '600', lineHeight: 28 },
   completeToggle: { width: 28, height: 30, alignItems: 'center', justifyContent: 'center' },
   subtasks: { gap: 8 },

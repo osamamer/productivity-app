@@ -329,6 +329,7 @@ export default function NoteEditorScreen() {
 
   return (
     <Screen
+      scroll={false}
       contentStyle={styles.editorContent}
       overlay={resource.data ? (
         <NoteOptionsMenu
@@ -433,9 +434,9 @@ const styles = StyleSheet.create({
   headerButton: { width: 36, height: 42, alignItems: 'center', justifyContent: 'center' },
   titleContainer: { flex: 1, gap: 0 },
   titleInput: { minHeight: 42, borderWidth: 0, borderColor: 'transparent', borderRadius: 0, paddingHorizontal: 0, paddingVertical: 8, fontSize: 20, lineHeight: 26, fontWeight: '700', backgroundColor: 'transparent' },
-  workspace: { flex: 1, minHeight: 600 },
+  workspace: { flex: 1 },
   bodyContainer: { flex: 1, gap: 0 },
-  bodyInput: { flex: 1, minHeight: 600, borderWidth: 0, borderColor: 'transparent', borderRadius: 0, paddingHorizontal: 18, paddingTop: 18, paddingBottom: 30, backgroundColor: 'transparent' },
+  bodyInput: { flex: 1, minHeight: 0, borderWidth: 0, borderColor: 'transparent', borderRadius: 0, paddingHorizontal: 18, paddingTop: 18, paddingBottom: 30, backgroundColor: 'transparent' },
   error: { paddingHorizontal: 18, paddingBottom: 10 },
   menuOverlay: { ...StyleSheet.absoluteFill, zIndex: 10 },
   menuDismiss: { ...StyleSheet.absoluteFill },

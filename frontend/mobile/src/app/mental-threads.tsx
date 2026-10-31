@@ -72,7 +72,7 @@ export default function MentalThreadsScreen() {
       back
       refreshing={resource.refreshing}
       onRefresh={() => void resource.reload()}
-      overlay={<AppButton label="Capture" icon="add" onPress={() => setComposerOpen(true)} style={styles.capture} />}>
+      overlay={<AppButton label="Capture" icon="add" onPress={() => setComposerOpen(true)} style={[styles.capture, { backgroundColor: colors.surface }]} />}>
       {resource.loading && <LoadingView />}
       {resource.error && !resource.data && <ErrorView message={resource.error} retry={() => void resource.reload()} />}
       {resource.data && (
@@ -123,6 +123,6 @@ const styles = StyleSheet.create({
   thread: { gap: 12 }, threadHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   stateChip: { minHeight: 28, paddingHorizontal: 10, borderRadius: 14, borderWidth: 1, justifyContent: 'center' },
   loadTrack: { height: 6, borderRadius: 3, overflow: 'hidden' }, loadBar: { height: '100%', borderRadius: 3 },
-  capture: { position: 'absolute', right: 18, bottom: 24, minHeight: 52, borderRadius: 26, paddingHorizontal: 17, shadowColor: '#11111A', shadowOffset: { width: 0, height: 5 }, shadowRadius: 12, shadowOpacity: 0.28, elevation: 6 },
+  capture: { position: 'absolute', right: 18, bottom: 32, zIndex: 1 },
   grow: { flex: 1, gap: 3 },
 });

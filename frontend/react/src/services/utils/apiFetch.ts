@@ -36,7 +36,10 @@ async function discardResponse(response: Response): Promise<void> {
     }
 }
 
-/** Retries transient API reads for at most three seconds. Writes are sent once. */
+/**
+ * Sends writes once and retries transient GET failures only during the first three seconds.
+ * The retry window does not abort an in-flight request.
+ */
 export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
     const request = typeof Request !== 'undefined' && input instanceof Request ? input : undefined;
     const method = (init.method ?? request?.method ?? 'GET').toUpperCase();
@@ -49,15 +52,10 @@ export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {})
     if (callerSignal?.aborted) abortFromCaller();
 
     const deadline = Date.now() + API_READ_RETRY_WINDOW_MS;
-    let timedOut = false;
-    const timeoutId = setTimeout(() => {
-        timedOut = true;
-        controller.abort();
-    }, API_READ_RETRY_WINDOW_MS);
     let attempt = 0;
 
     try {
-        while (!timedOut) {
+        for (;;) {
             try {
                 const response = await fetch(input, { ...init, signal: controller.signal });
                 if (!isRetryableStatus(response.status)) return response;
@@ -74,12 +72,10 @@ export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {})
                 await discardResponse(response);
                 if (!await waitForRetry(delayMs, controller.signal)) {
                     if (callerSignal?.aborted) throw new DOMException('The request was aborted.', 'AbortError');
-                    if (timedOut) throw new Error('API request failed after three seconds');
                     return response;
                 }
             } catch (error) {
                 if (callerSignal?.aborted) throw error;
-                if (timedOut) throw new Error('API request failed after three seconds');
 
                 const remainingMs = deadline - Date.now();
                 if (remainingMs <= 0) throw error;
@@ -88,17 +84,15 @@ export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {})
                 if (delayMs >= remainingMs) {
                     await waitForRetry(remainingMs, controller.signal);
                     if (callerSignal?.aborted) throw error;
-                    throw new Error('API request failed after three seconds');
+                    throw error;
                 }
                 if (!await waitForRetry(delayMs, controller.signal)) {
                     if (callerSignal?.aborted) throw error;
-                    throw new Error('API request failed after three seconds');
+                    throw error;
                 }
             }
         }
-        throw new Error('API request failed after three seconds');
     } finally {
-        clearTimeout(timeoutId);
         callerSignal?.removeEventListener('abort', abortFromCaller);
     }
 }

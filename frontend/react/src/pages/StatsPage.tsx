@@ -78,6 +78,7 @@ const SELECTION_ACTIONS_GAP = 12;
 const SELECTION_ACTIONS_FALLBACK_WIDTH = 88;
 
 type GroupDropPosition = 'before' | 'after';
+type DefinitionDropTarget = { id: string; position: GroupDropPosition };
 type PopupPosition = { top: number; left: number };
 
 type ContextMenuState =
@@ -209,6 +210,7 @@ export function StatsPage() {
     const [deleteTarget, setDeleteTarget] = useState<StatDefinition | null>(null);
     const [deleteAnchorPosition, setDeleteAnchorPosition] = useState<PopupPosition | null>(null);
     const [draggedId, setDraggedId] = useState<string | null>(null);
+    const [dragTargetDefinition, setDragTargetDefinition] = useState<DefinitionDropTarget | null>(null);
     const [orderError, setOrderError] = useState<string | null>(null);
     const [groups, setGroups] = useState<StatGroup[]>([]);
     const [groupError, setGroupError] = useState<string | null>(null);
@@ -267,6 +269,7 @@ export function StatsPage() {
     const pendingDefinitionMutationsRef = useRef(new Map<string, PendingDefinitionMutation>());
     const definitionOrderVersionRef = useRef(0);
     const groupMutationVersionRef = useRef(0);
+    const weeklyTaskLoadVersionRef = useRef(0);
 
     useEffect(() => { definitionsRef.current = definitions; }, [definitions]);
     useEffect(() => { groupsRef.current = groups; }, [groups]);
@@ -274,6 +277,26 @@ export function StatsPage() {
     const showErrorSnackbar = useCallback((message: string) => {
         setErrorSnackbar(message);
     }, []);
+
+    const loadWeeklyTaskScheduleForWeek = useCallback((definition: StatDefinition, weekStartDate?: string) => {
+        const requestVersion = ++weeklyTaskLoadVersionRef.current;
+        setWeeklyTaskLoading(true);
+        setWeeklyTaskError(null);
+        void statService.getWeeklyTaskSchedule(definition.id, weekStartDate)
+            .then(schedule => {
+                if (requestVersion !== weeklyTaskLoadVersionRef.current) return;
+                setWeeklyTaskInitialDraft({ ...schedule, weekCount: 1 });
+            })
+            .catch(error => {
+                if (requestVersion !== weeklyTaskLoadVersionRef.current) return;
+                console.error('Failed to load the stat task schedule:', error);
+                setWeeklyTaskError('Could not load the task schedule. Please try again.');
+                showErrorSnackbar('Could not load the task schedule.');
+            })
+            .finally(() => {
+                if (requestVersion === weeklyTaskLoadVersionRef.current) setWeeklyTaskLoading(false);
+            });
+    }, [showErrorSnackbar]);
 
     useEffect(() => {
         if (loadedGroupPreferencesKey === groupPreferencesKey) return;
@@ -681,14 +704,15 @@ export function StatsPage() {
         setCreateLinkedTaskError(null);
         void statService.replaceWeeklyTaskSchedule(definition.id, schedule)
             .then(() => {
-                setRecurringTaskFeedback(`Tasks scheduled for this week for “${schedule.taskName}”.`);
+                const period = schedule.weekCount === 1 ? '1 week' : `${schedule.weekCount} weeks`;
+                setRecurringTaskFeedback(`Tasks scheduled for ${period} for “${schedule.taskName}”.`);
                 setResourceRefreshKey(previous => previous + 1);
                 void loadDefinitions();
             })
             .catch(error => {
-                console.error('Failed to schedule linked tasks for this week:', error);
-                setCreateLinkedTaskError('Could not schedule tasks for this week. Please try again.');
-                showErrorSnackbar('Could not schedule tasks for this week.');
+                console.error('Failed to schedule linked tasks:', error);
+                setCreateLinkedTaskError('Could not schedule the tasks. Please try again.');
+                showErrorSnackbar('Could not schedule the tasks.');
             });
     };
 
@@ -697,41 +721,40 @@ export function StatsPage() {
         setWeeklyTaskAnchorPosition(anchorPosition);
         setWeeklyTaskInitialDraft(null);
         setWeeklyTaskError(null);
-        setWeeklyTaskLoading(true);
-        void statService.getWeeklyTaskSchedule(definition.id)
-            .then(schedule => {
-                setWeeklyTaskInitialDraft({
-                    taskName: schedule.taskName,
-                    daysOfWeek: schedule.daysOfWeek,
-                    timeOfDay: schedule.timeOfDay,
-                    importance: schedule.importance,
-                });
-            })
-            .catch(error => {
-                console.error('Failed to load this week\'s stat task schedule:', error);
-                setWeeklyTaskError('Could not load this week\'s task schedule. Please try again.');
-                showErrorSnackbar('Could not load this week\'s task schedule.');
-            })
-            .finally(() => setWeeklyTaskLoading(false));
+        loadWeeklyTaskScheduleForWeek(definition);
     };
 
-    const handleSaveWeeklyTaskSchedule = (schedule: StatWeeklyTaskScheduleDraft) => {
+    const handleSaveWeeklyTaskSchedule = (schedule: StatWeeklyTaskScheduleDraft, keepRepeating: boolean) => {
         if (!weeklyTaskTarget || weeklyTaskSaving) return;
         setWeeklyTaskSaving(true);
         setWeeklyTaskError(null);
-        void statService.replaceWeeklyTaskSchedule(weeklyTaskTarget.id, schedule)
+        const recurringSchedule: StatRecurringTaskDraft = {
+            recurrenceFrequency: 'CUSTOM',
+            recurrenceDaysOfWeek: schedule.daysOfWeek,
+            timeOfDay: schedule.timeOfDay,
+            importance: schedule.importance,
+            taskName: schedule.taskName,
+        };
+        const saveRequest = keepRepeating
+            ? weeklyTaskTarget.recurringTaskSeriesId
+                ? statService.updateRecurringTask(weeklyTaskTarget.id, recurringSchedule)
+                : statService.createRecurringTask(weeklyTaskTarget.id, recurringSchedule)
+            : statService.replaceWeeklyTaskSchedule(weeklyTaskTarget.id, schedule);
+        void saveRequest
             .then(() => {
                 setWeeklyTaskTarget(null);
                 setWeeklyTaskAnchorPosition(null);
                 setWeeklyTaskInitialDraft(null);
-                setRecurringTaskFeedback('This week\'s schedule updated.');
+                setRecurringTaskFeedback(keepRepeating
+                    ? 'The recurring task schedule was updated.'
+                    : 'The selected weeks were scheduled.');
                 setResourceRefreshKey(previous => previous + 1);
                 void loadDefinitions();
             })
             .catch(error => {
-                console.error('Failed to change this week\'s stat task schedule:', error);
-                setWeeklyTaskError('Could not update this week\'s task schedule. Please try again.');
-                showErrorSnackbar('Could not update this week\'s task schedule.');
+                console.error('Failed to change the stat task schedule:', error);
+                setWeeklyTaskError('Could not update the task schedule. Please try again.');
+                showErrorSnackbar('Could not update the task schedule.');
             })
             .finally(() => setWeeklyTaskSaving(false));
     };
@@ -1096,6 +1119,11 @@ export function StatsPage() {
         group,
         definitions: visibleDefinitions.filter(definition => group.statDefinitionIds.includes(definition.id)),
     })), [groups, visibleDefinitions]);
+    const statGroupIdByDefinitionId = useMemo(() => {
+        const groupIds = new Map<string, string>();
+        groups.forEach(group => group.statDefinitionIds.forEach(id => groupIds.set(id, group.groupId)));
+        return groupIds;
+    }, [groups]);
     const ungroupedDefinitions = useMemo(() => visibleDefinitions.filter(definition =>
         !groups.some(group => group.statDefinitionIds.includes(definition.id)),
     ), [groups, visibleDefinitions]);
@@ -1285,6 +1313,7 @@ export function StatsPage() {
 
     const finishDefinitionDragging = () => {
         setDraggedId(null);
+        setDragTargetDefinition(null);
         setDragTargetGroupId(null);
         setDragTargetGroupPosition(null);
     };
@@ -1369,21 +1398,32 @@ export function StatsPage() {
         setDragTargetGroupPosition(null);
     };
 
-    const handleDefinitionDrop = async (targetId: string) => {
+    const handleDefinitionDrop = async (targetId: string, dropPosition: GroupDropPosition) => {
         if (!draggedId || draggedId === targetId) return;
+        if ((statGroupIdByDefinitionId.get(draggedId) ?? null)
+            !== (statGroupIdByDefinitionId.get(targetId) ?? null)) {
+            finishDefinitionDragging();
+            return;
+        }
 
         const previous = definitionsRef.current;
         const visiblePrevious = previous.filter(definition => !isDedicatedStat(definition));
         const draggedIndex = visiblePrevious.findIndex(def => def.id === draggedId);
-        const targetIndex = visiblePrevious.findIndex(def => def.id === targetId);
-        if (draggedIndex < 0 || targetIndex < 0) return;
+        if (draggedIndex < 0) return;
 
         const nextVisible = [...visiblePrevious];
         const [dragged] = nextVisible.splice(draggedIndex, 1);
-        nextVisible.splice(draggedIndex < targetIndex ? targetIndex - 1 : targetIndex, 0, dragged);
+        const targetIndex = nextVisible.findIndex(def => def.id === targetId);
+        if (targetIndex < 0) return;
+        const insertionIndex = dropPosition === 'before' ? targetIndex : targetIndex + 1;
+        nextVisible.splice(insertionIndex, 0, dragged);
+        if (nextVisible.every((definition, index) => definition.id === visiblePrevious[index]?.id)) {
+            finishDefinitionDragging();
+            return;
+        }
         const next = [...nextVisible, ...previous.filter(isDedicatedStat)];
         setDefinitions(next);
-        setDraggedId(null);
+        finishDefinitionDragging();
         setOrderError(null);
         const mutationVersion = ++definitionOrderVersionRef.current;
 
@@ -1403,6 +1443,13 @@ export function StatsPage() {
         const isSelected = selectedStatIdSet.has(def.id);
         const isPending = pendingStatCreationsRef.current.has(def.id);
         const rowDraggable = !isPending;
+        const canReorderAtRow = draggedId !== null
+            && draggedId !== def.id
+            && (statGroupIdByDefinitionId.get(draggedId) ?? null)
+                === (statGroupIdByDefinitionId.get(def.id) ?? null);
+        const dropIndicatorPosition = canReorderAtRow && dragTargetDefinition?.id === def.id
+            ? dragTargetDefinition.position
+            : null;
 
         return (
             <Box
@@ -1413,10 +1460,38 @@ export function StatsPage() {
                     event.dataTransfer.effectAllowed = 'move';
                     event.dataTransfer.setData('text/plain', def.id);
                     setDraggedId(def.id);
+                    setDragTargetDefinition(null);
                 }}
                 onDragEnd={finishDefinitionDragging}
-                onDragOver={event => event.preventDefault()}
-                onDrop={() => { void handleDefinitionDrop(def.id); }}
+                onDragOver={event => {
+                    event.preventDefault();
+                    if (draggedId === null) return;
+                    setDragTargetGroupId(null);
+                    setDragTargetGroupPosition(null);
+                    if (!canReorderAtRow) {
+                        setDragTargetDefinition(null);
+                        event.dataTransfer.dropEffect = 'none';
+                        return;
+                    }
+                    event.dataTransfer.dropEffect = 'move';
+                    const bounds = event.currentTarget.getBoundingClientRect();
+                    const position = event.clientY < bounds.top + bounds.height / 2 ? 'before' : 'after';
+                    setDragTargetDefinition(previous => (
+                        previous?.id === def.id && previous.position === position
+                            ? previous
+                            : { id: def.id, position }
+                    ));
+                }}
+                onDrop={event => {
+                    event.preventDefault();
+                    if (!canReorderAtRow) {
+                        finishDefinitionDragging();
+                        return;
+                    }
+                    const bounds = event.currentTarget.getBoundingClientRect();
+                    const position = event.clientY < bounds.top + bounds.height / 2 ? 'before' : 'after';
+                    void handleDefinitionDrop(def.id, position);
+                }}
                 onContextMenu={event => {
                     event.preventDefault();
                     event.stopPropagation();
@@ -1425,6 +1500,7 @@ export function StatsPage() {
                 }}
                 onClick={event => handleDefinitionSelection(def, event)}
                 sx={{
+                    position: 'relative',
                     pl: 2,
                     pr: 2,
                     py: 1.5,
@@ -1452,6 +1528,28 @@ export function StatsPage() {
                                 : '3px solid transparent',
                     transition: 'background-color 0.15s, border-left-color 0.15s',
                     opacity: draggedId === def.id ? 0.45 : 1,
+                    '&::before': dropIndicatorPosition === 'before' ? {
+                        content: '""',
+                        position: 'absolute',
+                        top: -1,
+                        left: 10,
+                        right: 10,
+                        height: 3,
+                        zIndex: 1,
+                        borderRadius: 2,
+                        backgroundColor: 'primary.main',
+                    } : undefined,
+                    '&::after': dropIndicatorPosition === 'after' ? {
+                        content: '""',
+                        position: 'absolute',
+                        bottom: -1,
+                        left: 10,
+                        right: 10,
+                        height: 3,
+                        zIndex: 1,
+                        borderRadius: 2,
+                        backgroundColor: 'primary.main',
+                    } : undefined,
                     '&:hover': {
                         bgcolor: isPrimarySelected
                             ? theme.palette.mode === 'dark'
@@ -1604,7 +1702,7 @@ export function StatsPage() {
                             handleCreateRecurringLinkedTask(createLinkedTaskTarget, taskName, recurrence);
                         }
                     }}
-                    onCreateThisWeek={schedule => {
+                    onScheduleWeeks={schedule => {
                         if (createLinkedTaskTarget) {
                             handleCreateWeeklyLinkedTask(createLinkedTaskTarget, schedule);
                         }
@@ -1619,11 +1717,18 @@ export function StatsPage() {
                     loading={weeklyTaskLoading}
                     saving={weeklyTaskSaving}
                     error={weeklyTaskError}
+                    onWeekChange={weekStartDate => {
+                        if (weeklyTaskTarget) {
+                            loadWeeklyTaskScheduleForWeek(weeklyTaskTarget, weekStartDate);
+                        }
+                    }}
                     onClose={() => {
                         if (weeklyTaskSaving) return;
+                        weeklyTaskLoadVersionRef.current += 1;
                         setWeeklyTaskTarget(null);
                         setWeeklyTaskAnchorPosition(null);
                         setWeeklyTaskInitialDraft(null);
+                        setWeeklyTaskLoading(false);
                         setWeeklyTaskError(null);
                     }}
                     onConfirm={handleSaveWeeklyTaskSchedule}
@@ -1796,6 +1901,7 @@ export function StatsPage() {
                                                 if (draggedId !== null) {
                                                     event.preventDefault();
                                                     event.dataTransfer.dropEffect = 'move';
+                                                    setDragTargetDefinition(null);
                                                     setDragTargetGroupId(group.groupId);
                                                     setDragTargetGroupPosition(null);
                                                     return;
@@ -2038,7 +2144,7 @@ export function StatsPage() {
                         disabled={weeklyTaskLoading || weeklyTaskSaving}
                     >
                         <ListItemIcon><ViewDayIcon fontSize="small" /></ListItemIcon>
-                        <ListItemText>Change this week's schedule</ListItemText>
+                        <ListItemText>Change task schedule</ListItemText>
                     </MenuItem>
                 )}
                 {contextMenu?.kind === 'stat' && !contextMenu.definition.systemKey && (

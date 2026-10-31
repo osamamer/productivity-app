@@ -460,14 +460,15 @@ export const statService = {
         return response.json();
     },
 
-    async getWeeklyTaskSchedule(definitionId: string): Promise<StatWeeklyTaskSchedule> {
+    async getWeeklyTaskSchedule(definitionId: string, weekStartDate?: string): Promise<StatWeeklyTaskSchedule> {
         const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
         const params = new URLSearchParams({ timeZone });
+        if (weekStartDate) params.set('weekStartDate', weekStartDate);
         const response = await apiFetch(
             `${STATS_URL}/definitions/${definitionId}/weekly-task-schedule?${params}`,
             { headers: getAuthHeaders() },
         );
-        if (!response.ok) throw new Error('Failed to fetch this week\'s task schedule');
+        if (!response.ok) throw new Error('Failed to fetch the task schedule');
         return response.json();
     },
 
@@ -483,7 +484,7 @@ export const statService = {
             }),
             headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getAuthHeaders() },
         });
-        if (!response.ok) throw new Error('Failed to update this week\'s task schedule');
+        if (!response.ok) throw new Error('Failed to update the task schedule');
         invalidateDefinitionsCache();
         invalidateResource('tasks');
         invalidateResource('stats', 'task');

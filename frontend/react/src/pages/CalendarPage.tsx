@@ -13,6 +13,7 @@ import {
     CalendarEvent,
     CalendarEventInput,
     CalendarEventOccurrenceMoveInput,
+    CalendarEventReminderScope,
     CalendarEventStatus,
 } from "../types/CalendarEvent.ts";
 import {DayTemplate, DayTemplateApplication, DayTemplateRequest} from "../types/DayTemplate.ts";
@@ -147,6 +148,10 @@ export function CalendarPage() {
     const [calendarSettingsLoading, setCalendarSettingsLoading] = useState(true);
     const [calendarSettingsError, setCalendarSettingsError] = useState<string | null>(null);
     const calendarMutationVersions = useRef(new Map<string, number>());
+    const eventReminderMutationVersions = useRef(new Map<string, number>());
+    const eventReminderItemMutationVersions = useRef(new Map<string, number>());
+    const eventReminderRequestQueues = useRef(new Map<string, Promise<void>>());
+    const confirmedEventReminderValues = useRef(new Map<string, number | null>());
     const defaultCalendarId = calendars.find(calendar => calendar.defaultCalendar)?.id ?? '';
 
     useEffect(() => {
@@ -276,6 +281,54 @@ export function CalendarPage() {
     const handleUpdateEvent = async (eventId: string, input: CalendarEventInput) => {
         const updated = await eventService.updateEvent(eventId, input);
         setEvents(current => current.map(event => event.id === eventId ? updated : event));
+    };
+
+    const handleUpdateImportedEventReminder = (
+        eventId: string,
+        minutesBefore: number | null,
+        scope: CalendarEventReminderScope,
+    ) => {
+        const currentEvent = events.find(event => event.id === eventId);
+        if (!currentEvent?.sourceId) return Promise.reject(new Error('Imported event not found.'));
+
+        const queueKey = currentEvent.sourceId;
+        if (!confirmedEventReminderValues.current.has(eventId)) {
+            confirmedEventReminderValues.current.set(eventId, currentEvent.reminderMinutesBefore);
+        }
+        const version = (eventReminderMutationVersions.current.get(queueKey) ?? 0) + 1;
+        eventReminderMutationVersions.current.set(queueKey, version);
+        eventReminderItemMutationVersions.current.set(eventId, version);
+        setEvents(current => current.map(event => event.id === eventId
+            ? { ...event, reminderMinutesBefore: minutesBefore }
+            : event));
+
+        const previousRequest = eventReminderRequestQueues.current.get(queueKey) ?? Promise.resolve();
+        const request = previousRequest
+            .catch(() => undefined)
+            .then(() => eventService.updateImportedEventReminder(eventId, minutesBefore, scope))
+            .then(updatedEvents => {
+                updatedEvents.forEach(updated => {
+                    confirmedEventReminderValues.current.set(updated.id, updated.reminderMinutesBefore);
+                });
+                const updates = new Map(updatedEvents.map(event => [event.id, event]));
+                setEvents(current => current.map(event => {
+                    const updated = updates.get(event.id);
+                    const latestMutation = eventReminderItemMutationVersions.current.get(event.id) ?? 0;
+                    return updated && latestMutation <= version ? updated : event;
+                }));
+                return updatedEvents;
+            })
+            .catch(error => {
+                if (eventReminderItemMutationVersions.current.get(eventId) === version) {
+                    const confirmedValue = confirmedEventReminderValues.current.get(eventId) ?? null;
+                    setEvents(current => current.map(event => event.id === eventId
+                        ? { ...event, reminderMinutesBefore: confirmedValue }
+                        : event));
+                }
+                throw error;
+            });
+        eventReminderRequestQueues.current.set(queueKey, request.then(() => undefined, () => undefined));
+        return request;
     };
 
     const handleMoveEventOccurrence = async (
@@ -511,6 +564,7 @@ export function CalendarPage() {
                     onUpdateTask={handleUpdateTask}
                     onCreateEvent={handleCreateEvent}
                     onUpdateEvent={handleUpdateEvent}
+                    onUpdateImportedEventReminder={handleUpdateImportedEventReminder}
                     onMoveEventOccurrence={handleMoveEventOccurrence}
                     onDeleteEvent={handleDeleteEvent}
                     onCancelEventOccurrence={handleCancelEventOccurrence}

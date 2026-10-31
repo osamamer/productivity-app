@@ -423,10 +423,7 @@ export default function TodayScreen() {
     () => allTasks.filter(task => selectedTaskActionIds.includes(task.taskId)),
     [allTasks, selectedTaskActionIds],
   );
-  const hasLinkedSelection = selectedTasks.some(task => Boolean(task.mentalThreadId || task.statLinked))
-    || groups.some(group => selectedGroupIds.includes(group.groupId)
-      && (group.linkedToMentalThread || group.isStatGroup));
-  const canGroupSelectedTasks = !hasLinkedSelection && selectedGroupIds.length === 0 && selectedTaskIds.length >= 2;
+  const canGroupSelectedTasks = selectedGroupIds.length === 0 && selectedTaskIds.length >= 2;
 
   function isLinkedGroup(group: TaskGroup) {
     return group.isStatGroup || group.linkedToMentalThread || group.taskIds.some(taskId => (
@@ -689,7 +686,7 @@ export default function TodayScreen() {
   }
 
   async function moveSelectedToDate(scheduledPerformDateTime: string) {
-    if (bulkActionLoading || selectedTasks.length === 0 || hasLinkedSelection) return;
+    if (bulkActionLoading || selectedTasks.length === 0) return;
     setBulkDateSaving(true);
     try {
       await moveTasksToDate(selectedTaskActionIds, scheduledPerformDateTime);
@@ -702,7 +699,7 @@ export default function TodayScreen() {
   }
 
   async function confirmBulkDelete() {
-    if (!selectedTasks.length || hasLinkedSelection) return;
+    if (!selectedTasks.length) return;
     if (!await confirm('Delete selected tasks?', `${selectedTasks.length} tasks will be deleted.`, 'Delete')) return;
     setBulkActionLoading(true);
     try {
@@ -827,8 +824,8 @@ export default function TodayScreen() {
           taskCount={selectedTasks.length}
           loading={bulkActionLoading || bulkDateSaving}
           canGroup={canGroupSelectedTasks}
-          canMoveToDate={!hasLinkedSelection}
-          canDelete={!hasLinkedSelection}
+          canMoveToDate
+          canDelete
           onComplete={() => void performBulkCompletion(true)}
           onMoveToDate={() => setBulkDateOpen(true)}
           onGroup={openCreateGroup}

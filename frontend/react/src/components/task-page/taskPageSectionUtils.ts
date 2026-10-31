@@ -12,9 +12,6 @@ export function buildTaskListItems(tasks: Task[], groups: TaskGroup[]): TaskList
     const groupByTaskId = new Map<string, TaskGroup>();
     const tasksByGroupId = new Map<string, Task[]>();
     const groupCandidates = [...groups]
-        .map(group => group.linkedToMentalThread || group.taskIds.some(taskId => (
-            uniqueTasks.some(task => task.taskId === taskId && Boolean(task.mentalThreadId))
-        )) ? { ...group, linkedToMentalThread: true } : group)
         .filter(group => group.taskIds.length >= 2 || group.linkedToMentalThread || group.isStatGroup)
         .sort((first, second) => first.displayOrder - second.displayOrder);
 

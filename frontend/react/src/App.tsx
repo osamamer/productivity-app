@@ -13,6 +13,7 @@ import {PomodoroProvider} from "./contexts/PomodoroContext.tsx";
 import {UserProvider} from "./contexts/UserContext";
 import {NotificationCenter} from "./components/notifications/NotificationCenter.tsx";
 import {AppErrorBoundary, AppErrorPage} from "./components/AppErrorBoundary.tsx";
+import {OfflineStatusBar} from "./components/OfflineStatusBar.tsx";
 import {useAppContextMenuGuard} from "./components/AppContextMenuGuard.tsx";
 import {rememberMentalDestination, type MentalDestinationPath} from "./services/utils/mentalNavigation";
 import {AppShell} from "./components/AppShell.tsx";
@@ -141,9 +142,14 @@ function App() {
     }, []);
 
     return (
-        <AppErrorBoundary>
-            <RouterProvider router={appRouter}/>
-        </AppErrorBoundary>
+        <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <OfflineStatusBar />
+            <Box sx={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <AppErrorBoundary>
+                    <RouterProvider router={appRouter}/>
+                </AppErrorBoundary>
+            </Box>
+        </Box>
     );
 }
 

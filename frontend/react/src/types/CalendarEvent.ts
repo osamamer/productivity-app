@@ -1,6 +1,7 @@
 export type RecurrenceFrequency = 'NONE' | 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'CUSTOM';
 export type RecurrenceUnit = 'DAYS' | 'WEEKS' | 'MONTHS';
 export type CalendarEventStatus = 'CONFIRMED' | 'TENTATIVE' | 'CANCELLED';
+export type CalendarEventReminderScope = 'EVENT' | 'SERIES';
 
 export type CalendarEventOccurrenceOverride = {
     occurrenceKey: string;

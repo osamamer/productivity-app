@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import {
     Box,
     Button,
+    ButtonBase,
     CircularProgress,
     Collapse,
     Alert,
@@ -337,15 +338,11 @@ function buildTaskListItems(
     anchorTasks: Task[] = tasks,
 ): TaskListItem[] {
     const visibleTaskIds = new Set(tasks.map(task => task.taskId));
-    const visibleTasksById = new Map(tasks.map(task => [task.taskId, task]));
     const anchorIndexByTaskId = new Map(anchorTasks.map((task, index) => [task.taskId, index] as const));
     const groupByTaskId = new Map<string, TaskGroup>();
     const tasksByGroupId = new Map<string, Task[]>();
 
     groups
-        .map(group => group.linkedToMentalThread || group.taskIds.some(taskId => (
-            visibleTasksById.get(taskId)?.mentalThreadId
-        )) ? { ...group, linkedToMentalThread: true } : group)
         .sort((first, second) => first.displayOrder - second.displayOrder)
         .forEach(group => group.taskIds.forEach(taskId => {
             if (visibleTaskIds.has(taskId) && !groupByTaskId.has(taskId)) {
@@ -1259,6 +1256,7 @@ export function HomePage() {
     const [pendingDeletedTaskIds, setPendingDeletedTaskIds] = useState<string[]>([]);
     const [homeTaskListAnimating, setHomeTaskListAnimating] = useState(false);
     const [showOlderTasks, setShowOlderTasks] = useState(false);
+    const [showCompletionDetails, setShowCompletionDetails] = useState(false);
     const [bulkActionLoading, setBulkActionLoading] = useState(false);
     const [deleteRequest, setDeleteRequest] = useState<DeleteRequest | null>(null);
     const [deleteSubmitting, setDeleteSubmitting] = useState(false);
@@ -1307,6 +1305,7 @@ export function HomePage() {
     const taskListTopRef = useRef<HTMLDivElement | null>(null);
     const focusedPomodoroRowRef = useRef<HTMLDivElement | null>(null);
     const olderTasksSectionRef = useRef<HTMLDivElement | null>(null);
+    const completionCardExpansionRef = useRef(false);
     const selectionActionsRef = useRef<HTMLDivElement | null>(null);
     const taskFeedbackIdRef = useRef(0);
     const pendingUndoRef = useRef<PendingUndo | null>(null);
@@ -1534,9 +1533,24 @@ export function HomePage() {
 
         return mergedTasks;
     }, [activePomodoroTaskIdForHome, allTasks, resolvedActivePomodoroTask, todayTasks]);
+    const todayTasksForCompletion = useMemo(() => homeTodayTasks.filter(task => (
+        isScheduledForToday(task) && !pendingDeletedTaskIdSet.has(task.taskId)
+    )), [homeTodayTasks, pendingDeletedTaskIdSet]);
+    const allTodayTasksComplete = todayTasksForCompletion.length > 0
+        && todayTasksForCompletion.every(task => task.completed);
+
+    useLayoutEffect(() => {
+        if (!allTodayTasksComplete) {
+            setShowCompletionDetails(false);
+            completionCardExpansionRef.current = false;
+        }
+    }, [allTodayTasksComplete]);
+
     const visibleTasks = useMemo(
         () => {
-            const showCompletedToday = getShowCompletedHomeTasks() || !getExcludeTodayCompletedHomeTasks();
+            const showCompletedToday = allTodayTasksComplete
+                ? showCompletionDetails
+                : getShowCompletedHomeTasks() || !getExcludeTodayCompletedHomeTasks();
             const todayTaskIds = new Set(homeTodayTasks.map(task => task.taskId));
             const pendingDateTasks = pendingHomeDateTaskIds
                 .map(taskId => allTasks.find(task => task.taskId === taskId))
@@ -1559,7 +1573,8 @@ export function HomePage() {
                     || task.taskId === activePomodoroTaskIdForHome
                 ));
         },
-        [activePomodoroTaskIdForHome, allTasks, homeTodayTasks, pendingDeletedTaskIdSet, pendingHomeDateTaskIds],
+        [activePomodoroTaskIdForHome, allTasks, allTodayTasksComplete, homeTodayTasks,
+            pendingDeletedTaskIdSet, pendingHomeDateTaskIds, showCompletionDetails],
     );
     const olderTasks = useMemo(
         () => pastTasks.filter(task => !pendingDeletedTaskIdSet.has(task.taskId)
@@ -1572,18 +1587,6 @@ export function HomePage() {
         () => groups ?? [],
         [groups],
     );
-    const protectedTaskIdSet = useMemo(() => {
-        const protectedTaskIds = new Set(
-            allTasks.filter(task => Boolean(task.mentalThreadId)).map(task => task.taskId),
-        );
-        selectableGroups.forEach(group => {
-            if (group.isStatGroup || group.linkedToMentalThread
-                || group.taskIds.some(taskId => protectedTaskIds.has(taskId))) {
-                group.taskIds.forEach(taskId => protectedTaskIds.add(taskId));
-            }
-        });
-        return protectedTaskIds;
-    }, [allTasks, selectableGroups]);
     const selectedGroupTaskIdSet = useMemo(
         () => new Set(selectableGroups
             .filter(group => selectedGroupIdSet.has(group.groupId))
@@ -1598,8 +1601,8 @@ export function HomePage() {
         () => allTasks.filter(task => selectedActionTaskIdSet.has(task.taskId)),
         [allTasks, selectedActionTaskIdSet],
     );
-    const hasLinkedSelection = selectedTasks.some(task => protectedTaskIdSet.has(task.taskId))
-        || selectedGroupIds.some(groupId => selectableGroups.some(group => (
+    const hasOnlyOriginGroupSelection = selectedGroupIds.length > 0
+        && selectedGroupIds.every(groupId => selectableGroups.some(group => (
             group.groupId === groupId && (group.isStatGroup || group.linkedToMentalThread)
         )));
     const olderTaskIdSet = useMemo(() => new Set(olderTasks.map(task => task.taskId)), [olderTasks]);
@@ -1609,17 +1612,15 @@ export function HomePage() {
     );
     const selectionEntityCount = selectedTaskIds.length + selectedGroupIds.length;
     const selectionActionsVisible = selectionEntityCount > 1 || selectedGroupIds.length > 0;
-    const canGroupSelectedTasks = !hasLinkedSelection
-        && selectedGroupIds.length === 0
-        && selectedTaskIds.length >= 2;
-    const canCreateParentTask = selectedGroupIds.length === 0
-        && !hasLinkedSelection
-        && selectedTaskIds.length >= 2
-        && selectedTasks.length === selectedTaskIds.length
+    const canGroupSelectedTasks = (selectedGroupIds.length === 0 && selectedTaskIds.length >= 2)
+        || (hasOnlyOriginGroupSelection && selectedTasks.length >= 2);
+    const canCreateParentTask = (selectedGroupIds.length === 0 || hasOnlyOriginGroupSelection)
+        && selectedTasks.length >= 2
+        && selectedTasks.length === selectedActionTaskIdSet.size
         && selectedTasks.every(task => !task.parentId && !task.taskSeriesId);
 
     useKeyboardDelete({
-        enabled: selectionEntityCount > 0 && !hasLinkedSelection
+        enabled: selectionEntityCount > 0
             && !deleteRequest && !deleteSubmitting && !bulkActionLoading,
         onDelete: () => {
             const selectedGroupId = [...selectedGroupIds].reverse().find(groupId =>
@@ -1628,10 +1629,9 @@ export function HomePage() {
             if (selectedGroupId) {
                 const group = (groups ?? []).find(candidate => candidate.groupId === selectedGroupId);
                 if (group) {
-                    requestGroupDelete(
-                        group,
-                        findKeyboardDeleteAnchor('data-task-group-id', group.groupId) ?? document.body,
-                    );
+                    const anchorEl = findKeyboardDeleteAnchor('data-task-group-id', group.groupId) ?? document.body;
+                    if (group.isStatGroup) requestBulkDelete(anchorEl);
+                    else requestGroupDelete(group, anchorEl);
                 }
                 return;
             }
@@ -2234,9 +2234,7 @@ export function HomePage() {
     }, []);
 
     function requestGroupDelete(group: TaskGroup, anchorEl: HTMLElement) {
-        if (deleteSubmitting || group.linkedToMentalThread || group.taskIds.some(taskId => (
-            allTasks.some(task => task.taskId === taskId && Boolean(task.mentalThreadId))
-        ))) return;
+        if (deleteSubmitting || group.isStatGroup) return;
 
         setDeleteRequest({
             kind: 'group',
@@ -2247,7 +2245,7 @@ export function HomePage() {
     }
 
     function requestBulkDelete(anchorEl: HTMLElement) {
-        if (bulkActionLoading || hasLinkedSelection || selectedTasks.length === 0) return;
+        if (bulkActionLoading || selectedTasks.length === 0) return;
         setDeleteRequest({ kind: 'bulk', tasks: selectedTasks, anchorEl });
     }
 
@@ -2259,11 +2257,8 @@ export function HomePage() {
         if (!deleteRequest || deleteSubmitting) return;
 
         const request = deleteRequest;
-        if (request.kind !== 'single'
-            && (request.tasks.some(task => Boolean(task.mentalThreadId))
-                || (request.kind === 'group' && request.group.linkedToMentalThread))) return;
+        if (request.kind === 'group' && request.group.isStatGroup) return;
         const tasksToDelete = tasksForDeleteScope(request, scope, allTasks);
-        if (request.kind !== 'single' && tasksToDelete.some(task => Boolean(task.mentalThreadId))) return;
         const deletedTaskIds = new Set(tasksToDelete.map(task => task.taskId));
         const deletedActivePomodoroTaskId = activePomodoroTaskIdRef.current
             && tasksToDelete.some(task => task.taskId === activePomodoroTaskIdRef.current)
@@ -2390,7 +2385,6 @@ export function HomePage() {
     }
 
     async function performBulkAction(action: BulkAction, scheduledDateTime?: string) {
-        if (hasLinkedSelection && action !== 'complete' && action !== 'reopen') return;
         const tasksToUpdate = action === 'move-to-today' ? selectedOlderTasks : selectedTasks;
         if (action === 'move-to-date' && !scheduledDateTime) return;
         if (bulkActionLoading || tasksToUpdate.length === 0) return;
@@ -2517,6 +2511,7 @@ export function HomePage() {
     }
 
     function toggleOlderTasks() {
+        completionCardExpansionRef.current = false;
         setShowOlderTasks(previous => !previous);
         if (showOlderTasks) {
             const olderTaskIds = new Set(olderTasks.map(task => task.taskId));
@@ -3046,7 +3041,6 @@ export function HomePage() {
         const olderTaskIdSet = new Set(olderTasks.map(task => task.taskId));
         const tasksToMove = allTasks.filter(task => taskIds.includes(task.taskId) && olderTaskIdSet.has(task.taskId));
         if (tasksToMove.length === 0) return false;
-        if (tasksToMove.some(task => protectedTaskIdSet.has(task.taskId))) return false;
 
         const updates = tasksToMove.map(task => ({
             task,
@@ -3090,13 +3084,11 @@ export function HomePage() {
             await refreshTaskBuckets(true);
             return false;
         }
-    }, [allTasks, getTaskOrderInToday, olderTasks, protectedTaskIdSet, refreshTaskBuckets, saveTaskOrder, updateTasksInState]);
+    }, [allTasks, getTaskOrderInToday, olderTasks, refreshTaskBuckets, saveTaskOrder, updateTasksInState]);
 
     const moveGroupToToday = useCallback(async (group: TaskGroup, placement?: TodayDropPlacement) => {
         const groupTaskIdSet = new Set(group.taskIds);
         const tasksToMove = allTasks.filter(task => groupTaskIdSet.has(task.taskId));
-        if (group.isStatGroup || group.linkedToMentalThread
-            || tasksToMove.some(task => protectedTaskIdSet.has(task.taskId))) return;
         if (tasksToMove.length === 0) return;
 
         const updates = tasksToMove.map(task => ({
@@ -3123,7 +3115,13 @@ export function HomePage() {
             updates: { scheduledPerformDateTime },
         })), orderedTaskIds ?? undefined);
         try {
-            const updatedTasks = await taskGroupService.moveToToday(group.groupId);
+            const updatedTasks = await Promise.all(updates.map(({ task, scheduledPerformDateTime }) =>
+                taskService.updateTask(
+                    task.taskId,
+                    { scheduledPerformDateTime },
+                    { notifyResource: false },
+                ),
+            ));
             updateTasksInState(updatedTasks.map(updatedTask => ({
                 taskId: updatedTask.taskId,
                 updates: updatedTask,
@@ -3135,13 +3133,11 @@ export function HomePage() {
             console.error('Error moving task group to today:', err);
             await refreshTaskBuckets(true);
         }
-    }, [allTasks, getTaskOrderInToday, protectedTaskIdSet, refreshTaskBuckets, saveTaskOrder, updateTasksInState]);
+    }, [allTasks, getTaskOrderInToday, refreshTaskBuckets, saveTaskOrder, updateTasksInState]);
 
     const moveDraggedGroupToToday = useCallback((placement?: TodayDropPlacement) => {
         const draggedGroupId = getDraggedGroupId();
         const draggedGroup = groups?.find(group => group.groupId === draggedGroupId);
-        if (draggedGroup?.isStatGroup || draggedGroup?.linkedToMentalThread
-            || draggedGroup?.taskIds.some(taskId => protectedTaskIdSet.has(taskId))) return false;
         const olderTaskIdSet = new Set(olderTasks.map(task => task.taskId));
         if (!draggedGroup || !draggedGroup.taskIds.some(taskId => olderTaskIdSet.has(taskId))) {
             return false;
@@ -3150,11 +3146,10 @@ export function HomePage() {
         void moveGroupToToday(draggedGroup, placement);
         finishDragging();
         return true;
-    }, [finishDragging, getDraggedGroupId, groups, moveGroupToToday, olderTasks, protectedTaskIdSet]);
+    }, [finishDragging, getDraggedGroupId, groups, moveGroupToToday, olderTasks]);
 
     const moveDraggedOlderTasksToToday = useCallback((placement?: TodayDropPlacement) => {
         const draggedIds = getDraggedTaskIds();
-        if (draggedIds.some(taskId => protectedTaskIdSet.has(taskId))) return false;
         const olderTaskIdSet = new Set(olderTasks.map(task => task.taskId));
         const draggedOlderTaskIds = draggedIds.filter(taskId => olderTaskIdSet.has(taskId));
         if (draggedOlderTaskIds.length === 0) return false;
@@ -3162,7 +3157,7 @@ export function HomePage() {
         void moveTasksToToday(draggedOlderTaskIds, placement);
         finishDragging();
         return true;
-    }, [finishDragging, getDraggedTaskIds, moveTasksToToday, olderTasks, protectedTaskIdSet]);
+    }, [finishDragging, getDraggedTaskIds, moveTasksToToday, olderTasks]);
 
     const applyUpdatedGroup = useCallback((updatedGroup: TaskGroup, movedTaskIds: string[]) => {
         const movedTaskIdSet = new Set(movedTaskIds);
@@ -3191,7 +3186,7 @@ export function HomePage() {
 
     const createGroupFromTaskDrop = useCallback(async (targetTask: Task, taskIds: string[]) => {
         const groupedTaskIds = [...new Set([targetTask.taskId, ...taskIds])];
-        if (groupedTaskIds.length < 2 || groupedTaskIds.some(taskId => protectedTaskIdSet.has(taskId))) return;
+        if (groupedTaskIds.length < 2) return;
 
         try {
             const groupName = targetTask.name.trim().slice(0, 120) || 'Task group';
@@ -3210,16 +3205,15 @@ export function HomePage() {
             console.error('Error creating task group from drag:', err);
             await refreshGroups();
         }
-    }, [protectedTaskIdSet, refreshGroups]);
+    }, [refreshGroups]);
 
     const groupTasksFromDrop = useCallback(async (targetTask: Task, taskIds: string[]) => {
         const groupedTaskIds = [...new Set([targetTask.taskId, ...taskIds])];
-        if (groupedTaskIds.some(taskId => protectedTaskIdSet.has(taskId))) return;
         const olderTaskIds = groupedTaskIds.filter(taskId => olderTaskIdSet.has(taskId));
         if (olderTaskIds.length > 0 && !(await moveTasksToToday(olderTaskIds))) return;
 
         await createGroupFromTaskDrop(targetTask, taskIds);
-    }, [createGroupFromTaskDrop, moveTasksToToday, olderTaskIdSet, protectedTaskIdSet]);
+    }, [createGroupFromTaskDrop, moveTasksToToday, olderTaskIdSet]);
 
     const addTasksToGroup = useCallback(async (
         targetGroup: TaskGroup,
@@ -3227,10 +3221,7 @@ export function HomePage() {
         placement?: GroupTaskDropPlacement,
     ) => {
         const taskIdsToAdd = taskIds.filter(taskId => !targetGroup.taskIds.includes(taskId));
-        if (targetGroup.isStatGroup || targetGroup.linkedToMentalThread
-            || targetGroup.taskIds.some(taskId => protectedTaskIdSet.has(taskId))
-            || taskIdsToAdd.length === 0
-            || taskIdsToAdd.some(taskId => protectedTaskIdSet.has(taskId))) return;
+        if (targetGroup.isStatGroup || targetGroup.linkedToMentalThread || taskIdsToAdd.length === 0) return;
 
         minimizePomodoroTask(taskIdsToAdd[0]);
         const nextTaskIds = [...targetGroup.taskIds];
@@ -3263,14 +3254,11 @@ export function HomePage() {
             console.error('Error adding task to group:', err);
             await refreshGroups();
         }
-    }, [applyUpdatedGroup, minimizePomodoroTask, placeTasksAfterGroup, placeTasksRelativeToTask,
-        protectedTaskIdSet, refreshGroups]);
+    }, [applyUpdatedGroup, minimizePomodoroTask, placeTasksAfterGroup, placeTasksRelativeToTask, refreshGroups]);
 
     const removeTasksFromGroup = useCallback(async (sourceGroup: TaskGroup, taskIds: string[]) => {
-        if (sourceGroup.isStatGroup || sourceGroup.linkedToMentalThread
-            || sourceGroup.taskIds.some(taskId => protectedTaskIdSet.has(taskId))) return;
-        const taskIdsInGroup = taskIds.filter(taskId => sourceGroup.taskIds.includes(taskId)
-            && !protectedTaskIdSet.has(taskId));
+        if (sourceGroup.isStatGroup) return;
+        const taskIdsInGroup = taskIds.filter(taskId => sourceGroup.taskIds.includes(taskId));
         if (taskIdsInGroup.length === 0) return;
 
         const remainingTaskIds = sourceGroup.taskIds.filter(taskId => !taskIdsInGroup.includes(taskId));
@@ -3289,7 +3277,7 @@ export function HomePage() {
             console.error('Error removing dragged tasks from group:', err);
             await refreshGroups();
         }
-    }, [protectedTaskIdSet, refreshGroups]);
+    }, [refreshGroups]);
 
     const reorderGroupRelativeToTask = useCallback((groupId: string, targetTaskId: string, edge: DropEdge) => {
         const group = groups?.find(candidate => candidate.groupId === groupId);
@@ -3365,11 +3353,9 @@ export function HomePage() {
     }, [persistTaskOrder, visibleTasks]);
 
     const handleDropOnGroup = useCallback((targetGroup: TaskGroup, intent: GroupDropIntent) => {
-        const targetLinked = Boolean(targetGroup.isStatGroup || targetGroup.linkedToMentalThread
-            || targetGroup.taskIds.some(taskId => protectedTaskIdSet.has(taskId)));
+        const targetLinked = Boolean(targetGroup.isStatGroup || targetGroup.linkedToMentalThread);
         const draggedIds = getDraggedTaskIds();
-        const draggedProtected = draggedIds.some(taskId => protectedTaskIdSet.has(taskId));
-        if (intent === 'inside' && (targetLinked || draggedProtected)) {
+        if (intent === 'inside' && targetLinked) {
             finishDragging();
             return;
         }
@@ -3383,7 +3369,7 @@ export function HomePage() {
         const draggedOlderTaskIds = draggedIds.filter(taskId => olderTaskIdSet.has(taskId));
 
         if (intent === 'inside') {
-            if (draggedOlderTaskIds.length > 0 && !draggedProtected) {
+            if (draggedOlderTaskIds.length > 0) {
                 void moveTasksToToday(draggedOlderTaskIds);
                 void addTasksToGroup(targetGroup, draggedOlderTaskIds);
                 finishDragging();
@@ -3398,7 +3384,7 @@ export function HomePage() {
             return;
         }
 
-        if (draggedOlderTaskIds.length > 0 && !draggedProtected) {
+        if (draggedOlderTaskIds.length > 0) {
             void moveTasksToToday(draggedOlderTaskIds, {
                 kind: 'group',
                 targetGroup,
@@ -3441,7 +3427,7 @@ export function HomePage() {
         finishDragging();
     }, [addTasksToGroup, finishDragging, getDraggedGroupId, getDraggedPreservedGroupIds, getDraggedTaskIds,
         getPrimaryDraggedTaskId, groups, minimizePomodoroTask, moveDraggedGroupToToday, moveTasksToToday,
-        olderTasks, protectedTaskIdSet, removeTasksFromGroup, reorderRelativeToGroup, visibleTasks]);
+        olderTasks, removeTasksFromGroup, reorderRelativeToGroup, visibleTasks]);
 
     const handleDropAtBottom = useCallback(() => {
         if (moveDraggedGroupToToday({ kind: 'edge', edge: 'bottom' })) return;
@@ -3670,9 +3656,7 @@ export function HomePage() {
         firstVisibleTaskId?: string,
         taskToCreate?: TaskToCreate,
     ) {
-        if (!taskToCreate?.name.trim() || group.linkedToMentalThread || group.taskIds.some(taskId => (
-            allTasks.some(task => task.taskId === taskId && Boolean(task.mentalThreadId))
-        )) || groupTaskSubmissionRef.current) return;
+        if (!taskToCreate?.name.trim() || group.linkedToMentalThread || groupTaskSubmissionRef.current) return;
 
         groupTaskSubmissionRef.current = true;
         setGroupTaskInputGeneration(previous => previous + 1);
@@ -3761,9 +3745,7 @@ export function HomePage() {
 
     function startTaskInGroup(groupId: string) {
         if (groupTaskSubmissionRef.current || groups?.some(group => (
-            group.groupId === groupId && (group.linkedToMentalThread || group.taskIds.some(taskId => (
-                allTasks.some(task => task.taskId === taskId && Boolean(task.mentalThreadId))
-            )))
+            group.groupId === groupId && group.linkedToMentalThread
         ))) return;
         setGroupAddingTaskId(groupId);
         setCollapsedGroupIds(previous => {
@@ -3779,9 +3761,7 @@ export function HomePage() {
         if (!deleteRequest || deleteRequest.kind !== 'group' || deleteSubmitting) return;
 
         const group = deleteRequest.group;
-        if (group.linkedToMentalThread || group.taskIds.some(taskId => (
-            allTasks.some(task => task.taskId === taskId && Boolean(task.mentalThreadId))
-        ))) return;
+        if (group.isStatGroup) return;
         setDeleteSubmitting(true);
         setDeleteRequest(null);
         try {
@@ -3847,16 +3827,13 @@ export function HomePage() {
         const activeGroupId = getDraggedGroupId();
         setDragEdge(null);
         const containingGroup = groups?.find(group => group.taskIds.includes(dragTargetTask.taskId));
-        const targetGroupLinked = Boolean(containingGroup?.taskIds.some(taskId => protectedTaskIdSet.has(taskId)))
-            || protectedTaskIdSet.has(dragTargetTask.taskId);
-        const draggedTaskLinked = currentDraggedTaskIds.some(taskId => protectedTaskIdSet.has(taskId));
+        const targetGroupLinked = Boolean(containingGroup?.isStatGroup || containingGroup?.linkedToMentalThread);
         if ((currentDraggedTaskIds.length > 0 && !currentDraggedTaskIds.includes(dragTargetTask.taskId)) || activeGroupId) {
             const addingToExpandedGroup = Boolean(
                 containingGroup
                 && currentDraggedTaskIds.length > 0
                 && !activeGroupId
                 && !targetGroupLinked
-                && !draggedTaskLinked
                 && currentDraggedTaskIds.some(taskId => !containingGroup.taskIds.includes(taskId)),
             );
             if (addingToExpandedGroup) {
@@ -3872,7 +3849,7 @@ export function HomePage() {
             setDragTargetGroupId(null);
             setDragTargetPosition(edge);
         }
-    }, [getDraggedGroupId, getDraggedTaskIds, groups, protectedTaskIdSet]);
+    }, [getDraggedGroupId, getDraggedTaskIds, groups]);
 
     const handleTaskDrop = useCallback((
         droppedTask: Task,
@@ -3889,10 +3866,8 @@ export function HomePage() {
             containingGroup
             && !containingGroup.isStatGroup
             && !containingGroup.linkedToMentalThread
-            && !containingGroup.taskIds.some(groupTaskId => protectedTaskIdSet.has(groupTaskId))
             && !activeGroupId
             && currentDraggedTaskIds.length > 0
-            && !currentDraggedTaskIds.some(taskId => protectedTaskIdSet.has(taskId))
             && currentDraggedTaskIds.some(taskId => !containingGroup.taskIds.includes(taskId)),
         );
         if (canAddToContainingGroup) {
@@ -3919,8 +3894,7 @@ export function HomePage() {
         )) return;
         handleDropOnTask(droppedTask, intent === 'inside' ? 'before' : intent);
     }, [addTasksToGroup, finishDragging, getDraggedGroupId, getDraggedTaskIds, groups,
-        groupTasksFromDrop, handleDropOnTask, moveDraggedOlderTasksToToday, moveTasksToToday, olderTasks,
-        protectedTaskIdSet]);
+        groupTasksFromDrop, handleDropOnTask, moveDraggedOlderTasksToToday, moveTasksToToday, olderTasks]);
 
     const refreshHomeTasks = useCallback(() => refreshTaskBuckets(true), [refreshTaskBuckets]);
 
@@ -4002,9 +3976,9 @@ export function HomePage() {
             if (item.kind === 'task') return renderTaskRow(item.task, options);
 
             const collapsed = collapsedGroupIds.has(item.expansionId);
+            const groupCompleted = item.tasks.length > 0 && item.tasks.every(task => task.completed);
             const linkedGroup = Boolean(item.group.linkedToMentalThread)
-                || Boolean(item.group.isStatGroup)
-                || item.tasks.some(task => Boolean(task.mentalThreadId));
+                || Boolean(item.group.isStatGroup);
             if (item.group.isStatGroup) {
                 const groupSelected = selectedGroupIdSet.has(item.group.groupId);
                 const groupDragging = item.tasks.some(task => draggedTaskIds.includes(task.taskId));
@@ -4142,12 +4116,24 @@ export function HomePage() {
                             >
                                 {collapsed ? <ChevronRightIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
                             </IconButton>
-                            <Box sx={{ flex: 1, minWidth: 0, textAlign: 'left', position: 'relative', top: '-1px' }}>
-                                <Typography component="span" variant="body2" display="inline" sx={{ fontWeight: 650, overflowWrap: 'anywhere' }}>
+                            <Box sx={{
+                                flex: 1,
+                                minWidth: 0,
+                                textAlign: 'left',
+                                position: 'relative',
+                                top: '-1px',
+                                display: 'flex',
+                                alignItems: 'baseline',
+                            }}>
+                                <Typography component="span" variant="body2" sx={{
+                                    fontWeight: 650,
+                                    overflowWrap: 'anywhere',
+                                    textDecoration: groupCompleted ? 'line-through' : 'none',
+                                }}>
                                     {item.group.name}
-                                    <Typography component="span" variant="caption" color="text.disabled" sx={{ ml: 1 }}>
-                                        {item.tasks.length}
-                                    </Typography>
+                                </Typography>
+                                <Typography component="span" variant="caption" color="text.disabled" sx={{ ml: 1, flexShrink: 0 }}>
+                                    {item.tasks.length}
                                 </Typography>
                             </Box>
                             <IconButton
@@ -4382,7 +4368,15 @@ export function HomePage() {
                                 }}
                             />
                         ) : (
-                            <Box sx={{ flex: 1, minWidth: 0, textAlign: 'left', position: 'relative', top: '-1px' }}>
+                            <Box sx={{
+                                flex: 1,
+                                minWidth: 0,
+                                textAlign: 'left',
+                                position: 'relative',
+                                top: '-1px',
+                                display: 'flex',
+                                alignItems: 'baseline',
+                            }}>
                                 <Box
                                     component="span"
                                     data-task-group-name="true"
@@ -4395,13 +4389,16 @@ export function HomePage() {
                                         cursor: 'text',
                                     }}
                                 >
-                                    <Typography component="span" variant="body2" display="inline" sx={{ fontWeight: 650 }}>
+                                    <Typography component="span" variant="body2" display="inline" sx={{
+                                        fontWeight: 650,
+                                        textDecoration: groupCompleted ? 'line-through' : 'none',
+                                    }}>
                                         {item.group.name}
-                                        <Typography component="span" variant="caption" color="text.disabled" sx={{ ml: 1 }}>
-                                            {item.tasks.length}
-                                        </Typography>
                                     </Typography>
                                 </Box>
+                                <Typography component="span" variant="caption" color="text.disabled" sx={{ ml: '-24px', flexShrink: 0 }}>
+                                    {item.tasks.length}
+                                </Typography>
                             </Box>
                         )}
                         <IconButton
@@ -4437,7 +4434,6 @@ export function HomePage() {
                                 event.stopPropagation();
                                 requestGroupDelete(item.group, event.currentTarget);
                             }}
-                            disabled={linkedGroup}
                         >
                             <DeleteOutlineIcon sx={{ fontSize: '1.1rem' }} />
                         </IconButton>
@@ -4543,7 +4539,64 @@ export function HomePage() {
         || focusVisibility === 'revealing'
         || focusVisibility === 'fading'
         || focusVisibility === 'returning';
-    const hasHomeTaskRows = visibleTasks.length > 0 || focusedPomodoroTask !== null || homeTaskListAnimating;
+    const showHomeSections = !allTodayTasksComplete || showCompletionDetails;
+    const hasHomeTaskRows = visibleTasks.length > 0 || focusedPomodoroTask !== null
+        || homeTaskListAnimating || allTodayTasksComplete;
+    const todayCompletionMessage = allTodayTasksComplete ? (
+        <ButtonBase
+            type="button"
+            aria-label={showCompletionDetails
+                ? 'Hide today’s completed tasks and details'
+                : 'Show today’s completed tasks and details'}
+            aria-expanded={showCompletionDetails}
+            aria-controls="completed-today-task-list home-completion-details"
+            onClick={event => {
+                event.stopPropagation();
+                const nextExpanded = !showCompletionDetails;
+                setShowCompletionDetails(nextExpanded);
+                completionCardExpansionRef.current = nextExpanded;
+                if (focusVisibility === 'hidden') showAllTasks();
+            }}
+            aria-live="polite"
+            sx={{
+                display: 'flex',
+                width: '100%',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 1.5,
+                mb: 2.5,
+                p: 2,
+                border: '1px solid',
+                borderColor: theme => alpha(theme.palette.success.main, 0.24),
+                borderRadius: 2.5,
+                backgroundColor: theme => alpha(theme.palette.success.main, 0.07),
+                animation: `${buttonFadeIn} 220ms ease-out`,
+                textAlign: 'left',
+                '&:hover': {
+                    backgroundColor: theme => alpha(theme.palette.success.main, 0.11),
+                },
+            }}
+        >
+            <Box sx={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
+                <Typography align="left" variant="subtitle1" sx={{ fontWeight: 700, lineHeight: 1.3 }}>
+                    All done now. Congrats!
+                </Typography>
+            </Box>
+            <Box sx={{
+                display: 'grid',
+                placeItems: 'center',
+                flexShrink: 0,
+                width: 38,
+                height: 38,
+                ml: 'auto',
+                color: 'success.main',
+                borderRadius: '50%',
+                backgroundColor: theme => alpha(theme.palette.success.main, 0.14),
+            }}>
+                <CheckCircleOutlineIcon />
+            </Box>
+        </ButtonBase>
+    ) : null;
     const dragInProgress = draggedTaskIds.length > 0 || draggedGroupId !== null;
 
     return (
@@ -4586,7 +4639,7 @@ export function HomePage() {
                         <SmartTaskInput defaultToToday onSubmit={createTask} />
                     </Box>
 
-                    {selectionActionsVisible && selectionActionsPosition && (
+                    {showHomeSections && selectionActionsVisible && selectionActionsPosition && (
                         <Portal>
                             <Box
                                 ref={selectionActionsRef}
@@ -4629,18 +4682,16 @@ export function HomePage() {
                                         ? <ReplayIcon fontSize="small" />
                                         : <CheckCircleOutlineIcon fontSize="small" color="success" />}
                                 </IconButton>
-                                {!hasLinkedSelection && (
-                                    <IconButton
-                                        size="small"
-                                        color="inherit"
-                                        aria-label="Move selected tasks to a date"
-                                        title="Move selected tasks to a date"
-                                        onClick={event => openBulkDatePicker(event.currentTarget)}
-                                        disabled={bulkActionLoading || selectedTasks.length === 0}
-                                    >
-                                        <CalendarMonthIcon fontSize="small" />
-                                    </IconButton>
-                                )}
+                                <IconButton
+                                    size="small"
+                                    color="inherit"
+                                    aria-label="Move selected tasks to a date"
+                                    title="Move selected tasks to a date"
+                                    onClick={event => openBulkDatePicker(event.currentTarget)}
+                                    disabled={bulkActionLoading || selectedTasks.length === 0}
+                                >
+                                    <CalendarMonthIcon fontSize="small" />
+                                </IconButton>
                                 {canCreateParentTask && (
                                     <IconButton
                                         size="small"
@@ -4672,18 +4723,16 @@ export function HomePage() {
                                         <GroupWorkIcon fontSize="small" />
                                     </IconButton>
                                 )}
-                                {!hasLinkedSelection && (
-                                    <IconButton
-                                        size="small"
-                                        color="error"
-                                        aria-label="Delete selected tasks"
-                                        title="Delete selected tasks"
-                                        onClick={event => requestBulkDelete(event.currentTarget)}
-                                        disabled={bulkActionLoading || selectedTasks.length === 0}
-                                    >
-                                        <DeleteSweepIcon fontSize="small" />
-                                    </IconButton>
-                                )}
+                                <IconButton
+                                    size="small"
+                                    color="error"
+                                    aria-label="Delete selected tasks"
+                                    title="Delete selected tasks"
+                                    onClick={event => requestBulkDelete(event.currentTarget)}
+                                    disabled={bulkActionLoading || selectedTasks.length === 0}
+                                >
+                                    <DeleteSweepIcon fontSize="small" />
+                                </IconButton>
                             </Box>
                         </Portal>
                     )}
@@ -4692,11 +4741,14 @@ export function HomePage() {
 
                     {homeContentReady && groups !== null && hasHomeTaskRows ? (
                         <>
+                            {todayCompletionMessage}
+
                             {/* Keep the live Pomodoro row mounted while the surrounding task list animates. */}
                             {focusedPomodoroTask && (
                                 <Box
                                     ref={focusedPomodoroRowRef}
                                     sx={{
+                                        display: showHomeSections ? undefined : 'none',
                                         '--focus-task-offset': `${focusTaskOffset}px`,
                                         opacity: focusVisibility === 'fading' ? 0 : 1,
                                         pointerEvents: focusVisibility === 'fading'
@@ -4718,7 +4770,7 @@ export function HomePage() {
                                 </Box>
                             )}
 
-                            {homeTaskControlsReady && focusedPomodoroTask && focusVisibility === 'hidden'
+                            {showHomeSections && homeTaskControlsReady && focusedPomodoroTask && focusVisibility === 'hidden'
                                 && tasksBelowFocus.length > 0 && (
                                 <Button
                                     size="small"
@@ -4738,12 +4790,16 @@ export function HomePage() {
                             )}
 
                             <Collapse
-                                in={showTasksBelowFocus}
-                                timeout={focusVisibility === 'hidden' ? 0 : { enter: 260, exit: TASKS_FADE_DURATION_MS }}
+                                in={showTasksBelowFocus && showHomeSections}
+                                timeout={focusVisibility === 'hidden' ? 0 : {
+                                    enter: 260,
+                                    exit: allTodayTasksComplete ? TASK_EXIT_DURATION_MS : TASKS_FADE_DURATION_MS,
+                                }}
                                 mountOnEnter
                                 unmountOnExit
                             >
                                 <Box
+                                    id={allTodayTasksComplete ? 'completed-today-task-list' : undefined}
                                     sx={{
                                         animation: focusVisibility === 'fading' || focusVisibility === 'sliding'
                                             ? `${tasksFadeAway} ${TASKS_FADE_DURATION_MS}ms ease-out forwards`
@@ -4830,9 +4886,7 @@ export function HomePage() {
                             </Collapse>
                         </>
                     ) : homeContentReady && groups !== null ? (
-                        <Typography
-                            variant="body1"
-                            color="text.secondary"
+                        <Box
                             onDragOver={(event) => {
                                 if (!hasActiveDrag()) return;
                                 event.preventDefault();
@@ -4853,121 +4907,141 @@ export function HomePage() {
                                 minHeight: 32,
                             }}
                         >
-                            Nothing scheduled for today.
-                        </Typography>
+                            {todayCompletionMessage ?? (
+                                <Typography variant="body1" color="text.secondary">
+                                    Nothing scheduled for today.
+                                </Typography>
+                            )}
+                        </Box>
                     ) : homeContentReady ? (
                         <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
                             <CircularProgress size={20} aria-label="Loading task groups" />
                         </Box>
                     ) : null}
 
-                    {(focusVisibility === 'all' || focusVisibility === 'fading') && (
-                        <Box
-                            sx={{
-                                animation: focusVisibility === 'fading'
-                                    ? `${tasksFadeAway} ${TASKS_FADE_DURATION_MS}ms ease-out forwards`
-                                    : 'none',
-                            }}
+                    <Box id="home-completion-details">
+                        <Collapse
+                            in={showHomeSections && (focusVisibility === 'all' || focusVisibility === 'fading')}
+                            timeout={focusVisibility === 'hidden' ? 0 : { enter: 260, exit: TASKS_FADE_DURATION_MS }}
+                            mountOnEnter
                         >
-                            <TodayEventsSection />
-                        </Box>
-                    )}
-
-                    <Collapse
-                        in={homeTaskControlsReady && (focusVisibility === 'all' || focusVisibility === 'fading')
-                            && showOlderTasks && olderTasks.length > 0}
-                        timeout={focusVisibility === 'hidden' ? 0 : { enter: 260, exit: 220 }}
-                        mountOnEnter
-                        unmountOnExit
-                        onEntered={() => olderTasksSectionRef.current?.scrollIntoView({
-                            behavior: 'smooth',
-                            block: 'center',
-                        })}
-                    >
-                        <Box
-                            ref={olderTasksSectionRef}
-                            onClick={clearSelection}
-                            sx={{
-                                mt: 2,
-                                pt: 1.25,
-                                borderTop: '1px solid',
-                                borderColor: 'divider',
-                                animation: focusVisibility === 'fading'
-                                    ? `${tasksFadeAway} ${TASKS_FADE_DURATION_MS}ms ease-out forwards`
-                                    : 'none',
-                            }}
-                        >
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                                <HistoryIcon color="action" fontSize="small" />
-                                <Typography variant="subtitle2" color="text.secondary">
-                                    Older tasks
-                                </Typography>
-                                <Typography variant="caption" color="text.disabled">
-                                    {olderTasks.length}
-                                </Typography>
+                            <Box
+                                id="today-events-section"
+                                sx={{
+                                    animation: focusVisibility === 'fading'
+                                        ? `${tasksFadeAway} ${TASKS_FADE_DURATION_MS}ms ease-out forwards`
+                                        : 'none',
+                                }}
+                            >
+                                <TodayEventsSection />
                             </Box>
-                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
-                                <AnimatedTaskList
-                                    items={olderTaskListItems}
-                                    renderItem={item => renderTaskList([item], {
-                                        reorderable: false,
-                                        draggable: true,
-                                        showScheduledDate: true,
-                                    })}
-                                    immediateRemovalTaskIds={pendingDeletedTaskIdSet}
-                                    layoutVisibilityKey={collapsedGroupIds}
-                                    layoutScope="older"
-                                    layoutSnapshotRef={olderLayoutSnapshotRef}
-                                />
-                            </Box>
-                        </Box>
-                    </Collapse>
+                        </Collapse>
 
-                    <Collapse
-                        in={homeTaskControlsReady && (focusVisibility === 'all' || focusVisibility === 'fading')
-                            && (olderTasks.length > 0 || (focusedPomodoroTask !== null && tasksBelowFocus.length > 0))}
-                        timeout={focusVisibility === 'hidden' ? 0 : { enter: 220, exit: 180 }}
-                        mountOnEnter
-                        unmountOnExit
-                    >
-                        <Box
-                            sx={{
-                                display: 'flex',
-                                flexWrap: 'wrap',
-                                justifyContent: 'center',
-                                gap: 0.5,
-                                mt: 2,
+                        <Collapse
+                            in={homeTaskControlsReady && showHomeSections
+                                && (focusVisibility === 'all' || focusVisibility === 'fading')
+                                && showOlderTasks && olderTasks.length > 0}
+                            timeout="auto"
+                            mountOnEnter
+                            unmountOnExit
+                            onEntered={() => {
+                                if (completionCardExpansionRef.current) {
+                                    completionCardExpansionRef.current = false;
+                                    return;
+                                }
+                                olderTasksSectionRef.current?.scrollIntoView({
+                                    behavior: 'smooth',
+                                    block: 'center',
+                                });
                             }}
                         >
-                            {focusedPomodoroTask && tasksBelowFocus.length > 0 && (
-                                <Button
-                                    variant="text"
-                                    size="small"
-                                    startIcon={<VisibilityOffIcon />}
-                                    onClick={event => {
-                                        event.stopPropagation();
-                                        hideAllTasks();
-                                    }}
-                                >
-                                    Hide all tasks
-                                </Button>
-                            )}
-                            {olderTasks.length > 0 && (
-                                <Button
-                                    variant="text"
-                                    size="small"
-                                    color={overdueCount > 0 ? 'warning' : 'inherit'}
-                                    startIcon={<HistoryIcon />}
-                                    onClick={event => {
-                                        event.stopPropagation();
-                                        toggleOlderTasks();
-                                    }}
-                                >
-                                    {showOlderTasks ? 'Hide older tasks' : `View older tasks (${olderTasks.length})`}
-                                </Button>
-                            )}
-                        </Box>
-                    </Collapse>
+                            <Box
+                                id="older-tasks-section"
+                                ref={olderTasksSectionRef}
+                                onClick={clearSelection}
+                                sx={{
+                                    mt: 2,
+                                    pt: 1.25,
+                                    borderTop: '1px solid',
+                                    borderColor: 'divider',
+                                    animation: focusVisibility === 'fading'
+                                        ? `${tasksFadeAway} ${TASKS_FADE_DURATION_MS}ms ease-out forwards`
+                                        : 'none',
+                                }}
+                            >
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                                    <HistoryIcon color="action" fontSize="small" />
+                                    <Typography variant="subtitle2" color="text.secondary">
+                                        Older tasks
+                                    </Typography>
+                                    <Typography variant="caption" color="text.disabled">
+                                        {olderTasks.length}
+                                    </Typography>
+                                </Box>
+                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
+                                    <AnimatedTaskList
+                                        items={olderTaskListItems}
+                                        renderItem={item => renderTaskList([item], {
+                                            reorderable: false,
+                                            draggable: true,
+                                            showScheduledDate: true,
+                                        })}
+                                        immediateRemovalTaskIds={pendingDeletedTaskIdSet}
+                                        layoutVisibilityKey={collapsedGroupIds}
+                                        layoutScope="older"
+                                        layoutSnapshotRef={olderLayoutSnapshotRef}
+                                    />
+                                </Box>
+                            </Box>
+                        </Collapse>
+
+                        <Collapse
+                            in={homeTaskControlsReady && showHomeSections
+                                && (focusVisibility === 'all' || focusVisibility === 'fading')
+                                && (olderTasks.length > 0 || (focusedPomodoroTask !== null && tasksBelowFocus.length > 0))}
+                            timeout={focusVisibility === 'hidden' ? 0 : { enter: 220, exit: 180 }}
+                            mountOnEnter
+                            unmountOnExit
+                        >
+                            <Box
+                                sx={{
+                                    display: 'flex',
+                                    flexWrap: 'wrap',
+                                    justifyContent: 'center',
+                                    gap: 0.5,
+                                    mt: 2,
+                                }}
+                            >
+                                {focusedPomodoroTask && tasksBelowFocus.length > 0 && (
+                                    <Button
+                                        variant="text"
+                                        size="small"
+                                        startIcon={<VisibilityOffIcon />}
+                                        onClick={event => {
+                                            event.stopPropagation();
+                                            hideAllTasks();
+                                        }}
+                                    >
+                                        Hide all tasks
+                                    </Button>
+                                )}
+                                {olderTasks.length > 0 && (
+                                    <Button
+                                        variant="text"
+                                        size="small"
+                                        color={overdueCount > 0 ? 'warning' : 'inherit'}
+                                        startIcon={<HistoryIcon />}
+                                        onClick={event => {
+                                            event.stopPropagation();
+                                            toggleOlderTasks();
+                                        }}
+                                    >
+                                        {showOlderTasks ? 'Hide older tasks' : `View older tasks (${olderTasks.length})`}
+                                    </Button>
+                                )}
+                            </Box>
+                        </Collapse>
+                    </Box>
                 </Box>
 
                 <Popover

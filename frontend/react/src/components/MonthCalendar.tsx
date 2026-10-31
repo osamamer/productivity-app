@@ -3,11 +3,11 @@ import {
     Alert, Box, Button, Checkbox, Chip, Collapse, DialogActions, DialogContent,
     DialogContentText, DialogTitle, Divider, FormControlLabel, FormGroup, List, ListItem,
     ListItemButton, ListItemText, Popover, Snackbar, IconButton, Fade, Skeleton, Stack,
-    Switch, Tabs, Tab, InputBase, ToggleButton, ToggleButtonGroup, Typography, Menu,
+    Switch, Tabs, Tab, InputBase, TextField, ToggleButton, ToggleButtonGroup, Typography, Menu,
     MenuItem, ListItemIcon,
 } from "@mui/material";
 import dayGridPlugin from "@fullcalendar/daygrid";
-import interactionPlugin, { DateClickArg } from "@fullcalendar/interaction";
+import interactionPlugin, { DateClickArg, Draggable, DropArg } from "@fullcalendar/interaction";
 import FullCalendar from "@fullcalendar/react";
 import React, { useMemo, useState, useCallback, useRef } from "react";
 import { createPortal } from 'react-dom';
@@ -22,7 +22,7 @@ import { StatDefinition, StatEntry } from "../types/Stats.ts";
 import { formatDurationValue, formatTimeValue } from "../services/utils/statValues.ts";
 import { DateStatCheckIn } from "./stats/DateStatCheckIn.tsx";
 import { statService } from "../services/api/statService.ts";
-import { addDays, addMonths, format, isAfter, startOfDay, startOfMonth, subDays } from "date-fns";
+import { addDays, addMonths, differenceInCalendarDays, format, isAfter, startOfDay, startOfMonth, subDays } from "date-fns";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
 import { DateTimePicker } from "@mui/x-date-pickers/DateTimePicker";
@@ -36,10 +36,13 @@ import ReplayIcon from '@mui/icons-material/Replay';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import ExpandLessRoundedIcon from '@mui/icons-material/ExpandLessRounded';
+import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import {
     CalendarEvent,
     CalendarEventInput,
     CalendarEventOccurrenceMoveInput,
+    CalendarEventReminderScope,
     CalendarEventStatus,
 } from "../types/CalendarEvent.ts";
 import { DayTemplate, DayTemplateApplication, DayTemplateRequest } from "../types/DayTemplate.ts";
@@ -74,6 +77,11 @@ type MonthCalenderProps = {
     onUpdateTask: (taskId: string, updates: TaskUpdate) => Promise<void>,
     onCreateEvent: (event: CalendarEventInput) => Promise<void>,
     onUpdateEvent: (eventId: string, event: CalendarEventInput) => Promise<void>,
+    onUpdateImportedEventReminder: (
+        eventId: string,
+        minutesBefore: number | null,
+        scope: CalendarEventReminderScope,
+    ) => Promise<CalendarEvent[]>,
     onMoveEventOccurrence: (eventId: string, occurrenceKey: string, move: CalendarEventOccurrenceMoveInput) => Promise<void>,
     onDeleteEvent: (eventId: string) => Promise<void>,
     onCancelEventOccurrence: (eventId: string, occurrenceKey: string) => Promise<void>,
@@ -286,6 +294,66 @@ function calendarEventInputWithMove(
     };
 }
 
+function importedEventReminderStart(event: CalendarEvent): string | null {
+    if (!event.allDay) return event.startTime;
+    if (!event.startDate) return null;
+
+    const [year, month, day] = event.startDate.split('-').map(Number);
+    const localMidnightAsUtc = Date.UTC(year, month - 1, day);
+    try {
+        const formatter = new Intl.DateTimeFormat('en-US', {
+            timeZone: event.timeZone,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hourCycle: 'h23',
+        });
+        let instant = localMidnightAsUtc;
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+            const parts = Object.fromEntries(formatter.formatToParts(instant)
+                .filter(part => part.type !== 'literal')
+                .map(part => [part.type, Number(part.value)]));
+            const renderedAsUtc = Date.UTC(
+                parts.year, parts.month - 1, parts.day,
+                parts.hour, parts.minute, parts.second,
+            );
+            instant = localMidnightAsUtc - (renderedAsUtc - instant);
+        }
+        return new Date(instant).toISOString();
+    } catch (error) {
+        console.warn('Could not resolve imported event time zone for reminder picker:', error);
+        return new Date(`${event.startDate}T00:00:00`).toISOString();
+    }
+}
+
+function isImportedEventPast(event: CalendarEvent, now = new Date()): boolean {
+    if (!event.allDay) {
+        const end = event.endTime ?? event.startTime;
+        return end != null && new Date(end).getTime() <= now.getTime();
+    }
+
+    const endDate = event.endDate ?? event.startDate;
+    if (!endDate) return false;
+
+    try {
+        const parts = new Intl.DateTimeFormat('en-US', {
+            timeZone: event.timeZone,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+        }).formatToParts(now);
+        const dateParts = Object.fromEntries(parts.map(part => [part.type, part.value]));
+        const today = `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
+        return endDate < today;
+    } catch (error) {
+        console.warn('Could not resolve imported event time zone:', error);
+        return endDate < format(now, 'yyyy-MM-dd');
+    }
+}
+
 function recurrenceDraftFromSeries(series: TaskSeries | null): TaskRecurrenceDraft {
     if (!series?.active) return defaultTaskRecurrence();
 
@@ -396,7 +464,7 @@ function CalendarLoadingState() {
 }
 
 export function MonthCalendar({
-    tasks, groups, events, calendars, calendarManager, onCreateTask, onDeleteTask, onDeleteTaskOccurrence, onDeleteTaskFutureOccurrences, onUpdateTask, onCreateEvent, onUpdateEvent, onDeleteEvent,
+    tasks, groups, events, calendars, calendarManager, onCreateTask, onDeleteTask, onDeleteTaskOccurrence, onDeleteTaskFutureOccurrences, onUpdateTask, onCreateEvent, onUpdateEvent, onUpdateImportedEventReminder, onDeleteEvent,
     onMoveEventOccurrence,
     onCancelEventOccurrence, onRestoreEventOccurrence, onUpdateEventOccurrenceStatus, onDeleteEventOccurrence, onDeleteEventFutureOccurrences,
     dayTemplates, onCreateDayTemplate, onUpdateDayTemplate, onDeleteDayTemplate, onApplyDayTemplate, onUndoDayTemplate,
@@ -453,6 +521,12 @@ export function MonthCalendar({
         occurrenceKey: string;
     } | null>(null);
     const [selectedEventDialogOpen, setSelectedEventDialogOpen] = useState(false);
+    const [importedReminderError, setImportedReminderError] = useState<{ eventId: string; message: string } | null>(null);
+    const importedReminderMutationVersionRef = useRef(0);
+    const [importedReminderScopeSelection, setImportedReminderScopeSelection] = useState<{
+        eventId: string;
+        scope: CalendarEventReminderScope;
+    } | null>(null);
     const [selectedTaskGroupId, setSelectedTaskGroupId] = useState<string | null>(null);
     const [selectedTaskGroupDate, setSelectedTaskGroupDate] = useState<string | null>(null);
     const [selectedTaskGroupDialogOpen, setSelectedTaskGroupDialogOpen] = useState(false);
@@ -505,6 +579,7 @@ export function MonthCalendar({
     const [calendarDeleteError, setCalendarDeleteError] = useState<string | null>(null);
     const [calendarDeleting, setCalendarDeleting] = useState(false);
     const [moreDayPopover, setMoreDayPopover] = useState<MoreDayPopoverState | null>(null);
+    const [completedDayTasksExpanded, setCompletedDayTasksExpanded] = useState(false);
     const [applyingTemplateId, setApplyingTemplateId] = useState<string | null>(null);
     const [templateFeedback, setTemplateFeedback] = useState<{
         id: number;
@@ -516,6 +591,9 @@ export function MonthCalendar({
     const templateFeedbackIdRef = useRef(0);
     const applyingTemplateRef = useRef<string | null>(null);
     const onApplyDayTemplateRef = useRef(onApplyDayTemplate);
+    const moveExpandedCalendarItemToDateRef = useRef<(eventApi: EventApi, targetDate: Date) => Promise<boolean>>(
+        async () => false,
+    );
     const dayCellListenersRef = useRef(new Map<HTMLElement, {
         dragOver: (event: DragEvent) => void;
         dragLeave: (event: DragEvent) => void;
@@ -528,6 +606,19 @@ export function MonthCalendar({
     const initiallyCenteredTodayRef = useRef(false);
     const moreLinkClickListenersRef = useRef(new Map<HTMLElement, (event: MouseEvent) => void>());
     const moreDayPopoverRef = useRef<HTMLDivElement | null>(null);
+
+    React.useEffect(() => {
+        if (!moreDayPopover || !moreDayPopoverRef.current) return;
+
+        const draggable = new Draggable(moreDayPopoverRef.current, {
+            itemSelector: '[data-calendar-draggable-item="true"]',
+            eventData: element => ({
+                title: element.dataset.calendarItemTitle || 'Calendar item',
+                create: false,
+            }),
+        });
+        return () => draggable.destroy();
+    }, [moreDayPopover]);
 
     React.useEffect(() => {
         if (!moreDayPopover) return;
@@ -645,6 +736,10 @@ export function MonthCalendar({
         () => events.find(event => event.id === selectedEventSelection?.eventId) ?? null,
         [events, selectedEventSelection]
     );
+    const importedReminderScope = selectedCalendarEvent
+        && importedReminderScopeSelection?.eventId === selectedCalendarEvent.id
+        ? importedReminderScopeSelection.scope
+        : 'EVENT';
     const selectedImportedEventPresentation = useMemo(
         () => selectedCalendarEvent?.sourceId
             ? importedEventPresentation(selectedCalendarEvent.title, selectedCalendarEvent.description)
@@ -1201,6 +1296,78 @@ export function MonthCalendar({
         }
     }, [onUndoDayTemplate, templateFeedback]);
 
+    const moveExpandedCalendarItemToDate = useCallback(async (eventApi: EventApi, targetDate: Date) => {
+        const eventType = eventApi.extendedProps.eventType;
+        if (eventType === 'task') {
+            const task = tasks.find(item => item.taskId === eventApi.id);
+            if (!task?.scheduledPerformDateTime) return false;
+
+            const scheduledPerformDateTime = taskDateTimeOnDate(task.scheduledPerformDateTime, targetDate);
+            if (!scheduledPerformDateTime
+                || taskDateKey(scheduledPerformDateTime) === taskDateKey(task.scheduledPerformDateTime)) {
+                return false;
+            }
+
+            try {
+                await onUpdateTask(task.taskId, { scheduledPerformDateTime });
+                return true;
+            } catch (error) {
+                console.error('Failed to move calendar task:', error);
+                return false;
+            }
+        }
+
+        if (eventType !== 'calendarEvent') return false;
+
+        const calendarEventId = eventApi.extendedProps.calendarEventId;
+        const occurrenceKey = eventApi.extendedProps.calendarEventOccurrenceKey;
+        const calendarEvent = typeof calendarEventId === 'string'
+            ? events.find(event => event.id === calendarEventId)
+            : undefined;
+        if (!calendarEvent || calendarEvent.sourceId || typeof occurrenceKey !== 'string'
+            || !eventApi.start || !eventApi.end) {
+            return false;
+        }
+
+        const daysToMove = differenceInCalendarDays(targetDate, eventApi.start);
+        if (daysToMove === 0) return false;
+
+        const move = calendarEventMoveInput(
+            calendarEvent.allDay,
+            addDays(eventApi.start, daysToMove),
+            addDays(eventApi.end, daysToMove),
+        );
+        if (!move) return false;
+
+        try {
+            if (calendarEvent.recurrenceFrequency === 'NONE') {
+                await onUpdateEvent(calendarEvent.id, calendarEventInputWithMove(calendarEvent, move));
+            } else {
+                await onMoveEventOccurrence(calendarEvent.id, occurrenceKey, move);
+            }
+            return true;
+        } catch (error) {
+            console.error('Failed to move calendar event:', error);
+            return false;
+        }
+    }, [events, onMoveEventOccurrence, onUpdateEvent, onUpdateTask, tasks]);
+    moveExpandedCalendarItemToDateRef.current = moveExpandedCalendarItemToDate;
+
+    const handleExpandedCalendarDrop = useCallback((arg: DropArg) => {
+        const draggedItemId = arg.draggedEl.dataset.calendarItemId;
+        const draggedItemType = arg.draggedEl.dataset.calendarItemType;
+        if (!draggedItemId || !draggedItemType) return;
+
+        const draggedEvent = calendarRef.current?.getApi().getEvents().find(candidate =>
+            candidate.id === draggedItemId && candidate.extendedProps.eventType === draggedItemType,
+        );
+        if (!draggedEvent) return;
+
+        void moveExpandedCalendarItemToDateRef.current(draggedEvent, arg.date).then(moved => {
+            if (moved) setMoreDayPopover(null);
+        });
+    }, []);
+
     const handleDayCellDidMount = useCallback((arg: DayCellMountArg) => {
         const contextMenu = (event: MouseEvent) => {
             let target = event.target instanceof Element
@@ -1227,9 +1394,11 @@ export function MonthCalendar({
         };
         const dragOver = (event: DragEvent) => {
             const types = event.dataTransfer ? Array.from(event.dataTransfer.types) : [];
-            if (!types.includes(DAY_TEMPLATE_DRAG_TYPE)) return;
+            const isTemplateDrag = types.includes(DAY_TEMPLATE_DRAG_TYPE);
+            if (!isTemplateDrag) return;
 
             event.preventDefault();
+            event.stopPropagation();
             if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
             arg.el.classList.add('calendar-template-drop-target');
         };
@@ -1239,15 +1408,18 @@ export function MonthCalendar({
             }
         };
         const drop = (event: DragEvent) => {
-            event.preventDefault();
             arg.el.classList.remove('calendar-template-drop-target');
             const templateId = event.dataTransfer?.getData(DAY_TEMPLATE_DRAG_TYPE);
-            if (templateId) void handleTemplateDrop(templateId, format(arg.date, 'yyyy-MM-dd'));
+            if (templateId) {
+                event.preventDefault();
+                event.stopPropagation();
+                void handleTemplateDrop(templateId, format(arg.date, 'yyyy-MM-dd'));
+            }
         };
 
-        arg.el.addEventListener('dragover', dragOver);
-        arg.el.addEventListener('dragleave', dragLeave);
-        arg.el.addEventListener('drop', drop);
+        arg.el.addEventListener('dragover', dragOver, true);
+        arg.el.addEventListener('dragleave', dragLeave, true);
+        arg.el.addEventListener('drop', drop, true);
         arg.el.addEventListener('contextmenu', contextMenu, true);
         dayCellListenersRef.current.set(arg.el, { dragOver, dragLeave, drop, contextMenu });
     }, [handleTemplateDrop]);
@@ -1255,9 +1427,9 @@ export function MonthCalendar({
     const handleDayCellWillUnmount = useCallback((arg: DayCellMountArg) => {
         const listeners = dayCellListenersRef.current.get(arg.el);
         if (!listeners) return;
-        arg.el.removeEventListener('dragover', listeners.dragOver);
-        arg.el.removeEventListener('dragleave', listeners.dragLeave);
-        arg.el.removeEventListener('drop', listeners.drop);
+        arg.el.removeEventListener('dragover', listeners.dragOver, true);
+        arg.el.removeEventListener('dragleave', listeners.dragLeave, true);
+        arg.el.removeEventListener('drop', listeners.drop, true);
         arg.el.removeEventListener('contextmenu', listeners.contextMenu, true);
         dayCellListenersRef.current.delete(arg.el);
     }, []);
@@ -1550,6 +1722,7 @@ export function MonthCalendar({
                 width: Math.min(cellRect.width, Math.max(0, window.innerWidth - 24)),
                 events: eventsForDay,
             });
+            setCompletedDayTasksExpanded(false);
         };
 
         arg.el.addEventListener('click', interceptMoreLinkClick, true);
@@ -1844,6 +2017,94 @@ export function MonthCalendar({
         }
     }, [closeTaskDialog, onRefreshTasks, onUpdateTask, saveTaskRecurrence, selectedTask, taskDraft, taskPriorityScope, taskCalendarScope]);
 
+    const completedDayTaskEvents = moreDayPopover?.events.filter(eventApi =>
+        eventApi.extendedProps.eventType === 'task' && eventApi.extendedProps.completed === true,
+    ) ?? [];
+    const visibleMoreDayEvents = moreDayPopover?.events.filter(eventApi =>
+        eventApi.extendedProps.eventType !== 'task' || eventApi.extendedProps.completed !== true,
+    ) ?? [];
+    const renderMoreDayEvent = (eventApi: EventApi, index: number) => {
+        const eventType = eventApi.extendedProps.eventType;
+        const isTaskEntity = eventType === 'task' || eventType === 'taskGroup';
+        const isTimedEntry = eventType === 'calendarEvent' || eventType === 'task';
+        const completed = eventApi.extendedProps.completed === true;
+        const isTask = eventType === 'task';
+        const calendarEventId = eventApi.extendedProps.calendarEventId;
+        const isDraggable = isTask || (eventType === 'calendarEvent'
+            && typeof calendarEventId === 'string'
+            && !events.find(event => event.id === calendarEventId)?.sourceId);
+        const isCancelled = eventApi.classNames.includes('calendar-cancelled-event');
+        const isTentative = eventApi.classNames.includes('calendar-tentative-event');
+        const taskColorClass = eventApi.classNames.find(className => className.startsWith('calendar-task-color-'));
+        const taskColor = taskColorClass
+            ? calendarColorHex(taskColorClass.replace('calendar-task-color-', ''), theme.palette.primary.main)
+            : eventApi.borderColor;
+        const calendarFillClass = eventApi.classNames.find(className => className.startsWith('calendar-event-fill-'));
+        const calendarFillColor = calendarFillClass
+            ? calendarColorHex(calendarFillClass.replace('calendar-event-fill-', ''), theme.palette.primary.main)
+            : null;
+        const eventTextColor = isCancelled
+            ? theme.palette.text.secondary
+            : calendarFillColor
+                ? calendarEventTextColor(calendarFillColor)
+                : theme.palette.text.primary;
+        const eventStartsOnDate = eventApi.start
+            ? format(eventApi.start, 'yyyy-MM-dd') === moreDayPopover?.date
+            : false;
+
+        return (
+            <Box
+                key={`${eventApi.id}-${index}`}
+                component="button"
+                type="button"
+                data-calendar-draggable-item={isDraggable ? 'true' : undefined}
+                data-calendar-item-id={isDraggable ? eventApi.id : undefined}
+                data-calendar-item-type={isDraggable ? eventType : undefined}
+                data-calendar-item-title={isDraggable ? eventApi.title || 'Calendar item' : undefined}
+                onClick={mouseEvent => handleMoreDayEventClick(eventApi, mouseEvent)}
+                onContextMenu={mouseEvent => handleMoreDayEventContextMenu(eventApi, mouseEvent)}
+                className={eventApi.classNames.join(' ')}
+                sx={{
+                    alignItems: 'center',
+                    backgroundColor: eventApi.backgroundColor || 'transparent',
+                    border: `1px ${isCancelled ? 'dotted' : isTentative ? 'dashed' : 'solid'} ${isTask ? theme.palette.divider : eventApi.borderColor || theme.palette.divider}`,
+                    borderLeft: isTask ? `3px solid ${taskColor}` : undefined,
+                    borderRadius: isTask ? '0 6px 6px 0' : 1.5,
+                    color: eventTextColor,
+                    cursor: isDraggable ? 'grab' : 'pointer',
+                    display: 'flex',
+                    font: 'inherit',
+                    gap: 0.5,
+                    justifyContent: 'flex-start',
+                    margin: '2px',
+                    minWidth: 0,
+                    overflow: 'hidden',
+                    padding: '4px 8px',
+                    textAlign: 'left',
+                    textDecoration: isCancelled ? 'line-through' : 'none',
+                    opacity: isCancelled ? 0.75 : undefined,
+                    whiteSpace: 'nowrap',
+                    width: 'calc(100% - 4px)',
+                    '&:hover': { filter: theme.palette.mode === 'dark' ? 'brightness(1.12)' : 'brightness(0.96)' },
+                    '&:active': isDraggable ? { cursor: 'grabbing' } : undefined,
+                    '&:focus-visible': { outline: `2px solid ${theme.palette.primary.main}` },
+                }}
+            >
+                {isTaskEntity && completed && (
+                    <CheckIcon aria-label="Completed" sx={{ color: theme.palette.success.main, flexShrink: 0, fontSize: '1rem' }} />
+                )}
+                <Box component="span" sx={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {eventApi.title || 'Untitled'}
+                </Box>
+                {isTimedEntry && !eventApi.allDay && eventApi.start && eventStartsOnDate && (
+                    <Box component="span" sx={{ flex: '0 0 auto', fontSize: '0.72rem', fontWeight: 700, ml: 'auto', pl: 0.5 }}>
+                        {calendarEventTimeLabel(eventApi.start)}
+                    </Box>
+                )}
+            </Box>
+        );
+    };
+
     return (
         <>
             {/* Portal outside the scroller, but keep the expansion within its body below the header. */}
@@ -1881,78 +2142,80 @@ export function MonthCalendar({
                             },
                         }}
                     >
-                        <IconButton
-                            aria-label="Close day events"
-                            size="small"
-                            onClick={() => setMoreDayPopover(null)}
-                            sx={{ position: 'absolute', top: 4, right: 4, zIndex: 1, color: 'text.secondary' }}
-                        >
-                            <CloseRoundedIcon fontSize="small" />
-                        </IconButton>
+                        <Box sx={{
+                            position: 'absolute',
+                            top: 2,
+                            left: 4,
+                            right: 4,
+                            height: 36,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            zIndex: 1,
+                        }}>
+                            <IconButton
+                                aria-label="Close day events"
+                                size="small"
+                                onClick={() => setMoreDayPopover(null)}
+                                sx={{ color: 'text.secondary' }}
+                            >
+                                <CloseRoundedIcon fontSize="small" />
+                            </IconButton>
+                            <Box
+                                component="span"
+                                sx={{
+                                    alignItems: 'center',
+                                    display: 'inline-flex',
+                                    height: 24,
+                                    lineHeight: 1,
+                                    minWidth: 0,
+                                    overflow: 'hidden',
+                                    padding: '0 4px',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                    color: theme.palette.text.primary,
+                                    fontWeight: moreDayPopover.date === format(new Date(), 'yyyy-MM-dd')
+                                        ? isWeekView ? 600 : 800
+                                        : undefined,
+                                }}
+                            >
+                                {format(new Date(`${moreDayPopover.date}T12:00:00`), 'd')}
+                            </Box>
+                        </Box>
                         <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', px: 0.5, pt: 5.5, pb: 0.5 }}>
-                            <Stack spacing={0.25}>
-                                {moreDayPopover.events.map((eventApi, index) => {
-                                    const eventType = eventApi.extendedProps.eventType;
-                                    const isTaskEntity = eventType === 'task' || eventType === 'taskGroup';
-                                    const isTimedEntry = eventType === 'calendarEvent' || eventType === 'task';
-                                    const completed = eventApi.extendedProps.completed === true;
-                                    const isTask = eventType === 'task';
-                                    const isCancelled = eventApi.classNames.includes('calendar-cancelled-event');
-                                    const isTentative = eventApi.classNames.includes('calendar-tentative-event');
-                                    const taskColorClass = eventApi.classNames.find(className => className.startsWith('calendar-task-color-'));
-                                    const taskColor = taskColorClass
-                                        ? calendarColorHex(taskColorClass.replace('calendar-task-color-', ''), theme.palette.primary.main)
-                                        : eventApi.borderColor;
-                                    const eventStartsOnDate = eventApi.start
-                                        ? format(eventApi.start, 'yyyy-MM-dd') === moreDayPopover.date
-                                        : false;
-
-                                    return (
-                                        <Box
-                                            key={`${eventApi.id}-${index}`}
-                                            component="button"
-                                            type="button"
-                                            onClick={mouseEvent => handleMoreDayEventClick(eventApi, mouseEvent)}
-                                            onContextMenu={mouseEvent => handleMoreDayEventContextMenu(eventApi, mouseEvent)}
-                                            className={eventApi.classNames.join(' ')}
+                            <Stack spacing={0}>
+                                {visibleMoreDayEvents.map(renderMoreDayEvent)}
+                                {completedDayTaskEvents.length > 0 && (
+                                    <>
+                                        <Button
+                                            fullWidth
+                                            size="small"
+                                            aria-expanded={completedDayTasksExpanded}
+                                            onClick={() => setCompletedDayTasksExpanded(expanded => !expanded)}
+                                            startIcon={completedDayTasksExpanded
+                                                ? <ExpandLessRoundedIcon />
+                                                : <ExpandMoreRoundedIcon />}
                                             sx={{
-                                                alignItems: 'center',
-                                                backgroundColor: eventApi.backgroundColor || 'transparent',
-                                                border: `1px ${isCancelled ? 'dotted' : isTentative ? 'dashed' : 'solid'} ${isTask ? theme.palette.divider : eventApi.borderColor || theme.palette.divider}`,
-                                                borderLeft: isTask ? `3px solid ${taskColor}` : undefined,
-                                                borderRadius: 1.5,
-                                                color: isCancelled ? theme.palette.text.secondary : eventApi.textColor || theme.palette.text.primary,
-                                                cursor: 'pointer',
-                                                display: 'flex',
-                                                font: 'inherit',
-                                                gap: 0.5,
                                                 justifyContent: 'flex-start',
-                                                margin: 0,
-                                                minWidth: 0,
-                                                overflow: 'hidden',
-                                                padding: '4px 8px',
+                                                minHeight: 32,
+                                                px: 1,
+                                                py: 0.5,
+                                                borderRadius: 0,
+                                                color: 'text.secondary',
+                                                font: 'inherit',
+                                                textTransform: 'none',
                                                 textAlign: 'left',
-                                                textDecoration: isCancelled ? 'line-through' : 'none',
-                                                whiteSpace: 'nowrap',
-                                                width: '100%',
-                                                '&:hover': { filter: theme.palette.mode === 'dark' ? 'brightness(1.12)' : 'brightness(0.96)' },
-                                                '&:focus-visible': { outline: `2px solid ${theme.palette.primary.main}` },
                                             }}
                                         >
-                                            {isTaskEntity && completed && (
-                                                <CheckIcon aria-label="Completed" sx={{ color: theme.palette.success.main, flexShrink: 0, fontSize: '1rem' }} />
-                                            )}
-                                            <Box component="span" sx={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                {eventApi.title || 'Untitled'}
-                                            </Box>
-                                            {isTimedEntry && !eventApi.allDay && eventApi.start && eventStartsOnDate && (
-                                                <Box component="span" sx={{ flex: '0 0 auto', fontSize: '0.72rem', fontWeight: 700, ml: 'auto', pl: 0.5 }}>
-                                                    {calendarEventTimeLabel(eventApi.start)}
-                                                </Box>
-                                            )}
-                                        </Box>
-                                    );
-                                })}
+                                            Completed ({completedDayTaskEvents.length})
+                                        </Button>
+                                        <Collapse in={completedDayTasksExpanded}>
+                                            <Stack spacing={0}>
+                                                {completedDayTaskEvents.map(renderMoreDayEvent)}
+                                            </Stack>
+                                        </Collapse>
+                                    </>
+                                )}
                             </Stack>
                         </Box>
                     </Box>,
@@ -2545,6 +2808,8 @@ export function MonthCalendar({
                             eventWillUnmount={handleEventWillUnmount}
                             eventClick={handleEventClick}
                             eventDrop={handleEventDrop}
+                            droppable={true}
+                            drop={handleExpandedCalendarDrop}
                             dateClick={handleDateClick}
                             datesSet={handleDatesSet}
                             dayCellDidMount={handleDayCellDidMount}
@@ -2751,7 +3016,7 @@ export function MonthCalendar({
                 slotProps={{ paper: { sx: { borderRadius: '8px', pt: 1 } } }}
             >
                 {selectedCalendarEvent?.sourceId ? (
-                    <Stack spacing={1} sx={{ p: 2, minWidth: 280 }}>
+                    <Stack key={selectedCalendarEvent.id} spacing={1} sx={{ p: 2, minWidth: 280 }}>
                         <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
                             <Typography
                                 variant="subtitle1"
@@ -2791,7 +3056,52 @@ export function MonthCalendar({
                                 {selectedImportedEventPresentation.description}
                             </Typography>
                         )}
-                        <Typography variant="caption" color="text.secondary">Read-only imported event</Typography>
+                        {!isImportedEventPast(selectedCalendarEvent) && (
+                            <Stack spacing={1} sx={{ pt: 0.75 }}>
+                                <TextField
+                                    select
+                                    label="Apply reminder to"
+                                    size="small"
+                                    value={importedReminderScope}
+                                    onChange={event => setImportedReminderScopeSelection({
+                                        eventId: selectedCalendarEvent.id,
+                                        scope: event.target.value as CalendarEventReminderScope,
+                                    })}
+                                    onClick={event => event.stopPropagation()}
+                                    fullWidth
+                                >
+                                    <MenuItem value="EVENT">This event</MenuItem>
+                                    <MenuItem value="SERIES">All recurrences</MenuItem>
+                                </TextField>
+                                <TaskReminderPicker
+                                    value={selectedCalendarEvent.reminderMinutesBefore}
+                                    targetLabel="event"
+                                    scheduledAt={importedEventReminderStart(selectedCalendarEvent)}
+                                    preventPastReminders
+                                    disableNewReminders={selectedCalendarEvent.status === 'CANCELLED'}
+                                    onChange={minutesBefore => {
+                                        const version = ++importedReminderMutationVersionRef.current;
+                                        setImportedReminderError(null);
+                                        void onUpdateImportedEventReminder(
+                                            selectedCalendarEvent.id, minutesBefore, importedReminderScope,
+                                        )
+                                            .catch(error => {
+                                                console.error('Failed to save imported event reminder:', error);
+                                                if (importedReminderMutationVersionRef.current === version) {
+                                                    setImportedReminderError({
+                                                        eventId: selectedCalendarEvent.id,
+                                                        message: 'Could not save the reminder. Try again.',
+                                                    });
+                                                }
+                                            });
+                                    }}
+                                />
+                                {importedReminderError?.eventId === selectedCalendarEvent.id && (
+                                    <Alert severity="error">{importedReminderError.message}</Alert>
+                                )}
+                            </Stack>
+                        )}
+                        <Typography variant="caption" color="text.secondary">Imported event details are read-only</Typography>
                     </Stack>
                 ) : selectedCalendarEvent && (
                     <CalendarEventForm
@@ -2869,15 +3179,21 @@ export function MonthCalendar({
                 TransitionComponent={Fade}
                 transitionDuration={{ enter: 180, exit: 140 }}
                 fullWidth
-                maxWidth="sm"
+                maxWidth="xs"
+                slotProps={{ paper: { sx: { borderRadius: '8px' } } }}
             >
-                <DialogTitle>{selectedTaskGroup?.name || 'Task group'}</DialogTitle>
-                <DialogContent dividers sx={{ p: 0 }}>
+                <DialogTitle sx={{ px: 2, py: 1.25, fontSize: '1rem' }}>
+                    {selectedTaskGroup?.name || 'Task group'}
+                </DialogTitle>
+                <DialogContent dividers sx={{ p: 0, maxHeight: 'min(60vh, 420px)', overflowY: 'auto' }}>
                     {selectedTaskGroupTasks.length > 0 ? (
                         <List disablePadding>
                             {selectedTaskGroupTasks.map(task => (
                                 <ListItem key={task.taskId} disablePadding divider>
-                                    <ListItemButton onClick={event => openTaskEditor(task, { top: event.clientY, left: event.clientX })}>
+                                    <ListItemButton
+                                        onClick={event => openTaskEditor(task, { top: event.clientY, left: event.clientX })}
+                                        sx={{ px: 2, py: 0.75 }}
+                                    >
                                         <ListItemText
                                             primary={task.name || 'Untitled Task'}
                                             secondary={`${format(new Date(task.scheduledPerformDateTime!), 'MMM d, yyyy, HH:mm')} · ${task.completed ? 'Completed' : 'Open'}`}
@@ -2900,7 +3216,7 @@ export function MonthCalendar({
                         </Box>
                     )}
                 </DialogContent>
-                <DialogActions>
+                <DialogActions sx={{ px: 1.5, py: 0.75 }}>
                     <Button onClick={() => setSelectedTaskGroupDialogOpen(false)}>Close</Button>
                 </DialogActions>
             </CompactPopover>

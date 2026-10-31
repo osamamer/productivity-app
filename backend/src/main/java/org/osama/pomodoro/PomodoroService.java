@@ -104,6 +104,7 @@ public class PomodoroService {
         pomodoro.setSessionActive(true);
         pomodoro.setSessionRunning(true);
         pomodoro.setPhase(PomodoroPhase.FOCUS);
+        pomodoro.setPhaseDurationAdjustmentSeconds(0);
         pomodoroRepository.save(pomodoro);
 
         pausePomodoroUpdates(event.getTaskId());
@@ -178,6 +179,7 @@ public class PomodoroService {
             pomodoro.setPhase(pomodoro.isAutoStartSessions()
                     ? PomodoroPhase.BREAK
                     : PomodoroPhase.WAITING_FOR_BREAK);
+            pomodoro.setPhaseDurationAdjustmentSeconds(0);
         }
         pomodoroRepository.save(pomodoro);
 
@@ -293,6 +295,7 @@ public class PomodoroService {
         PomodoroPhase phase = currentPhase(pomodoro);
         if (phase == PomodoroPhase.WAITING_FOR_BREAK) {
             pomodoro.setPhase(PomodoroPhase.BREAK);
+            pomodoro.setPhaseDurationAdjustmentSeconds(0);
             pomodoro.setSecondsPassedInSession(0);
             pomodoro.setSecondsUntilNextTransition(0);
             pomodoroRepository.save(pomodoro);
@@ -307,6 +310,7 @@ public class PomodoroService {
 
         if (phase == PomodoroPhase.WAITING_FOR_FOCUS) {
             pomodoro.setPhase(PomodoroPhase.FOCUS);
+            pomodoro.setPhaseDurationAdjustmentSeconds(0);
             pomodoro.setSecondsPassedInSession(0);
             pomodoro.setSecondsUntilNextTransition(0);
             pomodoroRepository.save(pomodoro);
@@ -334,6 +338,7 @@ public class PomodoroService {
         }
 
         pomodoro.setPhase(PomodoroPhase.WAITING_FOR_FOCUS);
+        pomodoro.setPhaseDurationAdjustmentSeconds(0);
         pomodoro.setSecondsPassedInSession(0);
         pomodoro.setSecondsUntilNextTransition(0);
         pomodoroRepository.save(pomodoro);
@@ -357,6 +362,7 @@ public class PomodoroService {
         pausePomodoroUpdates(taskId);
         scheduleService.finishBreakEarly(taskId);
         pomodoro.setPhase(PomodoroPhase.FOCUS);
+        pomodoro.setPhaseDurationAdjustmentSeconds(0);
         pomodoro.setSecondsPassedInSession(0);
         pomodoro.setSecondsUntilNextTransition(
                 pomodoroSettings.durationInSeconds(pomodoro.getFocusDuration(), pomodoro.isSecondsMode()));
@@ -382,6 +388,7 @@ public class PomodoroService {
         taskSessionService.endSession(taskId);
 
         pomodoro.setPhase(PomodoroPhase.BREAK);
+        pomodoro.setPhaseDurationAdjustmentSeconds(0);
         pomodoro.setSessionActive(false);
         pomodoro.setSessionRunning(false);
         pomodoro.setSecondsPassedInSession(0);
@@ -396,6 +403,56 @@ public class PomodoroService {
         sendAsyncUpdate(taskId);
         log.info("Pomodoro focus ended early for a break: userId={} taskId={} focusNumber={} completedFocusSessions={}",
                 userId, taskId, pomodoro.getCurrentFocusNumber(), pomodoro.getCompletedFocusSessions());
+    }
+
+    @Transactional
+    public Pomodoro adjustCurrentPhaseTime(String taskId, String expectedPomodoroId,
+                                           PomodoroPhase expectedPhase, int expectedFocusNumber,
+                                           int deltaSeconds, String userId) {
+        if (deltaSeconds == 0 || deltaSeconds < -3_600 || deltaSeconds > 3_600) {
+            throw new IllegalArgumentException("Pomodoro time adjustment must be between -60 and 60 minutes.");
+        }
+
+        Task task = taskService.getTaskForUserOrThrow(taskId, userId);
+        Pomodoro pomodoro = getOwnedActivePomodoro(task.getTaskId(), userId);
+        PomodoroPhase phase = currentPhase(pomodoro);
+        if (!Objects.equals(expectedPomodoroId, pomodoro.getPomodoroId())
+                || phase != expectedPhase || pomodoro.getCurrentFocusNumber() != expectedFocusNumber) {
+            throw new IllegalStateException("Pomodoro phase changed before the time adjustment was applied.");
+        }
+        if (phase != PomodoroPhase.FOCUS && phase != PomodoroPhase.BREAK) {
+            throw new IllegalStateException("Pomodoro does not have an adjustable active phase.");
+        }
+
+        LocalDateTime pausedAt = null;
+        if (phase == PomodoroPhase.FOCUS && !pomodoro.isSessionRunning()) {
+            TaskSession activeSession = taskSessionRepository
+                    .findSessionByAssociatedTaskIdAndActiveIsTrue(task.getTaskId())
+                    .orElseThrow(() -> new IllegalStateException("Pomodoro focus session is not active."));
+            pausedAt = activeSession.getLastPauseTime();
+            if (pausedAt == null) {
+                throw new IllegalStateException("Pomodoro focus session has no pause timestamp.");
+            }
+        }
+
+        ScheduleService.PhaseTimeAdjustment adjustment = scheduleService.adjustCurrentPhaseEnd(
+                task.getTaskId(), phase, pausedAt, pomodoro.getSecondsUntilNextTransition(), deltaSeconds);
+        pomodoro.setSecondsUntilNextTransition(adjustment.remainingSeconds());
+        if (phase == PomodoroPhase.BREAK) {
+            pomodoro.setPhaseDurationAdjustmentSeconds(
+                    pomodoro.getPhaseDurationAdjustmentSeconds() + Math.toIntExact(adjustment.appliedDeltaSeconds()));
+        }
+        pomodoroRepository.save(pomodoro);
+
+        if (pausedAt == null) {
+            sendAsyncUpdate(task.getTaskId());
+        } else {
+            sendUpdate(pomodoro);
+        }
+        log.info("Pomodoro phase time adjusted: userId={} pomodoroId={} taskId={} phase={} requestedDeltaSeconds={} appliedDeltaSeconds={} remainingSeconds={}",
+                userId, pomodoro.getPomodoroId(), task.getTaskId(), phase, deltaSeconds,
+                adjustment.appliedDeltaSeconds(), adjustment.remainingSeconds());
+        return pomodoro;
     }
 
     @Transactional
@@ -601,6 +658,7 @@ public class PomodoroService {
             long breakDuration = pomodoro.getCurrentFocusNumber() % pomodoro.getLongBreakCooldown() == 0
                     ? pomodoroSettings.durationInSeconds(pomodoro.getLongBreakDuration(), pomodoro.isSecondsMode())
                     : pomodoroSettings.durationInSeconds(pomodoro.getShortBreakDuration(), pomodoro.isSecondsMode());
+            breakDuration = Math.max(0, breakDuration + pomodoro.getPhaseDurationAdjustmentSeconds());
             return Math.max(0, Math.min(breakDuration, breakDuration - secondsUntilNext));
         }
         return 0;

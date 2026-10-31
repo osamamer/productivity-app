@@ -8,7 +8,7 @@ import { useTheme } from '@mui/material/styles';
 import { format, parseISO, eachDayOfInterval } from 'date-fns';
 import { StatDefinition, StatEntry, StatEntryStatus } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
-import { getBooleanChoiceColor, getStatFeedbackColor, showStatFeedback } from '../../services/statFeedback';
+import { getBooleanChoiceColor, getBooleanChoiceTextColor, getStatFeedbackColor, showStatFeedback } from '../../services/statFeedback';
 import {
     durationValueToMinutes, formatDurationValue, formatTimeValue,
     minutesToDurationValue, minutesToTimeValue, timeValueToMinutes,
@@ -112,16 +112,14 @@ function buildWeeklyChartPoints(
         const week = days.slice(index, index + 7);
         const values = week
             .filter(day => entryStatuses.get(format(day, 'yyyy-MM-dd')) !== 'NOT_PLANNED')
-            .map(day => valueForDate(entriesByDate, format(day, 'yyyy-MM-dd'), definition))
-            .filter((value): value is number => value !== undefined);
+            .map(day => valueForDate(entriesByDate, format(day, 'yyyy-MM-dd'), definition) ?? 0);
         const comparisonValues = week
             .filter(day => comparisonStatuses.get(format(day, 'yyyy-MM-dd')) !== 'NOT_PLANNED')
             .map(day => valueForDate(
                 comparisonEntriesByDate,
                 format(day, 'yyyy-MM-dd'),
                 comparisonDefinition,
-            ))
-            .filter((value): value is number => value !== undefined);
+            ) ?? 0);
 
         points.push({
             date: format(week[0], 'yyyy-MM-dd'),
@@ -915,7 +913,7 @@ export const StatLineChart = React.memo(function StatLineChart({
                         >
                             <ToggleButton
                                 value="yes"
-                                sx={{ '&.Mui-selected': { bgcolor: `${getBooleanChoiceColor(definition, 1)}.main`, color: 'white', '&:hover': { bgcolor: `${getBooleanChoiceColor(definition, 1)}.dark` } } }}
+                                sx={{ '&.Mui-selected': { bgcolor: `${getBooleanChoiceColor(definition, 1)}.main`, color: getBooleanChoiceTextColor(definition, 1), '&:hover': { bgcolor: `${getBooleanChoiceColor(definition, 1)}.dark` } } }}
                                         >
                                             Yes
                                         </ToggleButton>
@@ -927,7 +925,7 @@ export const StatLineChart = React.memo(function StatLineChart({
                                         </ToggleButton>
                                         <ToggleButton
                                             value="no"
-                                sx={{ '&.Mui-selected': { bgcolor: `${getBooleanChoiceColor(definition, 0)}.main`, color: 'white', '&:hover': { bgcolor: `${getBooleanChoiceColor(definition, 0)}.dark` } } }}
+                                sx={{ '&.Mui-selected': { bgcolor: `${getBooleanChoiceColor(definition, 0)}.main`, color: getBooleanChoiceTextColor(definition, 0), '&:hover': { bgcolor: `${getBooleanChoiceColor(definition, 0)}.dark` } } }}
                                         >
                                             No
                                         </ToggleButton>

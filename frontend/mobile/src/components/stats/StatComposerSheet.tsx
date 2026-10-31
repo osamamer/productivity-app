@@ -142,7 +142,9 @@ export function StatComposerSheet({ visible, definition, onClose, onCreated, onU
         <AppText variant="label">Type</AppText>
         <ChoiceChips value={type} onChange={next => {
           setType(next);
-          setMorality(next === 'BOOLEAN' ? 'NEUTRAL' : morality);
+          setMorality(next === 'BOOLEAN'
+            || morality === 'NICE_TO_HAVE'
+            || morality === 'NICE_TO_AVOID' ? 'NEUTRAL' : morality);
           setThreshold('');
           setDurationThreshold(null);
         }} options={[
@@ -166,6 +168,12 @@ export function StatComposerSheet({ visible, definition, onClose, onCreated, onU
         options={type === 'TIME' ? [
           { value: 'GOOD' as const, label: 'Earlier is better' },
           { value: 'BAD' as const, label: 'Later is better' },
+          { value: 'NEUTRAL' as const, label: 'Neutral' },
+        ] : type === 'BOOLEAN' ? [
+          { value: 'GOOD' as const, label: 'A must' },
+          { value: 'BAD' as const, label: 'A must-avoid' },
+          { value: 'NICE_TO_HAVE' as const, label: 'Nice to have' },
+          { value: 'NICE_TO_AVOID' as const, label: 'Nice to avoid' },
           { value: 'NEUTRAL' as const, label: 'Neutral' },
         ] : [
           { value: 'GOOD' as const, label: 'Higher is better' },

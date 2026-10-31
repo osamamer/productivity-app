@@ -23,6 +23,7 @@ import {
   timeValueToScale,
   timeValueToDisplayScale,
 } from '@/lib/statValues';
+import { booleanStatColor } from '@/lib/statMorality';
 import { AppText } from '../ui/AppText';
 
 const RECENT_DAYS = 5;
@@ -37,13 +38,6 @@ const SLEEP_GREEN_BAND_MINUTES = 60;
 const SLEEP_BAD_COLOR_RANGE_MINUTES = 3 * 60;
 const MATURE_GOOD = { light: '#376A4F', dark: '#578469' };
 const MATURE_BAD = { light: '#9B4443', dark: '#B76561' };
-
-function booleanColors(definition: StatDefinition, dark: boolean): { yes: string; no: string } {
-  const good = dark ? MATURE_GOOD.dark : MATURE_GOOD.light;
-  const bad = dark ? MATURE_BAD.dark : MATURE_BAD.light;
-  return definition.morality === 'BAD' ? { yes: bad, no: good } : { yes: good, no: bad };
-}
-
 function isSleepStat(definition: StatDefinition): boolean {
   return definition.systemKey === 'sleep_hours'
     || definition.systemKey === 'sleep_time'
@@ -205,7 +199,8 @@ function formatDurationAxisValue(value: number): string {
 }
 
 function effectiveMorality(definition: StatDefinition): 'GOOD' | 'BAD' | 'NEUTRAL' {
-  return definition.morality ?? 'NEUTRAL';
+  const morality = definition.morality ?? 'NEUTRAL';
+  return morality === 'GOOD' || morality === 'BAD' ? morality : 'NEUTRAL';
 }
 
 function mixHexColors(first: string, second: string, firstWeight: number): string {
@@ -243,7 +238,7 @@ function thresholdGoodnessRatio(definition: StatDefinition, value: number): numb
     || !Number.isFinite(definition.goodThreshold)) return null;
 
   const morality = effectiveMorality(definition);
-  if (morality === 'NEUTRAL') return null;
+  if (morality !== 'GOOD' && morality !== 'BAD') return null;
 
   const threshold = definition.goodThreshold;
   return definition.type === 'TIME'
@@ -305,12 +300,15 @@ function getCircleColor(
   if (value === undefined) return dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)';
   if (status === 'NOT_PLANNED') return colors.notPlanned;
 
-  // Boolean values use the same semantic colors as the entry controls. In
-  // particular, a BAD stat such as cigarettes should make Yes red and No
-  // green instead of flowing through the numeric threshold palette.
+  // The new Nice to have/avoid choices use the not-planned yellow.
   if (definition.type === 'BOOLEAN') {
-    const { yes, no } = booleanColors(definition, dark);
-    return value === 1 ? yes : no;
+    if (definition.morality === 'NICE_TO_HAVE' || definition.morality === 'NICE_TO_AVOID') {
+      return booleanStatColor(definition, value === 1 ? 1 : 0, colors);
+    }
+    const good = dark ? MATURE_GOOD.dark : MATURE_GOOD.light;
+    const bad = dark ? MATURE_BAD.dark : MATURE_BAD.light;
+    const preferred = definition.morality === 'BAD' ? value === 0 : value === 1;
+    return preferred ? good : bad;
   }
 
   const thresholdColor = thresholdCircleColor(
@@ -689,13 +687,13 @@ function DurationLineHistory({
 }) {
   const [plotWidth, setPlotWidth] = useState(0);
   const bars = buckets.map(bucket => {
-    const values = bucket.map(date => entriesByDate.get(date)).filter((value): value is number => value !== undefined);
+    const values = bucket.map(date => entriesByDate.get(date) ?? 0);
     return {
       date: bucket[0],
       from: bucket[0],
       to: bucket[bucket.length - 1],
-      value: values.length > 0 ? values.reduce((total, value) => total + value, 0) / values.length : undefined,
-      sampleCount: values.length,
+      value: bucket.length > 0 ? values.reduce((total, value) => total + value, 0) / bucket.length : undefined,
+      sampleCount: bucket.length,
     };
   });
   const recordedValues = bars.map(bar => bar.value).filter((value): value is number => value !== undefined);
@@ -1186,10 +1184,9 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, dateFrom
   const chartPoints = useMemo(() => {
     return buckets
       .map((bucket, index) => {
-        const values = bucket
+        const eligibleDates = bucket
           .filter(date => !(definition.type === 'BOOLEAN' && statusesByDate.get(date) === 'NOT_PLANNED'))
-          .map(date => entriesByDate.get(date) ?? (definition.type === 'BOOLEAN' ? 0 : undefined))
-          .filter((value): value is number => value !== undefined);
+        const values = eligibleDates.map(date => entriesByDate.get(date) ?? 0);
         const value = values.length > 0 ? values.reduce((total, item) => total + item, 0) / values.length : undefined;
         if (value === undefined || !hasHistory) return undefined;
         const ratio = Math.max(0, Math.min(1, (value - domainMinimum) / chartSpan));
@@ -1202,7 +1199,7 @@ export function StatHistoryPreview({ definition, todayEntry, dateRange, dateFrom
           value,
         from: bucket[0],
         to: bucket[bucket.length - 1],
-        sampleCount: values.length,
+        sampleCount: eligibleDates.length,
         };
       })
       .filter((point): point is DatedChartPoint => point !== undefined);

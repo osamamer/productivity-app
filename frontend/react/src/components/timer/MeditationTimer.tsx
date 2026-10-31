@@ -1,5 +1,5 @@
 import { CompactPopover } from '../CompactPopover';
-import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
     Alert, Box, Button, CircularProgress,
     DialogActions, DialogContent, DialogTitle, MenuItem,
@@ -31,8 +31,9 @@ import {
 import { MeditationNavigationGuard } from './MeditationNavigationGuard.tsx';
 import { getRuntimeUserPreferences, subscribeToUserPreferences, updateRuntimeUserPreferences } from '../../services/userPreferenceStore';
 
-const DURATION_OPTIONS = [5, 10, 15, 20, 30, 60];
-const MAX_SESSION_SECONDS = 60 * 60;
+const MIN_MEDITATION_MINUTES = 1;
+const MAX_MEDITATION_MINUTES = 60;
+const MAX_SESSION_SECONDS = MAX_MEDITATION_MINUTES * 60;
 const MIN_MOOD = 1;
 const MAX_MOOD = 10;
 interface MeditationSettings {
@@ -55,10 +56,17 @@ function isValidIntervalBellCount(value: unknown): value is number {
     return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 10;
 }
 
+function isValidMeditationDuration(value: unknown): value is number {
+    return typeof value === 'number'
+        && Number.isInteger(value)
+        && value >= MIN_MEDITATION_MINUTES
+        && value <= MAX_MEDITATION_MINUTES;
+}
+
 function readMeditationSettings(): MeditationSettings {
     const preferences = getRuntimeUserPreferences();
     return {
-        durationMinutes: DURATION_OPTIONS.includes(preferences.meditationDurationMinutes)
+        durationMinutes: isValidMeditationDuration(preferences.meditationDurationMinutes)
             ? preferences.meditationDurationMinutes
             : DEFAULT_MEDITATION_SETTINGS.durationMinutes,
         numIntervalBells: isValidIntervalBellCount(preferences.meditationIntervalBells)
@@ -70,18 +78,15 @@ function readMeditationSettings(): MeditationSettings {
     };
 }
 
-function storeMeditationSettings(userId: string | undefined, settings: MeditationSettings): void {
-    updateRuntimeUserPreferences({
-        meditationDurationMinutes: settings.durationMinutes,
-        meditationIntervalBells: settings.numIntervalBells,
-        meditationSound: settings.selectedSound,
-    });
+function saveMeditationPreference(
+    userId: string | undefined,
+    preference: Partial<Pick<ReturnType<typeof getRuntimeUserPreferences>,
+        'meditationDurationMinutes' | 'meditationIntervalBells' | 'meditationSound'>>,
+): void {
+    updateRuntimeUserPreferences(preference);
     if (!userId) return;
-    void userService.updatePreferences({
-        meditationDurationMinutes: settings.durationMinutes,
-        meditationIntervalBells: settings.numIntervalBells,
-        meditationSound: settings.selectedSound,
-    }).catch(error => console.error('Could not save meditation preferences:', error));
+    void userService.updatePreferences(preference)
+        .catch(error => console.error('Could not save meditation preferences:', error));
 }
 
 function parseDate(value: string | null): number | null {
@@ -189,6 +194,7 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
     const [finishDialogOpen, setFinishDialogOpen] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [completedSession, setCompletedSession] = useState<MeditationSession | null>(null);
+    const [settingsLoadFailedKey, setSettingsLoadFailedKey] = useState<string | null>(null);
     const bellSessionRef = useRef<string | null>(null);
     const lastBellRef = useRef(0);
     const completionGongSessionRef = useRef<string | null>(null);
@@ -204,6 +210,11 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
 
     useEffect(() => {
         let cancelled = false;
+        setLoadedSettingsKey(null);
+        setSettingsLoadFailedKey(null);
+        setDurationMinutes(DEFAULT_MEDITATION_SETTINGS.durationMinutes);
+        setNumIntervalBells(DEFAULT_MEDITATION_SETTINGS.numIntervalBells);
+        setSelectedSound(DEFAULT_MEDITATION_SETTINGS.selectedSound);
         void userService.getPreferences().then(() => {
             if (cancelled) return;
             const stored = readMeditationSettings();
@@ -211,7 +222,10 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
             setNumIntervalBells(stored.numIntervalBells);
             setSelectedSound(stored.selectedSound);
             setLoadedSettingsKey(settingsStorageKey);
-        }).catch(error => console.error('Could not load meditation preferences:', error));
+        }).catch(loadError => {
+            console.error('Could not load meditation preferences:', loadError);
+            if (!cancelled) setSettingsLoadFailedKey(settingsStorageKey);
+        });
         return () => { cancelled = true; };
     }, [settingsStorageKey, user?.id]);
 
@@ -221,11 +235,6 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
         setNumIntervalBells(stored.numIntervalBells);
         setSelectedSound(stored.selectedSound);
     }), [user?.id]);
-
-    useEffect(() => {
-        if (loadedSettingsKey !== settingsStorageKey) return;
-        storeMeditationSettings(user?.id, { durationMinutes, numIntervalBells, selectedSound });
-    }, [durationMinutes, loadedSettingsKey, numIntervalBells, selectedSound, settingsStorageKey, user?.id]);
 
     useEffect(() => {
         mountedRef.current = true;
@@ -423,6 +432,7 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
 
     const handleSoundChange = (sound: MeditationSoundId) => {
         setSelectedSound(sound);
+        if (sound !== selectedSound) saveMeditationPreference(user?.id, { meditationSound: sound });
         if (session) {
             if (soundMuted) setSoundMuted(false);
             soundStartedByUserRef.current = true;
@@ -593,11 +603,18 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
         }
     };
 
-    const handleDurationChange = (event: ChangeEvent<HTMLInputElement>) => {
-        setDurationMinutes(Number(event.target.value));
+    const handleDurationChange = (value: number) => {
+        setDurationMinutes(value);
+        saveMeditationPreference(user?.id, { meditationDurationMinutes: value });
     };
 
-    if (isLoading) {
+    const handleBellsChange = (_event: Event, value: number | number[]) => {
+        const nextValue = value as number;
+        setNumIntervalBells(nextValue);
+        saveMeditationPreference(user?.id, { meditationIntervalBells: nextValue });
+    };
+
+    if (isLoading || (loadedSettingsKey !== settingsStorageKey && settingsLoadFailedKey !== settingsStorageKey)) {
         return (
             <Box sx={{ width: '100%', p: { xs: 2, sm: 3, lg: 4 }, minHeight: { xs: 610, sm: 620, md: 620 }, boxSizing: 'border-box' }}>
                 <Stack spacing={3}>
@@ -668,7 +685,7 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
                         onDismissCompleted={() => setCompletedSession(null)}
                         onMoodChange={setMoodBefore}
                         onDurationChange={handleDurationChange}
-                        onBellsChange={(_, value) => setNumIntervalBells(value as number)}
+                        onBellsChange={handleBellsChange}
                         onSoundChange={handleSoundChange}
                         onStart={startSession}
                     />
@@ -728,7 +745,7 @@ interface StartMeditationProps {
     completedSession: MeditationSession | null;
     onDismissCompleted: () => void;
     onMoodChange: (value: number) => void;
-    onDurationChange: (event: ChangeEvent<HTMLInputElement>) => void;
+    onDurationChange: (value: number) => void;
     onBellsChange: (_event: Event, value: number | number[]) => void;
     onSoundChange: (sound: MeditationSoundId) => void;
     onStart: () => void;
@@ -749,6 +766,35 @@ function StartMeditation({
     onSoundChange,
     onStart,
 }: StartMeditationProps) {
+    const [durationDraft, setDurationDraft] = useState(String(durationMinutes));
+    const durationDraftDirtyRef = useRef(false);
+    const parsedDurationDraft = durationDraft === '' ? null : Number(durationDraft);
+    const durationDraftIsValid = parsedDurationDraft !== null
+        && Number.isSafeInteger(parsedDurationDraft)
+        && parsedDurationDraft >= MIN_MEDITATION_MINUTES
+        && parsedDurationDraft <= MAX_MEDITATION_MINUTES;
+
+    useEffect(() => {
+        if (durationDraftDirtyRef.current) return;
+        setDurationDraft(String(durationMinutes));
+    }, [durationMinutes]);
+
+    const commitDurationDraft = () => {
+        if (parsedDurationDraft === null || !Number.isSafeInteger(parsedDurationDraft)) {
+            setDurationDraft(String(durationMinutes));
+            durationDraftDirtyRef.current = false;
+            return;
+        }
+
+        const nextDuration = Math.min(
+            MAX_MEDITATION_MINUTES,
+            Math.max(MIN_MEDITATION_MINUTES, parsedDurationDraft),
+        );
+        setDurationDraft(String(nextDuration));
+        durationDraftDirtyRef.current = false;
+        if (nextDuration !== durationMinutes) onDurationChange(nextDuration);
+    };
+
     return (
         <Stack spacing={2.5}>
             {completedSession && (
@@ -785,9 +831,29 @@ function StartMeditation({
                     </Box>
 
                     <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}>
-                        <TextField select label="Session length" value={durationMinutes} autoComplete="off" onChange={onDurationChange}>
-                            {DURATION_OPTIONS.map(option => <MenuItem key={option} value={option}>{option} minutes</MenuItem>)}
-                        </TextField>
+                        <TextField
+                            name="meditation-duration"
+                            label="Session length (minutes)"
+                            type="text"
+                            value={durationDraft}
+                            autoComplete="off"
+                            error={durationDraft !== '' && !durationDraftIsValid}
+                            helperText={durationDraft !== '' && !durationDraftIsValid
+                                ? `Enter a whole number from ${MIN_MEDITATION_MINUTES} to ${MAX_MEDITATION_MINUTES}.`
+                                : undefined}
+                            onChange={event => {
+                                if (/^\d*$/.test(event.target.value)) {
+                                    durationDraftDirtyRef.current = true;
+                                    setDurationDraft(event.target.value);
+                                }
+                            }}
+                            onBlur={commitDurationDraft}
+                            inputProps={{
+                                inputMode: 'numeric',
+                                onFocus: event => event.currentTarget.select(),
+                                onClick: event => event.currentTarget.select(),
+                            }}
+                        />
                         <Box sx={{ px: 1 }}>
                             <Typography variant="subtitle2">Interval bells: {numIntervalBells}</Typography>
                             <Slider

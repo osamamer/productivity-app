@@ -22,6 +22,7 @@ import { useAppPopup } from '@/providers/PopupProvider';
 import { useAuth } from '@/providers/AuthProvider';
 import { api } from '@/services/api';
 import { reportError } from '@/lib/errors';
+import { booleanStatColor } from '@/lib/statMorality';
 import { localDate } from '@/lib/date';
 import { registerStatDefinitions } from '@/lib/optimisticStats';
 import { formatDurationValue, formatTimeValue } from '@/lib/statValues';
@@ -239,8 +240,6 @@ export default function StatsScreen() {
     const isBoolean = definition.type === 'BOOLEAN';
     const notPlanned = entry?.status === 'NOT_PLANNED';
     const booleanPositive = entry?.value === 1;
-    const yesIsGood = definition.morality !== 'BAD';
-    const semanticGood = booleanPositive === yesIsGood;
     const goodColor = dark ? '#578469' : '#376A4F';
     const badColor = dark ? '#B76561' : '#9B4443';
     const icon = isBoolean
@@ -249,7 +248,11 @@ export default function StatsScreen() {
         : definition.type === 'DURATION' ? 'hourglass-outline'
           : 'stats-chart-outline';
     const iconColor = isBoolean
-      ? !entry ? colors.textMuted : notPlanned ? colors.notPlanned : semanticGood ? goodColor : badColor
+      ? !entry ? colors.textMuted
+        : notPlanned ? colors.notPlanned
+          : definition.morality === 'NICE_TO_HAVE' || definition.morality === 'NICE_TO_AVOID'
+            ? booleanStatColor(definition, booleanPositive ? 1 : 0, colors)
+            : booleanPositive === (definition.morality !== 'BAD') ? goodColor : badColor
       : !entry ? colors.textMuted : notPlanned ? colors.notPlanned : colors.accent;
     const todayValue = entry && entry.status !== 'NOT_PLANNED'
       ? todayStatValue(definition, entry)

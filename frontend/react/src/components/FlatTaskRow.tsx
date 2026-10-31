@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
     alpha,
     Alert,
@@ -28,6 +28,8 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
 import StopIcon from '@mui/icons-material/Stop';
 import SkipNextIcon from '@mui/icons-material/SkipNext';
+import AddIcon from '@mui/icons-material/Add';
+import RemoveIcon from '@mui/icons-material/Remove';
 import FreeBreakfastIcon from '@mui/icons-material/FreeBreakfast';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
@@ -37,7 +39,7 @@ import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
 import { StompSubscription } from '@stomp/stompjs';
-import { taskService } from '../services/api';
+import { PomodoroAdjustmentConflictError, taskService } from '../services/api';
 import { Task } from '../types/Task';
 import { TaskSeries } from '../types/TaskSeries';
 import { defaultTaskRecurrence, TaskRecurrenceDraft } from '../types/TaskRecurrence';
@@ -74,6 +76,7 @@ import { TaskRecurrenceCustomOptions, TaskRecurrencePicker } from './task/TaskRe
 import { WhiteNoiseControl } from './timer/WhiteNoiseControl';
 import { createAuthenticatedStompClient } from '../services/authenticatedStompClient';
 import { usePomodoroActions } from '../hooks/usePomodoro';
+import { getRuntimeUserPreferences, subscribeToUserPreferences } from '../services/userPreferenceStore';
 import {
     createOptimisticCompletedPomodoroStatus,
     createOptimisticPomodoroStatus,
@@ -337,6 +340,11 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     const [pomodoroStatus, setPomodoroStatus] = useState<PomodoroStatus | null>(initialPomodoroStatus);
     const [endOptionsAnchor, setEndOptionsAnchor] = useState<HTMLElement | null>(null);
     const [pomodoroConfig, setPomodoroConfig] = useState<PomodoroConfig>(NORMAL_POMODORO_CONFIG);
+    const userPreferences = useSyncExternalStore(
+        subscribeToUserPreferences,
+        getRuntimeUserPreferences,
+        getRuntimeUserPreferences,
+    );
     const [pomodoroFeedback, setPomodoroFeedback] = useState<PomodoroFeedback | null>(null);
     const [pomodoroHydrated, setPomodoroHydrated] = useState(!deferPomodoroHydration);
     const taskRef = useRef(task);
@@ -538,6 +546,8 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     const lastPomodoroStatusRef = useRef<PomodoroStatus | null>(initialPomodoroStatus);
     const pomodoroStatusRequestIdRef = useRef(0);
     const pomodoroMutationRevisionRef = useRef(0);
+    const timeAdjustmentRevisionRef = useRef(0);
+    const timeAdjustmentQueueRef = useRef<Promise<void>>(Promise.resolve());
     const clearCompletedPomodoroAfterExitRef = useRef(false);
     const onPomodoroActiveChangeRef = useRef(onPomodoroActiveChange);
     const onPomodoroStatusChangeRef = useRef(onPomodoroStatusChange);
@@ -901,6 +911,58 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
             console.error('Error starting Pomodoro break early:', e);
             rollbackPomodoroMutation(mutationRevision, optimisticStatus, previousStatus);
             if (pomodoroMutationRevisionRef.current === mutationRevision) showPomodoroError();
+        });
+    };
+
+    const handleTimeAdjustment = (deltaSeconds: number) => {
+        const previousStatus = lastPomodoroStatusRef.current?.active
+            ? lastPomodoroStatusRef.current
+            : pomodoroStatus?.active ? pomodoroStatus : null;
+        if (!previousStatus
+            || isWaitingForPhase(previousStatus)
+            || previousStatus.pomodoroId.startsWith('optimistic-pomodoro-')) return;
+
+        const actionRevision = pomodoroMutationRevisionRef.current;
+        const optimisticStatus = {
+            ...previousStatus,
+            secondsUntilNextTransition: Math.max(0, previousStatus.secondsUntilNextTransition + deltaSeconds),
+        };
+        if (!applyLocalPomodoroStatus(optimisticStatus, false, true)) return;
+
+        const revision = ++timeAdjustmentRevisionRef.current;
+        const request = timeAdjustmentQueueRef.current
+            .catch(() => undefined)
+            .then(() => taskService.adjustPomodoroTime(task.taskId, {
+                pomodoroId: previousStatus.pomodoroId,
+                phase: previousStatus.phase === 'BREAK'
+                    || (!previousStatus.phase && !previousStatus.sessionActive) ? 'BREAK' : 'FOCUS',
+                currentFocusNumber: previousStatus.currentFocusNumber,
+                deltaSeconds,
+            }));
+        timeAdjustmentQueueRef.current = request.then(() => undefined, () => undefined);
+
+        void request.then(serverStatus => {
+            if (timeAdjustmentRevisionRef.current === revision
+                && pomodoroMutationRevisionRef.current === actionRevision) {
+                applyLocalPomodoroStatus(serverStatus, true);
+            }
+        }).catch(error => {
+            if (error instanceof PomodoroAdjustmentConflictError) {
+                if (timeAdjustmentRevisionRef.current === revision
+                    && pomodoroMutationRevisionRef.current === actionRevision) {
+                    clearPomodoroMutation();
+                    void refreshPomodoroStatus();
+                }
+                return;
+            }
+            console.error('Could not adjust the Pomodoro timer:', error);
+            if (timeAdjustmentRevisionRef.current !== revision
+                || pomodoroMutationRevisionRef.current !== actionRevision) return;
+            clearPomodoroMutation();
+            showPomodoroError();
+            void refreshPomodoroStatus().catch(refreshError => {
+                console.error('Could not restore the Pomodoro timer after a failed adjustment:', refreshError);
+            });
         });
     };
 
@@ -1315,6 +1377,11 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     // Break: pomodoro started but not in a focus session
     const waitingForPhase = isWaitingForPhase(pomodoroStatus);
     const isBreak   = isActive && pomodoroStatus !== null && isBreakPhase(pomodoroStatus);
+    const timeAdjustmentMinutes = userPreferences.pomodoroTimeAdjustmentMinutes;
+    const timeAdjustmentLabel = `${timeAdjustmentMinutes} ${timeAdjustmentMinutes === 1 ? 'minute' : 'minutes'}`;
+    const canAdjustTime = Boolean(pomodoroStatus?.active
+        && !waitingForPhase
+        && !pomodoroStatus.pomodoroId.startsWith('optimistic-pomodoro-'));
     const playPauseLabel = waitingForPhase
         ? pomodoroStatus?.phase === 'WAITING_FOR_BREAK' ? 'Start break' : 'Start focus session'
         : pomodoroStatus?.sessionRunning ? 'Pause focus session' : 'Resume focus session';
@@ -1760,12 +1827,20 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             <CircularProgress size={18} />
                         </Box>
                     ) : (
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                            <Box sx={{ textAlign: 'left', minHeight: 34, display: 'flex', justifyContent: 'center', flexDirection: 'column' }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Box sx={{
+                                textAlign: waitingForPhase ? 'left' : 'center',
+                                minHeight: 34,
+                                ml: -1,
+                                display: 'flex',
+                                justifyContent: 'center',
+                                flexDirection: 'column',
+                            }}>
                                 <Typography
                                     variant={waitingForPhase ? 'h5' : 'caption'}
                                     sx={{
                                         display: 'block',
+                                        width: '100%',
                                         fontWeight: 600,
                                         textTransform: 'uppercase',
                                         letterSpacing: waitingForPhase ? 1.1 : 1,
@@ -1783,9 +1858,79 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                         : isBreak ? 'BREAK TIME' : 'WORK TIME'}
                                 </Typography>
                                 {!waitingForPhase && (
-                                    <Typography variant="h4" sx={{ fontWeight: 700, lineHeight: 1 }}>
-                                        {formatSeconds(pomodoroStatus!.secondsUntilNextTransition)}
-                                    </Typography>
+                                    <Box
+                                        sx={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            gap: 0.25,
+                                            '& .pomodoro-time-adjustment': {
+                                                opacity: 0,
+                                                transition: 'opacity 120ms ease',
+                                                color: 'text.secondary',
+                                            },
+                                            '&:hover .pomodoro-time-adjustment, &:focus-within .pomodoro-time-adjustment': {
+                                                opacity: 1,
+                                            },
+                                            '@media (hover: none)': {
+                                                '& .pomodoro-time-adjustment': { opacity: 1 },
+                                            },
+                                        }}
+                                    >
+                                        <Tooltip title={`Remove ${timeAdjustmentLabel}`} placement="top">
+                                            <span>
+                                                <IconButton
+                                                    className="pomodoro-time-adjustment"
+                                                    size="small"
+                                                    disabled={!canAdjustTime}
+                                                    aria-label={`Remove ${timeAdjustmentLabel} from the current Pomodoro phase`}
+                                                    onClick={event => {
+                                                        event.stopPropagation();
+                                                        handleTimeAdjustment(-timeAdjustmentMinutes * 60);
+                                                    }}
+                                                    sx={{
+                                                        width: 20,
+                                                        height: 20,
+                                                        p: 0,
+                                                        '&:hover': {
+                                                            color: 'primary.main',
+                                                            backgroundColor: alpha(activeAccent, 0.08),
+                                                        },
+                                                    }}
+                                                >
+                                                    <RemoveIcon sx={{ fontSize: 17 }} />
+                                                </IconButton>
+                                            </span>
+                                        </Tooltip>
+                                        <Typography variant="h4" sx={{ fontWeight: 700, lineHeight: 1 }}>
+                                            {formatSeconds(pomodoroStatus!.secondsUntilNextTransition)}
+                                        </Typography>
+                                        <Tooltip title={`Add ${timeAdjustmentLabel}`} placement="top">
+                                            <span>
+                                                <IconButton
+                                                    className="pomodoro-time-adjustment"
+                                                    size="small"
+                                                    disabled={!canAdjustTime}
+                                                    aria-label={`Add ${timeAdjustmentLabel} to the current Pomodoro phase`}
+                                                    onClick={event => {
+                                                        event.stopPropagation();
+                                                        handleTimeAdjustment(timeAdjustmentMinutes * 60);
+                                                    }}
+                                                    sx={{
+                                                        width: 20,
+                                                        height: 20,
+                                                        p: 0,
+                                                        '&:hover': {
+                                                            color: 'primary.main',
+                                                            backgroundColor: alpha(activeAccent, 0.08),
+                                                        },
+                                                    }}
+                                                >
+                                                    <AddIcon sx={{ fontSize: 17 }} />
+                                                </IconButton>
+                                            </span>
+                                        </Tooltip>
+                                    </Box>
                                 )}
                             </Box>
 

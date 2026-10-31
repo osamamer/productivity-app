@@ -3,6 +3,7 @@ import { View } from 'react-native';
 
 import { formatShortDate, localDate } from '@/lib/date';
 import { readStatInputPreference, saveStatInputPreference } from '@/lib/inputPreferences';
+import { booleanStatColor } from '@/lib/statMorality';
 import { reportError } from '@/lib/errors';
 import { formatTimeValue } from '@/lib/statValues';
 import {
@@ -31,17 +32,6 @@ function dateForMinutes(value: number): Date {
   const date = new Date();
   date.setHours(Math.floor(value / 60), value % 60, 0, 0);
   return date;
-}
-
-function booleanChoiceColor(
-  definition: StatDefinition,
-  value: 0 | 1,
-  colors: ReturnType<typeof useAppTheme>['colors'],
-): string {
-  const morality = definition.morality ?? 'NEUTRAL';
-  if (morality === 'NEUTRAL') return value === 1 ? colors.accent : colors.secondary;
-  if (morality === 'GOOD') return value === 1 ? colors.success : colors.danger;
-  return value === 1 ? colors.danger : colors.success;
 }
 
 function defaultValue(definition: StatDefinition, rememberedValue: number | null): number | null {
@@ -220,9 +210,9 @@ export function StatEntrySheet({ definition, existing, initialDate, onClose, onS
             void save(next === -2 ? null : next, next === -2 ? 'NOT_PLANNED' : 'RECORDED');
           }}
           options={[
-            { value: 1, label: 'Yes', color: booleanChoiceColor(definition, 1, colors) },
+            { value: 1, label: 'Yes', color: booleanStatColor(definition, 1, colors) },
             { value: -2, label: 'Not planned', color: colors.notPlanned },
-            { value: 0, label: 'No', color: booleanChoiceColor(definition, 0, colors) },
+            { value: 0, label: 'No', color: booleanStatColor(definition, 0, colors) },
           ]}
         />
       ) : definition?.type === 'RANGE' ? (

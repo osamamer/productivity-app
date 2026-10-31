@@ -7,8 +7,10 @@ import { MouseEvent } from 'react';
 import { AppTimeField } from '../input/AppPickerFields';
 import { StatDefinition, StatWeeklyTaskScheduleDraft } from '../../types/Stats';
 import {
-    STAT_RECURRENCE_DAYS, defaultStatWeeklyTaskScheduleDraft, isStatScheduleDayAvailable,
+    normalizeStatWeekStartDate, STAT_RECURRENCE_DAYS, defaultStatWeeklyTaskScheduleDraft,
+    isStatScheduleDayAvailable,
 } from './statRecurringTaskUtils';
+import { MAX_STAT_TASK_SCHEDULE_WEEKS, StatTaskSchedulePeriodFields } from './StatTaskSchedulePeriodFields';
 
 type PopupPosition = { top: number; left: number };
 
@@ -20,8 +22,9 @@ type Props = {
     error?: string | null;
     anchorPosition?: PopupPosition | null;
     initialDraft?: StatWeeklyTaskScheduleDraft | null;
+    onWeekChange: (weekStartDate: string) => void;
     onClose: () => void;
-    onConfirm: (draft: StatWeeklyTaskScheduleDraft) => void;
+    onConfirm: (draft: StatWeeklyTaskScheduleDraft, keepRepeating: boolean) => void;
 };
 
 const PRIORITY_OPTIONS = [
@@ -44,21 +47,40 @@ export function StatWeeklyTaskScheduleDialog({
     error = null,
     anchorPosition = null,
     initialDraft = null,
+    onWeekChange,
     onClose,
     onConfirm,
 }: Props) {
     const [draft, setDraft] = useState<StatWeeklyTaskScheduleDraft>(defaultStatWeeklyTaskScheduleDraft());
+    const [keepRepeating, setKeepRepeating] = useState(false);
 
     useEffect(() => {
         if (!open) return;
-        setDraft(initialDraft ?? defaultStatWeeklyTaskScheduleDraft(definition?.name ?? ''));
+        setDraft(current => initialDraft
+            ? { ...initialDraft, weekCount: current.weekCount }
+            : defaultStatWeeklyTaskScheduleDraft(definition?.name ?? ''));
+        setKeepRepeating(false);
     }, [open, definition?.id, definition?.name, initialDraft]);
 
     const timeMissing = !/^\d{2}:\d{2}$/.test(draft.timeOfDay);
     const nameMissing = !draft.taskName.trim();
+    const periodInvalid = !draft.weekStartDate || !Number.isInteger(draft.weekCount)
+        || draft.weekCount < 1 || draft.weekCount > MAX_STAT_TASK_SCHEDULE_WEEKS;
 
     const updateDays = (_event: MouseEvent<HTMLElement>, selectedDays: typeof draft.daysOfWeek) => {
         setDraft(current => ({ ...current, daysOfWeek: selectedDays }));
+    };
+
+    const updateWeekStart = (selectedDate: string) => {
+        const weekStartDate = normalizeStatWeekStartDate(selectedDate);
+        setDraft(current => ({
+            ...current,
+            weekStartDate,
+            daysOfWeek: current.daysOfWeek.filter(day =>
+                isStatScheduleDayAvailable(day, current.timeOfDay, weekStartDate),
+            ),
+        }));
+        if (weekStartDate) onWeekChange(weekStartDate);
     };
 
     return (
@@ -79,83 +101,110 @@ export function StatWeeklyTaskScheduleDialog({
             }}
         >
             <Box>
-                <DialogTitle>Change this week's schedule{definition ? ` for ${definition.name}` : ''}</DialogTitle>
+                <DialogTitle>Change task schedule{definition ? ` for ${definition.name}` : ''}</DialogTitle>
                 <DialogContent dividers>
                     <Stack spacing={1.5}>
-                        <Typography variant="body2" color="text.secondary">
-                            Changes apply only to the remaining days of this week. Tasks outside this week are unchanged.
-                        </Typography>
-                        {loading ? (
-                            <Typography variant="body2" color="text.secondary">Loading this week's tasks…</Typography>
+                        <ToggleButtonGroup
+                            exclusive
+                            fullWidth
+                            size="small"
+                            value={keepRepeating ? 'ongoing' : 'weeks'}
+                            onChange={(_, value: 'weeks' | 'ongoing' | null) => {
+                                if (value) setKeepRepeating(value === 'ongoing');
+                            }}
+                            disabled={saving || loading}
+                        >
+                            <ToggleButton value="weeks">Selected weeks</ToggleButton>
+                            <ToggleButton value="ongoing">Keep repeating</ToggleButton>
+                        </ToggleButtonGroup>
+                        {keepRepeating ? (
+                            <Typography variant="body2" color="text.secondary">
+                                This changes the recurring schedule for future tasks. It repeats every week on the selected days.
+                            </Typography>
                         ) : (
                             <>
-                                <Box>
-                                    <Typography variant="body2" color="text.secondary" sx={{ mb: 0.75 }}>
-                                        Days this week
-                                    </Typography>
-                                    <ToggleButtonGroup
-                                        value={draft.daysOfWeek}
-                                        onChange={updateDays}
-                                        aria-label="Days this week"
-                                        disabled={saving}
-                                        fullWidth
-                                        size="small"
-                                    >
-                                        {STAT_RECURRENCE_DAYS.map(day => (
-                                            <ToggleButton
-                                                key={day.value}
-                                                value={day.value}
-                                                aria-label={day.value}
-                                                disabled={!isStatScheduleDayAvailable(day.value, draft.timeOfDay)}
-                                            >
-                                                {day.label}
-                                            </ToggleButton>
-                                        ))}
-                                    </ToggleButtonGroup>
-                                </Box>
-                                <AppTimeField
-                                    label="Task time"
-                                    value={draft.timeOfDay}
-                                    onChange={timeOfDay => setDraft(current => ({
-                                        ...current,
-                                        timeOfDay,
-                                        daysOfWeek: current.daysOfWeek.filter(day =>
-                                            isStatScheduleDayAvailable(day, timeOfDay),
-                                        ),
-                                    }))}
+                                <StatTaskSchedulePeriodFields
+                                    weekStartDate={draft.weekStartDate}
+                                    weekCount={draft.weekCount}
                                     disabled={saving}
-                                    error={timeMissing}
-                                    helperText={timeMissing ? 'Choose a task time.' : undefined}
+                                    onWeekStartDateChange={updateWeekStart}
+                                    onWeekCountChange={weekCount => setDraft(current => ({ ...current, weekCount }))}
                                 />
-                                <Box>
-                                    <Typography variant="body2" color="text.secondary" sx={{ mb: 0.75 }}>
-                                        Priority
+                                {loading && (
+                                    <Typography variant="body2" color="text.secondary">
+                                        Loading that week's tasks…
                                     </Typography>
-                                    <Stack direction="row" spacing={1}>
-                                        {PRIORITY_OPTIONS.map(option => {
-                                            const selected = priorityBucket(draft.importance) === option.value;
-                                            return (
-                                                <Chip
-                                                    key={option.label}
-                                                    label={option.label}
-                                                    onClick={() => setDraft(current => ({
-                                                        ...current,
-                                                        importance: option.value,
-                                                    }))}
-                                                    disabled={saving}
-                                                    sx={{
-                                                        border: `1px solid ${option.color}`,
-                                                        color: selected ? '#fff' : option.color,
-                                                        backgroundColor: selected ? option.color : 'transparent',
-                                                        fontWeight: selected ? 600 : 400,
-                                                    }}
-                                                />
-                                            );
-                                        })}
-                                    </Stack>
-                                </Box>
+                                )}
                             </>
                         )}
+                        <Box>
+                            <Typography variant="body2" color="text.secondary" sx={{ mb: 0.75 }}>
+                                Days each week
+                            </Typography>
+                            <ToggleButtonGroup
+                                value={draft.daysOfWeek}
+                                onChange={updateDays}
+                                aria-label="Days each week"
+                                disabled={saving || (!keepRepeating && loading)}
+                                fullWidth
+                                size="small"
+                            >
+                                {STAT_RECURRENCE_DAYS.map(day => (
+                                    <ToggleButton
+                                        key={day.value}
+                                        value={day.value}
+                                        aria-label={day.value}
+                                        disabled={!keepRepeating && !isStatScheduleDayAvailable(
+                                            day.value,
+                                            draft.timeOfDay,
+                                            draft.weekStartDate,
+                                        )}
+                                    >
+                                        {day.label}
+                                    </ToggleButton>
+                                ))}
+                            </ToggleButtonGroup>
+                        </Box>
+                        <AppTimeField
+                            label="Task time"
+                            value={draft.timeOfDay}
+                            onChange={timeOfDay => setDraft(current => ({
+                                ...current,
+                                timeOfDay,
+                                daysOfWeek: current.daysOfWeek.filter(day => keepRepeating
+                                    || isStatScheduleDayAvailable(day, timeOfDay, current.weekStartDate)),
+                            }))}
+                            disabled={saving || (!keepRepeating && loading)}
+                            error={timeMissing}
+                            helperText={timeMissing ? 'Choose a task time.' : undefined}
+                        />
+                        <Box>
+                            <Typography variant="body2" color="text.secondary" sx={{ mb: 0.75 }}>
+                                Priority
+                            </Typography>
+                            <Stack direction="row" spacing={1}>
+                                {PRIORITY_OPTIONS.map(option => {
+                                    const selected = priorityBucket(draft.importance) === option.value;
+                                    return (
+                                        <Chip
+                                            key={option.label}
+                                            label={option.label}
+                                            onClick={() => setDraft(current => ({
+                                                ...current,
+                                                importance: option.value,
+                                            }))}
+                                            disabled={saving || (!keepRepeating && loading)}
+                                            sx={{
+                                                border: `1px solid ${option.color}`,
+                                                color: selected ? '#fff' : option.color,
+                                                backgroundColor: selected ? option.color : 'transparent',
+                                                fontWeight: selected ? 600 : 400,
+                                            }}
+                                        />
+                                    );
+                                })}
+                            </Stack>
+                        </Box>
                         {error && <Alert severity="error">{error}</Alert>}
                     </Stack>
                 </DialogContent>
@@ -163,11 +212,11 @@ export function StatWeeklyTaskScheduleDialog({
                     <Button onClick={onClose} disabled={saving}>Cancel</Button>
                     <Button
                         variant="contained"
-                        onClick={() => onConfirm(draft)}
-                        disabled={saving || loading || !definition || nameMissing || timeMissing
-                        }
+                        onClick={() => onConfirm(draft, keepRepeating)}
+                        disabled={saving || (!keepRepeating && loading) || !definition || nameMissing || timeMissing
+                            || draft.daysOfWeek.length === 0 || (!keepRepeating && periodInvalid)}
                     >
-                        {saving ? 'Saving…' : 'Save this week'}
+                        {saving ? 'Saving…' : keepRepeating ? 'Save recurring schedule' : 'Schedule selected weeks'}
                     </Button>
                 </DialogActions>
             </Box>

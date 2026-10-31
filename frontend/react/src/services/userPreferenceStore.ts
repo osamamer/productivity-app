@@ -13,6 +13,7 @@ export type RuntimeUserPreferences = {
     pomodoroShortBreakDuration: number | null;
     pomodoroLongBreakDuration: number | null;
     pomodoroNumFocuses: number | null;
+    pomodoroTimeAdjustmentMinutes: number;
     themeMode: 'light' | 'dark' | null;
     accentColor: string;
     meditationDurationMinutes: number;
@@ -33,6 +34,7 @@ const DEFAULT_RUNTIME_PREFERENCES: RuntimeUserPreferences = {
     pomodoroShortBreakDuration: null,
     pomodoroLongBreakDuration: null,
     pomodoroNumFocuses: null,
+    pomodoroTimeAdjustmentMinutes: 5,
     themeMode: null,
     accentColor: 'violet',
     meditationDurationMinutes: 10,
@@ -79,6 +81,8 @@ export function applyUserPreferences(scope: string, preferences: UserPreferences
         pomodoroShortBreakDuration: preferences.pomodoroShortBreakDuration ?? DEFAULT_RUNTIME_PREFERENCES.pomodoroShortBreakDuration,
         pomodoroLongBreakDuration: preferences.pomodoroLongBreakDuration ?? DEFAULT_RUNTIME_PREFERENCES.pomodoroLongBreakDuration,
         pomodoroNumFocuses: preferences.pomodoroNumFocuses ?? DEFAULT_RUNTIME_PREFERENCES.pomodoroNumFocuses,
+        pomodoroTimeAdjustmentMinutes: preferences.pomodoroTimeAdjustmentMinutes
+            ?? DEFAULT_RUNTIME_PREFERENCES.pomodoroTimeAdjustmentMinutes,
         themeMode: preferences.themeMode ?? DEFAULT_RUNTIME_PREFERENCES.themeMode,
         accentColor: preferences.accentColor === 'amber'
             ? 'sage'

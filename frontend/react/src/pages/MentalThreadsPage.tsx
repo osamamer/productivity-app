@@ -39,6 +39,7 @@ import {
     CloseMentalThreadInput,
     MentalThread,
     MentalThreadInput,
+    MentalThreadSummary,
 } from '../types/MentalThread.ts';
 import { getShowClosedMentalThreads } from '../services/utils/mentalThreadPreferences.ts';
 import { playAudioFeedback } from '../services/audioFeedback.ts';
@@ -80,10 +81,29 @@ const loadedWorkspaceReveal = keyframes`
     }
 `;
 
-function StateFilterChip({ stateFilter, onChange }: { stateFilter: StateFilter; onChange: (state: StateFilter) => void }) {
+function StateFilterChip({
+    stateFilter,
+    summary,
+    onChange,
+}: {
+    stateFilter: StateFilter;
+    summary: MentalThreadSummary;
+    onChange: (state: StateFilter) => void;
+}) {
     const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
     const color = stateFilter === 'ALL' ? closedThreadColor : attentionStateDetails[stateFilter].color;
-    const label = stateFilter === 'ALL' ? 'All Threads' : `${attentionStateDetails[stateFilter].label} Threads`;
+    const counts: Record<AttentionState, number> = {
+        ACTING: summary.actingCount,
+        RUMINATING: summary.ruminatingCount,
+        PLANNED: summary.plannedCount,
+        PENDING: summary.pendingCount,
+    };
+    const threadCount = stateFilter === 'ALL'
+        ? summary.openThreadCount
+        : counts[stateFilter];
+    const label = stateFilter === 'ALL'
+        ? `All ${threadCount} threads`
+        : `${threadCount} ${attentionStateDetails[stateFilter].label} Threads`;
 
     const selectState = (state: StateFilter) => {
         setAnchorEl(null);
@@ -112,12 +132,12 @@ function StateFilterChip({ stateFilter, onChange }: { stateFilter: StateFilter; 
             <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={() => setAnchorEl(null)}>
                 <MenuItem selected={stateFilter === 'ALL'} onClick={() => selectState('ALL')}>
                     <Box component="span" sx={{ width: 9, height: 9, mr: 1, borderRadius: '50%', bgcolor: closedThreadColor }} />
-                    All Threads
+                    All {summary.openThreadCount} threads
                 </MenuItem>
                 {attentionStates.map(state => (
                     <MenuItem key={state} selected={state === stateFilter} onClick={() => selectState(state)}>
                         <Box component="span" sx={{ width: 9, height: 9, mr: 1, borderRadius: '50%', bgcolor: attentionStateDetails[state].color }} />
-                        {attentionStateDetails[state].label} Threads
+                        {counts[state]} {attentionStateDetails[state].label} Threads
                     </MenuItem>
                 ))}
             </Menu>
@@ -405,7 +425,7 @@ export function MentalThreadsPage() {
                             spacing={1.5}
                             sx={{ px: 1.5, py: 1, borderBottom: 1, borderColor: 'divider' }}
                         >
-                            <StateFilterChip stateFilter={stateFilter} onChange={setStateFilter} />
+                            <StateFilterChip stateFilter={stateFilter} summary={summary} onChange={setStateFilter} />
                             <Button
                                 size="small"
                                 variant="outlined"

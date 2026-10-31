@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { reportError } from '@/lib/errors';
 import { formatDurationValue, formatTimeValue } from '@/lib/statValues';
+import { booleanStatColor } from '@/lib/statMorality';
 import { readStatInputPreference, saveStatInputPreference } from '@/lib/inputPreferences';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { useAuth } from '@/providers/AuthProvider';
@@ -17,13 +18,6 @@ import { ModalSheet } from '../ui/ModalSheet';
 import { DurationInput } from '../stats/DurationInput';
 import { AppPopup } from '../ui/AppPopup';
 import { TimePicker } from '../tasks/TaskScheduleField';
-
-function booleanColor(definition: StatDefinition, value: 0 | 1, colors: ReturnType<typeof useAppTheme>['colors']): string {
-  const morality = definition.morality ?? 'NEUTRAL';
-  if (morality === 'NEUTRAL') return value === 1 ? colors.accent : colors.secondary;
-  if (morality === 'GOOD') return value === 1 ? colors.success : colors.danger;
-  return value === 1 ? colors.danger : colors.success;
-}
 
 function formatValue(definition: StatDefinition, value: number): string {
   if (definition.type === 'TIME') return formatTimeValue(value);
@@ -189,9 +183,9 @@ export function CalendarStatCheckInSheet({ date, definitions, onClose, onSaved }
                   next === -2 ? 'NOT_PLANNED' : 'RECORDED',
                 )}
                 options={[
-                  { value: 1, label: 'Yes', color: booleanColor(definition, 1, colors) },
+                  { value: 1, label: 'Yes', color: booleanStatColor(definition, 1, colors) },
                   { value: -2, label: 'Not planned', color: colors.notPlanned },
-                  { value: 0, label: 'No', color: booleanColor(definition, 0, colors) },
+                  { value: 0, label: 'No', color: booleanStatColor(definition, 0, colors) },
                 ]} />
             )}
             {definition.type === 'NUMBER' && (

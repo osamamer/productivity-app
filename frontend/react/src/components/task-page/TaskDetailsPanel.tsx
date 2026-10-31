@@ -340,7 +340,6 @@ const SubtaskList = React.memo(function SubtaskList({
                         onContextMenu={event => {
                             event.preventDefault();
                             event.stopPropagation();
-                            if (subtask.mentalThreadId) return;
                             setContextMenu({
                                 subtask,
                                 top: event.clientY,
@@ -430,7 +429,7 @@ const SubtaskList = React.memo(function SubtaskList({
                     onClick: event => event.stopPropagation(),
                 }}
             >
-                {contextMenu && !contextMenu.subtask.mentalThreadId && (
+                {contextMenu && (
                     <MenuItem
                         onClick={event => {
                             event.stopPropagation();
@@ -912,7 +911,6 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
     }, [onCreateSubtask, task, visibleSubtaskState.items.length]);
 
     const handleDeleteSubtask = useCallback(async (subtask: Task) => {
-        if (subtask.mentalThreadId) return;
         setSubtaskState(previous => {
             if (previous.taskId !== task.taskId) return previous;
             const items = previous.items.filter(item => item.taskId !== subtask.taskId);
@@ -1035,17 +1033,15 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
                     Task details
                 </Typography>
                 <Box sx={{ display: 'flex', gap: 0.25, ml: 'auto' }}>
-                    {!task.mentalThreadId && (
-                        <IconButton
-                            size="small"
-                            color="error"
-                            onClick={event => onDelete(task, event.currentTarget)}
-                            aria-label={`Delete ${task.name}`}
-                            title="Delete task"
-                        >
-                            <DeleteOutlineRoundedIcon fontSize="small" />
-                        </IconButton>
-                    )}
+                    <IconButton
+                        size="small"
+                        color="error"
+                        onClick={event => onDelete(task, event.currentTarget)}
+                        aria-label={`Delete ${task.name}`}
+                        title="Delete task"
+                    >
+                        <DeleteOutlineRoundedIcon fontSize="small" />
+                    </IconButton>
                     <IconButton size="small" onClick={onClose} aria-label="Close task details">
                         <CloseRoundedIcon fontSize="small" />
                     </IconButton>

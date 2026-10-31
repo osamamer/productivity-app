@@ -58,6 +58,8 @@ public interface TaskRepository extends JpaRepository<Task, String>,
     List<Task> findAllByLinkedStatDefinitionIdAndStatScheduleWeekStartAndUserId(
             String linkedStatDefinitionId, LocalDate statScheduleWeekStart, String userId);
 
+    List<Task> findAllByLinkedStatDefinitionIdAndUserId(String linkedStatDefinitionId, String userId);
+
     @Modifying
     @Query(value = "UPDATE task SET calendar_id = :calendarId WHERE task_series_id = :seriesId AND user_id = :userId",
             nativeQuery = true)

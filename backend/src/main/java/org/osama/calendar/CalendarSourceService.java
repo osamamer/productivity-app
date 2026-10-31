@@ -2,6 +2,7 @@ package org.osama.calendar;
 
 import lombok.extern.slf4j.Slf4j;
 import org.osama.event.CalendarEvent;
+import org.osama.event.CalendarEventReminderService;
 import org.osama.event.CalendarEventRepository;
 import org.osama.exceptions.ResourceNotFoundException;
 import org.osama.user.UserRepository;
@@ -20,6 +21,7 @@ import java.util.*;
 public class CalendarSourceService {
     private final CalendarSourceRepository sources;
     private final CalendarEventRepository events;
+    private final CalendarEventReminderService eventReminders;
     private final CalendarService calendars;
     private final UserRepository users;
     private final IcsCalendarParser parser;
@@ -27,10 +29,12 @@ public class CalendarSourceService {
     private final TransactionTemplate transaction;
 
     public CalendarSourceService(CalendarSourceRepository sources, CalendarEventRepository events,
+                                 CalendarEventReminderService eventReminders,
                                  CalendarService calendars, UserRepository users,
                                  IcsCalendarParser parser, IcsFeedClient feeds, TransactionTemplate transaction) {
         this.sources = sources;
         this.events = events;
+        this.eventReminders = eventReminders;
         this.calendars = calendars;
         this.users = users;
         this.parser = parser;
@@ -129,16 +133,24 @@ public class CalendarSourceService {
             event.setEndTime(item.endTime());
             event.setTimeZone(item.timeZone());
             event.setStatus(item.status());
-            events.save(event);
+            CalendarEvent saved = events.save(event);
+            eventReminders.synchronizeImportedEvent(saved, item.seriesKey());
         }
-        existing.values().forEach(events::delete);
+        existing.values().forEach(event -> {
+            eventReminders.deleteForEvent(event);
+            events.delete(event);
+        });
     }
 
     public void removeCalendar(String userId, String calendarId) {
         transaction.executeWithoutResult(status -> {
             sources.findByCalendarIdAndUserId(calendarId, userId).ifPresent(source -> {
-                events.findAllBySourceId(source.getId()).forEach(events::delete);
+                events.findAllBySourceId(source.getId()).forEach(event -> {
+                    eventReminders.deleteForEvent(event);
+                    events.delete(event);
+                });
                 events.flush();
+                eventReminders.deletePreferencesForSource(source.getId());
                 sources.delete(source);
                 log.info("Calendar source removed: userId={} sourceId={}", userId, source.getId());
             });

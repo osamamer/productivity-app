@@ -35,7 +35,7 @@ function isFreshMentalState(recordedAt: string, now = Date.now()): boolean {
 
 async function loadSnapshot(): Promise<TodaySnapshot> {
     const [tasksResult, pomodoroResult, mentalStateResult] = await Promise.allSettled([
-        taskService.getTodayTasks(),
+        taskService.getAllMainTasks(),
         taskService.getTodayFocusSummary(getLocalDateKey()),
         mentalStateService.getHistory(1),
     ]);
@@ -50,7 +50,17 @@ async function loadSnapshot(): Promise<TodaySnapshot> {
         console.error('Failed to load the drawer mental-state summary:', mentalStateResult.reason);
     }
 
-    const tasks = tasksResult.status === 'fulfilled' ? tasksResult.value : null;
+    const today = new Date();
+    const tasks = tasksResult.status === 'fulfilled'
+        ? tasksResult.value.filter(task => {
+            if (!task.scheduledPerformDateTime) return false;
+            const scheduledAt = new Date(task.scheduledPerformDateTime);
+            return Number.isFinite(scheduledAt.getTime())
+                && scheduledAt.getFullYear() === today.getFullYear()
+                && scheduledAt.getMonth() === today.getMonth()
+                && scheduledAt.getDate() === today.getDate();
+        })
+        : null;
     const focusSummary = pomodoroResult.status === 'fulfilled' ? pomodoroResult.value : null;
     const mentalCheckIns = mentalStateResult.status === 'fulfilled' ? mentalStateResult.value : null;
     const latestMentalCheckIn = mentalCheckIns?.[0];

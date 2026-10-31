@@ -72,6 +72,9 @@ public class Pomodoro {
     @Column
     long secondsPassedInSession;
 
+    @Column(nullable = false)
+    private int phaseDurationAdjustmentSeconds;
+
     @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)

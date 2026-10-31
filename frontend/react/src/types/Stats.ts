@@ -1,5 +1,5 @@
 export type StatType = 'NUMBER' | 'BOOLEAN' | 'RANGE' | 'TIME' | 'DURATION';
-export type StatMorality = 'GOOD' | 'BAD' | 'NEUTRAL';
+export type StatMorality = 'GOOD' | 'BAD' | 'NEUTRAL' | 'NICE_TO_HAVE' | 'NICE_TO_AVOID';
 export type StatEntryStatus = 'RECORDED' | 'NOT_PLANNED';
 export type StatFeedback = 'CELEBRATE' | 'SAD' | 'NONE';
 export type StatRecurrenceFrequency = 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'CUSTOM';
@@ -19,9 +19,11 @@ export type StatWeeklyTaskScheduleDraft = {
     daysOfWeek: StatRecurrenceDay[];
     timeOfDay: string;
     importance: number;
+    weekStartDate: string;
+    weekCount: number;
 };
 
-export type StatWeeklyTaskSchedule = StatWeeklyTaskScheduleDraft & {
+export type StatWeeklyTaskSchedule = Omit<StatWeeklyTaskScheduleDraft, 'weekCount'> & {
     weekStartDate: string;
 };
 

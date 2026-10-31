@@ -23,7 +23,7 @@ export function PageTransition() {
         <Box
             key={`${location.pathname}-${loading ? 'loading' : 'ready'}`}
             sx={{
-                minHeight: '100vh',
+                minHeight: '100%',
                 display: 'flex',
                 flexDirection: 'column',
                 animation: `${pageEnter} 220ms cubic-bezier(0.22, 1, 0.36, 1) both`,

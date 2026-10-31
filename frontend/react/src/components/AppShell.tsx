@@ -14,7 +14,7 @@ export function AppShell() {
 
     return (
         <NavigationVisibilityContext.Provider value={navigationContext}>
-            <Box sx={{ display: 'flex', height: '100vh', minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
+            <Box sx={{ display: 'flex', height: '100%', minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
                 <Box sx={{ display: navigationVisible ? 'block' : 'none', flexShrink: 0 }}>
                     <SideNav />
                 </Box>
@@ -22,7 +22,7 @@ export function AppShell() {
                     flexGrow: 1,
                     display: 'flex',
                     flexDirection: 'column',
-                    height: '100vh',
+                    height: '100%',
                     minWidth: 0,
                     minHeight: 0,
                     overflowY: 'auto',

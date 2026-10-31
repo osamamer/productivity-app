@@ -189,6 +189,7 @@ public class UserController {
             Integer pomodoroShortBreakDuration,
             Integer pomodoroLongBreakDuration,
             Integer pomodoroNumFocuses,
+            Integer pomodoroTimeAdjustmentMinutes,
             String themeMode,
             String accentColor,
             Integer meditationDurationMinutes,
@@ -202,6 +203,7 @@ public class UserController {
                     excludeTodayCompletedTasks, showClosedMentalThreads, soundEffectsEnabled, whiteNoiseEnabled,
                     muteFocusNoiseDuringBreaks, pomodoroSecondsMode, pomodoroLongBreakCooldown, pomodoroFocusDuration,
                     pomodoroShortBreakDuration, pomodoroLongBreakDuration, pomodoroNumFocuses,
+                    pomodoroTimeAdjustmentMinutes,
                     themeMode, accentColor,
                     meditationDurationMinutes, meditationIntervalBells, meditationSound);
         }
@@ -230,6 +232,7 @@ public class UserController {
             Integer pomodoroShortBreakDuration,
             Integer pomodoroLongBreakDuration,
             Integer pomodoroNumFocuses,
+            Integer pomodoroTimeAdjustmentMinutes,
             String themeMode,
             String accentColor,
             Integer meditationDurationMinutes,
@@ -259,6 +262,7 @@ public class UserController {
                     user.getPomodoroShortBreakDuration(),
                     user.getPomodoroLongBreakDuration(),
                     user.getPomodoroNumFocuses(),
+                    user.getPomodoroTimeAdjustmentMinutes(),
                     user.getThemeMode(),
                     user.getAccentColor(),
                     user.getMeditationDurationMinutes(),

@@ -48,10 +48,40 @@ export function defaultStatWeeklyTaskScheduleDraft(taskName = ''): StatWeeklyTas
         daysOfWeek: [STAT_RECURRENCE_DAYS[next.getDay()].value],
         timeOfDay: upcomingTimeOfDay(),
         importance: 3,
+        weekStartDate: currentWeekStartDate(),
+        weekCount: 1,
     };
 }
 
-export function isStatScheduleDayAvailable(day: StatRecurrenceDay, timeOfDay: string): boolean {
+export function currentWeekStartDate(): string {
+    const today = new Date();
+    today.setDate(today.getDate() - today.getDay());
+    return formatDateOnly(today);
+}
+
+export function normalizeStatWeekStartDate(date: string): string {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return '';
+    const [year, month, day] = date.split('-').map(Number);
+    const selected = new Date(year, month - 1, day);
+    if (selected.getFullYear() !== year || selected.getMonth() !== month - 1 || selected.getDate() !== day) {
+        return '';
+    }
+    selected.setDate(selected.getDate() - selected.getDay());
+    return formatDateOnly(selected);
+}
+
+function formatDateOnly(date: Date): string {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+export function isStatScheduleDayAvailable(
+    day: StatRecurrenceDay,
+    timeOfDay: string,
+    weekStartDate = currentWeekStartDate(),
+): boolean {
+    const currentWeekStart = currentWeekStartDate();
+    if (weekStartDate > currentWeekStart) return true;
+    if (weekStartDate < currentWeekStart) return false;
     const dayIndex = STAT_RECURRENCE_DAYS.findIndex(option => option.value === day);
     const now = new Date();
     if (dayIndex < now.getDay()) return false;

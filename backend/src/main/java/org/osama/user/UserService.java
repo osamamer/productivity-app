@@ -193,7 +193,7 @@ public class UserService {
                 includeUnloggedNumericDaysAsZero, autoStartPomodoroSessions,
                 checkupNotificationsEnabled, repeatCheckupNotificationsEnabled,
                 checkupIntervalMinutes, checkupStartTime, checkupTimesPerDay, null, pomodoroSoundId,
-                null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null));
+                null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null));
     }
 
     @Transactional
@@ -245,6 +245,9 @@ public class UserService {
         if (updates.pomodoroShortBreakDuration() != null) user.setPomodoroShortBreakDuration(updates.pomodoroShortBreakDuration());
         if (updates.pomodoroLongBreakDuration() != null) user.setPomodoroLongBreakDuration(updates.pomodoroLongBreakDuration());
         if (updates.pomodoroNumFocuses() != null) user.setPomodoroNumFocuses(updates.pomodoroNumFocuses());
+        if (updates.pomodoroTimeAdjustmentMinutes() != null) {
+            user.setPomodoroTimeAdjustmentMinutes(updates.pomodoroTimeAdjustmentMinutes());
+        }
         if (updates.themeMode() != null) user.setThemeMode(updates.themeMode());
         if (updates.accentColor() != null) user.setAccentColor(updates.accentColor());
         if (updates.meditationDurationMinutes() != null) user.setMeditationDurationMinutes(updates.meditationDurationMinutes());
@@ -277,6 +280,11 @@ public class UserService {
         if (updates.pomodoroNumFocuses() != null && updates.pomodoroNumFocuses() < 1) {
             throw new IllegalArgumentException("The number of focus sessions must be positive.");
         }
+        if (updates.pomodoroTimeAdjustmentMinutes() != null
+                && (updates.pomodoroTimeAdjustmentMinutes() < 1
+                || updates.pomodoroTimeAdjustmentMinutes() > 60)) {
+            throw new IllegalArgumentException("Pomodoro time adjustment must be between 1 and 60 minutes.");
+        }
         if (updates.themeMode() != null
                 && !updates.themeMode().equals("light") && !updates.themeMode().equals("dark")) {
             throw new IllegalArgumentException("Theme mode must be light or dark.");
@@ -286,8 +294,9 @@ public class UserService {
             throw new IllegalArgumentException("That accent color is not available.");
         }
         if (updates.meditationDurationMinutes() != null
-                && !List.of(5, 10, 15, 20, 30, 60).contains(updates.meditationDurationMinutes())) {
-            throw new IllegalArgumentException("That meditation duration is not available.");
+                && (updates.meditationDurationMinutes() < 1
+                || updates.meditationDurationMinutes() > 60)) {
+            throw new IllegalArgumentException("Meditation duration must be between 1 and 60 minutes.");
         }
         if (updates.meditationIntervalBells() != null
                 && (updates.meditationIntervalBells() < 0 || updates.meditationIntervalBells() > 10)) {

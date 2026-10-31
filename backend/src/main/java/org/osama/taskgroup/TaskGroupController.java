@@ -3,6 +3,7 @@ package org.osama.taskgroup;
 import org.osama.user.CurrentUserService;
 import org.osama.task.Task;
 import org.osama.task.TaskDeletionReceipt;
+import org.osama.task.TaskService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,12 +22,14 @@ import java.util.List;
 public class TaskGroupController {
     private final TaskGroupService groupService;
     private final StatTaskGroupService statTaskGroupService;
+    private final TaskService taskService;
     private final CurrentUserService currentUserService;
 
     public TaskGroupController(TaskGroupService groupService, StatTaskGroupService statTaskGroupService,
-                               CurrentUserService currentUserService) {
+                               TaskService taskService, CurrentUserService currentUserService) {
         this.groupService = groupService;
         this.statTaskGroupService = statTaskGroupService;
+        this.taskService = taskService;
         this.currentUserService = currentUserService;
     }
 
@@ -56,7 +59,7 @@ public class TaskGroupController {
 
     @PutMapping("/{groupId}/move-to-today")
     public List<Task> moveGroupToToday(@PathVariable String groupId) {
-        return groupService.moveGroupToToday(groupId, currentUserService.getCurrentUserId());
+        return taskService.moveTaskGroupToToday(groupId, currentUserService.getCurrentUserId());
     }
 
     @DeleteMapping("/{groupId}/tasks/{taskId}")

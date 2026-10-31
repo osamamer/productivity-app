@@ -226,9 +226,50 @@ export function renderMeditationIntervalBell(
   renderResonantTone(context, when, 293.66, 3.2, 0.12, destination);
 }
 
-/** A lower, longer two-tone gong that marks the end of a meditation. */
+interface GongMode {
+  ratio: number;
+  level: number;
+  duration: number;
+  pitchDrop: number;
+}
+
+const GONG_MODES: readonly GongMode[] = [
+  { ratio: 0.78, level: 0.35, duration: 0.2, pitchDrop: 0.22 },
+  { ratio: 0.5, level: 0.2, duration: 1.8, pitchDrop: 0.035 },
+  { ratio: 1, level: 0.82, duration: 4.8, pitchDrop: 0.012 },
+  { ratio: 1.48, level: 0.46, duration: 4.1, pitchDrop: 0.018 },
+  { ratio: 2.08, level: 0.34, duration: 3.5, pitchDrop: 0.014 },
+  { ratio: 2.77, level: 0.23, duration: 2.8, pitchDrop: 0.02 },
+  { ratio: 3.63, level: 0.16, duration: 2.2, pitchDrop: 0.016 },
+  { ratio: 4.72, level: 0.11, duration: 1.8, pitchDrop: 0.024 },
+  { ratio: 6.11, level: 0.07, duration: 1.5, pitchDrop: 0.018 },
+];
+
+/** A struck, inharmonic low gong with a brief pitch bend and uneven decay. */
 export function renderMeditationCompletionGong(context: AudioContextLike): void {
   const start = context.currentTime + 0.01;
-  renderResonantTone(context, start, 146.83, 4.2, 0.14);
-  renderResonantTone(context, start + 0.22, 220, 3.7, 0.07);
+  const fundamental = 130.81;
+
+  GONG_MODES.forEach(mode => {
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    const modeStart = start;
+    const modeEnd = modeStart + mode.duration;
+    const peak = 0.26 * mode.level;
+    const earlyDecay = modeStart + Math.min(0.35, mode.duration * 0.22);
+    const lateDecay = modeStart + mode.duration * 0.62;
+
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(fundamental * mode.ratio * (1 + mode.pitchDrop), modeStart);
+    oscillator.frequency.linearRampToValueAtTime(fundamental * mode.ratio, modeStart + 0.14);
+    gain.gain.setValueAtTime(0, modeStart);
+    gain.gain.linearRampToValueAtTime(peak, modeStart + 0.008);
+    gain.gain.linearRampToValueAtTime(peak * 0.45, earlyDecay);
+    gain.gain.linearRampToValueAtTime(peak * 0.12, lateDecay);
+    gain.gain.linearRampToValueAtTime(0, modeEnd);
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.start(modeStart);
+    oscillator.stop(modeEnd + 0.02);
+  });
 }

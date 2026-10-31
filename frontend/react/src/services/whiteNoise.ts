@@ -1,6 +1,6 @@
 import {
     BUILT_IN_POMODORO_SOUND,
-    getPomodoroSoundAudioUrl,
+    getPomodoroSoundAudioUrls,
     getPomodoroSounds,
     loadSelectedPomodoroSoundMetadata,
     PomodoroSound,
@@ -13,6 +13,7 @@ export interface WhiteNoiseSource {
     id: string;
     name: string;
     url: string;
+    layerUrls?: [string, string];
 }
 
 const DEFAULT_SOURCE: WhiteNoiseSource = {
@@ -23,7 +24,6 @@ const DEFAULT_SOURCE: WhiteNoiseSource = {
 const VOLUME = 0.22;
 const MAX_CROSSFADE_SECONDS = 3;
 const AUDIO_READY_STATE = 3;
-const AUDIO_PRELOAD_TIMEOUT_MS = 15_000;
 
 let enabled = getRuntimeUserPreference('whiteNoiseEnabled');
 let source = DEFAULT_SOURCE;
@@ -108,9 +108,10 @@ function resetPlaybackState(): void {
     activeLayer = 0;
 }
 
-function setSource(audio: HTMLAudioElement, nextSource: { id: string; url: string }): void {
-    if (audio.src === new URL(nextSource.url, window.location.href).href) return;
-    audio.src = nextSource.url;
+function setSource(audio: HTMLAudioElement, nextSource: WhiteNoiseSource, index: 0 | 1): void {
+    const nextUrl = nextSource.layerUrls?.[index] ?? nextSource.url;
+    if (audio.src === new URL(nextUrl, window.location.href).href) return;
+    audio.src = nextUrl;
     audio.load();
 }
 
@@ -119,13 +120,11 @@ function preloadAudio(audio: HTMLAudioElement): Promise<void> {
 
     return new Promise((resolve, reject) => {
         let settled = false;
-        const timeoutId = window.setTimeout(() => finish(), AUDIO_PRELOAD_TIMEOUT_MS);
 
         function finish(error?: Error): void {
             if (settled) return;
             settled = true;
-            window.clearTimeout(timeoutId);
-            audio.removeEventListener('canplaythrough', onReady);
+            audio.removeEventListener('canplay', onReady);
             audio.removeEventListener('error', onError);
             if (error) reject(error);
             else resolve();
@@ -133,7 +132,7 @@ function preloadAudio(audio: HTMLAudioElement): Promise<void> {
 
         const onReady = () => finish();
         const onError = () => finish(new Error('Focus audio could not be loaded.'));
-        audio.addEventListener('canplaythrough', onReady);
+        audio.addEventListener('canplay', onReady);
         audio.addEventListener('error', onError);
         audio.load();
         if (audio.readyState >= AUDIO_READY_STATE) finish();
@@ -158,7 +157,7 @@ export function preloadWhiteNoiseSource(): Promise<void> {
     const request = Promise.all(([0, 1] as const).map(index => {
         const audio = getPlayer(index);
         if (!audio) return Promise.resolve();
-        setSource(audio, sourceAtStart);
+        setSource(audio, sourceAtStart, index);
         return preloadAudio(audio);
     })).then(() => undefined).catch(error => {
         if (sourceRevision === revisionAtStart) reportPlaybackError(error);
@@ -198,7 +197,7 @@ async function crossfadeTo(nextIndex: 0 | 1, durationMs: number): Promise<void> 
     if (!current || !next) return;
     const generation = crossfadeGeneration;
 
-    setSource(next, source);
+    setSource(next, source, nextIndex);
     next.currentTime = 0;
     next.volume = 0;
     // Reserve the transition before awaiting play(); timeupdate can fire again
@@ -289,14 +288,15 @@ export function initializeWhiteNoiseSource(): Promise<void> {
         .then(selectedSound => {
             const requestIsCurrent = sourceRevision === revisionAtStart && getAuthCacheScope() === scope;
             if (requestIsCurrent) {
-                return getPomodoroSoundAudioUrl(selectedSound)
-                    .then(url => {
+                return getPomodoroSoundAudioUrls(selectedSound, 2)
+                    .then(urls => {
                         if (sourceRevision === revisionAtStart && getAuthCacheScope() === scope) {
                             sourceLoadFailed = false;
                             setWhiteNoiseSource({
                                 id: selectedSound.id,
                                 name: selectedSound.name,
-                                url,
+                                url: urls[0],
+                                layerUrls: [urls[0], urls[1]],
                             });
                         }
                     })
@@ -338,11 +338,20 @@ export function resetWhiteNoiseSource(): void {
     stopWhiteNoise();
 }
 
-export function setWhiteNoiseSource(nextSource: { id: string; name?: string; url: string }): void {
+export function setWhiteNoiseSource(nextSource: {
+    id: string;
+    name?: string;
+    url: string;
+    layerUrls?: [string, string];
+}): void {
     const sourceScope = getAuthCacheScope();
     const nextName = nextSource.name
         ?? (nextSource.id === source.id ? source.name : nextSource.id === DEFAULT_SOURCE.id ? DEFAULT_SOURCE.name : 'Focus sound');
-    const sourceUnchanged = source.id === nextSource.id && source.url === nextSource.url && source.name === nextName;
+    const sourceUnchanged = source.id === nextSource.id
+        && source.url === nextSource.url
+        && source.name === nextName
+        && source.layerUrls?.[0] === nextSource.layerUrls?.[0]
+        && source.layerUrls?.[1] === nextSource.layerUrls?.[1];
     sourceOwnerScope = sourceScope;
     initializedSourceScope = sourceScope;
     sourceRevision += 1;
@@ -352,18 +361,23 @@ export function setWhiteNoiseSource(nextSource: { id: string; name?: string; url
     }
 
     const wasRunning = running;
-    source = { id: nextSource.id, name: nextName, url: nextSource.url };
+    source = {
+        id: nextSource.id,
+        name: nextName,
+        url: nextSource.url,
+        layerUrls: nextSource.layerUrls,
+    };
     sourceLoadFailed = false;
     publishSource();
     clearCrossfade();
 
     if (!wasRunning) {
-        players.forEach(player => {
+        players.forEach((player, index) => {
             if (!player) return;
             player.pause();
             player.currentTime = 0;
             player.volume = 0;
-            setSource(player, source);
+            setSource(player, source, index as 0 | 1);
         });
         void preloadWhiteNoiseSource();
         return;
@@ -388,20 +402,25 @@ export function selectWhiteNoiseSound(sound: PomodoroSound): Promise<WhiteNoiseS
     const previousSource = getWhiteNoiseSource();
     let audioLoaded = false;
     let preferenceSaved = scope === 'anonymous' || sound.id === previousSource.id;
-    const audioRequest = getPomodoroSoundAudioUrl(sound).then(url => {
+    const audioRequest = getPomodoroSoundAudioUrls(sound, 2).then(urls => {
         audioLoaded = true;
-        return url;
+        return urls;
     });
     const preferenceRequest = preferenceSaved
         ? Promise.resolve()
         : userService.updatePreferences({ pomodoroSoundId: sound.id }).then(() => {
             preferenceSaved = true;
         });
-    const switchRequest = audioRequest.then(url => {
+    const switchRequest = audioRequest.then(urls => {
         if (revision === sourceSelectionRevision && getAuthCacheScope() === scope) {
-            setWhiteNoiseSource({ id: sound.id, name: sound.name, url });
+            setWhiteNoiseSource({
+                id: sound.id,
+                name: sound.name,
+                url: urls[0],
+                layerUrls: [urls[0], urls[1]],
+            });
         }
-        return url;
+        return urls;
     });
 
     return Promise.all([switchRequest, preferenceRequest])
@@ -467,7 +486,7 @@ export async function startWhiteNoise(): Promise<void> {
 
     const audio = getPlayer(activeLayer as 0 | 1);
     if (!audio) return;
-    setSource(audio, source);
+    setSource(audio, source, activeLayer as 0 | 1);
     if (!audio.paused && running) return;
 
     running = true;

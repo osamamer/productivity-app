@@ -268,6 +268,7 @@ function NoteDraftEditorView({
                         '--notes-toolbar-foreground-strong': theme.palette.text.primary,
                         '--notes-toolbar-surface': theme.palette.background.paper,
                         '--notes-toolbar-border': theme.palette.divider,
+                        '--notes-toolbar-shadow': theme.shadows[4],
                         '--notes-toolbar-hover': alpha(theme.palette.text.primary, 0.08),
                         '--notes-toolbar-active': alpha(theme.palette.text.primary, 0.14),
                         color: 'text.primary',

@@ -38,6 +38,15 @@ public class CalendarEventController {
         return eventService.updateEvent(eventId, request, currentUserService.getCurrentUserId());
     }
 
+    @PutMapping("/{eventId}/reminder")
+    public List<CalendarEventResponse> updateImportedEventReminder(
+            @PathVariable String eventId,
+            @RequestBody CalendarEventReminderRequest request
+    ) {
+        return eventService.updateImportedEventReminder(
+                eventId, request.minutesBefore(), request.scope(), currentUserService.getCurrentUserId());
+    }
+
     @DeleteMapping("/{eventId}")
     public ResponseEntity<Void> deleteEvent(@PathVariable String eventId) {
         eventService.deleteEvent(eventId, currentUserService.getCurrentUserId());

@@ -304,3 +304,7 @@ databaseChangeLog:
       file: db/changelog/changes/088-rename-meditated-stat.yaml
   - include:
       file: db/changelog/changes/089-set-meditate-morality-good.yaml
+  - include:
+      file: db/changelog/changes/090-add-external-event-reminder-preferences.yaml
+  - include:
+      file: db/changelog/changes/091-add-pomodoro-time-adjustment.yaml

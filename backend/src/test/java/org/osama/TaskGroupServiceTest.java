@@ -207,7 +207,7 @@ class TaskGroupServiceTest {
         TaskGroupResponse group = taskGroupService.createGroup(
                 "Older work", List.of(first.getTaskId(), second.getTaskId()), TEST_USER_ID);
 
-        List<Task> movedTasks = taskGroupService.moveGroupToToday(group.groupId(), TEST_USER_ID);
+        List<Task> movedTasks = taskService.moveTaskGroupToToday(group.groupId(), TEST_USER_ID);
 
         assertEquals(2, movedTasks.size());
         assertEquals(LocalDate.now(), first.getScheduledPerformDateTime().toLocalDate());

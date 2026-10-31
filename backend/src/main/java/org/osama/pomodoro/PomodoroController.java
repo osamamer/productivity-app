@@ -49,6 +49,14 @@ public class PomodoroController {
         pomodoroService.startBreakEarly(taskId, currentUserService.getCurrentUserId());
     }
 
+    @PostMapping("/phase/adjust-time/{taskId}")
+    public Pomodoro adjustCurrentPhaseTime(@PathVariable String taskId,
+                                           @RequestBody TimeAdjustmentRequest request) {
+        return pomodoroService.adjustCurrentPhaseTime(
+                taskId, request.pomodoroId(), request.phase(), request.currentFocusNumber(),
+                request.deltaSeconds(), currentUserService.getCurrentUserId());
+    }
+
     @GetMapping("/status/{taskId}")
     public ResponseEntity<Pomodoro> getStatus(@PathVariable String taskId) {
         return pomodoroService.getActivePomodoro(taskId, currentUserService.getCurrentUserId())
@@ -62,4 +70,11 @@ public class PomodoroController {
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.noContent().build());
     }
+
+    public record TimeAdjustmentRequest(
+            String pomodoroId,
+            PomodoroPhase phase,
+            int currentFocusNumber,
+            int deltaSeconds
+    ) {}
 }

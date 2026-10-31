@@ -2,7 +2,7 @@ import { apiFetch } from '../utils/apiFetch';
 import { Task, TaskUpdate } from '../../types/Task';
 import { TaskToCreate } from '../../types/TaskToCreate';
 import { getAuthHeaders } from '../utils/authHeaders';
-import { PomodoroStatus } from '../../types/PomodoroStatus';
+import { PomodoroPhase, PomodoroStatus } from '../../types/PomodoroStatus';
 import { TaskPomodoroStats, TodayFocusSummary } from '../../types/TaskPomodoroStats';
 import { invalidateTaskPomodoroStats, setCachedTaskPomodoroStats } from '../cache/taskPomodoroStatsCache';
 import { CachedResource } from '../cache/ttlCache';
@@ -34,6 +34,13 @@ const POMODORO_URL = `${API_BASE_URL}/api/v1/pomodoro`;
 const TASK_CACHE_TTL_MS = 60 * 60 * 1000;
 const TASK_SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 export const TASK_PAGE_BATCH_SIZE = 30;
+
+export class PomodoroAdjustmentConflictError extends Error {
+    constructor() {
+        super('The Pomodoro phase changed before the time adjustment was applied.');
+        this.name = 'PomodoroAdjustmentConflictError';
+    }
+}
 
 export type TaskPageInitialSnapshot = {
     tasks: Task[];
@@ -1055,6 +1062,28 @@ export const taskService = {
             throw new Error('Failed to start the Pomodoro break');
         }
         invalidatePomodoroData(taskId);
+    },
+
+    async adjustPomodoroTime(taskId: string, adjustment: {
+        pomodoroId: string;
+        phase: PomodoroPhase;
+        currentFocusNumber: number;
+        deltaSeconds: number;
+    }): Promise<PomodoroStatus> {
+        const response = await apiFetch(`${POMODORO_URL}/phase/adjust-time/${taskId}`, {
+            method: 'POST',
+            body: JSON.stringify(adjustment),
+            headers: {
+                'Content-Type': 'application/json; charset=UTF-8',
+                ...getAuthHeaders(),
+            },
+        });
+        if (!response.ok) {
+            if (response.status === 409) throw new PomodoroAdjustmentConflictError();
+            throw new Error('Failed to adjust Pomodoro time');
+        }
+        invalidatePomodoroData(taskId);
+        return response.json();
     },
 
     // Returns the current user's active pomodoro, or null if none is running.

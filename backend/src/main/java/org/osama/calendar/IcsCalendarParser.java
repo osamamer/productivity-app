@@ -95,7 +95,8 @@ public class IcsCalendarParser {
 
     private void add(Map<String, ImportedCalendarEvent> imported, Map<String, VEvent> exceptions,
                      VEvent master, Temporal start, Temporal end, ZoneId zone) {
-        String occurrenceKey = key(uid(master), start.toString());
+        String eventUid = uid(master);
+        String occurrenceKey = key(eventUid, start.toString());
         VEvent exception = exceptions.get(occurrenceKey);
         if (exception != null) {
             ImportedCalendarEvent override = describe(exception, occurrenceKey, start, end, zone, master);
@@ -138,10 +139,10 @@ public class IcsCalendarParser {
         if (titleMarksCancelled) status = CalendarEventStatus.CANCELLED;
         if (start instanceof LocalDate startDate) {
             LocalDate endDate = end instanceof LocalDate d ? d : startDate.plusDays(1);
-            return new ImportedCalendarEvent(key, title, description, true, startDate, endDate.minusDays(1),
+            return new ImportedCalendarEvent(key, seriesKey(uid(event)), title, description, true, startDate, endDate.minusDays(1),
                     null, null, zone.getId(), status);
         }
-        return new ImportedCalendarEvent(key, title, description, false, null, null,
+        return new ImportedCalendarEvent(key, seriesKey(uid(event)), title, description, false, null, null,
                 instant(start, zone), instant(end, zone), zone.getId(), status);
     }
 
@@ -185,6 +186,11 @@ public class IcsCalendarParser {
 
     private String key(String uid, String occurrence) {
         return UUID.nameUUIDFromBytes((uid + "\u0000" + occurrence).getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString();
+    }
+
+    private String seriesKey(String uid) {
+        return UUID.nameUUIDFromBytes(("series\u0000" + uid)
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString();
     }
 
     private String value(VEvent event, String property) {

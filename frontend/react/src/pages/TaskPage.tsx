@@ -406,12 +406,11 @@ export function TaskPage() {
     }, [setHighlightedTask]);
 
     const requestDelete = useCallback((task: Task, anchorEl: HTMLElement) => {
-        if (deleteSubmitting || task.mentalThreadId) return;
+        if (deleteSubmitting) return;
 
         const tasks = selectedTaskIds.includes(task.taskId) && selectedTaskIds.length > 1
             ? allTasks.filter(candidate => selectedTaskIds.includes(candidate.taskId))
             : [task];
-        if (tasks.some(candidate => Boolean(candidate.mentalThreadId))) return;
         setDeleteRequest({
             kind: tasks.length > 1 ? 'bulk' : 'single',
             tasks,
@@ -420,9 +419,7 @@ export function TaskPage() {
     }, [allTasks, deleteSubmitting, selectedTaskIds]);
 
     const requestGroupDelete = useCallback((group: TaskGroup, anchorEl: HTMLElement) => {
-        if (deleteSubmitting || group.linkedToMentalThread || group.taskIds.some(taskId => (
-            allTasks.some(task => task.taskId === taskId && Boolean(task.mentalThreadId))
-        ))) return;
+        if (deleteSubmitting || group.isStatGroup) return;
         setDeleteRequest({
             kind: 'group',
             group,
@@ -439,10 +436,8 @@ export function TaskPage() {
         if (!deleteRequest || deleteSubmitting) return;
 
         const request = deleteRequest;
-        if (request.tasks.some(task => Boolean(task.mentalThreadId))
-            || (request.kind === 'group' && request.group.linkedToMentalThread)) return;
+        if (request.kind === 'group' && request.group.isStatGroup) return;
         const tasksToDelete = tasksForDeleteScope(request, scope, allTasks);
-        if (tasksToDelete.some(task => Boolean(task.mentalThreadId))) return;
         setDeleteSubmitting(true);
         setDeleteRequest(null);
         const receipts: Array<TaskDeletionReceipt | null> = [];
@@ -496,9 +491,7 @@ export function TaskPage() {
         if (!deleteRequest || deleteRequest.kind !== 'group' || deleteSubmitting) return;
 
         const group = deleteRequest.group;
-        if (group.linkedToMentalThread || group.taskIds.some(taskId => (
-            allTasks.some(task => task.taskId === taskId && Boolean(task.mentalThreadId))
-        ))) return;
+        if (group.isStatGroup) return;
         setDeleteSubmitting(true);
         setDeleteRequest(null);
         try {
@@ -516,7 +509,7 @@ export function TaskPage() {
             setDeleteSubmitting(false);
             setDeleteRequest(null);
         }
-    }, [allTasks, clearSelection, deleteRequest, deleteSubmitting]);
+    }, [clearSelection, deleteRequest, deleteSubmitting]);
 
     const toggleSection = useCallback((section: TaskSectionName) => {
         setExpandedSections(previous => {
@@ -647,18 +640,6 @@ export function TaskPage() {
             .flatMap(group => group.taskIds)),
         [taskGroups, selectedGroupIdSet],
     );
-    const protectedTaskIdSet = useMemo(() => {
-        const protectedTaskIds = new Set(
-            allTasks.filter(task => Boolean(task.mentalThreadId)).map(task => task.taskId),
-        );
-        taskGroups.forEach(group => {
-            if (group.isStatGroup || group.linkedToMentalThread
-                || group.taskIds.some(taskId => protectedTaskIds.has(taskId))) {
-                group.taskIds.forEach(taskId => protectedTaskIds.add(taskId));
-            }
-        });
-        return protectedTaskIds;
-    }, [allTasks, taskGroups]);
     const selectedActionTaskIdSet = useMemo(
         () => new Set([...selectedTaskIds, ...selectedGroupTaskIdSet]),
         [selectedGroupTaskIdSet, selectedTaskIds],
@@ -667,19 +648,17 @@ export function TaskPage() {
         () => allTasks.filter(task => selectedActionTaskIdSet.has(task.taskId)),
         [allTasks, selectedActionTaskIdSet],
     );
-    const hasLinkedSelection = selectedTasks.some(task => protectedTaskIdSet.has(task.taskId))
-        || selectedGroupIds.some(groupId => taskGroups.some(group => (
+    const hasOnlyOriginGroupSelection = selectedGroupIds.length > 0
+        && selectedGroupIds.every(groupId => taskGroups.some(group => (
             group.groupId === groupId && (group.isStatGroup || group.linkedToMentalThread)
         )));
     const selectionEntityCount = selectedTaskIds.length + selectedGroupIds.length;
     const selectionActionsVisible = selectionEntityCount > 1 || selectedGroupIds.length > 0;
-    const canGroupSelectedTasks = !hasLinkedSelection
-        && selectedGroupIds.length === 0
-        && selectedTaskIds.length >= 2;
-    const canCreateParentTask = selectedGroupIds.length === 0
-        && !hasLinkedSelection
-        && selectedTaskIds.length >= 2
-        && selectedTasks.length === selectedTaskIds.length
+    const canGroupSelectedTasks = (selectedGroupIds.length === 0 && selectedTaskIds.length >= 2)
+        || (hasOnlyOriginGroupSelection && selectedTasks.length >= 2);
+    const canCreateParentTask = (selectedGroupIds.length === 0 || hasOnlyOriginGroupSelection)
+        && selectedTasks.length >= 2
+        && selectedTasks.length === selectedActionTaskIdSet.size
         && selectedTasks.every(task => !task.parentId && !task.taskSeriesId);
     const selectedTask = taskSelectionEnabled
         && highlightedTask
@@ -751,9 +730,7 @@ export function TaskPage() {
     }, [allTasks, taskGroups]);
 
     const createTaskInGroup = useCallback(async (group: TaskGroup, taskToCreate: TaskToCreate) => {
-        if (!taskToCreate.name.trim() || group.linkedToMentalThread || group.taskIds.some(taskId => (
-            allTasks.some(task => task.taskId === taskId && Boolean(task.mentalThreadId))
-        ))) return;
+        if (!taskToCreate.name.trim() || group.linkedToMentalThread) return;
 
         const currentGroup = taskGroups.find(candidate => candidate.groupId === group.groupId) ?? group;
         const optimisticTaskId = `optimistic-task-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -826,7 +803,7 @@ export function TaskPage() {
             }
             showTaskFeedback('error', 'Could not add the task to that group');
         }
-    }, [addTaskToState, allTasks, removeTaskFromState, replaceTaskInState, showTaskFeedback, taskGroups]);
+    }, [addTaskToState, removeTaskFromState, replaceTaskInState, showTaskFeedback, taskGroups]);
 
     const applySelection = useCallback((taskIds: string[], groupIds: string[]) => {
         const nextTaskIds = new Set(taskIds);
@@ -943,12 +920,12 @@ export function TaskPage() {
     }, [applySelection, renderedSelectionEntities, selectedGroupIds, selectedTaskIds]);
 
     const requestBulkDelete = useCallback((anchorEl: HTMLElement) => {
-        if (bulkActionLoading || hasLinkedSelection || selectedTasks.length === 0) return;
+        if (bulkActionLoading || selectedTasks.length === 0) return;
         setDeleteRequest({ kind: 'bulk', tasks: selectedTasks, anchorEl });
-    }, [bulkActionLoading, hasLinkedSelection, selectedTasks]);
+    }, [bulkActionLoading, selectedTasks]);
 
     useKeyboardDelete({
-        enabled: selectionEntityCount > 0 && !hasLinkedSelection
+        enabled: selectionEntityCount > 0
             && !deleteRequest && !deleteSubmitting && !bulkActionLoading,
         onDelete: () => {
             const selectedGroupId = [...selectedGroupIds].reverse().find(groupId =>
@@ -957,11 +934,13 @@ export function TaskPage() {
             if (selectedGroupId) {
                 const group = taskGroups.find(candidate => candidate.groupId === selectedGroupId);
                 if (group) {
-                    setDeleteRequest({
+                    const anchorEl = findKeyboardDeleteAnchor('data-task-group-id', group.groupId) ?? document.body;
+                    if (group.isStatGroup) requestBulkDelete(anchorEl);
+                    else setDeleteRequest({
                         kind: 'group',
                         group,
                         tasks: allTasks.filter(task => group.taskIds.includes(task.taskId)),
-                        anchorEl: findKeyboardDeleteAnchor('data-task-group-id', group.groupId) ?? document.body,
+                        anchorEl,
                     });
                 }
                 return;
@@ -991,7 +970,6 @@ export function TaskPage() {
     }, []);
 
     const performBulkAction = useCallback(async (action: BulkAction, scheduledDateTime?: string) => {
-        if (hasLinkedSelection && action !== 'complete' && action !== 'reopen') return;
         if (bulkActionLoading || selectedTasks.length === 0) return;
         if (action === 'move-to-date' && !scheduledDateTime) return;
 
@@ -1022,16 +1000,15 @@ export function TaskPage() {
         } finally {
             setBulkActionLoading(false);
         }
-    }, [bulkActionLoading, clearSelection, hasLinkedSelection, refreshTaskBuckets, selectedTasks, showTaskFeedback, updateTaskInState]);
+    }, [bulkActionLoading, clearSelection, refreshTaskBuckets, selectedTasks, showTaskFeedback, updateTaskInState]);
 
     const openBulkDatePicker = useCallback((anchorEl: HTMLElement) => {
-        if (hasLinkedSelection) return;
         const firstScheduledDate = selectedTasks
             .map(task => task.scheduledPerformDateTime ? new Date(task.scheduledPerformDateTime) : null)
             .find((value): value is Date => value !== null && !Number.isNaN(value.getTime()));
         setBulkDateDraft(firstScheduledDate ?? new Date());
         setBulkDateAnchorEl(anchorEl);
-    }, [hasLinkedSelection, selectedTasks]);
+    }, [selectedTasks]);
 
     const createGroup = useCallback(async () => {
         const trimmedName = groupName.trim();
@@ -1096,10 +1073,7 @@ export function TaskPage() {
 
     const addTasksToGroup = useCallback(async (targetGroup: TaskGroup, taskIds: string[]) => {
         const taskIdsToAdd = taskIds.filter(taskId => !targetGroup.taskIds.includes(taskId));
-        if (targetGroup.isStatGroup || targetGroup.linkedToMentalThread
-            || targetGroup.taskIds.some(taskId => protectedTaskIdSet.has(taskId))
-            || taskIdsToAdd.length === 0
-            || taskIdsToAdd.some(taskId => protectedTaskIdSet.has(taskId))) return;
+        if (targetGroup.isStatGroup || targetGroup.linkedToMentalThread || taskIdsToAdd.length === 0) return;
 
         const nextTaskIds = [...targetGroup.taskIds, ...taskIdsToAdd];
         const movedTaskIdSet = new Set(taskIdsToAdd);
@@ -1129,7 +1103,7 @@ export function TaskPage() {
             }
             showTaskFeedback('error', 'Could not add the task to that group');
         }
-    }, [protectedTaskIdSet, showTaskFeedback]);
+    }, [showTaskFeedback]);
 
     const handleTaskDragStart = useCallback((task: Task) => {
         const renderedTaskIds = renderedTaskItems.flatMap(item => (
@@ -1153,16 +1127,14 @@ export function TaskPage() {
 
     const handleGroupDragOver = useCallback((group: TaskGroup, event: React.DragEvent<HTMLElement>) => {
         if (activeDraggedTaskIdsRef.current.length === 0) return;
-        if (group.isStatGroup || group.linkedToMentalThread
-            || group.taskIds.some(taskId => protectedTaskIdSet.has(taskId))
-            || activeDraggedTaskIdsRef.current.some(taskId => protectedTaskIdSet.has(taskId))) {
+        if (group.isStatGroup || group.linkedToMentalThread) {
             setDragTargetGroupId(null);
             return;
         }
         event.preventDefault();
         event.dataTransfer.dropEffect = 'move';
         setDragTargetGroupId(group.groupId);
-    }, [protectedTaskIdSet]);
+    }, []);
 
     const handleGroupDrop = useCallback((group: TaskGroup, event: React.DragEvent<HTMLElement>) => {
         const taskIdsToAdd = activeDraggedTaskIdsRef.current;
@@ -1443,17 +1415,15 @@ export function TaskPage() {
                                             ? <ReplayIcon fontSize="small" />
                                             : <CheckCircleOutlineIcon fontSize="small" color="success" />}
                                     </IconButton>
-                                    {!hasLinkedSelection && (
-                                        <IconButton
-                                            size="small"
-                                            aria-label="Move selected tasks to a date"
-                                            title="Move selected tasks to a date"
-                                            onClick={event => openBulkDatePicker(event.currentTarget)}
-                                            disabled={bulkActionLoading || selectedTasks.length === 0}
-                                        >
-                                            <CalendarMonthIcon fontSize="small" />
-                                        </IconButton>
-                                    )}
+                                    <IconButton
+                                        size="small"
+                                        aria-label="Move selected tasks to a date"
+                                        title="Move selected tasks to a date"
+                                        onClick={event => openBulkDatePicker(event.currentTarget)}
+                                        disabled={bulkActionLoading || selectedTasks.length === 0}
+                                    >
+                                        <CalendarMonthIcon fontSize="small" />
+                                    </IconButton>
                                     {canCreateParentTask && (
                                         <IconButton
                                             size="small"
@@ -1483,18 +1453,16 @@ export function TaskPage() {
                                             <GroupWorkIcon fontSize="small" />
                                         </IconButton>
                                     )}
-                                    {!hasLinkedSelection && (
-                                        <IconButton
-                                            size="small"
-                                            color="error"
-                                            aria-label="Delete selected tasks"
-                                            title="Delete selected tasks"
-                                            onClick={event => requestBulkDelete(event.currentTarget)}
-                                            disabled={bulkActionLoading || selectedTasks.length === 0}
-                                        >
-                                            <DeleteSweepIcon fontSize="small" />
-                                        </IconButton>
-                                    )}
+                                    <IconButton
+                                        size="small"
+                                        color="error"
+                                        aria-label="Delete selected tasks"
+                                        title="Delete selected tasks"
+                                        onClick={event => requestBulkDelete(event.currentTarget)}
+                                        disabled={bulkActionLoading || selectedTasks.length === 0}
+                                    >
+                                        <DeleteSweepIcon fontSize="small" />
+                                    </IconButton>
                                 </Box>
                             </Portal>
                         )}

@@ -11,6 +11,7 @@ import {
 import { StatRecurringTaskOptions } from './StatRecurringTaskDialog';
 import { AppTimeField } from '../input/AppPickerFields';
 import { TaskReminderPicker } from '../task/TaskReminderPicker';
+import { MAX_STAT_TASK_SCHEDULE_WEEKS, StatTaskSchedulePeriodFields } from './StatTaskSchedulePeriodFields';
 
 type PopupPosition = { top: number; left: number };
 
@@ -28,7 +29,7 @@ type Props = {
         reminderMinutesBefore: number | null,
     ) => void;
     onCreateRecurring: (taskName: string, recurrence: StatRecurringTaskDraft) => void;
-    onCreateThisWeek: (schedule: StatWeeklyTaskScheduleDraft) => void;
+    onScheduleWeeks: (schedule: StatWeeklyTaskScheduleDraft) => void;
 };
 
 const PRIORITY_OPTIONS = [
@@ -52,7 +53,7 @@ export function StatCreateLinkedTaskDialog({
     onClose,
     onCreate,
     onCreateRecurring,
-    onCreateThisWeek,
+    onScheduleWeeks,
 }: Props) {
     const [taskName, setTaskName] = useState('');
     const [importance, setImportance] = useState(3);
@@ -81,12 +82,16 @@ export function StatCreateLinkedTaskDialog({
         && recurrence.recurrenceDaysOfWeek.length === 0;
     const timeMissing = !/^\d{2}:\d{2}$/.test(recurrence.timeOfDay);
     const weeklyTimeMissing = !/^\d{2}:\d{2}$/.test(weeklySchedule.timeOfDay);
+    const weeklyPeriodInvalid = !weeklySchedule.weekStartDate
+        || !Number.isInteger(weeklySchedule.weekCount)
+        || weeklySchedule.weekCount < 1
+        || weeklySchedule.weekCount > MAX_STAT_TASK_SCHEDULE_WEEKS;
     const oneTimeMissing = !/^\d{2}:\d{2}$/.test(timeOfDay);
     const canCreate = Boolean(definition && trimmedTaskName && !saving
         && (mode === 'once'
             ? !oneTimeMissing
             : mode === 'week'
-                ? weeklySchedule.daysOfWeek.length > 0 && !weeklyTimeMissing
+                ? weeklySchedule.daysOfWeek.length > 0 && !weeklyTimeMissing && !weeklyPeriodInvalid
                 : !customDaysMissing && !timeMissing));
 
     return (
@@ -158,16 +163,32 @@ export function StatCreateLinkedTaskDialog({
                                 disabled={saving}
                             >
                                 <ToggleButton value="once">One-time</ToggleButton>
-                                <ToggleButton value="week">This week</ToggleButton>
+                                <ToggleButton value="week">Selected weeks</ToggleButton>
                                 {!definition.recurringTaskSeriesId && (
                                     <ToggleButton value="recurring">Recurring</ToggleButton>
                                 )}
                             </ToggleButtonGroup>
                             {mode === 'week' && (
                                 <>
+                                    <StatTaskSchedulePeriodFields
+                                        weekStartDate={weeklySchedule.weekStartDate}
+                                        weekCount={weeklySchedule.weekCount}
+                                        disabled={saving}
+                                        onWeekStartDateChange={weekStartDate => setWeeklySchedule(current => ({
+                                            ...current,
+                                            weekStartDate,
+                                            daysOfWeek: current.daysOfWeek.filter(day =>
+                                                isStatScheduleDayAvailable(day, current.timeOfDay, weekStartDate),
+                                            ),
+                                        }))}
+                                        onWeekCountChange={weekCount => setWeeklySchedule(current => ({
+                                            ...current,
+                                            weekCount,
+                                        }))}
+                                    />
                                     <Box>
                                         <Typography variant="body2" color="text.secondary" sx={{ mb: 0.75 }}>
-                                            Days this week
+                                            Days each week
                                         </Typography>
                                         <ToggleButtonGroup
                                             value={weeklySchedule.daysOfWeek}
@@ -185,7 +206,11 @@ export function StatCreateLinkedTaskDialog({
                                                     key={day.value}
                                                     value={day.value}
                                                     aria-label={day.value}
-                                                    disabled={!isStatScheduleDayAvailable(day.value, weeklySchedule.timeOfDay)}
+                                                    disabled={!isStatScheduleDayAvailable(
+                                                        day.value,
+                                                        weeklySchedule.timeOfDay,
+                                                        weeklySchedule.weekStartDate,
+                                                    )}
                                                 >
                                                     {day.label}
                                                 </ToggleButton>
@@ -199,7 +224,7 @@ export function StatCreateLinkedTaskDialog({
                                             ...current,
                                             timeOfDay,
                                             daysOfWeek: current.daysOfWeek.filter(day =>
-                                                isStatScheduleDayAvailable(day, timeOfDay),
+                                                isStatScheduleDayAvailable(day, timeOfDay, current.weekStartDate),
                                             ),
                                         }))}
                                         disabled={saving}
@@ -247,7 +272,7 @@ export function StatCreateLinkedTaskDialog({
                     onClick={() => mode === 'recurring'
                         ? onCreateRecurring(trimmedTaskName, { ...recurrence, importance, taskName: trimmedTaskName })
                         : mode === 'week'
-                            ? onCreateThisWeek({
+                            ? onScheduleWeeks({
                                 ...weeklySchedule,
                                 taskName: trimmedTaskName,
                                 importance,
@@ -257,7 +282,7 @@ export function StatCreateLinkedTaskDialog({
                 >
                     {saving ? 'Creating…' : mode === 'recurring'
                         ? 'Create recurring task'
-                        : mode === 'week' ? 'Schedule this week' : 'Create task'}
+                        : mode === 'week' ? 'Schedule tasks' : 'Create task'}
                 </Button>
             </DialogActions>
             </Box>

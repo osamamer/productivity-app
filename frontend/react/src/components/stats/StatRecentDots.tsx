@@ -15,6 +15,7 @@ import { KeyboardEvent } from 'react';
 import {
     effectiveStatMorality,
     getBooleanChoiceColor,
+    getBooleanChoiceTextColor,
     getStatFeedback,
     getStatFeedbackColor,
     showStatFeedback,
@@ -530,7 +531,7 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                             >
                                 <ToggleButton
                                     value="yes"
-                                    sx={{ '&.Mui-selected': { bgcolor: `${getBooleanChoiceColor(definition, 1)}.main`, color: 'white', '&:hover': { bgcolor: `${getBooleanChoiceColor(definition, 1)}.dark` } } }}
+                                    sx={{ '&.Mui-selected': { bgcolor: `${getBooleanChoiceColor(definition, 1)}.main`, color: getBooleanChoiceTextColor(definition, 1), '&:hover': { bgcolor: `${getBooleanChoiceColor(definition, 1)}.dark` } } }}
                                 >
                                     Yes
                                 </ToggleButton>
@@ -542,7 +543,7 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                                 </ToggleButton>
                                 <ToggleButton
                                     value="no"
-                                    sx={{ '&.Mui-selected': { bgcolor: `${getBooleanChoiceColor(definition, 0)}.main`, color: 'white', '&:hover': { bgcolor: `${getBooleanChoiceColor(definition, 0)}.dark` } } }}
+                                    sx={{ '&.Mui-selected': { bgcolor: `${getBooleanChoiceColor(definition, 0)}.main`, color: getBooleanChoiceTextColor(definition, 0), '&:hover': { bgcolor: `${getBooleanChoiceColor(definition, 0)}.dark` } } }}
                                 >
                                     No
                                 </ToggleButton>

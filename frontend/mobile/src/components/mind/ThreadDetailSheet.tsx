@@ -2,12 +2,13 @@ import { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { TaskRow } from '@/components/tasks/TaskRow';
+import { TaskDetailSheet } from '@/components/tasks/TaskDetailSheet';
 import { reportError } from '@/lib/errors';
 import { playAudioFeedback } from '@/lib/audioFeedback';
 import { useTaskWorkspace } from '@/providers/TaskWorkspaceProvider';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
-import type { AttentionState, ClosureType, MentalThread } from '@/types/models';
+import type { AttentionState, ClosureType, MentalThread, Task } from '@/types/models';
 import { AppButton } from '../ui/AppButton';
 import { AppInput } from '../ui/AppInput';
 import { AppSlider } from '../ui/AppSlider';
@@ -33,7 +34,8 @@ export function ThreadDetailSheet({ thread, onClose, onUpdated }: {
   const [taskSaving, setTaskSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statePickerOpen, setStatePickerOpen] = useState(false);
-  const { allTasks, addTask, updateTask } = useTaskWorkspace();
+  const { allTasks, addTask, updateTask, removeTask, refresh } = useTaskWorkspace();
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const { colors } = useAppTheme();
   const editable = thread?.status === 'OPEN';
   const stateColor = attention === 'ACTING'
@@ -111,8 +113,9 @@ export function ThreadDetailSheet({ thread, onClose, onUpdated }: {
   }
 
   return (
+    <>
     <ModalSheet
-      visible={Boolean(thread)}
+      visible={Boolean(thread) && !selectedTask}
       onClose={onClose}
       title={thread?.status === 'CLOSED' ? 'Closed thread' : 'Mental thread'}
       footer={editable ? <AppButton label="Save changes" loading={saving} onPress={() => void save()} /> : undefined}
@@ -186,7 +189,7 @@ export function ThreadDetailSheet({ thread, onClose, onUpdated }: {
       <View style={styles.tasks}>
         <AppText variant="heading">Next actions</AppText>
         {threadTasks.map(task => (
-          <TaskRow key={task.taskId} task={task} onToggle={() => void toggleTask(task)} onPress={() => void toggleTask(task)} />
+          <TaskRow key={task.taskId} task={task} onToggle={() => void toggleTask(task)} onPress={() => setSelectedTask(task)} />
         ))}
         {!threadTasks.length && <AppText color="muted">No next actions yet.</AppText>}
         {thread?.status === 'OPEN' && (
@@ -227,6 +230,25 @@ export function ThreadDetailSheet({ thread, onClose, onUpdated }: {
         onPress={() => void changeClosedState()}
       />
     </ModalSheet>
+    <TaskDetailSheet
+      key={selectedTask?.taskId ?? 'no-thread-task'}
+      task={thread && selectedTask ? selectedTask : null}
+      onClose={() => setSelectedTask(null)}
+      onUpdated={task => { updateTask(task); setSelectedTask(task); }}
+      onDeleted={taskId => { removeTask(taskId); setSelectedTask(null); }}
+      onDeletedOccurrence={async taskId => {
+        await api.tasks.removeOccurrence(taskId);
+        removeTask(taskId);
+        setSelectedTask(null);
+      }}
+      onDeletedFutureOccurrences={async taskId => {
+        await api.tasks.removeFutureOccurrences(taskId);
+        await refresh();
+        setSelectedTask(null);
+      }}
+      onSubtaskCreated={addTask}
+    />
+    </>
   );
 }
 

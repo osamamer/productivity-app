@@ -94,7 +94,7 @@ export function LoginPage() {
             component="main"
             data-context-menu-space
             sx={{
-                minHeight: '100vh',
+                minHeight: '100%',
                 display: 'grid',
                 placeItems: 'center',
                 p: { xs: 2, sm: 4 },
