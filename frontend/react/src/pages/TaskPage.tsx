@@ -36,6 +36,7 @@ import { Task } from '../types/Task';
 import { TaskGroup } from '../types/TaskGroup';
 import { getShowCompletedHomeTasks } from '../services/utils/homePreferences';
 import { playAudioFeedback } from '../services/audioFeedback';
+import { taskCompletionFeedbackKind } from '../services/utils/taskCompletionFeedback';
 import { createTaskSearchMatcher, normalizeTaskSearchText } from '../services/utils/taskSearch';
 import { findKeyboardDeleteAnchor, useKeyboardDelete } from '../hooks/useKeyboardDelete';
 import { BulkTaskDatePopover } from '../components/task/BulkTaskDatePopover';
@@ -307,7 +308,8 @@ export function TaskPage() {
     }, []);
 
     const toggleTaskCompletion = useCallback((taskId: string) => {
-        const task = allTasksRef.current.find(candidate => candidate.taskId === taskId);
+        const tasksBeforeCompletion = allTasksRef.current;
+        const task = tasksBeforeCompletion.find(candidate => candidate.taskId === taskId);
         if (!task) return;
 
         const previousCompleted = task.completed;
@@ -321,7 +323,7 @@ export function TaskPage() {
             candidate.taskId === taskId ? { ...candidate, completed } : candidate
         ));
         updateTasksInState([{ taskId, updates: { completed } }]);
-        if (!previousCompleted) playAudioFeedback('taskCompleted');
+        if (!previousCompleted) playAudioFeedback(taskCompletionFeedbackKind(tasksBeforeCompletion, new Set([taskId])));
 
         const persist = async () => {
             try {
@@ -973,6 +975,8 @@ export function TaskPage() {
         if (bulkActionLoading || selectedTasks.length === 0) return;
         if (action === 'move-to-date' && !scheduledDateTime) return;
 
+        const completingTaskIds = new Set(selectedTasks.filter(task => !task.completed).map(task => task.taskId));
+        const tasksBeforeCompletion = allTasksRef.current;
         setBulkActionLoading(true);
         try {
             const updatedTasks = await Promise.all(selectedTasks.map(task => {
@@ -985,6 +989,10 @@ export function TaskPage() {
                 return taskService.updateTask(task.taskId, { completed: action === 'complete' });
             }));
             updatedTasks.forEach(updatedTask => updateTaskInState(updatedTask.taskId, updatedTask));
+            if (action === 'complete' && completingTaskIds.size > 0
+                && taskCompletionFeedbackKind(tasksBeforeCompletion, completingTaskIds) === 'pomodoroCompleted') {
+                playAudioFeedback('pomodoroCompleted');
+            }
             setBulkDateAnchorEl(null);
             showTaskFeedback(
                 'success',

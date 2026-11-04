@@ -61,6 +61,7 @@ import { getAuthCacheScope } from '../services/utils/authHeaders';
 import { PomodoroStatus } from '../types/PomodoroStatus';
 import { celebrateStatLogged } from '../services/statCelebration';
 import { playAudioFeedback } from '../services/audioFeedback';
+import { taskCompletionFeedbackKind } from '../services/utils/taskCompletionFeedback';
 import { BulkTaskDatePopover } from '../components/task/BulkTaskDatePopover';
 import { findKeyboardDeleteAnchor, useKeyboardDelete } from '../hooks/useKeyboardDelete';
 import { TaskReminderPicker } from '../components/task/TaskReminderPicker';
@@ -1723,42 +1724,42 @@ export function HomePage() {
         () => pomodoroTaskMinimized ? null : activePomodoroTask,
         [activePomodoroTask, pomodoroTaskMinimized],
     );
-    const homeDetailTasks = useMemo(() => {
-        const tasksById = new Map<string, Task>();
-        [...visibleTasks, ...olderTasks, ...(focusedPomodoroTask ? [focusedPomodoroTask] : [])]
-            .forEach(task => tasksById.set(task.taskId, task));
-        return [...tasksById.values()];
-    }, [focusedPomodoroTask, olderTasks, visibleTasks]);
-
     useEffect(() => {
         let cancelled = false;
-        let nextTaskIndex = 0;
+        const todayDetailTasks = [...new Map(
+            [...visibleTasks, ...(focusedPomodoroTask ? [focusedPomodoroTask] : [])]
+                .map(task => [task.taskId, task] as const),
+        ).values()];
+        const todayIds = new Set(todayDetailTasks.map(task => task.taskId));
+        const olderDetailTasks = olderTasks.filter(task => !todayIds.has(task.taskId));
 
-        const prefetchWorker = async () => {
-            while (!cancelled) {
-                const task = homeDetailTasks[nextTaskIndex];
-                nextTaskIndex += 1;
-                if (!task) return;
-
-                try {
-                    await taskService.getTaskDetails(task);
-                } catch (error) {
-                    console.error('Error prefetching Home task details:', error);
+        const prefetchTasks = (tasks: Task[], workerCount: number) => {
+            let nextTaskIndex = 0;
+            const worker = async () => {
+                while (!cancelled) {
+                    const task = tasks[nextTaskIndex++];
+                    if (!task) return;
+                    try {
+                        await taskService.getTaskDetails(task);
+                    } catch (error) {
+                        console.error('Error prefetching Home task details:', error);
+                    }
                 }
-            }
+            };
+            return Promise.all(Array.from({ length: Math.min(workerCount, tasks.length) }, () => worker()));
         };
 
-        // Detail requests include subtasks and sometimes a recurring series.
-        // Limit concurrent tasks so warming a large Home list stays bounded.
-        void Promise.all(Array.from(
-            { length: Math.min(4, homeDetailTasks.length) },
-            () => prefetchWorker(),
-        ));
+        // Keep older details warm even when today's list is long, with four requests at most.
+        const olderWorkers = olderDetailTasks.length > 0 ? (todayDetailTasks.length > 0 ? 2 : 4) : 0;
+        void Promise.all([
+            prefetchTasks(todayDetailTasks, 4 - olderWorkers),
+            prefetchTasks(olderDetailTasks, olderWorkers),
+        ]);
 
         return () => {
             cancelled = true;
         };
-    }, [homeDetailTasks]);
+    }, [focusedPomodoroTask, olderTasks, visibleTasks]);
     const tasksBelowFocus = useMemo(
         () => focusedPomodoroTask
             ? visibleTasks.filter(task => task.taskId !== focusedPomodoroTask.taskId)
@@ -2094,7 +2095,8 @@ export function HomePage() {
     }, [refreshTaskBuckets, showUndoFeedback, taskListItems, updateTaskInState]);
 
     const toggleTaskCompletion = useCallback(async (taskId: string, anchorEl?: HTMLElement) => {
-        const task = allTasksRef.current.find(existingTask => existingTask.taskId === taskId);
+        const tasksBeforeCompletion = allTasksRef.current;
+        const task = tasksBeforeCompletion.find(existingTask => existingTask.taskId === taskId);
         if (task) captureHomeTaskLayout();
         const wasCompleted = task?.completed ?? false;
         const completed = !wasCompleted;
@@ -2124,7 +2126,10 @@ export function HomePage() {
         }
         if (!wasCompleted) {
             celebrateStatLogged(completionOrigin ?? anchorEl);
-            playAudioFeedback('taskCompleted');
+            playAudioFeedback(taskCompletionFeedbackKind(
+                tasksBeforeCompletion,
+                new Set([taskId]),
+            ));
         }
         const orderRevision = manualTaskOrderRevisionRef.current;
         const persist = async () => {
@@ -2428,7 +2433,10 @@ export function HomePage() {
         setBulkActionLoading(true);
         if (action === 'complete' && tasksToCelebrate.length > 0) {
             completionOrigins.forEach(origin => celebrateStatLogged(origin));
-            playAudioFeedback('taskCompleted');
+            playAudioFeedback(taskCompletionFeedbackKind(
+                allTasks,
+                new Set(tasksToCelebrate.map(task => task.taskId)),
+            ));
         }
         try {
             const updatedTasks = await Promise.all(tasksToUpdate.map(task => {
@@ -3942,7 +3950,7 @@ export function HomePage() {
         return (
             <Box
                 key={getTaskRenderKey(task.taskId)}
-                sx={isFocusedPomodoroRow
+                sx={isFocusedPomodoroRow || options.showScheduledDate
                     ? { contentVisibility: 'visible' }
                     : options.grouped
                         ? { contentVisibility: 'visible' }
@@ -4960,7 +4968,7 @@ export function HomePage() {
                             in={homeTaskControlsReady && showHomeSections
                                 && (focusVisibility === 'all' || focusVisibility === 'fading')
                                 && showOlderTasks && olderTasks.length > 0}
-                            timeout="auto"
+                            timeout={{ enter: 340, exit: 220 }}
                             mountOnEnter
                             unmountOnExit
                             onEntered={() => {
@@ -4970,7 +4978,7 @@ export function HomePage() {
                                 }
                                 olderTasksSectionRef.current?.scrollIntoView({
                                     behavior: 'smooth',
-                                    block: 'center',
+                                    block: 'nearest',
                                 });
                             }}
                         >

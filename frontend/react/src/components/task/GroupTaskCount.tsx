@@ -22,7 +22,11 @@ export function GroupTaskCount({ tasks, sx }: GroupTaskCountProps) {
             <span aria-hidden="true" style={{ textDecoration: partiallyComplete ? 'line-through' : 'none' }}>
                 {tasks.length}
             </span>
-            {partiallyComplete && <span aria-hidden="true"> {remaining}</span>}
+            {partiallyComplete && (
+                <span aria-hidden="true" style={{ display: 'inline-block', marginLeft: 7 }}>
+                    {remaining}
+                </span>
+            )}
         </Typography>
     );
 }

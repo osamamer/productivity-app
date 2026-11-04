@@ -26,6 +26,7 @@ import { useGlobalTasks } from '../hooks/useGlobalTasks';
 import { useProjectsWorkspace } from '../hooks/useProjectsWorkspace';
 import { taskService } from '../services/api/taskService';
 import { playAudioFeedback } from '../services/audioFeedback';
+import { taskCompletionFeedbackKind } from '../services/utils/taskCompletionFeedback';
 import { Project, ProjectInput } from '../types/Project';
 import { Task } from '../types/Task';
 import { TaskToCreate } from '../types/TaskToCreate';
@@ -121,7 +122,7 @@ export function ProjectsPage() {
         updateTaskInState(task.taskId, { completed: nextCompleted });
         replaceProjectTask(projectId, { ...task, completed: nextCompleted });
         adjustProjectCounts(projectId, 0, nextCompleted ? 1 : -1);
-        if (nextCompleted) playAudioFeedback('taskCompleted');
+        if (nextCompleted) playAudioFeedback(taskCompletionFeedbackKind(allTasks, new Set([task.taskId])));
 
         try {
             const updatedTask = await taskService.updateTask(task.taskId, { completed: nextCompleted });
