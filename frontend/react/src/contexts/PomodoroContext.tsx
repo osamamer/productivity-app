@@ -69,7 +69,7 @@ export interface PomodoroContextValue {
     publishPomodoroStatus: (
         status: PomodoroStatus | null,
         authoritative?: boolean,
-        optimistic?: boolean,
+        optimistic?: boolean | 'time-adjustment',
     ) => boolean;
     clearPomodoroMutation: () => void;
 }
@@ -85,7 +85,7 @@ export interface PomodoroActionsContextValue {
     publishPomodoroStatus: (
         status: PomodoroStatus | null,
         authoritative?: boolean,
-        optimistic?: boolean,
+        optimistic?: boolean | 'time-adjustment',
     ) => boolean;
     clearPomodoroMutation: () => void;
     canStartPomodoroForTask: (taskId: string) => boolean;
@@ -114,6 +114,7 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
     const statusRevisionRef = useRef(0);
     const retiredPomodoroIdsRef = useRef(new Set<string>());
     const optimisticPomodoroStatusRef = useRef<PomodoroStatus | null>(null);
+    const optimisticTimeAdjustmentRef = useRef(false);
     const refreshRequestRef = useRef<Promise<PomodoroStatus | null> | null>(null);
     const stompClientRef = useRef<Client | null>(null);
     const subscriptionRef = useRef<StompSubscription | null>(null);
@@ -133,6 +134,13 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
         if (!optimisticStatus.active) return !nextStatus.active;
         if (!nextStatus.active) return true;
 
+        if (optimisticTimeAdjustmentRef.current
+            && optimisticStatus.phase === nextStatus.phase
+            && optimisticStatus.currentFocusNumber === nextStatus.currentFocusNumber) {
+            // Tick and refresh snapshots can predate a pending adjustment.
+            return false;
+        }
+
         return optimisticStatus.sessionActive === nextStatus.sessionActive
             && optimisticStatus.sessionRunning === nextStatus.sessionRunning
             && optimisticStatus.phase === nextStatus.phase;
@@ -141,7 +149,7 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
     const commitPomodoroStatus = useCallback((
         nextStatus: PomodoroStatus | null,
         authoritative = false,
-        optimistic = false,
+        optimistic: boolean | 'time-adjustment' = false,
     ): boolean => {
         if (!optimistic && !optimisticStatusAllowsUpdate(nextStatus)) {
             // A live snapshot can race the request that changed this state.
@@ -188,8 +196,13 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
         }
 
         const nextActiveStatus = nextStatus?.active ? nextStatus : null;
-        if (optimistic) optimisticPomodoroStatusRef.current = nextStatus;
-        else if (authoritative) optimisticPomodoroStatusRef.current = null;
+        if (optimistic) {
+            optimisticPomodoroStatusRef.current = nextStatus;
+            optimisticTimeAdjustmentRef.current = optimistic === 'time-adjustment';
+        } else if (authoritative) {
+            optimisticPomodoroStatusRef.current = null;
+            optimisticTimeAdjustmentRef.current = false;
+        }
         activePomodoroRef.current = nextActiveStatus;
         statusRevisionRef.current += 1;
         activePomodoroCache.set(cacheKey, nextActiveStatus, ACTIVE_POMODORO_CACHE_TTL_MS);
@@ -202,7 +215,7 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
         (
             nextStatus: PomodoroStatus | null,
             authoritative = false,
-            optimistic = false,
+            optimistic: boolean | 'time-adjustment' = false,
         ) => (
             commitPomodoroStatus(nextStatus, authoritative, optimistic)
         ),
@@ -211,6 +224,7 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
 
     const clearPomodoroMutation = useCallback(() => {
         optimisticPomodoroStatusRef.current = null;
+        optimisticTimeAdjustmentRef.current = false;
     }, []);
 
     const canStartPomodoroForTask = useCallback((taskId: string) => {

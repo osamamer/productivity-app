@@ -49,6 +49,7 @@ import { useGlobalTasks } from '../hooks/useGlobalTasks';
 import { useUser } from '../hooks/useUser';
 import { SmartTaskInput } from '../components/input/SmartTaskInput';
 import { GroupTaskInputRow } from '../components/task/GroupTaskInputRow';
+import { GroupTaskCount } from '../components/task/GroupTaskCount';
 import { TaskParentPopover } from '../components/task/TaskParentPopover';
 import { FlatTaskRow } from '../components/FlatTaskRow';
 import { TaskToCreate } from '../types/TaskToCreate';
@@ -1109,6 +1110,22 @@ function isScheduledForToday(task: Task): boolean {
     return !Number.isNaN(scheduledDate.getTime()) && isSameLocalDay(scheduledDate, new Date());
 }
 
+function compareHomeTasks(first: Task, second: Task): number {
+    if (first.completed !== second.completed) return first.completed ? 1 : -1;
+
+    const firstTime = first.scheduledPerformDateTime
+        ? new Date(first.scheduledPerformDateTime).getTime()
+        : Number.POSITIVE_INFINITY;
+    const secondTime = second.scheduledPerformDateTime
+        ? new Date(second.scheduledPerformDateTime).getTime()
+        : Number.POSITIVE_INFINITY;
+    const timeDifference = firstTime - secondTime;
+    if (Number.isFinite(timeDifference) && timeDifference !== 0) return timeDifference;
+    if (firstTime !== secondTime) return firstTime === Number.POSITIVE_INFINITY ? 1 : -1;
+
+    return second.importance - first.importance;
+}
+
 function moveTaskDateToToday(task: Task): string {
     const today = new Date();
     const scheduledDate = task.scheduledPerformDateTime
@@ -1571,7 +1588,8 @@ export function HomePage() {
                     showCompletedToday
                     || !task.completed
                     || task.taskId === activePomodoroTaskIdForHome
-                ));
+                ))
+                .sort(compareHomeTasks);
         },
         [activePomodoroTaskIdForHome, allTasks, allTodayTasksComplete, homeTodayTasks,
             pendingDeletedTaskIdSet, pendingHomeDateTaskIds, showCompletionDetails],
@@ -2053,9 +2071,15 @@ export function HomePage() {
         ));
         if (isTopLevelTask) setHomeTaskListAnimating(true);
 
-        const message = pendingEdit.latestDateTime
-            ? `Task moved to ${formatTaskDateForFeedback(pendingEdit.latestDateTime)}`
-            : 'Task removed from Today';
+        const originalDate = pendingEdit.originalDateTime && new Date(pendingEdit.originalDateTime);
+        const nextDate = pendingEdit.latestDateTime && new Date(pendingEdit.latestDateTime);
+        const onlyTimeChanged = originalDate && nextDate
+            && isSameLocalDay(originalDate, nextDate);
+        const message = onlyTimeChanged
+            ? `Task time changed to ${nextDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+            : pendingEdit.latestDateTime
+                ? `Task moved to ${formatTaskDateForFeedback(pendingEdit.latestDateTime)}`
+                : 'Task removed from Today';
         showUndoFeedback(message, async () => {
             try {
                 const restoredTask = await taskService.updateTask(taskId, {
@@ -4132,9 +4156,7 @@ export function HomePage() {
                                 }}>
                                     {item.group.name}
                                 </Typography>
-                                <Typography component="span" variant="caption" color="text.disabled" sx={{ ml: 1, flexShrink: 0 }}>
-                                    {item.tasks.length}
-                                </Typography>
+                                <GroupTaskCount tasks={item.tasks} sx={{ ml: 1, flexShrink: 0 }} />
                             </Box>
                             <IconButton
                                 size="small"
@@ -4396,9 +4418,7 @@ export function HomePage() {
                                         {item.group.name}
                                     </Typography>
                                 </Box>
-                                <Typography component="span" variant="caption" color="text.disabled" sx={{ ml: '-24px', flexShrink: 0 }}>
-                                    {item.tasks.length}
-                                </Typography>
+                                <GroupTaskCount tasks={item.tasks} sx={{ ml: '-24px', flexShrink: 0 }} />
                             </Box>
                         )}
                         <IconButton
@@ -4748,9 +4768,8 @@ export function HomePage() {
                                 <Box
                                     ref={focusedPomodoroRowRef}
                                     sx={{
-                                        display: showHomeSections ? undefined : 'none',
                                         '--focus-task-offset': `${focusTaskOffset}px`,
-                                        opacity: focusVisibility === 'fading' ? 0 : 1,
+                                        opacity: 1,
                                         pointerEvents: focusVisibility === 'fading'
                                             || focusVisibility === 'sliding'
                                             || focusVisibility === 'returning'

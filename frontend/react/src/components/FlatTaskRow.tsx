@@ -82,6 +82,7 @@ import {
     createOptimisticPomodoroStatus,
     getOptimisticPomodoroStatus,
 } from '../services/utils/optimisticPomodoro';
+import { getPomodoroProgressPercentage } from '../services/utils/pomodoroProgress';
 import { TaskOriginAdornment } from './task/TaskOriginAdornment';
 import type { TaskOriginKind } from './task/TaskOriginUtils';
 
@@ -563,7 +564,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     const applyLocalPomodoroStatus = useCallback((
         nextStatus: PomodoroStatus | null,
         authoritative = false,
-        optimistic = false,
+        optimistic: boolean | 'time-adjustment' = false,
     ): boolean => {
         if (!publishPomodoroStatus(nextStatus, authoritative, optimistic)) return false;
 
@@ -927,7 +928,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
             ...previousStatus,
             secondsUntilNextTransition: Math.max(0, previousStatus.secondsUntilNextTransition + deltaSeconds),
         };
-        if (!applyLocalPomodoroStatus(optimisticStatus, false, true)) return;
+        if (!applyLocalPomodoroStatus(optimisticStatus, false, 'time-adjustment')) return;
 
         const revision = ++timeAdjustmentRevisionRef.current;
         const request = timeAdjustmentQueueRef.current
@@ -944,6 +945,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         void request.then(serverStatus => {
             if (timeAdjustmentRevisionRef.current === revision
                 && pomodoroMutationRevisionRef.current === actionRevision) {
+                clearPomodoroMutation();
                 applyLocalPomodoroStatus(serverStatus, true);
             }
         }).catch(error => {
@@ -1399,14 +1401,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
             : 'transparent';
     const progressColor = useGreenBar ? pomodoroGreen : activeAccent;
     const progressTrackColor = alpha(progressColor, 0.15);
-    const progressPct = pomodoroStatus
-        ? (() => {
-            const passed = Math.max(0, pomodoroStatus.secondsPassedInSession);
-            const remaining = Math.max(0, pomodoroStatus.secondsUntilNextTransition);
-            const total = passed + remaining;
-            return total > 0 ? Math.min(100, (passed / total) * 100) : 0;
-        })()
-        : 0;
+    const progressPct = getPomodoroProgressPercentage(pomodoroStatus);
 
     const cbColor = checkboxColor(task.importance);
     const scheduledLabel = task.scheduledPerformDateTime ? formatScheduledDate(task.scheduledPerformDateTime) : '';
@@ -1902,7 +1897,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                                 </IconButton>
                                             </span>
                                         </Tooltip>
-                                        <Typography variant="h4" sx={{ fontWeight: 700, lineHeight: 1 }}>
+                                        <Typography variant="h4" sx={{ fontWeight: 700, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
                                             {formatSeconds(pomodoroStatus!.secondsUntilNextTransition)}
                                         </Typography>
                                         <Tooltip title={`Add ${timeAdjustmentLabel}`} placement="top">

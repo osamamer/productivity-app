@@ -11,6 +11,7 @@ import { TaskGroup } from '../../types/TaskGroup';
 import { TaskToCreate } from '../../types/TaskToCreate';
 import { TaskPageListRow } from './TaskPageListRow';
 import { GroupTaskInputRow } from '../task/GroupTaskInputRow';
+import { GroupTaskCount } from '../task/GroupTaskCount';
 import { buildTaskListItems, type TaskListItem } from './taskPageSectionUtils';
 
 type SectionName = 'today' | 'comingUp' | 'leftovers' | 'undated';
@@ -214,9 +215,7 @@ export const TaskPageSection = React.memo(function TaskPageSection({
                             }}>
                                 {item.group.name}
                             </Typography>
-                            <Typography component="span" variant="caption" color="text.disabled" sx={{ ml: 1 }}>
-                                {item.tasks.length}
-                            </Typography>
+                            <GroupTaskCount tasks={item.tasks} sx={{ ml: 1 }} />
                         </Box>
                         {onGroupSelection && (
                             <IconButton
@@ -388,9 +387,7 @@ export const TaskPageSection = React.memo(function TaskPageSection({
                                     {item.group.name}
                                 </Typography>
                             </Box>
-                            <Typography component="span" variant="caption" color="text.disabled" sx={{ ml: '-24px', flexShrink: 0 }}>
-                                {item.tasks.length}
-                            </Typography>
+                            <GroupTaskCount tasks={item.tasks} sx={{ ml: '-24px', flexShrink: 0 }} />
                             <Box sx={{ flex: 1, minWidth: 0 }} />
                         </>
                     )}

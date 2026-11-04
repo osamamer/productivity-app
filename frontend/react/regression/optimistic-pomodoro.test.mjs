@@ -6,6 +6,7 @@ import {
   getOptimisticPomodoroStatus,
   pomodoroDurationInSeconds,
 } from '../src/services/utils/optimisticPomodoro.ts';
+import { getPomodoroProgressPercentage } from '../src/services/utils/pomodoroProgress.ts';
 
 const form = {
   focusDuration: 25,
@@ -32,6 +33,14 @@ function status(overrides = {}) {
     ...overrides,
   };
 }
+
+test('progress uses the current adjusted time remaining', () => {
+  const current = status({ secondsPassedInSession: 300, secondsUntilNextTransition: 300 });
+
+  assert.equal(getPomodoroProgressPercentage(current), 50);
+  assert.ok(Math.abs(getPomodoroProgressPercentage({ ...current, secondsUntilNextTransition: 600 }) - 100 / 3) < 0.001);
+  assert.ok(Math.abs(getPomodoroProgressPercentage({ ...current, secondsUntilNextTransition: 150 }) - 200 / 3) < 0.001);
+});
 
 test('converts configured minutes or seconds and clamps negative durations', () => {
   assert.equal(pomodoroDurationInSeconds(1.5, false), 90);

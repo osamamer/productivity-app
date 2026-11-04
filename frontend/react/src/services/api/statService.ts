@@ -486,7 +486,7 @@ export const statService = {
         });
         if (!response.ok) throw new Error('Failed to update the task schedule');
         invalidateDefinitionsCache();
-        invalidateResource('tasks');
+        invalidateRecurringTaskResources();
         invalidateResource('stats', 'task');
         return response.json();
     },

@@ -237,7 +237,7 @@ export function MonthCalendar({
     occurrenceDate: string;
     status: CalendarEvent['status'];
   } | null>(null);
-  const [selectedGroup, setSelectedGroup] = useState<TaskGroup | null>(null);
+  const [selectedGroup, setSelectedGroup] = useState<{ group: TaskGroup; date: string } | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [statEntries, setStatEntries] = useState<StatEntry[]>([]);
   const [statsError, setStatsError] = useState<string | null>(null);
@@ -465,9 +465,11 @@ export function MonthCalendar({
   const selectedGroupTasks = useMemo(() => {
     if (!selectedGroup) return [];
     const filteredTaskIds = new Set(calendarTasks.map(task => task.taskId));
-    return selectedGroup.taskIds
+    return selectedGroup.group.taskIds
       .map(taskId => tasks.find(task => task.taskId === taskId))
-      .filter((task): task is Task => task !== undefined && filteredTaskIds.has(task.taskId));
+      .filter((task): task is Task => task !== undefined
+        && filteredTaskIds.has(task.taskId)
+        && localDate(new Date(task.scheduledPerformDateTime)) === selectedGroup.date);
   }, [calendarTasks, selectedGroup, tasks]);
 
   const closeDay = useCallback(() => setDayDate(null), []);
@@ -499,7 +501,7 @@ export function MonthCalendar({
       }
     } else if (item.kind === 'taskGroup') {
       const group = groups.find(candidate => candidate.groupId === item.sourceId);
-      if (group) setSelectedGroup(group);
+      if (group) setSelectedGroup({ group, date: item.date });
     } else if (item.kind === 'task') {
       const task = tasks.find(candidate => candidate.taskId === item.sourceId);
       if (task) setSelectedTask(task);
@@ -740,7 +742,7 @@ export function MonthCalendar({
           : undefined}
         onDelete={editingEvent ? () => deleteEvent(editingEvent.id) : undefined} />}
       <CalendarTaskGroupSheet
-        group={selectedGroup}
+        group={selectedGroup?.group ?? null}
         tasks={selectedGroupTasks}
         onClose={() => setSelectedGroup(null)}
         onTaskPress={task => { setSelectedGroup(null); setTimeout(() => setSelectedTask(task), 220); }} />
