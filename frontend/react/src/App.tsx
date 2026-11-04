@@ -3,7 +3,7 @@ import '@fontsource/roboto/300.css';
 import '@fontsource/roboto/400.css';
 import '@fontsource/roboto/500.css';
 import '@fontsource/roboto/700.css';
-import {lazy, Suspense, useEffect, type ReactNode} from "react";
+import {lazy, Suspense, useEffect, useState, type ReactNode} from "react";
 import {createBrowserRouter, Navigate, Outlet, RouterProvider} from "react-router-dom";
 import {Box, LinearProgress} from '@mui/material';
 import {ProtectedRoute} from "./components/ProtectedRoute";
@@ -36,13 +36,24 @@ const MentalStatePage = lazy(() => import('./pages/MentalStatePage').then(module
 const MentalPage = lazy(() => import('./pages/MentalPage').then(module => ({ default: module.MentalPage })));
 const DayPage = lazy(() => import('./pages/DayPage').then(module => ({ default: module.DayPage })));
 
+function DelayedRouteFallback() {
+    const [showProgress, setShowProgress] = useState(false);
+
+    useEffect(() => {
+        const timeoutId = window.setTimeout(() => setShowProgress(true), 250);
+        return () => window.clearTimeout(timeoutId);
+    }, []);
+
+    return (
+        <Box sx={{ flex: 1, minHeight: '100%', backgroundColor: 'background.default' }}>
+            {showProgress && <LinearProgress aria-label="Loading page" />}
+        </Box>
+    );
+}
+
 function RouteSuspense({ children }: { children: ReactNode }) {
     return (
-        <Suspense fallback={(
-            <Box sx={{ flex: 1, minHeight: '100%', backgroundColor: 'background.default' }}>
-                <LinearProgress aria-label="Loading page" />
-            </Box>
-        )}>
+        <Suspense fallback={<DelayedRouteFallback />}>
             {children}
         </Suspense>
     );

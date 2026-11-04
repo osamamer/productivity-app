@@ -54,6 +54,7 @@ import {
     createOptimisticPomodoroStatus,
     getOptimisticPomodoroStatus,
 } from '../../services/utils/optimisticPomodoro';
+import { getPomodoroProgressPercentage } from '../../services/utils/pomodoroProgress';
 
 interface Task {
     taskId: string;
@@ -157,7 +158,7 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
     const applyLocalPomodoroStatus = useCallback((
         nextStatus: PomodoroStatus | null,
         authoritative = false,
-        optimistic = false,
+        optimistic: boolean | 'time-adjustment' = false,
     ): boolean => {
         if (!publishPomodoroStatus(nextStatus, authoritative, optimistic)) return false;
         lastPomodoroStatusRef.current = nextStatus;
@@ -353,8 +354,9 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
             ...previousStatus,
             secondsUntilNextTransition: Math.max(0, previousStatus.secondsUntilNextTransition + deltaSeconds),
         };
-        if (!applyLocalPomodoroStatus(optimisticStatus, false, true)) return;
+        if (!applyLocalPomodoroStatus(optimisticStatus, false, 'time-adjustment')) return;
 
+        const actionRevision = pomodoroMutationRevisionRef.current;
         const revision = ++timeAdjustmentRevisionRef.current;
         const request = timeAdjustmentQueueRef.current
             .catch(() => undefined)
@@ -368,12 +370,15 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
         timeAdjustmentQueueRef.current = request.then(() => undefined, () => undefined);
 
         void request.then(serverStatus => {
-            if (timeAdjustmentRevisionRef.current === revision) {
+            if (timeAdjustmentRevisionRef.current === revision
+                && pomodoroMutationRevisionRef.current === actionRevision) {
+                clearPomodoroMutation();
                 applyLocalPomodoroStatus(serverStatus, true);
             }
         }).catch(error => {
             if (error instanceof PomodoroAdjustmentConflictError) {
-                if (timeAdjustmentRevisionRef.current === revision) {
+                if (timeAdjustmentRevisionRef.current === revision
+                    && pomodoroMutationRevisionRef.current === actionRevision) {
                     clearPomodoroMutation();
                     void refreshActivePomodoro(true).catch(refreshError => {
                         console.error('Could not refresh the Pomodoro after its phase changed:', refreshError);
@@ -382,7 +387,8 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
                 return;
             }
             console.error('Could not adjust the Pomodoro timer:', error);
-            if (timeAdjustmentRevisionRef.current !== revision) return;
+            if (timeAdjustmentRevisionRef.current !== revision
+                || pomodoroMutationRevisionRef.current !== actionRevision) return;
             clearPomodoroMutation();
             showPomodoroError();
             void refreshActivePomodoro(true).catch(refreshError => {
@@ -525,14 +531,6 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
 
     const isBreakTime = () => isBreakPhase;
 
-    const getProgressPercentage = () => {
-        if (!status) return 0;
-        const passed = Math.max(0, status.secondsPassedInSession);
-        const remaining = Math.max(0, status.secondsUntilNextTransition);
-        const total = passed + remaining;
-        return total > 0 ? Math.min(100, (passed / total) * 100) : 0;
-    };
-
     const durationUnitLabel = pomodoroConfig.durationUnit;
     const durationLimits = POMODORO_DURATION_LIMITS[pomodoroConfig.durationUnit];
     const canStartPomodoro = isPomodoroFormValid(formData, pomodoroConfig);
@@ -627,7 +625,7 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
                                 />
                                 <CircularProgress
                                     variant="determinate"
-                                    value={getProgressPercentage()}
+                                    value={getPomodoroProgressPercentage(status)}
                                     size={200}
                                     thickness={2}
                                     sx={{
@@ -707,7 +705,7 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
                                                     </IconButton>
                                                 </span>
                                             </Tooltip>
-                                            <Typography variant="h3" component="div" fontWeight="bold">
+                                            <Typography variant="h3" component="div" fontWeight="bold" sx={{ fontVariantNumeric: 'tabular-nums' }}>
                                                 {formatTime(status.secondsUntilNextTransition)}
                                             </Typography>
                                             <Tooltip title={`Add ${timeAdjustmentLabel}`} placement="right">
