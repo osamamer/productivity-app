@@ -1,6 +1,6 @@
 import { PropsWithChildren, ReactNode } from 'react';
 import { Modal, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { AppButton } from './AppButton';
@@ -35,7 +35,9 @@ export function AppPopup({
 }: PropsWithChildren<AppPopupProps>) {
   const { colors } = useAppTheme();
   const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const isLandscape = width > height;
+  const maxCardHeight = height - insets.top - insets.bottom - (isLandscape ? 24 : 44);
   const icon = kind === 'error' ? '!' : kind === 'confirm' ? '?' : '•';
   const iconColor = kind === 'error' ? colors.danger : kind === 'confirm' ? colors.warning : colors.accent;
 
@@ -55,7 +57,7 @@ export function AppPopup({
         <View style={[
           styles.card,
           isLandscape && styles.landscapeCard,
-          { backgroundColor: colors.surface, borderColor: colors.border, maxHeight: height - (isLandscape ? 24 : 44) },
+          { backgroundColor: colors.surface, borderColor: colors.border, maxHeight: maxCardHeight },
         ]}>
           {showIcon && (
             <View style={[styles.icon, { backgroundColor: `${iconColor}20` }]}>

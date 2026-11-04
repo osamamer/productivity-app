@@ -43,6 +43,7 @@ import {
 } from '../types/MentalThread.ts';
 import { getShowClosedMentalThreads } from '../services/utils/mentalThreadPreferences.ts';
 import { playAudioFeedback } from '../services/audioFeedback.ts';
+import { taskCompletionFeedbackKind } from '../services/utils/taskCompletionFeedback.ts';
 import { findKeyboardDeleteAnchor, useKeyboardDelete } from '../hooks/useKeyboardDelete';
 
 type StateFilter = AttentionState | 'ALL';
@@ -342,7 +343,9 @@ export function MentalThreadsPage() {
     const handleToggleTask = async (task: Task) => {
         const nextCompleted = !task.completed;
         updateTaskInState(task.taskId, { completed: nextCompleted });
-        if (!task.completed && nextCompleted) playAudioFeedback('taskCompleted');
+        if (!task.completed && nextCompleted) {
+            playAudioFeedback(taskCompletionFeedbackKind(allTasks, new Set([task.taskId])));
+        }
         try {
             const updated = await taskService.updateTask(task.taskId, { completed: nextCompleted });
             updateTaskInState(task.taskId, updated);

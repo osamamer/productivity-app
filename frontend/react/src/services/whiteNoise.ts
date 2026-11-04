@@ -21,7 +21,7 @@ const DEFAULT_SOURCE: WhiteNoiseSource = {
     name: BUILT_IN_POMODORO_SOUND.name,
     url: '/audio/brown-noise.mp3',
 };
-const VOLUME = 0.22;
+const VOLUME = 0.4;
 const MAX_CROSSFADE_SECONDS = 3;
 const AUDIO_READY_STATE = 3;
 

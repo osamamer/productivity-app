@@ -18,6 +18,7 @@ import {
 } from "../types/CalendarEvent.ts";
 import {DayTemplate, DayTemplateApplication, DayTemplateRequest} from "../types/DayTemplate.ts";
 import { playAudioFeedback } from '../services/audioFeedback';
+import { taskCompletionFeedbackKind } from '../services/utils/taskCompletionFeedback';
 import { useNavigate } from 'react-router-dom';
 import { Calendar, CalendarColor, CalendarUpdate } from '../types/Calendar';
 import { CalendarManager } from '../components/calendar/CalendarManager';
@@ -515,7 +516,9 @@ export function CalendarPage() {
         relatedCalendarSnapshots.forEach(snapshot => {
             updateTaskInState(snapshot.taskId, { calendarId: updates.calendarId });
         });
-        if (!originalTask.completed && updates.completed === true) playAudioFeedback('taskCompleted');
+        if (!originalTask.completed && updates.completed === true) {
+            playAudioFeedback(taskCompletionFeedbackKind(allTasks, new Set([taskId])));
+        }
 
         try {
             await taskService.updateTask(taskId, updates);

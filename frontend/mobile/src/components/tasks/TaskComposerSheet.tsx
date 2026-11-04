@@ -154,6 +154,7 @@ export function TaskComposerSheet({ visible, onClose, onCreated, initialDate, ca
         showIcon={false}
         onClose={cancelCustomSchedule}
         dismissOnBackdrop={false}
+        scrollContent
         footer={(
           <View style={styles.popupActions}>
             <AppButton style={styles.popupAction} variant="secondary" label="Cancel" onPress={cancelCustomSchedule} />

@@ -111,6 +111,7 @@ export function TaskReminderField({ value, scheduledDateTime, onChange }: {
         showIcon={false}
         onClose={() => { setCustomOpen(false); setError(null); }}
         dismissOnBackdrop={false}
+        scrollContent
         footer={(
           <View style={styles.popupActions}>
             <AppButton style={styles.popupAction} variant="secondary" label="Cancel" onPress={() => { setCustomOpen(false); setError(null); }} />
