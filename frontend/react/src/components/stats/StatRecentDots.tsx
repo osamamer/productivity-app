@@ -9,7 +9,7 @@ import CheckIcon from '@mui/icons-material/Check';
 import CloseIcon from '@mui/icons-material/Close';
 import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
 import { format, subDays } from 'date-fns';
-import { StatDefinition, StatEntry, StatEntryStatus } from '../../types/Stats';
+import { StatDefinition, StatEntry, StatEntryStatus, StatType } from '../../types/Stats';
 import { getLastMonthWindow, statService } from '../../services/api/statService';
 import { KeyboardEvent } from 'react';
 import {
@@ -32,6 +32,8 @@ import { readStatInputPreference, saveStatInputPreference } from '../../services
 import { statValueColor, statValueLabel } from './statVisualization';
 import { AppTimeField } from '../input/AppPickerFields';
 import { AppNumberField } from '../input/AppNumberField';
+import { StatInputField } from './StatInputField';
+import { statInputLabel } from './statInputLabels';
 
 const CIRCLE_SIZE = 24;
 const THRESHOLD_COLOR_TRANSITION = 0.75;
@@ -242,6 +244,14 @@ function recentStatusMap(entries: StatEntry[] | undefined, recentStart: string, 
     );
 }
 
+function recentEntryMap(entries: StatEntry[] | undefined, recentStart: string, to: string): Map<string, StatEntry> {
+    return new Map(
+        (entries ?? [])
+            .filter(entry => entry.date >= recentStart && entry.date <= to)
+            .map(entry => [entry.date, entry]),
+    );
+}
+
 export const StatRecentDots = React.memo(function StatRecentDots({ definition, refreshKey, onEntryChanged, onError }: Props) {
     const theme = useTheme();
     const { from, to } = getLastMonthWindow();
@@ -252,11 +262,13 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
     const cachedEntries = statService.getCachedEntries(definition.id, from, to);
     const [valueMap, setValueMap] = useState<Map<string, number>>(() => recentValueMap(cachedEntries, recentStart, to));
     const [statusMap, setStatusMap] = useState<Map<string, StatEntryStatus>>(() => recentStatusMap(cachedEntries, recentStart, to));
+    const [entryMap, setEntryMap] = useState<Map<string, StatEntry>>(() => recentEntryMap(cachedEntries, recentStart, to));
     const [loading, setLoading] = useState(() => !cachedEntries);
 
     // Popover state
     const [popover, setPopover] = useState<PopoverState | null>(null);
     const [editValue, setEditValue] = useState<number | null>(null);
+    const [editAdditionalValues, setEditAdditionalValues] = useState<Partial<Record<StatType, number>>>({});
     const [editStatus, setEditStatus] = useState<StatEntryStatus>('RECORDED');
     const [saveError, setSaveError] = useState<string | null>(null);
     const popoverContentRef = useRef<HTMLDivElement | null>(null);
@@ -269,6 +281,7 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
         if (cached) {
             setValueMap(recentValueMap(cached, recentStart, to));
             setStatusMap(recentStatusMap(cached, recentStart, to));
+            setEntryMap(recentEntryMap(cached, recentStart, to));
             setLoading(false);
         }
 
@@ -277,6 +290,7 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                 if (!cancelled) {
                     setValueMap(recentValueMap(entries, recentStart, to));
                     setStatusMap(recentStatusMap(entries, recentStart, to));
+                    setEntryMap(recentEntryMap(entries, recentStart, to));
                 }
             })
             .catch(e => console.error('Failed to load recent dots:', e))
@@ -291,6 +305,7 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
         e.stopPropagation(); // don't select the stat in the left panel
         const existing = valueMap.get(date);
         setEditStatus(statusMap.get(date) ?? 'RECORDED');
+        setEditAdditionalValues(entryMap.get(date)?.additionalValues ?? {});
         setEditValue(existing ?? (
             definition.type === 'TIME' || definition.type === 'DURATION'
                 ? readStatInputPreference(definition.id, definition.type)
@@ -303,6 +318,7 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
     const closePopover = () => {
         setPopover(null);
         setEditValue(null);
+        setEditAdditionalValues({});
         setEditStatus('RECORDED');
         setSaveError(null);
     };
@@ -312,7 +328,18 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
         const activePopover = popover;
         const previousValue = valueMap.get(activePopover.date);
         const previousStatus = statusMap.get(activePopover.date);
+        const previousEntry = entryMap.get(activePopover.date);
         const previousHadEntry = valueMap.has(activePopover.date);
+        const nextAdditionalValues = Object.fromEntries(
+            (definition.additionalInputTypes ?? [])
+                .filter(type => editAdditionalValues[type] != null)
+                .map(type => [type, editAdditionalValues[type]]),
+        ) as Partial<Record<StatType, number>>;
+        if (editValue == null && editStatus !== 'NOT_PLANNED'
+            && Object.keys(nextAdditionalValues).length > 0) {
+            setSaveError(`Choose a value for ${definition.name} before saving its additional inputs.`);
+            return;
+        }
         // The editor unmounts before the request resolves, so preserve the source circle's position.
         const feedbackAnchor = activePopover.anchorEl.getBoundingClientRect();
         const mutationVersion = (entryMutationVersionsRef.current.get(activePopover.date) ?? 0) + 1;
@@ -333,6 +360,25 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
             else next.set(activePopover.date, editStatus);
             return next;
         });
+        setEntryMap(previous => {
+            const next = new Map(previous);
+            if (editValue === null && editStatus !== 'NOT_PLANNED') {
+                next.delete(activePopover.date);
+            } else {
+                next.set(activePopover.date, {
+                    ...(previousEntry ?? {}),
+                    id: previousEntry?.id ?? `optimistic-${definition.id}-${activePopover.date}`,
+                    statDefinitionId: definition.id,
+                    statDefinition: definition,
+                    date: activePopover.date,
+                    value: nextValue ?? 0,
+                    status: editStatus,
+                    additionalValues: nextAdditionalValues,
+                    userId: previousEntry?.userId ?? '',
+                });
+            }
+            return next;
+        });
         closePopover();
         setSaveError(null);
         if (editValue !== null && editStatus !== 'NOT_PLANNED') {
@@ -346,6 +392,7 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                 date: activePopover.date,
                 value: editStatus === 'NOT_PLANNED' ? null : editValue,
                 status: editStatus,
+                additionalValues: nextAdditionalValues,
             };
         const savePromise = statService.recordEntry(request);
         onEntryChanged?.(definition.id);
@@ -368,6 +415,12 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                     setStatusMap(previous => {
                         const next = new Map(previous);
                         if (previousHadEntry) next.set(activePopover.date, previousStatus ?? 'RECORDED');
+                        else next.delete(activePopover.date);
+                        return next;
+                    });
+                    setEntryMap(previous => {
+                        const next = new Map(previous);
+                        if (previousEntry) next.set(activePopover.date, previousEntry);
                         else next.delete(activePopover.date);
                         return next;
                     });
@@ -435,11 +488,15 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                                     ? formatDurationValue(value)
                                 : String(value)
                         : 'No entry';
+                    const additionalTooltip = (definition.additionalInputTypes ?? [])
+                        .filter(type => entryMap.get(date)?.additionalValues?.[type] != null)
+                        .map(type => `${statInputLabel(type)}: ${entryMap.get(date)?.additionalValues?.[type]}`)
+                        .join(', ');
 
                     return (
                         <Tooltip
                             key={date}
-                            title={`${format(new Date(date + 'T12:00:00'), 'MMM d')}: ${tooltipText} — click to edit`}
+                            title={`${format(new Date(date + 'T12:00:00'), 'MMM d')}: ${tooltipText}${additionalTooltip ? ` · ${additionalTooltip}` : ''} — click to edit`}
                             placement="top"
                         >
                             <Box
@@ -498,6 +555,8 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                         sx: {
                             p: 2,
                             minWidth: 220,
+                            maxHeight: '70vh',
+                            overflowY: 'auto',
                             boxShadow: theme.shadows[6],
                         },
                     },
@@ -614,6 +673,26 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                                 </Button>
                             </Box>
                         )}
+
+                        {(definition.additionalInputTypes ?? []).map(type => (
+                            <Box key={type} sx={{ mt: 1.5 }}>
+                                <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
+                                    {statInputLabel(type)}
+                                </Typography>
+                                <StatInputField
+                                    definition={definition}
+                                    type={type}
+                                    value={editAdditionalValues[type] ?? null}
+                                    onChange={value => setEditAdditionalValues(previous => {
+                                        const next = { ...previous };
+                                        if (value == null) delete next[type];
+                                        else next[type] = value;
+                                        return next;
+                                    })}
+                                    onFocus={() => undefined}
+                                />
+                            </Box>
+                        ))}
 
                         {saveError && (
                             <Alert severity="error" sx={{ mt: 1.5, py: 0 }}>{saveError}</Alert>

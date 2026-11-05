@@ -31,6 +31,7 @@ export interface StatDefinition {
     id: string;
     name: string;
     type: StatType;
+    additionalInputTypes?: StatType[];
     morality?: StatMorality | null;
     minValue?: number;
     maxValue?: number;
@@ -50,6 +51,7 @@ export interface StatEntry {
     statDefinition: StatDefinition;
     date: string; // 'YYYY-MM-DD'
     value: number;
+    additionalValues?: Partial<Record<StatType, number>>;
     status?: StatEntryStatus;
     userId: string;
 }
@@ -62,6 +64,7 @@ export interface StatFocusTimeEntry {
 export interface CreateDefinitionRequest {
     name: string;
     type: StatType;
+    additionalInputTypes?: StatType[];
     minValue?: number;
     maxValue?: number;
     morality?: StatMorality;
@@ -77,6 +80,7 @@ export interface UpdateDefinitionRequest {
     name: string;
     morality?: StatMorality;
     goodThreshold?: number;
+    additionalInputTypes?: StatType[];
 }
 
 export interface RecordEntryRequest {
@@ -84,6 +88,7 @@ export interface RecordEntryRequest {
     date?: string;
     value: number | null;
     status?: StatEntryStatus;
+    additionalValues?: Partial<Record<StatType, number>>;
 }
 
 export interface StatSummary {

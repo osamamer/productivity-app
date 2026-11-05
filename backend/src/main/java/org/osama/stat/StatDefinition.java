@@ -33,6 +33,10 @@ public class StatDefinition {
     @Column(nullable = false)
     private StatType type;
 
+    @Convert(converter = StatTypeListConverter.class)
+    @Column(name = "additional_input_types", nullable = false, columnDefinition = "TEXT")
+    private List<StatType> additionalInputTypes = List.of();
+
     // Null is treated as NEUTRAL so existing definitions remain unchanged.
     @Enumerated(EnumType.STRING)
     @Column

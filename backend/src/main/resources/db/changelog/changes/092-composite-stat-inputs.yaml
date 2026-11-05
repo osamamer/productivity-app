@@ -1,0 +1,31 @@
+databaseChangeLog:
+  - changeSet:
+      id: 092-composite-stat-inputs
+      author: codex
+      comment: Store companion input types on stat definitions and their values on daily entries
+      changes:
+        - addColumn:
+            tableName: stat_definition
+            columns:
+              - column:
+                  name: additional_input_types
+                  type: text
+                  defaultValue: ""
+                  constraints:
+                    nullable: false
+        - addColumn:
+            tableName: stat_entry
+            columns:
+              - column:
+                  name: additional_values
+                  type: text
+                  defaultValue: ""
+                  constraints:
+                    nullable: false
+      rollback:
+        - dropColumn:
+            tableName: stat_entry
+            columnName: additional_values
+        - dropColumn:
+            tableName: stat_definition
+            columnName: additional_input_types

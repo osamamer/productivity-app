@@ -308,3 +308,5 @@ databaseChangeLog:
       file: db/changelog/changes/090-add-external-event-reminder-preferences.yaml
   - include:
       file: db/changelog/changes/091-add-pomodoro-time-adjustment.yaml
+  - include:
+      file: db/changelog/changes/092-composite-stat-inputs.yaml

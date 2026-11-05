@@ -2,7 +2,7 @@ import { apiFetch } from '../utils/apiFetch';
 import {
     StatBootstrapResponse, StatDefinition, StatEntry, StatEntryStatus, StatSummary, StatInsights,
     StatFocusTimeEntry, CreateDefinitionRequest, RecordEntryRequest, UpdateDefinitionRequest,
-    StatRecurringTaskDraft, StatWeeklyTaskSchedule, StatWeeklyTaskScheduleDraft,
+    StatRecurringTaskDraft, StatWeeklyTaskSchedule, StatWeeklyTaskScheduleDraft, StatType,
 } from '../../types/Stats';
 import { TaskSeries } from '../../types/TaskSeries';
 import { getAuthCacheScope, getAuthHeaders } from '../utils/authHeaders';
@@ -40,6 +40,7 @@ const definitionsRequests = new Map<string, Promise<StatDefinition[]>>();
 const lastMonthPrefetchRequests = new Map<string, Promise<void>>();
 type OptimisticEntryOverride = {
     value: number | null;
+    additionalValues?: Partial<Record<StatType, number>>;
     status: StatEntryStatus;
     sequence: number;
 };
@@ -152,6 +153,7 @@ function effectiveEntry(definitionId: string, date: string): StatEntry | null {
                 ?? ({} as StatDefinition),
             date,
             value: override.value,
+            additionalValues: override.additionalValues ?? existing?.additionalValues ?? {},
             status: override.status,
             userId: existing?.userId ?? '',
         };
@@ -188,6 +190,7 @@ function applyOptimisticOverrides(
                 ?? ({} as StatDefinition),
             date,
             value: override.value,
+            additionalValues: override.additionalValues ?? existing?.additionalValues ?? {},
             status: override.status,
             userId: existing?.userId ?? '',
         });
@@ -201,9 +204,10 @@ function setOptimisticOverride(
     status: StatEntryStatus,
     sequence: number,
     previous: Map<string, OptimisticEntryOverride | undefined>,
+    additionalValues?: Partial<Record<StatType, number>>,
 ): void {
     if (!previous.has(key)) previous.set(key, optimisticEntryOverrides.get(key));
-    optimisticEntryOverrides.set(key, { value, status, sequence });
+    optimisticEntryOverrides.set(key, { value, additionalValues, status, sequence });
 }
 
 function applyOptimisticRecord(req: RecordEntryRequest): OptimisticWrite {
@@ -213,7 +217,7 @@ function applyOptimisticRecord(req: RecordEntryRequest): OptimisticWrite {
     const status = req.status ?? 'RECORDED';
     const value = status === 'NOT_PLANNED' ? 0 : req.value;
     const changedKey = entryIdentity(req.statDefinitionId, date);
-    setOptimisticOverride(changedKey, value, status, sequence, previous);
+    setOptimisticOverride(changedKey, value, status, sequence, previous, req.additionalValues);
 
     const definition = definitionsCache.get(definitionsCacheKey())
         ?.find(item => item.id === req.statDefinitionId);

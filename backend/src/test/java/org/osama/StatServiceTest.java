@@ -120,6 +120,56 @@ public class StatServiceTest {
     }
 
     @Test
+    void statEntry_persistsConfiguredCompanionInputValues() {
+        StatDefinition definition = statService.createDefinition(
+                "Workout", "description", StatType.NUMBER, null, null,
+                StatMorality.NEUTRAL, null, false, TaskRecurrenceFrequency.DAILY,
+                null, null, null, List.of(StatType.BOOLEAN, StatType.RANGE), TEST_USER_ID);
+        LocalDate date = LocalDate.now();
+
+        StatEntry saved = statService.recordEntry(definition.getId(), date, 35.0,
+                StatEntryStatus.RECORDED,
+                Map.of(StatType.BOOLEAN, 1.0, StatType.RANGE, 8.0), TEST_USER_ID);
+        StatEntry reloaded = entryRepository.findByStatDefinitionIdAndUserIdAndDate(
+                definition.getId(), TEST_USER_ID, date).orElseThrow();
+        StatDefinition reloadedDefinition = definitionRepository.findById(definition.getId()).orElseThrow();
+
+        assertEquals(List.of(StatType.BOOLEAN, StatType.RANGE), reloadedDefinition.getAdditionalInputTypes());
+        assertEquals(Map.of(StatType.BOOLEAN, 1.0, StatType.RANGE, 8.0), saved.getAdditionalValues());
+        assertEquals(saved.getAdditionalValues(), reloaded.getAdditionalValues());
+
+        StatEntry updated = statService.recordEntry(definition.getId(), date, 36.0,
+                StatEntryStatus.RECORDED, null, TEST_USER_ID);
+        assertEquals(Map.of(StatType.BOOLEAN, 1.0, StatType.RANGE, 8.0), updated.getAdditionalValues());
+    }
+
+    @Test
+    void statEntry_rejectsUnconfiguredAndOutOfRangeCompanionInputs() {
+        StatDefinition definition = statService.createDefinition(
+                "Workout", "description", StatType.NUMBER, null, null,
+                StatMorality.NEUTRAL, null, false, TaskRecurrenceFrequency.DAILY,
+                null, null, null, List.of(StatType.RANGE), TEST_USER_ID);
+
+        assertThrows(IllegalArgumentException.class, () -> statService.recordEntry(
+                definition.getId(), LocalDate.now(), 35.0, StatEntryStatus.RECORDED,
+                Map.of(StatType.RANGE, 11.0), TEST_USER_ID));
+        assertThrows(IllegalArgumentException.class, () -> statService.recordEntry(
+                definition.getId(), LocalDate.now(), 35.0, StatEntryStatus.RECORDED,
+                Map.of(StatType.BOOLEAN, 1.0), TEST_USER_ID));
+    }
+
+    @Test
+    void statDefinition_updatesCompanionInputTypesWithoutChangingItsPrimaryType() {
+        StatDefinition definition = createNamedStatDefinition("Reading", StatType.NUMBER);
+
+        StatDefinition updated = statService.updateDefinition(definition.getId(), "Reading", "description",
+                StatMorality.NEUTRAL, null, List.of(StatType.BOOLEAN, StatType.RANGE), TEST_USER_ID);
+
+        assertEquals(StatType.NUMBER, updated.getType());
+        assertEquals(List.of(StatType.BOOLEAN, StatType.RANGE), updated.getAdditionalInputTypes());
+    }
+
+    @Test
     void nullValue_clearsExistingEntry() {
         StatDefinition statDefinition = createStatDefinition(StatType.NUMBER, null, null);
         LocalDate today = LocalDate.now();

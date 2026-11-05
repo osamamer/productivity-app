@@ -45,6 +45,7 @@ public class StatController {
                 request.recurrenceDaysOfWeek,
                 request.timeOfDay,
                 request.recurringTaskImportance,
+                request.additionalInputTypes,
                 currentUserService.getCurrentUserId()
         );
     }
@@ -75,6 +76,7 @@ public class StatController {
                 request.description,
                 request.morality,
                 request.goodThreshold,
+                request.additionalInputTypes,
                 currentUserService.getCurrentUserId()
         );
     }
@@ -208,6 +210,7 @@ public class StatController {
                 date,
                 request.value,
                 request.status,
+                request.additionalValues,
                 currentUserService.getCurrentUserId()
         );
         return entry == null ? ResponseEntity.noContent().build() : ResponseEntity.ok(entry);
@@ -272,6 +275,7 @@ public class StatController {
         List<DayOfWeek> recurrenceDaysOfWeek;
         String timeOfDay;
         Integer recurringTaskImportance;
+        List<StatType> additionalInputTypes;
     }
 
     @Data
@@ -280,6 +284,7 @@ public class StatController {
         String description;
         StatMorality morality;
         Double goodThreshold;
+        List<StatType> additionalInputTypes;
     }
 
     @Data
@@ -294,6 +299,7 @@ public class StatController {
         LocalDate date;
         Double value;
         StatEntryStatus status;
+        java.util.Map<StatType, Double> additionalValues;
     }
 
     @Data

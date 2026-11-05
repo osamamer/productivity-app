@@ -1,17 +1,14 @@
 import React, { useRef, useState, useEffect } from 'react';
 import {
-    Box, Typography, Stack, ToggleButton, ToggleButtonGroup,
-    Slider, Button, Alert, CircularProgress, Divider,
+    Alert, Box, Button, CircularProgress, Divider, Stack, Typography,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import { StatDefinition, StatEntryStatus } from '../../types/Stats';
+import { StatDefinition, StatEntryStatus, StatType } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
-import { getBooleanChoiceColor, getBooleanChoiceTextColor, getStatFeedbackColor, showStatFeedback } from '../../services/statFeedback';
-import { minutesToTimeValue, timeValueToMinutes } from '../../services/utils/statValues';
-import { DurationInput } from './DurationInput';
-import { AppTimeField } from '../input/AppPickerFields';
-import { AppNumberField } from '../input/AppNumberField';
+import { getStatFeedbackColor, showStatFeedback } from '../../services/statFeedback';
 import { readStatInputPreference, saveStatInputPreference } from '../../services/utils/inputPreferences';
+import { StatInputField } from './StatInputField';
+import { statInputLabel } from './statInputLabels';
 
 interface Props {
     date: string;
@@ -22,6 +19,7 @@ interface Props {
 export function DateStatCheckIn({ date, definitions, onSaved }: Props) {
     const theme = useTheme();
     const [values, setValues] = useState<Record<string, number | null>>({});
+    const [additionalValues, setAdditionalValues] = useState<Record<string, Partial<Record<StatType, number>>>>({});
     const [statuses, setStatuses] = useState<Record<string, StatEntryStatus>>({});
     const [touched, setTouched] = useState<Set<string>>(new Set());
     const [loading, setLoading] = useState(true);
@@ -39,53 +37,78 @@ export function DateStatCheckIn({ date, definitions, onSaved }: Props) {
         setSuccess(false);
         setError(null);
         statService.getEntriesByDate(date)
-        .then(entries => {
-            const initial: Record<string, number | null> = {};
-            const initialStatuses: Record<string, StatEntryStatus> = {};
-            const preTouched = new Set<string>();
-            definitions.forEach(d => {
-                initial[d.id] = d.type === 'TIME' || d.type === 'DURATION'
-                    ? readStatInputPreference(d.id, d.type)
-                    : null;
-                initialStatuses[d.id] = 'RECORDED';
-            });
-            entries.forEach(e => {
-                initial[e.statDefinitionId] = e.value;
-                initialStatuses[e.statDefinitionId] = e.status ?? 'RECORDED';
-                preTouched.add(e.statDefinitionId);
-            });
-            setValues(initial);
-            setStatuses(initialStatuses);
-            setTouched(preTouched);
+            .then(entries => {
+                const initial: Record<string, number | null> = {};
+                const initialAdditional: Record<string, Partial<Record<StatType, number>>> = {};
+                const initialStatuses: Record<string, StatEntryStatus> = {};
+                const preTouched = new Set<string>();
+                definitions.forEach(definition => {
+                    initial[definition.id] = definition.type === 'TIME' || definition.type === 'DURATION'
+                        ? readStatInputPreference(definition.id, definition.type)
+                        : null;
+                    initialAdditional[definition.id] = Object.fromEntries(
+                        (definition.additionalInputTypes ?? [])
+                            .filter(type => type === 'TIME' || type === 'DURATION')
+                            .map(type => [type, readStatInputPreference(definition.id, type)]),
+                    );
+                    initialStatuses[definition.id] = 'RECORDED';
+                });
+                entries.forEach(entry => {
+                    initial[entry.statDefinitionId] = entry.value;
+                    initialAdditional[entry.statDefinitionId] = entry.additionalValues ?? {};
+                    initialStatuses[entry.statDefinitionId] = entry.status ?? 'RECORDED';
+                    preTouched.add(entry.statDefinitionId);
+                });
+                setValues(initial);
+                setAdditionalValues(initialAdditional);
+                setStatuses(initialStatuses);
+                setTouched(preTouched);
             })
-            .catch(e => {
-                console.error('Failed to load stat entries for date:', e);
+            .catch(exception => {
+                console.error('Failed to load stat entries for date:', exception);
                 setError('Failed to load existing entries.');
             })
             .finally(() => setLoading(false));
     }, [date, definitions]);
 
-    const setValue = (id: string, v: number | null, status: StatEntryStatus = 'RECORDED') => {
-        setValues(prev => ({ ...prev, [id]: v }));
-        setStatuses(prev => ({ ...prev, [id]: status }));
+    const setValue = (id: string, value: number | null, status: StatEntryStatus = 'RECORDED') => {
+        setValues(previous => ({ ...previous, [id]: value }));
+        setStatuses(previous => ({ ...previous, [id]: status }));
         const definition = definitions.find(item => item.id === id);
-        if (v !== null && (definition?.type === 'TIME' || definition?.type === 'DURATION')) {
-            saveStatInputPreference(id, definition.type, v);
+        if (value !== null && (definition?.type === 'TIME' || definition?.type === 'DURATION')) {
+            saveStatInputPreference(id, definition.type, value);
         }
-        setTouched(prev => {
-            const next = new Set(prev);
-            next.add(id);
-            return next;
+        setTouched(previous => new Set(previous).add(id));
+        setSuccess(false);
+    };
+
+    const setAdditionalValue = (id: string, type: StatType, value: number | null) => {
+        setAdditionalValues(previous => {
+            const nextForDefinition = { ...previous[id] };
+            if (value == null) delete nextForDefinition[type];
+            else nextForDefinition[type] = value;
+            return { ...previous, [id]: nextForDefinition };
         });
+        if (value != null && (type === 'TIME' || type === 'DURATION')) {
+            saveStatInputPreference(id, type, value);
+        }
+        setTouched(previous => new Set(previous).add(id));
         setSuccess(false);
     };
 
     const handleSave = async () => {
+        const toSave = definitions.filter(definition => touched.has(definition.id));
+        const missingPrimary = toSave.find(definition =>
+            values[definition.id] == null && statuses[definition.id] !== 'NOT_PLANNED');
+        if (missingPrimary) {
+            setError(`Choose a value for ${missingPrimary.name} before saving its additional inputs.`);
+            return;
+        }
+
         setSaving(true);
         setError(null);
         setSuccess(false);
         try {
-            const toSave = definitions.filter(d => touched.has(d.id));
             toSave.forEach(definition => {
                 const value = values[definition.id];
                 if (value !== null && value !== undefined && statuses[definition.id] !== 'NOT_PLANNED') {
@@ -94,20 +117,21 @@ export function DateStatCheckIn({ date, definitions, onSaved }: Props) {
                     });
                 }
             });
-            await Promise.all(
-                toSave.map(d =>
-                    statService.recordEntry({
-                        statDefinitionId: d.id,
-                        date,
-                        value: values[d.id] ?? null,
-                        status: statuses[d.id],
-                    })
-                )
-            );
+            await Promise.all(toSave.map(definition => statService.recordEntry({
+                statDefinitionId: definition.id,
+                date,
+                value: values[definition.id] ?? null,
+                status: statuses[definition.id],
+                additionalValues: Object.fromEntries(
+                    (definition.additionalInputTypes ?? [])
+                        .filter(type => additionalValues[definition.id]?.[type] != null)
+                        .map(type => [type, additionalValues[definition.id]?.[type]]),
+                ),
+            })));
             setSuccess(true);
             onSaved();
-        } catch (e) {
-            console.error('Failed to save stat entries:', e);
+        } catch (exception) {
+            console.error('Failed to save stat entries:', exception);
             setError('Failed to save. Please try again.');
         } finally {
             setSaving(false);
@@ -126,126 +150,49 @@ export function DateStatCheckIn({ date, definitions, onSaved }: Props) {
     return (
         <Box sx={{ p: 2 }}>
             <Box sx={{
-                '&::-webkit-scrollbar': {
-                    width: '0.4em',
-                },
+                '&::-webkit-scrollbar': { width: '0.4em' },
                 '&::-webkit-scrollbar-thumb': {
                     backgroundColor: 'action.disabled',
                     borderRadius: '999px',
                     border: '2px solid transparent',
                     backgroundClip: 'content-box',
                 },
-                '&::-webkit-scrollbar-thumb:hover': {
-                    backgroundColor: 'action.active',
-                },
+                '&::-webkit-scrollbar-thumb:hover': { backgroundColor: 'action.active' },
             }}>
                 <Stack spacing={3}>
-                    {definitions.map((def, i) => (
-                        <Box key={def.id}>
-                            {i > 0 && <Divider sx={{ mb: 3 }} />}
-                            <Typography variant="subtitle2" sx={{ mb: 0.5 }}>{def.name}</Typography>
-                            {def.type === 'BOOLEAN' && (
-                                <ToggleButtonGroup
-                                    value={statuses[def.id] === 'NOT_PLANNED'
-                                        ? 'not-planned'
-                                        : values[def.id] === 1 ? 'yes' : values[def.id] === 0 ? 'no' : null}
-                                    exclusive
-                                    onChange={(_, v) => setValue(
-                                        def.id,
-                                        v === null ? null : v === 'yes' ? 1 : 0,
-                                        v === 'not-planned' ? 'NOT_PLANNED' : 'RECORDED',
-                                    )}
-                                    size="small"
-                                >
-                                    <ToggleButton
-                                        value="yes"
-                                        onClick={event => { feedbackAnchorRef.current = event.currentTarget; }}
-                                        sx={{ '&.Mui-selected': { bgcolor: `${getBooleanChoiceColor(def, 1)}.main`, color: getBooleanChoiceTextColor(def, 1), '&:hover': { bgcolor: `${getBooleanChoiceColor(def, 1)}.dark` } } }}
-                                >
-                                    Yes
-                                </ToggleButton>
-                                <ToggleButton
-                                    value="not-planned"
-                                    sx={{ '&.Mui-selected': { bgcolor: 'notPlanned.main', color: 'notPlanned.contrastText', '&:hover': { bgcolor: 'notPlanned.dark' } } }}
-                                >
-                                    Not planned
-                                </ToggleButton>
-                                <ToggleButton
-                                    value="no"
-                                    onClick={event => { feedbackAnchorRef.current = event.currentTarget; }}
-                                        sx={{ '&.Mui-selected': { bgcolor: `${getBooleanChoiceColor(def, 0)}.main`, color: getBooleanChoiceTextColor(def, 0), '&:hover': { bgcolor: `${getBooleanChoiceColor(def, 0)}.dark` } } }}
-                                >
-                                    No
-                                </ToggleButton>
-                            </ToggleButtonGroup>
-                            )}
-                            {def.type === 'NUMBER' && (
-                                <AppNumberField
-                                    autoComplete="off"
-                                    size="small"
-                                    value={values[def.id] ?? ''}
-                                    onChange={e => setValue(def.id, e.target.value === '' ? null : Number(e.target.value))}
-                                    onStepValueChange={value => setValue(def.id, value)}
-                                    onFocus={event => { feedbackAnchorRef.current = event.currentTarget; }}
-                                    sx={{ width: 160 }}
+                    {definitions.map((definition, index) => (
+                        <Box key={definition.id}>
+                            {index > 0 && <Divider sx={{ mb: 3 }} />}
+                            <Typography variant="subtitle2" sx={{ mb: 0.5 }}>{definition.name}</Typography>
+                            <Stack spacing={1.5}>
+                                <StatInputField
+                                    definition={definition}
+                                    type={definition.type}
+                                    value={values[definition.id] ?? null}
+                                    status={statuses[definition.id]}
+                                    primary
+                                    onChange={(value, status) => setValue(definition.id, value, status)}
+                                    onFocus={element => { feedbackAnchorRef.current = element; }}
                                 />
-                            )}
-                            {def.type === 'TIME' && (
-                                <AppTimeField
-                                    label={def.name}
-                                    size="small"
-                                    value={minutesToTimeValue(values[def.id])}
-                                    onChange={value => setValue(
-                                        def.id,
-                                        value ? timeValueToMinutes(value) : null,
-                                    )}
-                                    onFocus={event => { feedbackAnchorRef.current = event.currentTarget; }}
-                                    minutesStep={1}
-                                    inputProps={{ 'aria-label': `${def.name} time` }}
-                                    sx={{ width: 160 }}
-                                />
-                            )}
-                            {def.type === 'DURATION' && (
-                                <DurationInput
-                                    value={values[def.id] ?? null}
-                                    onChange={value => setValue(def.id, value)}
-                                    onFocus={event => { feedbackAnchorRef.current = event.currentTarget; }}
-                                />
-                            )}
-                            {def.type === 'RANGE' && (
-                                <Box sx={{ px: 1, width: 260 }}>
-                                    <Slider
-                                        value={values[def.id] ?? def.minValue ?? 0}
-                                        min={def.minValue}
-                                        max={def.maxValue}
-                                        step={1}
-                                        marks
-                                        valueLabelDisplay="auto"
-                                        onChange={(event, v) => {
-                                            feedbackAnchorRef.current = event.currentTarget as HTMLElement;
-                                            setValue(def.id, v as number);
-                                        }}
-                                        color="primary"
-                                    />
-                                    <Stack direction="row" justifyContent="space-between">
-                                        <Typography variant="caption" color="text.secondary">{def.minValue}</Typography>
-                                        <Typography variant="caption" color="text.secondary">{def.maxValue}</Typography>
-                                    </Stack>
-                                    <Button size="small" onClick={() => setValue(def.id, null)}>
-                                        Clear
-                                    </Button>
-                                    {!touched.has(def.id) && (
+                                {(definition.additionalInputTypes ?? []).map(type => (
+                                    <Box key={type}>
                                         <Typography variant="caption" color="text.secondary">
-                                            Move the slider to record a value
+                                            {statInputLabel(type)}
                                         </Typography>
-                                    )}
-                                </Box>
-                            )}
+                                        <StatInputField
+                                            definition={definition}
+                                            type={type}
+                                            value={additionalValues[definition.id]?.[type] ?? null}
+                                            onChange={value => setAdditionalValue(definition.id, type, value)}
+                                            onFocus={element => { feedbackAnchorRef.current = element; }}
+                                        />
+                                    </Box>
+                                ))}
+                            </Stack>
                         </Box>
                     ))}
                 </Stack>
             </Box>
-
             <Box sx={{ pt: 2, mt: 2, borderTop: 1, borderColor: 'divider' }}>
                 {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
                 {success && <Alert severity="success" sx={{ mb: 2 }}>Saved!</Alert>}

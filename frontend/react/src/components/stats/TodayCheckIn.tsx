@@ -1,18 +1,15 @@
 import React, { useRef, useState, useEffect } from 'react';
 import {
-    Box, Typography, Stack, ToggleButton, ToggleButtonGroup,
-    Slider, Button, Alert, CircularProgress, Divider,
+    Box, Typography, Stack, Button, Alert, CircularProgress, Divider,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { format } from 'date-fns';
-import { StatDefinition, StatEntryStatus } from '../../types/Stats';
+import { StatDefinition, StatEntryStatus, StatType } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
-import { getBooleanChoiceColor, getBooleanChoiceTextColor, getStatFeedbackColor, showStatFeedback } from '../../services/statFeedback';
-import { minutesToTimeValue, timeValueToMinutes } from '../../services/utils/statValues';
-import { DurationInput } from './DurationInput';
-import { AppTimeField } from '../input/AppPickerFields';
-import { AppNumberField } from '../input/AppNumberField';
+import { getStatFeedbackColor, showStatFeedback } from '../../services/statFeedback';
 import { readStatInputPreference, saveStatInputPreference } from '../../services/utils/inputPreferences';
+import { StatInputField } from './StatInputField';
+import { statInputLabel } from './statInputLabels';
 
 interface Props {
     definitions: StatDefinition[];
@@ -22,6 +19,7 @@ interface Props {
 export function TodayCheckIn({ definitions, onSaved }: Props) {
     const theme = useTheme();
     const [values, setValues] = useState<Record<string, number | null>>({});
+    const [additionalValues, setAdditionalValues] = useState<Record<string, Partial<Record<StatType, number>>>>({});
     const [statuses, setStatuses] = useState<Record<string, StatEntryStatus>>({});
     // touched tracks which definitions have been explicitly set by the user (or pre-loaded from today's entries)
     const [touched, setTouched] = useState<Set<string>>(new Set());
@@ -39,20 +37,28 @@ export function TodayCheckIn({ definitions, onSaved }: Props) {
         statService.getTodayEntries()
         .then(entries => {
             const initial: Record<string, number | null> = {};
+            const initialAdditional: Record<string, Partial<Record<StatType, number>>> = {};
             const initialStatuses: Record<string, StatEntryStatus> = {};
             const preTouched = new Set<string>();
             definitions.forEach(d => {
                 initial[d.id] = d.type === 'TIME' || d.type === 'DURATION'
                     ? readStatInputPreference(d.id, d.type)
                     : null;
+                initialAdditional[d.id] = Object.fromEntries(
+                    (d.additionalInputTypes ?? [])
+                        .filter(type => type === 'TIME' || type === 'DURATION')
+                        .map(type => [type, readStatInputPreference(d.id, type)]),
+                );
                 initialStatuses[d.id] = 'RECORDED';
             });
             entries.forEach(e => {
                 initial[e.statDefinitionId] = e.value;
+                initialAdditional[e.statDefinitionId] = e.additionalValues ?? {};
                 initialStatuses[e.statDefinitionId] = e.status ?? 'RECORDED';
                 preTouched.add(e.statDefinitionId);
             });
             setValues(initial);
+            setAdditionalValues(initialAdditional);
             setStatuses(initialStatuses);
             setTouched(preTouched);
             })
@@ -78,13 +84,33 @@ export function TodayCheckIn({ definitions, onSaved }: Props) {
         setSuccess(false);
     };
 
+    const setAdditionalValue = (id: string, type: StatType, value: number | null) => {
+        setAdditionalValues(previous => {
+            const nextForDefinition = { ...previous[id] };
+            if (value == null) delete nextForDefinition[type];
+            else nextForDefinition[type] = value;
+            return { ...previous, [id]: nextForDefinition };
+        });
+        if (value != null && (type === 'TIME' || type === 'DURATION')) {
+            saveStatInputPreference(id, type, value);
+        }
+        setTouched(previous => new Set(previous).add(id));
+        setSuccess(false);
+    };
+
     const handleSave = async () => {
+        const toSave = definitions.filter(definition => touched.has(definition.id));
+        const missingPrimary = toSave.find(definition =>
+            values[definition.id] == null && statuses[definition.id] !== 'NOT_PLANNED');
+        if (missingPrimary) {
+            setError(`Choose a value for ${missingPrimary.name} before saving its additional inputs.`);
+            return;
+        }
         setSaving(true);
         setError(null);
         setSuccess(false);
         const today = format(new Date(), 'yyyy-MM-dd');
         try {
-            const toSave = definitions.filter(d => touched.has(d.id));
             toSave.forEach(definition => {
                 const value = values[definition.id];
                 if (value !== null && value !== undefined && statuses[definition.id] !== 'NOT_PLANNED') {
@@ -100,6 +126,11 @@ export function TodayCheckIn({ definitions, onSaved }: Props) {
                         date: today,
                         value: values[d.id] ?? null,
                         status: statuses[d.id],
+                        additionalValues: Object.fromEntries(
+                            (d.additionalInputTypes ?? [])
+                                .filter(type => additionalValues[d.id]?.[type] != null)
+                                .map(type => [type, additionalValues[d.id]?.[type]]),
+                        ),
                     })
                 )
             );
@@ -126,103 +157,31 @@ export function TodayCheckIn({ definitions, onSaved }: Props) {
                     <Box key={def.id}>
                         {i > 0 && <Divider sx={{ mb: 3 }} />}
                         <Typography variant="subtitle2" sx={{ mb: 0.5 }}>{def.name}</Typography>
-                            {def.type === 'BOOLEAN' && (
-                                <ToggleButtonGroup
-                                    value={statuses[def.id] === 'NOT_PLANNED'
-                                        ? 'not-planned'
-                                        : values[def.id] === 1 ? 'yes' : values[def.id] === 0 ? 'no' : null}
-                                    exclusive
-                                    onChange={(_, v) => setValue(
-                                        def.id,
-                                        v === null ? null : v === 'yes' ? 1 : 0,
-                                        v === 'not-planned' ? 'NOT_PLANNED' : 'RECORDED',
-                                    )}
-                                    size="small"
-                                >
-                                <ToggleButton
-                                    value="yes"
-                                    onClick={event => { feedbackAnchorRef.current = event.currentTarget; }}
-                                    sx={{ '&.Mui-selected': { bgcolor: `${getBooleanChoiceColor(def, 1)}.main`, color: getBooleanChoiceTextColor(def, 1), '&:hover': { bgcolor: `${getBooleanChoiceColor(def, 1)}.dark` } } }}
-                                >
-                                    Yes
-                                </ToggleButton>
-                                <ToggleButton
-                                    value="not-planned"
-                                    sx={{ '&.Mui-selected': { bgcolor: 'notPlanned.main', color: 'notPlanned.contrastText', '&:hover': { bgcolor: 'notPlanned.dark' } } }}
-                                >
-                                    Not planned
-                                </ToggleButton>
-                                <ToggleButton
-                                    value="no"
-                                    onClick={event => { feedbackAnchorRef.current = event.currentTarget; }}
-                                    sx={{ '&.Mui-selected': { bgcolor: `${getBooleanChoiceColor(def, 0)}.main`, color: getBooleanChoiceTextColor(def, 0), '&:hover': { bgcolor: `${getBooleanChoiceColor(def, 0)}.dark` } } }}
-                                >
-                                    No
-                                </ToggleButton>
-                            </ToggleButtonGroup>
-                        )}
-                        {def.type === 'NUMBER' && (
-                            <AppNumberField
-                                autoComplete="off"
-                                size="small"
-                                value={values[def.id] ?? ''}
-                                onChange={e => setValue(def.id, e.target.value === '' ? null : Number(e.target.value))}
-                                onStepValueChange={value => setValue(def.id, value)}
-                                onFocus={event => { feedbackAnchorRef.current = event.currentTarget; }}
-                                sx={{ width: 160 }}
-                            />
-                        )}
-                        {def.type === 'TIME' && (
-                            <AppTimeField
-                                label={def.name}
-                                size="small"
-                                value={minutesToTimeValue(values[def.id])}
-                                onChange={value => setValue(
-                                    def.id,
-                                    value ? timeValueToMinutes(value) : null,
-                                )}
-                                onFocus={event => { feedbackAnchorRef.current = event.currentTarget; }}
-                                minutesStep={1}
-                                inputProps={{ 'aria-label': `${def.name} time` }}
-                                sx={{ width: 160 }}
-                            />
-                        )}
-                        {def.type === 'DURATION' && (
-                            <DurationInput
+                        <Stack spacing={1.5}>
+                            <StatInputField
+                                definition={def}
+                                type={def.type}
                                 value={values[def.id] ?? null}
-                                onChange={value => setValue(def.id, value)}
-                                onFocus={event => { feedbackAnchorRef.current = event.currentTarget; }}
+                                status={statuses[def.id]}
+                                primary
+                                onChange={(value, status) => setValue(def.id, value, status)}
+                                onFocus={element => { feedbackAnchorRef.current = element; }}
                             />
-                        )}
-                        {def.type === 'RANGE' && (
-                            <Box sx={{ px: 1, width: 300 }}>
-                                <Slider
-                                    value={values[def.id] ?? def.minValue ?? 0}
-                                    min={def.minValue}
-                                    max={def.maxValue}
-                                    step={1}
-                                    marks
-                                    valueLabelDisplay="auto"
-                                    onChange={(event, v) => {
-                                        feedbackAnchorRef.current = event.currentTarget as HTMLElement;
-                                        setValue(def.id, v as number);
-                                    }}
-                                    color={touched.has(def.id) ? 'primary' : 'secondary'}
-                                />
-                                <Stack direction="row" justifyContent="space-between">
-                                    <Typography variant="caption" color="text.secondary">{def.minValue}</Typography>
-                                    <Typography variant="caption" color="text.secondary">{def.maxValue}</Typography>
-                                </Stack>
-                                <Button size="small" onClick={() => setValue(def.id, null)}>
-                                    Clear
-                                </Button>
-                                {!touched.has(def.id) && (
+                            {(def.additionalInputTypes ?? []).map(type => (
+                                <Box key={type}>
                                     <Typography variant="caption" color="text.secondary">
-                                        Move the slider to record a value
+                                        {statInputLabel(type)}
                                     </Typography>
-                                )}
-                            </Box>
-                        )}
+                                    <StatInputField
+                                        definition={def}
+                                        type={type}
+                                        value={additionalValues[def.id]?.[type] ?? null}
+                                        onChange={value => setAdditionalValue(def.id, type, value)}
+                                        onFocus={element => { feedbackAnchorRef.current = element; }}
+                                    />
+                                </Box>
+                            ))}
+                        </Stack>
                     </Box>
                 ))}
             </Stack>

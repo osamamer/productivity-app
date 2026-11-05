@@ -6,7 +6,7 @@ import {
     Box, TextField, Button, Select,
     MenuItem, FormControl, InputLabel, Typography,
     Stack, Collapse, FormHelperText, Checkbox,
-    FormControlLabel, DialogActions, DialogContent, DialogTitle,
+    FormControlLabel, FormGroup, DialogActions, DialogContent, DialogTitle,
 } from '@mui/material';
 import {
     CreateDefinitionRequest, StatDefinition, StatMorality, StatRecurrenceDay,
@@ -29,6 +29,7 @@ import { defaultStatRecurringTaskDraft } from './statRecurringTaskUtils';
 interface FormValues {
     name: string;
     type: StatType;
+    additionalInputTypes: StatType[];
     minValue: string;
     maxValue: string;
     morality: StatMorality;
@@ -43,6 +44,14 @@ interface FormValues {
 function normalizedStatName(name: string): string {
     return name.trim().toLowerCase();
 }
+
+const additionalInputOptions: Array<{ type: StatType; label: string }> = [
+    { type: 'BOOLEAN', label: 'Yes / no' },
+    { type: 'NUMBER', label: 'Amount' },
+    { type: 'RANGE', label: 'Rating (0–10)' },
+    { type: 'TIME', label: 'Time' },
+    { type: 'DURATION', label: 'Duration' },
+];
 
 function createValidationSchema(existingDefinitions: StatDefinition[], currentDefinitionId?: string) {
     return Yup.object({
@@ -159,6 +168,7 @@ export function CreateStatForm({
         initialValues: {
             name: initialDefinition?.name ?? '',
             type: initialDefinition?.type ?? 'NUMBER',
+            additionalInputTypes: initialDefinition?.additionalInputTypes ?? [],
             minValue: initialDefinition?.minValue == null ? '' : String(initialDefinition.minValue),
             maxValue: initialDefinition?.maxValue == null ? '' : String(initialDefinition.maxValue),
             morality: initialDefinition?.morality ?? 'NEUTRAL',
@@ -192,6 +202,7 @@ export function CreateStatForm({
                         goodThreshold: values.type !== 'BOOLEAN' && values.morality !== 'NEUTRAL'
                             ? threshold ?? undefined
                             : undefined,
+                        additionalInputTypes: values.additionalInputTypes.filter(type => type !== values.type),
                     };
                     if (onUpdatedOptimistically && onUpdateFailed) {
                         const operationId = `stat-update-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -200,6 +211,7 @@ export function CreateStatForm({
                             ...request,
                             morality: request.morality,
                             goodThreshold: request.goodThreshold ?? null,
+                            additionalInputTypes: request.additionalInputTypes,
                         };
                         onUpdatedOptimistically(optimisticDefinition, operationId, initialDefinition);
                         onCancel();
@@ -217,6 +229,7 @@ export function CreateStatForm({
                     const request: CreateDefinitionRequest = {
                         name: values.name.trim(),
                         type: values.type,
+                        additionalInputTypes: values.additionalInputTypes.filter(type => type !== values.type),
                         minValue: values.type === 'RANGE' ? Number(values.minValue) : undefined,
                         maxValue: values.type === 'RANGE' ? Number(values.maxValue) : undefined,
                         morality: values.morality,
@@ -246,6 +259,7 @@ export function CreateStatForm({
                             id: operationId,
                             name: request.name,
                             type: request.type,
+                            additionalInputTypes: request.additionalInputTypes,
                             morality: request.morality,
                             minValue: request.minValue,
                             maxValue: request.maxValue,
@@ -413,6 +427,8 @@ export function CreateStatForm({
                         onChange={event => {
                             const type = event.target.value as StatType;
                             formik.setFieldValue('type', type);
+                            formik.setFieldValue('additionalInputTypes',
+                                formik.values.additionalInputTypes.filter(inputType => inputType !== type));
                             formik.setFieldValue('goodThreshold', '');
                             if (type === 'BOOLEAN'
                                 || formik.values.morality === 'NICE_TO_HAVE'
@@ -430,6 +446,34 @@ export function CreateStatForm({
                         <MenuItem value="DURATION">Duration — hours and minutes</MenuItem>
                     </Select>
                 </FormControl>}
+                <Box>
+                    <Typography variant="subtitle2" sx={{ mb: 0.5 }}>Additional inputs</Typography>
+                    <FormGroup row>
+                        {additionalInputOptions.filter(option => option.type !== formik.values.type).map(option => (
+                            <FormControlLabel
+                                key={option.type}
+                                label={option.label}
+                                control={(
+                                    <Checkbox
+                                        size="small"
+                                        checked={formik.values.additionalInputTypes.includes(option.type)}
+                                        onChange={event => {
+                                            const selected = new Set(formik.values.additionalInputTypes);
+                                            if (event.target.checked) selected.add(option.type);
+                                            else selected.delete(option.type);
+                                            void formik.setFieldValue('additionalInputTypes', Array.from(selected));
+                                        }}
+                                    />
+                                )}
+                            />
+                        ))}
+                    </FormGroup>
+                    {formik.values.additionalInputTypes.includes('RANGE') && formik.values.type !== 'RANGE' && (
+                        <Typography variant="caption" color="text.secondary">
+                            Additional rating inputs use a 0–10 scale.
+                        </Typography>
+                    )}
+                </Box>
                 <FormControl size="small">
                     <InputLabel>Morality</InputLabel>
                     <Select

@@ -133,13 +133,30 @@ public class StatService {
                                            String requestedTimeOfDay,
                                            Integer recurringTaskImportance,
                                            String userId) {
+        return createDefinition(name, description, type, minValue, maxValue, morality, goodThreshold,
+                createRecurringTask, recurrenceFrequency, recurrenceDaysOfWeek, requestedTimeOfDay,
+                recurringTaskImportance, List.of(), userId);
+    }
+
+    @Transactional
+    public StatDefinition createDefinition(String name, String description, StatType type,
+                                           Double minValue, Double maxValue,
+                                           StatMorality morality, Double goodThreshold,
+                                           boolean createRecurringTask,
+                                           TaskRecurrenceFrequency recurrenceFrequency,
+                                           List<DayOfWeek> recurrenceDaysOfWeek,
+                                           String requestedTimeOfDay,
+                                           Integer recurringTaskImportance,
+                                           List<StatType> additionalInputTypes,
+                                           String userId) {
         User user = userRepository.findUserById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
 
         String normalizedName = normalizeName(name);
         validateDefinition(normalizedName, type, minValue, maxValue, morality, goodThreshold, userId, null);
+        List<StatType> normalizedAdditionalTypes = normalizeAdditionalInputTypes(type, additionalInputTypes);
         StatDefinition definition = saveDefinition(normalizedName, description, type, minValue, maxValue,
-                morality, goodThreshold, null, user);
+                morality, goodThreshold, null, user, normalizedAdditionalTypes);
         return createRecurringTask
                 ? createRecurringTask(definition.getId(), userId, null, recurrenceFrequency,
                 recurrenceDaysOfWeek, requestedTimeOfDay, recurringTaskImportance)
@@ -149,6 +166,14 @@ public class StatService {
     @Transactional
     public StatDefinition updateDefinition(String definitionId, String name, String description,
                                            StatMorality morality, Double goodThreshold,
+                                           String userId) {
+        return updateDefinition(definitionId, name, description, morality, goodThreshold, null, userId);
+    }
+
+    @Transactional
+    public StatDefinition updateDefinition(String definitionId, String name, String description,
+                                           StatMorality morality, Double goodThreshold,
+                                           List<StatType> requestedAdditionalInputTypes,
                                            String userId) {
         StatDefinition definition = definitionRepository.findByIdAndUserId(definitionId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("No such stat."));
@@ -160,6 +185,10 @@ public class StatService {
         String normalizedName = normalizeName(name);
         validateDefinition(normalizedName, definition.getType(), definition.getMinValue(),
                 definition.getMaxValue(), morality, goodThreshold, userId, definitionId);
+        if (requestedAdditionalInputTypes != null) {
+            definition.setAdditionalInputTypes(
+                    normalizeAdditionalInputTypes(definition.getType(), requestedAdditionalInputTypes));
+        }
         boolean nameChanged = !normalizedName.equals(definition.getName());
         TaskSeriesResponse linkedSeries = nameChanged && definition.getRecurringTaskSeriesId() != null
                 ? taskSeriesService.getSeries(definition.getRecurringTaskSeriesId(), userId)
@@ -815,6 +844,38 @@ public class StatService {
         return name == null ? null : name.trim();
     }
 
+    private List<StatType> normalizeAdditionalInputTypes(StatType primaryType,
+                                                         List<StatType> additionalInputTypes) {
+        if (additionalInputTypes == null || additionalInputTypes.isEmpty()) return List.of();
+        Set<StatType> uniqueTypes = new java.util.HashSet<>();
+        for (StatType inputType : additionalInputTypes) {
+            if (inputType == null || inputType == primaryType || !uniqueTypes.add(inputType)) {
+                throw new IllegalArgumentException("Additional stat inputs must be distinct from the primary input.");
+            }
+        }
+        return List.copyOf(additionalInputTypes);
+    }
+
+    private Map<StatType, Double> validateAdditionalValues(StatDefinition definition,
+                                                           Map<StatType, Double> values) {
+        if (values == null || values.isEmpty()) return Map.of();
+        Map<StatType, Double> validatedValues = new java.util.EnumMap<>(StatType.class);
+        for (Map.Entry<StatType, Double> entry : values.entrySet()) {
+            StatType inputType = entry.getKey();
+            Double value = entry.getValue();
+            if (inputType == null || !definition.getAdditionalInputTypes().contains(inputType) || value == null) {
+                throw new IllegalArgumentException("An entry contains an input not configured for this stat.");
+            }
+            if (inputType == StatType.RANGE) {
+                validateInputValue(inputType, value, 0.0, 10.0, definition.getName());
+            } else {
+                validateInputValue(inputType, value, null, null, definition.getName());
+            }
+            validatedValues.put(inputType, value);
+        }
+        return Map.copyOf(validatedValues);
+    }
+
     private void validateFocusTaskName(String taskName) {
         if (taskName == null || taskName.isBlank()) {
             throw new IllegalArgumentException("A task name is required.");
@@ -954,11 +1015,22 @@ public class StatService {
                                           StatMorality morality, Double goodThreshold,
                                           String systemKey,
                                           User user) {
+        return saveDefinition(name, description, type, minValue, maxValue, morality, goodThreshold,
+                systemKey, user, List.of());
+    }
+
+    private StatDefinition saveDefinition(String name, String description, StatType type,
+                                          Double minValue, Double maxValue,
+                                          StatMorality morality, Double goodThreshold,
+                                          String systemKey,
+                                          User user,
+                                          List<StatType> additionalInputTypes) {
         StatDefinition definition = new StatDefinition();
         definition.setId(UUID.randomUUID().toString());
         definition.setName(name);
         definition.setDescription(description);
         definition.setType(type);
+        definition.setAdditionalInputTypes(additionalInputTypes);
         definition.setMorality(morality);
         definition.setMinValue(minValue);
         definition.setMaxValue(maxValue);
@@ -1064,18 +1136,27 @@ public class StatService {
     @Transactional
     public StatEntry recordEntry(String statDefinitionId, LocalDate date, Number value, String userId) {
         return recordEntry(statDefinitionId, date,
-                value == null ? null : value.doubleValue(), StatEntryStatus.RECORDED, userId, false);
+                value == null ? null : value.doubleValue(), StatEntryStatus.RECORDED, null, userId, false);
     }
 
     @Transactional
     public StatEntry recordEntry(String statDefinitionId, LocalDate date, Number value,
                                  StatEntryStatus status, String userId) {
         return recordEntry(statDefinitionId, date,
-                value == null ? null : value.doubleValue(), status, userId, false);
+                value == null ? null : value.doubleValue(), status, null, userId, false);
+    }
+
+    @Transactional
+    public StatEntry recordEntry(String statDefinitionId, LocalDate date, Number value,
+                                 StatEntryStatus status, Map<StatType, Double> additionalValues,
+                                 String userId) {
+        return recordEntry(statDefinitionId, date,
+                value == null ? null : value.doubleValue(), status, additionalValues, userId, false);
     }
 
     private StatEntry recordEntry(String statDefinitionId, LocalDate date, Double requestedValue,
-                                  StatEntryStatus requestedStatus, String userId, boolean automatic) {
+                                  StatEntryStatus requestedStatus, Map<StatType, Double> requestedAdditionalValues,
+                                  String userId, boolean automatic) {
         StatDefinition definition = definitionRepository.findByIdAndUserId(statDefinitionId, userId)
                 .orElseThrow(() -> new IllegalArgumentException("Stat definition not found: " + statDefinitionId));
 
@@ -1103,6 +1184,9 @@ public class StatService {
                 userId,
                 date);
         if (value == null) {
+            if (requestedAdditionalValues != null && !requestedAdditionalValues.isEmpty()) {
+                throw new IllegalArgumentException("A primary stat value is required when recording additional inputs.");
+            }
             existingEntry.ifPresent(entryRepository::delete);
             if (existingEntry.isPresent()) {
                 statTaskLinkService.synchronizeStatEntry(
@@ -1115,11 +1199,15 @@ public class StatService {
         }
 
         validateValue(definition, value);
+        Map<StatType, Double> additionalValues = requestedAdditionalValues == null
+                ? existingEntry.map(StatEntry::getAdditionalValues).orElse(Map.of())
+                : validateAdditionalValues(definition, requestedAdditionalValues);
 
         Double previousValue = existingEntry.map(StatEntry::getValue).orElse(null);
         StatEntry statEntry = existingEntry.orElseGet(() -> createEntry(definition, date, user));
         statEntry.setValue(value);
         statEntry.setStatus(status);
+        statEntry.setAdditionalValues(additionalValues);
         StatEntry savedEntry = entryRepository.save(statEntry);
         log.info("Stat value {}: userId={} statDefinitionId={} statName={} date={} value={} status={} previousValue={}",
                 previousValue == null ? "recorded" : "updated",
@@ -1165,7 +1253,7 @@ public class StatService {
         if (durationMinutes <= 0) durationMinutes += StatTimeScale.MINUTES_PER_DAY;
 
         recordEntry(sleepDurationDefinition.get().getId(), wakeUpDate,
-                (double) durationMinutes, StatEntryStatus.RECORDED, userId, true);
+                (double) durationMinutes, StatEntryStatus.RECORDED, null, userId, true);
         log.info("Sleep duration calculated: userId={} sleepDate={} wakeUpDate={} durationMinutes={}",
                 userId, sleepDate, wakeUpDate, durationMinutes);
     }
@@ -1181,7 +1269,7 @@ public class StatService {
         StatDefinition minutesDefinition = getSystemDefinition(
                 userId, SystemStatCatalog.MEDITATION_MINUTES_SYSTEM_KEY);
 
-        recordEntry(meditatedDefinition.getId(), date, 1.0, StatEntryStatus.RECORDED, userId, true);
+        recordEntry(meditatedDefinition.getId(), date, 1.0, StatEntryStatus.RECORDED, null, userId, true);
 
         double existingMinutes = entryRepository
                 .findByStatDefinitionIdAndUserIdAndDate(minutesDefinition.getId(), userId, date)
@@ -1189,7 +1277,7 @@ public class StatService {
                 .orElse(0.0);
         double sessionMinutes = duration.toMillis() / 60_000.0;
         recordEntry(minutesDefinition.getId(), date, existingMinutes + sessionMinutes,
-                StatEntryStatus.RECORDED, userId, true);
+                StatEntryStatus.RECORDED, null, userId, true);
 
         log.info("Meditation stats recorded: userId={} date={} sessionMinutes={} dailyMinutes={}",
                 userId, date, sessionMinutes, existingMinutes + sessionMinutes);
@@ -1440,33 +1528,42 @@ public class StatService {
     }
 
     private void validateValue(StatDefinition statDefinition, Double value) {
-        switch (statDefinition.getType()) {
+        validateInputValue(statDefinition.getType(), value, statDefinition.getMinValue(),
+                statDefinition.getMaxValue(), statDefinition.getName());
+    }
+
+    private void validateInputValue(StatType type, Double value, Double minValue,
+                                    Double maxValue, String statName) {
+        if (value == null || !Double.isFinite(value)) {
+            throw new IllegalArgumentException("Stat values must be finite numbers: " + statName);
+        }
+        switch (type) {
             case StatType.BOOLEAN -> {
                 if (!value.equals(0.0) && !value.equals(1.0)) {
                     throw new IllegalArgumentException("Invalid value for true/false stat: "
-                    + statDefinition.getName());
+                    + statName);
                 }
             }
             case StatType.RANGE -> {
-                if (value > statDefinition.getMaxValue() || value < statDefinition.getMinValue()) {
+                if (value > maxValue || value < minValue) {
                     throw new IllegalArgumentException("Value out of range for stat: "
-                    + statDefinition.getName());
+                    + statName);
                 }
             }
             case StatType.TIME -> {
-                if (!Double.isFinite(value) || value < 0 || value >= 24 * 60 || value % 1 != 0) {
+                if (value < 0 || value >= 24 * 60 || value % 1 != 0) {
                     throw new IllegalArgumentException("Time values must be between 00:00 and 23:59: "
-                            + statDefinition.getName());
+                            + statName);
                 }
             }
             case StatType.DURATION -> {
-                if (!Double.isFinite(value) || value < 0 || value % 1 != 0) {
+                if (value < 0 || value % 1 != 0) {
                     throw new IllegalArgumentException("Duration values must be whole, non-negative minutes: "
-                            + statDefinition.getName());
+                            + statName);
                 }
             }
             case StatType.NUMBER -> {}
-            default -> throw new IllegalStateException("Invalid stat type: " + statDefinition.getType());
+            default -> throw new IllegalStateException("Invalid stat type: " + type);
         }
     }
 }

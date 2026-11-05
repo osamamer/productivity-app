@@ -13,6 +13,7 @@ import lombok.NoArgsConstructor;
 import org.osama.user.User;
 
 import java.time.LocalDate;
+import java.util.Map;
 
 @Data
 @NoArgsConstructor
@@ -52,6 +53,11 @@ public class StatEntry {
     //   DURATION -> whole minutes, with no 24-hour limit
     @Column(name = "stat_value", nullable = false)
     private double value;
+
+    @Convert(converter = StatInputValuesConverter.class)
+    @Column(name = "additional_values", nullable = false, columnDefinition = "TEXT")
+    @Builder.Default
+    private Map<StatType, Double> additionalValues = Map.of();
 
     // NOT_PLANNED is a neutral third state for boolean statistics. Its value is
     // kept at zero for storage compatibility, but it is not treated as No.
