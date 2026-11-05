@@ -782,11 +782,18 @@ export const taskService = {
         return series;
     },
 
-    async updateTaskSeries(seriesId: string, recurrence: TaskRecurrenceDraft, active?: boolean, repeatSubtasks?: boolean): Promise<TaskSeries> {
+    async updateTaskSeries(
+        seriesId: string,
+        recurrence: TaskRecurrenceDraft,
+        active?: boolean,
+        repeatSubtasks?: boolean,
+        startDateTime?: string,
+    ): Promise<TaskSeries> {
         const response = await apiFetch(`${TASK_SERIES_URL}/${seriesId}`, {
             method: 'PATCH',
             body: JSON.stringify({ ...recurrence, ...(active === undefined ? {} : { active }),
-                ...(repeatSubtasks === undefined ? {} : { repeatSubtasks }) }),
+                ...(repeatSubtasks === undefined ? {} : { repeatSubtasks }),
+                ...(startDateTime === undefined ? {} : { startDateTime }) }),
             headers: {
                 'Content-Type': 'application/json; charset=UTF-8',
                 ...getAuthHeaders(),

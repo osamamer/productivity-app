@@ -96,6 +96,39 @@ class TaskSeriesServiceTest {
     }
 
     @Test
+    void changingSeriesStartTimeReschedulesUpcomingOccurrencesTogether() {
+        LocalDateTime start = LocalDateTime.now().plusDays(1).withSecond(0).withNano(0);
+        NewTaskRequest request = request(start);
+        request.setRecurrenceFrequency(TaskRecurrenceFrequency.DAILY);
+        request.setRecurrenceEndDate(start.toLocalDate().plusDays(2));
+
+        Task first = taskSeriesService.createSeries(request, USER_ID);
+        int nextHour = start.getHour() == 23 ? 22 : start.getHour() + 1;
+        LocalDateTime newStart = start.withHour(nextHour);
+        TaskSeriesUpdateRequest update = new TaskSeriesUpdateRequest();
+        update.setStartDateTime(newStart);
+        update.setRecurrenceFrequency(TaskRecurrenceFrequency.DAILY);
+        update.setRecurrenceEndDate(start.toLocalDate().plusDays(2));
+        update.setTimeZone("UTC");
+
+        taskSeriesService.updateSeries(first.getTaskSeriesId(), update, USER_ID);
+
+        List<Task> occurrences = taskRepository
+                .findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(first.getTaskSeriesId());
+        List<Task> upcomingOccurrences = occurrences.stream().filter(task -> !task.isSkipped()).toList();
+        assertEquals(6, occurrences.size());
+        assertEquals(3, upcomingOccurrences.size());
+        assertTrue(upcomingOccurrences.stream().allMatch(task ->
+                task.getScheduledPerformDateTime().getHour() == newStart.getHour()));
+        assertTrue(upcomingOccurrences.stream().anyMatch(task ->
+                task.getScheduledPerformDateTime().equals(newStart)));
+        assertTrue(occurrences.stream().filter(task -> !upcomingOccurrences.contains(task))
+                .allMatch(task -> task.getSkipReason() == TaskSkipReason.SERIES_CHANGED));
+        assertEquals(newStart, seriesRepository.findBySeriesIdAndUserId(first.getTaskSeriesId(), USER_ID)
+                .orElseThrow().getStartDateTime());
+    }
+
+    @Test
     void seriesExpansionPrependsOccurrencesWithoutChangingTheirEstablishedOrder() {
         Task existingTask = taskService.createTask(
                 request(LocalDateTime.now().plusHours(1).withSecond(0).withNano(0)), USER_ID);

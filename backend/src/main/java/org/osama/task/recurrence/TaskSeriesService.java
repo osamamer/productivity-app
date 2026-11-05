@@ -188,8 +188,9 @@ public class TaskSeriesService {
             materializeOccurrences(saved, userId);
             eventPublisher.publishEvent(new TaskSeriesOccurrencesChangedEvent(saved.getSeriesId(), userId));
         }
-        log.info("Task series updated: userId={} seriesId={} active={} frequency={} importance={}",
-                userId, seriesId, saved.isActive(), saved.getRecurrenceFrequency(), saved.getImportance());
+        log.info("Task series updated: userId={} seriesId={} active={} frequency={} startDateTime={} importance={}",
+                userId, seriesId, saved.isActive(), saved.getRecurrenceFrequency(),
+                saved.getStartDateTime(), saved.getImportance());
         return toResponse(saved, userId);
     }
 

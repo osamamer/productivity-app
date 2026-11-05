@@ -26,6 +26,7 @@ import { TaskPomodoroStats } from '../../types/TaskPomodoroStats';
 import { taskService } from '../../services/api';
 import { AppDateField } from '../input/AppPickerFields';
 import { TaskRecurrenceCustomOptions, TaskRecurrencePicker } from '../task/TaskRecurrencePicker';
+import { TaskSeriesTimeField } from '../task/TaskSeriesTimeField';
 import { TaskReminderPicker } from '../task/TaskReminderPicker';
 import { SubtaskNameField } from '../task/SubtaskNameField';
 import { getTextOffsetAtPoint } from '../task/taskTextCaret';
@@ -854,6 +855,24 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
             });
     };
 
+    const handleSeriesTimeChange = async (time: string) => {
+        const currentSeries = taskSeriesRef.current;
+        if (!currentSeries?.active) return;
+        const date = currentSeries.startDateTime.slice(0, 10);
+        const savedSeries = await taskService.updateTaskSeries(
+            currentSeries.seriesId,
+            recurrenceDraftRef.current,
+            currentSeries.active,
+            repeatSubtasksRef.current,
+            `${date}T${time}:00`,
+        );
+        taskSeriesRef.current = savedSeries;
+        const nextDraft = recurrenceDraftFromSeries(savedSeries);
+        recurrenceDraftRef.current = nextDraft;
+        setRecurrenceDraft(nextDraft);
+        await onRefreshTasks?.();
+    };
+
     const handleCreateSubtask = useCallback(async (name: string) => {
         const createdAt = new Date().toISOString();
         const optimisticSubtask: Task = {
@@ -1280,6 +1299,12 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
                                             })}
                                         />
                                     </Box>
+                                    {taskSeriesRef.current?.active && (
+                                        <TaskSeriesTimeField
+                                            startDateTime={taskSeriesRef.current.startDateTime}
+                                            onApply={handleSeriesTimeChange}
+                                        />
+                                    )}
                                     </Box>
                                 </Collapse>
                             )}

@@ -73,6 +73,7 @@ import { SubtaskNameField } from './task/SubtaskNameField';
 import { getTextOffsetAtPoint } from './task/taskTextCaret';
 import { AppDateField } from './input/AppPickerFields';
 import { TaskRecurrenceCustomOptions, TaskRecurrencePicker } from './task/TaskRecurrencePicker';
+import { TaskSeriesTimeField } from './task/TaskSeriesTimeField';
 import { WhiteNoiseControl } from './timer/WhiteNoiseControl';
 import { createAuthenticatedStompClient } from '../services/authenticatedStompClient';
 import { usePomodoroActions } from '../hooks/usePomodoro';
@@ -1341,6 +1342,24 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
             });
     };
 
+    const handleSeriesTimeChange = async (time: string) => {
+        const currentSeries = taskSeriesRef.current;
+        if (!currentSeries?.active) return;
+        const date = currentSeries.startDateTime.slice(0, 10);
+        const savedSeries = await taskService.updateTaskSeries(
+            currentSeries.seriesId,
+            recurrenceDraftRef.current,
+            currentSeries.active,
+            repeatSubtasksRef.current,
+            `${date}T${time}:00`,
+        );
+        taskSeriesRef.current = savedSeries;
+        const nextDraft = recurrenceDraftFromSeries(savedSeries);
+        recurrenceDraftRef.current = nextDraft;
+        setRecurrenceDraft(nextDraft);
+        await onRefreshTasks?.();
+    };
+
     const handleNameCommit = () => {
         if (readOnly) return;
         const trimmed = localName.trim();
@@ -2146,6 +2165,12 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                             })}
                                         />
                                     </Box>
+                                    {taskSeriesRef.current?.active && (
+                                        <TaskSeriesTimeField
+                                            startDateTime={taskSeriesRef.current.startDateTime}
+                                            onApply={handleSeriesTimeChange}
+                                        />
+                                    )}
                                     </Box>
                                 </Collapse>
                             )}
