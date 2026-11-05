@@ -139,14 +139,14 @@ export function CalendarPage() {
         updateTaskInState,
     } = useGlobalTasks();
 
-    const [statDefinitions, setStatDefinitions] = useState<StatDefinition[]>([]);
-    const [events, setEvents] = useState<CalendarEvent[]>([]);
-    const [groups, setGroups] = useState<TaskGroup[]>([]);
+    const [statDefinitions, setStatDefinitions] = useState<StatDefinition[]>(() => statService.getCachedDefinitions() ?? []);
+    const [events, setEvents] = useState<CalendarEvent[]>(() => eventService.getLastKnownEvents() ?? []);
+    const [eventsReady, setEventsReady] = useState(() => eventService.getLastKnownEvents() !== undefined);
+    const [groups, setGroups] = useState<TaskGroup[]>(() => taskGroupService.getCachedGroups() ?? []);
     const [dayTemplates, setDayTemplates] = useState<DayTemplate[]>([]);
-    const [calendarDataLoading, setCalendarDataLoading] = useState(true);
-    const [calendars, setCalendars] = useState<Calendar[]>([]);
+    const [calendars, setCalendars] = useState<Calendar[]>(() => calendarService.getCachedCalendars() ?? []);
     const [calendarSources, setCalendarSources] = useState<CalendarSource[]>([]);
-    const [calendarSettingsLoading, setCalendarSettingsLoading] = useState(true);
+    const [calendarsReady, setCalendarsReady] = useState(() => calendarService.getCachedCalendars() !== undefined);
     const [calendarSettingsError, setCalendarSettingsError] = useState<string | null>(null);
     const calendarMutationVersions = useRef(new Map<string, number>());
     const eventReminderMutationVersions = useRef(new Map<string, number>());
@@ -154,6 +154,7 @@ export function CalendarPage() {
     const eventReminderRequestQueues = useRef(new Map<string, Promise<void>>());
     const confirmedEventReminderValues = useRef(new Map<string, number | null>());
     const defaultCalendarId = calendars.find(calendar => calendar.defaultCalendar)?.id ?? '';
+    const calendarCoreReady = calendarsReady && (eventsReady || !tasksLoading);
 
     useEffect(() => {
         let cancelled = false;
@@ -163,29 +164,35 @@ export function CalendarPage() {
                 console.error('Failed to load calendars:', error);
                 if (!cancelled) setCalendarSettingsError('Could not load calendars. Refresh to try again.');
             })
-            .finally(() => { if (!cancelled) setCalendarSettingsLoading(false); });
-        calendarSourceService.list()
-            .then(sources => { if (!cancelled) setCalendarSources(sources); })
-            .catch(error => console.error('Failed to load calendar sources:', error));
-        Promise.all([
-            statService.getDefinitions()
-                .then(definitions => { if (!cancelled) setStatDefinitions(definitions); })
-                .catch(e => console.error('Failed to load stat definitions:', e)),
-            eventService.getEvents()
-                .then(calendarEvents => { if (!cancelled) setEvents(calendarEvents); })
-                .catch(e => console.error('Failed to load calendar events:', e)),
-            taskGroupService.getGroups()
-                .then(taskGroups => { if (!cancelled) setGroups(taskGroups); })
-                .catch(e => console.error('Failed to load task groups:', e)),
-            dayTemplateService.getTemplates()
-                .then(templates => { if (!cancelled) setDayTemplates(templates); })
-                .catch(e => console.error('Failed to load day templates:', e)),
-        ]).finally(() => {
-            if (!cancelled) setCalendarDataLoading(false);
-        });
+            .finally(() => { if (!cancelled) setCalendarsReady(true); });
+        eventService.getEvents()
+            .then(calendarEvents => { if (!cancelled) setEvents(calendarEvents); })
+            .catch(error => console.error('Failed to load calendar events:', error))
+            .finally(() => { if (!cancelled) setEventsReady(true); });
 
         return () => { cancelled = true; };
     }, []);
+
+    useEffect(() => {
+        if (!calendarCoreReady) return;
+        let cancelled = false;
+        const secondaryTimer = window.setTimeout(() => {
+            statService.getDefinitions()
+                .then(definitions => { if (!cancelled) setStatDefinitions(definitions); })
+                .catch(e => console.error('Failed to load stat definitions:', e));
+            taskGroupService.getGroups()
+                .then(taskGroups => { if (!cancelled) setGroups(taskGroups); })
+                .catch(e => console.error('Failed to load task groups:', e));
+            dayTemplateService.getTemplates()
+                .then(templates => { if (!cancelled) setDayTemplates(templates); })
+                .catch(e => console.error('Failed to load day templates:', e));
+            calendarSourceService.list()
+                .then(sources => { if (!cancelled) setCalendarSources(sources); })
+                .catch(error => console.error('Failed to load calendar sources:', error));
+        }, 150);
+
+        return () => { cancelled = true; window.clearTimeout(secondaryTimer); };
+    }, [calendarCoreReady]);
 
     useEffect(() => {
         let active = true;
@@ -582,7 +589,7 @@ export function CalendarPage() {
                     onApplyDayTemplate={handleApplyDayTemplate}
                     onUndoDayTemplate={handleUndoDayTemplate}
                     statDefinitions={statDefinitions}
-                    loading={calendarDataLoading || tasksLoading || calendarSettingsLoading}
+                    loading={!calendarCoreReady}
                     onRefreshTasks={() => fetchAllTasks(true)}
                     onOpenDay={date => navigate(`/day/${date}`, { state: { returnTo: '/calendar' } })}
                 />

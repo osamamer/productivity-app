@@ -7,6 +7,10 @@ import { userService } from '../api/userService';
 
 const bootstrapRequests = new Map<string, Promise<void>>();
 
+export function hydrateCachedUserPreferences(): boolean {
+    return userService.hydrateCachedPreferences();
+}
+
 export async function loadUserPreferences(): Promise<void> {
     try {
         await userService.getPreferences();

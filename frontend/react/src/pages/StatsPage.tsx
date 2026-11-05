@@ -196,11 +196,12 @@ export function StatsPage() {
     const navigate = useNavigate();
     const { user } = useUser();
     const groupPreferencesKey = statGroupPreferencesStorageKey(user?.id);
-    const [definitions, setDefinitions] = useState<StatDefinition[]>([]);
-    const [selectedId, setSelectedId] = useState<string | null>(null);
+    const [definitions, setDefinitions] = useState<StatDefinition[]>(() => statService.getCachedDefinitions() ?? []);
+    const [selectedId, setSelectedId] = useState<string | null>(() =>
+        statService.getCachedDefinitions()?.find(definition => !isDedicatedStat(definition))?.id ?? null);
     const [selectedStatIds, setSelectedStatIds] = useState<string[]>([]);
     const [selectionActionsPosition, setSelectionActionsPosition] = useState<{ top: number; left: number } | null>(null);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(() => statService.getCachedDefinitions() === undefined);
     const [error, setError] = useState<string | null>(null);
     const [showCreateForm, setShowCreateForm] = useState(false);
     const [createStatGroupTarget, setCreateStatGroupTarget] = useState<StatGroup | null>(null);
@@ -212,7 +213,7 @@ export function StatsPage() {
     const [draggedId, setDraggedId] = useState<string | null>(null);
     const [dragTargetDefinition, setDragTargetDefinition] = useState<DefinitionDropTarget | null>(null);
     const [orderError, setOrderError] = useState<string | null>(null);
-    const [groups, setGroups] = useState<StatGroup[]>([]);
+    const [groups, setGroups] = useState<StatGroup[]>(() => statGroupService.getCachedGroups() ?? []);
     const [groupError, setGroupError] = useState<string | null>(null);
     const [groupDialogOpen, setGroupDialogOpen] = useState(false);
     const [groupEditTarget, setGroupEditTarget] = useState<StatGroup | null>(null);
@@ -344,7 +345,9 @@ export function StatsPage() {
             })
             .catch(e => {
                 console.error('Failed to load stat definitions:', e);
-                setError('Failed to load statistics.');
+                if (statService.getCachedDefinitions() === undefined) {
+                    setError('Failed to load statistics.');
+                }
             });
     }, []);
 
@@ -359,10 +362,11 @@ export function StatsPage() {
 
     useEffect(() => {
         let active = true;
-        setLoading(true);
+        if (!statService.getCachedDefinitions()) setLoading(true);
         setError(null);
         setGroupError(null);
-        Promise.all([loadDefinitions(), loadGroups()]).finally(() => {
+        void loadGroups();
+        void loadDefinitions().finally(() => {
             if (active) setLoading(false);
         });
 

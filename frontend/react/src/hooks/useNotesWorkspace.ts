@@ -60,14 +60,23 @@ export function useNotesWorkspace(userId: string) {
         const mutationVersion = mutationVersionRef.current;
         if (!notesWorkspaceCache.get(userId)) setLoading(true);
         setLoadError(null);
+        void notesService.getCategories()
+            .then(categories => {
+                if (!mountedRef.current || loadVersion !== loadVersionRef.current
+                    || mutationVersion !== mutationVersionRef.current) return;
+                setWorkspace(current => ({ ...current, categories }));
+            })
+            .catch(error => {
+                console.error('Could not refresh note categories.', error);
+                if (mountedRef.current && loadVersion === loadVersionRef.current) {
+                    setOperationError('Could not load note categories.');
+                }
+            });
         try {
-            const [notes, categories] = await Promise.all([
-                notesService.getNotes(),
-                notesService.getCategories(),
-            ]);
+            const notes = await notesService.getNotes();
             if (!mountedRef.current || loadVersion !== loadVersionRef.current) return;
             if (mutationVersion !== mutationVersionRef.current) return;
-            setWorkspace({ userId, notes, categories });
+            setWorkspace(current => ({ ...current, notes }));
             setSelectedNoteId(current => notes.some(note => note.id === current) ? current : notes[0]?.id ?? null);
         } catch (error) {
             if (mountedRef.current && loadVersion === loadVersionRef.current) {

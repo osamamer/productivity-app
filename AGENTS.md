@@ -112,6 +112,7 @@ All user-scoped entities (Task, DayEntity, MeditationSession, TaskSession, Pomod
 - **Forms**: Formik + Yup
 - **Calendar**: FullCalendar
 - **Routing**: React Router v6 (`App.tsx`)
+- **Loading**: Apply account-scoped cached preferences before the first render; on a cold session, fetch them alongside app code so theme and accent are correct immediately. Warm unrelated shared data after mount. Notes show their note snapshot before categories finish; Calendar renders when calendars and either tasks or events are ready, then fills in stats, groups, templates, and sources; Stats shows definitions before groups finish. Optional fetches must not gate an already useful view.
 - **Notes**: `pages/NotesPage.tsx` and `components/notes/`; the frontend calls the planned authenticated API through `services/api/notesService.ts`, with its backend contract tracked in `backend/NOTES_BACKEND_TODO.md`
 - **Mental threads**: `pages/MentalThreadsPage.tsx` and `components/mental-threads/`; the dashboard keeps total subjective load separate from the user's daily capacity check-in
 - **Mental state**: `pages/MentalStatePage.tsx` and `components/mental-state/`; each check-in records six signals and a required Labor, Leisure, or Recovery goal, calculates private derived scores on the backend, returns the saved goal, state, and goal-specific suggestions, and supports multiple entries per day

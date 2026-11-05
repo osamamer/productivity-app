@@ -57,22 +57,25 @@ async function renderApp() {
             .catch(error => console.error('Could not register the notification worker:', error));
     }
 
+    const bootstrapModule = import('./services/bootstrap/appBootstrap');
+    const appearanceReady = keycloak.authenticated
+        ? bootstrapModule.then(async ({ hydrateCachedUserPreferences, loadUserPreferences }) => {
+            if (!hydrateCachedUserPreferences()) await loadUserPreferences();
+        })
+        : Promise.resolve();
+
     const [
         { default: App },
         { AppThemeProvider },
         { AppErrorBoundary },
-        { loadUserPreferences, warmAppData },
+        { warmAppData },
     ] = await Promise.all([
         import('./App.tsx'),
         import('./contexts/ThemeContext'),
         import('./components/AppErrorBoundary'),
-        import('./services/bootstrap/appBootstrap'),
+        bootstrapModule,
+        appearanceReady,
     ]);
-
-    if (keycloak.authenticated) {
-        await loadUserPreferences();
-        void warmAppData();
-    }
 
     ReactDOM.createRoot(document.getElementById('root')!).render(
         <React.StrictMode>
@@ -83,6 +86,10 @@ async function renderApp() {
             </AppErrorBoundary>
         </React.StrictMode>,
     );
+
+    if (keycloak.authenticated) {
+        window.setTimeout(() => { void warmAppData(); }, 500);
+    }
 }
 
 window.addEventListener('storage', (event) => {

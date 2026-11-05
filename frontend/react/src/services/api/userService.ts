@@ -42,6 +42,7 @@ export interface UserPreferences {
 }
 
 const USER_PREFERENCES_TTL_MS = 5 * 60 * 1000;
+const PREFERENCES_SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const preferencesCache = new CachedResource<UserPreferences>({ ttlMs: USER_PREFERENCES_TTL_MS, maxEntries: 4 });
 const preferenceUpdateQueues = new Map<string, Promise<unknown>>();
 const pendingPreferenceUpdates = new PendingPreferenceUpdates<UserPreferences>();
@@ -52,7 +53,48 @@ function preferencesCacheKey(): string {
     return `${getAuthCacheScope()}:preferences`;
 }
 
+function preferencesSnapshotKey(): string {
+    return `claritard:${getAuthCacheScope()}:preferences`;
+}
+
+function readPreferencesSnapshot(): UserPreferences | undefined {
+    if (typeof window === 'undefined') return undefined;
+    try {
+        const raw = window.sessionStorage.getItem(preferencesSnapshotKey());
+        if (!raw) return undefined;
+        const snapshot = JSON.parse(raw) as { savedAt?: number; preferences?: UserPreferences };
+        if (typeof snapshot.savedAt !== 'number'
+            || Date.now() - snapshot.savedAt > PREFERENCES_SNAPSHOT_MAX_AGE_MS
+            || !snapshot.preferences || typeof snapshot.preferences !== 'object') {
+            window.sessionStorage.removeItem(preferencesSnapshotKey());
+            return undefined;
+        }
+        return snapshot.preferences;
+    } catch (error) {
+        console.warn('Could not read cached preferences:', error);
+        return undefined;
+    }
+}
+
+function persistPreferencesSnapshot(preferences: UserPreferences): void {
+    if (typeof window === 'undefined') return;
+    try {
+        window.sessionStorage.setItem(preferencesSnapshotKey(), JSON.stringify({
+            savedAt: Date.now(), preferences,
+        }));
+    } catch (error) {
+        console.warn('Could not cache preferences:', error);
+    }
+}
+
 export const userService = {
+    hydrateCachedPreferences(): boolean {
+        const preferences = readPreferencesSnapshot();
+        if (!preferences) return false;
+        applyUserPreferences(getAuthCacheScope(), preferences);
+        return true;
+    },
+
     async createUser(userData: {
         email: string;
         firstName: string;
@@ -136,6 +178,7 @@ export const userService = {
                 return preferencesCache.getCached(cacheKey) ?? response.data;
             }
             applyUserPreferences(scope, response.data);
+            persistPreferencesSnapshot(response.data);
 
             const legacyUpdates = readLegacyUserPreferenceUpdates();
             const updatesToMigrate = Object.fromEntries(
@@ -171,10 +214,11 @@ export const userService = {
                     preferencesCache.set(cacheKey, response.data);
                 }
                 if (getAuthCacheScope() === scope) {
-                    applyUserPreferences(
-                        scope,
-                        pendingPreferenceUpdates.mergeNewer(cacheKey, response.data, mutationVersion),
+                    const latestPreferences = pendingPreferenceUpdates.mergeNewer(
+                        cacheKey, response.data, mutationVersion,
                     );
+                    persistPreferencesSnapshot(latestPreferences);
+                    applyUserPreferences(scope, latestPreferences);
                 }
                 pendingPreferenceUpdates.removeThrough(cacheKey, mutationVersion);
                 return response.data;
@@ -202,6 +246,13 @@ export const userService = {
     },
 
     clearPreferencesCache(): void {
+        if (typeof window !== 'undefined') {
+            try {
+                window.sessionStorage.removeItem(preferencesSnapshotKey());
+            } catch (error) {
+                console.warn('Could not clear cached preferences:', error);
+            }
+        }
         preferenceCacheGeneration += 1;
         preferencesCache.clear();
         preferenceUpdateQueues.clear();
