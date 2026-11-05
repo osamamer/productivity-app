@@ -1,14 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BulkNotePatch, notesService, NotePatch } from '../services/api/notesService.ts';
 import { Note, NoteCategory } from '../types/Note.ts';
+import { notesWorkspaceCache } from '../services/cache/notesWorkspaceCache.ts';
 
 const SAVE_DELAY_MS = 500;
 interface WorkspaceState {
+    userId: string;
     notes: Note[];
     categories: NoteCategory[];
 }
 
-const EMPTY_WORKSPACE: WorkspaceState = { notes: [], categories: [] };
+function initialWorkspace(userId: string): WorkspaceState {
+    const cached = userId ? notesWorkspaceCache.get(userId) : undefined;
+    return { userId, notes: cached?.notes ?? [], categories: cached?.categories ?? [] };
+}
 
 interface IndexedNote {
     note: Note;
@@ -33,9 +38,9 @@ function errorMessage(error: unknown, fallback: string) {
 }
 
 export function useNotesWorkspace(userId: string) {
-    const [workspace, setWorkspace] = useState<WorkspaceState>(EMPTY_WORKSPACE);
-    const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
-    const [loading, setLoading] = useState(true);
+    const [workspace, setWorkspace] = useState<WorkspaceState>(() => initialWorkspace(userId));
+    const [selectedNoteId, setSelectedNoteId] = useState<string | null>(() => initialWorkspace(userId).notes[0]?.id ?? null);
+    const [loading, setLoading] = useState(() => !userId || !notesWorkspaceCache.get(userId));
     const [loadError, setLoadError] = useState<string | null>(null);
     const [operationError, setOperationError] = useState<string | null>(null);
     const [saveState, setSaveState] = useState<'saved' | 'saving' | 'error'>('saved');
@@ -47,11 +52,13 @@ export function useNotesWorkspace(userId: string) {
     const inFlightSavesRef = useRef(0);
     const mountedRef = useRef(true);
     const loadVersionRef = useRef(0);
+    const mutationVersionRef = useRef(0);
 
     const reload = useCallback(async () => {
         const loadVersion = loadVersionRef.current + 1;
         loadVersionRef.current = loadVersion;
-        setLoading(true);
+        const mutationVersion = mutationVersionRef.current;
+        if (!notesWorkspaceCache.get(userId)) setLoading(true);
         setLoadError(null);
         try {
             const [notes, categories] = await Promise.all([
@@ -59,22 +66,38 @@ export function useNotesWorkspace(userId: string) {
                 notesService.getCategories(),
             ]);
             if (!mountedRef.current || loadVersion !== loadVersionRef.current) return;
-            setWorkspace({ notes, categories });
+            if (mutationVersion !== mutationVersionRef.current) return;
+            setWorkspace({ userId, notes, categories });
             setSelectedNoteId(current => notes.some(note => note.id === current) ? current : notes[0]?.id ?? null);
         } catch (error) {
             if (mountedRef.current && loadVersion === loadVersionRef.current) {
-                setLoadError(errorMessage(error, 'Could not load notes.'));
+                console.error('Could not refresh notes.', error);
+                if (!notesWorkspaceCache.get(userId)) {
+                    setLoadError(errorMessage(error, 'Could not load notes.'));
+                }
             }
         } finally {
             if (mountedRef.current && loadVersion === loadVersionRef.current) setLoading(false);
         }
-    }, []);
+    }, [userId]);
 
     useEffect(() => {
         if (!userId) return;
         mountedRef.current = true;
+        const cached = notesWorkspaceCache.get(userId);
+        setWorkspace(current => current.userId === userId ? current : initialWorkspace(userId));
+        setSelectedNoteId(current => cached?.notes.some(note => note.id === current)
+            ? current
+            : cached?.notes[0]?.id ?? null);
+        setLoading(!cached);
         void reload();
     }, [reload, userId]);
+
+    useEffect(() => {
+        if (userId && workspace.userId === userId && !loading && !loadError && saveState !== 'error') {
+            notesWorkspaceCache.set(userId, { notes: workspace.notes, categories: workspace.categories });
+        }
+    }, [loadError, loading, saveState, userId, workspace]);
 
     const updateSaveState = useCallback(() => {
         if (!mountedRef.current) return;
@@ -115,6 +138,7 @@ export function useNotesWorkspace(userId: string) {
                     }));
                 }
             } catch (error) {
+                notesWorkspaceCache.invalidate(userId);
                 const newerUpdates = pendingUpdatesRef.current.get(noteId);
                 const pendingTimer = saveTimersRef.current.get(noteId);
                 if (pendingTimer !== undefined) window.clearTimeout(pendingTimer);
@@ -140,7 +164,7 @@ export function useNotesWorkspace(userId: string) {
                 inFlightSavesByNoteRef.current.delete(noteId);
             }
         }
-    }, [updateSaveState]);
+    }, [updateSaveState, userId]);
 
     const queueNoteSave = useCallback((noteId: string, updates: NotePatch) => {
         const retryUpdates = failedUpdatesRef.current.get(noteId);
@@ -161,6 +185,9 @@ export function useNotesWorkspace(userId: string) {
 
     useEffect(() => () => {
         mountedRef.current = false;
+        if (pendingUpdatesRef.current.size > 0 || failedUpdatesRef.current.size > 0 || inFlightSavesRef.current > 0) {
+            notesWorkspaceCache.invalidate(userId);
+        }
         for (const timer of saveTimersRef.current.values()) window.clearTimeout(timer);
         for (const [noteId, updates] of pendingUpdatesRef.current.entries()) {
             void notesService.updateNote(noteId, updates, true).catch(error => {
@@ -169,7 +196,7 @@ export function useNotesWorkspace(userId: string) {
         }
         saveTimersRef.current.clear();
         pendingUpdatesRef.current.clear();
-    }, []);
+    }, [userId]);
 
     useEffect(() => {
         selectedNoteIdRef.current = selectedNoteId;
@@ -188,6 +215,7 @@ export function useNotesWorkspace(userId: string) {
 
     const createNote = useCallback(async (categoryId: string | null = null) => {
         setOperationError(null);
+        mutationVersionRef.current += 1;
         try {
             const note = await notesService.createNote(categoryId);
             setWorkspace(current => ({ ...current, notes: [note, ...current.notes] }));
@@ -200,6 +228,7 @@ export function useNotesWorkspace(userId: string) {
     }, []);
 
     const updateNote = useCallback((noteId: string, updates: NotePatch) => {
+        mutationVersionRef.current += 1;
         setWorkspace(current => ({
             ...current,
             notes: current.notes.map(note => note.id === noteId
@@ -210,6 +239,7 @@ export function useNotesWorkspace(userId: string) {
     }, [queueNoteSave]);
 
     const updateNoteDraft = useCallback((noteId: string, updates: NotePatch) => {
+        mutationVersionRef.current += 1;
         queueNoteSave(noteId, updates);
     }, [queueNoteSave]);
 
@@ -218,6 +248,7 @@ export function useNotesWorkspace(userId: string) {
         const noteIndex = workspace.notes.findIndex(note => note.id === noteId);
         const noteToDelete = noteIndex >= 0 ? workspace.notes[noteIndex] : null;
         if (!noteToDelete) return;
+        mutationVersionRef.current += 1;
 
         setWorkspace(current => ({
             ...current,
@@ -250,6 +281,7 @@ export function useNotesWorkspace(userId: string) {
 
     const updateNotes = useCallback(async (noteIds: string[], updates: BulkNotePatch) => {
         setOperationError(null);
+        mutationVersionRef.current += 1;
         try {
             await Promise.all(noteIds.map(noteId => flushNote(noteId)));
             const updatedNotes = await notesService.updateNotes(noteIds, updates);
@@ -268,6 +300,7 @@ export function useNotesWorkspace(userId: string) {
 
     const deleteNotes = useCallback(async (noteIds: string[]) => {
         setOperationError(null);
+        mutationVersionRef.current += 1;
         const deletedIds = new Set(noteIds);
         const notesToRestore = workspace.notes
             .map((note, index) => ({ note, index }))
@@ -308,6 +341,7 @@ export function useNotesWorkspace(userId: string) {
 
     const createCategory = useCallback(async (name: string, color: string) => {
         setOperationError(null);
+        mutationVersionRef.current += 1;
         try {
             const category = await notesService.createCategory({ name: name.trim(), color });
             setWorkspace(current => ({ ...current, categories: [...current.categories, category] }));
@@ -320,6 +354,7 @@ export function useNotesWorkspace(userId: string) {
 
     const updateCategory = useCallback(async (categoryId: string, updates: Pick<NoteCategory, 'name' | 'color'>) => {
         setOperationError(null);
+        mutationVersionRef.current += 1;
         try {
             const category = await notesService.updateCategory(categoryId, { ...updates, name: updates.name.trim() });
             setWorkspace(current => ({
@@ -335,6 +370,7 @@ export function useNotesWorkspace(userId: string) {
 
     const deleteCategory = useCallback(async (categoryId: string) => {
         setOperationError(null);
+        mutationVersionRef.current += 1;
         try {
             await notesService.deleteCategory(categoryId);
             setWorkspace(current => ({

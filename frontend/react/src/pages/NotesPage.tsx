@@ -59,7 +59,7 @@ export function NotesPage() {
         createCategory,
         updateCategory,
         deleteCategory,
-    } = useNotesWorkspace(user?.id ?? 'anonymous');
+    } = useNotesWorkspace(user?.id ?? '');
     const [activeFilter, setActiveFilter] = useState<NotesFilter>('all');
     const [searchQuery, setSearchQuery] = useState('');
     const [sort, setSort] = useState<NoteSort>('updated');

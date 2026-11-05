@@ -14,6 +14,7 @@ import { clearPomodoroSoundCache } from '../services/api/pomodoroSoundService';
 import { resetWhiteNoiseSource } from '../services/whiteNoise';
 import { clearAppBootstrap } from '../services/bootstrap/appBootstrap';
 import { sideNavSnapshotCache } from '../services/cache/sideNavSnapshotCache';
+import { notesWorkspaceCache } from '../services/cache/notesWorkspaceCache';
 
 interface UserInfo {
     id: string;
@@ -70,6 +71,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
         clearPomodoroSoundCache();
         resetWhiteNoiseSource();
         sideNavSnapshotCache.clear();
+        notesWorkspaceCache.clear();
         await endCurrentSession();
         window.location.replace('/sign-in');
     }, []);
