@@ -124,6 +124,27 @@ class MeditationSystemStatIntegrationTest {
         assertEquals(ended.getStartTime().plusHours(1), ended.getEndTime());
     }
 
+    @Test
+    void savingWithTheIntendedDurationRecordsThatDurationInMeditationStats() {
+        MeditationSession session = meditationSessionService.startSession(5, 0, 600, TEST_USER_ID);
+        session.setStartTime(LocalDateTime.now().minusMinutes(12));
+        session.setLastUnpauseTime(session.getStartTime());
+        meditationSessionRepository.save(session);
+
+        MeditationSession ended = meditationSessionService.endSession(
+                session.getId(), TEST_USER_ID, null, true);
+
+        assertEquals(Duration.ofMinutes(10), ended.getTotalSessionTime());
+        StatDefinition meditationMinutes = definitionRepository
+                .findByUserIdAndSystemKey(TEST_USER_ID, SystemStatCatalog.MEDITATION_MINUTES_SYSTEM_KEY)
+                .orElseThrow();
+        assertEquals(10.0, entryRepository
+                .findByStatDefinitionIdAndUserIdAndDate(
+                        meditationMinutes.getId(), TEST_USER_ID, ended.getEndTime().toLocalDate())
+                .orElseThrow()
+                .getValue());
+    }
+
     private MeditationSession endSessionWithElapsedMinutes(long minutes) {
         MeditationSession session = meditationSessionService.startSession(5, 0, 0, TEST_USER_ID);
         session.setLastUnpauseTime(LocalDateTime.now().minusMinutes(minutes));

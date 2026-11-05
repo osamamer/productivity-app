@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
     Alert, Box, Button, CircularProgress,
     DialogActions, DialogContent, DialogTitle, MenuItem,
-    Slider, Skeleton, Stack, TextField,
+    Slider, Skeleton, Stack, TextField, ToggleButton, ToggleButtonGroup,
     Typography,
 } from '@mui/material';
 import SelfImprovementIcon from '@mui/icons-material/SelfImprovement';
@@ -184,6 +184,7 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
     const [elapsed, setElapsed] = useState(0);
     const [moodBefore, setMoodBefore] = useState(5);
     const [moodAfter, setMoodAfter] = useState(5);
+    const [recordedDuration, setRecordedDuration] = useState<'elapsed' | 'intended'>('elapsed');
     const [durationMinutes, setDurationMinutes] = useState(DEFAULT_MEDITATION_SETTINGS.durationMinutes);
     const [numIntervalBells, setNumIntervalBells] = useState(DEFAULT_MEDITATION_SETTINGS.numIntervalBells);
     const [selectedSound, setSelectedSound] = useState<MeditationSoundId>(DEFAULT_MEDITATION_SETTINGS.selectedSound);
@@ -472,6 +473,7 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
         sessionActionInFlightRef.current = true;
         setError(null);
         setCompletedSession(null);
+        setRecordedDuration('elapsed');
         setSession(optimisticSession);
         setClientRunningAnchor(optimisticAnchor);
         setElapsed(0);
@@ -566,7 +568,11 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
         sessionActionInFlightRef.current = true;
         setError(null);
         try {
-            const finished = await meditationService.endSession(session.id, moodAfter);
+            const finished = await meditationService.endSession(
+                session.id,
+                moodAfter,
+                recordedDuration === 'intended',
+            );
             setCompletedSession(finished);
             setSession(null);
             setClientRunningAnchor(null);
@@ -671,7 +677,10 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
                         onTogglePause={togglePause}
                         onSoundChange={handleSoundChange}
                         onToggleSound={toggleSound}
-                        onFinish={() => setFinishDialogOpen(true)}
+                        onFinish={() => {
+                            setRecordedDuration('elapsed');
+                            setFinishDialogOpen(true);
+                        }}
                     />
                 ) : (
                     <StartMeditation
@@ -698,6 +707,25 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
                     <Typography color="text.secondary" sx={{ mb: 3 }}>
                         Save a quick check-in with this meditation session.
                     </Typography>
+                    {session.intendedLength > 0 && (
+                        <Box sx={{ mb: 2.5 }}>
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>
+                                Duration to record
+                            </Typography>
+                            <ToggleButtonGroup
+                                exclusive
+                                fullWidth
+                                size="small"
+                                value={recordedDuration}
+                                onChange={(_, value: 'elapsed' | 'intended' | null) => {
+                                    if (value) setRecordedDuration(value);
+                                }}
+                            >
+                                <ToggleButton value="elapsed">Elapsed · {formatTime(elapsed)}</ToggleButton>
+                                <ToggleButton value="intended">Planned · {formatTime(session.intendedLength)}</ToggleButton>
+                            </ToggleButtonGroup>
+                        </Box>
+                    )}
                     <Slider
                         value={moodAfter}
                         min={MIN_MOOD}

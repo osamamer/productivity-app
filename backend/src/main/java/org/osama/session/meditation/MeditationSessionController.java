@@ -70,10 +70,13 @@ public class MeditationSessionController {
             @RequestBody(required = false) @Valid EndMeditationRequest endMeditationRequest
     ) {
         Integer moodAfter = endMeditationRequest == null ? null : endMeditationRequest.getMoodAfter();
+        boolean useIntendedDuration = endMeditationRequest != null
+                && endMeditationRequest.isUseIntendedDuration();
         MeditationSession session = meditationSessionService.endSession(
                 sessionId,
                 currentUserService.getCurrentUserId(),
-                moodAfter
+                moodAfter,
+                useIntendedDuration
         );
         return ResponseEntity.ok(session);
     }

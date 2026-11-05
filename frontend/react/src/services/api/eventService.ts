@@ -32,6 +32,21 @@ export const eventService = {
         });
     },
 
+    async exportEvents(): Promise<void> {
+        const response = await apiFetch(`${EVENT_URL}/export`, { headers: getAuthHeaders() });
+        if (!response.ok) throw await parseError(response, 'Failed to export events');
+
+        const objectUrl = URL.createObjectURL(await response.blob());
+        const download = document.createElement('a');
+        download.href = objectUrl;
+        download.download = 'claritard-calendar.ics';
+        download.style.display = 'none';
+        document.body.append(download);
+        download.click();
+        download.remove();
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+    },
+
     getLastKnownEvents(): CalendarEvent[] | undefined {
         return eventsCache.getStale(eventsCacheKey());
     },

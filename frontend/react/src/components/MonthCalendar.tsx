@@ -38,6 +38,7 @@ import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import ExpandLessRoundedIcon from '@mui/icons-material/ExpandLessRounded';
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
+import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 import {
     CalendarEvent,
     CalendarEventInput,
@@ -63,6 +64,7 @@ import { DayCalendarEntry } from "../types/DayEntity";
 import { taskDateKey } from "../services/utils/taskDate";
 import { CALENDAR_COLORS, Calendar, calendarColorHex } from '../types/Calendar';
 import { CalendarChipSelect } from './calendar/CalendarSelect';
+import { isCalendarStatTaskVisible } from '../services/utils/calendarStatTaskVisibility';
 
 type MonthCalenderProps = {
     tasks: Task[],
@@ -70,6 +72,7 @@ type MonthCalenderProps = {
     events: CalendarEvent[],
     calendars: Calendar[],
     calendarManager?: React.ReactNode,
+    onExportEvents: () => Promise<void>,
     onCreateTask: (task: TaskToCreate) => Promise<void>,
     onDeleteTask: (taskId: string) => Promise<void>,
     onDeleteTaskOccurrence: (taskId: string) => Promise<void>,
@@ -113,6 +116,7 @@ const expandDayReveal = keyframes`
 
 type CalendarDisplaySettings = {
     showTasks: boolean;
+    showStatTasks: boolean;
     showStats: boolean;
     taskStatus: TaskStatusFilter;
     priorityFilters: number[];
@@ -123,6 +127,7 @@ type CalendarDisplayPreferences = Record<CalendarDisplayView, CalendarDisplaySet
 
 const DEFAULT_CALENDAR_DISPLAY_SETTINGS: CalendarDisplaySettings = {
     showTasks: true,
+    showStatTasks: true,
     showStats: true,
     taskStatus: 'open',
     priorityFilters: [3, 6, 9],
@@ -151,6 +156,9 @@ function normalizeCalendarDisplaySettings(value: unknown): CalendarDisplaySettin
         showTasks: typeof parsed.showTasks === 'boolean'
             ? parsed.showTasks
             : DEFAULT_CALENDAR_DISPLAY_SETTINGS.showTasks,
+        showStatTasks: typeof parsed.showStatTasks === 'boolean'
+            ? parsed.showStatTasks
+            : DEFAULT_CALENDAR_DISPLAY_SETTINGS.showStatTasks,
         showStats: typeof parsed.showStats === 'boolean'
             ? parsed.showStats
             : DEFAULT_CALENDAR_DISPLAY_SETTINGS.showStats,
@@ -464,7 +472,7 @@ function CalendarLoadingState() {
 }
 
 export function MonthCalendar({
-    tasks, groups, events, calendars, calendarManager, onCreateTask, onDeleteTask, onDeleteTaskOccurrence, onDeleteTaskFutureOccurrences, onUpdateTask, onCreateEvent, onUpdateEvent, onUpdateImportedEventReminder, onDeleteEvent,
+    tasks, groups, events, calendars, calendarManager, onExportEvents, onCreateTask, onDeleteTask, onDeleteTaskOccurrence, onDeleteTaskFutureOccurrences, onUpdateTask, onCreateEvent, onUpdateEvent, onUpdateImportedEventReminder, onDeleteEvent,
     onMoveEventOccurrence,
     onCancelEventOccurrence, onRestoreEventOccurrence, onUpdateEventOccurrenceStatus, onDeleteEventOccurrence, onDeleteEventFutureOccurrences,
     dayTemplates, onCreateDayTemplate, onUpdateDayTemplate, onDeleteDayTemplate, onApplyDayTemplate, onUndoDayTemplate,
@@ -563,6 +571,8 @@ export function MonthCalendar({
     const [displayPreferencesByView, setDisplayPreferencesByView] = useState<CalendarDisplayPreferences>(initialDisplayPreferences);
     const displayPreferencesRef = useRef(initialDisplayPreferences);
     const [filterAnchor, setFilterAnchor] = useState<HTMLElement | null>(null);
+    const [exportingEvents, setExportingEvents] = useState(false);
+    const [eventExportNotice, setEventExportNotice] = useState<'success' | 'error' | null>(null);
     const [showTemplatePanel, setShowTemplatePanel] = useState(false);
     const [templateCreationOpen, setTemplateCreationOpen] = useState(false);
     const [templateEditTarget, setTemplateEditTarget] = useState<DayTemplate | null>(null);
@@ -695,6 +705,7 @@ export function MonthCalendar({
     const displayView: CalendarDisplayView = isWeekView ? 'week' : 'month';
     const {
         showTasks,
+        showStatTasks,
         showStats,
         taskStatus,
         priorityFilters,
@@ -883,21 +894,42 @@ export function MonthCalendar({
         return priorityFilters.includes(priorityBucket(task.importance));
     }), [priorityFilters, taskStatus, tasks, visibleCalendarIds]);
 
+    const calendarDisplayTasks = useMemo(() => calendarTasks.filter(task => isCalendarStatTaskVisible(
+        task,
+        availableStatDefinitions,
+        new Set(selectedStatIdsForDisplay),
+        showStatTasks,
+    )), [availableStatDefinitions, calendarTasks, selectedStatIdsForDisplay, showStatTasks]);
+
+    const handleExportEvents = async () => {
+        if (exportingEvents || events.length === 0) return;
+        setExportingEvents(true);
+        try {
+            await onExportEvents();
+            setEventExportNotice('success');
+        } catch (error) {
+            console.error('Failed to export calendar events:', error);
+            setEventExportNotice('error');
+        } finally {
+            setExportingEvents(false);
+        }
+    };
+
     const selectedTaskGroupTasks = useMemo(() => {
         if (!selectedTaskGroup) return [];
         if (!selectedTaskGroupDate) return [];
 
-        const taskById = new Map(calendarTasks.map(task => [task.taskId, task]));
+        const taskById = new Map(calendarDisplayTasks.map(task => [task.taskId, task]));
         return selectedTaskGroup.taskIds
             .map(taskId => taskById.get(taskId))
             .filter((task): task is Task => task !== undefined
                 && taskDateKey(task.scheduledPerformDateTime!) === selectedTaskGroupDate);
-    }, [calendarTasks, selectedTaskGroup, selectedTaskGroupDate]);
+    }, [calendarDisplayTasks, selectedTaskGroup, selectedTaskGroupDate]);
 
     const calendarEvents = useMemo(() => {
-        const taskById = new Map(calendarTasks.map(task => [task.taskId, task]));
+        const taskById = new Map(calendarDisplayTasks.map(task => [task.taskId, task]));
         const tasksByGroupAndDate = new Map<string, { group: TaskGroup; date: string; tasks: Task[] }>();
-        calendarTasks.forEach(task => {
+        calendarDisplayTasks.forEach(task => {
             const group = taskGroupByTaskId.get(task.taskId);
             if (!group) return;
             const date = taskDateKey(task.scheduledPerformDateTime!);
@@ -985,7 +1017,7 @@ export function MonthCalendar({
             : [];
 
         const taskEvents = showTasks
-            ? calendarTasks
+            ? calendarDisplayTasks
                 .filter(task => !taskGroupByTaskId.has(task.taskId) || singletonOriginTaskIds.has(task.taskId))
                 .map(task => {
                     const taskName = task.name || 'Untitled Task';
@@ -1051,7 +1083,7 @@ export function MonthCalendar({
             : [];
 
         return [...eventEntries, ...groupEvents, ...taskEvents, ...statEvents];
-    }, [availableStatDefinitions, calendarRange.end, calendarRange.start, calendarTasks, calendars, events, hasVisibleStats, selectedStatIdsForDisplay, showTasks, statEntries, taskGroupByTaskId, theme.palette, visibleCalendarIds]);
+    }, [availableStatDefinitions, calendarRange.end, calendarRange.start, calendarDisplayTasks, calendars, events, hasVisibleStats, selectedStatIdsForDisplay, showTasks, statEntries, taskGroupByTaskId, theme.palette, visibleCalendarIds]);
 
     React.useLayoutEffect(() => {
         if (loading || initiallyCenteredTodayRef.current) return;
@@ -2253,6 +2285,15 @@ export function MonthCalendar({
                         <Stack direction="row" spacing={1}>
                             <Button
                                 size="small"
+                                variant="outlined"
+                                startIcon={<DownloadRoundedIcon />}
+                                onClick={() => void handleExportEvents()}
+                                disabled={loading || events.length === 0 || exportingEvents}
+                            >
+                                {exportingEvents ? 'Exporting…' : 'Export'}
+                            </Button>
+                            <Button
+                                size="small"
                                 variant={showTemplatePanel ? 'contained' : 'outlined'}
                                 startIcon={<ViewDayIcon />}
                                 onClick={() => setShowTemplatePanel(previous => !previous)}
@@ -2302,6 +2343,12 @@ export function MonthCalendar({
                                 control={<Switch checked={showTasks} onChange={event => updateDisplayPreferences({ showTasks: event.target.checked })} />}
                                 label="Show tasks"
                             />
+                            {showTasks && (
+                                <FormControlLabel
+                                    control={<Switch checked={showStatTasks} onChange={event => updateDisplayPreferences({ showStatTasks: event.target.checked })} />}
+                                    label="Show stat-linked tasks"
+                                />
+                            )}
                             <FormControlLabel
                                 control={<Switch checked={showStats} onChange={event => updateDisplayPreferences({ showStats: event.target.checked })} />}
                                 label="Show statistics"
@@ -2351,7 +2398,7 @@ export function MonthCalendar({
                             <>
                                 <Divider sx={{ my: 1.5 }} />
                                 <Stack direction="row" justifyContent="space-between" alignItems="center">
-                                    <Typography variant="caption" color="text.secondary">Statistics to show</Typography>
+                                    <Typography variant="caption" color="text.secondary">Statistics and linked tasks to show</Typography>
                                     <Stack direction="row" spacing={0.25}>
                                         <Button size="small" onClick={() => updateDisplayPreferences({ selectedStatIds: availableStatDefinitions.map(definition => definition.id) })}>
                                             All
@@ -3635,6 +3682,28 @@ export function MonthCalendar({
                         sx={{ backgroundColor: 'background.paper' }}
                     >
                         {taskCreationError}
+                    </Alert>
+                ) : undefined}
+            </Snackbar>
+            <Snackbar
+                open={eventExportNotice !== null}
+                autoHideDuration={4000}
+                onClose={(_, reason) => {
+                    if (reason !== 'clickaway') setEventExportNotice(null);
+                }}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                sx={{ right: { xs: 12, sm: 28 }, bottom: { xs: 12, sm: 28 } }}
+            >
+                {eventExportNotice ? (
+                    <Alert
+                        severity={eventExportNotice}
+                        variant="outlined"
+                        onClose={() => setEventExportNotice(null)}
+                        sx={{ backgroundColor: 'background.paper' }}
+                    >
+                        {eventExportNotice === 'success'
+                            ? 'Calendar events exported.'
+                            : 'Could not export calendar events. Try again.'}
                     </Alert>
                 ) : undefined}
             </Snackbar>

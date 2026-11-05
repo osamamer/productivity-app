@@ -283,11 +283,12 @@ public class TaskService {
 
     @Transactional(readOnly = true)
     public TaskPomodoroStatsResponse getPomodoroStats(String taskId, String userId) {
-        getTaskForUserOrThrow(taskId, userId);
+        Task task = getTaskForUserOrThrow(taskId, userId);
+        List<String> relatedTaskIds = statTaskLinkService.focusHistoryTaskIds(task, userId);
         LocalDateTime now = LocalDateTime.now();
         return TaskPomodoroStatsCalculator.calculate(
                 taskId,
-                taskSessionRepository.findAllByAssociatedTaskId(taskId),
+                taskSessionRepository.findAllByAssociatedTaskIdIn(relatedTaskIds),
                 now.toLocalDate(),
                 now
         );

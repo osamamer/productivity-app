@@ -2,6 +2,7 @@ import { createContext, useContext, useLayoutEffect } from 'react';
 
 interface NavigationVisibilityContextValue {
     visible: boolean;
+    focusLocked: boolean;
     setVisible: (visible: boolean) => void;
 }
 
@@ -13,10 +14,12 @@ export function useNavigationVisibility() {
 
 export function usePageNavigationVisibility(visible: boolean) {
     const navigation = useNavigationVisibility();
+    const setVisible = navigation?.setVisible;
+    const focusLocked = navigation?.focusLocked ?? false;
 
     useLayoutEffect(() => {
-        if (!navigation) return;
-        navigation.setVisible(visible);
-        return () => navigation.setVisible(true);
-    }, [navigation, visible]);
+        if (!setVisible || focusLocked) return;
+        setVisible(visible);
+        return () => setVisible(true);
+    }, [focusLocked, setVisible, visible]);
 }

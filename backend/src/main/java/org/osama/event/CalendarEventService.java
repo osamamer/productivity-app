@@ -32,19 +32,22 @@ public class CalendarEventService {
     private final CalendarEventReminderService eventReminderService;
     private final UserRepository userRepository;
     private final CalendarService calendarService;
+    private final CalendarEventIcsExporter icsExporter;
 
     public CalendarEventService(CalendarEventRepository eventRepository,
                                 CalendarEventCancellationRepository cancellationRepository,
                                 ReminderRepository reminderRepository,
                                 CalendarEventReminderService eventReminderService,
                                 UserRepository userRepository,
-                                CalendarService calendarService) {
+                                CalendarService calendarService,
+                                CalendarEventIcsExporter icsExporter) {
         this.eventRepository = eventRepository;
         this.cancellationRepository = cancellationRepository;
         this.reminderRepository = reminderRepository;
         this.eventReminderService = eventReminderService;
         this.userRepository = userRepository;
         this.calendarService = calendarService;
+        this.icsExporter = icsExporter;
     }
 
     @Transactional(readOnly = true)
@@ -68,6 +71,11 @@ public class CalendarEventService {
                 .map(event -> toResponse(event, reminderMinutes.get(event.getId()),
                         overrides.getOrDefault(event.getId(), List.of())))
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public String exportEventsIcs(String userId) {
+        return icsExporter.export(getEvents(userId));
     }
 
     @Transactional

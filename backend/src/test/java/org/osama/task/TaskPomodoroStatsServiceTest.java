@@ -5,6 +5,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.osama.requests.NewTaskRequest;
+import org.osama.stat.StatDefinition;
+import org.osama.stat.StatDefinitionRepository;
+import org.osama.stat.StatFocusTaskLink;
+import org.osama.stat.StatFocusTaskLinkRepository;
+import org.osama.stat.StatType;
 import org.osama.session.task.TaskSession;
 import org.osama.session.task.TaskSessionRepository;
 import org.osama.user.User;
@@ -35,6 +40,8 @@ class TaskPomodoroStatsServiceTest {
     @Autowired private TaskSessionRepository taskSessionRepository;
     @Autowired private UserRepository userRepository;
     @Autowired private TaskRepository taskRepository;
+    @Autowired private StatDefinitionRepository statDefinitionRepository;
+    @Autowired private StatFocusTaskLinkRepository statFocusTaskLinkRepository;
 
     @BeforeEach
     void setUp() {
@@ -57,6 +64,65 @@ class TaskPomodoroStatsServiceTest {
         assertEquals(2, stats.totalDaysWorked());
         assertEquals(2, stats.currentStreakDays());
         assertEquals(today, stats.lastWorkedOnDate());
+    }
+
+    @Test
+    void aggregatesFocusHistoryAcrossTasksLinkedToTheSameStat() {
+        StatDefinition definition = createStatDefinition("Focused writing");
+        Task selectedTask = linkToStat(createTask(USER_ID, "Draft introduction"), definition);
+        Task relatedTask = linkToStat(createTask(USER_ID, "Edit introduction"), definition);
+        Task unrelatedTask = createTask(USER_ID, "Plan lunch");
+        Task otherUsersTask = createTask(OTHER_USER_ID, "Private writing");
+        LocalDate today = LocalDate.now();
+
+        taskSessionRepository.save(session(selectedTask.getTaskId(), true, today, 25));
+        taskSessionRepository.save(session(relatedTask.getTaskId(), true, today, 40));
+        taskSessionRepository.save(session(unrelatedTask.getTaskId(), true, today, 10));
+        taskSessionRepository.save(session(otherUsersTask.getTaskId(), true, today, 90));
+
+        TaskPomodoroStatsResponse stats = taskService.getPomodoroStats(selectedTask.getTaskId(), USER_ID);
+
+        assertEquals(Duration.ofMinutes(65).toSeconds(), stats.totalFocusSeconds());
+        assertEquals(2, stats.totalFocusSessions());
+        assertEquals(1, stats.totalDaysWorked());
+        assertEquals(1, stats.currentStreakDays());
+    }
+
+    @Test
+    void aggregatesFocusHistoryAcrossLegacyAndAdditionalStatTaskNames() {
+        StatDefinition definition = createStatDefinition("Daily meditation");
+        definition.setFocusTaskName("Morning sit");
+        statDefinitionRepository.save(definition);
+        linkTaskName(definition, "Evening sit");
+        Task selectedTask = createTask(USER_ID, "Morning sit");
+        Task relatedTask = createTask(USER_ID, "Evening sit");
+        LocalDate today = LocalDate.now();
+        taskSessionRepository.save(session(selectedTask.getTaskId(), true, today, 15));
+        taskSessionRepository.save(session(relatedTask.getTaskId(), true, today, 10));
+
+        TaskPomodoroStatsResponse stats = taskService.getPomodoroStats(selectedTask.getTaskId(), USER_ID);
+
+        assertEquals(Duration.ofMinutes(25).toSeconds(), stats.totalFocusSeconds());
+        assertEquals(2, stats.totalFocusSessions());
+    }
+
+    @Test
+    void aggregatesFocusHistoryAcrossOccurrencesOfAStatLinkedSeries() {
+        String seriesId = "stat-linked-series";
+        StatDefinition definition = createStatDefinition("Daily practice");
+        definition.setRecurringTaskSeriesId(seriesId);
+        statDefinitionRepository.save(definition);
+        LocalDate today = LocalDate.now();
+        Task selectedTask = recurringOccurrence(USER_ID, seriesId, today);
+        Task relatedTask = recurringOccurrence(USER_ID, seriesId, today.minusDays(1));
+        taskSessionRepository.save(session(selectedTask.getTaskId(), true, today, 20));
+        taskSessionRepository.save(session(relatedTask.getTaskId(), true, today.minusDays(1), 30));
+
+        TaskPomodoroStatsResponse stats = taskService.getPomodoroStats(selectedTask.getTaskId(), USER_ID);
+
+        assertEquals(Duration.ofMinutes(50).toSeconds(), stats.totalFocusSeconds());
+        assertEquals(2, stats.totalFocusSessions());
+        assertEquals(2, stats.totalDaysWorked());
     }
 
     @Test
@@ -120,6 +186,29 @@ class TaskPomodoroStatsServiceTest {
         task.setTaskSeriesId(seriesId);
         task.setSeriesOccurrenceAt(LocalDateTime.of(date, java.time.LocalTime.NOON));
         return taskRepository.save(task);
+    }
+
+    private StatDefinition createStatDefinition(String name) {
+        StatDefinition definition = new StatDefinition();
+        definition.setId(java.util.UUID.randomUUID().toString());
+        definition.setName(name);
+        definition.setType(StatType.NUMBER);
+        definition.setDisplayOrder(0);
+        definition.setUser(userRepository.findUserById(USER_ID).orElseThrow());
+        return statDefinitionRepository.save(definition);
+    }
+
+    private Task linkToStat(Task task, StatDefinition definition) {
+        task.setLinkedStatDefinitionId(definition.getId());
+        task.setStatLinked(true);
+        return taskRepository.save(task);
+    }
+
+    private void linkTaskName(StatDefinition definition, String taskName) {
+        StatFocusTaskLink link = new StatFocusTaskLink();
+        link.setStatDefinition(definition);
+        link.setTaskName(taskName);
+        statFocusTaskLinkRepository.save(link);
     }
 
     private TaskSession session(String taskId, boolean pomodoro, LocalDate date, long minutes) {

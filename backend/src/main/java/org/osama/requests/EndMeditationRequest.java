@@ -13,4 +13,6 @@ public class EndMeditationRequest {
     @Min(MIN_MOOD)
     @Max(MAX_MOOD)
     private Integer moodAfter;
+
+    private boolean useIntendedDuration;
 }

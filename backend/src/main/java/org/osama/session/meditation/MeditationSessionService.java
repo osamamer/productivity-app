@@ -128,6 +128,11 @@ public class MeditationSessionService {
     }
 
     public MeditationSession endSession(String sessionId, String userId, Integer moodAfter) {
+        return endSession(sessionId, userId, moodAfter, false);
+    }
+
+    public MeditationSession endSession(String sessionId, String userId, Integer moodAfter,
+                                        boolean useIntendedDuration) {
         Optional<MeditationSession> activeSession = userId == null
                 ? meditationSessionRepository.findById(sessionId)
                 : meditationSessionRepository.findByIdAndUserId(sessionId, userId);
@@ -140,10 +145,11 @@ public class MeditationSessionService {
         LocalDateTime endTime = LocalDateTime.now();
         LocalDateTime deadline = session.getStartTime().plusSeconds(MAX_SESSION_SECONDS);
         if (endTime.isAfter(deadline)) endTime = deadline;
-        return finishSession(session, endTime, moodAfter, userId);
+        return finishSession(session, endTime, moodAfter, userId, useIntendedDuration);
     }
 
-    private MeditationSession finishSession(MeditationSession session, LocalDateTime endTime, Integer moodAfter, String userId) {
+    private MeditationSession finishSession(MeditationSession session, LocalDateTime endTime, Integer moodAfter,
+                                            String userId, boolean useIntendedDuration) {
         if (session.isRunning()) {
             session.setLastPauseTime(endTime);
             addSessionTimeAfterPausing(session);
@@ -155,8 +161,14 @@ public class MeditationSessionService {
             validateMood(moodAfter);
             session.setMoodAfter(moodAfter);
         }
-        log.info("Meditation session ended: userId={} sessionId={} totalTime={} moodAfter={}",
-                userId, session.getId(), session.getTotalSessionTime(), moodAfter);
+        Duration elapsedTime = session.getTotalSessionTime();
+        boolean recordIntendedDuration = useIntendedDuration && session.getIntendedLength() > 0;
+        if (recordIntendedDuration) {
+            session.setTotalSessionTime(Duration.ofSeconds(session.getIntendedLength()));
+        }
+        log.info("Meditation session ended: userId={} sessionId={} durationChoice={} elapsedTime={} recordedTime={} moodAfter={}",
+                userId, session.getId(), recordIntendedDuration ? "intended" : "elapsed",
+                elapsedTime, session.getTotalSessionTime(), moodAfter);
         MeditationSession savedSession = meditationSessionRepository.save(session);
         eventPublisher.publishEvent(new MeditationSessionEndedEvent(
                 savedSession.getId(),
@@ -170,7 +182,8 @@ public class MeditationSessionService {
     private boolean endIfExpired(MeditationSession session, LocalDateTime now) {
         if (!session.isActive() || session.getStartTime() == null
                 || now.isBefore(session.getStartTime().plusSeconds(MAX_SESSION_SECONDS))) return false;
-        finishSession(session, session.getStartTime().plusSeconds(MAX_SESSION_SECONDS), null, session.getUser().getId());
+        finishSession(session, session.getStartTime().plusSeconds(MAX_SESSION_SECONDS), null,
+                session.getUser().getId(), false);
         return true;
     }
 

@@ -5,6 +5,7 @@ import {
     DialogTitle, Typography,
 } from '@mui/material';
 import { useBlocker } from 'react-router-dom';
+import { useNavigationVisibility } from '../appShellNavigation';
 import { meditationService } from '../../services/api/meditationService.ts';
 import { MeditationSession } from '../../types/MeditationSession.ts';
 
@@ -19,7 +20,8 @@ export function MeditationNavigationGuard({
     onSessionEnded,
     onError,
 }: MeditationNavigationGuardProps) {
-    const blocker = useBlocker(Boolean(session));
+    const navigation = useNavigationVisibility();
+    const blocker = useBlocker(Boolean(session) && !navigation?.focusLocked);
     const [isEnding, setIsEnding] = useState(false);
     const [isCheckingSession, setIsCheckingSession] = useState(false);
     const blockerState = blocker.state;

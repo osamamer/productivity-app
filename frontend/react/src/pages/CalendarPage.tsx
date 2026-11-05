@@ -555,6 +555,7 @@ export function CalendarPage() {
                     groups={groups}
                     events={events}
                     calendars={calendars}
+                    onExportEvents={() => eventService.exportEvents()}
                     calendarManager={(
                         <CalendarManager
                             calendars={calendars}

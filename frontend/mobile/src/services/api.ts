@@ -388,8 +388,9 @@ export const api = {
       }),
     pause: (id: string) => json<MeditationSession>(`/api/v1/meditation/${id}/pause`, 'PATCH'),
     resume: (id: string) => json<MeditationSession>(`/api/v1/meditation/${id}/unpause`, 'PATCH'),
-    end: (id: string, moodAfter?: number) =>
-      json<MeditationSession>(`/api/v1/meditation/${id}/end`, 'POST', moodAfter === undefined ? undefined : { moodAfter }),
+    end: (id: string, moodAfter?: number, useIntendedDuration = false) =>
+      json<MeditationSession>(`/api/v1/meditation/${id}/end`, 'POST',
+        moodAfter === undefined && !useIntendedDuration ? undefined : { moodAfter, useIntendedDuration }),
     discard: (id: string) => apiRequest<void>(`/api/v1/meditation/${id}`, { method: 'DELETE' }),
   },
   preferences: {

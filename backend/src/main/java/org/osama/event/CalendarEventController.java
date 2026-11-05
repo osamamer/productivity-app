@@ -1,6 +1,8 @@
 package org.osama.event;
 
 import org.osama.user.CurrentUserService;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
@@ -22,6 +24,15 @@ public class CalendarEventController {
     @GetMapping
     public List<CalendarEventResponse> getEvents() {
         return eventService.getEvents(currentUserService.getCurrentUserId());
+    }
+
+    @GetMapping(value = "/export", produces = "text/calendar")
+    public ResponseEntity<String> exportEvents() {
+        String calendar = eventService.exportEventsIcs(currentUserService.getCurrentUserId());
+        return ResponseEntity.ok()
+                .contentType(new MediaType("text", "calendar", java.nio.charset.StandardCharsets.UTF_8))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"claritard-calendar.ics\"")
+                .body(calendar);
     }
 
     @PostMapping

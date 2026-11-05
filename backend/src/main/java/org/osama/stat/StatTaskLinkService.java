@@ -206,6 +206,48 @@ public class StatTaskLinkService {
     }
 
     @Transactional(readOnly = true)
+    public List<String> focusHistoryTaskIds(Task task, String userId) {
+        Map<String, StatDefinition> definitions = new LinkedHashMap<>();
+        if (task.getLinkedStatDefinitionId() != null) {
+            definitionRepository.findByIdAndUserId(task.getLinkedStatDefinitionId(), userId)
+                    .ifPresent(definition -> definitions.put(definition.getId(), definition));
+        }
+        if (task.getTaskSeriesId() != null) {
+            definitionRepository.findByRecurringTaskSeriesIdAndUserId(task.getTaskSeriesId(), userId)
+                    .ifPresent(definition -> definitions.putIfAbsent(definition.getId(), definition));
+        }
+
+        String taskName = task.getName();
+        if (taskName != null && !taskName.isBlank()) {
+            focusTaskLinkRepository.findAllByTaskNameAndUserIdIgnoreCase(taskName, userId).stream()
+                    .map(StatFocusTaskLink::getStatDefinition)
+                    .forEach(definition -> definitions.putIfAbsent(definition.getId(), definition));
+            definitionRepository.findAllByUserId(userId).stream()
+                    .filter(definition -> definition.getRecurringTaskSeriesId() == null)
+                    .filter(definition -> definition.getFocusTaskName() != null
+                            && definition.getFocusTaskName().equalsIgnoreCase(taskName))
+                    .forEach(definition -> definitions.putIfAbsent(definition.getId(), definition));
+        }
+
+        Map<String, Task> relatedTasks = new LinkedHashMap<>();
+        relatedTasks.put(task.getTaskId(), task);
+        definitions.values().forEach(definition -> {
+            taskRepository.findAllByLinkedStatDefinitionIdAndUserId(definition.getId(), userId)
+                    .forEach(relatedTask -> relatedTasks.putIfAbsent(relatedTask.getTaskId(), relatedTask));
+            if (definition.getRecurringTaskSeriesId() != null) {
+                taskRepository.findAllByTaskSeriesIdAndUserIdOrderBySeriesOccurrenceAtAsc(
+                                definition.getRecurringTaskSeriesId(), userId)
+                        .forEach(relatedTask -> relatedTasks.putIfAbsent(relatedTask.getTaskId(), relatedTask));
+            } else {
+                linkedTaskNames(definition).stream()
+                        .flatMap(name -> taskRepository.findAllByUserIdAndNameIgnoreCase(userId, name).stream())
+                        .forEach(relatedTask -> relatedTasks.putIfAbsent(relatedTask.getTaskId(), relatedTask));
+            }
+        });
+        return List.copyOf(relatedTasks.keySet());
+    }
+
+    @Transactional(readOnly = true)
     public boolean isStatLinkedSeries(String seriesId, String seriesName, String userId) {
         if (definitionRepository.findByRecurringTaskSeriesIdAndUserId(seriesId, userId).isPresent()) {
             return true;

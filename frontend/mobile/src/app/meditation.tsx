@@ -307,6 +307,7 @@ export default function MeditationScreen() {
   const [durationMinutes, setDurationMinutes] = useState(DEFAULT_MEDITATION_SETTINGS.durationMinutes);
   const [moodBefore, setMoodBefore] = useState(5);
   const [moodAfter, setMoodAfter] = useState(5);
+  const [recordedDuration, setRecordedDuration] = useState<'elapsed' | 'intended'>('elapsed');
   const [numIntervalBells, setNumIntervalBells] = useState(DEFAULT_MEDITATION_SETTINGS.numIntervalBells);
   const [selectedSound, setSelectedSound] = useState<MeditationSoundId>(DEFAULT_MEDITATION_SETTINGS.selectedSound);
   const [soundMuted, setSoundMuted] = useState(false);
@@ -521,6 +522,7 @@ export default function MeditationScreen() {
     mutationInFlightRef.current = true;
     setError(null);
     setCompletedSession(null);
+    setRecordedDuration('elapsed');
     setClientRunningAnchor({ sessionId: optimisticSession.id, startedAt });
     setSessionData(optimisticSession);
     setMuted(soundMuted);
@@ -606,7 +608,7 @@ export default function MeditationScreen() {
     mutationInFlightRef.current = true;
     setError(null);
     try {
-      const finished = await api.meditation.end(session.id, moodAfter);
+      const finished = await api.meditation.end(session.id, moodAfter, recordedDuration === 'intended');
       setSessionData(undefined);
       setClientRunningAnchor(null);
       setCompletedSession(finished);
@@ -777,7 +779,7 @@ export default function MeditationScreen() {
             </View>
             <View style={styles.actions}>
               {!sessionComplete && <AppButton style={styles.action} variant="secondary" label={session.running ? 'Pause' : 'Resume'} icon={session.running ? 'pause' : 'play'} loading={saving} onPress={() => void togglePause()} />}
-              <AppButton style={styles.action} variant={sessionComplete ? 'primary' : 'ghost'} label={sessionComplete ? 'Finish session' : 'End early'} icon={sessionComplete ? 'checkmark-circle-outline' : 'stop-circle-outline'} loading={saving} onPress={() => setFinishSheetOpen(true)} />
+              <AppButton style={styles.action} variant={sessionComplete ? 'primary' : 'ghost'} label={sessionComplete ? 'Finish session' : 'End early'} icon={sessionComplete ? 'checkmark-circle-outline' : 'stop-circle-outline'} loading={saving} onPress={() => { setRecordedDuration('elapsed'); setFinishSheetOpen(true); }} />
             </View>
           </Card>
         </Animated.View>
@@ -814,6 +816,34 @@ export default function MeditationScreen() {
           </View>
         )}>
         <AppText color="muted">Save a quick check-in with this meditation session.</AppText>
+        {session && session.intendedLength > 0 && (
+          <View style={styles.durationChoiceSection}>
+            <AppText variant="label">Duration to record</AppText>
+            <View style={styles.durationChoiceRow}>
+              {([
+                { value: 'elapsed', label: `Elapsed · ${clock(elapsed)}` },
+                { value: 'intended', label: `Planned · ${clock(session.intendedLength)}` },
+              ] as const).map(option => {
+                const selected = recordedDuration === option.value;
+                return (
+                  <SilentPressable
+                    key={option.value}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected }}
+                    onPress={() => setRecordedDuration(option.value)}
+                    style={({ pressed }) => [
+                      styles.durationChoice,
+                      { backgroundColor: selected ? colors.accentSoft : colors.background, borderColor: selected ? colors.accent : colors.border },
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <AppText variant="label" color={selected ? 'accent' : 'muted'}>{option.label}</AppText>
+                  </SilentPressable>
+                );
+              })}
+            </View>
+          </View>
+        )}
         <View style={styles.sectionHeading}><AppText variant="label">Mood after meditation</AppText><AppText variant="label" color="muted">{moodAfter} · {moodLabel(moodAfter)}</AppText></View>
         <AppSlider label="Mood after meditation" value={moodAfter} minimumValue={MIN_MOOD} maximumValue={MAX_MOOD} minimumLabel="Very low" maximumLabel="Very good" onValueChange={setMoodAfter} />
       </ModalSheet>
@@ -855,6 +885,9 @@ const styles = StyleSheet.create({
   actions: { flexDirection: 'row', gap: 10 },
   action: { flex: 1 },
   finishActions: { gap: 10 },
+  durationChoiceSection: { gap: 8, marginTop: 18 },
+  durationChoiceRow: { flexDirection: 'row', gap: 8 },
+  durationChoice: { flex: 1, minHeight: 48, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8, borderWidth: StyleSheet.hairlineWidth, borderRadius: 12 },
   error: { marginHorizontal: 2 },
   pressed: { opacity: 0.76, transform: [{ scale: 0.985 }] },
 });

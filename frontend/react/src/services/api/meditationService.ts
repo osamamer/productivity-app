@@ -48,11 +48,14 @@ export const meditationService = {
         return updateSession(`${sessionId}/unpause`, 'Failed to resume meditation session');
     },
 
-    async endSession(sessionId: string, moodAfter?: number): Promise<MeditationSession> {
+    async endSession(sessionId: string, moodAfter?: number, useIntendedDuration = false): Promise<MeditationSession> {
+        const body = moodAfter === undefined && !useIntendedDuration
+            ? undefined
+            : JSON.stringify({ moodAfter, useIntendedDuration });
         const response = await apiFetch(`${MEDITATION_URL}/${sessionId}/end`, {
             method: 'POST',
-            body: moodAfter === undefined ? undefined : JSON.stringify({ moodAfter }),
-            headers: moodAfter === undefined ? getAuthHeaders() : jsonHeaders(),
+            body,
+            headers: body === undefined ? getAuthHeaders() : jsonHeaders(),
         });
 
         if (!response.ok) throw new Error('Failed to finish meditation session');
