@@ -11,8 +11,10 @@ public record StatSummaryResponse(
         Integer periodYesCount,    // entries with value=1 in the selected period (BOOLEAN only)
         Integer booleanStreak,     // consecutive days with value=1, ending at the selected period's end
         Integer longestBooleanStreak, // longest consecutive run of value=1 in the selected period (BOOLEAN only)
+        Integer allTimeLongestBooleanStreak, // longest consecutive run of value=1 across all recorded dates
         Double periodAverage,      // average value in the selected period (NUMBER / RANGE / TIME / DURATION)
         Double periodTotal,         // sum of values in the selected period (NUMBER / RANGE / TIME / DURATION)
         Double periodHighest,       // highest single-day value in the selected period (NUMBER / RANGE / TIME / DURATION)
+        Double personalBest,        // all-time best value following the stat's configured direction
         LocalDate averageStartDate  // first eligible day when unlogged days count as zero
 ) {}

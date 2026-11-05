@@ -230,6 +230,7 @@ public class StatServiceTest {
 
         assertEquals(60.0, summary.periodAverage(), 0.0001);
         assertEquals(4 * 60.0, summary.periodHighest(), 0.0001);
+        assertEquals(22 * 60.0, summary.personalBest(), 0.0001);
         assertTrue(StatTimeScale.toLinearValue(sleepTime, 22 * 60.0)
                 < StatTimeScale.toLinearValue(sleepTime, 4 * 60.0));
     }
@@ -387,6 +388,38 @@ public class StatServiceTest {
         assertEquals(75.0, summary.periodAverage(), 0.0001);
         assertEquals(150.0, summary.periodTotal(), 0.0001);
         assertEquals(90.0, summary.periodHighest(), 0.0001);
+    }
+
+    @Test
+    void summaryIncludesAllTimePersonalBestAndLongestBooleanStreak() {
+        LocalDate today = LocalDate.now();
+        StatDefinition number = createNamedStatDefinition("Lifetime amount", StatType.NUMBER);
+        statService.recordEntry(number.getId(), today.minusDays(40), 12.0, TEST_USER_ID);
+        statService.recordEntry(number.getId(), today, 8.0, TEST_USER_ID);
+
+        StatSummaryResponse numberSummary = statService.getSummary(number.getId(), today, today, TEST_USER_ID);
+        assertEquals(8.0, numberSummary.periodHighest(), 0.0001);
+        assertEquals(12.0, numberSummary.personalBest(), 0.0001);
+
+        StatDefinition avoidDuration = statService.createDefinition(
+                "Less screen time", "description", StatType.DURATION, null, null,
+                StatMorality.BAD, 60.0, TEST_USER_ID);
+        statService.recordEntry(avoidDuration.getId(), today.minusDays(40), 25.0, TEST_USER_ID);
+        statService.recordEntry(avoidDuration.getId(), today, 35.0, TEST_USER_ID);
+        StatSummaryResponse durationSummary = statService.getSummary(
+                avoidDuration.getId(), today, today, TEST_USER_ID);
+        assertEquals(25.0, durationSummary.personalBest(), 0.0001);
+
+        StatDefinition booleanStat = createNamedStatDefinition("Lifetime streak", StatType.BOOLEAN);
+        LocalDate firstRecordDate = today.minusDays(40);
+        statService.recordEntry(booleanStat.getId(), firstRecordDate, 1.0, TEST_USER_ID);
+        statService.recordEntry(booleanStat.getId(), firstRecordDate.plusDays(1), 1.0, TEST_USER_ID);
+        statService.recordEntry(booleanStat.getId(), firstRecordDate.plusDays(2), 1.0, TEST_USER_ID);
+
+        StatSummaryResponse booleanSummary = statService.getSummary(
+                booleanStat.getId(), today, today, TEST_USER_ID);
+        assertEquals(0, booleanSummary.longestBooleanStreak());
+        assertEquals(3, booleanSummary.allTimeLongestBooleanStreak());
     }
 
     @Test

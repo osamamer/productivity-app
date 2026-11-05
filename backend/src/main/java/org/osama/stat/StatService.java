@@ -25,6 +25,7 @@ import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -997,6 +998,10 @@ public class StatService {
                         entry -> entry.getStatDefinition().getId(),
                         LinkedHashMap::new,
                         Collectors.toList()));
+        Map<String, List<StatEntry>> allEntriesByDefinition = entryRepository.findAllByUserId(userId).stream()
+                .filter(entry -> entry.getStatDefinition() != null
+                        && definitionIds.contains(entry.getStatDefinition().getId()))
+                .collect(Collectors.groupingBy(entry -> entry.getStatDefinition().getId()));
         Map<String, LocalDate> firstLoggedDates = Boolean.TRUE.equals(user.getIncludeUnloggedNumericDaysAsZero())
                 ? entryRepository.findFirstLoggedDatesByUserId(userId).stream()
                         .collect(Collectors.toMap(row -> (String) row[0], row -> (LocalDate) row[1]))
@@ -1005,7 +1010,8 @@ public class StatService {
         for (StatDefinition definition : definitions) {
             List<StatEntry> entries = entriesByDefinition.getOrDefault(definition.getId(), List.of());
             entriesByDefinition.putIfAbsent(definition.getId(), entries);
-            summaries.put(definition.getId(), summarize(definition, entries, from, to, user,
+            List<StatEntry> allEntries = allEntriesByDefinition.getOrDefault(definition.getId(), List.of());
+            summaries.put(definition.getId(), summarize(definition, entries, allEntries, from, to, user,
                     firstLoggedDates.get(definition.getId())));
         }
 
@@ -1234,14 +1240,16 @@ public class StatService {
 
         List<StatEntry> entries = entryRepository
                 .findAllByStatDefinitionIdAndUserIdAndDateBetween(definitionId, userId, from, to);
+        List<StatEntry> allEntries = entryRepository.findAllByStatDefinitionIdAndUserId(definitionId, userId);
 
         LocalDate firstLoggedDate = Boolean.TRUE.equals(user.getIncludeUnloggedNumericDaysAsZero())
                 ? entryRepository.findFirstLoggedDate(definitionId, userId)
                 : null;
-        return summarize(def, entries, from, to, user, firstLoggedDate);
+        return summarize(def, entries, allEntries, from, to, user, firstLoggedDate);
     }
 
     private StatSummaryResponse summarize(StatDefinition def, List<StatEntry> entries,
+                                          List<StatEntry> allEntries,
                                           LocalDate from, LocalDate to, User user, LocalDate firstLoggedDate) {
 
         Map<LocalDate, Double> valueByDate = entries.stream()
@@ -1252,9 +1260,11 @@ public class StatService {
         Integer periodYesCount = null;
         Integer booleanStreak = null;
         Integer longestBooleanStreak = null;
+        Integer allTimeLongestBooleanStreak = null;
         Double periodAverage = null;
         Double periodTotal = null;
         Double periodHighest = null;
+        Double personalBest = null;
         LocalDate averageStartDate = null;
 
         if (def.getType() == StatType.BOOLEAN) {
@@ -1272,6 +1282,23 @@ public class StatService {
                             && entries.stream().filter(entry -> entry.getDate().equals(date))
                             .noneMatch(entry -> entry.getStatus() == StatEntryStatus.NOT_PLANNED)
                             && valueByDate.get(date) == 1.0);
+            if (!allEntries.isEmpty()) {
+                Map<LocalDate, StatEntry> allEntriesByDate = allEntries.stream()
+                        .collect(Collectors.toMap(StatEntry::getDate, entry -> entry));
+                LocalDate firstDate = allEntriesByDate.keySet().stream().min(LocalDate::compareTo).orElseThrow();
+                LocalDate lastDate = allEntriesByDate.keySet().stream().max(LocalDate::compareTo).orElseThrow();
+                allTimeLongestBooleanStreak = computeLongestStreak(firstDate, lastDate, date -> {
+                    StatEntry entry = allEntriesByDate.get(date);
+                    return entry != null && entry.getStatus() != StatEntryStatus.NOT_PLANNED
+                            && entry.getValue() == 1.0;
+                });
+            } else {
+                allTimeLongestBooleanStreak = 0;
+            }
+        }
+
+        if (def.getType() != StatType.BOOLEAN) {
+            personalBest = computePersonalBest(def, allEntries);
         }
 
         if (def.getType() == StatType.NUMBER || def.getType() == StatType.RANGE
@@ -1310,7 +1337,24 @@ public class StatService {
         }
 
         return new StatSummaryResponse(checkInStreak, periodYesCount, booleanStreak, longestBooleanStreak,
-                periodAverage, periodTotal, periodHighest, averageStartDate);
+                allTimeLongestBooleanStreak, periodAverage, periodTotal, periodHighest, personalBest,
+                averageStartDate);
+    }
+
+    private Double computePersonalBest(StatDefinition definition, List<StatEntry> entries) {
+        if (entries.isEmpty()) return null;
+        boolean lowerIsBetter = definition.getType() == StatType.TIME
+                ? definition.getMorality() == StatMorality.GOOD
+                : definition.getMorality() == StatMorality.BAD
+                    || definition.getMorality() == StatMorality.NICE_TO_AVOID;
+        Comparator<Double> comparator = Comparator.comparingDouble(value -> definition.getType() == StatType.TIME
+                ? StatTimeScale.toLinearValue(definition, value)
+                : value);
+        if (!lowerIsBetter) comparator = comparator.reversed();
+        return entries.stream()
+                .map(StatEntry::getValue)
+                .min(comparator)
+                .orElse(null);
     }
 
     private void validatePeriod(LocalDate from, LocalDate to) {

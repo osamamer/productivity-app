@@ -242,15 +242,20 @@ export const StatSummaryBar = React.memo(function StatSummaryBar({ definition, d
             value: `${displaySummary.periodYesCount ?? 0} ${displaySummary.periodYesCount === 1 ? 'time' : 'times'}`,
         });
         tiles.push({
-            label: 'longest streak',
-            value: pluralDays(displaySummary.longestBooleanStreak ?? derivedLongestBooleanStreak ?? 0),
+            label: 'personal best',
+            value: pluralDays(displaySummary.allTimeLongestBooleanStreak
+                ?? displaySummary.longestBooleanStreak
+                ?? derivedLongestBooleanStreak
+                ?? 0),
         });
     }
 
     if (definition.type === 'NUMBER' || definition.type === 'RANGE') {
         tiles.push({
-            label: 'Highest',
-            value: periodHighest != null ? formatAverage(periodHighest) : '—',
+            label: 'personal best',
+            value: displaySummary.personalBest != null
+                ? formatAverage(displaySummary.personalBest)
+                : periodHighest != null ? formatAverage(periodHighest) : '—',
         });
         tiles.push({
             label: 'Average',
@@ -267,23 +272,27 @@ export const StatSummaryBar = React.memo(function StatSummaryBar({ definition, d
             ?? (entries ? averageTimeValues(definition, entries.map(entry => entry.value)) : null);
         const timeLatest = displaySummary.periodHighest ?? derivedPeriodHighest;
         tiles.push({
-            label: 'Earliest',
-            value: derivedPeriodEarliest != null ? formatTimeValue(derivedPeriodEarliest) : '—',
+            label: 'personal best',
+            value: displaySummary.personalBest != null
+                ? formatTimeValue(displaySummary.personalBest)
+                : derivedPeriodEarliest != null ? formatTimeValue(derivedPeriodEarliest) : '—',
         });
         tiles.push({
             label: 'Average',
             value: timeAverage !== null ? formatTimeValue(timeAverage) : '—',
         });
         tiles.push({
-            label: 'Latest',
+            label: 'latest',
             value: timeLatest != null ? formatTimeValue(timeLatest) : '—',
         });
     }
 
     if (definition.type === 'DURATION') {
         tiles.push({
-            label: 'Highest',
-            value: periodHighest != null ? formatDurationValue(periodHighest) : '—',
+            label: 'personal best',
+            value: displaySummary.personalBest != null
+                ? formatDurationValue(displaySummary.personalBest)
+                : periodHighest != null ? formatDurationValue(periodHighest) : '—',
         });
         tiles.push({
             label: 'Average',
