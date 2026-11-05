@@ -1046,18 +1046,29 @@ public class StatService {
     }
 
     public List<StatDefinition> getDefinitions(String userId) {
+        return getDefinitions(userId, true);
+    }
+
+    public List<StatDefinition> getDefinitions(String userId, boolean includeSecret) {
         return definitionRepository.findAllByUserIdOrderByDisplayOrderAsc(userId).stream()
                 .filter(this::isDailyStatDefinition)
+                .filter(definition -> includeSecret || !definition.isSecret())
                 .map(this::withFocusTaskNames)
                 .toList();
     }
 
     @Transactional(readOnly = true)
     public StatBootstrapResponse getBootstrap(LocalDate from, LocalDate to, String userId) {
+        return getBootstrap(from, to, userId, true);
+    }
+
+    @Transactional(readOnly = true)
+    public StatBootstrapResponse getBootstrap(LocalDate from, LocalDate to, String userId,
+                                              boolean includeSecret) {
         validatePeriod(from, to);
         User user = userRepository.findUserById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("No such user."));
-        List<StatDefinition> definitions = getDefinitions(userId);
+        List<StatDefinition> definitions = getDefinitions(userId, includeSecret);
         Set<String> definitionIds = definitions.stream()
                 .map(StatDefinition::getId)
                 .collect(Collectors.toSet());
@@ -1092,29 +1103,65 @@ public class StatService {
 
     @Transactional
     public List<StatDefinition> reorderDefinitions(List<String> definitionIds, String userId) {
+        return reorderDefinitions(definitionIds, userId, true);
+    }
+
+    @Transactional
+    public List<StatDefinition> reorderDefinitions(List<String> definitionIds, String userId,
+                                                  boolean includeSecret) {
         List<StatDefinition> definitions = definitionRepository.findAllByUserId(userId).stream()
                 .filter(this::isDailyStatDefinition)
+                .sorted(Comparator.comparing(StatDefinition::getDisplayOrder,
+                                Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(StatDefinition::getId))
                 .toList();
-        Set<String> existingIds = definitions.stream()
+        List<StatDefinition> reorderableDefinitions = definitions.stream()
+                .filter(definition -> includeSecret || !definition.isSecret())
+                .toList();
+        Set<String> existingIds = reorderableDefinitions.stream()
                 .map(StatDefinition::getId)
                 .collect(Collectors.toSet());
 
-        if (definitionIds == null || definitionIds.size() != definitions.size()
+        if (definitionIds == null || definitionIds.size() != reorderableDefinitions.size()
                 || definitionIds.stream().anyMatch(id -> id == null)
                 || definitionIds.stream().distinct().count() != definitionIds.size()
                 || !existingIds.equals(Set.copyOf(definitionIds))) {
-            throw new IllegalArgumentException("The reorder list must contain every stat exactly once.");
+            throw new IllegalArgumentException("The reorder list must contain every visible stat exactly once.");
         }
 
-        Map<String, StatDefinition> definitionsById = definitions.stream()
+        Map<String, StatDefinition> definitionsById = reorderableDefinitions.stream()
                 .collect(Collectors.toMap(StatDefinition::getId, definition -> definition));
-        for (int index = 0; index < definitionIds.size(); index++) {
-            definitionsById.get(definitionIds.get(index)).setDisplayOrder(index);
+        List<StatDefinition> orderedDefinitions;
+        if (includeSecret) {
+            orderedDefinitions = definitionIds.stream().map(definitionsById::get).toList();
+        } else {
+            var requestedOrder = definitionIds.iterator();
+            orderedDefinitions = definitions.stream()
+                    .map(definition -> definition.isSecret() ? definition
+                            : definitionsById.get(requestedOrder.next()))
+                    .toList();
+        }
+        for (int index = 0; index < orderedDefinitions.size(); index++) {
+            orderedDefinitions.get(index).setDisplayOrder(index);
         }
         definitionRepository.saveAll(definitions);
         log.info("Stat definitions reordered: userId={} count={} orderedDefinitionIds={}",
                 userId, definitions.size(), definitionIds);
-        return getDefinitions(userId);
+        return getDefinitions(userId, includeSecret);
+    }
+
+    @Transactional
+    public StatDefinition updateSecret(String definitionId, boolean secret, String userId) {
+        StatDefinition definition = definitionRepository.findByIdAndUserId(definitionId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("No such stat."));
+        if (definition.getSystemKey() != null) {
+            throw new IllegalArgumentException("Built-in statistics cannot be secret.");
+        }
+        definition.setSecret(secret);
+        StatDefinition savedDefinition = definitionRepository.save(definition);
+        log.info("Stat privacy updated: userId={} statDefinitionId={} secret={}",
+                userId, savedDefinition.getId(), secret);
+        return withFocusTaskNames(savedDefinition);
     }
 
     @Transactional
@@ -1312,11 +1359,28 @@ public class StatService {
     }
 
     public List<StatEntry> getTodayEntries(String userId) {
-        return entryRepository.findAllByUserIdAndDate(userId, LocalDate.now());
+        return getTodayEntries(userId, true);
+    }
+
+    @Transactional(readOnly = true)
+    public List<StatEntry> getTodayEntries(String userId, boolean includeSecret) {
+        return filterSecretEntries(entryRepository.findAllByUserIdAndDate(userId, LocalDate.now()), includeSecret);
     }
 
     public List<StatEntry> getEntriesByDate(LocalDate date, String userId) {
-        return entryRepository.findAllByUserIdAndDate(userId, date);
+        return getEntriesByDate(date, userId, true);
+    }
+
+    @Transactional(readOnly = true)
+    public List<StatEntry> getEntriesByDate(LocalDate date, String userId, boolean includeSecret) {
+        return filterSecretEntries(entryRepository.findAllByUserIdAndDate(userId, date), includeSecret);
+    }
+
+    private List<StatEntry> filterSecretEntries(List<StatEntry> entries, boolean includeSecret) {
+        if (includeSecret) return entries;
+        return entries.stream()
+                .filter(entry -> entry.getStatDefinition() == null || !entry.getStatDefinition().isSecret())
+                .toList();
     }
 
     public StatSummaryResponse getSummary(String definitionId, LocalDate from, LocalDate to, String userId) {

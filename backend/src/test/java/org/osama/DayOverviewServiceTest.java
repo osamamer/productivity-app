@@ -6,6 +6,8 @@ import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.osama.day.DayOverviewResponse;
 import org.osama.day.DayOverviewService;
+import org.osama.stat.StatService;
+import org.osama.stat.StatType;
 import org.osama.task.Task;
 import org.osama.task.TaskRepository;
 import org.osama.user.User;
@@ -31,6 +33,7 @@ class DayOverviewServiceTest {
     private static final String USER_ID = "day-overview-test-user";
 
     @Autowired private DayOverviewService dayOverviewService;
+    @Autowired private StatService statService;
     @Autowired private TaskRepository taskRepository;
     @Autowired private UserRepository userRepository;
 
@@ -84,6 +87,24 @@ class DayOverviewServiceTest {
         assertEquals(date.plusDays(1).atStartOfDay(), overview.dayEnd());
         assertEquals(List.of("Future task"), overview.tasks().stream()
                 .map(DayOverviewResponse.TaskSummary::name)
+                .toList());
+    }
+
+    @Test
+    void hidesSecretStatisticsFromDayOverview() {
+        LocalDate date = LocalDate.now();
+        var publicStat = statService.createDefinition("Public stat", null, StatType.NUMBER,
+                null, null, USER_ID);
+        var secretStat = statService.createDefinition("Secret stat", null, StatType.NUMBER,
+                null, null, USER_ID);
+        statService.updateSecret(secretStat.getId(), true, USER_ID);
+        statService.recordEntry(publicStat.getId(), date, 2.0, USER_ID);
+        statService.recordEntry(secretStat.getId(), date, 8.0, USER_ID);
+
+        List<DayOverviewResponse.StatSummary> stats = dayOverviewService.getOverview(date, USER_ID).stats();
+
+        assertEquals(List.of("Public stat"), stats.stream()
+                .map(DayOverviewResponse.StatSummary::name)
                 .toList());
     }
 

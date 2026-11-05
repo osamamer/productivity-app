@@ -20,12 +20,15 @@ public class StatController {
     private final StatService statService;
     private final StatInsightService statInsightService;
     private final CurrentUserService currentUserService;
+    private final SecretStatsAccessService secretStatsAccessService;
 
     public StatController(StatService statService, StatInsightService statInsightService,
-                          CurrentUserService currentUserService) {
+                          CurrentUserService currentUserService,
+                          SecretStatsAccessService secretStatsAccessService) {
         this.statService = statService;
         this.statInsightService = statInsightService;
         this.currentUserService = currentUserService;
+        this.secretStatsAccessService = secretStatsAccessService;
     }
 
     // --- Stat Definitions ---
@@ -51,25 +54,49 @@ public class StatController {
     }
 
     @GetMapping("/definitions")
-    public List<StatDefinition> getDefinitions() {
-        return statService.getDefinitions(currentUserService.getCurrentUserId());
+    public List<StatDefinition> getDefinitions(
+            @RequestHeader(value = "X-Secret-Stats-Access", required = false) String accessToken) {
+        String userId = currentUserService.getCurrentUserId();
+        return statService.getDefinitions(userId, secretStatsAccessService.hasAccess(userId, accessToken));
     }
 
     @GetMapping("/bootstrap")
     public StatBootstrapResponse getBootstrap(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
-        return statService.getBootstrap(from, to, currentUserService.getCurrentUserId());
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestHeader(value = "X-Secret-Stats-Access", required = false) String accessToken) {
+        String userId = currentUserService.getCurrentUserId();
+        return statService.getBootstrap(from, to, userId,
+                secretStatsAccessService.hasAccess(userId, accessToken));
+    }
+
+    @PostMapping("/secret-access")
+    public SecretStatsAccessService.GrantResponse unlockSecretStats(
+            @RequestBody SecretStatsAccessRequest request) {
+        return secretStatsAccessService.unlock(request == null ? null : request.password,
+                currentUserService.getCurrentUserId());
+    }
+
+    @DeleteMapping("/secret-access")
+    public void lockSecretStats(
+            @RequestHeader(value = "X-Secret-Stats-Access", required = false) String accessToken) {
+        secretStatsAccessService.lock(currentUserService.getCurrentUserId(), accessToken);
     }
 
     @DeleteMapping("/definitions/{id}")
-    public void deleteDefinition(@PathVariable String id) {
-        statService.deleteDefinition(id, currentUserService.getCurrentUserId());
+    public void deleteDefinition(@PathVariable String id,
+                                 @RequestHeader(value = "X-Secret-Stats-Access", required = false) String accessToken) {
+        String userId = currentUserService.getCurrentUserId();
+        secretStatsAccessService.requireDefinitionAccess(id, userId, accessToken);
+        statService.deleteDefinition(id, userId);
     }
 
     @PutMapping("/definitions/{id}")
     public StatDefinition updateDefinition(@PathVariable String id,
-                                           @RequestBody UpdateDefinitionRequest request) {
+                                           @RequestBody UpdateDefinitionRequest request,
+                                           @RequestHeader(value = "X-Secret-Stats-Access", required = false) String accessToken) {
+        String userId = currentUserService.getCurrentUserId();
+        secretStatsAccessService.requireDefinitionAccess(id, userId, accessToken);
         return statService.updateDefinition(
                 id,
                 request.name,
@@ -77,23 +104,41 @@ public class StatController {
                 request.morality,
                 request.goodThreshold,
                 request.additionalInputTypes,
-                currentUserService.getCurrentUserId()
+                userId
         );
+    }
+
+    @PutMapping("/definitions/{id}/secret")
+    public StatDefinition updateSecret(@PathVariable String id,
+                                       @RequestBody SecretStatRequest request,
+                                       @RequestHeader(value = "X-Secret-Stats-Access", required = false) String accessToken) {
+        String userId = currentUserService.getCurrentUserId();
+        secretStatsAccessService.requireDefinitionAccess(id, userId, accessToken);
+        if (request == null || request.secret == null) {
+            throw new IllegalArgumentException("Please choose whether the statistic should be secret.");
+        }
+        return statService.updateSecret(id, request.secret, userId);
     }
 
     @PutMapping("/definitions/{id}/stats-page-visibility")
     public StatDefinition updateStatsPageVisibility(@PathVariable String id,
-                                                   @RequestBody StatsPageVisibilityRequest request) {
+                                                   @RequestBody StatsPageVisibilityRequest request,
+                                                   @RequestHeader(value = "X-Secret-Stats-Access", required = false) String accessToken) {
+        String userId = currentUserService.getCurrentUserId();
+        secretStatsAccessService.requireDefinitionAccess(id, userId, accessToken);
         return statService.updateStatsPageVisibility(
-                id, request.showOnStatsPage, currentUserService.getCurrentUserId());
+                id, request.showOnStatsPage, userId);
     }
 
     @PostMapping("/definitions/{id}/recurring-task")
     public StatDefinition createRecurringTask(@PathVariable String id,
-                                              @RequestBody(required = false) CreateRecurringTaskRequest request) {
+                                              @RequestBody(required = false) CreateRecurringTaskRequest request,
+                                              @RequestHeader(value = "X-Secret-Stats-Access", required = false) String accessToken) {
+        String userId = currentUserService.getCurrentUserId();
+        secretStatsAccessService.requireDefinitionAccess(id, userId, accessToken);
         return statService.createRecurringTask(
                 id,
-                currentUserService.getCurrentUserId(),
+                userId,
                 request == null ? null : request.timeZone,
                 request == null || request.recurrenceFrequency == null
                         ? org.osama.task.recurrence.TaskRecurrenceFrequency.DAILY
@@ -106,23 +151,32 @@ public class StatController {
     }
 
     @GetMapping("/definitions/{id}/recurring-task")
-    public TaskSeriesResponse getRecurringTask(@PathVariable String id) {
-        return statService.getRecurringTask(id, currentUserService.getCurrentUserId());
+    public TaskSeriesResponse getRecurringTask(@PathVariable String id,
+                                               @RequestHeader(value = "X-Secret-Stats-Access", required = false) String accessToken) {
+        String userId = currentUserService.getCurrentUserId();
+        secretStatsAccessService.requireDefinitionAccess(id, userId, accessToken);
+        return statService.getRecurringTask(id, userId);
     }
 
     @GetMapping("/definitions/{id}/weekly-task-schedule")
     public StatWeeklyTaskScheduleResponse getWeeklyTaskSchedule(
             @PathVariable String id,
             @RequestParam(required = false) String timeZone,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate weekStartDate) {
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate weekStartDate,
+            @RequestHeader(value = "X-Secret-Stats-Access", required = false) String accessToken) {
+        String userId = currentUserService.getCurrentUserId();
+        secretStatsAccessService.requireDefinitionAccess(id, userId, accessToken);
         return statService.getWeeklyTaskSchedule(
-                id, timeZone, weekStartDate, currentUserService.getCurrentUserId());
+                id, timeZone, weekStartDate, userId);
     }
 
     @PutMapping("/definitions/{id}/weekly-task-schedule")
     public StatWeeklyTaskScheduleResponse replaceWeeklyTaskSchedule(
             @PathVariable String id,
-            @RequestBody WeeklyTaskScheduleRequest request) {
+            @RequestBody WeeklyTaskScheduleRequest request,
+            @RequestHeader(value = "X-Secret-Stats-Access", required = false) String accessToken) {
+        String userId = currentUserService.getCurrentUserId();
+        secretStatsAccessService.requireDefinitionAccess(id, userId, accessToken);
         return statService.replaceWeeklyTaskSchedule(
                 id,
                 request == null ? null : request.taskName,
@@ -132,15 +186,18 @@ public class StatController {
                 request == null ? null : request.timeZone,
                 request == null ? null : request.weekStartDate,
                 request == null ? null : request.weekCount,
-                currentUserService.getCurrentUserId());
+                userId);
     }
 
     @PutMapping("/definitions/{id}/recurring-task")
     public StatDefinition updateRecurringTask(@PathVariable String id,
-                                              @RequestBody CreateRecurringTaskRequest request) {
+                                              @RequestBody CreateRecurringTaskRequest request,
+                                              @RequestHeader(value = "X-Secret-Stats-Access", required = false) String accessToken) {
+        String userId = currentUserService.getCurrentUserId();
+        secretStatsAccessService.requireDefinitionAccess(id, userId, accessToken);
         return statService.updateRecurringTask(
                 id,
-                currentUserService.getCurrentUserId(),
+                userId,
                 request == null ? null : request.timeZone,
                 request == null || request.recurrenceFrequency == null
                         ? TaskRecurrenceFrequency.DAILY : request.recurrenceFrequency,
@@ -152,20 +209,29 @@ public class StatController {
     }
 
     @DeleteMapping("/definitions/{id}/recurring-task")
-    public StatDefinition disconnectRecurringTask(@PathVariable String id) {
-        return statService.disconnectRecurringTask(id, currentUserService.getCurrentUserId());
+    public StatDefinition disconnectRecurringTask(@PathVariable String id,
+                                                  @RequestHeader(value = "X-Secret-Stats-Access", required = false) String accessToken) {
+        String userId = currentUserService.getCurrentUserId();
+        secretStatsAccessService.requireDefinitionAccess(id, userId, accessToken);
+        return statService.disconnectRecurringTask(id, userId);
     }
 
     @PutMapping("/definitions/{id}/focus-task")
     public StatDefinition linkFocusTask(@PathVariable String id,
-                                        @RequestBody LinkFocusTaskRequest request) {
+                                        @RequestBody LinkFocusTaskRequest request,
+                                        @RequestHeader(value = "X-Secret-Stats-Access", required = false) String accessToken) {
+        String userId = currentUserService.getCurrentUserId();
+        secretStatsAccessService.requireDefinitionAccess(id, userId, accessToken);
         return statService.linkFocusTask(id, request == null ? null : request.taskName,
-                currentUserService.getCurrentUserId());
+                userId);
     }
 
     @PostMapping("/definitions/{id}/focus-task/start")
     public Task startFocusTask(@PathVariable String id,
-                               @RequestBody(required = false) StartFocusTaskRequest request) {
+                               @RequestBody(required = false) StartFocusTaskRequest request,
+                               @RequestHeader(value = "X-Secret-Stats-Access", required = false) String accessToken) {
+        String userId = currentUserService.getCurrentUserId();
+        secretStatsAccessService.requireDefinitionAccess(id, userId, accessToken);
         return statService.startFocusTask(
                 id,
                 request == null ? null : request.taskName,
@@ -173,37 +239,51 @@ public class StatController {
                 request == null ? null : request.timeZone,
                 request == null ? null : request.scheduledPerformDateTime,
                 request == null ? null : request.reminderMinutesBefore,
-                currentUserService.getCurrentUserId()
+                userId
         );
     }
 
     @DeleteMapping("/definitions/{id}/focus-task")
     public StatDefinition unlinkFocusTask(@PathVariable String id,
-                                          @RequestBody(required = false) LinkFocusTaskRequest request) {
+                                          @RequestBody(required = false) LinkFocusTaskRequest request,
+                                          @RequestHeader(value = "X-Secret-Stats-Access", required = false) String accessToken) {
+        String userId = currentUserService.getCurrentUserId();
+        secretStatsAccessService.requireDefinitionAccess(id, userId, accessToken);
         return statService.unlinkFocusTask(id, request == null ? null : request.taskName,
-                currentUserService.getCurrentUserId());
+                userId);
     }
 
     @DeleteMapping("/definitions/{id}/recurring-task/series")
-    public StatDefinition deleteRecurringTaskSeries(@PathVariable String id) {
-        return statService.deleteRecurringTaskSeries(id, currentUserService.getCurrentUserId());
+    public StatDefinition deleteRecurringTaskSeries(@PathVariable String id,
+                                                    @RequestHeader(value = "X-Secret-Stats-Access", required = false) String accessToken) {
+        String userId = currentUserService.getCurrentUserId();
+        secretStatsAccessService.requireDefinitionAccess(id, userId, accessToken);
+        return statService.deleteRecurringTaskSeries(id, userId);
     }
 
     @DeleteMapping("/definitions/{id}/recurring-task/future")
-    public StatDefinition deleteRecurringTaskFutureOccurrences(@PathVariable String id) {
-        return statService.deleteRecurringTaskFutureOccurrences(id, currentUserService.getCurrentUserId());
+    public StatDefinition deleteRecurringTaskFutureOccurrences(@PathVariable String id,
+                                                               @RequestHeader(value = "X-Secret-Stats-Access", required = false) String accessToken) {
+        String userId = currentUserService.getCurrentUserId();
+        secretStatsAccessService.requireDefinitionAccess(id, userId, accessToken);
+        return statService.deleteRecurringTaskFutureOccurrences(id, userId);
     }
 
     @PutMapping("/definitions/order")
-    public List<StatDefinition> reorderDefinitions(@RequestBody ReorderDefinitionsRequest request) {
-        return statService.reorderDefinitions(request.definitionIds,
-                currentUserService.getCurrentUserId());
+    public List<StatDefinition> reorderDefinitions(@RequestBody ReorderDefinitionsRequest request,
+                                                   @RequestHeader(value = "X-Secret-Stats-Access", required = false) String accessToken) {
+        String userId = currentUserService.getCurrentUserId();
+        return statService.reorderDefinitions(request.definitionIds, userId,
+                secretStatsAccessService.hasAccess(userId, accessToken));
     }
 
     // --- Stat Entries ---
 
     @PostMapping("/entries")
-    public ResponseEntity<StatEntry> recordEntry(@RequestBody RecordEntryRequest request) {
+    public ResponseEntity<StatEntry> recordEntry(@RequestBody RecordEntryRequest request,
+                                                 @RequestHeader(value = "X-Secret-Stats-Access", required = false) String accessToken) {
+        String userId = currentUserService.getCurrentUserId();
+        secretStatsAccessService.requireDefinitionAccess(request.statDefinitionId, userId, accessToken);
         LocalDate date = request.date != null ? request.date : LocalDate.now();
         StatEntry entry = statService.recordEntry(
                 request.statDefinitionId,
@@ -211,7 +291,7 @@ public class StatController {
                 request.value,
                 request.status,
                 request.additionalValues,
-                currentUserService.getCurrentUserId()
+                userId
         );
         return entry == null ? ResponseEntity.noContent().build() : ResponseEntity.ok(entry);
     }
@@ -220,43 +300,61 @@ public class StatController {
     public List<StatEntry> getEntries(
             @RequestParam String statDefinitionId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
-        return statService.getEntries(statDefinitionId, from, to, currentUserService.getCurrentUserId());
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestHeader(value = "X-Secret-Stats-Access", required = false) String accessToken) {
+        String userId = currentUserService.getCurrentUserId();
+        secretStatsAccessService.requireDefinitionAccess(statDefinitionId, userId, accessToken);
+        return statService.getEntries(statDefinitionId, from, to, userId);
     }
 
     @GetMapping("/definitions/{id}/focus-time")
     public List<StatFocusTimeEntryResponse> getFocusTime(
             @PathVariable String id,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
-        return statService.getFocusTime(id, from, to, currentUserService.getCurrentUserId());
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestHeader(value = "X-Secret-Stats-Access", required = false) String accessToken) {
+        String userId = currentUserService.getCurrentUserId();
+        secretStatsAccessService.requireDefinitionAccess(id, userId, accessToken);
+        return statService.getFocusTime(id, from, to, userId);
     }
 
     @GetMapping("/entries/today")
-    public List<StatEntry> getTodayEntries() {
-        return statService.getTodayEntries(currentUserService.getCurrentUserId());
+    public List<StatEntry> getTodayEntries(
+            @RequestHeader(value = "X-Secret-Stats-Access", required = false) String accessToken) {
+        String userId = currentUserService.getCurrentUserId();
+        return statService.getTodayEntries(userId, secretStatsAccessService.hasAccess(userId, accessToken));
     }
 
     @GetMapping("/definitions/{id}/summary")
     public StatSummaryResponse getSummary(
             @PathVariable String id,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
-        return statService.getSummary(id, from, to, currentUserService.getCurrentUserId());
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestHeader(value = "X-Secret-Stats-Access", required = false) String accessToken) {
+        String userId = currentUserService.getCurrentUserId();
+        secretStatsAccessService.requireDefinitionAccess(id, userId, accessToken);
+        return statService.getSummary(id, from, to, userId);
     }
 
     @GetMapping("/definitions/{id}/insights")
     public StatInsightsResponse getInsights(
             @PathVariable String id,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
-        return statInsightService.getInsights(id, from, to, currentUserService.getCurrentUserId());
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestHeader(value = "X-Secret-Stats-Access", required = false) String accessToken) {
+        String userId = currentUserService.getCurrentUserId();
+        secretStatsAccessService.requireDefinitionAccess(id, userId, accessToken);
+        return statInsightService.getInsights(id, from, to, userId,
+                secretStatsAccessService.hasAccess(userId, accessToken));
     }
 
     @GetMapping("/entries/by-date")
     public List<StatEntry> getEntriesByDate(
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
-        return statService.getEntriesByDate(date, currentUserService.getCurrentUserId());
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @RequestHeader(value = "X-Secret-Stats-Access", required = false) String accessToken) {
+        String userId = currentUserService.getCurrentUserId();
+        return statService.getEntriesByDate(date, userId,
+                secretStatsAccessService.hasAccess(userId, accessToken));
     }
 
     // --- Request bodies ---
@@ -291,6 +389,10 @@ public class StatController {
     public static class StatsPageVisibilityRequest {
         boolean showOnStatsPage;
     }
+
+    public record SecretStatsAccessRequest(String password) { }
+
+    public record SecretStatRequest(Boolean secret) { }
 
     @Data
     public static class RecordEntryRequest {

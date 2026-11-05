@@ -49,6 +49,8 @@ public class StatServiceTest {
     @Autowired private StatService statService;
     @Autowired private StatEntryRepository entryRepository;
     @Autowired private StatDefinitionRepository definitionRepository;
+    @Autowired private SecretStatsAccessRepository secretStatsAccessRepository;
+    @Autowired private SecretStatsAccessService secretStatsAccessService;
     @Autowired private UserRepository userRepository;
     @Autowired private SystemStatProvisioningService provisioningService;
     @Autowired private TaskRepository taskRepository;
@@ -141,6 +143,39 @@ public class StatServiceTest {
         StatEntry updated = statService.recordEntry(definition.getId(), date, 36.0,
                 StatEntryStatus.RECORDED, null, TEST_USER_ID);
         assertEquals(Map.of(StatType.BOOLEAN, 1.0, StatType.RANGE, 8.0), updated.getAdditionalValues());
+    }
+
+    @Test
+    void secretStatisticsRequireAnActiveGrantAndStayOutOfLockedBootstrapAndDateEntries() throws Exception {
+        StatDefinition publicDefinition = createNamedStatDefinition("public-stat", StatType.NUMBER);
+        StatDefinition secretDefinition = createNamedStatDefinition("secret-stat", StatType.NUMBER);
+        statService.updateSecret(secretDefinition.getId(), true, TEST_USER_ID);
+        LocalDate date = LocalDate.now();
+        statService.recordEntry(publicDefinition.getId(), date, 4.0, TEST_USER_ID);
+        statService.recordEntry(secretDefinition.getId(), date, 9.0, TEST_USER_ID);
+
+        assertFalse(secretStatsAccessService.hasAccess(TEST_USER_ID, "unknown-token"));
+        assertThrows(org.osama.exceptions.ResourceNotFoundException.class,
+                () -> secretStatsAccessService.requireDefinitionAccess(
+                        secretDefinition.getId(), TEST_USER_ID, "unknown-token"));
+
+        var bootstrap = statService.getBootstrap(date, date, TEST_USER_ID, false);
+        assertEquals(List.of(publicDefinition.getId()), bootstrap.definitions().stream()
+                .map(StatDefinition::getId).toList());
+        assertFalse(bootstrap.entries().containsKey(secretDefinition.getId()));
+        assertEquals(List.of(publicDefinition.getId()), statService.getEntriesByDate(
+                date, TEST_USER_ID, false).stream().map(entry -> entry.getStatDefinition().getId()).toList());
+
+        String token = "valid-secret-token";
+        String hash = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(
+                java.security.MessageDigest.getInstance("SHA-256")
+                        .digest(token.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        secretStatsAccessRepository.save(new SecretStatsAccess(hash,
+                userRepository.findUserById(TEST_USER_ID).orElseThrow(),
+                LocalDateTime.now(java.time.ZoneOffset.UTC).plusMinutes(5)));
+        assertTrue(secretStatsAccessService.hasAccess(TEST_USER_ID, token));
+        assertDoesNotThrow(() -> secretStatsAccessService.requireDefinitionAccess(
+                secretDefinition.getId(), TEST_USER_ID, token));
     }
 
     @Test

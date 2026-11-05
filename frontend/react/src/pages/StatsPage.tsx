@@ -2,7 +2,7 @@ import { CompactPopover } from '../components/CompactPopover';
 import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-    Box, Button, Typography, Alert,
+    Box, Button, Typography, Alert, FormControlLabel, Switch,
     Stack, Skeleton, IconButton, DialogTitle,
     DialogContent, DialogContentText, DialogActions, TextField,
     Collapse, ListItemIcon, ListItemText, Menu,
@@ -20,6 +20,7 @@ import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
 import FolderIcon from '@mui/icons-material/Folder';
 import GroupWorkIcon from '@mui/icons-material/GroupWork';
 import LinkOutlinedIcon from '@mui/icons-material/LinkOutlined';
+import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import SelfImprovementIcon from '@mui/icons-material/SelfImprovement';
 import ViewDayIcon from '@mui/icons-material/ViewDay';
 import { PageWrapper } from '../components/PageWrapper';
@@ -261,6 +262,12 @@ export function StatsPage() {
     const [focusTaskAnchorPosition, setFocusTaskAnchorPosition] = useState<PopupPosition | null>(null);
     const [focusTaskFeedback, setFocusTaskFeedback] = useState<string | null>(null);
     const [errorSnackbar, setErrorSnackbar] = useState<string | null>(null);
+    const [secretStatsEnabled, setSecretStatsEnabled] = useState(() => statService.hasSecretStatsAccess());
+    const [secretPromptAnchor, setSecretPromptAnchor] = useState<PopupPosition | null>(null);
+    const [secretPassword, setSecretPassword] = useState('');
+    const [secretPasswordError, setSecretPasswordError] = useState<string | null>(null);
+    const [secretPasswordSaving, setSecretPasswordSaving] = useState(false);
+    const [secretStatsRevision, setSecretStatsRevision] = useState(0);
     const selectionAnchorRef = useRef<string | null>(null);
     const selectionActionsRef = useRef<HTMLDivElement | null>(null);
     const pendingStatCreationsRef = useRef(new Map<string, PendingStatCreation>());
@@ -321,7 +328,8 @@ export function StatsPage() {
                         .map(pending => pending.definitionId),
                 ]);
                 const optimisticDefinitions = definitionsRef.current.filter(definition =>
-                    pendingDefinitionIds.has(definition.id),
+                    pendingDefinitionIds.has(definition.id)
+                        && (statService.hasSecretStatsAccess() || !definition.secret),
                 );
                 const serverDefinitionIds = new Set(defs.map(definition => definition.id));
                 const mergedDefinitions = [
@@ -373,10 +381,34 @@ export function StatsPage() {
         return () => { active = false; };
     }, [loadDefinitions, loadGroups]);
 
-    useEffect(() => subscribeToResourceInvalidation('stats', () => {
+    useEffect(() => subscribeToResourceInvalidation('stats', origin => {
         setResourceRefreshKey(previous => previous + 1);
+        if (origin === 'secret-access') {
+            const hasAccess = statService.hasSecretStatsAccess();
+            setSecretStatsEnabled(hasAccess);
+            setSecretStatsRevision(previous => previous + 1);
+            setSecretPromptAnchor(null);
+            setSecretPassword('');
+            setSecretPasswordError(null);
+            void loadGroups();
+            if (!hasAccess) {
+                const visibleDefinitions = definitionsRef.current.filter(definition => !definition.secret);
+                definitionsRef.current = visibleDefinitions;
+                setDefinitions(visibleDefinitions);
+                setSelectedId(previous => visibleDefinitions.some(definition => definition.id === previous)
+                    ? previous
+                    : visibleDefinitions.find(definition => !isDedicatedStat(definition))?.id ?? null);
+                setSelectedStatIds(previous => previous.filter(id =>
+                    visibleDefinitions.some(definition => definition.id === id),
+                ));
+            }
+        }
         void loadDefinitions();
-    }), [loadDefinitions]);
+    }), [loadDefinitions, loadGroups]);
+
+    useEffect(() => () => {
+        if (statService.hasSecretStatsAccess()) statService.lockSecretStats(false);
+    }, []);
 
     const handleEntryChanged = useCallback((definitionId: string) => {
         setEntryRefreshKeys(previous => ({
@@ -573,6 +605,55 @@ export function StatsPage() {
     };
 
     const closeContextMenu = () => setContextMenu(null);
+
+    const handleSecretVisibilityChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        if (!event.target.checked) {
+            setSecretPromptAnchor(null);
+            setSecretPassword('');
+            setSecretPasswordError(null);
+            statService.lockSecretStats();
+            return;
+        }
+        const bounds = event.currentTarget.getBoundingClientRect();
+        setSecretPassword('');
+        setSecretPasswordError(null);
+        setSecretPromptAnchor({ top: bounds.bottom + 8, left: bounds.left });
+    };
+
+    const handleUnlockSecretStats = async (event: React.FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        if (!secretPassword || secretPasswordSaving) return;
+        setSecretPasswordSaving(true);
+        setSecretPasswordError(null);
+        try {
+            await statService.unlockSecretStats(secretPassword);
+            setSecretPromptAnchor(null);
+            setSecretPassword('');
+        } catch {
+            setSecretPasswordError('Could not verify your password. Try again.');
+        } finally {
+            setSecretPasswordSaving(false);
+        }
+    };
+
+    const handleToggleSecretDefinition = async (definition: StatDefinition) => {
+        closeContextMenu();
+        try {
+            const updated = await statService.updateSecret(definition.id, !definition.secret);
+            if (updated.secret && !statService.hasSecretStatsAccess()) {
+                const visibleDefinitions = definitionsRef.current.filter(item => item.id !== updated.id);
+                definitionsRef.current = visibleDefinitions;
+                setDefinitions(visibleDefinitions);
+                setSelectedId(previous => previous === updated.id
+                    ? visibleDefinitions.find(item => !isDedicatedStat(item))?.id ?? null
+                    : previous);
+                setSelectedStatIds(previous => previous.filter(id => id !== updated.id));
+                setSecretStatsRevision(previous => previous + 1);
+            }
+        } catch {
+            showErrorSnackbar('Could not update statistic privacy.');
+        }
+    };
 
     const handleUpdated = (updated: StatDefinition, operationId?: string) => {
         reconcileDefinition(updated, operationId);
@@ -1569,9 +1650,19 @@ export function StatsPage() {
             >
                 <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
                     <Box sx={{ minWidth: 0, flex: 1, textAlign: 'left' }}>
-                        <Typography variant="body2" fontWeight={isPrimarySelected ? 600 : isSelected ? 500 : 400} noWrap>
-                            {def.name}
-                        </Typography>
+                        <Stack direction="row" alignItems="center" spacing={0.5} sx={{ minWidth: 0 }}>
+                            <Typography
+                                variant="body2"
+                                fontWeight={isPrimarySelected ? 600 : isSelected ? 500 : 400}
+                                noWrap
+                                sx={{ minWidth: 0, flex: 1 }}
+                            >
+                                {def.name}
+                            </Typography>
+                            {def.secret && (
+                                <LockOutlinedIcon fontSize="small" color="action" titleAccess="Secret statistic" />
+                            )}
+                        </Stack>
                     </Box>
                     <Stack direction="row" alignItems="center" spacing={0.5} sx={{ flexShrink: 0 }}>
                         {!isPending && (
@@ -1590,12 +1681,32 @@ export function StatsPage() {
 
     return (
         <PageWrapper>
-            <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%' }}>
+            <Box key={secretStatsRevision} sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%' }}>
 
                 {/* Header */}
-                <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5, flexShrink: 0 }}>
-                    <Typography variant="h5" fontWeight={600}>Statistics</Typography>
-                    <Stack direction="row" spacing={1}>
+                <Stack
+                    direction={{ xs: 'column', sm: 'row' }}
+                    alignItems={{ xs: 'stretch', sm: 'center' }}
+                    justifyContent="space-between"
+                    spacing={{ xs: 0.75, sm: 1 }}
+                    sx={{ mb: 1.5, flexShrink: 0 }}
+                >
+                    <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ flex: 1 }}>
+                        <Typography variant="h5" fontWeight={600}>Statistics</Typography>
+                        <FormControlLabel
+                            control={(
+                                <Switch
+                                    size="small"
+                                    checked={secretStatsEnabled}
+                                    onChange={handleSecretVisibilityChange}
+                                    inputProps={{ 'aria-label': 'Show secret statistics' }}
+                                />
+                            )}
+                            label="Show secret stats"
+                            sx={{ m: 0, '& .MuiFormControlLabel-label': { fontSize: '0.8rem' } }}
+                        />
+                    </Stack>
+                    <Stack direction="row" spacing={1} justifyContent={{ xs: 'flex-end', sm: 'flex-start' }}>
                         <Button
                             startIcon={<CreateNewFolderOutlinedIcon />}
                             variant="outlined"
@@ -1614,6 +1725,52 @@ export function StatsPage() {
                         </Button>
                     </Stack>
                 </Stack>
+
+                <CompactPopover
+                    open={Boolean(secretPromptAnchor)}
+                    onClose={() => {
+                        setSecretPromptAnchor(null);
+                        setSecretPassword('');
+                        setSecretPasswordError(null);
+                    }}
+                    anchorPosition={secretPromptAnchor ?? undefined}
+                    maxWidth="xs"
+                    slotProps={{ paper: { sx: { borderRadius: 2 } } }}
+                >
+                    <Box component="form" onSubmit={handleUnlockSecretStats}>
+                        <DialogTitle>Show secret stats</DialogTitle>
+                        <DialogContent dividers sx={{ p: 1.5 }}>
+                            <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+                                Confirm your account password to reveal them for 15 minutes.
+                            </Typography>
+                            <TextField
+                                autoFocus
+                                fullWidth
+                                size="small"
+                                type="password"
+                                label="Account password"
+                                value={secretPassword}
+                                onChange={event => {
+                                    setSecretPassword(event.target.value);
+                                    setSecretPasswordError(null);
+                                }}
+                                autoComplete="current-password"
+                                error={Boolean(secretPasswordError)}
+                                helperText={secretPasswordError ?? undefined}
+                            />
+                        </DialogContent>
+                        <DialogActions>
+                            <Button onClick={() => {
+                                setSecretPromptAnchor(null);
+                                setSecretPassword('');
+                                setSecretPasswordError(null);
+                            }}>Cancel</Button>
+                            <Button type="submit" variant="contained" disabled={!secretPassword || secretPasswordSaving}>
+                                {secretPasswordSaving ? 'Checking…' : 'Show stats'}
+                            </Button>
+                        </DialogActions>
+                    </Box>
+                </CompactPopover>
 
                 <CompactPopover
                     open={showCreateForm}
@@ -2133,6 +2290,14 @@ export function StatsPage() {
                     }}>
                         <ListItemIcon><SelfImprovementIcon fontSize="small" /></ListItemIcon>
                         <ListItemText>Go to meditation page</ListItemText>
+                    </MenuItem>
+                )}
+                {contextMenu?.kind === 'stat' && !contextMenu.definition.systemKey && (
+                    <MenuItem onClick={() => { void handleToggleSecretDefinition(contextMenu.definition); }}>
+                        <ListItemIcon><LockOutlinedIcon fontSize="small" /></ListItemIcon>
+                        <ListItemText>
+                            {contextMenu.definition.secret ? 'Remove secret protection' : 'Make secret'}
+                        </ListItemText>
                     </MenuItem>
                 )}
                 {contextMenu?.kind === 'stat'

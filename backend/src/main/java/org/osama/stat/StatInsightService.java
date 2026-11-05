@@ -28,14 +28,23 @@ public class StatInsightService {
     }
 
     public StatInsightsResponse getInsights(String definitionId, LocalDate from, LocalDate to, String userId) {
+        return getInsights(definitionId, from, to, userId, true);
+    }
+
+    public StatInsightsResponse getInsights(String definitionId, LocalDate from, LocalDate to,
+                                            String userId, boolean includeSecret) {
         StatDefinition driver = definitionRepository.findByIdAndUserId(definitionId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("No such stat."));
         validatePeriod(from, to);
 
         List<StatDefinition> definitions = definitionRepository.findAllByUserIdOrderByDisplayOrderAsc(userId);
+        if (!includeSecret) {
+            definitions = definitions.stream().filter(definition -> !definition.isSecret()).toList();
+        }
         List<StatEntry> entries = entryRepository.findAllByUserIdAndDateBetween(userId, from, to);
         Map<String, Map<LocalDate, Double>> valuesByDefinition = entries.stream()
                 .filter(entry -> entry.getStatDefinition() != null)
+                .filter(entry -> includeSecret || !entry.getStatDefinition().isSecret())
                 .filter(entry -> entry.getStatus() != StatEntryStatus.NOT_PLANNED)
                 .collect(Collectors.groupingBy(
                         entry -> entry.getStatDefinition().getId(),

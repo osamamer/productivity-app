@@ -68,6 +68,23 @@ class StatGroupServiceTest {
     }
 
     @Test
+    void lockedGroupEditsHideSecretStatsWithoutDroppingTheirMembership() {
+        StatDefinition visibleStat = createStat("Visible", StatType.NUMBER);
+        StatDefinition secretStat = createStat("Secret", StatType.NUMBER);
+        statService.updateSecret(secretStat.getId(), true, TEST_USER_ID);
+        StatGroupResponse group = statGroupService.createGroup(
+                "Daily", List.of(visibleStat.getId(), secretStat.getId()), TEST_USER_ID);
+
+        StatGroupResponse editedWhileLocked = statGroupService.replaceDefinitions(
+                group.groupId(), List.of(visibleStat.getId()), TEST_USER_ID, false);
+        StatGroupResponse createdWhileLocked = statGroupService.createGroup(
+                "Visible only", List.of(secretStat.getId()), TEST_USER_ID, false);
+
+        assertEquals(List.of(visibleStat.getId(), secretStat.getId()), editedWhileLocked.statDefinitionIds());
+        assertEquals(List.of(), createdWhileLocked.statDefinitionIds());
+    }
+
+    @Test
     void reorderingGroupsPersistsTheSubmittedOrder() {
         StatGroupResponse first = statGroupService.createGroup("First", TEST_USER_ID);
         StatGroupResponse second = statGroupService.createGroup("Second", TEST_USER_ID);

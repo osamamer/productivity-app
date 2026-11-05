@@ -62,7 +62,9 @@ public class DayOverviewService {
         if (date == null) throw new IllegalArgumentException("A day is required.");
 
         LocalDate today = LocalDate.now();
-        List<StatEntry> dateStats = statEntryRepository.findAllByUserIdAndDate(userId, date);
+        List<StatEntry> dateStats = statEntryRepository.findAllByUserIdAndDate(userId, date).stream()
+                .filter(entry -> entry.getStatDefinition() == null || !entry.getStatDefinition().isSecret())
+                .toList();
         DayWindow window = buildDayWindow(date, dateStats, today);
         List<Task> userTasks = taskRepository.findAllByUserId(userId);
         Map<String, Task> taskById = userTasks.stream()

@@ -41,12 +41,17 @@ public class KeycloakAccountService {
     private String adminPassword;
 
     public void changePassword(String username, String keycloakUserId, String currentPassword, String newPassword) {
-        if (!isCurrentPasswordValid(username, currentPassword)) {
-            throw new InvalidCurrentPasswordException("Current password is incorrect.");
-        }
+        verifyCurrentPassword(username, currentPassword);
 
         String adminAccessToken = fetchAdminAccessToken();
         resetPassword(keycloakUserId, newPassword, adminAccessToken);
+    }
+
+    public void verifyCurrentPassword(String username, String currentPassword) {
+        if (username == null || username.isBlank() || currentPassword == null || currentPassword.isBlank()
+                || !isCurrentPasswordValid(username, currentPassword)) {
+            throw new InvalidCurrentPasswordException("Current password is incorrect.");
+        }
     }
 
     public void registerUser(String email, String firstName, String lastName, String username, String password) {

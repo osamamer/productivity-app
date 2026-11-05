@@ -310,3 +310,5 @@ databaseChangeLog:
       file: db/changelog/changes/091-add-pomodoro-time-adjustment.yaml
   - include:
       file: db/changelog/changes/092-composite-stat-inputs.yaml
+  - include:
+      file: db/changelog/changes/093-secret-stat-access.yaml

@@ -37,6 +37,7 @@ export interface StatDefinition {
     maxValue?: number;
     goodThreshold?: number | null;
     systemKey?: string;
+    secret?: boolean;
     showOnStatsPage?: boolean;
     recurringTaskSeriesId?: string | null;
     focusTaskName?: string | null;

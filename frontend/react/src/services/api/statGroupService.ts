@@ -1,8 +1,9 @@
 import { apiFetch } from '../utils/apiFetch';
 import { StatGroup } from '../../types/StatGroup';
-import { getAuthCacheScope, getAuthHeaders } from '../utils/authHeaders';
+import { getAuthCacheScope } from '../utils/authHeaders';
+import { getStatAuthHeaders } from './statService';
 import { CachedResource } from '../cache/ttlCache';
-import { invalidateResource } from '../cache/resourceInvalidation';
+import { invalidateResource, subscribeToResourceInvalidation } from '../cache/resourceInvalidation';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 const GROUPS_URL = `${API_BASE_URL}/api/v1/stats/groups`;
@@ -18,6 +19,10 @@ function groupsCacheKey(): string {
     return `${getAuthCacheScope()}:stat-groups`;
 }
 
+subscribeToResourceInvalidation('stats', origin => {
+    if (origin === 'secret-access' || origin === 'stat-definition') groupsCache.clear();
+});
+
 export const statGroupService = {
     getCachedGroups(): StatGroup[] | undefined {
         return groupsCache.getStale(groupsCacheKey());
@@ -25,7 +30,7 @@ export const statGroupService = {
 
     async getGroups(): Promise<StatGroup[]> {
         return groupsCache.get(groupsCacheKey(), async () => {
-            const response = await apiFetch(GROUPS_URL, { headers: getAuthHeaders() });
+            const response = await apiFetch(GROUPS_URL, { headers: getStatAuthHeaders() });
             if (!response.ok) throw new Error('Failed to fetch stat groups');
             return response.json();
         });
@@ -37,7 +42,7 @@ export const statGroupService = {
             body: JSON.stringify({ name, statDefinitionIds }),
             headers: {
                 'Content-Type': 'application/json; charset=UTF-8',
-                ...getAuthHeaders(),
+                ...getStatAuthHeaders(),
             },
         });
         if (!response.ok) throw new Error('Failed to create stat group');
@@ -52,7 +57,7 @@ export const statGroupService = {
             body: JSON.stringify({ groupIds }),
             headers: {
                 'Content-Type': 'application/json; charset=UTF-8',
-                ...getAuthHeaders(),
+                ...getStatAuthHeaders(),
             },
         });
         if (!response.ok) throw new Error('Failed to reorder stat groups');
@@ -67,7 +72,7 @@ export const statGroupService = {
             body: JSON.stringify({ name }),
             headers: {
                 'Content-Type': 'application/json; charset=UTF-8',
-                ...getAuthHeaders(),
+                ...getStatAuthHeaders(),
             },
         });
         if (!response.ok) throw new Error('Failed to rename stat group');
@@ -82,7 +87,7 @@ export const statGroupService = {
             body: JSON.stringify({ statDefinitionIds }),
             headers: {
                 'Content-Type': 'application/json; charset=UTF-8',
-                ...getAuthHeaders(),
+                ...getStatAuthHeaders(),
             },
         });
         if (!response.ok) throw new Error('Failed to update stat group membership');
@@ -94,7 +99,7 @@ export const statGroupService = {
     async deleteGroup(groupId: string): Promise<void> {
         const response = await apiFetch(`${GROUPS_URL}/${groupId}`, {
             method: 'DELETE',
-            headers: getAuthHeaders(),
+            headers: getStatAuthHeaders(),
         });
         if (!response.ok) throw new Error('Failed to delete stat group');
         invalidateGroups();

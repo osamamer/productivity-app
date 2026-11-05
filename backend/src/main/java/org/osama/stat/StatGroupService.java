@@ -45,11 +45,20 @@ public class StatGroupService {
 
     @Transactional
     public StatGroupResponse createGroup(String name, List<String> definitionIds, String userId) {
+        return createGroup(name, definitionIds, userId, true);
+    }
+
+    @Transactional
+    public StatGroupResponse createGroup(String name, List<String> definitionIds, String userId,
+                                         boolean includeSecret) {
         User user = userRepository.findUserById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
         List<String> requestedIds = definitionIds == null ? List.of() : definitionIds;
-        List<StatDefinition> definitions = findOwnedDailyDefinitions(requestedIds, userId);
-        detachDefinitionsFromOtherGroups(requestedIds, userId, null);
+        List<StatDefinition> definitions = findOwnedDailyDefinitions(requestedIds, userId).stream()
+                .filter(definition -> includeSecret || !definition.isSecret())
+                .toList();
+        detachDefinitionsFromOtherGroups(
+                definitions.stream().map(StatDefinition::getId).toList(), userId, null);
 
         StatGroup group = new StatGroup();
         group.setGroupId(UUID.randomUUID().toString());
@@ -100,10 +109,26 @@ public class StatGroupService {
 
     @Transactional
     public StatGroupResponse replaceDefinitions(String groupId, List<String> definitionIds, String userId) {
+        return replaceDefinitions(groupId, definitionIds, userId, true);
+    }
+
+    @Transactional
+    public StatGroupResponse replaceDefinitions(String groupId, List<String> definitionIds, String userId,
+                                                boolean includeSecret) {
         StatGroup group = getGroupOrThrow(groupId, userId);
         List<String> requestedIds = definitionIds == null ? List.of() : definitionIds;
-        List<StatDefinition> definitions = findOwnedDailyDefinitions(requestedIds, userId);
-        detachDefinitionsFromOtherGroups(requestedIds, userId, groupId);
+        List<StatDefinition> definitions = findOwnedDailyDefinitions(requestedIds, userId).stream()
+                .filter(definition -> includeSecret || !definition.isSecret())
+                .collect(Collectors.toCollection(java.util.ArrayList::new));
+        if (!includeSecret) {
+            group.getDefinitions().stream()
+                    .filter(StatDefinition::isSecret)
+                    .filter(definition -> definitions.stream()
+                            .noneMatch(existing -> existing.getId().equals(definition.getId())))
+                    .forEach(definitions::add);
+        }
+        List<String> effectiveDefinitionIds = definitions.stream().map(StatDefinition::getId).toList();
+        detachDefinitionsFromOtherGroups(effectiveDefinitionIds, userId, groupId);
 
         group.replaceDefinitions(definitions);
         StatGroup savedGroup = groupRepository.save(group);

@@ -54,6 +54,20 @@ const knownEntries = new Map<string, StatEntry>();
 const optimisticEntryOverrides = new Map<string, OptimisticEntryOverride>();
 let optimisticWriteSequence = 0;
 let statCacheGeneration = 0;
+let secretAccessGeneration = 0;
+let secretStatsAccessToken: string | null = null;
+let secretStatsAccessExpiresAt: number | null = null;
+let secretStatsExpiryTimer: ReturnType<typeof setTimeout> | undefined;
+let lockedSecretDefinitionIds = new Set<string>();
+
+export function getStatAuthHeaders(): Record<string, string> {
+    refreshSecretStatsAccess();
+    const headers = getAuthHeaders();
+    if (secretStatsAccessToken && secretStatsAccessExpiresAt && secretStatsAccessExpiresAt > Date.now()) {
+        return { ...headers, 'X-Secret-Stats-Access': secretStatsAccessToken };
+    }
+    return headers;
+}
 
 function invalidateRecurringTaskResources(): void {
     invalidateResource('stats', 'stat-definition');
@@ -299,30 +313,136 @@ function clearDataCaches(): void {
     lastMonthPrefetchRequests.clear();
 }
 
+function clearSecretStatsCaches(): void {
+    secretAccessGeneration += 1;
+    definitionsCache.delete(definitionsCacheKey());
+    definitionsRequests.delete(definitionsCacheKey());
+    lastMonthPrefetchRequests.clear();
+    knownEntries.clear();
+    optimisticEntryOverrides.clear();
+    clearDataCaches();
+}
+
+function clearSecretStatsAccess(preserveHiddenIds: boolean, notify = true): void {
+    if (secretStatsAccessToken) {
+        void apiFetch(`${STATS_URL}/secret-access`, {
+            method: 'DELETE',
+            headers: { ...getAuthHeaders(), 'X-Secret-Stats-Access': secretStatsAccessToken },
+        }).catch(() => undefined);
+    }
+    if (secretStatsExpiryTimer !== undefined) clearTimeout(secretStatsExpiryTimer);
+    secretStatsExpiryTimer = undefined;
+    if (preserveHiddenIds) {
+        lockedSecretDefinitionIds = new Set((definitionsCache.getStale(definitionsCacheKey()) ?? [])
+            .filter(definition => definition.secret)
+            .map(definition => definition.id));
+    }
+    secretStatsAccessToken = null;
+    secretStatsAccessExpiresAt = null;
+    clearSecretStatsCaches();
+    if (notify) invalidateResource('stats', 'secret-access');
+}
+
+function refreshSecretStatsAccess(): void {
+    if (secretStatsAccessToken && secretStatsAccessExpiresAt !== null
+        && secretStatsAccessExpiresAt <= Date.now()) {
+        clearSecretStatsAccess(true);
+    }
+}
+
 subscribeToResourceInvalidation('stats', origin => {
     // Linked task mutations update stat entries on the server without calling recordEntry.
     if (origin === 'task') clearDataCaches();
 });
 
 export const statService = {
+    hasSecretStatsAccess(): boolean {
+        refreshSecretStatsAccess();
+        return Boolean(secretStatsAccessToken && secretStatsAccessExpiresAt
+            && secretStatsAccessExpiresAt > Date.now());
+    },
+
+    getSecretStatsAccessExpiresAt(): number | null {
+        return this.hasSecretStatsAccess() ? secretStatsAccessExpiresAt : null;
+    },
+
+    async unlockSecretStats(password: string): Promise<number> {
+        const response = await apiFetch(`${STATS_URL}/secret-access`, {
+            method: 'POST',
+            body: JSON.stringify({ password }),
+            headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getAuthHeaders() },
+        });
+        if (!response.ok) throw new Error('Could not unlock secret statistics');
+        const grant = await response.json() as { accessToken: string; expiresAt: string };
+        const expiresAt = Date.parse(grant.expiresAt);
+        if (!grant.accessToken || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+            throw new Error('Could not unlock secret statistics');
+        }
+        secretStatsAccessToken = grant.accessToken;
+        secretStatsAccessExpiresAt = expiresAt;
+        lockedSecretDefinitionIds.clear();
+        if (secretStatsExpiryTimer !== undefined) clearTimeout(secretStatsExpiryTimer);
+        secretStatsExpiryTimer = setTimeout(() => {
+            if (secretStatsAccessExpiresAt && secretStatsAccessExpiresAt <= Date.now()) {
+                this.lockSecretStats();
+            }
+        }, Math.max(0, expiresAt - Date.now()));
+        clearSecretStatsCaches();
+        invalidateResource('stats', 'secret-access');
+        return expiresAt;
+    },
+
+    async updateSecret(id: string, secret: boolean): Promise<StatDefinition> {
+        const response = await apiFetch(`${STATS_URL}/definitions/${id}/secret`, {
+            method: 'PUT',
+            body: JSON.stringify({ secret }),
+            headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getStatAuthHeaders() },
+        });
+        if (!response.ok) throw new Error('Failed to update statistic privacy');
+        const definition = await response.json() as StatDefinition;
+        if (secret && !this.hasSecretStatsAccess()) {
+            lockedSecretDefinitionIds.add(id);
+            clearSecretStatsCaches();
+        }
+        invalidateResource('stats', 'stat-definition');
+        return definition;
+    },
+
+    lockSecretStats(notify = true): void {
+        clearSecretStatsAccess(true, notify);
+    },
+
     getCachedDefinitions(): StatDefinition[] | undefined {
-        return definitionsCache.getStale(definitionsCacheKey());
+        refreshSecretStatsAccess();
+        const definitions = definitionsCache.getStale(definitionsCacheKey());
+        return definitions && !this.hasSecretStatsAccess()
+            ? definitions.filter(definition => !definition.secret)
+            : definitions;
     },
 
     async getDefinitions(): Promise<StatDefinition[]> {
+        refreshSecretStatsAccess();
         const key = definitionsCacheKey();
         const cachedDefinitions = definitionsCache.get(key);
-        if (cachedDefinitions) return cachedDefinitions;
+        if (cachedDefinitions) {
+            return this.hasSecretStatsAccess()
+                ? cachedDefinitions
+                : cachedDefinitions.filter(definition => !definition.secret);
+        }
 
         const pendingRequest = definitionsRequests.get(key);
         if (pendingRequest) return pendingRequest;
 
-        const request = apiFetch(`${STATS_URL}/definitions`, { headers: getAuthHeaders() })
+        const requestGeneration = secretAccessGeneration;
+        const request = apiFetch(`${STATS_URL}/definitions`, { headers: getStatAuthHeaders() })
             .then(response => {
                 if (!response.ok) throw new Error('Failed to fetch stat definitions');
                 return response.json() as Promise<StatDefinition[]>;
             })
             .then(definitions => {
+                if (requestGeneration !== secretAccessGeneration) {
+                    return definitions.filter(definition => !lockedSecretDefinitionIds.has(definition.id));
+                }
                 definitionsCache.set(key, definitions);
                 return definitions;
             });
@@ -336,6 +456,7 @@ export const statService = {
     },
 
     async prefetchLastMonth(): Promise<void> {
+        refreshSecretStatsAccess();
         const range = getLastMonthWindow();
         const key = `${getAuthCacheScope()}:${range.from}:${range.to}`;
         const pendingRequest = lastMonthPrefetchRequests.get(key);
@@ -345,7 +466,7 @@ export const statService = {
         const request = (async () => {
             const params = new URLSearchParams({ from: range.from, to: range.to });
             const response = await apiFetch(`${STAT_BOOTSTRAP_URL}?${params}`, {
-                headers: getAuthHeaders(),
+                headers: getStatAuthHeaders(),
             });
             if (!response.ok) throw new Error('Failed to warm statistics');
 
@@ -386,7 +507,7 @@ export const statService = {
         const response = await apiFetch(`${STATS_URL}/definitions`, {
             method: 'POST',
             body: JSON.stringify(req),
-            headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getAuthHeaders() },
+            headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getStatAuthHeaders() },
         });
         if (!response.ok) throw new Error('Failed to create stat definition');
         const definition = await response.json() as StatDefinition;
@@ -398,7 +519,7 @@ export const statService = {
     async deleteDefinition(id: string): Promise<void> {
         const response = await apiFetch(`${STATS_URL}/definitions/${id}`, {
             method: 'DELETE',
-            headers: getAuthHeaders(),
+            headers: getStatAuthHeaders(),
         });
         if (!response.ok) throw new Error('Failed to delete stat definition');
         invalidateDefinitionsCache();
@@ -412,7 +533,7 @@ export const statService = {
         const response = await apiFetch(`${STATS_URL}/definitions/${id}`, {
             method: 'PUT',
             body: JSON.stringify(req),
-            headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getAuthHeaders() },
+            headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getStatAuthHeaders() },
         });
         if (!response.ok) throw new Error('Failed to update stat definition');
         invalidateDefinitionsCache();
@@ -427,7 +548,7 @@ export const statService = {
         const response = await apiFetch(`${STATS_URL}/definitions/${id}/stats-page-visibility`, {
             method: 'PUT',
             body: JSON.stringify({ showOnStatsPage }),
-            headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getAuthHeaders() },
+            headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getStatAuthHeaders() },
         });
         if (!response.ok) throw new Error('Failed to update Stats page visibility');
         invalidateDefinitionsCache();
@@ -446,7 +567,7 @@ export const statService = {
                 importance: recurrence.importance,
                 taskName: recurrence.taskName,
             }),
-            headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getAuthHeaders() },
+            headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getStatAuthHeaders() },
         });
         if (!response.ok) throw new Error('Failed to create recurring task');
         invalidateDefinitionsCache();
@@ -458,7 +579,7 @@ export const statService = {
 
     async getRecurringTask(definitionId: string): Promise<TaskSeries> {
         const response = await apiFetch(`${STATS_URL}/definitions/${definitionId}/recurring-task`, {
-            headers: getAuthHeaders(),
+            headers: getStatAuthHeaders(),
         });
         if (!response.ok) throw new Error('Failed to fetch recurring task');
         return response.json();
@@ -470,7 +591,7 @@ export const statService = {
         if (weekStartDate) params.set('weekStartDate', weekStartDate);
         const response = await apiFetch(
             `${STATS_URL}/definitions/${definitionId}/weekly-task-schedule?${params}`,
-            { headers: getAuthHeaders() },
+            { headers: getStatAuthHeaders() },
         );
         if (!response.ok) throw new Error('Failed to fetch the task schedule');
         return response.json();
@@ -486,7 +607,7 @@ export const statService = {
                 ...schedule,
                 timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
             }),
-            headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getAuthHeaders() },
+            headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getStatAuthHeaders() },
         });
         if (!response.ok) throw new Error('Failed to update the task schedule');
         invalidateDefinitionsCache();
@@ -506,7 +627,7 @@ export const statService = {
                 importance: recurrence.importance,
                 taskName: recurrence.taskName,
             }),
-            headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getAuthHeaders() },
+            headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getStatAuthHeaders() },
         });
         if (!response.ok) throw new Error('Failed to update recurring task');
         invalidateDefinitionsCache();
@@ -519,7 +640,7 @@ export const statService = {
     async deleteRecurringTaskSeries(definitionId: string): Promise<StatDefinition> {
         const response = await apiFetch(`${STATS_URL}/definitions/${definitionId}/recurring-task/series`, {
             method: 'DELETE',
-            headers: getAuthHeaders(),
+            headers: getStatAuthHeaders(),
         });
         if (!response.ok) throw new Error('Failed to delete recurring task series');
         invalidateDefinitionsCache();
@@ -530,7 +651,7 @@ export const statService = {
     async deleteRecurringTaskFutureOccurrences(definitionId: string): Promise<StatDefinition> {
         const response = await apiFetch(`${STATS_URL}/definitions/${definitionId}/recurring-task/future`, {
             method: 'DELETE',
-            headers: getAuthHeaders(),
+            headers: getStatAuthHeaders(),
         });
         if (!response.ok) throw new Error('Failed to delete future recurring tasks');
         invalidateDefinitionsCache();
@@ -542,7 +663,7 @@ export const statService = {
     async disconnectRecurringTask(definitionId: string): Promise<StatDefinition> {
         const response = await apiFetch(`${STATS_URL}/definitions/${definitionId}/recurring-task`, {
             method: 'DELETE',
-            headers: getAuthHeaders(),
+            headers: getStatAuthHeaders(),
         });
         if (!response.ok) throw new Error('Failed to disconnect recurring task');
         invalidateDefinitionsCache();
@@ -554,7 +675,7 @@ export const statService = {
         const response = await apiFetch(`${STATS_URL}/definitions/${definitionId}/focus-task`, {
             method: 'PUT',
             body: JSON.stringify({ taskName }),
-            headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getAuthHeaders() },
+            headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getStatAuthHeaders() },
         });
         if (!response.ok) throw new Error('Failed to link task focus time');
         invalidateDefinitionsCache();
@@ -578,7 +699,7 @@ export const statService = {
                 reminderMinutesBefore,
                 timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
             }),
-            headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getAuthHeaders() },
+            headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getStatAuthHeaders() },
         });
         if (!response.ok) throw new Error('Failed to start focus task');
         invalidateDefinitionsCache();
@@ -590,7 +711,7 @@ export const statService = {
         const response = await apiFetch(`${STATS_URL}/definitions/${definitionId}/focus-task`, {
             method: 'DELETE',
             body: taskName ? JSON.stringify({ taskName }) : undefined,
-            headers: getAuthHeaders(),
+            headers: getStatAuthHeaders(),
         });
         if (!response.ok) throw new Error('Failed to unlink task focus time');
         invalidateDefinitionsCache();
@@ -602,7 +723,7 @@ export const statService = {
         const response = await apiFetch(`${STATS_URL}/definitions/order`, {
             method: 'PUT',
             body: JSON.stringify({ definitionIds }),
-            headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getAuthHeaders() },
+            headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getStatAuthHeaders() },
         });
         if (!response.ok) throw new Error('Failed to reorder stat definitions');
         invalidateDefinitionsCache();
@@ -610,6 +731,7 @@ export const statService = {
     },
 
     async getEntries(definitionId: string, from: string, to: string): Promise<StatEntry[]> {
+        refreshSecretStatsAccess();
         const key = entryCacheKey(definitionId, from, to);
         const cachedEntries = entryCache.get(key);
         if (cachedEntries) return applyOptimisticOverrides(cachedEntries, from, to, definitionId);
@@ -618,13 +740,17 @@ export const statService = {
         if (pendingRequest) return pendingRequest;
 
         const requestGeneration = statCacheGeneration;
+        const accessGeneration = secretAccessGeneration;
         const params = new URLSearchParams({ statDefinitionId: definitionId, from, to });
-        const request = apiFetch(`${STATS_URL}/entries?${params}`, { headers: getAuthHeaders() })
+        const request = apiFetch(`${STATS_URL}/entries?${params}`, { headers: getStatAuthHeaders() })
             .then(response => {
                 if (!response.ok) throw new Error('Failed to fetch stat entries');
                 return response.json() as Promise<StatEntry[]>;
             })
             .then(entries => {
+                if (accessGeneration !== secretAccessGeneration) {
+                    return entries.filter(entry => !lockedSecretDefinitionIds.has(entry.statDefinitionId));
+                }
                 rememberEntries(entries);
                 if (requestGeneration === statCacheGeneration) {
                     entryCache.set(
@@ -645,11 +771,13 @@ export const statService = {
     },
 
     getCachedEntries(definitionId: string, from: string, to: string): StatEntry[] | undefined {
+        refreshSecretStatsAccess();
         const entries = entryCache.getStale(entryCacheKey(definitionId, from, to));
         return entries ? applyOptimisticOverrides(entries, from, to, definitionId) : undefined;
     },
 
     async getFocusTime(definitionId: string, from: string, to: string): Promise<StatFocusTimeEntry[]> {
+        refreshSecretStatsAccess();
         const key = focusTimeCacheKey(definitionId, from, to);
         const cachedFocusTime = focusTimeCache.get(key);
         if (cachedFocusTime) return cachedFocusTime;
@@ -660,7 +788,7 @@ export const statService = {
         const requestGeneration = statCacheGeneration;
         const params = new URLSearchParams({ from, to });
         const request = apiFetch(`${STATS_URL}/definitions/${definitionId}/focus-time?${params}`, {
-            headers: getAuthHeaders(),
+            headers: getStatAuthHeaders(),
         })
             .then(response => {
                 if (!response.ok) throw new Error('Failed to fetch task focus time');
@@ -686,20 +814,27 @@ export const statService = {
     },
 
     getCachedFocusTime(definitionId: string, from: string, to: string): StatFocusTimeEntry[] | undefined {
+        refreshSecretStatsAccess();
         return focusTimeCache.getStale(focusTimeCacheKey(definitionId, from, to));
     },
 
     async getTodayEntries(): Promise<StatEntry[]> {
+        refreshSecretStatsAccess();
         const date = localDateString();
+        const accessGeneration = secretAccessGeneration;
         const entries = await dailyEntriesCache.get(dailyEntriesCacheKey(date), async () => {
-            const response = await apiFetch(`${STATS_URL}/entries/today`, { headers: getAuthHeaders() });
+            const response = await apiFetch(`${STATS_URL}/entries/today`, { headers: getStatAuthHeaders() });
             if (!response.ok) throw new Error("Failed to fetch today's entries");
             return response.json();
         }, CURRENT_STAT_DATA_TTL_MS);
+        if (accessGeneration !== secretAccessGeneration) {
+            return entries.filter(entry => !lockedSecretDefinitionIds.has(entry.statDefinitionId));
+        }
         return applyOptimisticOverrides(entries, date, date);
     },
 
     async getSummary(definitionId: string, from: string, to: string): Promise<StatSummary> {
+        refreshSecretStatsAccess();
         const key = summaryCacheKey(definitionId, from, to);
         const cachedSummary = summaryCache.get(key);
         if (cachedSummary) return cachedSummary;
@@ -710,7 +845,7 @@ export const statService = {
         const requestGeneration = statCacheGeneration;
         const params = new URLSearchParams({ from, to });
         const request = apiFetch(`${STATS_URL}/definitions/${definitionId}/summary?${params}`, {
-            headers: getAuthHeaders(),
+            headers: getStatAuthHeaders(),
         })
             .then(response => {
                 if (!response.ok) throw new Error('Failed to fetch stat summary');
@@ -736,6 +871,7 @@ export const statService = {
     },
 
     getCachedSummary(definitionId: string, from: string, to: string): StatSummary | undefined {
+        refreshSecretStatsAccess();
         return summaryCache.getStale(summaryCacheKey(definitionId, from, to));
     },
 
@@ -757,6 +893,7 @@ export const statService = {
     },
 
     async getInsights(definitionId: string, from: string, to: string): Promise<StatInsights> {
+        refreshSecretStatsAccess();
         const key = insightsCacheKey(definitionId, from, to);
         const cachedInsights = insightsCache.get(key);
         if (cachedInsights) return cachedInsights;
@@ -767,7 +904,7 @@ export const statService = {
         const requestGeneration = statCacheGeneration;
         const params = new URLSearchParams({ from, to });
         const request = apiFetch(`${STATS_URL}/definitions/${definitionId}/insights?${params}`, {
-            headers: getAuthHeaders(),
+            headers: getStatAuthHeaders(),
         })
             .then(response => {
                 if (!response.ok) throw new Error('Failed to fetch stat insights');
@@ -793,11 +930,16 @@ export const statService = {
     },
 
     async getEntriesByDate(date: string): Promise<StatEntry[]> {
+        refreshSecretStatsAccess();
+        const accessGeneration = secretAccessGeneration;
         const entries = await dailyEntriesCache.get(dailyEntriesCacheKey(date), async () => {
-            const response = await apiFetch(`${STATS_URL}/entries/by-date?date=${date}`, { headers: getAuthHeaders() });
+            const response = await apiFetch(`${STATS_URL}/entries/by-date?date=${date}`, { headers: getStatAuthHeaders() });
             if (!response.ok) throw new Error(`Failed to fetch entries for ${date}`);
             return response.json();
         }, isCurrentOrFutureRange(date) ? CURRENT_STAT_DATA_TTL_MS : DERIVED_STAT_DATA_TTL_MS);
+        if (accessGeneration !== secretAccessGeneration) {
+            return entries.filter(entry => !lockedSecretDefinitionIds.has(entry.statDefinitionId));
+        }
         return applyOptimisticOverrides(entries, date, date);
     },
 
@@ -808,7 +950,7 @@ export const statService = {
             response = await apiFetch(`${STATS_URL}/entries`, {
                 method: 'POST',
                 body: JSON.stringify(req),
-                headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getAuthHeaders() },
+                headers: { 'Content-Type': 'application/json; charset=UTF-8', ...getStatAuthHeaders() },
             });
             if (!response.ok) throw new Error('Failed to record stat entry');
             const responseEntry = response.status === 204

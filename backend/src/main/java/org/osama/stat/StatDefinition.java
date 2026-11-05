@@ -62,6 +62,9 @@ public class StatDefinition {
     @Column(name = "show_on_stats_page", nullable = false)
     private boolean showOnStatsPage;
 
+    @Column(nullable = false)
+    private boolean secret;
+
     // Legacy mirror of the first linked task name. New code uses focusTaskNames.
     @Column(name = "focus_task_name")
     private String focusTaskName;
