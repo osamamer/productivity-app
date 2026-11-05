@@ -2,7 +2,7 @@ import type { StatDefinition } from '../../types/Stats';
 import type { Task } from '../../types/Task';
 
 function linkedDefinitions(task: Task, definitions: StatDefinition[]): StatDefinition[] {
-    const taskName = task.name.trim().toLocaleLowerCase();
+    const taskName = task.name.trim().toLowerCase();
 
     return definitions.filter(definition => {
         if (task.linkedStatDefinitionId === definition.id) return true;
@@ -10,7 +10,7 @@ function linkedDefinitions(task: Task, definitions: StatDefinition[]): StatDefin
         if (!taskName || definition.recurringTaskSeriesId) return false;
 
         return [definition.focusTaskName, ...(definition.focusTaskNames ?? [])]
-            .some(name => name?.trim().toLocaleLowerCase() === taskName);
+            .some(name => name?.trim().toLowerCase() === taskName);
     });
 }
 

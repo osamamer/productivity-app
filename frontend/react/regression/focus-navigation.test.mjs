@@ -43,7 +43,7 @@ test('allows navigation during breaks and when no focus session is active', () =
   assert.equal(isFocusNavigationLocked(null), false);
 });
 
-test('supports older active-session status without a phase field when it is running', () => {
+test('supports older active focus status without a phase field, including paused sessions', () => {
   assert.equal(isFocusNavigationLocked(status({ phase: undefined })), true);
-  assert.equal(isFocusNavigationLocked(status({ phase: undefined, sessionRunning: false })), false);
+    assert.equal(isFocusNavigationLocked(status({ phase: undefined, sessionRunning: false })), true);
 });

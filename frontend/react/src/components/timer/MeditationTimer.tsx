@@ -707,7 +707,7 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
                     <Typography color="text.secondary" sx={{ mb: 3 }}>
                         Save a quick check-in with this meditation session.
                     </Typography>
-                    {session.intendedLength > 0 && (
+                    {session && session.intendedLength > 0 && (
                         <Box sx={{ mb: 2.5 }}>
                             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>
                                 Duration to record

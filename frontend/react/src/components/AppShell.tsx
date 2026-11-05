@@ -49,13 +49,12 @@ export function AppShell() {
         if (focusBlockerState !== 'blocked') return;
 
         focusBlocker.reset();
-        setFocusNavigationRevealed(false);
         setBlockedNoticeOpen(true);
         setShakeSideNav(false);
         window.requestAnimationFrame(() => setShakeSideNav(true));
         if (shakeTimeoutRef.current !== null) window.clearTimeout(shakeTimeoutRef.current);
         shakeTimeoutRef.current = window.setTimeout(() => setShakeSideNav(false), 420);
-    }, [focusBlockerState]);
+    }, [focusBlocker, focusBlockerState]);
 
     useEffect(() => () => {
         if (shakeTimeoutRef.current !== null) window.clearTimeout(shakeTimeoutRef.current);
