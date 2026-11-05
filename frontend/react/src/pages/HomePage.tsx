@@ -413,37 +413,6 @@ function buildTaskListItems(
         .map(({ item }) => item);
 }
 
-function buildCompletionGroupTaskIdsByTaskId(
-    items: TaskListItem[],
-    scopeTasks: Task[],
-): Map<string, string[]> {
-    const scopeTaskIds = new Set([
-        ...scopeTasks.map(task => task.taskId),
-        ...items.flatMap(item => item.kind === 'task'
-            ? [item.task.taskId]
-            : item.tasks.map(task => task.taskId)),
-    ]);
-    const groupTaskIdsByTaskId = new Map<string, string[]>();
-
-    items.forEach(item => {
-        if (item.kind !== 'group') return;
-
-        const groupTaskIds = item.group.taskIds.filter(taskId => scopeTaskIds.has(taskId));
-        if (groupTaskIds.length < 2) return;
-        groupTaskIds.forEach(taskId => groupTaskIdsByTaskId.set(taskId, groupTaskIds));
-    });
-
-    return groupTaskIdsByTaskId;
-}
-
-function mergeCompletionGroupTaskIdsByTaskId(
-    ...groupMaps: Map<string, string[]>[]
-): Map<string, string[]> {
-    const merged = new Map<string, string[]>();
-    groupMaps.forEach(groupMap => groupMap.forEach((taskIds, taskId) => merged.set(taskId, taskIds)));
-    return merged;
-}
-
 function taskListItemId(item: TaskListItem): string {
     return item.renderKey;
 }
@@ -1137,77 +1106,6 @@ function moveTaskDateToToday(task: Task): string {
     return formatLocalDateTime(nextDate);
 }
 
-function reorderTaskIdsForCompletion(
-    taskIds: string[],
-    taskId: string,
-    completed: boolean,
-    tasks: Task[],
-    completionGroupTaskIdsByTaskId: Map<string, string[]>,
-): string[] {
-    const preserveUnchangedOrder = (nextTaskIds: string[]) =>
-        nextTaskIds.every((id, index) => id === taskIds[index]) ? taskIds : nextTaskIds;
-    const insertAtCompletionBoundary = (remainingTaskIds: string[], movedTaskIds: string[]) => {
-        const taskById = new Map(tasks.map(candidate => [candidate.taskId, candidate]));
-        const openTaskIds = remainingTaskIds.filter(id => !taskById.get(id)?.completed);
-        const completedTaskIds = remainingTaskIds.filter(id => taskById.get(id)?.completed);
-        return [...openTaskIds, ...movedTaskIds, ...completedTaskIds];
-    };
-    const renderedGroupTaskIds = completionGroupTaskIdsByTaskId.get(taskId);
-    if (!renderedGroupTaskIds) {
-        const remainingTaskIds = taskIds.filter(id => id !== taskId);
-        return preserveUnchangedOrder(insertAtCompletionBoundary(remainingTaskIds, [taskId]));
-    }
-
-    const taskIdSet = new Set(taskIds);
-    const groupTaskIdsInCurrentOrder = renderedGroupTaskIds.filter(groupTaskId => taskIdSet.has(groupTaskId));
-    if (groupTaskIdsInCurrentOrder.length < 2) {
-        const remainingTaskIds = taskIds.filter(id => id !== taskId);
-        return preserveUnchangedOrder(insertAtCompletionBoundary(remainingTaskIds, [taskId]));
-    }
-
-    const tasksById = new Map(tasks.map(task => [task.taskId, task]));
-    const groupTasks = groupTaskIdsInCurrentOrder.map(groupTaskId => tasksById.get(groupTaskId));
-    if (groupTasks.some(groupTask => !groupTask)) return taskIds;
-
-    const allCompleted = groupTasks.every(groupTask => (
-        groupTask!.taskId === taskId ? completed : groupTask!.completed
-    ));
-    const allReopened = groupTasks.every(groupTask => (
-        groupTask!.taskId === taskId ? !completed : !groupTask!.completed
-    ));
-    // Keep a mixed group in its current position until it reaches a uniform completion state.
-    if (!allCompleted && !allReopened) return taskIds;
-
-    const groupTaskIds = new Set(groupTaskIdsInCurrentOrder);
-    const groupIdsInOrder = taskIds.filter(id => groupTaskIds.has(id));
-    if (groupIdsInOrder.length !== groupTaskIdsInCurrentOrder.length) return taskIds;
-
-    const remainingTaskIds = taskIds.filter(id => !groupTaskIds.has(id));
-    const nextTaskIds = insertAtCompletionBoundary(remainingTaskIds, groupIdsInOrder);
-    return preserveUnchangedOrder(nextTaskIds);
-}
-
-function reorderTaskIdsForCompletionChanges(
-    taskIds: string[],
-    changes: Array<{ taskId: string; completed: boolean }>,
-    tasks: Task[],
-    completionGroupTaskIdsByTaskId: Map<string, string[]>,
-): string[] {
-    let nextTaskIds = taskIds;
-    let nextTasks = tasks;
-    changes.forEach(({ taskId, completed }) => {
-        nextTaskIds = reorderTaskIdsForCompletion(
-            nextTaskIds,
-            taskId,
-            completed,
-            nextTasks,
-            completionGroupTaskIdsByTaskId,
-        );
-        nextTasks = nextTasks.map(task => task.taskId === taskId ? { ...task, completed } : task);
-    });
-    return nextTaskIds;
-}
-
 function reorderTaskSnapshot(tasks: Task[], orderedTaskIds: string[]): Task[] {
     const taskIdSet = new Set(orderedTaskIds);
     const orderedTasks = tasks.filter(task => taskIdSet.has(task.taskId));
@@ -1487,7 +1385,7 @@ export function HomePage() {
         updateTasksInState,
         removeTaskFromState,
         reorderTasksInState,
-    } = useGlobalTasks({ prioritizeToday: true });
+    } = useGlobalTasks({ homeMode: true, prioritizeToday: true });
     const allTasksRef = useRef(allTasks);
     allTasksRef.current = allTasks;
     const manualTaskOrderRevisionRef = useRef(0);
@@ -1776,16 +1674,6 @@ export function HomePage() {
         () => buildTaskListItems(olderTasks, groups ?? [], getTaskRenderKey, 'older', pastTasks),
         [getTaskRenderKey, groups, olderTasks, pastTasks],
     );
-    const focusedPomodoroTaskId = focusedPomodoroTask?.taskId;
-    const completionGroupTaskIdsByTaskId = useMemo(() => mergeCompletionGroupTaskIdsByTaskId(
-        buildCompletionGroupTaskIdsByTaskId(
-            taskListItems,
-            homeTodayTasks.filter(task => task.taskId !== focusedPomodoroTaskId),
-        ),
-        buildCompletionGroupTaskIdsByTaskId(olderTaskListItems, pastTasks),
-    ), [focusedPomodoroTaskId, homeTodayTasks, olderTaskListItems, pastTasks, taskListItems]);
-    const completionGroupTaskIdsByTaskIdRef = useRef(completionGroupTaskIdsByTaskId);
-    completionGroupTaskIdsByTaskIdRef.current = completionGroupTaskIdsByTaskId;
     const renderedSelectionEntities = useMemo(() => {
         const entities: SelectionEntity[] = focusedPomodoroTask
             ? [{ kind: 'task', id: focusedPomodoroTask.taskId }]
@@ -1821,14 +1709,15 @@ export function HomePage() {
         const taskId = navigationState?.openPomodoroTaskId;
         if (typeof taskId !== 'string' || handledFocusNavigationTaskIdRef.current === taskId) return;
         if (!homeContentReady || !allTasksSynchronized) return;
-        if (!allTasks.some(task => task.taskId === taskId)) return;
+        if (!allTasks.some(task => task.taskId === taskId)
+            && resolvedActivePomodoroTask?.taskId !== taskId) return;
 
         handledFocusNavigationTaskIdRef.current = taskId;
         setActiveExpansion({ taskId, panel: 'pomodoro' });
         setSelectedTaskIds([taskId]);
         setSelectedGroupIds([]);
         navigate('/', { replace: true, state: null });
-    }, [allTasks, allTasksSynchronized, homeContentReady, location.state, navigate]);
+    }, [allTasks, allTasksSynchronized, homeContentReady, location.state, navigate, resolvedActivePomodoroTask]);
 
     const updateSelectionActionsPosition = useCallback(() => {
         if (!selectionActionsVisible) {
@@ -2103,28 +1992,17 @@ export function HomePage() {
         const wasCompleted = task?.completed ?? false;
         const completed = !wasCompleted;
         const completionOrigin = !wasCompleted ? anchorEl?.getBoundingClientRect() : undefined;
-        const previousTaskOrder = allTasksRef.current.map(item => item.taskId);
-        const nextTaskOrder = task
-            ? reorderTaskIdsForCompletion(
-                previousTaskOrder,
-                taskId,
-                completed,
-                allTasksRef.current,
-                completionGroupTaskIdsByTaskIdRef.current,
-            )
-            : null;
         const requestId = (completionRequestIdRef.current.get(taskId) ?? 0) + 1;
         if (!completionMutationRef.current.has(taskId)) {
             completionConfirmedStateRef.current.set(taskId, wasCompleted);
         }
         completionRequestIdRef.current.set(taskId, requestId);
 
-        if (task && nextTaskOrder) {
-            const optimisticTasks = allTasksRef.current.map(candidate => (
+        if (task) {
+            allTasksRef.current = allTasksRef.current.map(candidate => (
                 candidate.taskId === taskId ? { ...candidate, completed } : candidate
             ));
-            allTasksRef.current = reorderTaskSnapshot(optimisticTasks, nextTaskOrder);
-            updateTasksInState([{ taskId, updates: { completed } }], nextTaskOrder);
+            updateTasksInState([{ taskId, updates: { completed } }]);
         }
         if (!wasCompleted) {
             celebrateStatLogged(completionOrigin ?? anchorEl);
@@ -2133,7 +2011,6 @@ export function HomePage() {
                 new Set([taskId]),
             ));
         }
-        const orderRevision = manualTaskOrderRevisionRef.current;
         const persist = async () => {
             try {
                 const updatedTask = await taskService.toggleTaskCompletion(
@@ -2164,53 +2041,28 @@ export function HomePage() {
                     && completionRequestIdRef.current.get(taskId) === requestId) {
                     showUndoFeedback('Task completed', async () => {
                         try {
-                            await taskOrderMutationRef.current;
-                            const restoreOrderRevision = manualTaskOrderRevisionRef.current;
-                            const currentOrder = allTasksRef.current.map(item => item.taskId);
-                            const restoredOrder = reorderTaskIdsForCompletion(
-                                currentOrder,
-                                taskId,
-                                false,
-                                allTasksRef.current,
-                                completionGroupTaskIdsByTaskIdRef.current,
-                            );
                             const restoredTask = await taskService.updateTask(
                                 taskId,
                                 { completed: wasCompleted },
                                 { notifyResource: false },
                             );
                             captureHomeTaskLayout();
-                            allTasksRef.current = reorderTaskSnapshot(
-                                allTasksRef.current.map(item => item.taskId === taskId
-                                    ? { ...item, completed: wasCompleted,
-                                        completionDateTime: restoredTask.completionDateTime }
-                                    : item),
-                                restoreOrderRevision === manualTaskOrderRevisionRef.current
-                                    ? restoredOrder
-                                    : allTasksRef.current.map(item => item.taskId),
-                            );
+                            allTasksRef.current = allTasksRef.current.map(item => item.taskId === taskId
+                                ? { ...item, completed: wasCompleted,
+                                    completionDateTime: restoredTask.completionDateTime }
+                                : item);
                             updateTasksInState([{
                                 taskId,
                                 updates: {
                                     completed: wasCompleted,
                                     completionDateTime: restoredTask.completionDateTime,
                                 },
-                            }], restoreOrderRevision === manualTaskOrderRevisionRef.current
-                                ? restoredOrder
-                                : undefined);
-                            if (restoredOrder !== currentOrder
-                                && restoreOrderRevision === manualTaskOrderRevisionRef.current) {
-                                await saveTaskOrder(restoredOrder, restoreOrderRevision);
-                            }
+                            }]);
                         } catch (error) {
                             console.error('Error undoing task completion:', error);
                             await refreshTaskBuckets(true);
                         }
                     });
-                }
-                if (nextTaskOrder && nextTaskOrder !== previousTaskOrder && updatedTask.completed !== wasCompleted
-                    && orderRevision === manualTaskOrderRevisionRef.current) {
-                    await saveTaskOrder(nextTaskOrder, orderRevision);
                 }
             } catch (error) {
                 console.error('Error toggling task:', error);
@@ -2221,21 +2073,9 @@ export function HomePage() {
                             ? { ...candidate, completed: rollbackCompleted }
                             : candidate
                     ));
-                    const rollbackOrder = nextTaskOrder
-                        && orderRevision === manualTaskOrderRevisionRef.current
-                        ? reorderTaskIdsForCompletion(
-                            currentTasks.map(candidate => candidate.taskId),
-                            taskId,
-                            rollbackCompleted,
-                            currentTasks,
-                            completionGroupTaskIdsByTaskIdRef.current,
-                        )
-                        : undefined;
                     captureHomeTaskLayout();
-                    allTasksRef.current = rollbackOrder
-                        ? reorderTaskSnapshot(currentTasks, rollbackOrder)
-                        : currentTasks;
-                    updateTasksInState([{ taskId, updates: { completed: rollbackCompleted } }], rollbackOrder);
+                    allTasksRef.current = currentTasks;
+                    updateTasksInState([{ taskId, updates: { completed: rollbackCompleted } }]);
                 }
             }
 
@@ -2250,7 +2090,7 @@ export function HomePage() {
                 completionConfirmedStateRef.current.delete(taskId);
             }
         });
-    }, [captureHomeTaskLayout, refreshTaskBuckets, saveTaskOrder, showUndoFeedback, updateTasksInState]);
+    }, [captureHomeTaskLayout, refreshTaskBuckets, showUndoFeedback, updateTasksInState]);
 
     function removeTasksFromGroups(taskIds: string[]) {
         const taskIdSet = new Set(taskIds);
@@ -2424,15 +2264,11 @@ export function HomePage() {
         const tasksToCelebrate = action === 'complete'
             ? tasksToUpdate.filter(task => !task.completed)
             : [];
-        const tasksToReopen = action === 'reopen'
-            ? tasksToUpdate.filter(task => task.completed)
-            : [];
         const completionOrigins = tasksToCelebrate
             .flatMap(task => Array.from(document.querySelectorAll<HTMLElement>('[data-task-id]'))
                 .filter(row => row.dataset.taskId === task.taskId)
                 .map(row => row.getBoundingClientRect()));
         const previousCompletion = new Map(tasksToUpdate.map(task => [task.taskId, task.completed]));
-        const orderRevision = manualTaskOrderRevisionRef.current;
 
         setBulkActionLoading(true);
         if (action === 'complete' && tasksToCelebrate.length > 0) {
@@ -2468,29 +2304,11 @@ export function HomePage() {
                     { notifyResource: action !== 'complete' && action !== 'reopen' },
                 );
             }));
-            const tasksToMove = action === 'complete' ? tasksToCelebrate : tasksToReopen;
-            let nextTaskOrder: string[] | undefined;
-            if (tasksToMove.length > 0 && orderRevision === manualTaskOrderRevisionRef.current) {
-                const currentTaskOrder = allTasks.map(task => task.taskId);
-                const reorderedTaskIds = reorderTaskIdsForCompletionChanges(
-                    currentTaskOrder,
-                    tasksToMove.map(task => ({
-                        taskId: task.taskId,
-                        completed: action === 'complete',
-                    })),
-                    allTasks,
-                    completionGroupTaskIdsByTaskIdRef.current,
-                );
-                if (reorderedTaskIds !== currentTaskOrder) nextTaskOrder = reorderedTaskIds;
-            }
-            if (tasksToMove.length > 0) captureHomeTaskLayout();
+            if (action === 'complete' || action === 'reopen') captureHomeTaskLayout();
             updateTasksInState(updatedTasks.map(updatedTask => ({
                 taskId: updatedTask.taskId,
                 updates: updatedTask,
-            })), nextTaskOrder);
-            if (nextTaskOrder) {
-                await saveTaskOrder(nextTaskOrder, orderRevision);
-            }
+            })));
             if (action === 'move-to-date' && scheduledDateTime && isSameLocalDay(new Date(scheduledDateTime), new Date())) {
                 await appendTasksToTodayOrder(
                     tasksToUpdate.filter(task => !isScheduledForToday(task)).map(task => task.taskId),
@@ -2501,34 +2319,17 @@ export function HomePage() {
                     `${tasksToCelebrate.length} task${tasksToCelebrate.length === 1 ? '' : 's'} completed`,
                     async () => {
                         try {
-                            const reopenedIds = new Set(tasksToUpdate
-                                .filter(task => !previousCompletion.get(task.taskId))
-                                .map(task => task.taskId));
-                            const reopenedOrderRevision = manualTaskOrderRevisionRef.current;
-                            const currentOrder = allTasksRef.current.map(task => task.taskId);
-                            const reopenedOrder = reorderTaskIdsForCompletionChanges(
-                                currentOrder,
-                                [...reopenedIds].map(taskId => ({ taskId, completed: false })),
-                                allTasksRef.current,
-                                completionGroupTaskIdsByTaskIdRef.current,
-                            );
                             const restoredTasks = await Promise.all(tasksToUpdate.map(task =>
                                 taskService.updateTask(task.taskId, {
                                     completed: previousCompletion.get(task.taskId) ?? task.completed,
                                 }, { notifyResource: false }),
                             ));
-                            if (reopenedIds.size > 0) captureHomeTaskLayout();
+                            captureHomeTaskLayout();
                             const restoredChanges = restoredTasks.map(restoredTask => ({
                                 taskId: restoredTask.taskId,
                                 updates: restoredTask,
                             }));
-                            if (reopenedIds.size > 0 && reopenedOrder !== currentOrder
-                                && reopenedOrderRevision === manualTaskOrderRevisionRef.current) {
-                                updateTasksInState(restoredChanges, reopenedOrder);
-                                await saveTaskOrder(reopenedOrder, reopenedOrderRevision);
-                            } else {
-                                updateTasksInState(restoredChanges);
-                            }
+                            updateTasksInState(restoredChanges);
                         } catch (error) {
                             console.error('Error undoing bulk task completion:', error);
                             await refreshTaskBuckets(true);

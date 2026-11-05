@@ -4,7 +4,7 @@ import { TASK_PAGE_BATCH_SIZE, taskService } from '../services/api';
 import { subscribeToResourceInvalidation } from '../services/cache/resourceInvalidation';
 import { getShowCompletedHomeTasks } from '../services/utils/homePreferences';
 
-export type TaskLoadMode = 'all' | 'taskPage';
+export type TaskLoadMode = 'all' | 'home' | 'taskPage';
 
 type TaskState = {
     allTasks: Task[];
@@ -237,7 +237,9 @@ export function useTaskManager() {
                         force,
                     )
                     : null;
-                const tasks = taskPageSnapshot?.tasks ?? await taskService.getAllMainTasks(force);
+                const tasks = taskPageSnapshot?.tasks ?? (loadMode === 'home'
+                    ? await taskService.getHomeTaskSnapshot(force)
+                    : await taskService.getAllMainTasks(force));
 
                 if (!isCurrentRequest()) return;
 
@@ -271,13 +273,13 @@ export function useTaskManager() {
                 if (isCurrentRequest()) {
                     setError(err instanceof Error ? err.message : 'Failed to fetch tasks');
                 }
-                console.error('Error fetching all tasks:', err);
+                console.error('Error fetching tasks:', err);
             } finally {
                 if (isCurrentRequest()) {
                     if (showLoading) setLoading(false);
                     tasksLoadedRef.current = true;
                     setTasksLoaded(true);
-                    if (loadMode === 'all' && requestSucceeded) setAllTasksSynchronized(true);
+                    if (requestSucceeded) setAllTasksSynchronized(true);
                 }
             }
         })();
@@ -295,13 +297,11 @@ export function useTaskManager() {
     const fetchTodayTasks = useCallback(async () => {
         const requestDataGeneration = taskDataGenerationRef.current;
         try {
-            const mainTasks = uniqueTasksById(await taskService.getAllMainTasks());
-            const tasks = splitTasksByDate(mainTasks).today;
+            const tasks = splitTasksByDate(uniqueTasksById(await taskService.getTodayTasks())).today;
             if (taskDataGenerationRef.current !== requestDataGeneration) return;
             todayTasksLoadedRef.current = true;
             setTaskState(prev => {
-                // Home can render this smaller snapshot while the complete
-                // task list is still being reconciled in the background.
+                // Home can render today's tasks while older tasks are still loading.
                 if (prev.allTasks.length === 0) {
                     return withTaskBuckets(prev, tasks);
                 }

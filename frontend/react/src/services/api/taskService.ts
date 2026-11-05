@@ -148,6 +148,7 @@ const mainTasksCache = new CachedResource<Task[]>({ ttlMs: TASK_CACHE_TTL_MS, ma
 const todayTasksCache = new CachedResource<Task[]>({ ttlMs: TASK_CACHE_TTL_MS, maxEntries: 4 });
 const taskPageInitialCache = new CachedResource<TaskPageInitialSnapshot>({ ttlMs: TASK_CACHE_TTL_MS, maxEntries: 4 });
 const taskPageBatchCache = new CachedResource<Task[]>({ ttlMs: TASK_CACHE_TTL_MS, maxEntries: 12 });
+const homeOlderTasksCache = new CachedResource<Task[]>({ ttlMs: TASK_CACHE_TTL_MS, maxEntries: 4 });
 // A Home deletion waits briefly for undo, and other callers can have older
 // requests in flight. Keep per-user tombstones outside response caches so
 // every task response is filtered until the deletion is undone or the user
@@ -217,8 +218,21 @@ function persistMainTasks(tasks: Task[]): void {
     }
 }
 
+function currentTaskDateKey(): string {
+    const now = new Date();
+    return [
+        now.getFullYear(),
+        String(now.getMonth() + 1).padStart(2, '0'),
+        String(now.getDate()).padStart(2, '0'),
+    ].join('-');
+}
+
 function todayTasksCacheKey(): string {
-    return `${getAuthCacheScope()}:today-tasks`;
+    return `${getAuthCacheScope()}:today-tasks:${currentTaskDateKey()}`;
+}
+
+function homeOlderTasksCacheKey(): string {
+    return `${getAuthCacheScope()}:home-older-tasks:${currentTaskDateKey()}`;
 }
 
 function invalidateTodayTasksCache(): void {
@@ -238,6 +252,7 @@ function invalidateMainTasksCache(): void {
 
 function invalidateTaskViewCaches(): void {
     invalidateTodayTasksCache();
+    homeOlderTasksCache.invalidate(homeOlderTasksCacheKey());
     invalidateTaskPageCache();
 }
 
@@ -290,6 +305,7 @@ function clearTaskDataCaches(): void {
         }
     }
     todayTasksCache.clear();
+    homeOlderTasksCache.clear();
     invalidateTaskPageCache();
     clearTaskSubtasksCache();
     clearTaskSeriesCache();
@@ -444,6 +460,22 @@ export const taskService = {
         return filterDeletedTasks(tasks);
     },
 
+    async getHomeTaskSnapshot(forceRefresh = false): Promise<Task[]> {
+        const olderKey = homeOlderTasksCacheKey();
+        if (forceRefresh) homeOlderTasksCache.invalidate(olderKey);
+        const [today, older] = await Promise.all([
+            this.getTodayTasks(forceRefresh),
+            homeOlderTasksCache.get(olderKey, async () => {
+                const response = await apiFetch(`${TASK_URL}?period=PAST&completed=false`, {
+                    headers: getAuthHeaders(),
+                });
+                if (!response.ok) throw new Error('Failed to fetch older tasks');
+                return response.json() as Promise<Task[]>;
+            }),
+        ]);
+        return filterDeletedTasks([...today, ...older]);
+    },
+
     async getTaskPageInitialSnapshot(
         batchSize = TASK_PAGE_BATCH_SIZE,
         completed?: boolean,
@@ -494,7 +526,13 @@ export const taskService = {
             throw new Error('Failed to reorder tasks');
         }
         const tasks = await response.json() as Task[];
-        setMainTasksSnapshot(tasks);
+        const currentTasks = getMainTasksSnapshotForMutation();
+        if (currentTasks) {
+            const updatedById = new Map(tasks.map(task => [task.taskId, task]));
+            setMainTasksSnapshot(currentTasks
+                .map(task => updatedById.get(task.taskId) ?? task)
+                .sort((first, second) => first.displayOrder - second.displayOrder));
+        }
         invalidateTaskViewCaches();
         return filterDeletedTasks(tasks);
     },

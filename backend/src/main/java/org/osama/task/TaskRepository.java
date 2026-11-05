@@ -27,11 +27,24 @@ public interface TaskRepository extends JpaRepository<Task, String>,
         long getCompletedTaskCount();
     }
 
+    interface MainTaskOrder {
+        String getTaskId();
+        int getDisplayOrder();
+    }
+
     Optional<Task> findTaskByTaskId(String taskId);
 
     Optional<Task> findTaskByTaskIdAndUserId(String taskId, String userId);
 
     List<Task> findAllByUserIdAndParentIdIsNullOrderByDisplayOrderAsc(String userId);
+
+    @Query("""
+            select t.taskId as taskId, t.displayOrder as displayOrder
+            from Task t
+            where t.userId = :userId and t.parentId is null and t.skipped = false
+            order by t.displayOrder, t.completed, t.importance desc, t.creationDateTime desc, t.taskId
+            """)
+    List<MainTaskOrder> findMainTaskOrder(@Param("userId") String userId);
 
     List<Task> findAllByUserIdAndParentIdOrderByDisplayOrderAsc(String userId, String parentId);
 

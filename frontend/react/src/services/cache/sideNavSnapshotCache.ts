@@ -35,7 +35,7 @@ function isFreshMentalState(recordedAt: string, now = Date.now()): boolean {
 
 async function loadSnapshot(): Promise<TodaySnapshot> {
     const [tasksResult, pomodoroResult, mentalStateResult] = await Promise.allSettled([
-        taskService.getAllMainTasks(),
+        taskService.getTodayTasks(),
         taskService.getTodayFocusSummary(getLocalDateKey()),
         mentalStateService.getHistory(1),
     ]);

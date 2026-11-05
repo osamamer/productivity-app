@@ -3,6 +3,7 @@ package org.osama.event;
 import lombok.extern.slf4j.Slf4j;
 import org.osama.calendar.CalendarService;
 import org.osama.exceptions.ResourceNotFoundException;
+import org.osama.reminder.Reminder;
 import org.osama.reminder.ReminderRepository;
 import org.osama.user.User;
 import org.osama.user.UserRepository;
@@ -14,7 +15,9 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -46,8 +49,24 @@ public class CalendarEventService {
 
     @Transactional(readOnly = true)
     public List<CalendarEventResponse> getEvents(String userId) {
-        return eventRepository.findAllByUserIdOrderByStartDateAscStartTimeAsc(userId).stream()
-                .map(this::toResponse)
+        List<CalendarEvent> events = eventRepository.findAllByUserIdOrderByStartDateAscStartTimeAsc(userId);
+        if (events.isEmpty()) return List.of();
+
+        List<String> eventIds = events.stream().map(CalendarEvent::getId).toList();
+        List<String> localEventIds = events.stream()
+                .filter(event -> event.getSourceId() == null)
+                .map(CalendarEvent::getId)
+                .toList();
+        Map<String, Integer> reminderMinutes = reminderRepository.findAllByEventIdIn(eventIds).stream()
+                .collect(Collectors.toMap(Reminder::getEventId, Reminder::getMinutesBefore));
+        Map<String, List<CalendarEventCancellation>> overrides = localEventIds.isEmpty()
+                ? Map.of()
+                : cancellationRepository.findAllByEventIdInOrderByOccurrenceKeyAsc(localEventIds).stream()
+                        .collect(Collectors.groupingBy(CalendarEventCancellation::getEventId));
+
+        return events.stream()
+                .map(event -> toResponse(event, reminderMinutes.get(event.getId()),
+                        overrides.getOrDefault(event.getId(), List.of())))
                 .toList();
     }
 
@@ -442,6 +461,14 @@ public class CalendarEventService {
 
     private CalendarEventResponse toResponse(CalendarEvent event) {
         Integer reminderMinutes = eventReminderService.minutesBefore(event.getId());
+        List<CalendarEventCancellation> occurrenceOverrides = event.getSourceId() == null
+                ? cancellationRepository.findAllByEventIdOrderByOccurrenceKeyAsc(event.getId())
+                : List.of();
+        return toResponse(event, reminderMinutes, occurrenceOverrides);
+    }
+
+    private CalendarEventResponse toResponse(CalendarEvent event, Integer reminderMinutes,
+                                             List<CalendarEventCancellation> occurrenceOverrides) {
         if (event.getSourceId() != null) {
             return new CalendarEventResponse(event.getId(), event.getTitle(), event.getDescription(),
                     event.isAllDay(), event.getStartDate(), event.getEndDate(), event.getStartTime(),
@@ -449,8 +476,6 @@ public class CalendarEventService {
                     null, null, null, List.of(), List.of(), reminderMinutes,
                     event.getCreatedAt(), event.getUpdatedAt(), event.getCalendarId(), event.getSourceId());
         }
-        List<CalendarEventCancellation> occurrenceOverrides = cancellationRepository
-                .findAllByEventIdOrderByOccurrenceKeyAsc(event.getId());
         return new CalendarEventResponse(event.getId(), event.getTitle(), event.getDescription(),
                 event.isAllDay(), event.getStartDate(), event.getEndDate(), event.getStartTime(),
                 event.getEndTime(), event.getTimeZone(), event.getStatus(), event.getRecurrenceFrequency(),

@@ -15,6 +15,7 @@ import org.springframework.data.domain.Pageable;
 
 public interface ReminderRepository extends JpaRepository<Reminder, String> {
     Optional<Reminder> findByEventId(String eventId);
+    List<Reminder> findAllByEventIdIn(Collection<String> eventIds);
     void deleteByEventId(String eventId);
     Optional<Reminder> findByTaskIdAndNotificationType(String taskId, NotificationType notificationType);
     List<Reminder> findAllByTaskIdInAndUserId(Collection<String> taskIds, String userId);

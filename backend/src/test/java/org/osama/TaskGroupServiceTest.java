@@ -65,7 +65,31 @@ class TaskGroupServiceTest {
     }
 
     @Test
-    void reorderMainTasks_doesNotReturnSkippedTasks() {
+    void reorderMainTasks_movesOnlyTheSelectedPositionsForTheCurrentUser() {
+        createTask(OTHER_USER_ID, "Other user's task");
+        createTask(TEST_USER_ID, "First");
+        createTask(TEST_USER_ID, "Middle");
+        createTask(TEST_USER_ID, "Last");
+        List<Task> originalOrder = taskService.getTodayTasks(TEST_USER_ID);
+        String firstId = originalOrder.get(0).getTaskId();
+        String middleId = originalOrder.get(1).getTaskId();
+        String lastId = originalOrder.get(2).getTaskId();
+
+        List<Task> response = taskService.reorderMainTasks(List.of(lastId, firstId), TEST_USER_ID);
+        entityManager.flush();
+        entityManager.clear();
+
+        assertEquals(List.of(lastId, firstId), response.stream().map(Task::getTaskId).toList());
+        assertEquals(List.of(lastId, middleId, firstId),
+                taskService.getTodayTasks(TEST_USER_ID).stream().map(Task::getTaskId).toList());
+        assertEquals(1, taskService.getTodayTasks(OTHER_USER_ID).size());
+        assertThrows(IllegalArgumentException.class,
+                () -> taskService.reorderMainTasks(List.of(firstId, middleId,
+                        taskService.getTodayTasks(OTHER_USER_ID).get(0).getTaskId()), TEST_USER_ID));
+    }
+
+    @Test
+    void reorderMainTasks_doesNotLoadSkippedTasksOrReturnUnchangedTasks() {
         Task visible = createTask(TEST_USER_ID, "Visible");
         Task skipped = createTask(TEST_USER_ID, "Skipped");
         skipped.setSkipped(true);
@@ -75,7 +99,7 @@ class TaskGroupServiceTest {
         UpdateTaskRequest update = new UpdateTaskRequest();
         update.setName("Should stay hidden");
 
-        assertEquals(List.of(visible.getTaskId()), reordered.stream().map(Task::getTaskId).toList());
+        assertTrue(reordered.isEmpty());
         assertTrue(taskService.getTaskForUser(skipped.getTaskId(), TEST_USER_ID).isEmpty());
         assertTrue(taskService.updateTask(skipped.getTaskId(), update, TEST_USER_ID).isEmpty());
         assertEquals("Skipped", taskRepository.findTaskByTaskId(skipped.getTaskId()).orElseThrow().getName());

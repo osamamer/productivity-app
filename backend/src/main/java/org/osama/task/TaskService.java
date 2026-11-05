@@ -1168,31 +1168,58 @@ public class TaskService {
             throw new IllegalArgumentException("The task reorder list must contain unique task IDs.");
         }
 
-        List<Task> allMainTasks = getAllMainTasks(userId);
-        Map<String, Task> tasksById = allMainTasks.stream()
-                .collect(Collectors.toMap(Task::getTaskId, task -> task));
-
-        if (taskIds.stream().anyMatch(taskId -> !tasksById.containsKey(taskId))) {
+        List<TaskRepository.MainTaskOrder> currentOrder = taskRepository.findMainTaskOrder(userId);
+        Set<String> requestedIds = new HashSet<>(taskIds);
+        Set<String> visibleIds = currentOrder.stream()
+                .map(TaskRepository.MainTaskOrder::getTaskId)
+                .collect(Collectors.toSet());
+        if (!visibleIds.containsAll(requestedIds)) {
             throw new IllegalArgumentException("The reorder list contains a task that does not belong to the user.");
         }
 
-        List<Task> selectedTasks = taskIds.stream().map(tasksById::get).toList();
         List<Integer> selectedPositions = new ArrayList<>();
-        for (int index = 0; index < allMainTasks.size(); index++) {
-            if (taskIds.contains(allMainTasks.get(index).getTaskId())) {
+        List<String> reorderedIds = currentOrder.stream()
+                .map(TaskRepository.MainTaskOrder::getTaskId)
+                .collect(Collectors.toCollection(ArrayList::new));
+        for (int index = 0; index < reorderedIds.size(); index++) {
+            if (requestedIds.contains(reorderedIds.get(index))) {
                 selectedPositions.add(index);
             }
         }
         for (int index = 0; index < selectedPositions.size(); index++) {
-            allMainTasks.set(selectedPositions.get(index), selectedTasks.get(index));
-        }
-        for (int index = 0; index < allMainTasks.size(); index++) {
-            allMainTasks.get(index).setDisplayOrder(index);
+            reorderedIds.set(selectedPositions.get(index), taskIds.get(index));
         }
 
-        taskRepository.saveAll(allMainTasks);
-        log.info("Tasks reordered: userId={} count={} orderedTaskIds={}", userId, taskIds.size(), taskIds);
-        return allMainTasks;
+        Map<String, Integer> originalPositions = currentOrder.stream()
+                .collect(Collectors.toMap(TaskRepository.MainTaskOrder::getTaskId,
+                        TaskRepository.MainTaskOrder::getDisplayOrder));
+        // Deleted or skipped tasks can leave gaps. Preserve those slots; only duplicate
+        // positions need normalization to keep the requested order deterministic.
+        boolean duplicatePositions = new HashSet<>(originalPositions.values()).size() != currentOrder.size();
+        Map<String, Integer> changedPositions = new HashMap<>();
+        for (int index = 0; index < reorderedIds.size(); index++) {
+            String taskId = reorderedIds.get(index);
+            int position = duplicatePositions ? index : currentOrder.get(index).getDisplayOrder();
+            if (originalPositions.get(taskId) != position) {
+                changedPositions.put(taskId, position);
+            }
+        }
+
+        if (changedPositions.isEmpty()) return List.of();
+
+        Map<String, Task> tasksById = taskRepository.findAllByTaskIdInAndUserId(changedPositions.keySet(), userId)
+                .stream()
+                .collect(Collectors.toMap(Task::getTaskId, task -> task));
+        changedPositions.forEach((taskId, position) -> tasksById.get(taskId).setDisplayOrder(position));
+
+        List<Task> changedTasks = reorderedIds.stream()
+                .filter(changedPositions::containsKey)
+                .map(tasksById::get)
+                .toList();
+        attachReminderMinutes(changedTasks);
+        log.info("Tasks reordered: userId={} selectedCount={} changedCount={}",
+                userId, taskIds.size(), changedPositions.size());
+        return changedTasks;
     }
 
     public void prependSeriesOccurrences(List<Task> newOccurrences, String userId) {

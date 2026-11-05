@@ -120,7 +120,9 @@ All user-scoped entities (Task, DayEntity, MeditationSession, TaskSession, Pomod
 - **Pomodoro audio**: `services/api/pomodoroSoundService.ts` stores uploaded MP3s in user-scoped IndexedDB and streams uncached audio progressively through Media Source Extensions where supported; keep preload behavior independent of playback startup.
 - **Projects**: `pages/ProjectsPage.tsx` and `components/projects/`; master/detail view with saved project colors/icons, task progress and due-date overview, inline quick-add, collapsible completed tasks, and project assignment in the task details panel
 - **Tasks page**: `pages/TaskPage.tsx` loads page-specific task DTOs from `/api/v1/tasks/page`; the DTO includes batched focus history, which the page snapshot and per-task stats caches keep warm for the details panel
+- **Task order**: Completing or reopening Home tasks changes status without persisting a new global order. Explicit reorder requests preserve the positions of unselected tasks and return only changed task rows; clients merge those rows into their cached snapshots.
 - **Home task details**: `pages/HomePage.tsx` warms `taskDetailsCache` for today's and older tasks; `FlatTaskRow` prepares subtasks and recurrence state before enabling the details panel, with detail cache misses limited to four concurrent loads
+- **Home task loading**: Home loads today's tasks and incomplete older tasks without waiting for `/api/v1/tasks/main`. The sidebar's task count uses the today-only endpoint. The Tasks page keeps its own paged snapshot, while pages that need the complete task set can load it separately.
 
 ### Services / Ports
 

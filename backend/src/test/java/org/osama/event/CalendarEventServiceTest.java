@@ -1,5 +1,7 @@
 package org.osama.event;
 
+import jakarta.persistence.EntityManager;
+import org.hibernate.SessionFactory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Execution;
@@ -36,6 +38,7 @@ class CalendarEventServiceTest {
     @Autowired private CalendarEventCancellationRepository cancellationRepository;
     @Autowired private ReminderRepository reminderRepository;
     @Autowired private UserRepository userRepository;
+    @Autowired private EntityManager entityManager;
 
     @BeforeEach
     void setUp() {
@@ -60,6 +63,42 @@ class CalendarEventServiceTest {
         assertEquals(1440, event.reminderMinutesBefore());
         assertEquals(start.minusSeconds(24 * 60 * 60), reminder.getDateTime());
         assertEquals(USER_ID, reminder.getUser().getId());
+    }
+
+    @Test
+    void listingEventsLoadsRemindersAndOccurrenceOverridesInBatches() {
+        Instant start = Instant.parse("2027-01-10T10:00:00Z");
+        CalendarEventResponse recurring = null;
+        for (int index = 0; index < 4; index++) {
+            CalendarEventRequest request = timedRequest(
+                    start.plusSeconds(index * 86_400L),
+                    start.plusSeconds(index * 86_400L + 3_600));
+            if (index == 0) request.setRecurrenceFrequency(RecurrenceFrequency.WEEKLY);
+            CalendarEventResponse created = eventService.createEvent(request, USER_ID);
+            if (index == 0) recurring = created;
+        }
+        CalendarEventOccurrenceRequest occurrence = new CalendarEventOccurrenceRequest();
+        occurrence.setOccurrenceKey("instant:2027-01-17T10:00:00Z");
+        eventService.cancelEventOccurrence(recurring.id(), occurrence, USER_ID);
+        entityManager.flush();
+        entityManager.clear();
+
+        SessionFactory sessionFactory = entityManager.getEntityManagerFactory().unwrap(SessionFactory.class);
+        var statistics = sessionFactory.getStatistics();
+        boolean statisticsWereEnabled = statistics.isStatisticsEnabled();
+        statistics.setStatisticsEnabled(true);
+        try {
+            statistics.clear();
+            var events = eventService.getEvents(USER_ID);
+
+            assertEquals(4, events.size());
+            assertEquals(1440, events.get(0).reminderMinutesBefore());
+            assertEquals(1, events.get(0).cancelledOccurrenceKeys().size());
+            assertTrue(statistics.getPrepareStatementCount() <= 4,
+                    "Listing events should use a bounded number of database queries");
+        } finally {
+            statistics.setStatisticsEnabled(statisticsWereEnabled);
+        }
     }
 
     @Test
