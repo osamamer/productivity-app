@@ -20,7 +20,6 @@ import {AppShell} from "./components/AppShell.tsx";
 import {
     loadHomePageModule,
     loadTaskPageModule,
-    preloadInactivePrimaryRoutes,
 } from './services/routePreload';
 
 const HomePage = lazy(() => loadHomePageModule().then(module => ({ default: module.HomePage })));
@@ -145,12 +144,6 @@ const appRouter = createBrowserRouter(routes);
 
 function App() {
     useAppContextMenuGuard();
-    useEffect(() => {
-        const timeoutId = window.setTimeout(() => {
-            preloadInactivePrimaryRoutes(window.location.pathname);
-        }, 800);
-        return () => window.clearTimeout(timeoutId);
-    }, []);
 
     return (
         <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>

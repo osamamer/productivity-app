@@ -34,11 +34,3 @@ export function preloadPrimaryRoute(path: string): void {
         preloadTaskPageData();
     }
 }
-
-export function preloadInactivePrimaryRoutes(currentPath: string): void {
-    if (currentPath !== '/') void loadHomePageModule();
-    if (currentPath !== '/tasks') {
-        void loadTaskPageModule();
-        preloadTaskPageData();
-    }
-}

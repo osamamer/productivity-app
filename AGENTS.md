@@ -211,3 +211,5 @@ Docker services are defined in `deployment/docker-compose.yml`. Environment vari
 ## Mistakes
 
 After a non-trivial mistake, Codex must ask the user: "Should I add a note to AGENTS.md to prevent this from happening again?"
+
+When diagnosing suspend or resume failures, inspect suspend entries across every boot involved in a test before deciding which sleep mode was tested. A reboot resets temporary `/sys/power/mem_sleep` changes, but a failed suspend may have occurred before that reboot.
