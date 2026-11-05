@@ -83,13 +83,28 @@ type MeditationDefinitions = {
     minutes: StatDefinition;
 };
 
+function cachedMeditationDefinitions(): MeditationDefinitions | null {
+    const definitions = statService.getCachedDefinitions();
+    const meditated = definitions && findSystemDefinition(definitions, MEDITATED_SYSTEM_KEY);
+    const minutes = definitions && findSystemDefinition(definitions, MEDITATION_MINUTES_SYSTEM_KEY);
+    return meditated && minutes ? { meditated, minutes } : null;
+}
+
+function cachedMeditationData(period: MeditationPeriod, definitions: MeditationDefinitions | null): MeditationStatsData | null {
+    if (!definitions) return null;
+    const meditatedSummary = statService.getCachedSummary(definitions.meditated.id, period.from, period.to);
+    const minutesSummary = statService.getCachedSummary(definitions.minutes.id, period.from, period.to);
+    const meditatedEntries = statService.getCachedEntries(definitions.meditated.id, period.from, period.to);
+    const minutesEntries = statService.getCachedEntries(definitions.minutes.id, period.from, period.to);
+    return meditatedSummary && minutesSummary && meditatedEntries && minutesEntries
+        ? { meditatedSummary, minutesSummary, meditatedEntries, minutesEntries, period }
+        : null;
+}
+
 export function MeditationStats({ refreshKey }: MeditationStatsProps) {
     const theme = useTheme();
-    const [data, setData] = useState<MeditationStatsData | null>(null);
-    const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
     const [monthOffset, setMonthOffset] = useState(0);
-    const [definitions, setDefinitions] = useState<MeditationDefinitions | null>(null);
     const period = useMemo<MeditationPeriod>(() => {
         const today = new Date();
         const from = addMonths(startOfMonth(today), monthOffset);
@@ -102,6 +117,9 @@ export function MeditationStats({ refreshKey }: MeditationStatsProps) {
             monthEnd,
         };
     }, [monthOffset]);
+    const [definitions, setDefinitions] = useState<MeditationDefinitions | null>(cachedMeditationDefinitions);
+    const [data, setData] = useState<MeditationStatsData | null>(() => cachedMeditationData(period, cachedMeditationDefinitions()));
+    const [loading, setLoading] = useState(() => cachedMeditationData(period, cachedMeditationDefinitions()) === null);
 
     useEffect(() => {
         let cancelled = false;

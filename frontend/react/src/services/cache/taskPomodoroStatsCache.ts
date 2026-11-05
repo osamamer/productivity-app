@@ -4,7 +4,7 @@ import { getAuthCacheScope } from '../utils/authHeaders';
 
 // Focus history changes less often than the task list, so keep it warm between task switches.
 // Mutations invalidate the relevant entry immediately.
-export const TASK_POMODORO_STATS_TTL_MS = 15 * 60 * 1000;
+export const TASK_POMODORO_STATS_TTL_MS = 24 * 60 * 60 * 1000;
 
 const taskPomodoroStatsResource = new CachedResource<TaskPomodoroStats>({
     ttlMs: TASK_POMODORO_STATS_TTL_MS,

@@ -19,8 +19,8 @@ const STAT_DEFINITIONS_TTL_MS = 24 * 60 * 60 * 1000;
 // Stat writes invalidate affected data explicitly, so current-period data can stay warm
 // for the session instead of refetching every minute while the user changes selection.
 const CURRENT_STAT_DATA_TTL_MS = 24 * 60 * 60 * 1000;
-const HISTORICAL_STAT_ENTRIES_TTL_MS = 30 * 60 * 1000;
-const DERIVED_STAT_DATA_TTL_MS = 5 * 60 * 1000;
+const HISTORICAL_STAT_ENTRIES_TTL_MS = 24 * 60 * 60 * 1000;
+const DERIVED_STAT_DATA_TTL_MS = 24 * 60 * 60 * 1000;
 const STAT_CACHE_MAX_ENTRIES = 100;
 
 const entryCache = new TtlCache<StatEntry[]>({ ttlMs: HISTORICAL_STAT_ENTRIES_TTL_MS, maxEntries: STAT_CACHE_MAX_ENTRIES });

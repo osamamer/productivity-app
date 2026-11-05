@@ -6,7 +6,7 @@ Use `src/providers/ThemeProvider.tsx` as the source of visual tokens, `src/servi
 
 Use `src/providers/PopupProvider.tsx` and `src/components/ui/AppPopup.tsx` for confirmations, errors, and reminder fallbacks; do not use React Native system alerts. Date and time fields should keep their selection UI inside the themed popup. Task priority controls use `src/lib/taskPriority.ts` for the web client’s Low/Medium/High colors and thresholds. Calendar task items stay neutral and show their assigned calendar color only on the left edge.
 
-`src/lib/taskDetailsCache.ts` owns the in-memory task details cache, including subtasks and recurrence. Prefetch task rows and visible calendar items with its four-request concurrency limit, update cached details through the API service, and clear the cache when the authenticated session ends.
+`src/lib/taskDetailsCache.ts` owns the one-day in-memory task details cache, including subtasks and recurrence. Prefetch task rows and visible calendar items with its four-request concurrency limit, update cached details through the API service, and clear the cache when the authenticated session ends.
 
 For mobile scheduling controls, use a `Custom` action that opens the themed date/time popup. Do not leave a `Someday` action that silently means “no date”; keep custom selection and cancellation behavior explicit.
 

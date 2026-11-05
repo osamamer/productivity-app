@@ -9,7 +9,7 @@ import type { TaskDeletionReceipt } from './taskService';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 const GROUP_URL = `${API_BASE_URL}/api/v1/task-groups`;
-const GROUPS_TTL_MS = 60 * 60 * 1000;
+const GROUPS_TTL_MS = 24 * 60 * 60 * 1000;
 const GROUP_SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const GROUP_SNAPSHOT_VERSION = 2;
 const groupsCache = new CachedResource<TaskGroup[]>({ ttlMs: GROUPS_TTL_MS, maxEntries: 4 });

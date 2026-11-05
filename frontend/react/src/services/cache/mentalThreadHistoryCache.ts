@@ -8,7 +8,7 @@ export interface CachedMentalThreadHistory {
     entries: MentalThreadLoadEntry[];
 }
 
-const LOAD_HISTORY_TTL_MS = 5 * 60 * 1000;
+const LOAD_HISTORY_TTL_MS = 24 * 60 * 60 * 1000;
 const LOAD_HISTORY_MAX_ENTRIES = 100;
 const loadHistoryCache = new TtlCache<CachedMentalThreadHistory>({
     ttlMs: LOAD_HISTORY_TTL_MS,

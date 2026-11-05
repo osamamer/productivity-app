@@ -180,8 +180,11 @@ interface MeditationTimerProps {
 export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
     const { user } = useUser();
     const settingsStorageKey = user?.id ?? 'anonymous';
-    const [session, setSession] = useState<MeditationSession | null>(null);
-    const [elapsed, setElapsed] = useState(0);
+    const [session, setSession] = useState<MeditationSession | null>(() => meditationService.getCachedActiveSession() ?? null);
+    const [elapsed, setElapsed] = useState(() => {
+        const cached = meditationService.getCachedActiveSession();
+        return cached ? elapsedSeconds(cached) : 0;
+    });
     const [moodBefore, setMoodBefore] = useState(5);
     const [moodAfter, setMoodAfter] = useState(5);
     const [recordedDuration, setRecordedDuration] = useState<'elapsed' | 'intended'>('elapsed');
@@ -189,7 +192,7 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
     const [numIntervalBells, setNumIntervalBells] = useState(DEFAULT_MEDITATION_SETTINGS.numIntervalBells);
     const [selectedSound, setSelectedSound] = useState<MeditationSoundId>(DEFAULT_MEDITATION_SETTINGS.selectedSound);
     const [soundMuted, setSoundMuted] = useState(false);
-    const [isLoading, setIsLoading] = useState(true);
+    const [isLoading, setIsLoading] = useState(() => meditationService.getCachedActiveSession() === undefined);
     const [actionLoading, setActionLoading] = useState(false);
     const [startPending, setStartPending] = useState(false);
     const [finishDialogOpen, setFinishDialogOpen] = useState(false);
@@ -251,7 +254,7 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
 
     useEffect(() => {
         let mounted = true;
-        meditationService.getActiveSession()
+        meditationService.getActiveSession(true)
             .then(activeSession => {
                 if (mounted) {
                     setSession(activeSession);
@@ -282,7 +285,7 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
             const observedMutationVersion = sessionMutationVersionRef.current;
             requestInFlight = true;
             try {
-                const canonicalSession = await meditationService.getActiveSession();
+                const canonicalSession = await meditationService.getActiveSession(true);
                 if (
                     !mounted
                     || sessionActionInFlightRef.current
@@ -328,7 +331,6 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
         const intervalId = window.setInterval(() => void syncWithBackend(), 15_000);
         window.addEventListener('focus', syncWithBackend);
         document.addEventListener('visibilitychange', handleVisibilityChange);
-        void syncWithBackend();
 
         return () => {
             mounted = false;

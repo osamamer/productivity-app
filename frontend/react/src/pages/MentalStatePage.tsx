@@ -1,5 +1,5 @@
 import { CompactPopover } from '../components/CompactPopover';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
     Alert, Box, Button, CircularProgress,
     DialogActions, DialogContent, DialogContentText, DialogTitle,
@@ -23,14 +23,15 @@ function isCurrentCheckIn(checkIn: MentalStateCheckIn | null, now: number): bool
 }
 
 export function MentalStatePage() {
-    const [history, setHistory] = useState<MentalStateCheckIn[]>([]);
+    const [history, setHistory] = useState<MentalStateCheckIn[]>(() => mentalStateService.getCachedHistory(40) ?? []);
     const [selected, setSelected] = useState<MentalStateCheckIn | null>(null);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(() => mentalStateService.getCachedHistory(40) === undefined);
     const [error, setError] = useState<string | null>(null);
     const [deleteTarget, setDeleteTarget] = useState<MentalStateCheckIn | null>(null);
     const [deleteAnchorPosition, setDeleteAnchorPosition] = useState<{ top: number; left: number } | null>(null);
     const [deleting, setDeleting] = useState(false);
     const [now, setNow] = useState(() => Date.now());
+    const historyMutationVersion = useRef(0);
 
     useEffect(() => {
         const interval = window.setInterval(() => setNow(Date.now()), 60_000);
@@ -39,9 +40,10 @@ export function MentalStatePage() {
 
     useEffect(() => {
         let cancelled = false;
+        const loadVersion = historyMutationVersion.current;
         mentalStateService.getHistory(40)
             .then(checkIns => {
-                if (cancelled) return;
+                if (cancelled || historyMutationVersion.current !== loadVersion) return;
                 setHistory(checkIns);
                 setSelected(null);
             })
@@ -56,6 +58,7 @@ export function MentalStatePage() {
     }, []);
 
     const handleSaved = (checkIn: MentalStateCheckIn) => {
+        historyMutationVersion.current += 1;
         setHistory(current => [checkIn, ...current]);
         setSelected(null);
         setError(null);
@@ -70,6 +73,7 @@ export function MentalStatePage() {
         setError(null);
         try {
             await mentalStateService.deleteCheckIn(target.id);
+            historyMutationVersion.current += 1;
             const remaining = history.filter(checkIn => checkIn.id !== target.id);
             setHistory(remaining);
             setSelected(current => current?.id === target.id ? null : current);

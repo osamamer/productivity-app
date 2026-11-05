@@ -68,17 +68,18 @@ function applyThreadToState(
 }
 
 export function useMentalThreadsWorkspace() {
-    const [threads, setThreads] = useState<MentalThread[]>([]);
-    const [summary, setSummary] = useState<MentalThreadSummary | null>(null);
-    const [loading, setLoading] = useState(true);
+    const [threads, setThreads] = useState<MentalThread[]>(() => mentalThreadService.getCachedThreads(true) ?? []);
+    const [summary, setSummary] = useState<MentalThreadSummary | null>(() => mentalThreadService.getCachedSummary() ?? null);
+    const [loading, setLoading] = useState(() => mentalThreadService.getCachedThreads(true) === undefined
+        || mentalThreadService.getCachedSummary() === undefined);
     const [error, setError] = useState<string | null>(null);
     const [operationError, setOperationError] = useState<string | null>(null);
-    const threadsRef = useRef<MentalThread[]>([]);
+    const threadsRef = useRef<MentalThread[]>(threads);
+    const summaryRef = useRef<MentalThreadSummary | null>(summary);
     const threadMutationVersionsRef = useRef(new Map<string, number>());
     const capacityMutationVersionRef = useRef(0);
 
     const reload = useCallback(async (signal?: AbortSignal) => {
-        setLoading(true);
         setError(null);
         try {
             const [loadedThreads, loadedSummary] = await Promise.all([
@@ -87,6 +88,7 @@ export function useMentalThreadsWorkspace() {
             ]);
             if (signal?.aborted) return;
             threadsRef.current = loadedThreads;
+            summaryRef.current = loadedSummary;
             setThreads(loadedThreads);
             setSummary(loadedSummary);
         } catch (loadError) {
@@ -149,9 +151,11 @@ export function useMentalThreadsWorkspace() {
         const optimisticThreads = applyThreadToState(threadsRef.current, threadId, optimisticThread);
         threadsRef.current = optimisticThreads;
         setThreads(optimisticThreads);
-        setSummary(currentSummary => currentSummary
-            ? updateSummaryForThread(currentSummary, previousThread, optimisticThread)
-            : currentSummary);
+        const optimisticSummary = summaryRef.current
+            ? updateSummaryForThread(summaryRef.current, previousThread, optimisticThread)
+            : null;
+        summaryRef.current = optimisticSummary;
+        setSummary(optimisticSummary);
 
         if (
             previousThread.currentMentalLoad !== optimisticThread.currentMentalLoad
@@ -167,11 +171,12 @@ export function useMentalThreadsWorkspace() {
             const nextThreads = applyThreadToState(threadsRef.current, threadId, updatedThread);
             threadsRef.current = nextThreads;
             setThreads(nextThreads);
-            setSummary(currentSummary => {
-                return currentSummary
-                    ? updateSummaryForThread(currentSummary, optimisticThread, updatedThread)
-                    : currentSummary;
-            });
+            const nextSummary = summaryRef.current
+                ? updateSummaryForThread(summaryRef.current, optimisticThread, updatedThread)
+                : null;
+            summaryRef.current = nextSummary;
+            setSummary(nextSummary);
+            mentalThreadService.cacheWorkspace(nextThreads, nextSummary);
             return updatedThread;
         } catch (operationFailure) {
             if (threadMutationVersionsRef.current.get(threadId) !== mutationVersion) return optimisticThread;
@@ -179,9 +184,11 @@ export function useMentalThreadsWorkspace() {
             const rolledBackThreads = applyThreadToState(threadsRef.current, threadId, previousThread);
             threadsRef.current = rolledBackThreads;
             setThreads(rolledBackThreads);
-            setSummary(currentSummary => currentSummary
-                ? updateSummaryForThread(currentSummary, optimisticThread, previousThread)
-                : currentSummary);
+            const rolledBackSummary = summaryRef.current
+                ? updateSummaryForThread(summaryRef.current, optimisticThread, previousThread)
+                : null;
+            summaryRef.current = rolledBackSummary;
+            setSummary(rolledBackSummary);
             setOperationError(operationFailure instanceof Error
                 ? operationFailure.message
                 : 'The mental thread could not be changed');
@@ -208,29 +215,36 @@ export function useMentalThreadsWorkspace() {
     }, [performAndReload]);
 
     const checkInCapacity = useCallback(async (capacity: number) => {
-        const previousCapacity = summary?.capacityToday ?? null;
+        const previousCapacity = summaryRef.current?.capacityToday ?? null;
         const mutationVersion = capacityMutationVersionRef.current + 1;
         capacityMutationVersionRef.current = mutationVersion;
         setOperationError(null);
-        setSummary(currentSummary => currentSummary
-            ? { ...currentSummary, capacityToday: capacity }
-            : currentSummary);
+        const optimisticSummary = summaryRef.current
+            ? { ...summaryRef.current, capacityToday: capacity }
+            : null;
+        summaryRef.current = optimisticSummary;
+        setSummary(optimisticSummary);
 
         try {
             await mentalThreadService.checkInCapacity(capacity);
+            if (capacityMutationVersionRef.current === mutationVersion && summaryRef.current) {
+                mentalThreadService.cacheSummary(summaryRef.current);
+            }
             return true;
         } catch (operationFailure) {
             if (capacityMutationVersionRef.current === mutationVersion) {
-                setSummary(currentSummary => currentSummary
-                    ? { ...currentSummary, capacityToday: previousCapacity }
-                    : currentSummary);
+                const rolledBackSummary = summaryRef.current
+                    ? { ...summaryRef.current, capacityToday: previousCapacity }
+                    : null;
+                summaryRef.current = rolledBackSummary;
+                setSummary(rolledBackSummary);
                 setOperationError(operationFailure instanceof Error
                     ? operationFailure.message
                     : 'The daily capacity could not be changed');
             }
             return false;
         }
-    }, [summary?.capacityToday]);
+    }, []);
 
     return {
         threads,

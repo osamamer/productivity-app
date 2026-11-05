@@ -1,6 +1,8 @@
 import axios from 'axios';
 import apiClient from '../utils/axiosConfig';
-import { getAuthCacheScope } from '../utils/authHeaders';
+import { getAuthCacheScope, getAuthHeaders } from '../utils/authHeaders';
+import { apiFetch } from '../utils/apiFetch';
+import { isDefinitiveRefreshFailure, redirectToSignIn, refreshAuthToken } from '../keycloak';
 import { CachedResource } from '../cache/ttlCache';
 import {
     applyUserPreferences,
@@ -41,7 +43,7 @@ export interface UserPreferences {
     meditationSound?: 'rain' | 'ocean' | 'forest' | 'bowls' | null;
 }
 
-const USER_PREFERENCES_TTL_MS = 5 * 60 * 1000;
+const USER_PREFERENCES_TTL_MS = 24 * 60 * 60 * 1000;
 const PREFERENCES_SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const preferencesCache = new CachedResource<UserPreferences>({ ttlMs: USER_PREFERENCES_TTL_MS, maxEntries: 4 });
 const preferenceUpdateQueues = new Map<string, Promise<unknown>>();
@@ -172,19 +174,32 @@ export const userService = {
 
         return preferencesCache.get(cacheKey, async () => {
             const requestMutationVersion = preferenceMutationVersion;
-            const response = await apiClient.get<UserPreferences>('/api/v1/users/me/preferences');
+            try {
+                await refreshAuthToken(30);
+            } catch (error) {
+                if (isDefinitiveRefreshFailure(error)) {
+                    redirectToSignIn();
+                    throw error;
+                }
+                console.warn('Could not refresh the preference request session; using the current token:', error);
+            }
+            const response = await apiFetch(`${API_BASE_URL}/users/me/preferences`, {
+                headers: getAuthHeaders(),
+            });
+            if (!response.ok) throw new Error('Failed to load account preferences');
+            const preferences = await response.json() as UserPreferences;
             const scope = getAuthCacheScope();
             if (requestMutationVersion !== preferenceMutationVersion) {
-                return preferencesCache.getCached(cacheKey) ?? response.data;
+                return preferencesCache.getCached(cacheKey) ?? preferences;
             }
-            applyUserPreferences(scope, response.data);
-            persistPreferencesSnapshot(response.data);
+            applyUserPreferences(scope, preferences);
+            persistPreferencesSnapshot(preferences);
 
             const legacyUpdates = readLegacyUserPreferenceUpdates();
             const updatesToMigrate = Object.fromEntries(
-                Object.entries(legacyUpdates).filter(([key]) => response.data[key as keyof UserPreferences] == null),
+                Object.entries(legacyUpdates).filter(([key]) => preferences[key as keyof UserPreferences] == null),
             ) as Partial<UserPreferences>;
-            if (Object.keys(updatesToMigrate).length === 0) return response.data;
+            if (Object.keys(updatesToMigrate).length === 0) return preferences;
 
             try {
                 const migrated = await this.updatePreferences(updatesToMigrate);
@@ -192,8 +207,8 @@ export const userService = {
                 return migrated;
             } catch (error) {
                 console.warn('Could not migrate device preferences to the user account:', error);
-                applyUserPreferences(scope, { ...response.data, ...updatesToMigrate });
-                return response.data;
+                applyUserPreferences(scope, { ...preferences, ...updatesToMigrate });
+                return preferences;
             }
         });
     },

@@ -377,6 +377,16 @@ export function SideNav() {
 
     useEffect(() => sideNavSnapshotCache.subscribe(setTodaySnapshot), []);
 
+    useEffect(() => {
+        const refreshOnFocus = () => {
+            void sideNavSnapshotCache.refresh().catch(error => {
+                console.error('Failed to refresh the drawer summary:', error);
+            });
+        };
+        window.addEventListener('focus', refreshOnFocus);
+        return () => window.removeEventListener('focus', refreshOnFocus);
+    }, []);
+
     const closeDrawer = useCallback(() => {
         setOpen(false);
     }, []);

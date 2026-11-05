@@ -17,7 +17,7 @@ import { PomodoroStatus } from '../types/PomodoroStatus';
 
 const WS_URL = import.meta.env.VITE_WS_URL
     || `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`;
-const ACTIVE_POMODORO_CACHE_TTL_MS = 30_000;
+const ACTIVE_POMODORO_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const ACTIVE_POMODORO_REFRESH_MS = 15_000;
 const ACTIVE_POMODORO_STORAGE_PREFIX = 'claritard:active-pomodoro:';
 
@@ -263,7 +263,7 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
                 });
         };
 
-        refresh(false);
+        refresh(true);
         const intervalId = window.setInterval(() => refresh(true), ACTIVE_POMODORO_REFRESH_MS);
         const handleFocus = () => refresh(true);
         const handleVisibilityChange = () => {

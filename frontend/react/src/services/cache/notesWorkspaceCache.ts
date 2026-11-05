@@ -6,7 +6,7 @@ export interface NotesWorkspaceSnapshot {
     categories: NoteCategory[];
 }
 
-const cache = new TtlCache<NotesWorkspaceSnapshot>({ ttlMs: 5 * 60_000, maxEntries: 4 });
+const cache = new TtlCache<NotesWorkspaceSnapshot>({ ttlMs: 24 * 60 * 60 * 1000, maxEntries: 4 });
 
 export const notesWorkspaceCache = {
     get(userId: string): NotesWorkspaceSnapshot | undefined {

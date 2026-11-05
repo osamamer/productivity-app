@@ -31,7 +31,7 @@ const SESSION_URL = `${API_BASE_URL}/api/v1/session`;
 const POMODORO_URL = `${API_BASE_URL}/api/v1/pomodoro`;
 // Task data changes through this service and is explicitly invalidated after
 // mutations, so it can stay warm for the lifetime of a normal work session.
-const TASK_CACHE_TTL_MS = 60 * 60 * 1000;
+const TASK_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const TASK_SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 export const TASK_PAGE_BATCH_SIZE = 30;
 
@@ -292,6 +292,7 @@ function invalidateTaskPageCache(): void {
 
 function invalidatePomodoroData(taskId: string): void {
     invalidateTaskPomodoroStats(taskId);
+    invalidateResource('stats', 'task');
     invalidateResource('tasks');
 }
 

@@ -6,7 +6,7 @@ export interface TaskDetailsCacheEntry {
   taskSeries: TaskSeries | null;
 }
 
-const TASK_DETAILS_TTL_MS = 60 * 60 * 1000;
+const TASK_DETAILS_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_TASK_DETAILS_ENTRIES = 500;
 const MAX_CONCURRENT_DETAIL_LOADS = 4;
 

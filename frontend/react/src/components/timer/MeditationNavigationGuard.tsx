@@ -35,7 +35,7 @@ export function MeditationNavigationGuard({
 
         let cancelled = false;
         setIsCheckingSession(true);
-        void meditationService.getActiveSession()
+        void meditationService.getActiveSession(true)
             .then(activeSession => {
                 const currentBlocker = blockerRef.current;
                 if (cancelled || currentBlocker.state !== 'blocked' || activeSession) return;
@@ -84,13 +84,13 @@ export function MeditationNavigationGuard({
         setIsEnding(true);
         onError('');
         try {
-            const activeSession = await meditationService.getActiveSession();
+            const activeSession = await meditationService.getActiveSession(true);
             if (activeSession) await meditationService.endSession(activeSession.id);
             onSessionEnded();
             blocker.proceed();
         } catch (error) {
             try {
-                const activeSession = await meditationService.getActiveSession();
+                const activeSession = await meditationService.getActiveSession(true);
                 if (!activeSession) {
                     onSessionEnded();
                     blocker.proceed();

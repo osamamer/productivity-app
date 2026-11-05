@@ -11,8 +11,8 @@ import { CachedResource } from '../cache/ttlCache.ts';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 const MENTAL_THREADS_URL = `${API_BASE_URL}/api/v1/mental-threads`;
-const MENTAL_THREADS_TTL_MS = 30 * 1000;
-const MENTAL_SUMMARY_TTL_MS = 30 * 1000;
+const MENTAL_THREADS_TTL_MS = 24 * 60 * 60 * 1000;
+const MENTAL_SUMMARY_TTL_MS = 24 * 60 * 60 * 1000;
 const threadsCache = new CachedResource<MentalThread[]>({ ttlMs: MENTAL_THREADS_TTL_MS, maxEntries: 4 });
 const summaryCache = new CachedResource<MentalThreadSummary>({ ttlMs: MENTAL_SUMMARY_TTL_MS, maxEntries: 4 });
 
@@ -21,7 +21,9 @@ function threadsCacheKey(includeClosed: boolean): string {
 }
 
 function summaryCacheKey(): string {
-    return `${getAuthCacheScope()}:summary`;
+    const today = new Date();
+    const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    return `${getAuthCacheScope()}:summary:${date}`;
 }
 
 function invalidateReadCaches(): void {
@@ -45,6 +47,23 @@ async function responseJson<T>(response: Response, fallbackMessage: string): Pro
 }
 
 export const mentalThreadService = {
+    getCachedThreads(includeClosed = false): MentalThread[] | undefined {
+        return threadsCache.getStale(threadsCacheKey(includeClosed));
+    },
+
+    getCachedSummary(): MentalThreadSummary | undefined {
+        return summaryCache.getStale(summaryCacheKey());
+    },
+
+    cacheWorkspace(threads: MentalThread[], summary: MentalThreadSummary | null): void {
+        threadsCache.set(threadsCacheKey(true), threads);
+        if (summary) summaryCache.set(summaryCacheKey(), summary);
+    },
+
+    cacheSummary(summary: MentalThreadSummary): void {
+        summaryCache.set(summaryCacheKey(), summary);
+    },
+
     // Cached reads must outlive an individual component mount so Strict Mode cleanup cannot abort the shared request.
     async getThreads(includeClosed = false): Promise<MentalThread[]> {
         return threadsCache.get(threadsCacheKey(includeClosed), async () => {
@@ -82,7 +101,6 @@ export const mentalThreadService = {
             body: JSON.stringify(input),
         });
         const result = await responseJson<MentalThread>(response, 'Failed to update the mental thread');
-        invalidateReadCaches();
         return result;
     },
 
@@ -131,7 +149,6 @@ export const mentalThreadService = {
             body: JSON.stringify({ capacity }),
         });
         if (!response.ok) throw new Error('Failed to save today\'s capacity');
-        summaryCache.invalidate(summaryCacheKey());
     },
 
     clearCache(): void {

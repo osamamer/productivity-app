@@ -8,7 +8,7 @@ import { subscribeToResourceInvalidation } from '../cache/resourceInvalidation';
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 const PROJECTS_URL = `${API_BASE_URL}/api/v1/projects`;
 const TASKS_URL = `${API_BASE_URL}/api/v1/tasks`;
-const PROJECTS_TTL_MS = 60 * 60 * 1000;
+const PROJECTS_TTL_MS = 24 * 60 * 60 * 1000;
 const PROJECT_SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const projectsCache = new CachedResource<Project[]>({ ttlMs: PROJECTS_TTL_MS, maxEntries: 4 });
 

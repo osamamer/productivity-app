@@ -7,6 +7,7 @@ import { useEffect } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { PageWrapper } from '../components/PageWrapper';
 import { getLastMentalDestination, rememberMentalDestination } from '../services/utils/mentalNavigation';
+import { warmMentalData } from '../services/bootstrap/mentalDataPrefetch';
 
 const mentalDestinations = [
     {
@@ -42,6 +43,7 @@ export function MentalPage() {
         : null;
 
     useEffect(() => {
+        warmMentalData();
         if (redirectDestination === null) {
             rememberMentalDestination('/mental');
         }

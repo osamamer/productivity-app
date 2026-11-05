@@ -4,7 +4,7 @@ import { getAuthCacheScope } from '../utils/authHeaders';
 
 // Subtasks are small, user-scoped collections. Keep them warm for the work
 // session; task mutations invalidate the affected detail record immediately.
-export const TASK_SUBTASKS_TTL_MS = 60 * 60 * 1000;
+export const TASK_SUBTASKS_TTL_MS = 24 * 60 * 60 * 1000;
 
 const taskSubtasksResource = new CachedResource<Task[]>({
     ttlMs: TASK_SUBTASKS_TTL_MS,

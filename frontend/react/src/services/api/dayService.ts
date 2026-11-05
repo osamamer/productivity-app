@@ -7,11 +7,13 @@ import { CachedResource } from '../cache/ttlCache';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 const DAY_URL = `${API_BASE_URL}/api/v1/day`;
-const TODAY_TTL_MS = 60 * 1000;
+const TODAY_TTL_MS = 24 * 60 * 60 * 1000;
 const todayCache = new CachedResource<DayEntity>({ ttlMs: TODAY_TTL_MS, maxEntries: 4 });
 
 function todayCacheKey(): string {
-    return `${getAuthCacheScope()}:today`;
+    const today = new Date();
+    const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    return `${getAuthCacheScope()}:today:${date}`;
 }
 
 export const dayService = {
@@ -59,6 +61,7 @@ export const dayService = {
         if (!response.ok) {
             throw new Error('Failed to clear applied day template');
         }
+        todayCache.invalidate(todayCacheKey());
     },
 
     async setTodayInfo(rating: number, plan: string, summary: string): Promise<void> {

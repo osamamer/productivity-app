@@ -67,7 +67,7 @@ export const POMODORO_NUM_FOCUSES_MAX = 10;
 export const POMODORO_LONG_BREAK_COOLDOWN_MIN = 1;
 export const POMODORO_LONG_BREAK_COOLDOWN_MAX = 5;
 
-const POMODORO_CONFIG_TTL_MS = 5 * 60 * 1000;
+const POMODORO_CONFIG_TTL_MS = 24 * 60 * 60 * 1000;
 const pomodoroConfigCache = new TtlCache<PomodoroConfig>({ ttlMs: POMODORO_CONFIG_TTL_MS, maxEntries: 4 });
 const pomodoroConfigRequests = new Map<string, Promise<PomodoroConfig>>();
 let pendingFormPreferenceUpdate: Partial<{

@@ -142,6 +142,7 @@ export function CalendarPage() {
     const [statDefinitions, setStatDefinitions] = useState<StatDefinition[]>(() => statService.getCachedDefinitions() ?? []);
     const [events, setEvents] = useState<CalendarEvent[]>(() => eventService.getLastKnownEvents() ?? []);
     const [eventsReady, setEventsReady] = useState(() => eventService.getLastKnownEvents() !== undefined);
+    const eventSnapshotAvailable = useRef(eventService.getLastKnownEvents() !== undefined);
     const [groups, setGroups] = useState<TaskGroup[]>(() => taskGroupService.getCachedGroups() ?? []);
     const [dayTemplates, setDayTemplates] = useState<DayTemplate[]>([]);
     const [calendars, setCalendars] = useState<Calendar[]>(() => calendarService.getCachedCalendars() ?? []);
@@ -166,12 +167,21 @@ export function CalendarPage() {
             })
             .finally(() => { if (!cancelled) setCalendarsReady(true); });
         eventService.getEvents()
-            .then(calendarEvents => { if (!cancelled) setEvents(calendarEvents); })
+            .then(calendarEvents => {
+                if (!cancelled) {
+                    eventSnapshotAvailable.current = true;
+                    setEvents(calendarEvents);
+                }
+            })
             .catch(error => console.error('Failed to load calendar events:', error))
             .finally(() => { if (!cancelled) setEventsReady(true); });
 
         return () => { cancelled = true; };
     }, []);
+
+    useEffect(() => {
+        if (eventsReady && eventSnapshotAvailable.current) eventService.cacheEvents(events);
+    }, [events, eventsReady]);
 
     useEffect(() => {
         if (!calendarCoreReady) return;
@@ -202,7 +212,7 @@ export function CalendarPage() {
             lastRefresh = Date.now();
             try {
                 const [nextEvents, nextSources] = await Promise.all([
-                    eventService.getEvents(), calendarSourceService.list(),
+                    eventService.getEvents(true), calendarSourceService.list(),
                 ]);
                 if (!active) return;
                 setEvents(current => current.length === nextEvents.length
@@ -258,7 +268,7 @@ export function CalendarPage() {
 
     const refreshImportedCalendar = async () => {
         const [nextCalendars, nextSources, nextEvents] = await Promise.all([
-            calendarService.getCalendars(), calendarSourceService.list(), eventService.getEvents(),
+            calendarService.getCalendars(), calendarSourceService.list(), eventService.getEvents(true),
         ]);
         setCalendars(nextCalendars);
         setCalendarSources(nextSources);
@@ -428,7 +438,7 @@ export function CalendarPage() {
             console.error('Failed to undo day template application:', error);
             try {
                 const [currentEvents] = await Promise.all([
-                    eventService.getEvents(),
+                    eventService.getEvents(true),
                     fetchAllTasks(true),
                 ]);
                 setEvents(currentEvents);
