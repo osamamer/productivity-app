@@ -1144,6 +1144,8 @@ function reorderTaskIdsForCompletion(
     tasks: Task[],
     completionGroupTaskIdsByTaskId: Map<string, string[]>,
 ): string[] {
+    const preserveUnchangedOrder = (nextTaskIds: string[]) =>
+        nextTaskIds.every((id, index) => id === taskIds[index]) ? taskIds : nextTaskIds;
     const insertAtCompletionBoundary = (remainingTaskIds: string[], movedTaskIds: string[]) => {
         const taskById = new Map(tasks.map(candidate => [candidate.taskId, candidate]));
         const openTaskIds = remainingTaskIds.filter(id => !taskById.get(id)?.completed);
@@ -1153,14 +1155,14 @@ function reorderTaskIdsForCompletion(
     const renderedGroupTaskIds = completionGroupTaskIdsByTaskId.get(taskId);
     if (!renderedGroupTaskIds) {
         const remainingTaskIds = taskIds.filter(id => id !== taskId);
-        return insertAtCompletionBoundary(remainingTaskIds, [taskId]);
+        return preserveUnchangedOrder(insertAtCompletionBoundary(remainingTaskIds, [taskId]));
     }
 
     const taskIdSet = new Set(taskIds);
     const groupTaskIdsInCurrentOrder = renderedGroupTaskIds.filter(groupTaskId => taskIdSet.has(groupTaskId));
     if (groupTaskIdsInCurrentOrder.length < 2) {
         const remainingTaskIds = taskIds.filter(id => id !== taskId);
-        return insertAtCompletionBoundary(remainingTaskIds, [taskId]);
+        return preserveUnchangedOrder(insertAtCompletionBoundary(remainingTaskIds, [taskId]));
     }
 
     const tasksById = new Map(tasks.map(task => [task.taskId, task]));
@@ -1182,7 +1184,7 @@ function reorderTaskIdsForCompletion(
 
     const remainingTaskIds = taskIds.filter(id => !groupTaskIds.has(id));
     const nextTaskIds = insertAtCompletionBoundary(remainingTaskIds, groupIdsInOrder);
-    return nextTaskIds.every((id, index) => id === taskIds[index]) ? taskIds : nextTaskIds;
+    return preserveUnchangedOrder(nextTaskIds);
 }
 
 function reorderTaskIdsForCompletionChanges(
@@ -2158,13 +2160,11 @@ export function HomePage() {
                         }]);
                     }
                 }
-                if (nextTaskOrder && nextTaskOrder !== previousTaskOrder && updatedTask.completed !== wasCompleted
-                    && orderRevision === manualTaskOrderRevisionRef.current) {
-                    await saveTaskOrder(nextTaskOrder, orderRevision);
-                }
-                if (!wasCompleted && updatedTask.completed) {
+                if (!wasCompleted && updatedTask.completed
+                    && completionRequestIdRef.current.get(taskId) === requestId) {
                     showUndoFeedback('Task completed', async () => {
                         try {
+                            await taskOrderMutationRef.current;
                             const restoreOrderRevision = manualTaskOrderRevisionRef.current;
                             const currentOrder = allTasksRef.current.map(item => item.taskId);
                             const restoredOrder = reorderTaskIdsForCompletion(
@@ -2207,6 +2207,10 @@ export function HomePage() {
                             await refreshTaskBuckets(true);
                         }
                     });
+                }
+                if (nextTaskOrder && nextTaskOrder !== previousTaskOrder && updatedTask.completed !== wasCompleted
+                    && orderRevision === manualTaskOrderRevisionRef.current) {
+                    await saveTaskOrder(nextTaskOrder, orderRevision);
                 }
             } catch (error) {
                 console.error('Error toggling task:', error);
