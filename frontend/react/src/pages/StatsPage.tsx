@@ -267,7 +267,6 @@ export function StatsPage() {
     const [secretPassword, setSecretPassword] = useState('');
     const [secretPasswordError, setSecretPasswordError] = useState<string | null>(null);
     const [secretPasswordSaving, setSecretPasswordSaving] = useState(false);
-    const [secretStatsRevision, setSecretStatsRevision] = useState(0);
     const selectionAnchorRef = useRef<string | null>(null);
     const selectionActionsRef = useRef<HTMLDivElement | null>(null);
     const pendingStatCreationsRef = useRef(new Map<string, PendingStatCreation>());
@@ -319,9 +318,12 @@ export function StatsPage() {
         writeOpenStatGroupIds(groupPreferencesKey, openGroupIds);
     }, [groupPreferencesKey, loadedGroupPreferencesKey, openGroupIds]);
 
-    const loadDefinitions = useCallback(() => {
+    const loadDefinitions = useCallback((preserveExisting = false) => {
         return statService.getDefinitions()
             .then(defs => {
+                const existingDefinitionsById = new Map(
+                    definitionsRef.current.map(definition => [definition.id, definition]),
+                );
                 const pendingDefinitionIds = new Set([
                     ...Array.from(pendingStatCreationsRef.current.values()).map(pending => pending.tempId),
                     ...Array.from(pendingDefinitionMutationsRef.current.values())
@@ -335,7 +337,7 @@ export function StatsPage() {
                 const mergedDefinitions = [
                     ...defs.map(definition => optimisticDefinitions.find(
                         optimistic => optimistic.id === definition.id,
-                    ) ?? definition),
+                    ) ?? (preserveExisting ? existingDefinitionsById.get(definition.id) : undefined) ?? definition),
                     ...optimisticDefinitions.filter(definition => !serverDefinitionIds.has(definition.id)),
                 ];
                 definitionsRef.current = mergedDefinitions;
@@ -382,11 +384,10 @@ export function StatsPage() {
     }, [loadDefinitions, loadGroups]);
 
     useEffect(() => subscribeToResourceInvalidation('stats', origin => {
-        setResourceRefreshKey(previous => previous + 1);
+        if (origin !== 'secret-access') setResourceRefreshKey(previous => previous + 1);
         if (origin === 'secret-access') {
             const hasAccess = statService.hasSecretStatsAccess();
             setSecretStatsEnabled(hasAccess);
-            setSecretStatsRevision(previous => previous + 1);
             setSecretPromptAnchor(null);
             setSecretPassword('');
             setSecretPasswordError(null);
@@ -403,7 +404,7 @@ export function StatsPage() {
                 ));
             }
         }
-        void loadDefinitions();
+        void loadDefinitions(origin === 'secret-access');
     }), [loadDefinitions, loadGroups]);
 
     useEffect(() => () => {
@@ -648,7 +649,6 @@ export function StatsPage() {
                     ? visibleDefinitions.find(item => !isDedicatedStat(item))?.id ?? null
                     : previous);
                 setSelectedStatIds(previous => previous.filter(id => id !== updated.id));
-                setSecretStatsRevision(previous => previous + 1);
             }
         } catch {
             showErrorSnackbar('Could not update statistic privacy.');
@@ -1681,7 +1681,7 @@ export function StatsPage() {
 
     return (
         <PageWrapper>
-            <Box key={secretStatsRevision} sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%' }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%' }}>
 
                 {/* Header */}
                 <Stack

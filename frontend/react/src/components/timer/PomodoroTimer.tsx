@@ -565,48 +565,58 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
                             <TimerIcon sx={{ fontSize: 48, color: 'primary.main' }} />
                         </Box>
 
-                        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
-                            <PomodoroNumberField
-                                name="focusDuration"
-                                label={`Focus (${durationUnitLabel})`}
-                                value={formData.focusDuration}
-                                onChange={value => updatePomodoroForm({ focusDuration: value })}
-                                max={durationLimits.focusDuration}
-                            />
-                            <PomodoroNumberField
-                                name="shortBreakDuration"
-                                label={`Short Break (${durationUnitLabel})`}
-                                value={formData.shortBreakDuration}
-                                onChange={value => updatePomodoroForm({ shortBreakDuration: value })}
-                                max={durationLimits.shortBreakDuration}
-                            />
-                            <PomodoroNumberField
-                                name="longBreakDuration"
-                                label={`Long Break (${durationUnitLabel})`}
-                                value={formData.longBreakDuration}
-                                onChange={value => updatePomodoroForm({ longBreakDuration: value })}
-                                max={durationLimits.longBreakDuration}
-                            />
-                            <PomodoroNumberField
-                                name="numFocuses"
-                                label="Focus Sessions"
-                                value={formData.numFocuses}
-                                onChange={value => updatePomodoroForm({ numFocuses: value })}
-                                min={1}
-                                max={10}
-                            />
-                        </Box>
-
-                        <Button
-                            variant="contained"
-                            color="primary"
-                            onClick={startPomodoro}
-                            disabled={!canStartPomodoro}
-                            fullWidth
-                            startIcon={<PlayArrowIcon />}
+                        <Box
+                            component="form"
+                            noValidate
+                            onSubmit={event => {
+                                event.preventDefault();
+                                startPomodoro();
+                            }}
+                            sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}
                         >
-                            Start Session
-                        </Button>
+                            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+                                <PomodoroNumberField
+                                    name="focusDuration"
+                                    label={`Focus (${durationUnitLabel})`}
+                                    value={formData.focusDuration}
+                                    onChange={value => updatePomodoroForm({ focusDuration: value })}
+                                    max={durationLimits.focusDuration}
+                                />
+                                <PomodoroNumberField
+                                    name="shortBreakDuration"
+                                    label={`Short Break (${durationUnitLabel})`}
+                                    value={formData.shortBreakDuration}
+                                    onChange={value => updatePomodoroForm({ shortBreakDuration: value })}
+                                    max={durationLimits.shortBreakDuration}
+                                />
+                                <PomodoroNumberField
+                                    name="longBreakDuration"
+                                    label={`Long Break (${durationUnitLabel})`}
+                                    value={formData.longBreakDuration}
+                                    onChange={value => updatePomodoroForm({ longBreakDuration: value })}
+                                    max={durationLimits.longBreakDuration}
+                                />
+                                <PomodoroNumberField
+                                    name="numFocuses"
+                                    label="Focus Sessions"
+                                    value={formData.numFocuses}
+                                    onChange={value => updatePomodoroForm({ numFocuses: value })}
+                                    min={1}
+                                    max={10}
+                                />
+                            </Box>
+
+                            <Button
+                                type="submit"
+                                variant="contained"
+                                color="primary"
+                                disabled={!canStartPomodoro}
+                                fullWidth
+                                startIcon={<PlayArrowIcon />}
+                            >
+                                Start Session
+                            </Button>
+                        </Box>
                     </>
                 ) : (
                     <>

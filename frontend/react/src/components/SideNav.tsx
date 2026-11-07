@@ -6,7 +6,7 @@ import {
     useMediaQuery, useTheme,
 } from '@mui/material';
 import { type Theme } from '@mui/material/styles';
-import { useCallback, useEffect, useState, type MouseEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import type { SvgIconComponent } from '@mui/icons-material';
 import DashboardRoundedIcon from '@mui/icons-material/DashboardRounded';
@@ -29,6 +29,7 @@ import { useAppTheme } from '../hooks/useAppTheme';
 import { useUser } from '../hooks/useUser';
 import { usePomodoro } from '../hooks/usePomodoro';
 import { sideNavSnapshotCache, type TodaySnapshot } from '../services/cache/sideNavSnapshotCache';
+import { mentalStateService } from '../services/api/mentalStateService';
 
 const COLLAPSED_WIDTH = 60;
 const EXPANDED_WIDTH = 260;
@@ -344,6 +345,7 @@ export function SideNav() {
     const [todaySnapshot, setTodaySnapshot] = useState<TodaySnapshot | null>(
         () => sideNavSnapshotCache.getCached() ?? null,
     );
+    const previousOpenRef = useRef(open);
 
     useEffect(() => {
         try {
@@ -376,6 +378,23 @@ export function SideNav() {
     }, []);
 
     useEffect(() => sideNavSnapshotCache.subscribe(setTodaySnapshot), []);
+
+    useEffect(() => {
+        const wasOpen = previousOpenRef.current;
+        previousOpenRef.current = open;
+        if (!open || wasOpen) return;
+
+        const snapshot = sideNavSnapshotCache.getCached();
+        const hasMissingData = !snapshot
+            || snapshot.openTaskCount === null
+            || snapshot.focusSeconds === null
+            || !mentalStateService.getCachedHistory(40);
+        if (!hasMissingData) return;
+
+        void sideNavSnapshotCache.refresh(true)
+            .then(setTodaySnapshot)
+            .catch(error => console.error('Failed to refresh the drawer summary after expanding:', error));
+    }, [open]);
 
     useEffect(() => {
         const refreshOnFocus = () => {

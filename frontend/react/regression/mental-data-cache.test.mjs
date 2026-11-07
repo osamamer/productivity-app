@@ -5,6 +5,7 @@ import { createServer } from 'vite';
 let viteServer;
 let mentalStateService;
 let meditationService;
+let subscribeToResourceInvalidation;
 const originalFetch = globalThis.fetch;
 
 before(async () => {
@@ -17,6 +18,7 @@ before(async () => {
   });
   ({ mentalStateService } = await viteServer.ssrLoadModule('/src/services/api/mentalStateService.ts'));
   ({ meditationService } = await viteServer.ssrLoadModule('/src/services/api/meditationService.ts'));
+  ({ subscribeToResourceInvalidation } = await viteServer.ssrLoadModule('/src/services/cache/resourceInvalidation.ts'));
 });
 
 after(async () => {
@@ -81,4 +83,19 @@ test('meditation session changes update the cache and a live check can replace i
   assert.equal(await meditationService.getActiveSession(true), null);
   assert.equal(await meditationService.getActiveSession(), null);
   assert.equal(activeReads, 2);
+});
+
+test('ending meditation invalidates task views that reflect the completed session', async () => {
+  let taskInvalidationOrigin;
+  const unsubscribe = subscribeToResourceInvalidation('tasks', origin => {
+    taskInvalidationOrigin = origin;
+  });
+  globalThis.fetch = async () => Response.json({ id: 'session-2', active: false });
+
+  try {
+    await meditationService.endSession('session-2');
+    assert.equal(taskInvalidationOrigin, 'task');
+  } finally {
+    unsubscribe();
+  }
 });

@@ -37,9 +37,10 @@ function isFreshMentalState(recordedAt: string, now = Date.now()): boolean {
 }
 
 async function loadSnapshot(): Promise<TodaySnapshot> {
-    const [tasksResult, pomodoroResult] = await Promise.allSettled([
+    const [tasksResult, pomodoroResult, mentalStateResult] = await Promise.allSettled([
         taskService.getTodayTasks(),
         taskService.getTodayFocusSummary(getLocalDateKey()),
+        mentalStateService.getHistory(40),
     ]);
 
     if (tasksResult.status === 'rejected') {
@@ -47,6 +48,9 @@ async function loadSnapshot(): Promise<TodaySnapshot> {
     }
     if (pomodoroResult.status === 'rejected') {
         console.error('Failed to load the drawer focus summary:', pomodoroResult.reason);
+    }
+    if (mentalStateResult.status === 'rejected') {
+        console.error('Failed to load the drawer mental state:', mentalStateResult.reason);
     }
 
     const today = new Date();
@@ -61,7 +65,9 @@ async function loadSnapshot(): Promise<TodaySnapshot> {
         })
         : null;
     const focusSummary = pomodoroResult.status === 'fulfilled' ? pomodoroResult.value : null;
-    const latestMentalCheckIn = mentalStateService.getCachedHistory(40)?.[0];
+    const latestMentalCheckIn = (mentalStateResult.status === 'fulfilled'
+        ? mentalStateResult.value
+        : mentalStateService.getCachedHistory(40))?.[0];
 
     return {
         openTaskCount: tasks?.filter(task => !task.completed && !task.skipped).length ?? null,

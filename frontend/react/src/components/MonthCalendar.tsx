@@ -4,6 +4,7 @@ import {
     DialogContentText, DialogTitle, Divider, FormControlLabel, FormGroup, List, ListItem,
     ListItemButton, ListItemText, Popover, Snackbar, IconButton, Fade, Skeleton, Stack,
     Switch, Tabs, Tab, InputBase, TextField, ToggleButton, ToggleButtonGroup, Typography, Menu,
+    LinearProgress,
     MenuItem, ListItemIcon,
 } from "@mui/material";
 import dayGridPlugin from "@fullcalendar/daygrid";
@@ -100,6 +101,7 @@ type MonthCalenderProps = {
     onUndoDayTemplate: (application: DayTemplateApplication) => Promise<void>,
     statDefinitions?: StatDefinition[],
     loading?: boolean,
+    isLoading?: boolean,
     onRefreshTasks?: () => Promise<void>,
     onOpenDay?: (date: string) => void,
 }
@@ -476,7 +478,7 @@ export function MonthCalendar({
     onMoveEventOccurrence,
     onCancelEventOccurrence, onRestoreEventOccurrence, onUpdateEventOccurrenceStatus, onDeleteEventOccurrence, onDeleteEventFutureOccurrences,
     dayTemplates, onCreateDayTemplate, onUpdateDayTemplate, onDeleteDayTemplate, onApplyDayTemplate, onUndoDayTemplate,
-    statDefinitions, loading = false, onRefreshTasks, onOpenDay,
+    statDefinitions, loading = false, isLoading = false, onRefreshTasks, onOpenDay,
 }: MonthCalenderProps) {
     const theme = useTheme();
     const calendarEventFillStyles = useMemo(() => {
@@ -2262,6 +2264,9 @@ export function MonthCalendar({
                         minHeight: 0,
                     }}
                 >
+                    {isLoading && (
+                        <LinearProgress aria-label="Loading calendar information" />
+                    )}
                     {loading ? (
                         <CalendarLoadingState />
                     ) : (
