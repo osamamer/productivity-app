@@ -1,4 +1,4 @@
-import type { TaskRecurrenceDraft } from './TaskRecurrence';
+import type { TaskRecurrenceDraft, TaskRecurrenceFrequency } from './TaskRecurrence';
 import type { TaskPomodoroStats } from './TaskPomodoroStats';
 
 export interface Task   {
@@ -19,6 +19,7 @@ export interface Task   {
     mentalThreadId: string | null;
     projectId: string | null;
     taskSeriesId: string | null;
+    recurrenceFrequency?: TaskRecurrenceFrequency;
     calendarId?: string;
     linkedStatDefinitionId?: string | null;
     seriesOccurrenceAt: string | null;

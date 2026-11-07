@@ -26,8 +26,9 @@ function targetValue(definition: StatDefinition): number | undefined {
         : undefined;
 }
 
-function formatNumericValue(value: number): string {
-    return Number.isInteger(value) ? String(value) : Number(value.toFixed(2)).toString();
+function formatNumericValue(value: number, definition: StatDefinition): string {
+    const numericValue = Number.isInteger(value) ? String(value) : Number(value.toFixed(2)).toString();
+    return definition.type === 'NUMBER' && definition.unit ? `${numericValue} ${definition.unit}` : numericValue;
 }
 
 function paddedDomain(minimum: number, maximum: number): NumericDomain {
@@ -106,6 +107,7 @@ function valuePosition(value: number, domain: NumericDomain): number {
 }
 
 function NumericBar({
+    definition,
     point,
     value,
     color,
@@ -114,6 +116,7 @@ function NumericBar({
     onPointClick,
     onDateContextMenu,
 }: {
+    definition: StatDefinition;
     point: StatChartPoint;
     value: number;
     color: string;
@@ -129,7 +132,7 @@ function NumericBar({
 
     return (
         <MuiTooltip
-            title={`${format(parseISO(point.date), 'EEEE, MMM d')}: ${formatNumericValue(value)}`}
+            title={`${format(parseISO(point.date), 'EEEE, MMM d')}: ${formatNumericValue(value, definition)}`}
             arrow
             slotProps={{
                 tooltip: {
@@ -152,7 +155,7 @@ function NumericBar({
             <Box
                 role={onPointClick ? 'button' : undefined}
                 tabIndex={onPointClick ? 0 : undefined}
-                aria-label={`${format(parseISO(point.date), 'EEEE, MMMM d')}: ${formatNumericValue(value)}`}
+                aria-label={`${format(parseISO(point.date), 'EEEE, MMMM d')}: ${formatNumericValue(value, definition)}`}
                 onClick={onPointClick ? event => onPointClick(point, event) : undefined}
                 onKeyDown={onPointClick ? event => {
                     if (event.key !== 'Enter' && event.key !== ' ') return;
@@ -207,7 +210,7 @@ function SevenDayNumericBars({
             <Box sx={{ display: 'grid', gridTemplateColumns: '52px minmax(0, 1fr)', gap: 1 }}>
                 <Box sx={{ height: 188, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                     {[...ticks].reverse().map(value => (
-                        <Typography key={value} variant="caption" color="text.secondary">{formatNumericValue(value)}</Typography>
+                        <Typography key={value} variant="caption" color="text.secondary">{formatNumericValue(value, definition)}</Typography>
                     ))}
                 </Box>
                 <Box sx={{ position: 'relative', height: 188, borderBottom: 1, borderColor: 'divider' }}>
@@ -266,6 +269,7 @@ function SevenDayNumericBars({
                                 {point.value !== undefined && (
                                     <Box sx={{ position: 'relative', width: comparisonDefinition ? 'clamp(3px, 12%, 5px)' : '100%', height: '100%' }}>
                                         <NumericBar
+                                            definition={definition}
                                             point={point}
                                             value={point.value}
                                             color={primaryColor}
@@ -279,6 +283,7 @@ function SevenDayNumericBars({
                                 {comparisonDefinition && point.comparisonValue !== undefined && (
                                     <Box sx={{ position: 'relative', width: 'clamp(3px, 12%, 5px)', height: '100%' }}>
                                         <NumericBar
+                                            definition={comparisonDefinition}
                                             point={point}
                                             value={point.comparisonValue}
                                             color={comparisonColor}

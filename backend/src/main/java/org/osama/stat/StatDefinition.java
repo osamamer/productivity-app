@@ -37,6 +37,9 @@ public class StatDefinition {
     @Column(name = "additional_input_types", nullable = false, columnDefinition = "TEXT")
     private List<StatType> additionalInputTypes = List.of();
 
+    @Column(length = 32)
+    private String unit;
+
     // Null is treated as NEUTRAL so existing definitions remain unchanged.
     @Enumerated(EnumType.STRING)
     @Column

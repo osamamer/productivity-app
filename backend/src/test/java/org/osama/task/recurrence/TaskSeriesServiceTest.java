@@ -7,6 +7,7 @@ import org.osama.task.Task;
 import org.osama.task.TaskRepository;
 import org.osama.task.TaskSkipReason;
 import org.osama.task.TaskService;
+import org.osama.task.TaskQuery;
 import org.osama.requests.UpdateTaskRequest;
 import org.osama.user.User;
 import org.osama.user.UserRepository;
@@ -68,6 +69,24 @@ class TaskSeriesServiceTest {
     }
 
     @Test
+    void taskQueriesIncludeTheirSeriesFrequency() {
+        LocalDateTime start = LocalDateTime.now().plusDays(1).withSecond(0).withNano(0);
+        NewTaskRequest request = request(start);
+        request.setRecurrenceFrequency(TaskRecurrenceFrequency.DAILY);
+        request.setRecurrenceEndDate(start.toLocalDate().plusDays(1));
+        Task first = taskSeriesService.createSeries(request, USER_ID);
+
+        Task queried = taskService.findTasks(TaskQuery.builder().userId(USER_ID).build()).stream()
+                .filter(task -> task.getTaskId().equals(first.getTaskId()))
+                .findFirst()
+                .orElseThrow();
+
+        assertEquals(first.getTaskSeriesId(), queried.getTaskSeriesId());
+        assertEquals(1, seriesRepository.findAllBySeriesIdInAndUserId(List.of(first.getTaskSeriesId()), USER_ID).size());
+        assertEquals(TaskRecurrenceFrequency.DAILY, queried.getRecurrenceFrequency());
+    }
+
+    @Test
     void movingOneOccurrenceDoesNotChangeTheSeriesOrOtherOccurrences() {
         LocalDateTime start = LocalDateTime.now().plusDays(1).withSecond(0).withNano(0);
         NewTaskRequest request = request(start);
@@ -103,6 +122,8 @@ class TaskSeriesServiceTest {
         request.setRecurrenceEndDate(start.toLocalDate().plusDays(2));
 
         Task first = taskSeriesService.createSeries(request, USER_ID);
+        List<Task> originalOccurrences = taskRepository
+                .findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(first.getTaskSeriesId());
         int nextHour = start.getHour() == 23 ? 22 : start.getHour() + 1;
         LocalDateTime newStart = start.withHour(nextHour);
         TaskSeriesUpdateRequest update = new TaskSeriesUpdateRequest();
@@ -115,17 +136,49 @@ class TaskSeriesServiceTest {
 
         List<Task> occurrences = taskRepository
                 .findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(first.getTaskSeriesId());
-        List<Task> upcomingOccurrences = occurrences.stream().filter(task -> !task.isSkipped()).toList();
-        assertEquals(6, occurrences.size());
-        assertEquals(3, upcomingOccurrences.size());
-        assertTrue(upcomingOccurrences.stream().allMatch(task ->
+        assertEquals(3, occurrences.size());
+        assertEquals(originalOccurrences.stream().map(Task::getTaskId).toList(),
+                occurrences.stream().map(Task::getTaskId).toList());
+        assertTrue(occurrences.stream().allMatch(task -> !task.isSkipped()));
+        assertTrue(occurrences.stream().allMatch(task ->
                 task.getScheduledPerformDateTime().getHour() == newStart.getHour()));
-        assertTrue(upcomingOccurrences.stream().anyMatch(task ->
+        assertTrue(occurrences.stream().anyMatch(task ->
                 task.getScheduledPerformDateTime().equals(newStart)));
-        assertTrue(occurrences.stream().filter(task -> !upcomingOccurrences.contains(task))
-                .allMatch(task -> task.getSkipReason() == TaskSkipReason.SERIES_CHANGED));
         assertEquals(newStart, seriesRepository.findBySeriesIdAndUserId(first.getTaskSeriesId(), USER_ID)
                 .orElseThrow().getStartDateTime());
+    }
+
+    @Test
+    void changingOnlyTheSeriesTimeUpdatesTodayAndKeepsDeletedDatesDeleted() {
+        LocalDate today = LocalDate.now();
+        LocalDateTime start = today.atTime(12, 0);
+        NewTaskRequest request = request(start);
+        request.setRecurrenceFrequency(TaskRecurrenceFrequency.DAILY);
+        request.setRecurrenceEndDate(today.plusDays(2));
+
+        Task first = taskSeriesService.createSeries(request, USER_ID);
+        List<Task> originalOccurrences = taskRepository
+                .findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(first.getTaskSeriesId());
+        Task deletedOccurrence = originalOccurrences.get(1);
+        taskService.deleteTaskOccurrence(deletedOccurrence.getTaskId(), USER_ID);
+
+        LocalDateTime newStart = start.withHour(13);
+        TaskSeriesUpdateRequest update = new TaskSeriesUpdateRequest();
+        update.setStartDateTime(newStart);
+        update.setRecurrenceFrequency(TaskRecurrenceFrequency.DAILY);
+        update.setRecurrenceEndDate(today.plusDays(2));
+        update.setTimeZone("UTC");
+        taskSeriesService.updateSeries(first.getTaskSeriesId(), update, USER_ID);
+
+        List<Task> occurrences = taskRepository
+                .findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(first.getTaskSeriesId());
+        assertEquals(2, occurrences.size());
+        assertTrue(occurrences.stream().allMatch(task -> task.getScheduledPerformDateTime().getHour() == 13));
+        assertTrue(occurrences.stream().anyMatch(task -> task.getTaskId().equals(originalOccurrences.get(0).getTaskId())));
+        assertTrue(occurrences.stream().anyMatch(task -> task.getTaskId().equals(originalOccurrences.get(2).getTaskId())));
+        assertTrue(taskRepository.findTaskByTaskId(deletedOccurrence.getTaskId()).isEmpty());
+        assertTrue(taskRepository.existsAnyByTaskSeriesIdAndSeriesOccurrenceAt(
+                first.getTaskSeriesId(), deletedOccurrence.getSeriesOccurrenceAt()));
     }
 
     @Test

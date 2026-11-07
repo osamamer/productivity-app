@@ -32,6 +32,7 @@ export interface StatDefinition {
     name: string;
     type: StatType;
     additionalInputTypes?: StatType[];
+    unit?: string | null;
     morality?: StatMorality | null;
     minValue?: number;
     maxValue?: number;
@@ -66,6 +67,7 @@ export interface CreateDefinitionRequest {
     name: string;
     type: StatType;
     additionalInputTypes?: StatType[];
+    unit?: string;
     minValue?: number;
     maxValue?: number;
     morality?: StatMorality;
@@ -82,6 +84,7 @@ export interface UpdateDefinitionRequest {
     morality?: StatMorality;
     goodThreshold?: number;
     additionalInputTypes?: StatType[];
+    unit?: string;
 }
 
 export interface RecordEntryRequest {
@@ -120,6 +123,7 @@ export interface StatCorrelation {
     statDefinitionId: string;
     statName: string;
     statType: StatType;
+    unit?: string | null;
     overlapDays: number;
     correlation: number | null;
     strength: CorrelationStrength;

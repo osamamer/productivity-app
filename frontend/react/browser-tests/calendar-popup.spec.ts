@@ -87,6 +87,52 @@ test('opening a busy calendar centers today without moving the page or header', 
     await expect.poll(() => today.evaluate(e => e.closest('.fc-scroller')!.scrollTop)).toBe(0);
 });
 
+test('right-clicking a calendar task or event opens item actions', async ({ page }) => {
+    await page.setViewportSize({ width: 1100, height: 650 });
+    await page.clock.install({ time: new Date('2026-10-26T08:00:00') });
+    await page.clock.resume();
+    await page.route('**/api/v1/**', route => route.fulfill({ json: [] }));
+    await page.goto('/browser-tests/calendar-popup.html');
+
+    await page.getByText('Context task', { exact: true }).click({ button: 'right' });
+    await expect(page.getByRole('menuitem', { name: 'Edit task' })).toBeVisible();
+    await page.keyboard.press('Escape');
+
+    await page.getByText('Context event', { exact: true }).click({ button: 'right' });
+    await expect(page.getByRole('menuitem', { name: 'Edit event' })).toBeVisible();
+
+    await page.goto('/browser-tests/calendar-popup.html?dense');
+    const day = page.locator('[data-date="2026-10-26"]').first();
+    await day.locator('.fc-daygrid-more-link').click();
+    const dayItems = page.getByRole('dialog', { name: 'Events for October 26, 2026' });
+    await dayItems.getByText('Context task', { exact: true }).click({ button: 'right' });
+    await expect(page.getByRole('menuitem', { name: 'Edit task' })).toBeVisible();
+    await page.keyboard.press('Escape');
+
+    await day.locator('.fc-daygrid-more-link').click();
+    await page.getByRole('dialog', { name: 'Events for October 26, 2026' })
+        .getByText('Context event', { exact: true }).click({ button: 'right' });
+    await expect(page.getByRole('menuitem', { name: 'Edit event' })).toBeVisible();
+});
+
+test('daily task visibility is separate from stat-linked task visibility', async ({ page }) => {
+    await page.setViewportSize({ width: 1100, height: 650 });
+    await page.clock.install({ time: new Date('2026-10-26T08:00:00') });
+    await page.clock.resume();
+    await page.route('**/api/v1/**', route => route.fulfill({ json: [] }));
+    await page.goto('/browser-tests/calendar-popup.html');
+
+    await expect(page.getByText('Context task', { exact: true })).toBeVisible();
+    await expect(page.getByText('Weekly task', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Display', exact: true }).click();
+    await page.getByRole('switch', { name: 'Show daily repeating tasks' }).click();
+
+    await expect(page.getByText('Context task', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Stat 1', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Weekly task', { exact: true })).toBeVisible();
+    await expect(page.getByText('Stat 2', { exact: true })).toBeVisible();
+});
+
 test('a tall lower-row day expansion stays below the header during scroll and resize', async ({ page }) => {
     await page.setViewportSize({ width: 1100, height: 650 });
     await page.clock.install({ time: new Date('2026-10-26T12:00:00') });

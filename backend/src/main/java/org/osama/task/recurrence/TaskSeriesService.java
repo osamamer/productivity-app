@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.osama.calendar.CalendarService;
 import org.osama.exceptions.ResourceNotFoundException;
 import org.osama.requests.NewTaskRequest;
+import org.osama.requests.UpdateTaskRequest;
 import org.osama.stat.StatTaskLinkService;
 import org.osama.task.Task;
 import org.osama.task.TaskRepository;
@@ -19,10 +20,15 @@ import java.time.DateTimeException;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -149,11 +155,15 @@ public class TaskSeriesService {
                 : request.getRecurrenceDaysOfWeek();
         LocalDateTime startDateTime = request.getStartDateTime() == null
                 ? series.getStartDateTime() : request.getStartDateTime();
+        boolean timeOnlyChange = isTimeOnlyChange(series, request, frequency, timeZone,
+                recurrenceDaysOfWeek, startDateTime);
         validateRule(frequency, request.getRecurrenceEndDate(), request.getRecurrenceInterval(),
                 request.getRecurrenceUnit(), timeZone, recurrenceDaysOfWeek, startDateTime.toString());
         validateImportance(request.getImportance());
 
-        skipFutureOccurrences(series.getSeriesId(), TaskSkipReason.SERIES_CHANGED);
+        if (!timeOnlyChange) {
+            skipFutureOccurrences(series.getSeriesId(), TaskSkipReason.SERIES_CHANGED);
+        }
         series.setRecurrenceFrequency(frequency);
         if (request.getImportance() != null) {
             series.setImportance(request.getImportance());
@@ -185,6 +195,9 @@ public class TaskSeriesService {
             updateOccurrenceImportance(saved.getSeriesId(), userId, request.getImportance());
         }
         if (saved.isActive()) {
+            if (timeOnlyChange) {
+                rescheduleExistingOccurrences(saved, userId);
+            }
             materializeOccurrences(saved, userId);
             eventPublisher.publishEvent(new TaskSeriesOccurrencesChangedEvent(saved.getSeriesId(), userId));
         }
@@ -314,6 +327,10 @@ public class TaskSeriesService {
             // A user-deleted occurrence remains in the table as a tombstone.
             // The active-row lookup hides it, but its unique series/date slot
             // must stay reserved so expansion cannot recreate the occurrence.
+            if (taskRepository.existsUserRemovedOccurrenceByTaskSeriesIdAndDate(
+                    series.getSeriesId(), userId, occurrenceDate.toLocalDate())) {
+                continue;
+            }
             if (taskRepository.existsAnyByTaskSeriesIdAndSeriesOccurrenceAt(series.getSeriesId(), occurrenceDate)) {
                 continue;
             }
@@ -340,6 +357,78 @@ public class TaskSeriesService {
         if (series.isRepeatSubtasks()) {
             taskRepository.findAllByTaskSeriesIdAndUserIdOrderBySeriesOccurrenceAtAsc(series.getSeriesId(), userId)
                     .forEach(occurrence -> copySeriesSubtasks(series, occurrence, userId));
+        }
+    }
+
+    private boolean isTimeOnlyChange(TaskSeries series, TaskSeriesUpdateRequest request,
+                                    TaskRecurrenceFrequency frequency, String timeZone,
+                                    List<DayOfWeek> recurrenceDaysOfWeek, LocalDateTime startDateTime) {
+        if (startDateTime.equals(series.getStartDateTime())
+                || !startDateTime.toLocalDate().equals(series.getStartDateTime().toLocalDate())
+                || frequency != series.getRecurrenceFrequency()
+                || !Objects.equals(timeZone, series.getTimeZone())
+                || !Objects.equals(request.getRecurrenceEndDate(), series.getRecurrenceEndDate())) {
+            return false;
+        }
+        if (frequency != TaskRecurrenceFrequency.CUSTOM) return true;
+        return Objects.equals(request.getRecurrenceInterval(), series.getRecurrenceInterval())
+                && request.getRecurrenceUnit() == series.getRecurrenceUnit()
+                && recurrenceDaysOfWeek.equals(TaskRecurrenceDays.decode(series.getRecurrenceDaysOfWeek()));
+    }
+
+    private void rescheduleExistingOccurrences(TaskSeries series, String userId) {
+        ZoneId zone = ZoneId.of(series.getTimeZone());
+        LocalDate today = LocalDate.now(zone);
+        LocalDateTime from = today.atStartOfDay();
+        if (series.getStartDateTime().isAfter(from)) from = series.getStartDateTime();
+        LocalDateTime through = today.plusDays(OCCURRENCE_HORIZON_DAYS).atTime(LocalTime.MAX);
+        List<LocalDateTime> targetOccurrences = TaskRecurrenceCalculator.occurrencesBetween(series, from, through);
+        Map<LocalDate, List<Task>> existingByDate = new HashMap<>();
+        taskRepository.findAllByTaskSeriesIdAndUserIdOrderBySeriesOccurrenceAtAsc(series.getSeriesId(), userId)
+                .forEach(task -> {
+                    if (task.getSeriesOccurrenceAt() != null) {
+                        existingByDate.computeIfAbsent(task.getSeriesOccurrenceAt().toLocalDate(), ignored -> new ArrayList<>())
+                                .add(task);
+                    }
+                });
+
+        for (LocalDateTime targetOccurrence : targetOccurrences) {
+            LocalDate occurrenceDate = targetOccurrence.toLocalDate();
+            if (taskRepository.existsUserRemovedOccurrenceByTaskSeriesIdAndDate(
+                    series.getSeriesId(), userId, occurrenceDate)) {
+                continue;
+            }
+            List<Task> sameDateOccurrences = existingByDate.getOrDefault(occurrenceDate, List.of());
+            Task task = sameDateOccurrences.stream()
+                    .filter(candidate -> !candidate.isCompleted())
+                    .filter(candidate -> candidate.getSkipReason() != TaskSkipReason.USER)
+                    .min(Comparator.comparing((Task candidate) ->
+                                    !targetOccurrence.equals(candidate.getSeriesOccurrenceAt()))
+                            .thenComparing(Task::isSkipped))
+                    .orElse(null);
+            if (task == null) continue;
+
+            List<Task> duplicateOccurrences = sameDateOccurrences.stream()
+                    .filter(candidate -> candidate != task)
+                    .filter(candidate -> !candidate.isCompleted())
+                    .filter(candidate -> candidate.getSkipReason() != TaskSkipReason.USER)
+                    .filter(candidate -> !candidate.isSkipped())
+                    .toList();
+            duplicateOccurrences.forEach(candidate -> {
+                candidate.setSkipped(true);
+                candidate.setSkipReason(TaskSkipReason.SERIES_CHANGED);
+            });
+            taskRepository.saveAll(duplicateOccurrences);
+            task.setSkipped(false);
+            task.setSkipReason(null);
+            taskRepository.save(task);
+            UpdateTaskRequest update = new UpdateTaskRequest();
+            update.setScheduledPerformDateTime(targetOccurrence.toString());
+            update.setTimeZone(series.getTimeZone());
+            taskService.updateTask(task.getTaskId(), update, userId).ifPresent(updated -> {
+                updated.setSeriesOccurrenceAt(targetOccurrence);
+                taskRepository.save(updated);
+            });
         }
     }
 

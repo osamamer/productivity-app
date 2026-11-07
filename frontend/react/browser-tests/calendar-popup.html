@@ -13,7 +13,27 @@
         taskId: `stat-${i}`, name: `Stat ${i}`, description: '', completed: false,
         creationDateTime: '2026-10-26T19:36:00', scheduledPerformDateTime: '2026-10-26T19:36:00',
         calendarId: 'default', importance: 3, displayOrder: i, taskSeriesId: `series-${i}`, parentId: null,
+        recurrenceFrequency: i === 1 ? 'DAILY' : 'WEEKLY',
     }));
+    tasks.push({
+        taskId: 'context-task', name: 'Context task', description: '', completed: false,
+        creationDateTime: '2026-10-26T22:00:00', scheduledPerformDateTime: '2026-10-26T22:00:00',
+        calendarId: 'default', importance: 3, displayOrder: 3, taskSeriesId: null, parentId: null,
+        recurrenceFrequency: 'DAILY',
+    });
+    tasks.push({
+        taskId: 'weekly-task', name: 'Weekly task', description: '', completed: false,
+        creationDateTime: '2026-10-26T08:00:00', scheduledPerformDateTime: '2026-10-26T08:00:00',
+        calendarId: 'default', importance: 3, displayOrder: 4, taskSeriesId: 'weekly-series', parentId: null,
+        recurrenceFrequency: 'WEEKLY',
+    });
+    const events = [{
+        id: 'context-event', calendarId: 'default', title: 'Context event', description: '', allDay: false,
+        startDate: null, endDate: null, startTime: '2026-10-26T10:00:00Z', endTime: '2026-10-26T11:00:00Z',
+        timeZone: 'UTC', status: 'CONFIRMED', recurrenceFrequency: 'NONE', recurrenceEndDate: null,
+        recurrenceInterval: null, recurrenceUnit: null, cancelledOccurrenceKeys: [], occurrenceOverrides: [],
+        reminderMinutesBefore: null, createdAt: '2026-10-26T09:00:00', updatedAt: '2026-10-26T09:00:00',
+    }];
     if (new URLSearchParams(location.search).has('dense')) {
         for (let day = 1; day <= 31; day++) {
             const count = day === 28 ? 35 : 6;
@@ -26,7 +46,8 @@
     const props = {
         tasks,
         groups: [{ groupId: 'stat-group', name: 'Stat group', taskIds: ['stat-1', 'stat-2'], displayOrder: 0, isStatGroup: true }],
-        events: [], calendars: [{ id: 'default', name: 'Default', visible: true, color: 'SAGE' }], dayTemplates: [],
+        statDefinitions: [{ id: 'daily-stat', name: 'Daily stat', type: 'BOOLEAN', recurringTaskSeriesId: 'series-1' }],
+        events, calendars: [{ id: 'default', name: 'Default', visible: true, color: 'SAGE' }], dayTemplates: [],
         onCreateTask: noop, onDeleteTask: noop, onDeleteTaskOccurrence: noop, onUpdateTask: noop,
         onCreateEvent: noop, onUpdateEvent: noop, onMoveEventOccurrence: noop, onDeleteEvent: noop,
         onCancelEventOccurrence: noop, onRestoreEventOccurrence: noop, onUpdateEventOccurrenceStatus: noop,

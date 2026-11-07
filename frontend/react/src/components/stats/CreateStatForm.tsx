@@ -30,6 +30,7 @@ interface FormValues {
     name: string;
     type: StatType;
     additionalInputTypes: StatType[];
+    unit: string;
     minValue: string;
     maxValue: string;
     morality: StatMorality;
@@ -67,6 +68,7 @@ function createValidationSchema(existingDefinitions: StatDefinition[], currentDe
                 );
             }),
         type: Yup.string().oneOf(['NUMBER', 'BOOLEAN', 'RANGE', 'TIME', 'DURATION']).required(),
+        unit: Yup.string().max(32, 'Use 32 characters or fewer.'),
         minValue: Yup.string().when('type', {
             is: 'RANGE',
             then: schema => schema.required('Min value is required'),
@@ -169,6 +171,7 @@ export function CreateStatForm({
             name: initialDefinition?.name ?? '',
             type: initialDefinition?.type ?? 'NUMBER',
             additionalInputTypes: initialDefinition?.additionalInputTypes ?? [],
+            unit: initialDefinition?.unit ?? '',
             minValue: initialDefinition?.minValue == null ? '' : String(initialDefinition.minValue),
             maxValue: initialDefinition?.maxValue == null ? '' : String(initialDefinition.maxValue),
             morality: initialDefinition?.morality ?? 'NEUTRAL',
@@ -196,6 +199,7 @@ export function CreateStatForm({
                             ? Number(values.goodThreshold)
                             : undefined;
                 if (initialDefinition) {
+                    const hasAmountInput = values.type === 'NUMBER' || values.additionalInputTypes.includes('NUMBER');
                     const request = {
                         name: values.name.trim(),
                         morality: values.morality,
@@ -203,6 +207,7 @@ export function CreateStatForm({
                             ? threshold ?? undefined
                             : undefined,
                         additionalInputTypes: values.additionalInputTypes.filter(type => type !== values.type),
+                        unit: hasAmountInput ? values.unit.trim() : '',
                     };
                     if (onUpdatedOptimistically && onUpdateFailed) {
                         const operationId = `stat-update-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -212,6 +217,7 @@ export function CreateStatForm({
                             morality: request.morality,
                             goodThreshold: request.goodThreshold ?? null,
                             additionalInputTypes: request.additionalInputTypes,
+                            unit: request.unit || null,
                         };
                         onUpdatedOptimistically(optimisticDefinition, operationId, initialDefinition);
                         onCancel();
@@ -226,10 +232,12 @@ export function CreateStatForm({
                         onUpdated?.(def);
                     }
                 } else {
+                    const hasAmountInput = values.type === 'NUMBER' || values.additionalInputTypes.includes('NUMBER');
                     const request: CreateDefinitionRequest = {
                         name: values.name.trim(),
                         type: values.type,
                         additionalInputTypes: values.additionalInputTypes.filter(type => type !== values.type),
+                        unit: hasAmountInput ? values.unit.trim() : undefined,
                         minValue: values.type === 'RANGE' ? Number(values.minValue) : undefined,
                         maxValue: values.type === 'RANGE' ? Number(values.maxValue) : undefined,
                         morality: values.morality,
@@ -260,6 +268,7 @@ export function CreateStatForm({
                             name: request.name,
                             type: request.type,
                             additionalInputTypes: request.additionalInputTypes,
+                            unit: request.unit || null,
                             morality: request.morality,
                             minValue: request.minValue,
                             maxValue: request.maxValue,
@@ -474,6 +483,21 @@ export function CreateStatForm({
                         </Typography>
                     )}
                 </Box>
+                {(formik.values.type === 'NUMBER' || formik.values.additionalInputTypes.includes('NUMBER')) && (
+                    <TextField
+                        name="unit"
+                        autoComplete="off"
+                        label="Unit"
+                        placeholder="e.g. steps, kg, ml"
+                        value={formik.values.unit}
+                        onChange={formik.handleChange}
+                        onBlur={formik.handleBlur}
+                        error={formik.touched.unit && Boolean(formik.errors.unit)}
+                        helperText={formik.touched.unit ? formik.errors.unit : undefined}
+                        size="small"
+                        inputProps={{ maxLength: 32 }}
+                    />
+                )}
                 <FormControl size="small">
                     <InputLabel>Morality</InputLabel>
                     <Select

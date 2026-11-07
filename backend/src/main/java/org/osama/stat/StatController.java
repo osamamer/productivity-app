@@ -49,6 +49,7 @@ public class StatController {
                 request.timeOfDay,
                 request.recurringTaskImportance,
                 request.additionalInputTypes,
+                request.unit,
                 currentUserService.getCurrentUserId()
         );
     }
@@ -104,6 +105,7 @@ public class StatController {
                 request.morality,
                 request.goodThreshold,
                 request.additionalInputTypes,
+                request.unit,
                 userId
         );
     }
@@ -374,6 +376,7 @@ public class StatController {
         String timeOfDay;
         Integer recurringTaskImportance;
         List<StatType> additionalInputTypes;
+        String unit;
     }
 
     @Data
@@ -383,6 +386,7 @@ public class StatController {
         StatMorality morality;
         Double goodThreshold;
         List<StatType> additionalInputTypes;
+        String unit;
     }
 
     @Data

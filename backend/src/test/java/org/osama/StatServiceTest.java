@@ -585,6 +585,33 @@ public class StatServiceTest {
     }
 
     @Test
+    void amountUnitsAreSavedTrimmedAndCanBeChanged() {
+        StatDefinition definition = statService.createDefinition(
+                "Water", null, StatType.BOOLEAN, null, null, StatMorality.NEUTRAL, null,
+                false, org.osama.task.recurrence.TaskRecurrenceFrequency.DAILY, List.of(), null,
+                null, List.of(StatType.NUMBER), " ml ", TEST_USER_ID);
+
+        assertEquals("ml", definition.getUnit());
+
+        StatDefinition updated = statService.updateDefinition(
+                definition.getId(), "Water", null, StatMorality.NEUTRAL, null,
+                List.of(StatType.NUMBER), "cups", TEST_USER_ID);
+        assertEquals("cups", updated.getUnit());
+    }
+
+    @Test
+    void unitsRequireAnAmountInputAndHaveALengthLimit() {
+        assertThrows(IllegalArgumentException.class, () -> statService.createDefinition(
+                "Habit", null, StatType.BOOLEAN, null, null, StatMorality.NEUTRAL, null,
+                false, org.osama.task.recurrence.TaskRecurrenceFrequency.DAILY, List.of(), null,
+                null, List.of(), "times", TEST_USER_ID));
+        assertThrows(IllegalArgumentException.class, () -> statService.createDefinition(
+                "Amount", null, StatType.NUMBER, null, null, StatMorality.NEUTRAL, null,
+                false, org.osama.task.recurrence.TaskRecurrenceFrequency.DAILY, List.of(), null,
+                null, List.of(), "x".repeat(33), TEST_USER_ID));
+    }
+
+    @Test
     void definitionUpdateAllowsKeepingItsOwnName() {
         StatDefinition statDefinition = createNamedStatDefinition("Keep this name", StatType.BOOLEAN);
 

@@ -312,3 +312,5 @@ databaseChangeLog:
       file: db/changelog/changes/092-composite-stat-inputs.yaml
   - include:
       file: db/changelog/changes/093-secret-stat-access.yaml
+  - include:
+      file: db/changelog/changes/094-stat-units.yaml

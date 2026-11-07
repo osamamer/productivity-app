@@ -8,12 +8,15 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Collection;
 import java.util.Optional;
 
 public interface TaskSeriesRepository extends JpaRepository<TaskSeries, String> {
     List<TaskSeries> findAllByActiveTrue();
 
     Optional<TaskSeries> findBySeriesIdAndUserId(String seriesId, String userId);
+
+    List<TaskSeries> findAllBySeriesIdInAndUserId(Collection<String> seriesIds, String userId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select series from TaskSeries series where series.seriesId = :seriesId and series.userId = :userId")

@@ -30,3 +30,7 @@ export function isCalendarStatTaskVisible(
     if (matches.length === 0) return true;
     return matches.some(definition => selectedStatIds.has(definition.id));
 }
+
+export function isCalendarDailyTaskVisible(task: Task, showDailyRecurringTasks: boolean): boolean {
+    return showDailyRecurringTasks || task.recurrenceFrequency !== 'DAILY';
+}

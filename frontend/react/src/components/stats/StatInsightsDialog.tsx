@@ -35,12 +35,13 @@ function formatCorrelation(correlation: number | null): string {
     return correlation === null ? '—' : correlation.toFixed(2);
 }
 
-function formatAverage(value: number | null, type: StatCorrelation['statType']): string {
+function formatAverage(value: number | null, type: StatCorrelation['statType'], unit?: string | null): string {
     if (value === null) return '—';
     if (type === 'BOOLEAN') return `${Math.round(value * 100)}%`;
     if (type === 'TIME') return formatTimeValue(value);
     if (type === 'DURATION') return formatDurationValue(value);
-    return Number.isInteger(value) ? String(value) : value.toFixed(1);
+    const label = Number.isInteger(value) ? String(value) : value.toFixed(1);
+    return type === 'NUMBER' && unit ? `${label} ${unit}` : label;
 }
 
 function RelationshipCard({ correlation }: {
@@ -70,7 +71,7 @@ function RelationshipCard({ correlation }: {
                 {correlation.otherAverageWhenDriverHigher !== null &&
                     correlation.otherAverageWhenDriverLower !== null && (
                         <Typography variant="caption" color="text.secondary">
-                            · {formatAverage(correlation.otherAverageWhenDriverHigher, correlation.statType)} vs {formatAverage(correlation.otherAverageWhenDriverLower, correlation.statType)} average
+                            · {formatAverage(correlation.otherAverageWhenDriverHigher, correlation.statType, correlation.unit)} vs {formatAverage(correlation.otherAverageWhenDriverLower, correlation.statType, correlation.unit)} average
                         </Typography>
                     )}
             </Stack>

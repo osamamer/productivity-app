@@ -8,6 +8,7 @@ public record StatCorrelationResponse(
         String statDefinitionId,
         String statName,
         StatType statType,
+        String unit,
         int overlapDays,
         Double correlation,
         String strength,

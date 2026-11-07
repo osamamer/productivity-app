@@ -87,16 +87,21 @@ export function StatInputField({
 
     if (type === 'NUMBER') {
         return (
-            <AppNumberField
-                autoComplete="off"
-                size="small"
-                value={value ?? ''}
-                onChange={event => onChange(event.target.value === '' ? null : Number(event.target.value))}
-                onStepValueChange={onChange}
-                onFocus={event => onFocus(event.currentTarget)}
-                inputProps={{ 'aria-label': primary ? definition.name : 'Amount' }}
-                sx={{ width: 160 }}
-            />
+            <Stack direction="row" spacing={1} alignItems="center">
+                <AppNumberField
+                    autoComplete="off"
+                    size="small"
+                    value={value ?? ''}
+                    onChange={event => onChange(event.target.value === '' ? null : Number(event.target.value))}
+                    onStepValueChange={onChange}
+                    onFocus={event => onFocus(event.currentTarget)}
+                    inputProps={{ 'aria-label': primary ? definition.name : 'Amount' }}
+                    sx={{ width: 160 }}
+                />
+                {definition.unit && (
+                    <Typography variant="body2" color="text.secondary">{definition.unit}</Typography>
+                )}
+            </Stack>
         );
     }
 

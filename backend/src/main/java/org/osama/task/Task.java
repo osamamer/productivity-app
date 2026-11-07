@@ -10,6 +10,7 @@ import com.fasterxml.jackson.datatype.jsr310.ser.LocalDateTimeSerializer;
 import jakarta.persistence.*;
 import lombok.Data;
 import org.osama.user.User;
+import org.osama.task.recurrence.TaskRecurrenceFrequency;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -109,6 +110,9 @@ public class Task {
 
     @Transient
     private Integer reminderMinutesBefore;
+
+    @Transient
+    private TaskRecurrenceFrequency recurrenceFrequency;
 
     @Transient
     private boolean statLinked;

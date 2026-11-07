@@ -99,7 +99,7 @@ public class StatInsightService {
 
         String insight = buildInsight(driver, other, pairs.size(), correlation, strength,
                 highAverage, lowAverage);
-        return new StatCorrelationResponse(other.getId(), other.getName(), other.getType(), pairs.size(),
+        return new StatCorrelationResponse(other.getId(), other.getName(), other.getType(), other.getUnit(), pairs.size(),
                 correlation, strength, direction, meaningful, highAverage, lowAverage, insight);
     }
 

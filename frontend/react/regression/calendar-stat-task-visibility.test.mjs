@@ -4,6 +4,7 @@ import { createServer } from 'vite';
 
 let viteServer;
 let isCalendarStatTaskVisible;
+let isCalendarDailyTaskVisible;
 
 before(async () => {
   viteServer = await createServer({
@@ -13,7 +14,7 @@ before(async () => {
     server: { middlewareMode: true, ws: false, watch: null },
     logLevel: 'silent',
   });
-  ({ isCalendarStatTaskVisible } = await viteServer.ssrLoadModule('/src/services/utils/calendarStatTaskVisibility.ts'));
+  ({ isCalendarStatTaskVisible, isCalendarDailyTaskVisible } = await viteServer.ssrLoadModule('/src/services/utils/calendarStatTaskVisibility.ts'));
 });
 
 after(async () => {
@@ -75,4 +76,11 @@ test('does not infer recurring stat links from task names and handles orphaned s
   assert.equal(isCalendarStatTaskVisible(task(), definitions, new Set(['weekly']), true), true);
   assert.equal(isCalendarStatTaskVisible(task({ statLinked: true }), [], new Set(), true), true);
   assert.equal(isCalendarStatTaskVisible(task({ statLinked: true }), [], new Set(), false), false);
+});
+
+test('daily task visibility is independent from stat links', () => {
+  assert.equal(isCalendarDailyTaskVisible(task({ recurrenceFrequency: 'DAILY', statLinked: true }), false), false);
+  assert.equal(isCalendarDailyTaskVisible(task({ recurrenceFrequency: 'DAILY' }), true), true);
+  assert.equal(isCalendarDailyTaskVisible(task({ recurrenceFrequency: 'WEEKLY' }), false), true);
+  assert.equal(isCalendarDailyTaskVisible(task(), false), true);
 });

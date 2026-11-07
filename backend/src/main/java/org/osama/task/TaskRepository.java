@@ -89,6 +89,13 @@ public interface TaskRepository extends JpaRepository<Task, String>,
     boolean existsAnyByTaskSeriesIdAndSeriesOccurrenceAt(@Param("seriesId") String seriesId,
                                                          @Param("occurrenceAt") LocalDateTime occurrenceAt);
 
+    @Query(value = "select exists(select 1 from task where task_series_id = :seriesId and user_id = :userId "
+            + "and cast(series_occurrence_at as date) = :occurrenceDate "
+            + "and (soft_deleted = true or skip_reason = 'USER'))", nativeQuery = true)
+    boolean existsUserRemovedOccurrenceByTaskSeriesIdAndDate(@Param("seriesId") String seriesId,
+                                                             @Param("userId") String userId,
+                                                             @Param("occurrenceDate") LocalDate occurrenceDate);
+
     List<Task> findAllByTaskSeriesIdAndSeriesOccurrenceAtAfter(String taskSeriesId, LocalDateTime seriesOccurrenceAt);
 
     @Query("""

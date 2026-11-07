@@ -5,6 +5,7 @@ import { differenceInCalendarDays, format, parseISO } from 'date-fns';
 import { StatDefinition, StatEntry, StatSummary } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
 import { getStatPeriodWindow, StatPeriodMode, StatPeriodOffset } from './statPeriod';
+import { statNumericValueLabel } from './statVisualization';
 import {
     averageTimeValues,
     formatDurationValue,
@@ -251,19 +252,22 @@ export const StatSummaryBar = React.memo(function StatSummaryBar({ definition, d
     }
 
     if (definition.type === 'NUMBER' || definition.type === 'RANGE') {
+        const numericLabel = (value: number) => definition.type === 'NUMBER'
+            ? statNumericValueLabel(value, definition.unit)
+            : formatAverage(value);
         tiles.push({
             label: 'personal best',
             value: displaySummary.personalBest != null
-                ? formatAverage(displaySummary.personalBest)
-                : periodHighest != null ? formatAverage(periodHighest) : '—',
+                ? numericLabel(displaySummary.personalBest)
+                : periodHighest != null ? numericLabel(periodHighest) : '—',
         });
         tiles.push({
             label: 'Average',
-            value: displaySummary.periodAverage !== null ? formatAverage(displaySummary.periodAverage) : '—',
+            value: displaySummary.periodAverage !== null ? numericLabel(displaySummary.periodAverage) : '—',
         });
         tiles.push({
             label: 'Total',
-            value: displaySummary.periodTotal !== null ? formatAverage(displaySummary.periodTotal) : '—',
+            value: displaySummary.periodTotal !== null ? numericLabel(displaySummary.periodTotal) : '—',
         });
     }
 

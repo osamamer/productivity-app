@@ -65,7 +65,8 @@ import { DayCalendarEntry } from "../types/DayEntity";
 import { taskDateKey } from "../services/utils/taskDate";
 import { CALENDAR_COLORS, Calendar, calendarColorHex } from '../types/Calendar';
 import { CalendarChipSelect } from './calendar/CalendarSelect';
-import { isCalendarStatTaskVisible } from '../services/utils/calendarStatTaskVisibility';
+import { isCalendarDailyTaskVisible, isCalendarStatTaskVisible } from '../services/utils/calendarStatTaskVisibility';
+import { statNumericValueLabel } from './stats/statVisualization';
 
 type MonthCalenderProps = {
     tasks: Task[],
@@ -119,6 +120,7 @@ const expandDayReveal = keyframes`
 type CalendarDisplaySettings = {
     showTasks: boolean;
     showStatTasks: boolean;
+    showDailyRecurringTasks: boolean;
     showStats: boolean;
     taskStatus: TaskStatusFilter;
     priorityFilters: number[];
@@ -130,6 +132,7 @@ type CalendarDisplayPreferences = Record<CalendarDisplayView, CalendarDisplaySet
 const DEFAULT_CALENDAR_DISPLAY_SETTINGS: CalendarDisplaySettings = {
     showTasks: true,
     showStatTasks: true,
+    showDailyRecurringTasks: true,
     showStats: true,
     taskStatus: 'open',
     priorityFilters: [3, 6, 9],
@@ -161,6 +164,9 @@ function normalizeCalendarDisplaySettings(value: unknown): CalendarDisplaySettin
         showStatTasks: typeof parsed.showStatTasks === 'boolean'
             ? parsed.showStatTasks
             : DEFAULT_CALENDAR_DISPLAY_SETTINGS.showStatTasks,
+        showDailyRecurringTasks: typeof parsed.showDailyRecurringTasks === 'boolean'
+            ? parsed.showDailyRecurringTasks
+            : DEFAULT_CALENDAR_DISPLAY_SETTINGS.showDailyRecurringTasks,
         showStats: typeof parsed.showStats === 'boolean'
             ? parsed.showStats
             : DEFAULT_CALENDAR_DISPLAY_SETTINGS.showStats,
@@ -246,7 +252,7 @@ function statEventValue(definition: StatDefinition, value: number, status?: Stat
     if (definition.type === 'BOOLEAN') return value === 1 ? 'Yes' : 'No';
     if (definition.type === 'TIME') return formatTimeValue(value);
     if (definition.type === 'DURATION') return formatDurationValue(value);
-    return Number.isInteger(value) ? String(value) : value.toFixed(1);
+    return statNumericValueLabel(value, definition.type === 'NUMBER' ? definition.unit : null);
 }
 
 function calendarEventTimeLabel(start: Date | null): string {
@@ -403,17 +409,6 @@ const calendarLoadingReveal = keyframes`
     from {
         opacity: 0;
         transform: translate3d(0, 8px, 0);
-    }
-    to {
-        opacity: 1;
-        transform: none;
-    }
-`;
-
-const calendarContentReveal = keyframes`
-    from {
-        opacity: 0;
-        transform: translate3d(0, 7px, 0);
     }
     to {
         opacity: 1;
@@ -708,6 +703,7 @@ export function MonthCalendar({
     const {
         showTasks,
         showStatTasks,
+        showDailyRecurringTasks,
         showStats,
         taskStatus,
         priorityFilters,
@@ -896,12 +892,11 @@ export function MonthCalendar({
         return priorityFilters.includes(priorityBucket(task.importance));
     }), [priorityFilters, taskStatus, tasks, visibleCalendarIds]);
 
-    const calendarDisplayTasks = useMemo(() => calendarTasks.filter(task => isCalendarStatTaskVisible(
-        task,
-        availableStatDefinitions,
-        new Set(selectedStatIdsForDisplay),
-        showStatTasks,
-    )), [availableStatDefinitions, calendarTasks, selectedStatIdsForDisplay, showStatTasks]);
+    const calendarDisplayTasks = useMemo(() => {
+        const selectedIds = new Set(selectedStatIdsForDisplay);
+        return calendarTasks.filter(task => isCalendarDailyTaskVisible(task, showDailyRecurringTasks)
+            && isCalendarStatTaskVisible(task, availableStatDefinitions, selectedIds, showStatTasks));
+    }, [availableStatDefinitions, calendarTasks, selectedStatIdsForDisplay, showDailyRecurringTasks, showStatTasks]);
 
     const handleExportEvents = async () => {
         if (exportingEvents || events.length === 0) return;
@@ -2275,10 +2270,6 @@ export function MonthCalendar({
                             minHeight: 0,
                             display: 'flex',
                             flexDirection: 'column',
-                            animation: `${calendarContentReveal} 420ms cubic-bezier(0.22, 1, 0.36, 1) both`,
-                            '@media (prefers-reduced-motion: reduce)': {
-                                animation: 'none',
-                            },
                         }}>
                     <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
                         <Box>
@@ -2348,6 +2339,12 @@ export function MonthCalendar({
                                 control={<Switch checked={showTasks} onChange={event => updateDisplayPreferences({ showTasks: event.target.checked })} />}
                                 label="Show tasks"
                             />
+                            {showTasks && (
+                                <FormControlLabel
+                                    control={<Switch checked={showDailyRecurringTasks} onChange={event => updateDisplayPreferences({ showDailyRecurringTasks: event.target.checked })} />}
+                                    label="Show daily repeating tasks"
+                                />
+                            )}
                             {showTasks && (
                                 <FormControlLabel
                                     control={<Switch checked={showStatTasks} onChange={event => updateDisplayPreferences({ showStatTasks: event.target.checked })} />}

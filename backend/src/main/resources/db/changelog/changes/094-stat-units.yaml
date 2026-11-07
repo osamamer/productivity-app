@@ -1,0 +1,16 @@
+databaseChangeLog:
+  - changeSet:
+      id: 094-stat-units
+      author: codex
+      comment: Store display units for numeric stat inputs
+      changes:
+        - addColumn:
+            tableName: stat_definition
+            columns:
+              - column:
+                  name: unit
+                  type: varchar(32)
+      rollback:
+        - dropColumn:
+            tableName: stat_definition
+            columnName: unit

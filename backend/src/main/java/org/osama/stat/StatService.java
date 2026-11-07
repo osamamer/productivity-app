@@ -149,14 +149,33 @@ public class StatService {
                                            Integer recurringTaskImportance,
                                            List<StatType> additionalInputTypes,
                                            String userId) {
+        return createDefinition(name, description, type, minValue, maxValue, morality, goodThreshold,
+                createRecurringTask, recurrenceFrequency, recurrenceDaysOfWeek, requestedTimeOfDay,
+                recurringTaskImportance, additionalInputTypes, null, userId);
+    }
+
+    @Transactional
+    public StatDefinition createDefinition(String name, String description, StatType type,
+                                           Double minValue, Double maxValue,
+                                           StatMorality morality, Double goodThreshold,
+                                           boolean createRecurringTask,
+                                           TaskRecurrenceFrequency recurrenceFrequency,
+                                           List<DayOfWeek> recurrenceDaysOfWeek,
+                                           String requestedTimeOfDay,
+                                           Integer recurringTaskImportance,
+                                           List<StatType> additionalInputTypes,
+                                           String unit,
+                                           String userId) {
         User user = userRepository.findUserById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
 
         String normalizedName = normalizeName(name);
         validateDefinition(normalizedName, type, minValue, maxValue, morality, goodThreshold, userId, null);
         List<StatType> normalizedAdditionalTypes = normalizeAdditionalInputTypes(type, additionalInputTypes);
+        String normalizedUnit = normalizeUnit(unit);
+        validateUnit(type, normalizedAdditionalTypes, normalizedUnit);
         StatDefinition definition = saveDefinition(normalizedName, description, type, minValue, maxValue,
-                morality, goodThreshold, null, user, normalizedAdditionalTypes);
+                morality, goodThreshold, null, user, normalizedAdditionalTypes, normalizedUnit);
         return createRecurringTask
                 ? createRecurringTask(definition.getId(), userId, null, recurrenceFrequency,
                 recurrenceDaysOfWeek, requestedTimeOfDay, recurringTaskImportance)
@@ -175,6 +194,16 @@ public class StatService {
                                            StatMorality morality, Double goodThreshold,
                                            List<StatType> requestedAdditionalInputTypes,
                                            String userId) {
+        return updateDefinition(definitionId, name, description, morality, goodThreshold,
+                requestedAdditionalInputTypes, null, userId);
+    }
+
+    @Transactional
+    public StatDefinition updateDefinition(String definitionId, String name, String description,
+                                           StatMorality morality, Double goodThreshold,
+                                           List<StatType> requestedAdditionalInputTypes,
+                                           String unit,
+                                           String userId) {
         StatDefinition definition = definitionRepository.findByIdAndUserId(definitionId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("No such stat."));
         if (definition.getSystemKey() != null
@@ -189,6 +218,12 @@ public class StatService {
             definition.setAdditionalInputTypes(
                     normalizeAdditionalInputTypes(definition.getType(), requestedAdditionalInputTypes));
         }
+        String normalizedUnit = normalizeUnit(unit);
+        List<StatType> effectiveAdditionalTypes = definition.getAdditionalInputTypes();
+        boolean supportsUnit = definition.getType() == StatType.NUMBER
+                || effectiveAdditionalTypes.contains(StatType.NUMBER);
+        validateUnit(definition.getType(), effectiveAdditionalTypes, normalizedUnit);
+        if (unit != null || !supportsUnit) definition.setUnit(normalizedUnit);
         boolean nameChanged = !normalizedName.equals(definition.getName());
         TaskSeriesResponse linkedSeries = nameChanged && definition.getRecurringTaskSeriesId() != null
                 ? taskSeriesService.getSeries(definition.getRecurringTaskSeriesId(), userId)
@@ -844,6 +879,22 @@ public class StatService {
         return name == null ? null : name.trim();
     }
 
+    private String normalizeUnit(String unit) {
+        if (unit == null) return null;
+        String normalized = unit.trim();
+        if (normalized.isEmpty()) return null;
+        if (normalized.length() > 32) {
+            throw new IllegalArgumentException("Statistic unit must be 32 characters or fewer.");
+        }
+        return normalized;
+    }
+
+    private void validateUnit(StatType type, List<StatType> additionalInputTypes, String unit) {
+        if (unit != null && type != StatType.NUMBER && !additionalInputTypes.contains(StatType.NUMBER)) {
+            throw new IllegalArgumentException("A unit can only be set for a statistic with an amount input.");
+        }
+    }
+
     private List<StatType> normalizeAdditionalInputTypes(StatType primaryType,
                                                          List<StatType> additionalInputTypes) {
         if (additionalInputTypes == null || additionalInputTypes.isEmpty()) return List.of();
@@ -1025,12 +1076,24 @@ public class StatService {
                                           String systemKey,
                                           User user,
                                           List<StatType> additionalInputTypes) {
+        return saveDefinition(name, description, type, minValue, maxValue, morality, goodThreshold,
+                systemKey, user, additionalInputTypes, null);
+    }
+
+    private StatDefinition saveDefinition(String name, String description, StatType type,
+                                          Double minValue, Double maxValue,
+                                          StatMorality morality, Double goodThreshold,
+                                          String systemKey,
+                                          User user,
+                                          List<StatType> additionalInputTypes,
+                                          String unit) {
         StatDefinition definition = new StatDefinition();
         definition.setId(UUID.randomUUID().toString());
         definition.setName(name);
         definition.setDescription(description);
         definition.setType(type);
         definition.setAdditionalInputTypes(additionalInputTypes);
+        definition.setUnit(unit);
         definition.setMorality(morality);
         definition.setMinValue(minValue);
         definition.setMaxValue(maxValue);

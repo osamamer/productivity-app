@@ -29,7 +29,7 @@ import {
 } from '../../services/utils/statValues';
 import { DurationInput } from './DurationInput';
 import { readStatInputPreference, saveStatInputPreference } from '../../services/utils/inputPreferences';
-import { statValueColor, statValueLabel } from './statVisualization';
+import { statNumericValueLabel, statValueColor, statValueLabel } from './statVisualization';
 import { AppTimeField } from '../input/AppPickerFields';
 import { AppNumberField } from '../input/AppNumberField';
 import { StatInputField } from './StatInputField';
@@ -486,11 +486,17 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                                 ? formatTimeValue(value)
                                 : definition.type === 'DURATION'
                                     ? formatDurationValue(value)
-                                : String(value)
+                                : statValueLabel(definition, value)
                         : 'No entry';
                     const additionalTooltip = (definition.additionalInputTypes ?? [])
                         .filter(type => entryMap.get(date)?.additionalValues?.[type] != null)
-                        .map(type => `${statInputLabel(type)}: ${entryMap.get(date)?.additionalValues?.[type]}`)
+                        .map(type => {
+                            const additionalValue = entryMap.get(date)?.additionalValues?.[type];
+                            const label = type === 'NUMBER'
+                                ? statNumericValueLabel(additionalValue!, definition.unit)
+                                : String(additionalValue);
+                            return `${statInputLabel(type)}: ${label}`;
+                        })
                         .join(', ');
 
                     return (

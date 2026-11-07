@@ -22,6 +22,8 @@ import org.osama.stat.StatTaskLinkService;
 import org.osama.taskgroup.TaskGroupService;
 import org.osama.task.events.TasksDeletedEvent;
 import org.osama.task.recurrence.TaskSeriesRepository;
+import org.osama.task.recurrence.TaskRecurrenceFrequency;
+import org.osama.task.recurrence.TaskSeries;
 import org.osama.calendar.CalendarService;
 import org.osama.user.User;
 import org.osama.user.UserRepository;
@@ -97,7 +99,7 @@ public class TaskService {
         Specification<Task> spec = TaskSpecifications.matchesQuery(query);
 
         List<Task> tasks = taskRepository.findAll(spec, taskSort(query));
-        attachReminderMinutes(tasks);
+        attachReminderMinutes(tasks, query.getUserId());
         return tasks;
     }
 
@@ -114,7 +116,7 @@ public class TaskService {
                 spec,
                 PageRequest.of(offset / limit, limit, taskSort(query))
         ).getContent();
-        attachReminderMinutes(tasks);
+        attachReminderMinutes(tasks, query.getUserId());
         return tasks;
     }
 
@@ -195,7 +197,7 @@ public class TaskService {
                 .stream()
                 .filter(task -> !task.isSkipped())
                 .toList();
-        attachReminderMinutes(subtasks);
+        attachReminderMinutes(subtasks, userId);
         return subtasks;
     }
 
@@ -244,7 +246,7 @@ public class TaskService {
             task.setDisplayOrder(nextDisplayOrder + index);
         }
         taskRepository.saveAll(movedTasks);
-        attachReminderMinutes(movedTasks);
+        attachReminderMinutes(movedTasks, userId);
         log.info("Tasks moved to parent: userId={} parentTaskId={} taskCount={} taskIds={}",
                 userId, normalizedParentId, movedTasks.size(), normalizedTaskIds);
         return movedTasks;
@@ -736,10 +738,11 @@ public class TaskService {
         task.setReminderMinutesBefore(findTaskReminder(task.getTaskId())
                 .map(Reminder::getMinutesBefore)
                 .orElse(null));
+        attachRecurrenceFrequency(task);
         return task;
     }
 
-    private void attachReminderMinutes(List<Task> tasks) {
+    private void attachReminderMinutes(List<Task> tasks, String userId) {
         if (tasks.isEmpty()) return;
         Map<String, Integer> reminderMinutes = reminderRepository
                 .findAllByTaskIdInAndNotificationType(
@@ -747,6 +750,24 @@ public class TaskService {
                 .stream()
                 .collect(Collectors.toMap(Reminder::getTaskId, Reminder::getMinutesBefore, (first, ignored) -> first));
         tasks.forEach(task -> task.setReminderMinutesBefore(reminderMinutes.get(task.getTaskId())));
+        Map<String, TaskRecurrenceFrequency> frequenciesBySeries = new HashMap<>();
+        Set<String> seriesIds = tasks.stream()
+                .map(Task::getTaskSeriesId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (userId != null && !seriesIds.isEmpty()) {
+            taskSeriesRepository.findAllBySeriesIdInAndUserId(seriesIds, userId)
+                    .forEach(series -> frequenciesBySeries.put(series.getSeriesId(), series.getRecurrenceFrequency()));
+        }
+        tasks.forEach(task -> task.setRecurrenceFrequency(frequenciesBySeries.get(task.getTaskSeriesId())));
+    }
+
+    private void attachRecurrenceFrequency(Task task) {
+        if (task.getTaskSeriesId() == null || task.getUserId() == null) return;
+        task.setRecurrenceFrequency(taskSeriesRepository
+                .findBySeriesIdAndUserId(task.getTaskSeriesId(), task.getUserId())
+                .map(TaskSeries::getRecurrenceFrequency)
+                .orElse(null));
     }
 
     private String normalizeTimeZone(String timeZone) {
@@ -1217,7 +1238,7 @@ public class TaskService {
                 .filter(changedPositions::containsKey)
                 .map(tasksById::get)
                 .toList();
-        attachReminderMinutes(changedTasks);
+        attachReminderMinutes(changedTasks, userId);
         log.info("Tasks reordered: userId={} selectedCount={} changedCount={}",
                 userId, taskIds.size(), changedPositions.size());
         return changedTasks;

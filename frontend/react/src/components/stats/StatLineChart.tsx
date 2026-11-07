@@ -19,6 +19,7 @@ import { TimeStatChart } from './TimeStatChart';
 import { StatChartPoint, StatChartPointClickEvent } from './statChartTypes';
 import { AppTimeField } from '../input/AppPickerFields';
 import { AppNumberField } from '../input/AppNumberField';
+import { statNumericValueLabel } from './statVisualization';
 import { formatStatBucketRange, getStatPeriodWindow, StatPeriodMode, StatPeriodOffset } from './statPeriod';
 
 type ChartPoint = StatChartPoint;
@@ -160,7 +161,10 @@ function formatPointValue(
     if (definition.type === 'DURATION') {
         return averaged ? `Average ${formatDurationValue(value)}` : formatDurationValue(value);
     }
-    return averaged ? `Average ${formatChartValue(value)}` : formatChartValue(value);
+    const numericValue = definition.type === 'NUMBER'
+        ? statNumericValueLabel(value, definition.unit)
+        : formatChartValue(value);
+    return averaged ? `Average ${numericValue}` : numericValue;
 }
 
 type NumericDomain = [number, number];
@@ -243,6 +247,7 @@ function axisTicks(definition: StatDefinition, domain: NumericDomain): number[] 
 function formatAxisValue(value: number, definition: StatDefinition): string {
     if (definition.type === 'TIME') return formatTimeValue(value);
     if (definition.type === 'DURATION') return formatDurationValue(value);
+    if (definition.type === 'NUMBER') return statNumericValueLabel(value, definition.unit);
     if (definition.type !== 'BOOLEAN') return formatChartValue(value);
     if (value === 0) return 'No';
     if (value === 1) return 'Yes';
