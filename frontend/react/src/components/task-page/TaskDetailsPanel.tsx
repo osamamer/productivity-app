@@ -16,8 +16,6 @@ import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
-import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
-import { TimePicker } from '@mui/x-date-pickers/TimePicker';
 import { Task } from '../../types/Task.tsx';
 import { TaskToCreate } from '../../types/TaskToCreate.tsx';
 import { TaskSeries } from '../../types/TaskSeries';
@@ -27,6 +25,7 @@ import { taskService } from '../../services/api';
 import { AppDateField } from '../input/AppPickerFields';
 import { TaskRecurrenceCustomOptions, TaskRecurrencePicker } from '../task/TaskRecurrencePicker';
 import { TaskSeriesTimeField } from '../task/TaskSeriesTimeField';
+import { TaskSchedulePicker } from '../task/TaskSchedulePicker';
 import { TaskReminderPicker } from '../task/TaskReminderPicker';
 import { SubtaskNameField } from '../task/SubtaskNameField';
 import { getTextOffsetAtPoint } from '../task/taskTextCaret';
@@ -1222,32 +1221,23 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
                             >
                                 <Box sx={{ minWidth: 0 }}>
                                     <Collapse in={showTimeOnlySchedule} timeout={180} unmountOnExit>
-                                        <TimePicker
+                                        <TaskSchedulePicker
                                             label="Schedule"
                                             value={scheduledDraft}
+                                            savedValue={validScheduledDate}
+                                            timeOnly
                                             onChange={handleDateChange}
                                             onAccept={commitDateChange}
-                                            ampm={false}
-                                            slotProps={{
-                                                field: { clearable: false },
-                                                actionBar: { actions: ['cancel', 'accept'] },
-                                                textField: { size: 'small', fullWidth: true },
-                                            }}
                                         />
                                     </Collapse>
                                     <Collapse in={!showTimeOnlySchedule} timeout={180} unmountOnExit>
-                                        <DateTimePicker
+                                        <TaskSchedulePicker
                                             label="Schedule"
                                             value={scheduledDraft}
+                                            savedValue={validScheduledDate}
+                                            timeOnly={false}
                                             onChange={handleDateChange}
                                             onAccept={commitDateChange}
-                                            closeOnSelect={false}
-                                            ampm={false}
-                                            slotProps={{
-                                                field: { clearable: true },
-                                                actionBar: { actions: ['cancel', 'accept'] },
-                                                textField: { size: 'small', fullWidth: true },
-                                            }}
                                         />
                                     </Collapse>
                                 </Box>
