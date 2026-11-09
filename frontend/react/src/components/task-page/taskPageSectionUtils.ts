@@ -4,6 +4,10 @@ export type TaskListItem =
     | { kind: 'task'; task: Task }
     | { kind: 'group'; group: TaskGroup; tasks: Task[] };
 
+export function shouldRenderTaskGroup(tasks: Task[]): boolean {
+    return tasks.length > 1;
+}
+
 export function buildTaskListItems(tasks: Task[], groups: TaskGroup[]): TaskListItem[] {
     const tasksById = new Map<string, Task>();
     tasks.forEach(task => tasksById.set(task.taskId, task));
@@ -29,17 +33,18 @@ export function buildTaskListItems(tasks: Task[], groups: TaskGroup[]): TaskList
         else tasksByGroupId.set(groupId, [task]);
     });
 
-    const singletonLinkedGroups = new Map<string, TaskGroup>();
+    const singletonGroups = new Map<string, TaskGroup>();
     groupCandidates.forEach(group => {
-        if (!group.linkedToMentalThread && !group.isStatGroup) return;
         const groupTasks = tasksByGroupId.get(group.groupId) ?? [];
-        if (groupTasks.length === 1) singletonLinkedGroups.set(groupTasks[0].taskId, group);
+        if (groupTasks.length > 0 && !shouldRenderTaskGroup(groupTasks)) {
+            singletonGroups.set(groupTasks[0].taskId, group);
+        }
     });
 
     const emittedGroupIds = new Set<string>();
     return uniqueTasks.reduce<TaskListItem[]>((items, task) => {
         const group = groupByTaskId.get(task.taskId);
-        const singletonGroup = singletonLinkedGroups.get(task.taskId);
+        const singletonGroup = singletonGroups.get(task.taskId);
         if (!group) {
             items.push({ kind: 'task', task });
         } else if (singletonGroup?.groupId === group.groupId) {

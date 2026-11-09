@@ -50,6 +50,7 @@ import { useUser } from '../hooks/useUser';
 import { SmartTaskInput } from '../components/input/SmartTaskInput';
 import { GroupTaskInputRow } from '../components/task/GroupTaskInputRow';
 import { GroupTaskCount } from '../components/task/GroupTaskCount';
+import { shouldRenderTaskGroup } from '../components/task-page/taskPageSectionUtils';
 import { TaskParentPopover } from '../components/task/TaskParentPopover';
 import { FlatTaskRow } from '../components/FlatTaskRow';
 import { TaskToCreate } from '../types/TaskToCreate';
@@ -377,7 +378,7 @@ function buildTaskListItems(
 
         emittedGroupIds.add(group.groupId);
         const groupTasks = tasksByGroupId.get(group.groupId) ?? [];
-        if ((group.linkedToMentalThread || group.isStatGroup) && groupTasks.length === 1) {
+        if (groupTasks.length > 0 && !shouldRenderTaskGroup(groupTasks)) {
             const singletonTask = groupTasks[0];
             items.push({
                 kind: 'task',

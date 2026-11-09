@@ -41,7 +41,7 @@ export function MentalThreadCreateDialog({ open, onClose, onSave }: MentalThread
     };
 
     const handleSave = async () => {
-        if (!input.title.trim()) return;
+        if (!input.title.trim() || saving) return;
         setSaving(true);
         try {
             const saved = await onSave({
@@ -69,6 +69,16 @@ export function MentalThreadCreateDialog({ open, onClose, onSave }: MentalThread
                         autoComplete="off"
                         value={input.title}
                         onChange={event => update('title', event.target.value)}
+                        onKeyDown={event => {
+                            if (event.key !== 'Enter'
+                                || event.shiftKey
+                                || event.altKey
+                                || event.ctrlKey
+                                || event.metaKey
+                                || event.nativeEvent.isComposing) return;
+                            event.preventDefault();
+                            void handleSave();
+                        }}
                         required
                         autoFocus
                         inputProps={{ maxLength: 160 }}
