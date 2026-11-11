@@ -51,7 +51,7 @@ export function SubStatInputFields({ definitions, date, refreshKey, onEntryChang
             })
             .catch(exception => {
                 console.error('Failed to load sub-stat inputs:', exception);
-                if (!cancelled) setError('Could not load additional inputs.');
+                if (!cancelled) setError('Could not load these values.');
             })
             .finally(() => {
                 if (!cancelled) setLoading(false);
@@ -83,8 +83,8 @@ export function SubStatInputFields({ definitions, date, refreshKey, onEntryChang
             setTouched(new Set());
         } catch (exception) {
             console.error('Failed to save sub-stat inputs:', exception);
-            setError('Could not save additional inputs. Please try again.');
-            onError?.('Could not save the additional statistic inputs.');
+            setError('Could not save these values. Please try again.');
+            onError?.('Could not save the related stat values.');
         } finally {
             setSaving(false);
         }
@@ -93,10 +93,7 @@ export function SubStatInputFields({ definitions, date, refreshKey, onEntryChang
     if (definitions.length === 0) return null;
 
     return (
-        <Box sx={{ mt: 1.5, pt: 1.5, borderTop: 1, borderColor: 'divider' }}>
-            <Typography variant="caption" color="text.secondary" fontWeight={600}>
-                Additional inputs
-            </Typography>
+        <Box sx={{ mt: 1.5 }}>
             {loading ? <CircularProgress size={16} sx={{ display: 'block', my: 1 }} /> : (
                 <Stack spacing={1.25} sx={{ mt: 1 }}>
                     {definitions.map(definition => (
@@ -118,7 +115,7 @@ export function SubStatInputFields({ definitions, date, refreshKey, onEntryChang
                     {error && <Alert severity="error" sx={{ py: 0 }}>{error}</Alert>}
                     {touched.size > 0 && (
                         <Button size="small" onClick={() => void handleSave()} disabled={saving} sx={{ alignSelf: 'flex-end' }}>
-                            {saving ? <CircularProgress size={16} /> : 'Save inputs'}
+                            {saving ? <CircularProgress size={16} /> : 'Save'}
                         </Button>
                     )}
                 </Stack>

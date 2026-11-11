@@ -10,6 +10,7 @@ import { getStatFeedbackColor, showStatFeedback } from '../../services/statFeedb
 import { readStatInputPreference, saveStatInputPreference } from '../../services/utils/inputPreferences';
 import { StatInputField } from './StatInputField';
 import { statInputLabel } from './statInputLabels';
+import { groupStatDefinitions } from '../../services/utils/statDefinitionHierarchy';
 
 interface Props {
     definitions: StatDefinition[];
@@ -126,11 +127,13 @@ export function TodayCheckIn({ definitions, onSaved }: Props) {
                         date: today,
                         value: values[d.id] ?? null,
                         status: statuses[d.id],
-                        additionalValues: Object.fromEntries(
-                            (d.additionalInputTypes ?? [])
-                                .filter(type => additionalValues[d.id]?.[type] != null)
-                                .map(type => [type, additionalValues[d.id]?.[type]]),
-                        ),
+                        additionalValues: statuses[d.id] === 'NOT_PLANNED'
+                            ? {}
+                            : Object.fromEntries(
+                                (d.additionalInputTypes ?? [])
+                                    .filter(type => additionalValues[d.id]?.[type] != null)
+                                    .map(type => [type, additionalValues[d.id]?.[type]]),
+                            ),
                     })
                 )
             );
@@ -144,6 +147,8 @@ export function TodayCheckIn({ definitions, onSaved }: Props) {
         }
     };
 
+    const definitionGroups = groupStatDefinitions(definitions);
+
     if (loading) return <CircularProgress size={24} sx={{ display: 'block', mx: 'auto', my: 3 }} />;
     if (definitions.length === 0) return null;
 
@@ -153,7 +158,7 @@ export function TodayCheckIn({ definitions, onSaved }: Props) {
                 Today's Check-In — {format(new Date(), 'MMMM d, yyyy')}
             </Typography>
             <Stack spacing={3} sx={{ mt: 2 }}>
-                {definitions.map((def, i) => (
+                {definitionGroups.map(({ definition: def, subDefinitions }, i) => (
                     <Box key={def.id}>
                         {i > 0 && <Divider sx={{ mb: 3 }} />}
                         <Typography variant="subtitle2" sx={{ mb: 0.5 }}>{def.name}</Typography>
@@ -179,6 +184,36 @@ export function TodayCheckIn({ definitions, onSaved }: Props) {
                                         onChange={value => setAdditionalValue(def.id, type, value)}
                                         onFocus={element => { feedbackAnchorRef.current = element; }}
                                     />
+                                </Box>
+                            ))}
+                            {subDefinitions.map(subDefinition => (
+                                <Box key={subDefinition.id} sx={{ mt: 0.5 }}>
+                                    <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
+                                        {subDefinition.name}
+                                    </Typography>
+                                    <StatInputField
+                                        definition={subDefinition}
+                                        type={subDefinition.type}
+                                        value={values[subDefinition.id] ?? null}
+                                        status={statuses[subDefinition.id]}
+                                        primary
+                                        onChange={(value, status) => setValue(subDefinition.id, value, status)}
+                                        onFocus={element => { feedbackAnchorRef.current = element; }}
+                                    />
+                                    {(subDefinition.additionalInputTypes ?? []).map(type => (
+                                        <Box key={type} sx={{ mt: 1 }}>
+                                            <Typography variant="caption" color="text.secondary">
+                                                {statInputLabel(type)}
+                                            </Typography>
+                                            <StatInputField
+                                                definition={subDefinition}
+                                                type={type}
+                                                value={additionalValues[subDefinition.id]?.[type] ?? null}
+                                                onChange={value => setAdditionalValue(subDefinition.id, type, value)}
+                                                onFocus={element => { feedbackAnchorRef.current = element; }}
+                                            />
+                                        </Box>
+                                    ))}
                                 </Box>
                             ))}
                         </Stack>

@@ -338,11 +338,13 @@ export const StatRecentDots = React.memo(function StatRecentDots({
         const previousStatus = statusMap.get(activePopover.date);
         const previousEntry = entryMap.get(activePopover.date);
         const previousHadEntry = valueMap.has(activePopover.date);
-        const nextAdditionalValues = Object.fromEntries(
-            (definition.additionalInputTypes ?? [])
-                .filter(type => editAdditionalValues[type] != null)
-                .map(type => [type, editAdditionalValues[type]]),
-        ) as Partial<Record<StatType, number>>;
+        const nextAdditionalValues = editStatus === 'NOT_PLANNED'
+            ? {}
+            : Object.fromEntries(
+                (definition.additionalInputTypes ?? [])
+                    .filter(type => editAdditionalValues[type] != null)
+                    .map(type => [type, editAdditionalValues[type]]),
+            ) as Partial<Record<StatType, number>>;
         if (editValue == null && editStatus !== 'NOT_PLANNED'
             && Object.keys(nextAdditionalValues).length > 0) {
             setSaveError(`Choose a value for ${definition.name} before saving its additional inputs.`);

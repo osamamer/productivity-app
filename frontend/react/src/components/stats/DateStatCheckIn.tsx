@@ -123,11 +123,13 @@ export function DateStatCheckIn({ date, definitions, onSaved }: Props) {
                 date,
                 value: values[definition.id] ?? null,
                 status: statuses[definition.id],
-                additionalValues: Object.fromEntries(
-                    (definition.additionalInputTypes ?? [])
-                        .filter(type => additionalValues[definition.id]?.[type] != null)
-                        .map(type => [type, additionalValues[definition.id]?.[type]]),
-                ),
+                additionalValues: statuses[definition.id] === 'NOT_PLANNED'
+                    ? {}
+                    : Object.fromEntries(
+                        (definition.additionalInputTypes ?? [])
+                            .filter(type => additionalValues[definition.id]?.[type] != null)
+                            .map(type => [type, additionalValues[definition.id]?.[type]]),
+                    ),
             })));
             setSuccess(true);
             onSaved();
@@ -195,11 +197,8 @@ export function DateStatCheckIn({ date, definitions, onSaved }: Props) {
                                         </Box>
                                     ))}
                                     {subDefinitions.length > 0 && (
-                                        <Box sx={{ mt: 0.5, pl: 1.5, borderLeft: 1, borderColor: 'divider' }}>
-                                            <Typography variant="caption" color="text.secondary" fontWeight={600}>
-                                                Additional inputs
-                                            </Typography>
-                                            <Stack spacing={1.5} sx={{ mt: 1 }}>
+                                        <Box sx={{ mt: 0.5 }}>
+                                            <Stack spacing={1.5}>
                                                 {subDefinitions.map(subDefinition => (
                                                     <Box key={subDefinition.id}>
                                                         <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>

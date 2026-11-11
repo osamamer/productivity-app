@@ -101,18 +101,24 @@ export default function StatsScreen() {
     void writeOpenStatGroupIds(groupPreferencesKey, openGroupIds);
   }, [groupPreferencesKey, loadedGroupPreferencesKey, openGroupIds]);
   const entriesByDefinition = useMemo(() => new Map((resource.data?.entries ?? []).map(entry => [entry.statDefinitionId, entry])), [resource.data?.entries]);
+  const listDefinitions = useMemo(() => {
+    const definitions = resource.data?.definitions ?? [];
+    const definitionIds = new Set(definitions.map(definition => definition.id));
+    return definitions.filter(definition =>
+      !definition.parentDefinitionId || !definitionIds.has(definition.parentDefinitionId));
+  }, [resource.data?.definitions]);
   const groupedDefinitions = useMemo(() => (resource.data?.groups ?? [])
     .map(group => ({
       group,
-      definitions: (resource.data?.definitions ?? []).filter(definition => group.statDefinitionIds.includes(definition.id)),
-    })), [resource.data?.definitions, resource.data?.groups]);
+      definitions: listDefinitions.filter(definition => group.statDefinitionIds.includes(definition.id)),
+    })), [listDefinitions, resource.data?.groups]);
   const groupedDefinitionIds = useMemo(
     () => new Set(groupedDefinitions.flatMap(item => item.definitions.map(definition => definition.id))),
     [groupedDefinitions],
   );
   const ungroupedDefinitions = useMemo(
-    () => (resource.data?.definitions ?? []).filter(definition => !groupedDefinitionIds.has(definition.id)),
-    [groupedDefinitionIds, resource.data?.definitions],
+    () => listDefinitions.filter(definition => !groupedDefinitionIds.has(definition.id)),
+    [groupedDefinitionIds, listDefinitions],
   );
   const groupPreferencesReady = loadedGroupPreferencesKey === groupPreferencesKey;
 
@@ -300,7 +306,6 @@ export default function StatsScreen() {
             <AppText variant="label" numberOfLines={1}>{definition.name}</AppText>
             {subDefinitions.length > 0 && (
               <View style={[styles.subStats, { borderLeftColor: colors.border }]}>
-                <AppText variant="caption" color="muted">Additional inputs</AppText>
                 {subDefinitions.map(subDefinition => {
                   const subEntry = entriesByDefinition.get(subDefinition.id);
                   const subValue = subEntry && subEntry.status !== 'NOT_PLANNED'
@@ -432,7 +437,7 @@ export default function StatsScreen() {
       />
       <StatLogSheet
         visible={logSheetOpen}
-        definitions={resource.data?.definitions ?? []}
+        definitions={listDefinitions}
         onClose={() => setLogSheetOpen(false)}
         onSelect={(definition, date) => {
           setLogSheetOpen(false);
@@ -452,7 +457,7 @@ export default function StatsScreen() {
         key={`stat-group-${editingGroup?.groupId ?? 'new'}-${groupComposerOpen ? 'open' : 'closed'}`}
         visible={groupComposerOpen}
         group={editingGroup}
-        definitions={resource.data?.definitions ?? []}
+        definitions={listDefinitions}
         onClose={closeGroupComposer}
         onSaved={saveGroup}
       />

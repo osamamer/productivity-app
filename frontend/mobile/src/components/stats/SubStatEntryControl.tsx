@@ -5,7 +5,7 @@ import { booleanStatColor } from '@/lib/statMorality';
 import { formatTimeValue } from '@/lib/statValues';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
-import type { StatDefinition, StatEntry, StatEntryStatus } from '@/types/models';
+import type { StatDefinition, StatEntry, StatEntryStatus, StatType } from '@/types/models';
 import { AppButton } from '../ui/AppButton';
 import { AppInput } from '../ui/AppInput';
 import { AppPopup } from '../ui/AppPopup';
@@ -13,6 +13,7 @@ import { AppText } from '../ui/AppText';
 import { ChoiceChips } from '../ui/ChoiceChips';
 import { DurationInput } from './DurationInput';
 import { TimePicker } from '../tasks/TaskScheduleField';
+import { StatAdditionalInputControl } from './StatAdditionalInputControl';
 
 function dateForMinutes(value: number): Date {
   const date = new Date();
@@ -30,6 +31,7 @@ export function SubStatEntryControl({ definition, entry, date, onSaved }: {
   const [value, setValue] = useState<number | null>(entry?.value ?? null);
   const [valueText, setValueText] = useState(entry?.value == null ? '' : String(entry.value));
   const [status, setStatus] = useState<StatEntryStatus>(entry?.status ?? 'RECORDED');
+  const [additionalValues, setAdditionalValues] = useState<Partial<Record<StatType, number>>>(entry?.additionalValues ?? {});
   const [timeValue, setTimeValue] = useState(() => dateForMinutes(definition.type === 'TIME' ? entry?.value ?? 12 * 60 : 12 * 60));
   const [timePickerOpen, setTimePickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -56,6 +58,17 @@ export function SubStatEntryControl({ definition, entry, date, onSaved }: {
       setError('Enter a valid value.');
       return;
     }
+    const nextAdditionalValues = status === 'NOT_PLANNED'
+      ? {}
+      : Object.fromEntries(
+        (definition.additionalInputTypes ?? [])
+          .filter(type => additionalValues[type] != null)
+          .map(type => [type, additionalValues[type]]),
+      ) as Partial<Record<StatType, number>>;
+    if (nextValue === null && status !== 'NOT_PLANNED' && Object.keys(nextAdditionalValues).length > 0) {
+      setError('Choose a value before saving these fields.');
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -64,11 +77,13 @@ export function SubStatEntryControl({ definition, entry, date, onSaved }: {
         status === 'NOT_PLANNED' ? null : nextValue,
         date,
         status,
+        nextAdditionalValues,
       );
       onSaved(definition.id, recorded ?? null, date);
       setValue(recorded?.value ?? null);
       setValueText(recorded?.value == null ? '' : String(recorded.value));
       setStatus(recorded?.status ?? 'RECORDED');
+      setAdditionalValues(recorded?.additionalValues ?? nextAdditionalValues);
       setDirty(false);
       setClearPending(false);
     } catch (cause) {
@@ -84,7 +99,7 @@ export function SubStatEntryControl({ definition, entry, date, onSaved }: {
   const booleanValue = status === 'NOT_PLANNED' ? -2 : value == null ? -1 : value;
 
   return (
-    <View style={{ gap: 8, paddingLeft: 12, borderLeftWidth: 2, borderLeftColor: colors.border }}>
+    <View style={{ gap: 8 }}>
       <AppText variant="caption" color="muted">{definition.name}</AppText>
       {definition.type === 'BOOLEAN' ? (
         <ChoiceChips
@@ -116,6 +131,25 @@ export function SubStatEntryControl({ definition, entry, date, onSaved }: {
         <AppInput label={definition.unit ? `Value (${definition.unit})` : 'Value'} value={valueText}
           onChangeText={next => { setValueText(next); setDirty(true); setError(null); }} keyboardType="decimal-pad" />
       )}
+      {(definition.additionalInputTypes ?? []).map(type => (
+        <StatAdditionalInputControl
+          key={`${definition.id}-${type}-${date}`}
+          definition={definition}
+          type={type}
+          value={additionalValues[type] ?? null}
+          onChange={nextValue => {
+            setAdditionalValues(previous => {
+              const next = { ...previous };
+              if (nextValue == null) delete next[type];
+              else next[type] = nextValue;
+              return next;
+            });
+            setDirty(true);
+            setClearPending(false);
+            setError(null);
+          }}
+        />
+      ))}
       {error && <AppText color="danger">{error}</AppText>}
       {(entry || value !== null) && (
         <AppButton compact variant="secondary" label="Clear input" disabled={saving}

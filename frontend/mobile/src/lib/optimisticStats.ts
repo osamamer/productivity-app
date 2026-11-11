@@ -1,5 +1,5 @@
 import { localDate } from './date';
-import type { StatDefinition, StatEntry, StatEntryStatus } from '@/types/models';
+import type { StatDefinition, StatEntry, StatEntryStatus, StatType } from '@/types/models';
 
 type Override = { entry: StatEntry | null; sequence: number };
 
@@ -100,15 +100,20 @@ export function applyOptimisticStatEntry(
   date: string,
   value: number | null,
   status: StatEntryStatus = 'RECORDED',
+    additionalValues?: Partial<Record<StatType, number>>,
 ): OptimisticStatWrite {
   definitions.set(definition.id, definition);
   const writeSequence = ++sequence;
   const previous = new Map<string, Override | undefined>();
   const persistedValue = status === 'NOT_PLANNED' ? 0 : value;
   const changedKey = key(definition.id, date);
+  const existingEntry = effectiveEntry(definition.id, date);
   setOverride(
     changedKey,
-    persistedValue === null ? null : optimisticEntry(definition, date, persistedValue, status),
+    persistedValue === null ? null : {
+      ...optimisticEntry(definition, date, persistedValue, status),
+      additionalValues: additionalValues ?? existingEntry?.additionalValues ?? {},
+    },
     writeSequence,
     previous,
   );

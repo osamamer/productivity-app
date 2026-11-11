@@ -20,7 +20,7 @@ import type { StatDefinition, StatEntry } from '@/types/models';
 interface StatDetailData {
   definition: StatDefinition;
   subStatDefinitions: StatDefinition[];
-  todayEntry?: StatEntry;
+  todayEntries: StatEntry[];
 }
 
 type DateRangeKey = '7-days' | '30-days' | '3-months' | '1-year' | 'this-month' | 'this-year';
@@ -107,12 +107,15 @@ export default function StatDetailScreen() {
   const { height } = useWindowDimensions();
   const resource = useAsyncData<StatDetailData>(async () => {
     const [definitions, todayEntries] = await Promise.all([api.stats.definitions(), api.stats.today()]);
-    const definition = definitions.find(item => item.id === statId);
-    if (!definition) throw new Error('Stat no longer exists.');
+    const routeDefinition = definitions.find(item => item.id === statId);
+    if (!routeDefinition) throw new Error('Stat no longer exists.');
+    const definition = routeDefinition.parentDefinitionId
+      ? definitions.find(item => item.id === routeDefinition.parentDefinitionId) ?? routeDefinition
+      : routeDefinition;
     return {
       definition,
       subStatDefinitions: definitions.filter(item => item.parentDefinitionId === definition.id),
-      todayEntry: todayEntries.find(entry => entry.statDefinitionId === definition.id),
+      todayEntries,
     };
   });
   const [dateRange, setDateRange] = useState<DateRangeKey>('30-days');
@@ -121,7 +124,18 @@ export default function StatDetailScreen() {
   const [entryDate, setEntryDate] = useState<string | undefined>();
   const [selectedPoint, setSelectedPoint] = useState<StatHistoryPoint | null>(null);
   const [periodMenuOpen, setPeriodMenuOpen] = useState(false);
+  const [displayMenuOpen, setDisplayMenuOpen] = useState(false);
+  const [displaySelection, setDisplaySelection] = useState<{ parentId: string; definitionId: string } | null>(null);
   const definition = resource.data?.definition;
+  const subStatDefinitions = resource.data?.subStatDefinitions ?? [];
+  const displayDefinitionId = definition && displaySelection?.parentId === definition.id
+    ? displaySelection.definitionId
+    : definition?.id;
+  const displayDefinition = subStatDefinitions.find(item => item.id === displayDefinitionId)
+    ?? definition;
+  const displayTodayEntry = resource.data?.todayEntries.find(
+    entry => entry.statDefinitionId === displayDefinition?.id,
+  );
   const datePeriod = useMemo(() => rangeDates(dateRange), [dateRange]);
   const calendarHeatmap = dateRange === '3-months' || dateRange === '1-year' || dateRange === 'this-year';
   const includeRangeYear = dateRange === '1-year'
@@ -140,7 +154,7 @@ export default function StatDetailScreen() {
 
   function handleEntrySaved(entry: StatEntry | null, date?: string) {
     const changedDate = date ?? entry?.date;
-    if (changedDate) {
+    if (changedDate && displayDefinition?.id === definition?.id) {
       setEntries(current => [
         ...current.filter(existing => existing.date !== changedDate),
         ...(entry ? [entry] : []),
@@ -155,8 +169,12 @@ export default function StatDetailScreen() {
         }
         : current);
     }
-    if (changedDate === localDate() && resource.data) {
-      resource.setData({ ...resource.data, todayEntry: entry ?? undefined });
+    if (changedDate === localDate() && resource.data && definition) {
+      const rest = resource.data.todayEntries.filter(item => item.statDefinitionId !== definition.id);
+      resource.setData({
+        ...resource.data,
+        todayEntries: entry ? [...rest, entry] : rest,
+      });
     }
     setHistoryRefreshKey(key => key + 1);
   }
@@ -169,14 +187,14 @@ export default function StatDetailScreen() {
     return <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}><ErrorView message={resource.error} retry={() => void resource.reload()} /></SafeAreaView>;
   }
 
-  if (!definition) return null;
+  if (!definition || !displayDefinition) return null;
 
   const selectedPointDate = selectedPoint
     ? selectedPoint.from === selectedPoint.to
       ? formatShortDate(selectedPoint.from)
       : `${formatShortDate(selectedPoint.from)} – ${formatShortDate(selectedPoint.to)}`
     : undefined;
-  const selectedPointValue = selectedPoint ? formatPointValue(definition, selectedPoint) : undefined;
+  const selectedPointValue = selectedPoint ? formatPointValue(displayDefinition, selectedPoint) : undefined;
   const activePeriodLabel = DATE_RANGES.find(period => period.value === dateRange)?.label ?? '30 days';
   const selectedLogDate = selectedPoint && selectedPoint.from === selectedPoint.to ? selectedPoint.from : undefined;
   const logButtonLabel = selectedLogDate ? `Log ${formatLogDate(selectedLogDate)}` : 'Log';
@@ -197,13 +215,15 @@ export default function StatDetailScreen() {
           </SilentPressable>
           <View style={styles.chartTitleGroup}>
             <AppText variant="heading" numberOfLines={1} style={styles.chartTitle}>{definition.name}</AppText>
-            <AppText variant="caption" color="muted" numberOfLines={1}>{dateRangeLabel}</AppText>
+            <AppText variant="caption" color="muted" numberOfLines={1}>
+              {displayDefinition.id === definition.id ? dateRangeLabel : `${displayDefinition.name} · ${dateRangeLabel}`}
+            </AppText>
           </View>
         </View>
         <Card style={styles.chartCard}>
           <StatHistoryPreview
-            definition={definition}
-            todayEntry={resource.data?.todayEntry}
+            definition={displayDefinition}
+            todayEntry={displayTodayEntry}
             dateRange={datePeriod.days}
             dateFrom={datePeriod.from}
             dateTo={datePeriod.to}
@@ -218,6 +238,47 @@ export default function StatDetailScreen() {
       </View>
 
       <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
+        {displayMenuOpen && (
+          <>
+            <SilentPressable
+              accessibilityRole="button"
+              accessibilityLabel="Close display options"
+              style={styles.menuDismiss}
+              onPress={() => setDisplayMenuOpen(false)}
+            />
+            <View style={[styles.periodMenu, { backgroundColor: colors.surface, borderColor: colors.border, bottom: 74, width: 220 }]}>
+              <SilentPressable
+                accessibilityRole="button"
+                accessibilityState={{ selected: displayDefinition.id === definition.id }}
+                onPress={() => {
+                  setDisplaySelection({ parentId: definition.id, definitionId: definition.id });
+                  setSelectedPoint(null);
+                  setDisplayMenuOpen(false);
+                }}
+                style={({ pressed }) => [styles.periodOption, displayDefinition.id === definition.id && { backgroundColor: colors.accentSoft }, pressed && styles.pressed]}
+              >
+                <AppText variant="label" style={styles.grow}>Main value</AppText>
+                {displayDefinition.id === definition.id && <Ionicons name="checkmark" size={18} color={colors.accent} />}
+              </SilentPressable>
+              {subStatDefinitions.map(subDefinition => (
+                <SilentPressable
+                  key={subDefinition.id}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: displayDefinition.id === subDefinition.id }}
+                  onPress={() => {
+                    setDisplaySelection({ parentId: definition.id, definitionId: subDefinition.id });
+                    setSelectedPoint(null);
+                    setDisplayMenuOpen(false);
+                  }}
+                  style={({ pressed }) => [styles.periodOption, displayDefinition.id === subDefinition.id && { backgroundColor: colors.accentSoft }, pressed && styles.pressed]}
+                >
+                  <AppText variant="label" numberOfLines={1} style={styles.grow}>{subDefinition.name}</AppText>
+                  {displayDefinition.id === subDefinition.id && <Ionicons name="checkmark" size={18} color={colors.accent} />}
+                </SilentPressable>
+              ))}
+            </View>
+          </>
+        )}
         {periodMenuOpen && (
           <>
             <SilentPressable
@@ -255,11 +316,25 @@ export default function StatDetailScreen() {
               </View>
             </View>
           )}
+          {subStatDefinitions.length > 0 && (
+            <SilentPressable
+              accessibilityRole="button"
+              accessibilityLabel={`Choose displayed value, currently ${displayDefinition.id === definition.id ? 'main value' : displayDefinition.name}`}
+              accessibilityState={{ expanded: displayMenuOpen }}
+              onPress={() => { setPeriodMenuOpen(false); setDisplayMenuOpen(open => !open); }}
+              style={({ pressed }) => [styles.stickyButton, { backgroundColor: colors.surface, borderColor: colors.accent, shadowColor: colors.text }, pressed && styles.pressed]}
+            >
+              <Ionicons name="stats-chart-outline" size={18} color={colors.accent} />
+              <AppText variant="label" color="accent" numberOfLines={1}>
+                {displayDefinition.id === definition.id ? 'Main value' : displayDefinition.name}
+              </AppText>
+            </SilentPressable>
+          )}
           <SilentPressable
             accessibilityRole="button"
             accessibilityLabel={`Choose period, currently ${activePeriodLabel}`}
             accessibilityState={{ expanded: periodMenuOpen }}
-            onPress={() => setPeriodMenuOpen(open => !open)}
+            onPress={() => { setDisplayMenuOpen(false); setPeriodMenuOpen(open => !open); }}
             style={({ pressed }) => [styles.stickyButton, { backgroundColor: colors.surface, borderColor: colors.accent, shadowColor: colors.text }, pressed && styles.pressed]}
           >
             <Ionicons name="calendar-outline" size={18} color={colors.accent} />
@@ -281,11 +356,16 @@ export default function StatDetailScreen() {
         key={`${definition.id}-${entryDate ?? 'closed'}`}
         definition={entryDate ? definition : null}
         subStatDefinitions={resource.data?.subStatDefinitions ?? []}
-        existing={entryDate ? sortedEntries.find(entry => entry.date === entryDate) : undefined}
+        existing={entryDate && displayDefinition.id === definition.id ? sortedEntries.find(entry => entry.date === entryDate) : undefined}
         initialDate={entryDate}
         onClose={() => setEntryDate(undefined)}
         onSaved={handleEntrySaved}
-        onSubEntrySaved={() => setHistoryRefreshKey(key => key + 1)}
+        onSubEntrySaved={(definitionId, entry, date) => {
+          setHistoryRefreshKey(key => key + 1);
+          if (date !== localDate() || !resource.data) return;
+          const rest = resource.data.todayEntries.filter(item => item.statDefinitionId !== definitionId);
+          resource.setData({ ...resource.data, todayEntries: entry ? [...rest, entry] : rest });
+        }}
         onReverted={(entry, date) => {
           const revertedDate = date ?? entry?.date;
           if (revertedDate) {
@@ -303,8 +383,9 @@ export default function StatDetailScreen() {
               }
               : current);
           }
-          if (revertedDate === localDate() && resource.data) {
-            resource.setData({ ...resource.data, todayEntry: entry });
+          if (revertedDate === localDate() && resource.data && definition) {
+            const rest = resource.data.todayEntries.filter(item => item.statDefinitionId !== definition.id);
+            resource.setData({ ...resource.data, todayEntries: entry ? [...rest, entry] : rest });
           }
           setHistoryRefreshKey(key => key + 1);
         }}

@@ -18,6 +18,7 @@ import type {
   Note,
   NoteCategory,
   StatDefinition,
+  StatType,
   StatMorality,
   StatEntryStatus,
   StatEntry,
@@ -359,8 +360,20 @@ export const api = {
       return apiRequest<StatEntry[]>(`/api/v1/stats/entries?${params}`);
     },
     entriesByDate: (date: string) => apiRequest<StatEntry[]>(`/api/v1/stats/entries/by-date?date=${encodeURIComponent(date)}`),
-    record: async (statDefinitionId: string, value: number | null, date?: string, status?: StatEntryStatus) => {
-      const entry = await json<StatEntry | undefined>('/api/v1/stats/entries', 'POST', { statDefinitionId, value, date, status });
+    record: async (
+      statDefinitionId: string,
+      value: number | null,
+      date?: string,
+      status?: StatEntryStatus,
+      additionalValues?: Partial<Record<StatType, number>>,
+    ) => {
+      const entry = await json<StatEntry | undefined>('/api/v1/stats/entries', 'POST', {
+        statDefinitionId,
+        value,
+        date,
+        status,
+        additionalValues,
+      });
       invalidateResource('stats', 'stat');
       return entry;
     },

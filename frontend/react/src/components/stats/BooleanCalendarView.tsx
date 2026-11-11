@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import {
-    Box, Typography, CircularProgress, Stack, Popover,
+    Box, Typography, CircularProgress, Stack, Popover, Button,
     ToggleButton, ToggleButtonGroup, Alert,
 } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
@@ -8,11 +8,13 @@ import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import HighlightOffIcon from '@mui/icons-material/HighlightOff';
 import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
 import { format, eachDayOfInterval, getDay, getMonth, parseISO } from 'date-fns';
-import { StatDefinition, StatEntry, StatEntryStatus } from '../../types/Stats';
+import { StatDefinition, StatEntry, StatEntryStatus, StatType } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
 import { getBooleanChoiceColor, getStatFeedbackColor, showStatFeedback } from '../../services/statFeedback';
 import { getStatPeriodWindow, StatPeriodMode, StatPeriodOffset } from './statPeriod';
 import { SubStatInputFields } from './SubStatInputFields';
+import { StatInputField } from './StatInputField';
+import { statInputLabel } from './statInputLabels';
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -28,10 +30,15 @@ interface Props {
     onDateContextMenu?: (date: string, event: React.MouseEvent<Element>) => void;
 }
 
-function entryMaps(entries: StatEntry[]): { values: Map<string, number>; statuses: Map<string, StatEntryStatus> } {
+function entryMaps(entries: StatEntry[]): {
+    values: Map<string, number>;
+    statuses: Map<string, StatEntryStatus>;
+    entries: Map<string, StatEntry>;
+} {
     return {
         values: new Map(entries.map(entry => [entry.date, entry.value])),
         statuses: new Map(entries.map(entry => [entry.date, entry.status ?? 'RECORDED'] as [string, StatEntryStatus])),
+        entries: new Map(entries.map(entry => [entry.date, entry])),
     };
 }
 
@@ -86,10 +93,12 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
         key: string;
         values: Map<string, number>;
         statuses: Map<string, StatEntryStatus>;
+        entries: Map<string, StatEntry>;
     }>(() => ({
         key: dataKey,
         values: cachedMaps?.values ?? new Map(),
         statuses: cachedMaps?.statuses ?? new Map(),
+        entries: cachedMaps?.entries ?? new Map(),
     }));
     const hasRenderedDataRef = useRef(Boolean(cachedEntries));
     const [loadingKey, setLoadingKey] = useState<string | null>(cachedEntries ? null : dataKey);
@@ -103,15 +112,23 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
         : cachedMaps
             ? cachedMaps.statuses
             : valueState.statuses;
+    const entryMap = valueState.key === dataKey
+        ? valueState.entries
+        : cachedMaps
+            ? cachedMaps.entries
+            : valueState.entries;
     const loading = loadingKey === dataKey
         || (valueState.key !== dataKey && !cachedEntries && !hasRenderedDataRef.current);
     const [popover, setPopover] = useState<{ anchorEl: HTMLElement; date: string } | null>(null);
     const [editValue, setEditValue] = useState<number | null>(null);
     const [editStatus, setEditStatus] = useState<StatEntryStatus>('RECORDED');
+    const [editAdditionalValues, setEditAdditionalValues] = useState<Partial<Record<StatType, number>>>({});
     const [saveError, setSaveError] = useState<string | null>(null);
     const entryMutationVersionsRef = useRef(new Map<string, number>());
     const dailyGridRef = useRef<HTMLDivElement | null>(null);
     const [dailyGridWidth, setDailyGridWidth] = useState(0);
+    const additionalInputTypes = definition.additionalInputTypes ?? [];
+    const hasEmbeddedInputs = additionalInputTypes.length > 0 || subStatDefinitions.length > 0;
 
     const allDays = eachDayOfInterval({ start: from, end: to });
     const isDailyGrid = dateRange >= 90;
@@ -130,12 +147,15 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
     while (days.length % 7 !== 0) days.push(null);
 
     useEffect(() => {
+        setPopover(null);
+    }, [dataKey]);
+
+    useEffect(() => {
         let cancelled = false;
         if (!statService.getCachedEntries(definition.id, fromStr, toStr)
             && !hasRenderedDataRef.current) {
             setLoadingKey(dataKey);
         }
-        setPopover(null);
         statService.getEntries(definition.id, fromStr, toStr)
             .then(entries => {
                 if (!cancelled) {
@@ -168,6 +188,7 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
         event.stopPropagation();
         setEditValue(valueMap.get(date) ?? null);
         setEditStatus(statusMap.get(date) ?? 'RECORDED');
+        setEditAdditionalValues(entryMap.get(date)?.additionalValues ?? {});
         setSaveError(null);
         setPopover({ anchorEl: event.currentTarget, date });
     };
@@ -176,6 +197,7 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
         setPopover(null);
         setEditValue(null);
         setEditStatus('RECORDED');
+        setEditAdditionalValues({});
         setSaveError(null);
     };
 
@@ -185,9 +207,24 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
     ) => {
         if (!popover) return;
         const activePopover = popover;
+        const nextAdditionalValues = nextStatus === 'NOT_PLANNED'
+            ? {}
+            : Object.fromEntries(
+                (definition.additionalInputTypes ?? [])
+                    .filter(type => editAdditionalValues[type] != null)
+                    .map(type => [type, editAdditionalValues[type]]),
+            ) as Partial<Record<StatType, number>>;
+        if (nextValue == null && nextStatus !== 'NOT_PLANNED' && Object.keys(nextAdditionalValues).length > 0) {
+            setSaveError(`Choose a value for ${definition.name} before saving its additional inputs.`);
+            return;
+        }
         const previousValue = valueMap.get(activePopover.date);
         const previousStatus = statusMap.get(activePopover.date);
+        const previousEntry = entryMap.get(activePopover.date);
         const previousHadEntry = valueMap.has(activePopover.date);
+        const shouldRemoveEntry = nextValue === null
+            && nextStatus !== 'NOT_PLANNED'
+            && Object.keys(nextAdditionalValues).length === 0;
         // The editor unmounts before the request resolves, so preserve the source cell's position.
         const feedbackAnchor = activePopover.anchorEl.getBoundingClientRect();
         const mutationVersion = (entryMutationVersionsRef.current.get(activePopover.date) ?? 0) + 1;
@@ -197,14 +234,28 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
             if (previous.key !== dataKey) return previous;
             const values = new Map(previous.values);
             const statuses = new Map(previous.statuses);
-            if (nextValue === null && nextStatus !== 'NOT_PLANNED') {
+            const entries = new Map(previous.entries);
+            if (shouldRemoveEntry) {
                 values.delete(activePopover.date);
                 statuses.delete(activePopover.date);
+                entries.delete(activePopover.date);
             } else {
-                values.set(activePopover.date, nextStatus === 'NOT_PLANNED' ? 0 : nextValue ?? 0);
+                const value = nextStatus === 'NOT_PLANNED' ? 0 : nextValue ?? 0;
+                values.set(activePopover.date, value);
                 statuses.set(activePopover.date, nextStatus);
+                entries.set(activePopover.date, {
+                    ...(previousEntry ?? {}),
+                    id: previousEntry?.id ?? `optimistic-${definition.id}-${activePopover.date}`,
+                    statDefinitionId: definition.id,
+                    statDefinition: definition,
+                    date: activePopover.date,
+                    value,
+                    status: nextStatus,
+                    additionalValues: nextAdditionalValues,
+                    userId: previousEntry?.userId ?? definition.userId,
+                });
             }
-            return { ...previous, values, statuses };
+            return { ...previous, values, statuses, entries };
         });
         closeEditor();
         setSaveError(null);
@@ -218,6 +269,7 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
                 date: activePopover.date,
                 value: nextStatus === 'NOT_PLANNED' ? null : nextValue,
                 status: nextStatus,
+                additionalValues: nextAdditionalValues,
             })
         onEntryChanged?.(definition.id);
         void savePromise.catch(error => {
@@ -227,14 +279,17 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
                         if (previous.key !== dataKey) return previous;
                         const values = new Map(previous.values);
                         const statuses = new Map(previous.statuses);
+                        const entries = new Map(previous.entries);
                         if (previousHadEntry) {
                             values.set(activePopover.date, previousValue!);
                             statuses.set(activePopover.date, previousStatus ?? 'RECORDED');
+                            if (previousEntry) entries.set(activePopover.date, previousEntry);
                         } else {
                             values.delete(activePopover.date);
                             statuses.delete(activePopover.date);
+                            entries.delete(activePopover.date);
                         }
-                        return { ...previous, values, statuses };
+                        return { ...previous, values, statuses, entries };
                     });
                     onEntryChanged?.(definition.id);
                     setSaveError('Failed to save this value.');
@@ -550,15 +605,15 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
                 slotProps={{
                     paper: {
                         sx: {
-                            p: subStatDefinitions.length > 0 ? 1.5 : 0,
-                            minWidth: subStatDefinitions.length > 0 ? 'min(300px, calc(100vw - 32px))' : 0,
+                            p: hasEmbeddedInputs ? 1.5 : 0,
+                            minWidth: hasEmbeddedInputs ? 'min(300px, calc(100vw - 32px))' : 0,
                             maxWidth: 'min(360px, calc(100vw - 32px))',
                             bgcolor: 'background.paper',
                             boxShadow: 3,
                             display: 'flex',
                             flexDirection: 'column',
-                            alignItems: subStatDefinitions.length > 0 ? 'stretch' : 'center',
-                            justifyContent: subStatDefinitions.length > 0 ? 'flex-start' : 'center',
+                            alignItems: hasEmbeddedInputs ? 'stretch' : 'center',
+                            justifyContent: hasEmbeddedInputs ? 'flex-start' : 'center',
                             borderRadius: 1,
                             overflow: 'auto',
                         },
@@ -577,7 +632,7 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
                                 const nextValue = value === null ? null : value === 'yes' ? 1 : 0;
                                 setEditStatus(nextStatus);
                                 setEditValue(nextValue);
-                                void saveEntry(nextStatus, nextValue);
+                                if (!hasEmbeddedInputs) void saveEntry(nextStatus, nextValue);
                             }}
                             size="small"
                             sx={{
@@ -656,6 +711,25 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
                                 <CheckCircleOutlineIcon />
                             </ToggleButton>
                         </ToggleButtonGroup>
+                        {additionalInputTypes.map(type => (
+                            <Box key={type} sx={{ mt: 1.5, width: '100%' }}>
+                                <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
+                                    {statInputLabel(type)}
+                                </Typography>
+                                <StatInputField
+                                    definition={definition}
+                                    type={type}
+                                    value={editAdditionalValues[type] ?? null}
+                                    onChange={value => setEditAdditionalValues(previous => {
+                                        const next = { ...previous };
+                                        if (value == null) delete next[type];
+                                        else next[type] = value;
+                                        return next;
+                                    })}
+                                    onFocus={() => undefined}
+                                />
+                            </Box>
+                        ))}
                         {saveError && <Alert severity="error" sx={{ mt: 1 }}>{saveError}</Alert>}
                         <SubStatInputFields
                             definitions={subStatDefinitions}
@@ -664,6 +738,11 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
                             onEntryChanged={onEntryChanged}
                             onError={onError}
                         />
+                        {hasEmbeddedInputs && (
+                            <Button size="small" variant="contained" onClick={() => saveEntry()} sx={{ mt: 1.5, alignSelf: 'flex-end' }}>
+                                Save
+                            </Button>
+                        )}
                     </Box>
                 )}
             </Popover>

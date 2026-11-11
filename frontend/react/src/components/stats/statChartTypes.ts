@@ -1,4 +1,4 @@
-import { StatEntryStatus } from '../../types/Stats';
+import { StatEntryStatus, StatType } from '../../types/Stats';
 
 export interface StatChartPoint {
     date: string;
@@ -9,6 +9,7 @@ export interface StatChartPoint {
     periodEnd?: string;
     status?: StatEntryStatus;
     comparisonStatus?: StatEntryStatus;
+    additionalValues?: Partial<Record<StatType, number>>;
 }
 
 export interface StatChartPointClickEvent {

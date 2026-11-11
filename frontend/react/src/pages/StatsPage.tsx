@@ -44,6 +44,7 @@ import { useKeyboardDelete } from '../hooks/useKeyboardDelete';
 import { statService } from '../services/api/statService';
 import { statGroupService } from '../services/api/statGroupService';
 import { subscribeToResourceInvalidation } from '../services/cache/resourceInvalidation';
+import { topLevelStatDefinitions } from '../services/utils/statDefinitionHierarchy';
 import {
     readOpenStatGroupIds,
     statGroupPreferencesStorageKey,
@@ -115,6 +116,10 @@ function isDedicatedStat(definition: StatDefinition): boolean {
     return definition.systemKey !== undefined
         && DEDICATED_SYSTEM_KEYS.has(definition.systemKey)
         && !isOptionalMeditationStat;
+}
+
+function statListDefinitions(definitions: StatDefinition[]): StatDefinition[] {
+    return topLevelStatDefinitions(definitions).filter(definition => !isDedicatedStat(definition));
 }
 
 function StatsLoadingState() {
@@ -199,7 +204,7 @@ export function StatsPage() {
     const groupPreferencesKey = statGroupPreferencesStorageKey(user?.id);
     const [definitions, setDefinitions] = useState<StatDefinition[]>(() => statService.getCachedDefinitions() ?? []);
     const [selectedId, setSelectedId] = useState<string | null>(() =>
-        statService.getCachedDefinitions()?.find(definition => !isDedicatedStat(definition))?.id ?? null);
+        statListDefinitions(statService.getCachedDefinitions() ?? [])[0]?.id ?? null);
     const [selectedStatIds, setSelectedStatIds] = useState<string[]>([]);
     const [selectionActionsPosition, setSelectionActionsPosition] = useState<{ top: number; left: number } | null>(null);
     const [loading, setLoading] = useState(() => statService.getCachedDefinitions() === undefined);
@@ -343,14 +348,13 @@ export function StatsPage() {
                 definitionsRef.current = mergedDefinitions;
                 setDefinitions(mergedDefinitions);
                 setSelectedId(prev => {
-                    const visibleDefs = mergedDefinitions.filter(definition =>
-                        !isDedicatedStat(definition) && !pendingStatCreationsRef.current.has(definition.id),
-                    );
+                    const visibleDefs = statListDefinitions(mergedDefinitions).filter(definition =>
+                        !pendingStatCreationsRef.current.has(definition.id));
                     if (prev && visibleDefs.some(d => d.id === prev)) return prev;
                     return visibleDefs[0]?.id ?? null;
                 });
                 setSelectedStatIds(previous => previous.filter(id =>
-                    mergedDefinitions.some(definition => !isDedicatedStat(definition) && definition.id === id),
+                    statListDefinitions(mergedDefinitions).some(definition => definition.id === id),
                 ));
             })
             .catch(e => {
@@ -394,13 +398,14 @@ export function StatsPage() {
             void loadGroups();
             if (!hasAccess) {
                 const visibleDefinitions = definitionsRef.current.filter(definition => !definition.secret);
+                const listableDefinitions = statListDefinitions(visibleDefinitions);
                 definitionsRef.current = visibleDefinitions;
                 setDefinitions(visibleDefinitions);
-                setSelectedId(previous => visibleDefinitions.some(definition => definition.id === previous)
+                setSelectedId(previous => listableDefinitions.some(definition => definition.id === previous)
                     ? previous
-                    : visibleDefinitions.find(definition => !isDedicatedStat(definition))?.id ?? null);
+                    : listableDefinitions[0]?.id ?? null);
                 setSelectedStatIds(previous => previous.filter(id =>
-                    visibleDefinitions.some(definition => definition.id === id),
+                    listableDefinitions.some(definition => definition.id === id),
                 ));
             }
         }
@@ -646,7 +651,7 @@ export function StatsPage() {
                 definitionsRef.current = visibleDefinitions;
                 setDefinitions(visibleDefinitions);
                 setSelectedId(previous => previous === updated.id
-                    ? visibleDefinitions.find(item => !isDedicatedStat(item))?.id ?? null
+                    ? statListDefinitions(visibleDefinitions)[0]?.id ?? null
                     : previous);
                 setSelectedStatIds(previous => previous.filter(id => id !== updated.id));
             }
@@ -968,8 +973,8 @@ export function StatsPage() {
         })));
         setSelectedStatIds(previous => previous.filter(id => id !== target.id));
         if (selectedId === target.id) {
-            setSelectedId(nextDefinitions.find(definition =>
-                !isDedicatedStat(definition) && !pendingStatCreationsRef.current.has(definition.id),
+            setSelectedId(statListDefinitions(nextDefinitions).find(definition =>
+                !pendingStatCreationsRef.current.has(definition.id),
             )?.id ?? null);
         }
         if (selectionAnchorRef.current === target.id) selectionAnchorRef.current = null;
@@ -1146,25 +1151,50 @@ export function StatsPage() {
         });
     };
 
-    const visibleDefinitions = useMemo(
+    const allVisibleDefinitions = useMemo(
         () => definitions.filter(definition => !isDedicatedStat(definition)),
         [definitions],
     );
+    const visibleDefinitions = useMemo(() => statListDefinitions(definitions), [definitions]);
     const selectableDefinitions = useMemo(
         () => visibleDefinitions.filter(definition => !pendingStatCreationsRef.current.has(definition.id)),
         [visibleDefinitions],
     );
+    const chartDefinitions = useMemo(
+        () => allVisibleDefinitions.filter(definition => !pendingStatCreationsRef.current.has(definition.id)),
+        [allVisibleDefinitions],
+    );
+    const selectableDefinitionIds = useMemo(
+        () => new Set(selectableDefinitions.map(definition => definition.id)),
+        [selectableDefinitions],
+    );
     const subStatDefinitionsByParentId = useMemo(() => {
         const childrenByParentId = new Map<string, StatDefinition[]>();
-        selectableDefinitions.forEach(definition => {
+        chartDefinitions.forEach(definition => {
             if (!definition.parentDefinitionId) return;
+            if (!selectableDefinitionIds.has(definition.parentDefinitionId)) return;
             const children = childrenByParentId.get(definition.parentDefinitionId) ?? [];
             children.push(definition);
             childrenByParentId.set(definition.parentDefinitionId, children);
         });
         return childrenByParentId;
-    }, [selectableDefinitions]);
+    }, [chartDefinitions, selectableDefinitionIds]);
     const selectedDef = selectableDefinitions.find(d => d.id === selectedId) ?? null;
+    useEffect(() => {
+        if (loading) return;
+        setSelectedId(previous => {
+            if (!previous) return previous;
+            const currentDefinition = definitions.find(definition => definition.id === previous);
+            const parentId = currentDefinition?.parentDefinitionId;
+            if (parentId && selectableDefinitionIds.has(parentId)) return parentId;
+            if (selectableDefinitionIds.has(previous)) return previous;
+            return selectableDefinitions[0]?.id ?? null;
+        });
+        setSelectedStatIds(previous => {
+            const next = previous.filter(id => selectableDefinitionIds.has(id));
+            return next.length === previous.length ? previous : next;
+        });
+    }, [definitions, loading, selectableDefinitionIds, selectableDefinitions]);
     const selectedSubStatDefinitions = useMemo(
         () => selectedDef ? subStatDefinitionsByParentId.get(selectedDef.id) ?? [] : [],
         [selectedDef, subStatDefinitionsByParentId],
@@ -1364,10 +1394,9 @@ export function StatsPage() {
             ...group,
             statDefinitionIds: group.statDefinitionIds.filter(id => !targetIds.has(id)),
         })));
-        const nextVisibleDefinitions = previousDefinitions
+        const nextVisibleDefinitions = statListDefinitions(previousDefinitions
             .filter(definition => !targetIds.has(definition.id)
-                && !isDedicatedStat(definition)
-                && !pendingStatCreationsRef.current.has(definition.id));
+                && !pendingStatCreationsRef.current.has(definition.id)));
         if (targetIds.has(selectedId ?? '')) setSelectedId(nextVisibleDefinitions[0]?.id ?? null);
         clearSelection();
         setBulkDeleteTargets(null);
@@ -1512,7 +1541,7 @@ export function StatsPage() {
         }
 
         const previous = definitionsRef.current;
-        const visiblePrevious = previous.filter(definition => !isDedicatedStat(definition));
+        const visiblePrevious = statListDefinitions(previous);
         const draggedIndex = visiblePrevious.findIndex(def => def.id === draggedId);
         if (draggedIndex < 0) return;
 
@@ -1526,7 +1555,13 @@ export function StatsPage() {
             finishDefinitionDragging();
             return;
         }
-        const next = [...nextVisible, ...previous.filter(isDedicatedStat)];
+        const visibleIds = new Set(visiblePrevious.map(definition => definition.id));
+        const hiddenSubStats = previous.filter(definition =>
+            !isDedicatedStat(definition)
+            && !visibleIds.has(definition.id)
+            && Boolean(definition.parentDefinitionId),
+        );
+        const next = [...nextVisible, ...hiddenSubStats, ...previous.filter(isDedicatedStat)];
         setDefinitions(next);
         finishDefinitionDragging();
         setOrderError(null);
@@ -2384,6 +2419,19 @@ export function StatsPage() {
                         <ListItemText>Edit stat</ListItemText>
                     </MenuItem>
                 )}
+                {contextMenu?.kind === 'stat' && definitions
+                    .filter(definition => definition.parentDefinitionId === contextMenu.definition.id
+                        && (!definition.systemKey || isEditableSystemStat(definition))
+                        && !pendingStatCreationsRef.current.has(definition.id))
+                    .map(definition => (
+                        <MenuItem key={definition.id} onClick={() => {
+                            setEditTarget(definition);
+                            closeContextMenu();
+                        }}>
+                            <ListItemIcon><EditOutlinedIcon fontSize="small" /></ListItemIcon>
+                            <ListItemText>Edit {definition.name}</ListItemText>
+                        </MenuItem>
+                    ))}
                 {contextMenu?.kind === 'stat' && !contextMenu.definition.systemKey && (
                     <MenuItem
                         onClick={() => {

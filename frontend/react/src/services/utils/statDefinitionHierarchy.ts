@@ -35,3 +35,7 @@ export function groupStatDefinitions(definitions: StatDefinition[]): Array<{
             subDefinitions: childrenByParentId.get(definition.id) ?? [],
         }));
 }
+
+export function topLevelStatDefinitions(definitions: StatDefinition[]): StatDefinition[] {
+    return groupStatDefinitions(definitions).map(group => group.definition);
+}

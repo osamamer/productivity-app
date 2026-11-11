@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { groupStatDefinitions, includeDirectStatChildren } from '../src/services/utils/statDefinitionHierarchy.ts';
+import { groupStatDefinitions, includeDirectStatChildren, topLevelStatDefinitions } from '../src/services/utils/statDefinitionHierarchy.ts';
 
 test('selecting a statistic includes its sub-stat entries in the calendar', () => {
   const definitions = [
@@ -44,4 +44,14 @@ test('a sub-stat remains editable on its own when its parent is not selected', (
   assert.deepEqual(groupStatDefinitions(definitions), [
     { definition: definitions[0], subDefinitions: [] },
   ]);
+});
+
+test('the stat list shows parent stats but not their sub-stats', () => {
+  const definitions = [
+    { id: 'exercise' },
+    { id: 'walk', parentDefinitionId: 'exercise' },
+    { id: 'orphan', parentDefinitionId: 'missing-parent' },
+  ];
+
+  assert.deepEqual(topLevelStatDefinitions(definitions), [definitions[0], definitions[2]]);
 });

@@ -89,34 +89,41 @@ export const StatCard = React.memo(function StatCard({
     const [insightsOpen, setInsightsOpen] = useState(false);
     const [insightsAvailable, setInsightsAvailable] = useState(false);
     const [comparisonId, setComparisonId] = useState('');
-    const supportsComparison = definition.type !== 'TIME' && definition.type !== 'DURATION';
-    const availableComparisons = supportsComparison
-        ? comparisonDefinitions.filter(item => item.id !== definition.id)
-        : [];
-    const comparisonDefinition = supportsComparison
-        ? availableComparisons.find(item => item.id === comparisonId)
-        : undefined;
     const supportsFocusTime = Boolean(
         definition.recurringTaskSeriesId
         || definition.focusTaskNames?.length
         || definition.focusTaskName,
     );
-    const [viewMode, setViewMode] = useState<'stat' | 'focusTime'>('stat');
-    const focusTimeView = supportsFocusTime && viewMode === 'focusTime';
+    const [displaySelection, setDisplaySelection] = useState<{
+        parentId: string;
+        metricId: string;
+        focusTime: boolean;
+    }>({ parentId: definition.id, metricId: definition.id, focusTime: false });
+    const currentDisplaySelection = displaySelection.parentId === definition.id
+        ? displaySelection
+        : { parentId: definition.id, metricId: definition.id, focusTime: false };
+    const displayDefinition = subStatDefinitions.find(item => item.id === currentDisplaySelection.metricId)
+        ?? definition;
+    const focusTimeView = supportsFocusTime && currentDisplaySelection.focusTime;
+    const supportsComparison = !focusTimeView && displayDefinition.type !== 'TIME' && displayDefinition.type !== 'DURATION';
+    const hasDisplayOptions = supportsFocusTime || subStatDefinitions.length > 0;
+    const availableComparisons = supportsComparison
+        ? comparisonDefinitions.filter(item => item.id !== displayDefinition.id)
+        : [];
+    const comparisonDefinition = availableComparisons.find(item => item.id === comparisonId);
     const comparisonIds = comparisonDefinitions.map(item => item.id).join(':');
-    const isBooleanCalendar = !focusTimeView && definition.type === 'BOOLEAN' && !comparisonDefinition;
+    const isBooleanCalendar = !focusTimeView && displayDefinition.type === 'BOOLEAN' && !comparisonDefinition;
 
     useEffect(() => {
-        if (!supportsFocusTime && viewMode !== 'stat') setViewMode('stat');
         if (focusTimeView && comparisonId) setComparisonId('');
-    }, [comparisonId, focusTimeView, supportsFocusTime, viewMode]);
+    }, [comparisonId, focusTimeView]);
 
     useEffect(() => {
         let cancelled = false;
         const to = new Date();
         const from = subDays(to, 89);
         statService.getInsights(
-            definition.id,
+            displayDefinition.id,
             format(from, 'yyyy-MM-dd'),
             format(to, 'yyyy-MM-dd'),
         )
@@ -131,16 +138,16 @@ export const StatCard = React.memo(function StatCard({
             });
 
         return () => { cancelled = true; };
-    }, [comparisonDefinitions.length, comparisonIds, definition.id, refreshKey]);
+    }, [comparisonDefinitions.length, comparisonIds, displayDefinition.id, refreshKey]);
 
     useEffect(() => {
         const comparisonStillAvailable = comparisonDefinitions.some(
-            item => item.id === comparisonId && item.id !== definition.id,
+            item => item.id === comparisonId && item.id !== displayDefinition.id,
         );
         if (comparisonId && !comparisonStillAvailable) {
             setComparisonId('');
         }
-    }, [comparisonDefinitions, comparisonId, definition.id]);
+    }, [comparisonDefinitions, comparisonId, displayDefinition.id]);
 
     const dateRanges = isBooleanCalendar
         ? CALENDAR_DATE_RANGES
@@ -203,7 +210,7 @@ export const StatCard = React.memo(function StatCard({
                     />
                 ) : (
                     <StatSummaryBar
-                        definition={definition}
+                        definition={displayDefinition}
                         dateRange={dateRange}
                         periodMode={periodMode}
                         periodOffset={periodOffset}
@@ -293,7 +300,7 @@ export const StatCard = React.memo(function StatCard({
                     >
                         {periodWindow.label}
                     </Typography>
-                    {(supportsFocusTime || supportsComparison) && (
+                    {(hasDisplayOptions || supportsComparison) && (
                         <Stack
                             direction="row"
                             spacing={1}
@@ -315,25 +322,43 @@ export const StatCard = React.memo(function StatCard({
                                 },
                             }}
                         >
-                            {supportsFocusTime && (
+                            {hasDisplayOptions && (
                                 <FormControl
                                     size="small"
                                     sx={{
-                                        flex: '1 1 180px',
+                                        flex: '1 1 220px',
                                         minWidth: 0,
-                                        '@container (min-width: 900px)': { minWidth: 180 },
+                                        '@container (min-width: 900px)': { minWidth: 220 },
                                     }}
                                 >
-                                    <InputLabel id={`stat-view-label-${definition.id}`}>View</InputLabel>
+                                    <InputLabel id={`stat-display-label-${definition.id}`}>Display</InputLabel>
                                     <Select
-                                        labelId={`stat-view-label-${definition.id}`}
-                                        value={viewMode}
-                                        label="View"
-                                        onChange={event => setViewMode(event.target.value as 'stat' | 'focusTime')}
-                                        inputProps={{ 'aria-label': `View ${definition.name}` }}
+                                        labelId={`stat-display-label-${definition.id}`}
+                                        value={focusTimeView ? 'focusTime' : displayDefinition.id}
+                                        label="Display"
+                                        onChange={event => {
+                                            const nextValue = event.target.value;
+                                            if (nextValue === 'focusTime') {
+                                                setDisplaySelection({
+                                                    parentId: definition.id,
+                                                    metricId: definition.id,
+                                                    focusTime: true,
+                                                });
+                                                return;
+                                            }
+                                            setDisplaySelection({
+                                                parentId: definition.id,
+                                                metricId: nextValue,
+                                                focusTime: false,
+                                            });
+                                        }}
+                                        inputProps={{ 'aria-label': `Display value for ${definition.name}` }}
                                     >
-                                        <MenuItem value="stat">Stat value</MenuItem>
-                                        <MenuItem value="focusTime">Focus time</MenuItem>
+                                        <MenuItem value={definition.id}>Main value</MenuItem>
+                                        {subStatDefinitions.map(item => (
+                                            <MenuItem key={item.id} value={item.id}>{item.name}</MenuItem>
+                                        ))}
+                                        {supportsFocusTime && <MenuItem value="focusTime">Focus time</MenuItem>}
                                     </Select>
                                 </FormControl>
                             )}
@@ -353,7 +378,7 @@ export const StatCard = React.memo(function StatCard({
                                         value={comparisonId}
                                         label="Overlay stat"
                                         onChange={event => setComparisonId(event.target.value)}
-                                        inputProps={{ 'aria-label': `Overlay another stat on ${definition.name}` }}
+                                        inputProps={{ 'aria-label': `Overlay another stat on ${displayDefinition.name}` }}
                                     >
                                         <MenuItem value="">None</MenuItem>
                                         {availableComparisons.map(item => (
@@ -366,7 +391,7 @@ export const StatCard = React.memo(function StatCard({
                     )}
                 </Box>
                 <StatViewTransition
-                    viewKey={focusTimeView ? 'focus-time' : isBooleanCalendar ? 'calendar' : 'chart'}
+                    viewKey={focusTimeView ? 'focus-time' : `${displayDefinition.id}:${isBooleanCalendar ? 'calendar' : 'chart'}`}
                 >
                     {focusTimeView ? (
                         <TaskFocusTimeChart
@@ -378,8 +403,8 @@ export const StatCard = React.memo(function StatCard({
                         />
                     ) : isBooleanCalendar ? (
                         <BooleanCalendarView
-                            definition={definition}
-                            subStatDefinitions={subStatDefinitions}
+                            definition={displayDefinition}
+                            subStatDefinitions={displayDefinition.id === definition.id ? subStatDefinitions : []}
                             dateRange={dateRange}
                             periodMode={periodMode}
                             periodOffset={periodOffset}
@@ -390,8 +415,8 @@ export const StatCard = React.memo(function StatCard({
                         />
                     ) : (
                         <StatLineChart
-                            definition={definition}
-                            subStatDefinitions={subStatDefinitions}
+                            definition={displayDefinition}
+                            subStatDefinitions={displayDefinition.id === definition.id ? subStatDefinitions : []}
                             comparisonDefinition={comparisonDefinition}
                             dateRange={dateRange}
                             periodMode={periodMode}
@@ -403,59 +428,11 @@ export const StatCard = React.memo(function StatCard({
                         />
                     )}
                 </StatViewTransition>
-                {subStatDefinitions.length > 0 && !focusTimeView && (
-                    <Box sx={{ mt: 2.5, pt: 2, borderTop: 1, borderColor: 'divider' }}>
-                        <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1.5 }}>
-                            Additional inputs
-                        </Typography>
-                        <Stack spacing={2}>
-                            {subStatDefinitions.map(subDefinition => (
-                                <Box
-                                    key={subDefinition.id}
-                                    sx={{
-                                        px: { xs: 0, sm: 1.5 },
-                                        py: 1.5,
-                                        borderLeft: { xs: 0, sm: 2 },
-                                        borderColor: 'divider',
-                                        minWidth: 0,
-                                    }}
-                                >
-                                    <Typography variant="body2" fontWeight={600} sx={{ mb: 1 }}>
-                                        {subDefinition.name}
-                                    </Typography>
-                                    {subDefinition.type === 'BOOLEAN' ? (
-                                        <BooleanCalendarView
-                                            definition={subDefinition}
-                                            dateRange={dateRange}
-                                            periodMode={periodMode}
-                                            periodOffset={periodOffset}
-                                            refreshKey={refreshKey}
-                                            onEntryChanged={onEntryChanged}
-                                            onError={onError}
-                                            onDateContextMenu={onDateContextMenu}
-                                        />
-                                    ) : (
-                                        <StatLineChart
-                                            definition={subDefinition}
-                                            dateRange={dateRange}
-                                            periodMode={periodMode}
-                                            periodOffset={periodOffset}
-                                            refreshKey={refreshKey}
-                                            onEntryChanged={onEntryChanged}
-                                            onError={onError}
-                                            onDateContextMenu={onDateContextMenu}
-                                        />
-                                    )}
-                                </Box>
-                            ))}
-                        </Stack>
-                    </Box>
-                )}
             </CardContent>
             <StatInsightsDialog
                 open={insightsOpen}
                 onClose={() => setInsightsOpen(false)}
-                definition={definition}
+                definition={displayDefinition}
             />
         </Card>
     );

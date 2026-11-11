@@ -197,6 +197,7 @@ export interface StatDefinition {
   id: string;
   name: string;
   type: StatType;
+  additionalInputTypes?: StatType[];
   unit?: string | null;
   morality?: StatMorality | null;
   minValue?: number;
@@ -221,6 +222,7 @@ export interface StatEntry {
   statDefinition: StatDefinition;
   date: string;
   value: number;
+  additionalValues?: Partial<Record<StatType, number>>;
   status?: StatEntryStatus;
   userId: string;
 }

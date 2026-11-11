@@ -17,7 +17,7 @@ import {
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { useAuth } from '@/providers/AuthProvider';
 import { api } from '@/services/api';
-import type { StatDefinition, StatEntry, StatEntryStatus } from '@/types/models';
+import type { StatDefinition, StatEntry, StatEntryStatus, StatType } from '@/types/models';
 import { AppButton } from '../ui/AppButton';
 import { AppInput } from '../ui/AppInput';
 import { AppText } from '../ui/AppText';
@@ -28,6 +28,7 @@ import { AppPopup } from '../ui/AppPopup';
 import { CalendarDatePicker } from '../ui/CalendarDatePicker';
 import { TimePicker } from '../tasks/TaskScheduleField';
 import { SubStatEntryControl } from './SubStatEntryControl';
+import { StatAdditionalInputControl } from './StatAdditionalInputControl';
 
 function dateForMinutes(value: number): Date {
   const date = new Date();
@@ -65,6 +66,7 @@ export function StatEntrySheet({
   const firstEntryDate = existing?.date ?? initialDate ?? localDate();
   const [entryForDate, setEntryForDate] = useState<StatEntry | undefined>(existing);
   const [entryStatus, setEntryStatus] = useState<StatEntryStatus>(existing?.status ?? 'RECORDED');
+  const [additionalValues, setAdditionalValues] = useState<Partial<Record<StatType, number>>>(existing?.additionalValues ?? {});
   const [value, setValue] = useState(existing?.value == null ? '' : String(existing.value));
   const [rangeValue, setRangeValue] = useState(existing?.value ?? definition?.minValue ?? 1);
   const [durationValue, setDurationValue] = useState<number | null>(definition?.type === 'DURATION' ? existing?.value ?? null : null);
@@ -96,6 +98,7 @@ export function StatEntrySheet({
       const nextValue = matchingEntry?.value ?? defaultValue(definition, rememberedValue);
       setEntryForDate(matchingEntry);
       setEntryStatus(matchingEntry?.status ?? 'RECORDED');
+      setAdditionalValues(matchingEntry?.additionalValues ?? {});
       setValue(nextValue == null ? '' : String(nextValue));
       setRangeValue(nextValue ?? definition.minValue ?? 1);
       setDurationValue(definition.type === 'DURATION' ? nextValue : null);
@@ -116,6 +119,7 @@ export function StatEntrySheet({
     setEntryForDate(undefined);
     setEntriesForDate([]);
     setEntryStatus('RECORDED');
+    setAdditionalValues({});
     setValue('');
     setRangeValue(definition?.minValue ?? 1);
     setDurationValue(null);
@@ -143,11 +147,23 @@ export function StatEntrySheet({
     }
     const isNotPlanned = nextStatus === 'NOT_PLANNED';
     const persistedValue = isNotPlanned ? 0 : numeric;
+    const persistedAdditionalValues = isNotPlanned
+      ? {}
+      : Object.fromEntries(
+        (definition.additionalInputTypes ?? [])
+          .filter(type => additionalValues[type] != null)
+          .map(type => [type, additionalValues[type]]),
+      ) as Partial<Record<StatType, number>>;
+    if (persistedValue === null && !isNotPlanned && Object.keys(persistedAdditionalValues).length > 0) {
+      setError(`Choose a value for ${definition.name} before saving these fields.`);
+      return;
+    }
     const optimisticWrite: OptimisticStatWrite = applyOptimisticStatEntry(
       definition,
       entryDate,
       persistedValue,
       nextStatus,
+      persistedAdditionalValues,
     );
     if (persistedValue === null) {
       onSaved(null, entryDate);
@@ -159,6 +175,7 @@ export function StatEntrySheet({
         statDefinition: definition,
         date: entryDate,
         value: persistedValue,
+        additionalValues: persistedAdditionalValues,
         status: nextStatus,
         userId: entryForDate?.userId ?? definition.userId,
       };
@@ -167,7 +184,13 @@ export function StatEntrySheet({
     setSaving(true);
     setError(null);
     try {
-      const recorded = await api.stats.record(definition.id, persistedValue, entryDate, nextStatus);
+      const recorded = await api.stats.record(
+        definition.id,
+        persistedValue,
+        entryDate,
+        nextStatus,
+        persistedAdditionalValues,
+      );
       if (recorded) registerStatEntries([recorded]);
       else removeKnownStatEntry(definition.id, entryDate);
       settleOptimisticStatWrite(optimisticWrite);
@@ -234,7 +257,9 @@ export function StatEntrySheet({
               const nextValue = next === -2 ? 0 : next;
               setValue(String(nextValue));
               setEntryStatus(nextStatus);
-              if (subStatDefinitions.length === 0) void save(next === -2 ? null : next, nextStatus);
+              if (subStatDefinitions.length === 0 && (definition.additionalInputTypes?.length ?? 0) === 0) {
+                void save(next === -2 ? null : next, nextStatus);
+              }
             }}
             options={[
               { value: 1, label: 'Yes', color: booleanStatColor(definition, 1, colors) },
@@ -242,20 +267,15 @@ export function StatEntrySheet({
               { value: 0, label: 'No', color: booleanStatColor(definition, 0, colors) },
             ]}
           />
-          {subStatDefinitions.length > 0 && (
-            <AppButton label="Record" loading={saving} disabled={entryLoading} onPress={() => void save()} />
-          )}
         </>
       ) : definition?.type === 'RANGE' ? (
         <>
           <AppText variant="heading">{rangeValue}</AppText>
           <ChoiceChips value={rangeValue} onChange={setRangeValue} options={range.map(item => ({ value: item, label: String(item) }))} />
-          <AppButton label="Record" loading={saving} disabled={entryLoading} onPress={() => void save()} />
         </>
       ) : definition?.type === 'DURATION' ? (
         <>
           <DurationInput value={durationValue} onChange={next => { setDurationValue(next); rememberValue(next); }} autoFocus />
-          <AppButton label="Record" loading={saving} disabled={entryLoading} onPress={() => void save()} />
         </>
       ) : definition?.type === 'TIME' ? (
         <>
@@ -266,7 +286,6 @@ export function StatEntrySheet({
             icon="time-outline"
             onPress={() => setTimePickerOpen(true)}
           />
-          <AppButton label="Record" loading={saving} disabled={entryLoading} onPress={() => void save()} />
           <AppPopup
             visible={timePickerOpen}
             title="Choose time"
@@ -279,19 +298,34 @@ export function StatEntrySheet({
           </AppPopup>
         </>
       ) : (
-        <>
-          <AppInput autoFocus label="Value" value={value} onChangeText={setValue} keyboardType="decimal-pad" />
-          <AppButton label="Record" loading={saving} disabled={entryLoading} onPress={() => void save()} />
-        </>
+        <AppInput autoFocus label="Value" value={value} onChangeText={setValue} keyboardType="decimal-pad" />
+      )}
+      {definition && (definition.additionalInputTypes ?? []).map(type => (
+        <StatAdditionalInputControl
+          key={`${definition.id}-${type}-${entryDate}`}
+          definition={definition}
+          type={type}
+          value={additionalValues[type] ?? null}
+          onChange={nextValue => setAdditionalValues(previous => {
+            const next = { ...previous };
+            if (nextValue == null) delete next[type];
+            else next[type] = nextValue;
+            return next;
+          })}
+        />
+      ))}
+      {definition && (definition.type !== 'BOOLEAN'
+        || subStatDefinitions.length > 0
+        || (definition.additionalInputTypes?.length ?? 0) > 0) && (
+        <AppButton label="Record" loading={saving} disabled={entryLoading} onPress={() => void save()} />
       )}
       {subStatDefinitions.length > 0 && (
-        <View style={{ gap: 12, marginTop: 8, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.border }}>
-          <AppText variant="label">Additional inputs</AppText>
+        <View style={{ gap: 12, marginTop: 8 }}>
           {entryLoading ? <AppText color="muted">Loading inputs…</AppText> : subStatDefinitions.map(subDefinition => {
             const subEntry = entriesForDate.find(entry => entry.statDefinitionId === subDefinition.id);
             return (
               <SubStatEntryControl
-                key={`${subDefinition.id}-${entryDate}-${subEntry?.id ?? 'new'}-${subEntry?.value ?? ''}`}
+                key={`${subDefinition.id}-${entryDate}-${subEntry?.id ?? 'new'}-${subEntry?.value ?? ''}-${JSON.stringify(subEntry?.additionalValues ?? {})}`}
                 definition={subDefinition}
                 entry={subEntry}
                 date={entryDate}
