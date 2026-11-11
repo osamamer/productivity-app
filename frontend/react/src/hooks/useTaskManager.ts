@@ -3,6 +3,7 @@ import { Task } from '../types/Task';
 import { TASK_PAGE_BATCH_SIZE, taskService } from '../services/api';
 import { subscribeToResourceInvalidation } from '../services/cache/resourceInvalidation';
 import { getShowCompletedHomeTasks } from '../services/utils/homePreferences';
+import { reconcileTaskSnapshot } from '../services/utils/taskSnapshot';
 
 export type TaskLoadMode = 'all' | 'home' | 'taskPage';
 
@@ -177,6 +178,8 @@ export function useTaskManager() {
     const [activeTaskLoadMode, setActiveTaskLoadMode] = useState<TaskLoadMode>('all');
     const [allTasksSynchronized, setAllTasksSynchronized] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const taskStateRef = useRef(taskState);
+    taskStateRef.current = taskState;
     const taskRequestsRef = useRef(new Map<TaskLoadMode, Promise<void>>());
     const taskRequestIdsRef = useRef(new Map<TaskLoadMode, number>());
     const nextTaskRequestIdRef = useRef(0);
@@ -203,6 +206,7 @@ export function useTaskManager() {
     const fetchAllTasks = useCallback(async (
         force = false,
         loadMode: TaskLoadMode = allTasksLoadModeRef.current,
+        preservePageState = false,
     ) => {
         allTasksLoadModeRef.current = loadMode;
         const pendingRequest = taskRequestsRef.current.get(loadMode);
@@ -230,9 +234,19 @@ export function useTaskManager() {
                 const completedFilter = loadMode === 'taskPage' && !getShowCompletedHomeTasks()
                     ? false
                     : undefined;
+                const loadedTaskBuckets = loadMode === 'taskPage' && preservePageState
+                    ? splitTasksByDate(taskStateRef.current.allTasks)
+                    : null;
+                const taskPageBatchSize = loadedTaskBuckets
+                    ? Math.max(
+                        TASK_PAGE_BATCH_SIZE,
+                        loadedTaskBuckets.future.length,
+                        loadedTaskBuckets.past.length,
+                    )
+                    : TASK_PAGE_BATCH_SIZE;
                 const taskPageSnapshot = loadMode === 'taskPage'
                     ? await taskService.getTaskPageInitialSnapshot(
-                        TASK_PAGE_BATCH_SIZE,
+                        taskPageBatchSize,
                         completedFilter,
                         force,
                     )
@@ -243,10 +257,11 @@ export function useTaskManager() {
 
                 if (!isCurrentRequest()) return;
 
-                const snapshotChanged = loadedTaskModeRef.current !== loadMode
-                    || loadedTaskSnapshotRef.current !== tasks;
+                const modeChanged = loadedTaskModeRef.current !== loadMode;
+                const reconciledTasks = reconcileTaskSnapshot(loadedTaskSnapshotRef.current, tasks);
+                const snapshotChanged = modeChanged || loadedTaskSnapshotRef.current !== reconciledTasks;
                 loadedTaskModeRef.current = loadMode;
-                loadedTaskSnapshotRef.current = tasks;
+                loadedTaskSnapshotRef.current = reconciledTasks;
                 setActiveTaskLoadMode(loadMode);
                 if (taskPageSnapshot) {
                     setTaskPageHasMoreFutureTasks(taskPageSnapshot.hasMoreFutureTasks);
@@ -254,7 +269,7 @@ export function useTaskManager() {
                 }
                 if (snapshotChanged) {
                     setTaskState(prev => {
-                        const next = withTaskBuckets(prev, tasks);
+                        const next = withTaskBuckets(prev, reconciledTasks);
                         if (loadMode === 'all' && todayTasksLoadedRef.current && prev.todayTasks.length > 0) {
                             next.todayTasks = prev.todayTasks;
                         }
@@ -263,10 +278,12 @@ export function useTaskManager() {
                             // Keep the user's current selection across refreshes. On the
                             // first load, select the same fallback task as before.
                             highlightedTask: prev.highlightedTask
-                                ?? (loadMode === 'taskPage' ? null : tasks[tasks.length - 1] ?? null),
+                                ?? (loadMode === 'taskPage' ? null : reconciledTasks[reconciledTasks.length - 1] ?? null),
                         };
                     });
-                    setTaskLoadVersion(previous => previous + 1);
+                    if (!preservePageState || modeChanged) {
+                        setTaskLoadVersion(previous => previous + 1);
+                    }
                 }
                 requestSucceeded = true;
             } catch (err) {
@@ -354,8 +371,9 @@ export function useTaskManager() {
     const refreshTaskBuckets = useCallback(async (
         force = false,
         loadMode: TaskLoadMode = allTasksLoadModeRef.current,
+        preservePageState = false,
     ) => {
-        await fetchAllTasks(force, loadMode);
+        await fetchAllTasks(force, loadMode, preservePageState);
     }, [fetchAllTasks]);
 
     const invalidatePendingTaskLoads = useCallback(() => {
@@ -400,6 +418,34 @@ export function useTaskManager() {
             if (timeoutId) {
                 clearTimeout(timeoutId);
             }
+        };
+    }, [refreshTaskBuckets]);
+
+    useEffect(() => {
+        let refreshing = false;
+        const syncTasks = async () => {
+            if (!tasksLoadedRef.current
+                || refreshing
+                || document.visibilityState !== 'visible'
+                || !navigator.onLine) return;
+            refreshing = true;
+            try {
+                await refreshTaskBuckets(true, allTasksLoadModeRef.current, true);
+            } finally {
+                refreshing = false;
+            }
+        };
+        const intervalId = window.setInterval(() => void syncTasks(), 60_000);
+        const syncWhenVisible = () => {
+            if (document.visibilityState === 'visible') void syncTasks();
+        };
+        const syncWhenOnline = () => void syncTasks();
+        document.addEventListener('visibilitychange', syncWhenVisible);
+        window.addEventListener('online', syncWhenOnline);
+        return () => {
+            window.clearInterval(intervalId);
+            document.removeEventListener('visibilitychange', syncWhenVisible);
+            window.removeEventListener('online', syncWhenOnline);
         };
     }, [refreshTaskBuckets]);
 

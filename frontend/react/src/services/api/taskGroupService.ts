@@ -72,7 +72,8 @@ export const taskGroupService = {
         return groupsCache.getStale(groupsCacheKey()) ?? readPersistedGroups();
     },
 
-    async getGroups(): Promise<TaskGroup[]> {
+    async getGroups(forceRefresh = false): Promise<TaskGroup[]> {
+        if (forceRefresh) groupsCache.invalidate(groupsCacheKey());
         return groupsCache.get(groupsCacheKey(), async () => {
             const response = await apiFetch(GROUP_URL, { headers: getAuthHeaders() });
             if (!response.ok) {

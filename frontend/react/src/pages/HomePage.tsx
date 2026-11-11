@@ -38,7 +38,7 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import ReplayIcon from '@mui/icons-material/Replay';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import NotificationsNoneIcon from '@mui/icons-material/NotificationsNone';
-import { mergeTaskDeletionReceipts, taskGroupService, taskService } from '../services/api';
+import { mergeTaskDeletionReceipts, statGroupService, statService, taskGroupService, taskService } from '../services/api';
 import type { TaskDeletionReceipt } from '../services/api';
 import { invalidateResource } from '../services/cache/resourceInvalidation';
 import { setCachedTaskDetails } from '../services/cache/taskDetailsCache';
@@ -49,8 +49,10 @@ import { useGlobalTasks } from '../hooks/useGlobalTasks';
 import { useUser } from '../hooks/useUser';
 import { SmartTaskInput } from '../components/input/SmartTaskInput';
 import { GroupTaskInputRow } from '../components/task/GroupTaskInputRow';
+import { StatGroupTaskComposer } from '../components/task/StatGroupTaskComposer';
 import { GroupTaskCount } from '../components/task/GroupTaskCount';
 import { shouldRenderTaskGroup } from '../components/task-page/taskPageSectionUtils';
+import { compareHomeTasks } from '../services/utils/homeTaskOrdering';
 import { TaskParentPopover } from '../components/task/TaskParentPopover';
 import { FlatTaskRow } from '../components/FlatTaskRow';
 import { TaskToCreate } from '../types/TaskToCreate';
@@ -1081,22 +1083,6 @@ function isScheduledForToday(task: Task): boolean {
     return !Number.isNaN(scheduledDate.getTime()) && isSameLocalDay(scheduledDate, new Date());
 }
 
-function compareHomeTasks(first: Task, second: Task): number {
-    if (first.completed !== second.completed) return first.completed ? 1 : -1;
-
-    const firstTime = first.scheduledPerformDateTime
-        ? new Date(first.scheduledPerformDateTime).getTime()
-        : Number.POSITIVE_INFINITY;
-    const secondTime = second.scheduledPerformDateTime
-        ? new Date(second.scheduledPerformDateTime).getTime()
-        : Number.POSITIVE_INFINITY;
-    const timeDifference = firstTime - secondTime;
-    if (Number.isFinite(timeDifference) && timeDifference !== 0) return timeDifference;
-    if (firstTime !== secondTime) return firstTime === Number.POSITIVE_INFINITY ? 1 : -1;
-
-    return second.importance - first.importance;
-}
-
 function moveTaskDateToToday(task: Task): string {
     const today = new Date();
     const scheduledDate = task.scheduledPerformDateTime
@@ -1189,6 +1175,7 @@ export function HomePage() {
     const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
     const [localGroupName, setLocalGroupName] = useState('');
     const [groupAddingTaskId, setGroupAddingTaskId] = useState<string | null>(null);
+    const [groupAddingTaskScope, setGroupAddingTaskScope] = useState<HomeTaskListScope | null>(null);
     const [groupTaskInputGeneration, setGroupTaskInputGeneration] = useState(0);
     const [bulkDateAnchorEl, setBulkDateAnchorEl] = useState<HTMLElement | null>(null);
     const [bulkDateDraft, setBulkDateDraft] = useState(() => new Date());
@@ -1818,9 +1805,9 @@ export function HomePage() {
         }, FOCUS_TASK_SLIDE_DURATION_MS);
     }, []);
 
-    const refreshGroups = useCallback(async () => {
+    const refreshGroups = useCallback(async (forceRefresh = false) => {
         try {
-            const fetchedGroups = await taskGroupService.getGroups();
+            const fetchedGroups = await taskGroupService.getGroups(forceRefresh);
             const previousGroups = groupsRef.current ?? [];
             groupsRef.current = fetchedGroups;
             setGroups(fetchedGroups);
@@ -1831,13 +1818,40 @@ export function HomePage() {
             ));
         } catch (err) {
             console.error('Error fetching task groups:', err);
-            setGroups([]);
-            groupsRef.current = [];
+            if (!forceRefresh) {
+                setGroups([]);
+                groupsRef.current = [];
+            }
         }
     }, []);
 
     useEffect(() => {
         void refreshGroups();
+    }, [refreshGroups]);
+
+    useEffect(() => {
+        let refreshing = false;
+        const syncGroups = async () => {
+            if (refreshing || document.visibilityState !== 'visible' || !navigator.onLine) return;
+            refreshing = true;
+            try {
+                await refreshGroups(true);
+            } finally {
+                refreshing = false;
+            }
+        };
+        const intervalId = window.setInterval(() => void syncGroups(), 60_000);
+        const syncWhenVisible = () => {
+            if (document.visibilityState === 'visible') void syncGroups();
+        };
+        const syncWhenOnline = () => void syncGroups();
+        document.addEventListener('visibilitychange', syncWhenVisible);
+        window.addEventListener('online', syncWhenOnline);
+        return () => {
+            window.clearInterval(intervalId);
+            document.removeEventListener('visibilitychange', syncWhenVisible);
+            window.removeEventListener('online', syncWhenOnline);
+        };
     }, [refreshGroups]);
 
     useEffect(() => {
@@ -2108,12 +2122,14 @@ export function HomePage() {
     }, []);
 
     function requestGroupDelete(group: TaskGroup, anchorEl: HTMLElement) {
-        if (deleteSubmitting || group.isStatGroup) return;
+        if (deleteSubmitting) return;
 
         setDeleteRequest({
             kind: 'group',
             group,
-            tasks: allTasks.filter(task => group.taskIds.includes(task.taskId)),
+            tasks: group.isStatGroup
+                ? []
+                : allTasks.filter(task => group.taskIds.includes(task.taskId)),
             anchorEl,
         });
     }
@@ -2131,7 +2147,32 @@ export function HomePage() {
         if (!deleteRequest || deleteSubmitting) return;
 
         const request = deleteRequest;
-        if (request.kind === 'group' && request.group.isStatGroup) return;
+        if (request.kind === 'group' && request.group.isStatGroup) {
+            setDeleteRequest(null);
+            setDeleteSubmitting(true);
+            void (async () => {
+                try {
+                    await statGroupService.deleteGroup(request.group.groupId.replace(/^stat-group:/, ''));
+                    setGroups(previous => (previous ?? []).filter(group => group.groupId !== request.group.groupId));
+                    setCollapsedGroupIds(previous => {
+                        const next = new Set(previous);
+                        next.delete(groupExpansionId(request.group, 'today'));
+                        next.delete(groupExpansionId(request.group, 'older'));
+                        return next;
+                    });
+                    setSelectedGroupIds(previous => previous.filter(groupId => groupId !== request.group.groupId));
+                    showTaskFeedback('success', 'Statistic group removed');
+                    await refreshGroups(true);
+                } catch (error) {
+                    console.error('Error removing statistic group:', error);
+                    showTaskFeedback('error', 'Could not remove the statistic group');
+                    await refreshGroups(true);
+                } finally {
+                    setDeleteSubmitting(false);
+                }
+            })();
+            return;
+        }
         const tasksToDelete = tasksForDeleteScope(request, scope, allTasks);
         const deletedTaskIds = new Set(tasksToDelete.map(task => task.taskId));
         const deletedActivePomodoroTaskId = activePomodoroTaskIdRef.current
@@ -3581,16 +3622,55 @@ export function HomePage() {
         }
     }
 
-    function startTaskInGroup(groupId: string) {
+    async function createStatTaskInGroup(
+        group: TaskGroup,
+        statDefinitionId: string,
+        taskToCreate: TaskToCreate,
+    ) {
+        if (!taskToCreate.name.trim() || !group.isStatGroup || groupTaskSubmissionRef.current) return;
+
+        groupTaskSubmissionRef.current = true;
+        try {
+            const currentStatGroup = await statGroupService.getGroups(true);
+            const linkedDefinitionIds = currentStatGroup.find(
+                candidate => `stat-group:${candidate.groupId}` === group.groupId,
+            )?.statDefinitionIds ?? [];
+            if (!linkedDefinitionIds.includes(statDefinitionId)) {
+                throw new Error('The selected statistic is no longer linked to this group.');
+            }
+
+            const createdTask = await statService.startFocusTask(
+                statDefinitionId,
+                taskToCreate.name.trim(),
+                taskToCreate.importance,
+                taskToCreate.scheduledPerformDateTime || undefined,
+                taskToCreate.reminderMinutesBefore ?? null,
+            );
+            addTaskToState(createdTask);
+            showTaskCreationDateFeedback(createdTask.scheduledPerformDateTime ?? undefined);
+            await refreshGroups(true);
+        } catch (error) {
+            console.error('Error creating task in statistic group:', error);
+            showTaskFeedback('error', 'Could not add the task to that statistic group.');
+            throw error;
+        } finally {
+            groupTaskSubmissionRef.current = false;
+        }
+    }
+
+    function startTaskInGroup(groupId: string, scope: HomeTaskListScope = 'today') {
         if (groupTaskSubmissionRef.current || groups?.some(group => (
             group.groupId === groupId && group.linkedToMentalThread
         ))) return;
         setGroupAddingTaskId(groupId);
+        setGroupAddingTaskScope(scope);
+        const group = groups?.find(candidate => candidate.groupId === groupId);
+        const expansionId = group?.isStatGroup ? groupExpansionId(group, scope) : groupId;
         setCollapsedGroupIds(previous => {
-            if (!previous.has(groupId)) return previous;
+            if (!previous.has(expansionId)) return previous;
 
             const next = new Set(previous);
-            next.delete(groupId);
+            next.delete(expansionId);
             return next;
         });
     }
@@ -3810,10 +3890,13 @@ export function HomePage() {
         options: { reorderable?: boolean; draggable?: boolean; showScheduledDate?: boolean } = {},
     ) {
         const reorderable = options.reorderable ?? true;
+        const listScope: HomeTaskListScope = options.showScheduledDate ? 'older' : 'today';
         return items.map(item => {
             if (item.kind === 'task') return renderTaskRow(item.task, options);
 
             const collapsed = collapsedGroupIds.has(item.expansionId);
+            const groupAddingHere = groupAddingTaskId === item.group.groupId
+                && groupAddingTaskScope === listScope;
             const groupCompleted = item.tasks.length > 0 && item.tasks.every(task => task.completed);
             const linkedGroup = Boolean(item.group.linkedToMentalThread)
                 || Boolean(item.group.isStatGroup);
@@ -3987,8 +4070,12 @@ export function HomePage() {
                                 size="small"
                                 color="inherit"
                                 aria-label={`Add task to ${item.group.name}`}
-                                title="Add task to group"
-                                disabled
+                                title="Add a task linked to a statistic"
+                                onClick={event => {
+                                    event.stopPropagation();
+                                    startTaskInGroup(item.group.groupId, listScope);
+                                }}
+                                disabled={groupAddingHere}
                             >
                                 <AddIcon fontSize="small" />
                             </IconButton>
@@ -3996,14 +4083,30 @@ export function HomePage() {
                                 size="small"
                                 color="error"
                                 aria-label={`Delete group ${item.group.name}`}
-                                title="Delete group"
-                                disabled
+                                title="Remove statistic group"
+                                onClick={event => {
+                                    event.stopPropagation();
+                                    requestGroupDelete(item.group, event.currentTarget);
+                                }}
+                                disabled={deleteSubmitting}
                             >
                                 <DeleteOutlineIcon sx={{ fontSize: '1.1rem' }} />
                             </IconButton>
                         </Box>
                         <Collapse in={!collapsed} timeout="auto" unmountOnExit>
                             <Box data-stat-task-group-content={item.group.groupId} sx={{ ml: 1.7, pl: 1.1, borderLeft: '1px solid', borderColor: 'divider' }}>
+                                {groupAddingHere && (
+                                    <StatGroupTaskComposer
+                                        group={item.group}
+                                        onSubmit={(statDefinitionId, taskToCreate) => (
+                                            createStatTaskInGroup(item.group, statDefinitionId, taskToCreate)
+                                        )}
+                                        onCancel={() => {
+                                            setGroupAddingTaskId(null);
+                                            setGroupAddingTaskScope(null);
+                                        }}
+                                    />
+                                )}
                                 <AnimatedGroupTaskRows
                                     tasks={item.tasks}
                                     renderTask={task => renderTaskRow(task, { ...options, grouped: true })}
@@ -4253,9 +4356,9 @@ export function HomePage() {
                             title="Add task to group"
                             onClick={event => {
                                 event.stopPropagation();
-                                startTaskInGroup(item.group.groupId);
+                                startTaskInGroup(item.group.groupId, listScope);
                             }}
-                            disabled={linkedGroup || groupAddingTaskId === item.group.groupId}
+                            disabled={linkedGroup || groupAddingHere}
                         >
                             <AddIcon fontSize="small" />
                         </IconButton>
@@ -4332,7 +4435,7 @@ export function HomePage() {
                             }}
                         >
                             <Collapse
-                                in={!linkedGroup && groupAddingTaskId === item.group.groupId}
+                                in={!linkedGroup && groupAddingHere}
                                 timeout={180}
                                 unmountOnExit
                                 sx={{
@@ -4340,7 +4443,7 @@ export function HomePage() {
                                     '& .MuiCollapse-wrapper': { willChange: 'height' },
                                 }}
                             >
-                                <Fade in={groupAddingTaskId === item.group.groupId} timeout={150}>
+                                <Fade in={groupAddingHere} timeout={150}>
                                     <GroupTaskInputRow
                                         key={`${item.group.groupId}:${groupTaskInputGeneration}`}
                                         contextName={item.group.name}
@@ -4348,8 +4451,14 @@ export function HomePage() {
                                         onSubmit={taskToCreate => {
                                             void createTaskInGroup(item.group, item.tasks[0]?.taskId, taskToCreate);
                                         }}
-                                        onEscape={() => setGroupAddingTaskId(null)}
-                                        onBlur={() => setGroupAddingTaskId(null)}
+                                        onEscape={() => {
+                                            setGroupAddingTaskId(null);
+                                            setGroupAddingTaskScope(null);
+                                        }}
+                                        onBlur={() => {
+                                            setGroupAddingTaskId(null);
+                                            setGroupAddingTaskScope(null);
+                                        }}
                                     />
                                 </Fade>
                             </Collapse>
@@ -4998,7 +5107,9 @@ export function HomePage() {
                         <Box>
                             <Typography variant="body2" sx={{ mb: 1.25 }}>
                                 {deleteRequest.kind === 'group'
-                                    ? `Delete “${deleteRequest.group.name}” and its ${deleteRequest.tasks.length} task${deleteRequest.tasks.length === 1 ? '' : 's'}?`
+                                    ? deleteRequest.group.isStatGroup
+                                        ? `Remove “${deleteRequest.group.name}” from task groups? Its tasks and statistics will remain.`
+                                        : `Delete “${deleteRequest.group.name}” and its ${deleteRequest.tasks.length} task${deleteRequest.tasks.length === 1 ? '' : 's'}?`
                                     : deleteRequest.kind === 'bulk'
                                         ? `Delete ${deleteRequest.tasks.length} selected task${deleteRequest.tasks.length > 1 ? 's' : ''}?`
                                         : deleteRequest.tasks[0].taskSeriesId
@@ -5052,7 +5163,7 @@ export function HomePage() {
                                     >
                                         {deleteSubmitting ? 'Deleting…' : 'Delete series'}
                                     </Button>
-                                    {deleteRequest.kind === 'group' && (
+                                    {deleteRequest.kind === 'group' && !deleteRequest.group.isStatGroup && (
                                         <Button size="small" onClick={() => void confirmUngroup()} disabled={deleteSubmitting}>
                                             Ungroup
                                         </Button>
@@ -5068,7 +5179,7 @@ export function HomePage() {
                                     <Button size="small" onClick={closeDeleteRequest} disabled={deleteSubmitting}>
                                         Cancel
                                     </Button>
-                                    {deleteRequest.kind === 'group' && (
+                                    {deleteRequest.kind === 'group' && !deleteRequest.group.isStatGroup && (
                                         <Button size="small" onClick={() => void confirmUngroup()} disabled={deleteSubmitting}>
                                             Ungroup
                                         </Button>
@@ -5080,7 +5191,11 @@ export function HomePage() {
                                         onClick={() => void confirmDelete()}
                                         disabled={deleteSubmitting}
                                     >
-                                        {deleteSubmitting ? <CircularProgress size={16} color="inherit" /> : 'Delete'}
+                                        {deleteSubmitting
+                                            ? <CircularProgress size={16} color="inherit" />
+                                            : deleteRequest.kind === 'group' && deleteRequest.group.isStatGroup
+                                                ? 'Remove group'
+                                                : 'Delete'}
                                     </Button>
                                 </Box>
                             )}

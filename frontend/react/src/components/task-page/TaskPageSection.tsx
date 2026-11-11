@@ -11,6 +11,7 @@ import { TaskGroup } from '../../types/TaskGroup';
 import { TaskToCreate } from '../../types/TaskToCreate';
 import { TaskPageListRow } from './TaskPageListRow';
 import { GroupTaskInputRow } from '../task/GroupTaskInputRow';
+import { StatGroupTaskComposer } from '../task/StatGroupTaskComposer';
 import { GroupTaskCount } from '../task/GroupTaskCount';
 import { buildTaskListItems, type TaskListItem } from './taskPageSectionUtils';
 
@@ -33,6 +34,7 @@ type TaskPageSectionProps = {
     onGroupSelection?: (group: TaskGroup, event: React.MouseEvent<HTMLElement>) => void;
     onRenameGroup?: (group: TaskGroup, name: string) => Promise<void>;
     onCreateTaskInGroup?: (group: TaskGroup, task: TaskToCreate) => void;
+    onCreateStatTaskInGroup?: (group: TaskGroup, statDefinitionId: string, task: TaskToCreate) => void | Promise<void>;
     onDeleteGroup?: (group: TaskGroup, anchorEl: HTMLElement) => void;
     onGroupDragOver?: (group: TaskGroup, event: React.DragEvent<HTMLElement>) => void;
     onGroupDrop?: (group: TaskGroup, event: React.DragEvent<HTMLElement>) => void;
@@ -72,6 +74,7 @@ export const TaskPageSection = React.memo(function TaskPageSection({
     onGroupSelection,
     onRenameGroup,
     onCreateTaskInGroup,
+    onCreateStatTaskInGroup,
     onDeleteGroup,
     onGroupDragOver,
     onGroupDrop,
@@ -230,13 +233,21 @@ export const TaskPageSection = React.memo(function TaskPageSection({
                                 <AdsClickRoundedIcon fontSize="small" />
                             </IconButton>
                         )}
-                        {onCreateTaskInGroup && (
+                        {onCreateStatTaskInGroup && (
                             <IconButton
                                 size="small"
                                 color="inherit"
                                 aria-label={`Add task to ${item.group.name}`}
-                                title="Add task to group"
-                                disabled
+                                title="Add a task linked to a statistic"
+                                disabled={addingGroupId === item.group.groupId}
+                                onClick={event => {
+                                    event.stopPropagation();
+                                    setAddingGroupId(item.group.groupId);
+                                    setGroupTaskInputGeneration(previous => previous + 1);
+                                    if (collapsedGroupIds.has(item.group.groupId)) {
+                                        onToggleGroup(item.group.groupId);
+                                    }
+                                }}
                             >
                                 <AddRoundedIcon fontSize="small" />
                             </IconButton>
@@ -246,8 +257,11 @@ export const TaskPageSection = React.memo(function TaskPageSection({
                                 size="small"
                                 color="error"
                                 aria-label={`Delete group ${item.group.name}`}
-                                title="Delete group"
-                                disabled
+                                title="Remove statistic group"
+                                onClick={event => {
+                                    event.stopPropagation();
+                                    onDeleteGroup?.(item.group, event.currentTarget);
+                                }}
                             >
                                 <DeleteOutlineRoundedIcon sx={{ fontSize: '1.1rem' }} />
                             </IconButton>
@@ -258,6 +272,16 @@ export const TaskPageSection = React.memo(function TaskPageSection({
                             data-stat-task-group-content={item.group.groupId}
                             sx={{ ml: 1.7, pl: 1.1, borderLeft: '1px solid', borderColor: 'divider' }}
                         >
+                            {addingGroupId === item.group.groupId && onCreateStatTaskInGroup && (
+                                <StatGroupTaskComposer
+                                    key={`${item.group.groupId}:${groupTaskInputGeneration}`}
+                                    group={item.group}
+                                    onSubmit={(statDefinitionId, taskToCreate) => (
+                                        onCreateStatTaskInGroup(item.group, statDefinitionId, taskToCreate)
+                                    )}
+                                    onCancel={() => setAddingGroupId(null)}
+                                />
+                            )}
                             {item.tasks.map(task => renderTask(task, true))}
                         </Box>
                     </Collapse>

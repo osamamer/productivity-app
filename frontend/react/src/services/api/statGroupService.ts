@@ -28,7 +28,8 @@ export const statGroupService = {
         return groupsCache.getStale(groupsCacheKey());
     },
 
-    async getGroups(): Promise<StatGroup[]> {
+    async getGroups(forceRefresh = false): Promise<StatGroup[]> {
+        if (forceRefresh) groupsCache.invalidate(groupsCacheKey());
         return groupsCache.get(groupsCacheKey(), async () => {
             const response = await apiFetch(GROUPS_URL, { headers: getStatAuthHeaders() });
             if (!response.ok) throw new Error('Failed to fetch stat groups');

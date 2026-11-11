@@ -24,6 +24,8 @@ import { TaskToCreate } from '../types/TaskToCreate';
 import {
     mergeTaskDeletionReceipts,
     TASK_PAGE_BATCH_SIZE,
+    statGroupService,
+    statService,
     taskGroupService,
     taskService,
 } from '../services/api';
@@ -261,22 +263,44 @@ export function TaskPage() {
         setHighlightedTask(null);
     }, [setHighlightedTask]);
 
-    useEffect(() => {
-        let active = true;
-        void taskGroupService.getGroups()
-            .then(groups => {
-                if (!active) return;
-                setTaskGroups(groups);
-                setTaskGroupsLoaded(true);
-            })
-            .catch(error => {
-                console.error('Error fetching task groups for Tasks page:', error);
-                if (active) setTaskGroupsLoaded(true);
-            });
-        return () => {
-            active = false;
-        };
+    const refreshTaskGroups = useCallback(async (forceRefresh = false) => {
+        try {
+            setTaskGroups(await taskGroupService.getGroups(forceRefresh));
+            setTaskGroupsLoaded(true);
+        } catch (error) {
+            console.error('Error fetching task groups for Tasks page:', error);
+            if (!forceRefresh) setTaskGroupsLoaded(true);
+        }
     }, []);
+
+    useEffect(() => {
+        void refreshTaskGroups();
+    }, [refreshTaskGroups]);
+
+    useEffect(() => {
+        let refreshing = false;
+        const syncGroups = async () => {
+            if (refreshing || document.visibilityState !== 'visible' || !navigator.onLine) return;
+            refreshing = true;
+            try {
+                await refreshTaskGroups(true);
+            } finally {
+                refreshing = false;
+            }
+        };
+        const intervalId = window.setInterval(() => void syncGroups(), 60_000);
+        const syncWhenVisible = () => {
+            if (document.visibilityState === 'visible') void syncGroups();
+        };
+        const syncWhenOnline = () => void syncGroups();
+        document.addEventListener('visibilitychange', syncWhenVisible);
+        window.addEventListener('online', syncWhenOnline);
+        return () => {
+            window.clearInterval(intervalId);
+            document.removeEventListener('visibilitychange', syncWhenVisible);
+            window.removeEventListener('online', syncWhenOnline);
+        };
+    }, [refreshTaskGroups]);
 
     useEffect(() => {
         if (initializedTaskLoadVersionRef.current === taskLoadVersion) return;
@@ -421,11 +445,13 @@ export function TaskPage() {
     }, [allTasks, deleteSubmitting, selectedTaskIds]);
 
     const requestGroupDelete = useCallback((group: TaskGroup, anchorEl: HTMLElement) => {
-        if (deleteSubmitting || group.isStatGroup) return;
+        if (deleteSubmitting) return;
         setDeleteRequest({
             kind: 'group',
             group,
-            tasks: allTasks.filter(task => group.taskIds.includes(task.taskId)),
+            tasks: group.isStatGroup
+                ? []
+                : allTasks.filter(task => group.taskIds.includes(task.taskId)),
             anchorEl,
         });
     }, [allTasks, deleteSubmitting]);
@@ -438,7 +464,24 @@ export function TaskPage() {
         if (!deleteRequest || deleteSubmitting) return;
 
         const request = deleteRequest;
-        if (request.kind === 'group' && request.group.isStatGroup) return;
+        if (request.kind === 'group' && request.group.isStatGroup) {
+            setDeleteSubmitting(true);
+            setDeleteRequest(null);
+            try {
+                await statGroupService.deleteGroup(request.group.groupId.replace(/^stat-group:/, ''));
+                setTaskGroups(previous => previous.filter(group => group.groupId !== request.group.groupId));
+                clearSelection();
+                await refreshTaskGroups(true);
+            } catch (error) {
+                console.error('Error removing statistic group:', error);
+                showTaskFeedback('error', 'Could not remove the statistic group');
+                await refreshTaskGroups(true);
+            } finally {
+                setDeleteSubmitting(false);
+                setDeleteRequest(null);
+            }
+            return;
+        }
         const tasksToDelete = tasksForDeleteScope(request, scope, allTasks);
         setDeleteSubmitting(true);
         setDeleteRequest(null);
@@ -487,7 +530,7 @@ export function TaskPage() {
             setDeleteSubmitting(false);
             setDeleteRequest(null);
         }
-    }, [allTasks, clearSelection, deleteRequest, deleteSubmitting, refreshTaskBuckets, removeTaskFromState]);
+    }, [allTasks, clearSelection, deleteRequest, deleteSubmitting, refreshTaskBuckets, refreshTaskGroups, removeTaskFromState, showTaskFeedback]);
 
     const confirmUngroup = useCallback(async () => {
         if (!deleteRequest || deleteRequest.kind !== 'group' || deleteSubmitting) return;
@@ -806,6 +849,38 @@ export function TaskPage() {
             showTaskFeedback('error', 'Could not add the task to that group');
         }
     }, [addTaskToState, removeTaskFromState, replaceTaskInState, showTaskFeedback, taskGroups]);
+
+    const createStatTaskInGroup = useCallback(async (
+        group: TaskGroup,
+        statDefinitionId: string,
+        taskToCreate: TaskToCreate,
+    ) => {
+        if (!group.isStatGroup || !taskToCreate.name.trim()) return;
+
+        try {
+            const currentStatGroups = await statGroupService.getGroups(true);
+            const linkedDefinitionIds = currentStatGroups.find(
+                candidate => `stat-group:${candidate.groupId}` === group.groupId,
+            )?.statDefinitionIds ?? [];
+            if (!linkedDefinitionIds.includes(statDefinitionId)) {
+                throw new Error('The selected statistic is no longer linked to this group.');
+            }
+
+            const createdTask = await statService.startFocusTask(
+                statDefinitionId,
+                taskToCreate.name.trim(),
+                taskToCreate.importance,
+                taskToCreate.scheduledPerformDateTime || undefined,
+                taskToCreate.reminderMinutesBefore ?? null,
+            );
+            addTaskToState(createdTask);
+            await refreshTaskGroups(true);
+        } catch (error) {
+            console.error('Error creating task in statistic group:', error);
+            showTaskFeedback('error', 'Could not add the task to that statistic group');
+            throw error;
+        }
+    }, [addTaskToState, refreshTaskGroups, showTaskFeedback]);
 
     const applySelection = useCallback((taskIds: string[], groupIds: string[]) => {
         const nextTaskIds = new Set(taskIds);
@@ -1319,6 +1394,7 @@ export function TaskPage() {
         onGroupSelection: handleGroupSelection,
         onRenameGroup: renameGroup,
         onCreateTaskInGroup: createTaskInGroup,
+        onCreateStatTaskInGroup: createStatTaskInGroup,
         onDeleteGroup: requestGroupDelete,
         onGroupDragOver: handleGroupDragOver,
         onGroupDrop: handleGroupDrop,
@@ -1617,7 +1693,9 @@ export function TaskPage() {
                     <Box>
                         <Typography variant="body2" sx={{ mb: 1.25 }}>
                             {deleteRequest.kind === 'group'
-                                ? `Delete “${deleteRequest.group.name}” and its ${deleteRequest.tasks.length} tasks?`
+                                ? deleteRequest.group.isStatGroup
+                                    ? `Remove “${deleteRequest.group.name}” from task groups? Its tasks and statistics will remain.`
+                                    : `Delete “${deleteRequest.group.name}” and its ${deleteRequest.tasks.length} tasks?`
                                 : deleteRequest.kind === 'bulk'
                                     ? `Delete ${deleteRequest.tasks.length} selected tasks?`
                                     : deleteRequest.tasks[0].taskSeriesId
@@ -1672,7 +1750,7 @@ export function TaskPage() {
                                 >
                                     {deleteSubmitting ? 'Deleting…' : 'Delete series'}
                                 </Button>
-                                {deleteRequest.kind === 'group' && (
+                                {deleteRequest.kind === 'group' && !deleteRequest.group.isStatGroup && (
                                     <Button size="small" onClick={() => void confirmUngroup()} disabled={deleteSubmitting}>
                                         Ungroup
                                     </Button>
@@ -1688,7 +1766,7 @@ export function TaskPage() {
                                 <Button size="small" onClick={closeDeleteRequest} disabled={deleteSubmitting}>
                                     Cancel
                                 </Button>
-                                {deleteRequest.kind === 'group' && (
+                                {deleteRequest.kind === 'group' && !deleteRequest.group.isStatGroup && (
                                     <Button size="small" onClick={() => void confirmUngroup()} disabled={deleteSubmitting}>
                                         Ungroup
                                     </Button>
@@ -1700,7 +1778,11 @@ export function TaskPage() {
                                     onClick={() => void confirmDelete()}
                                     disabled={deleteSubmitting}
                                 >
-                                    {deleteSubmitting ? 'Deleting…' : 'Delete'}
+                                    {deleteSubmitting
+                                        ? 'Deleting…'
+                                        : deleteRequest.kind === 'group' && deleteRequest.group.isStatGroup
+                                            ? 'Remove group'
+                                            : 'Delete'}
                                 </Button>
                             </Box>
                         )}
