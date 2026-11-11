@@ -364,12 +364,12 @@ export const api = {
       invalidateResource('stats', 'stat');
       return entry;
     },
-    create: async (input: Pick<StatDefinition, 'name' | 'type' | 'minValue' | 'maxValue'> & { morality?: StatMorality | null; goodThreshold?: number | null }) => {
+    create: async (input: Pick<StatDefinition, 'name' | 'type' | 'minValue' | 'maxValue'> & { morality?: StatMorality | null; goodThreshold?: number | null; parentDefinitionId?: string | null }) => {
       const definition = await json<StatDefinition>('/api/v1/stats/definitions', 'POST', input);
       invalidateResource('stats', 'stat-definition');
       return definition;
     },
-    update: async (id: string, input: Pick<StatDefinition, 'name' | 'morality' | 'goodThreshold'>) => {
+    update: async (id: string, input: Pick<StatDefinition, 'name' | 'morality' | 'goodThreshold' | 'parentDefinitionId'>) => {
       const definition = await json<StatDefinition>(`/api/v1/stats/definitions/${id}`, 'PUT', input);
       invalidateResource('stats', 'stat-definition');
       return definition;

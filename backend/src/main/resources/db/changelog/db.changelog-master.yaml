@@ -314,3 +314,5 @@ databaseChangeLog:
       file: db/changelog/changes/093-secret-stat-access.yaml
   - include:
       file: db/changelog/changes/094-stat-units.yaml
+  - include:
+      file: db/changelog/changes/095-stat-sub-stat-parent.yaml

@@ -38,6 +38,7 @@ interface FormValues {
     createRecurringTask: boolean;
     recurrenceFrequency: StatRecurrenceFrequency;
     recurrenceDaysOfWeek: StatRecurrenceDay[];
+    parentDefinitionId: string;
     timeOfDay: string;
     recurringTaskImportance: number;
 }
@@ -53,6 +54,11 @@ const additionalInputOptions: Array<{ type: StatType; label: string }> = [
     { type: 'TIME', label: 'Time' },
     { type: 'DURATION', label: 'Duration' },
 ];
+
+const nonDailySystemKeys = new Set([
+    'energy', 'activation', 'stimulation_hunger', 'clarity', 'valence', 'emotional_load',
+    'stimulation', 'hunger', 'arousal',
+]);
 
 function createValidationSchema(existingDefinitions: StatDefinition[], currentDefinitionId?: string) {
     return Yup.object({
@@ -149,6 +155,12 @@ export function CreateStatForm({
 }: Props) {
     const isEditing = Boolean(initialDefinition);
     const hasRecurringTask = Boolean(initialDefinition?.recurringTaskSeriesId);
+    const parentCandidates = existingDefinitions.filter(definition =>
+        !definition.parentDefinitionId && !nonDailySystemKeys.has(definition.systemKey ?? ''),
+    );
+    const currentDefinitionHasChildren = Boolean(initialDefinition && existingDefinitions.some(
+        definition => definition.parentDefinitionId === initialDefinition.id,
+    ));
     // Keep the clock-based default stable so enableReinitialize cannot reset
     // user-entered fields when a later render crosses into a new minute.
     const [initialRecurringTaskDraft] = React.useState(defaultStatRecurringTaskDraft);
@@ -185,6 +197,7 @@ export function CreateStatForm({
             createRecurringTask: false,
             recurrenceFrequency: initialRecurringTaskDraft.recurrenceFrequency,
             recurrenceDaysOfWeek: initialRecurringTaskDraft.recurrenceDaysOfWeek,
+            parentDefinitionId: initialDefinition?.parentDefinitionId ?? '',
             timeOfDay: initialRecurringTaskDraft.timeOfDay,
             recurringTaskImportance: initialRecurringTaskDraft.importance,
         },
@@ -208,6 +221,7 @@ export function CreateStatForm({
                             : undefined,
                         additionalInputTypes: values.additionalInputTypes.filter(type => type !== values.type),
                         unit: hasAmountInput ? values.unit.trim() : '',
+                        parentDefinitionId: values.parentDefinitionId || null,
                     };
                     if (onUpdatedOptimistically && onUpdateFailed) {
                         const operationId = `stat-update-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -218,6 +232,7 @@ export function CreateStatForm({
                             goodThreshold: request.goodThreshold ?? null,
                             additionalInputTypes: request.additionalInputTypes,
                             unit: request.unit || null,
+                            parentDefinitionId: request.parentDefinitionId ?? null,
                         };
                         onUpdatedOptimistically(optimisticDefinition, operationId, initialDefinition);
                         onCancel();
@@ -249,6 +264,7 @@ export function CreateStatForm({
                         recurrenceDaysOfWeek: values.recurrenceDaysOfWeek,
                         timeOfDay: values.timeOfDay,
                         recurringTaskImportance: values.recurringTaskImportance,
+                        parentDefinitionId: values.parentDefinitionId || null,
                     };
 
                     if (request.createRecurringTask
@@ -268,6 +284,7 @@ export function CreateStatForm({
                             name: request.name,
                             type: request.type,
                             additionalInputTypes: request.additionalInputTypes,
+                            parentDefinitionId: request.parentDefinitionId ?? null,
                             unit: request.unit || null,
                             morality: request.morality,
                             minValue: request.minValue,
@@ -427,6 +444,33 @@ export function CreateStatForm({
                     size="small"
                     required
                 />
+                <FormControl size="small" fullWidth disabled={Boolean(
+                    isEditing && currentDefinitionHasChildren && !initialDefinition?.parentDefinitionId
+                )}>
+                    <InputLabel id="stat-parent-definition-label">Sub-stat of</InputLabel>
+                    <Select
+                        labelId="stat-parent-definition-label"
+                        name="parentDefinitionId"
+                        value={formik.values.parentDefinitionId}
+                        label="Sub-stat of"
+                        onChange={event => void formik.setFieldValue('parentDefinitionId', event.target.value)}
+                    >
+                        <MenuItem value="">None</MenuItem>
+                        {formik.values.parentDefinitionId
+                            && !parentCandidates.some(definition => definition.id === formik.values.parentDefinitionId)
+                            && <MenuItem value={formik.values.parentDefinitionId} disabled>Linked statistic</MenuItem>}
+                        {parentCandidates
+                            .filter(definition => definition.id !== initialDefinition?.id)
+                            .map(definition => (
+                                <MenuItem key={definition.id} value={definition.id}>{definition.name}</MenuItem>
+                            ))}
+                    </Select>
+                    <FormHelperText>
+                        {isEditing && currentDefinitionHasChildren && !initialDefinition?.parentDefinitionId
+                            ? 'Move or remove this statistic’s sub-stats first.'
+                            : 'Choose a parent to keep this statistic with related tracking.'}
+                    </FormHelperText>
+                </FormControl>
                 {!isEditing && <FormControl size="small" required>
                     <InputLabel>Type</InputLabel>
                     <Select

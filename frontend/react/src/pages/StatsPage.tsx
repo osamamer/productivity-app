@@ -1663,6 +1663,11 @@ export function StatsPage() {
                                 <LockOutlinedIcon fontSize="small" color="action" titleAccess="Secret statistic" />
                             )}
                         </Stack>
+                        {def.parentDefinitionId && (
+                            <Typography variant="caption" color="text.secondary" noWrap>
+                                Sub-stat of {visibleDefinitions.find(parent => parent.id === def.parentDefinitionId)?.name ?? 'another statistic'}
+                            </Typography>
+                        )}
                     </Box>
                     <Stack direction="row" alignItems="center" spacing={0.5} sx={{ flexShrink: 0 }}>
                         {!isPending && (
@@ -2195,18 +2200,46 @@ export function StatsPage() {
                         {/* Right panel — selected stat chart */}
                         <Box sx={{ flex: 1, overflowY: 'auto', minWidth: 0 }}>
                             {selectedDef ? (
-                                <StatCard
-                                    definition={selectedDef}
-                                    comparisonDefinitions={selectableDefinitions}
-                                    refreshKey={resourceRefreshKey + (entryRefreshKeys[selectedDef.id] ?? 0)}
-                                    onEntryChanged={handleEntryChanged}
-                                    onError={showErrorSnackbar}
-                                    onDateContextMenu={(date, event) => {
-                                        event.preventDefault();
-                                        event.stopPropagation();
-                                        setDayContextMenu({ date, top: event.clientY, left: event.clientX });
-                                    }}
-                                />
+                                <Stack spacing={2}>
+                                    <StatCard
+                                        definition={selectedDef}
+                                        comparisonDefinitions={selectableDefinitions}
+                                        refreshKey={resourceRefreshKey + (entryRefreshKeys[selectedDef.id] ?? 0)}
+                                        onEntryChanged={handleEntryChanged}
+                                        onError={showErrorSnackbar}
+                                        onDateContextMenu={(date, event) => {
+                                            event.preventDefault();
+                                            event.stopPropagation();
+                                            setDayContextMenu({ date, top: event.clientY, left: event.clientX });
+                                        }}
+                                    />
+                                    {selectableDefinitions.some(definition => definition.parentDefinitionId === selectedDef.id) && (
+                                        <Box>
+                                            <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1 }}>
+                                                Sub-statistics
+                                            </Typography>
+                                            <Stack spacing={2}>
+                                                {selectableDefinitions
+                                                    .filter(definition => definition.parentDefinitionId === selectedDef.id)
+                                                    .map(definition => (
+                                                        <StatCard
+                                                            key={definition.id}
+                                                            definition={definition}
+                                                            comparisonDefinitions={selectableDefinitions}
+                                                            refreshKey={resourceRefreshKey + (entryRefreshKeys[definition.id] ?? 0)}
+                                                            onEntryChanged={handleEntryChanged}
+                                                            onError={showErrorSnackbar}
+                                                            onDateContextMenu={(date, event) => {
+                                                                event.preventDefault();
+                                                                event.stopPropagation();
+                                                                setDayContextMenu({ date, top: event.clientY, left: event.clientX });
+                                                            }}
+                                                        />
+                                                    ))}
+                                            </Stack>
+                                        </Box>
+                                    )}
+                                </Stack>
                             ) : (
                                 <Box sx={{
                                     display: 'flex',

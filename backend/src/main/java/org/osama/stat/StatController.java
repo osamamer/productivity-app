@@ -50,6 +50,7 @@ public class StatController {
                 request.recurringTaskImportance,
                 request.additionalInputTypes,
                 request.unit,
+                request.parentDefinitionId,
                 currentUserService.getCurrentUserId()
         );
     }
@@ -106,6 +107,8 @@ public class StatController {
                 request.goodThreshold,
                 request.additionalInputTypes,
                 request.unit,
+                request.parentDefinitionId,
+                request.isParentDefinitionIdProvided(),
                 userId
         );
     }
@@ -377,6 +380,7 @@ public class StatController {
         Integer recurringTaskImportance;
         List<StatType> additionalInputTypes;
         String unit;
+        String parentDefinitionId;
     }
 
     @Data
@@ -387,6 +391,17 @@ public class StatController {
         Double goodThreshold;
         List<StatType> additionalInputTypes;
         String unit;
+        String parentDefinitionId;
+        private boolean parentDefinitionIdProvided;
+
+        public void setParentDefinitionId(String parentDefinitionId) {
+            this.parentDefinitionId = parentDefinitionId;
+            this.parentDefinitionIdProvided = true;
+        }
+
+        public boolean isParentDefinitionIdProvided() {
+            return parentDefinitionIdProvided;
+        }
     }
 
     @Data

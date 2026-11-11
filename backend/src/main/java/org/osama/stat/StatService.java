@@ -29,6 +29,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
@@ -166,16 +167,36 @@ public class StatService {
                                            List<StatType> additionalInputTypes,
                                            String unit,
                                            String userId) {
+        return createDefinition(name, description, type, minValue, maxValue, morality, goodThreshold,
+                createRecurringTask, recurrenceFrequency, recurrenceDaysOfWeek, requestedTimeOfDay,
+                recurringTaskImportance, additionalInputTypes, unit, null, userId);
+    }
+
+    @Transactional
+    public StatDefinition createDefinition(String name, String description, StatType type,
+                                           Double minValue, Double maxValue,
+                                           StatMorality morality, Double goodThreshold,
+                                           boolean createRecurringTask,
+                                           TaskRecurrenceFrequency recurrenceFrequency,
+                                           List<DayOfWeek> recurrenceDaysOfWeek,
+                                           String requestedTimeOfDay,
+                                           Integer recurringTaskImportance,
+                                           List<StatType> additionalInputTypes,
+                                           String unit,
+                                           String parentDefinitionId,
+                                           String userId) {
         User user = userRepository.findUserById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
 
         String normalizedName = normalizeName(name);
         validateDefinition(normalizedName, type, minValue, maxValue, morality, goodThreshold, userId, null);
+        StatDefinition parentDefinition = resolveParentDefinition(parentDefinitionId, userId, null);
         List<StatType> normalizedAdditionalTypes = normalizeAdditionalInputTypes(type, additionalInputTypes);
         String normalizedUnit = normalizeUnit(unit);
         validateUnit(type, normalizedAdditionalTypes, normalizedUnit);
         StatDefinition definition = saveDefinition(normalizedName, description, type, minValue, maxValue,
-                morality, goodThreshold, null, user, normalizedAdditionalTypes, normalizedUnit);
+                morality, goodThreshold, null, user, normalizedAdditionalTypes, normalizedUnit,
+                parentDefinition);
         return createRecurringTask
                 ? createRecurringTask(definition.getId(), userId, null, recurrenceFrequency,
                 recurrenceDaysOfWeek, requestedTimeOfDay, recurringTaskImportance)
@@ -204,6 +225,18 @@ public class StatService {
                                            List<StatType> requestedAdditionalInputTypes,
                                            String unit,
                                            String userId) {
+        return updateDefinition(definitionId, name, description, morality, goodThreshold,
+                requestedAdditionalInputTypes, unit, null, false, userId);
+    }
+
+    @Transactional
+    public StatDefinition updateDefinition(String definitionId, String name, String description,
+                                           StatMorality morality, Double goodThreshold,
+                                           List<StatType> requestedAdditionalInputTypes,
+                                           String unit,
+                                           String requestedParentDefinitionId,
+                                           boolean parentDefinitionIdProvided,
+                                           String userId) {
         StatDefinition definition = definitionRepository.findByIdAndUserId(definitionId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("No such stat."));
         if (definition.getSystemKey() != null
@@ -224,6 +257,13 @@ public class StatService {
                 || effectiveAdditionalTypes.contains(StatType.NUMBER);
         validateUnit(definition.getType(), effectiveAdditionalTypes, normalizedUnit);
         if (unit != null || !supportsUnit) definition.setUnit(normalizedUnit);
+        if (parentDefinitionIdProvided) {
+            String normalizedParentId = normalizeParentId(requestedParentDefinitionId);
+            if (!Objects.equals(definition.getParentDefinitionId(), normalizedParentId)) {
+                definition.setParentDefinition(resolveParentDefinition(
+                        normalizedParentId, userId, definitionId));
+            }
+        }
         boolean nameChanged = !normalizedName.equals(definition.getName());
         TaskSeriesResponse linkedSeries = nameChanged && definition.getRecurringTaskSeriesId() != null
                 ? taskSeriesService.getSeries(definition.getRecurringTaskSeriesId(), userId)
@@ -875,6 +915,33 @@ public class StatService {
                 systemStat.systemKey(), user);
     }
 
+    private StatDefinition resolveParentDefinition(String requestedParentId, String userId,
+                                                    String definitionId) {
+        String parentId = normalizeParentId(requestedParentId);
+        if (parentId == null) return null;
+        if (parentId.equals(definitionId)) {
+            throw new IllegalArgumentException("A statistic cannot be its own sub-stat.");
+        }
+        if (definitionId != null
+                && definitionRepository.existsByParentDefinitionIdAndUserId(definitionId, userId)) {
+            throw new IllegalArgumentException("A statistic with sub-stats cannot become a sub-stat.");
+        }
+        StatDefinition parent = definitionRepository.findByIdAndUserId(parentId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("Choose an available parent statistic."));
+        if (parent.getParentDefinitionId() != null) {
+            throw new IllegalArgumentException("Choose a top-level statistic as the parent.");
+        }
+        if (!isDailyStatDefinition(parent)) {
+            throw new IllegalArgumentException("Choose a daily statistic as the parent.");
+        }
+        return parent;
+    }
+
+    private String normalizeParentId(String parentId) {
+        if (parentId == null || parentId.isBlank()) return null;
+        return parentId.trim();
+    }
+
     private String normalizeName(String name) {
         return name == null ? null : name.trim();
     }
@@ -1087,6 +1154,18 @@ public class StatService {
                                           User user,
                                           List<StatType> additionalInputTypes,
                                           String unit) {
+        return saveDefinition(name, description, type, minValue, maxValue, morality, goodThreshold,
+                systemKey, user, additionalInputTypes, unit, null);
+    }
+
+    private StatDefinition saveDefinition(String name, String description, StatType type,
+                                          Double minValue, Double maxValue,
+                                          StatMorality morality, Double goodThreshold,
+                                          String systemKey,
+                                          User user,
+                                          List<StatType> additionalInputTypes,
+                                          String unit,
+                                          StatDefinition parentDefinition) {
         StatDefinition definition = new StatDefinition();
         definition.setId(UUID.randomUUID().toString());
         definition.setName(name);
@@ -1099,6 +1178,7 @@ public class StatService {
         definition.setMaxValue(maxValue);
         definition.setGoodThreshold(goodThreshold);
         definition.setSystemKey(systemKey);
+        definition.setParentDefinition(parentDefinition);
         definition.setDisplayOrder(nextDisplayOrder(user.getId()));
         definition.setUser(user);
         StatDefinition savedDefinition = definitionRepository.save(definition);
@@ -1235,6 +1315,8 @@ public class StatService {
             throw new IllegalArgumentException("Cannot delete a system stat.");
         }
         statGroupService.removeDefinitionFromGroups(definitionId, userId);
+        definitionRepository.findAllByParentDefinitionIdAndUserId(definitionId, userId)
+                .forEach(child -> child.setParentDefinition(null));
         entryRepository.deleteAll(entryRepository.findAllByStatDefinitionIdAndUserId(definitionId, userId));
         focusTaskLinkRepository.deleteAllByStatDefinitionId(definitionId);
         definitionRepository.delete(statDefinition);

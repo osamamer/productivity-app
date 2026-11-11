@@ -14,20 +14,27 @@ import { ModalSheet } from '../ui/ModalSheet';
 import { DurationInput } from './DurationInput';
 import { TimePicker } from '../tasks/TaskScheduleField';
 
+const nonDailySystemKeys = new Set([
+  'energy', 'activation', 'stimulation_hunger', 'clarity', 'valence', 'emotional_load',
+  'stimulation', 'hunger', 'arousal',
+]);
+
 function dateForMinutes(value: number): Date {
   const date = new Date();
   date.setHours(Math.floor(value / 60), value % 60, 0, 0);
   return date;
 }
 
-export function StatComposerSheet({ visible, definition, onClose, onCreated, onUpdated }: {
+export function StatComposerSheet({ visible, definition, definitions = [], onClose, onCreated, onUpdated }: {
   visible: boolean;
   definition?: StatDefinition | null;
+  definitions?: StatDefinition[];
   onClose: () => void;
   onCreated: (definition: StatDefinition) => void;
   onUpdated?: (definition: StatDefinition) => void;
 }) {
   const [name, setName] = useState('');
+  const [parentDefinitionId, setParentDefinitionId] = useState('');
   const [type, setType] = useState<StatType>('BOOLEAN');
   const [min, setMin] = useState('1');
   const [max, setMax] = useState('10');
@@ -40,6 +47,14 @@ export function StatComposerSheet({ visible, definition, onClose, onCreated, onU
   const [error, setError] = useState<string | null>(null);
   const nameInputRef = useRef<TextInput>(null);
   const editing = Boolean(definition);
+  const parentCandidates = definitions.filter(candidate =>
+    candidate.id !== definition?.id
+    && !candidate.parentDefinitionId
+    && !nonDailySystemKeys.has(candidate.systemKey ?? ''),
+  );
+  const definitionHasChildren = Boolean(definition && definitions.some(
+    candidate => candidate.parentDefinitionId === definition.id,
+  ));
 
   useEffect(() => {
     if (!visible) return undefined;
@@ -48,6 +63,7 @@ export function StatComposerSheet({ visible, definition, onClose, onCreated, onU
     const definitionThreshold = definition?.goodThreshold ?? null;
     const setupTimer = setTimeout(() => {
       setName(definition?.name ?? '');
+      setParentDefinitionId(definition?.parentDefinitionId ?? '');
       setType(definitionType);
       setMin(definition?.minValue == null ? '1' : String(definition.minValue));
       setMax(definition?.maxValue == null ? '10' : String(definition.maxValue));
@@ -108,6 +124,7 @@ export function StatComposerSheet({ visible, definition, onClose, onCreated, onU
           name: name.trim(),
           morality,
           goodThreshold,
+          parentDefinitionId: parentDefinitionId || null,
         });
         onUpdated?.(updated);
       } else {
@@ -118,6 +135,7 @@ export function StatComposerSheet({ visible, definition, onClose, onCreated, onU
           maxValue,
           morality,
           goodThreshold,
+          parentDefinitionId: parentDefinitionId || null,
         });
         onCreated(created);
       }
@@ -138,6 +156,22 @@ export function StatComposerSheet({ visible, definition, onClose, onCreated, onU
       title={editing ? 'Edit stat' : 'New stat'}
       footer={<AppButton label={editing ? 'Save changes' : 'Create stat'} loading={saving} onPress={() => void submit()} />}>
       <AppInput ref={nameInputRef} autoFocus label="Name" value={name} onChangeText={setName} error={error ?? undefined} />
+      <AppText variant="label">Sub-stat of</AppText>
+      {definition && definitionHasChildren && !definition.parentDefinitionId ? (
+        <AppText variant="caption" color="muted">Move or remove this statistic’s sub-stats first.</AppText>
+      ) : (
+        <ChoiceChips
+          value={parentDefinitionId}
+          onChange={setParentDefinitionId}
+          options={[
+            { value: '', label: 'None' },
+            ...(parentDefinitionId && !parentCandidates.some(candidate => candidate.id === parentDefinitionId)
+              ? [{ value: parentDefinitionId, label: 'Linked statistic' }]
+              : []),
+            ...parentCandidates.map(candidate => ({ value: candidate.id, label: candidate.name })),
+          ]}
+        />
+      )}
       {!editing && <>
         <AppText variant="label">Type</AppText>
         <ChoiceChips value={type} onChange={next => {

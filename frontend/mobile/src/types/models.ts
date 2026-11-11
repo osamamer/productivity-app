@@ -201,6 +201,7 @@ export interface StatDefinition {
   minValue?: number;
   maxValue?: number;
   goodThreshold?: number | null;
+  parentDefinitionId?: string | null;
   systemKey?: string;
   displayOrder: number;
   userId: string;

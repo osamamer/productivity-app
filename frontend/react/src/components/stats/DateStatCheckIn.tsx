@@ -163,7 +163,9 @@ export function DateStatCheckIn({ date, definitions, onSaved }: Props) {
                     {definitions.map((definition, index) => (
                         <Box key={definition.id}>
                             {index > 0 && <Divider sx={{ mb: 3 }} />}
-                            <Typography variant="subtitle2" sx={{ mb: 0.5 }}>{definition.name}</Typography>
+                            <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+                                {definition.parentDefinitionId ? '↳ ' : ''}{definition.name}
+                            </Typography>
                             <Stack spacing={1.5}>
                                 <StatInputField
                                     definition={definition}

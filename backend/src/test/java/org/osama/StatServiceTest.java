@@ -623,6 +623,65 @@ public class StatServiceTest {
     }
 
     @Test
+    void definitionsCanBeCreatedAndMovedBetweenTopLevelParents() {
+        StatDefinition firstParent = createNamedStatDefinition("Exercise", StatType.BOOLEAN);
+        StatDefinition secondParent = createNamedStatDefinition("Wellbeing", StatType.BOOLEAN);
+        StatDefinition child = statService.createDefinition(
+                "Walking", null, StatType.NUMBER, null, null, StatMorality.NEUTRAL, null,
+                false, TaskRecurrenceFrequency.DAILY, List.of(), null, null,
+                List.of(), null, firstParent.getId(), TEST_USER_ID);
+
+        assertEquals(firstParent.getId(), child.getParentDefinitionId());
+
+        StatDefinition moved = statService.updateDefinition(
+                child.getId(), child.getName(), null, StatMorality.NEUTRAL, null,
+                null, null, secondParent.getId(), true, TEST_USER_ID);
+        assertEquals(secondParent.getId(), moved.getParentDefinitionId());
+
+        StatDefinition detached = statService.updateDefinition(
+                child.getId(), child.getName(), null, StatMorality.NEUTRAL, null,
+                null, null, null, true, TEST_USER_ID);
+        assertNull(detached.getParentDefinitionId());
+    }
+
+    @Test
+    void subStatisticsCannotBeNestedOrMoveTheirParentUnderAnotherStatistic() {
+        StatDefinition parent = createNamedStatDefinition("Exercise", StatType.BOOLEAN);
+        StatDefinition otherParent = createNamedStatDefinition("Wellbeing", StatType.BOOLEAN);
+        StatDefinition child = statService.createDefinition(
+                "Walking", null, StatType.NUMBER, null, null, StatMorality.NEUTRAL, null,
+                false, TaskRecurrenceFrequency.DAILY, List.of(), null, null,
+                List.of(), null, parent.getId(), TEST_USER_ID);
+
+        assertThrows(IllegalArgumentException.class, () -> statService.createDefinition(
+                "Steps", null, StatType.NUMBER, null, null, StatMorality.NEUTRAL, null,
+                false, TaskRecurrenceFrequency.DAILY, List.of(), null, null,
+                List.of(), null, child.getId(), TEST_USER_ID));
+        assertThrows(IllegalArgumentException.class, () -> statService.updateDefinition(
+                parent.getId(), parent.getName(), null, StatMorality.NEUTRAL, null,
+                null, null, otherParent.getId(), true, TEST_USER_ID));
+    }
+
+    @Test
+    void deletingAParentKeepsItsSubStatisticsAndTheirEntries() {
+        StatDefinition parent = createNamedStatDefinition("Exercise", StatType.BOOLEAN);
+        StatDefinition child = statService.createDefinition(
+                "Walking", null, StatType.NUMBER, null, null, StatMorality.NEUTRAL, null,
+                false, TaskRecurrenceFrequency.DAILY, List.of(), null, null,
+                List.of(), null, parent.getId(), TEST_USER_ID);
+        LocalDate date = LocalDate.now();
+        statService.recordEntry(child.getId(), date, 4500, TEST_USER_ID);
+
+        statService.deleteDefinition(parent.getId(), TEST_USER_ID);
+
+        StatDefinition retainedChild = definitionRepository.findByIdAndUserId(child.getId(), TEST_USER_ID)
+                .orElseThrow();
+        assertNull(retainedChild.getParentDefinitionId());
+        assertEquals(4500.0, entryRepository.findByStatDefinitionIdAndUserIdAndDate(
+                child.getId(), TEST_USER_ID, date).orElseThrow().getValue());
+    }
+
+    @Test
     void renamingStatRenamesItsLinkedRecurringTaskAndOccurrences() {
         StatDefinition definition = createNamedStatDefinition("Drink water", StatType.BOOLEAN);
         StatDefinition linked = statService.createRecurringTask(definition.getId(), TEST_USER_ID);

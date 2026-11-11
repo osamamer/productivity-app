@@ -41,6 +41,7 @@ export interface StatDefinition {
     secret?: boolean;
     showOnStatsPage?: boolean;
     recurringTaskSeriesId?: string | null;
+    parentDefinitionId?: string | null;
     focusTaskName?: string | null;
     focusTaskNames?: string[];
     displayOrder: number;
@@ -77,6 +78,7 @@ export interface CreateDefinitionRequest {
     recurrenceDaysOfWeek?: StatRecurrenceDay[];
     timeOfDay?: string;
     recurringTaskImportance?: number;
+    parentDefinitionId?: string | null;
 }
 
 export interface UpdateDefinitionRequest {
@@ -85,6 +87,7 @@ export interface UpdateDefinitionRequest {
     goodThreshold?: number;
     additionalInputTypes?: StatType[];
     unit?: string;
+    parentDefinitionId?: string | null;
 }
 
 export interface RecordEntryRequest {

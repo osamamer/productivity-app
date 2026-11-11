@@ -297,6 +297,11 @@ export default function StatsScreen() {
           </View>
           <View style={styles.statCopy}>
             <AppText variant="label" numberOfLines={1}>{definition.name}</AppText>
+            {definition.parentDefinitionId && (
+              <AppText variant="caption" color="muted" numberOfLines={1}>
+                Sub-stat of {resource.data?.definitions.find(parent => parent.id === definition.parentDefinitionId)?.name ?? 'another statistic'}
+              </AppText>
+            )}
           </View>
           {todayValue !== null && <AppText variant="label" color="muted" numberOfLines={1} style={styles.todayValue}>{todayValue}</AppText>}
         </Card>
@@ -416,6 +421,7 @@ export default function StatsScreen() {
         key={`stat-${editingDefinition?.id ?? 'new'}-${composerOpen ? 'open' : 'closed'}`}
         visible={composerOpen}
         definition={editingDefinition}
+        definitions={resource.data?.definitions ?? []}
         onClose={closeStatComposer}
         onCreated={definition => resource.setData(current => current ? { ...current, definitions: [...current.definitions, definition] } : current)}
         onUpdated={definition => { saveDefinition(definition); closeStatComposer(); }}

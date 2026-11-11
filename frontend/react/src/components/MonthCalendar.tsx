@@ -66,6 +66,7 @@ import { taskDateKey } from "../services/utils/taskDate";
 import { CALENDAR_COLORS, Calendar, calendarColorHex } from '../types/Calendar';
 import { CalendarChipSelect } from './calendar/CalendarSelect';
 import { isCalendarDailyTaskVisible, isCalendarStatTaskVisible } from '../services/utils/calendarStatTaskVisibility';
+import { includeDirectStatChildren } from '../services/utils/statDefinitionHierarchy';
 import { statNumericValueLabel } from './stats/statVisualization';
 
 type MonthCalenderProps = {
@@ -725,7 +726,10 @@ export function MonthCalendar({
         updateDisplayPreferences(update(displayPreferencesRef.current[displayView]));
     }, [displayView, updateDisplayPreferences]);
     const selectedStatIdsForDisplay = useMemo(
-        () => selectedStatIds ?? availableStatDefinitions.map(definition => definition.id),
+        () => includeDirectStatChildren(
+            selectedStatIds ?? availableStatDefinitions.map(definition => definition.id),
+            availableStatDefinitions,
+        ),
         [availableStatDefinitions, selectedStatIds]
     );
     const selectedStatDefinitions = useMemo(

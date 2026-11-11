@@ -1,6 +1,7 @@
 package org.osama.stat;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -84,4 +85,19 @@ public class StatDefinition {
 
     @Column(name = "user_id", insertable = false, updatable = false)
     private String userId;
+
+    @JsonIgnore
+    @lombok.ToString.Exclude
+    @lombok.EqualsAndHashCode.Exclude
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "parent_definition_id")
+    private StatDefinition parentDefinition;
+
+    @Column(name = "parent_definition_id", insertable = false, updatable = false)
+    private String parentDefinitionId;
+
+    public void setParentDefinition(StatDefinition parentDefinition) {
+        this.parentDefinition = parentDefinition;
+        this.parentDefinitionId = parentDefinition == null ? null : parentDefinition.getId();
+    }
 }

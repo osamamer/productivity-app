@@ -18,4 +18,8 @@ public interface StatDefinitionRepository extends JpaRepository<StatDefinition, 
     Optional<StatDefinition> findByUserIdAndSystemKey(String userId, String systemKey);
 
     Optional<StatDefinition> findByRecurringTaskSeriesIdAndUserId(String recurringTaskSeriesId, String userId);
+
+    List<StatDefinition> findAllByParentDefinitionIdAndUserId(String parentDefinitionId, String userId);
+
+    boolean existsByParentDefinitionIdAndUserId(String parentDefinitionId, String userId);
 }

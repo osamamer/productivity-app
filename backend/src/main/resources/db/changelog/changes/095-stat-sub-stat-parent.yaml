@@ -1,0 +1,36 @@
+databaseChangeLog:
+  - changeSet:
+      id: 095-stat-sub-stat-parent
+      author: codex
+      comment: Allow daily statistic definitions to be organized under a parent statistic
+      changes:
+        - addColumn:
+            tableName: stat_definition
+            columns:
+              - column:
+                  name: parent_definition_id
+                  type: varchar(255)
+        - addForeignKeyConstraint:
+            baseTableName: stat_definition
+            baseColumnNames: parent_definition_id
+            constraintName: fk_stat_definition_parent
+            referencedTableName: stat_definition
+            referencedColumnNames: id
+            onDelete: SET NULL
+        - createIndex:
+            tableName: stat_definition
+            indexName: idx_app_stat_definition_parent
+            ifNotExists: true
+            columns:
+              - column:
+                  name: parent_definition_id
+      rollback:
+        - dropIndex:
+            tableName: stat_definition
+            indexName: idx_app_stat_definition_parent
+        - dropForeignKeyConstraint:
+            baseTableName: stat_definition
+            constraintName: fk_stat_definition_parent
+        - dropColumn:
+            tableName: stat_definition
+            columnName: parent_definition_id
