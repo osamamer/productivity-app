@@ -197,6 +197,7 @@ export interface StatDefinition {
   id: string;
   name: string;
   type: StatType;
+  unit?: string | null;
   morality?: StatMorality | null;
   minValue?: number;
   maxValue?: number;

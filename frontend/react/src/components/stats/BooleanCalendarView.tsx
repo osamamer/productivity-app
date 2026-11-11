@@ -12,11 +12,13 @@ import { StatDefinition, StatEntry, StatEntryStatus } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
 import { getBooleanChoiceColor, getStatFeedbackColor, showStatFeedback } from '../../services/statFeedback';
 import { getStatPeriodWindow, StatPeriodMode, StatPeriodOffset } from './statPeriod';
+import { SubStatInputFields } from './SubStatInputFields';
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 interface Props {
     definition: StatDefinition;
+    subStatDefinitions?: StatDefinition[];
     dateRange: number;
     periodMode: StatPeriodMode;
     periodOffset: StatPeriodOffset;
@@ -60,6 +62,7 @@ function monthLabelsForWeeks(weeks: (Date | null)[][], showYear: boolean): strin
 
 export const BooleanCalendarView = React.memo(function BooleanCalendarView({
     definition,
+    subStatDefinitions = [],
     dateRange,
     periodMode,
     periodOffset,
@@ -547,21 +550,23 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
                 slotProps={{
                     paper: {
                         sx: {
-                            p: 0,
-                            minWidth: 0,
+                            p: subStatDefinitions.length > 0 ? 1.5 : 0,
+                            minWidth: subStatDefinitions.length > 0 ? 'min(300px, calc(100vw - 32px))' : 0,
+                            maxWidth: 'min(360px, calc(100vw - 32px))',
                             bgcolor: 'background.paper',
                             boxShadow: 3,
                             display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
+                            flexDirection: 'column',
+                            alignItems: subStatDefinitions.length > 0 ? 'stretch' : 'center',
+                            justifyContent: subStatDefinitions.length > 0 ? 'flex-start' : 'center',
                             borderRadius: 1,
-                            overflow: 'hidden',
+                            overflow: 'auto',
                         },
                     },
                 }}
             >
                 {popover && (
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
                         <ToggleButtonGroup
                             value={editStatus === 'NOT_PLANNED'
                                 ? 'not-planned'
@@ -652,6 +657,13 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
                             </ToggleButton>
                         </ToggleButtonGroup>
                         {saveError && <Alert severity="error" sx={{ mt: 1 }}>{saveError}</Alert>}
+                        <SubStatInputFields
+                            definitions={subStatDefinitions}
+                            date={popover.date}
+                            refreshKey={refreshKey}
+                            onEntryChanged={onEntryChanged}
+                            onError={onError}
+                        />
                     </Box>
                 )}
             </Popover>

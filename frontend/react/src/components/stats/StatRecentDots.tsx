@@ -34,6 +34,7 @@ import { AppTimeField } from '../input/AppPickerFields';
 import { AppNumberField } from '../input/AppNumberField';
 import { StatInputField } from './StatInputField';
 import { statInputLabel } from './statInputLabels';
+import { SubStatInputFields } from './SubStatInputFields';
 
 const CIRCLE_SIZE = 24;
 const THRESHOLD_COLOR_TRANSITION = 0.75;
@@ -223,6 +224,7 @@ interface PopoverState {
 
 interface Props {
     definition: StatDefinition;
+    subStatDefinitions?: StatDefinition[];
     refreshKey: number;
     onEntryChanged?: (definitionId: string) => void;
     onError?: (message: string) => void;
@@ -252,7 +254,13 @@ function recentEntryMap(entries: StatEntry[] | undefined, recentStart: string, t
     );
 }
 
-export const StatRecentDots = React.memo(function StatRecentDots({ definition, refreshKey, onEntryChanged, onError }: Props) {
+export const StatRecentDots = React.memo(function StatRecentDots({
+    definition,
+    subStatDefinitions = [],
+    refreshKey,
+    onEntryChanged,
+    onError,
+}: Props) {
     const theme = useTheme();
     const { from, to } = getLastMonthWindow();
     const recentStart = format(subDays(new Date(), 4), 'yyyy-MM-dd');
@@ -560,8 +568,9 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                     paper: {
                         sx: {
                             p: 2,
-                            minWidth: 220,
-                            maxHeight: '70vh',
+                            minWidth: subStatDefinitions.length > 0 ? 'min(300px, calc(100vw - 32px))' : 220,
+                            maxWidth: 'min(380px, calc(100vw - 32px))',
+                            maxHeight: 'min(70vh, 560px)',
                             overflowY: 'auto',
                             boxShadow: theme.shadows[6],
                         },
@@ -699,6 +708,16 @@ export const StatRecentDots = React.memo(function StatRecentDots({ definition, r
                                 />
                             </Box>
                         ))}
+
+                        {popover && (
+                            <SubStatInputFields
+                                definitions={subStatDefinitions}
+                                date={popover.date}
+                                refreshKey={refreshKey}
+                                onEntryChanged={onEntryChanged}
+                                onError={onError}
+                            />
+                        )}
 
                         {saveError && (
                             <Alert severity="error" sx={{ mt: 1.5, py: 0 }}>{saveError}</Alert>

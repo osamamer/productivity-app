@@ -1154,7 +1154,27 @@ export function StatsPage() {
         () => visibleDefinitions.filter(definition => !pendingStatCreationsRef.current.has(definition.id)),
         [visibleDefinitions],
     );
+    const subStatDefinitionsByParentId = useMemo(() => {
+        const childrenByParentId = new Map<string, StatDefinition[]>();
+        selectableDefinitions.forEach(definition => {
+            if (!definition.parentDefinitionId) return;
+            const children = childrenByParentId.get(definition.parentDefinitionId) ?? [];
+            children.push(definition);
+            childrenByParentId.set(definition.parentDefinitionId, children);
+        });
+        return childrenByParentId;
+    }, [selectableDefinitions]);
     const selectedDef = selectableDefinitions.find(d => d.id === selectedId) ?? null;
+    const selectedSubStatDefinitions = useMemo(
+        () => selectedDef ? subStatDefinitionsByParentId.get(selectedDef.id) ?? [] : [],
+        [selectedDef, subStatDefinitionsByParentId],
+    );
+    const selectedStatCardRefreshKey = useMemo(() => resourceRefreshKey
+        + (selectedDef ? entryRefreshKeys[selectedDef.id] ?? 0 : 0)
+        + selectedSubStatDefinitions.reduce(
+            (total, definition) => total + (entryRefreshKeys[definition.id] ?? 0),
+            0,
+        ), [entryRefreshKeys, resourceRefreshKey, selectedDef, selectedSubStatDefinitions]);
     const selectedStatIdSet = useMemo(() => new Set(selectedStatIds), [selectedStatIds]);
     const selectedDefinitions = useMemo(
         () => selectableDefinitions.filter(definition => selectedStatIdSet.has(definition.id)),
@@ -1524,6 +1544,10 @@ export function StatsPage() {
     };
 
     const renderDefinitionRow = (def: StatDefinition, isGroupMember = false) => {
+        const subStatDefinitions = subStatDefinitionsByParentId.get(def.id) ?? [];
+        const subStatRefreshKey = resourceRefreshKey
+            + (entryRefreshKeys[def.id] ?? 0)
+            + subStatDefinitions.reduce((total, definition) => total + (entryRefreshKeys[definition.id] ?? 0), 0);
         const isPrimarySelected = def.id === selectedId;
         const isSelected = selectedStatIdSet.has(def.id);
         const isPending = pendingStatCreationsRef.current.has(def.id);
@@ -1663,17 +1687,13 @@ export function StatsPage() {
                                 <LockOutlinedIcon fontSize="small" color="action" titleAccess="Secret statistic" />
                             )}
                         </Stack>
-                        {def.parentDefinitionId && (
-                            <Typography variant="caption" color="text.secondary" noWrap>
-                                Sub-stat of {visibleDefinitions.find(parent => parent.id === def.parentDefinitionId)?.name ?? 'another statistic'}
-                            </Typography>
-                        )}
                     </Box>
                     <Stack direction="row" alignItems="center" spacing={0.5} sx={{ flexShrink: 0 }}>
                         {!isPending && (
                             <StatRecentDots
                                 definition={def}
-                                refreshKey={resourceRefreshKey + (entryRefreshKeys[def.id] ?? 0)}
+                                subStatDefinitions={subStatDefinitions}
+                                refreshKey={subStatRefreshKey}
                                 onEntryChanged={handleEntryChanged}
                                 onError={showErrorSnackbar}
                             />
@@ -2200,46 +2220,19 @@ export function StatsPage() {
                         {/* Right panel — selected stat chart */}
                         <Box sx={{ flex: 1, overflowY: 'auto', minWidth: 0 }}>
                             {selectedDef ? (
-                                <Stack spacing={2}>
-                                    <StatCard
-                                        definition={selectedDef}
-                                        comparisonDefinitions={selectableDefinitions}
-                                        refreshKey={resourceRefreshKey + (entryRefreshKeys[selectedDef.id] ?? 0)}
-                                        onEntryChanged={handleEntryChanged}
-                                        onError={showErrorSnackbar}
-                                        onDateContextMenu={(date, event) => {
-                                            event.preventDefault();
-                                            event.stopPropagation();
-                                            setDayContextMenu({ date, top: event.clientY, left: event.clientX });
-                                        }}
-                                    />
-                                    {selectableDefinitions.some(definition => definition.parentDefinitionId === selectedDef.id) && (
-                                        <Box>
-                                            <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1 }}>
-                                                Sub-statistics
-                                            </Typography>
-                                            <Stack spacing={2}>
-                                                {selectableDefinitions
-                                                    .filter(definition => definition.parentDefinitionId === selectedDef.id)
-                                                    .map(definition => (
-                                                        <StatCard
-                                                            key={definition.id}
-                                                            definition={definition}
-                                                            comparisonDefinitions={selectableDefinitions}
-                                                            refreshKey={resourceRefreshKey + (entryRefreshKeys[definition.id] ?? 0)}
-                                                            onEntryChanged={handleEntryChanged}
-                                                            onError={showErrorSnackbar}
-                                                            onDateContextMenu={(date, event) => {
-                                                                event.preventDefault();
-                                                                event.stopPropagation();
-                                                                setDayContextMenu({ date, top: event.clientY, left: event.clientX });
-                                                            }}
-                                                        />
-                                                    ))}
-                                            </Stack>
-                                        </Box>
-                                    )}
-                                </Stack>
+                                <StatCard
+                                    definition={selectedDef}
+                                    subStatDefinitions={selectedSubStatDefinitions}
+                                    comparisonDefinitions={selectableDefinitions}
+                                    refreshKey={selectedStatCardRefreshKey}
+                                    onEntryChanged={handleEntryChanged}
+                                    onError={showErrorSnackbar}
+                                    onDateContextMenu={(date, event) => {
+                                        event.preventDefault();
+                                        event.stopPropagation();
+                                        setDayContextMenu({ date, top: event.clientY, left: event.clientX });
+                                    }}
+                                />
                             ) : (
                                 <Box sx={{
                                     display: 'flex',

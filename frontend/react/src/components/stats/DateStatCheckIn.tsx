@@ -9,6 +9,7 @@ import { getStatFeedbackColor, showStatFeedback } from '../../services/statFeedb
 import { readStatInputPreference, saveStatInputPreference } from '../../services/utils/inputPreferences';
 import { StatInputField } from './StatInputField';
 import { statInputLabel } from './statInputLabels';
+import { groupStatDefinitions } from '../../services/utils/statDefinitionHierarchy';
 
 interface Props {
     date: string;
@@ -138,6 +139,8 @@ export function DateStatCheckIn({ date, definitions, onSaved }: Props) {
         }
     };
 
+    const definitionGroups = groupStatDefinitions(definitions);
+
     if (loading) return <CircularProgress size={24} sx={{ display: 'block', mx: 'auto', my: 3 }} />;
     if (definitions.length === 0) {
         return (
@@ -160,39 +163,80 @@ export function DateStatCheckIn({ date, definitions, onSaved }: Props) {
                 '&::-webkit-scrollbar-thumb:hover': { backgroundColor: 'action.active' },
             }}>
                 <Stack spacing={3}>
-                    {definitions.map((definition, index) => (
-                        <Box key={definition.id}>
-                            {index > 0 && <Divider sx={{ mb: 3 }} />}
-                            <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
-                                {definition.parentDefinitionId ? '↳ ' : ''}{definition.name}
-                            </Typography>
-                            <Stack spacing={1.5}>
-                                <StatInputField
-                                    definition={definition}
-                                    type={definition.type}
-                                    value={values[definition.id] ?? null}
-                                    status={statuses[definition.id]}
-                                    primary
-                                    onChange={(value, status) => setValue(definition.id, value, status)}
-                                    onFocus={element => { feedbackAnchorRef.current = element; }}
-                                />
-                                {(definition.additionalInputTypes ?? []).map(type => (
-                                    <Box key={type}>
-                                        <Typography variant="caption" color="text.secondary">
-                                            {statInputLabel(type)}
-                                        </Typography>
-                                        <StatInputField
-                                            definition={definition}
-                                            type={type}
-                                            value={additionalValues[definition.id]?.[type] ?? null}
-                                            onChange={value => setAdditionalValue(definition.id, type, value)}
-                                            onFocus={element => { feedbackAnchorRef.current = element; }}
-                                        />
-                                    </Box>
-                                ))}
-                            </Stack>
-                        </Box>
-                    ))}
+                    {definitionGroups.map(({ definition, subDefinitions }, index) => {
+                        return (
+                            <Box key={definition.id}>
+                                {index > 0 && <Divider sx={{ mb: 3 }} />}
+                                <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+                                    {definition.name}
+                                </Typography>
+                                <Stack spacing={1.5}>
+                                    <StatInputField
+                                        definition={definition}
+                                        type={definition.type}
+                                        value={values[definition.id] ?? null}
+                                        status={statuses[definition.id]}
+                                        primary
+                                        onChange={(value, status) => setValue(definition.id, value, status)}
+                                        onFocus={element => { feedbackAnchorRef.current = element; }}
+                                    />
+                                    {(definition.additionalInputTypes ?? []).map(type => (
+                                        <Box key={type}>
+                                            <Typography variant="caption" color="text.secondary">
+                                                {statInputLabel(type)}
+                                            </Typography>
+                                            <StatInputField
+                                                definition={definition}
+                                                type={type}
+                                                value={additionalValues[definition.id]?.[type] ?? null}
+                                                onChange={value => setAdditionalValue(definition.id, type, value)}
+                                                onFocus={element => { feedbackAnchorRef.current = element; }}
+                                            />
+                                        </Box>
+                                    ))}
+                                    {subDefinitions.length > 0 && (
+                                        <Box sx={{ mt: 0.5, pl: 1.5, borderLeft: 1, borderColor: 'divider' }}>
+                                            <Typography variant="caption" color="text.secondary" fontWeight={600}>
+                                                Additional inputs
+                                            </Typography>
+                                            <Stack spacing={1.5} sx={{ mt: 1 }}>
+                                                {subDefinitions.map(subDefinition => (
+                                                    <Box key={subDefinition.id}>
+                                                        <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
+                                                            {subDefinition.name}
+                                                        </Typography>
+                                                        <StatInputField
+                                                            definition={subDefinition}
+                                                            type={subDefinition.type}
+                                                            value={values[subDefinition.id] ?? null}
+                                                            status={statuses[subDefinition.id]}
+                                                            primary
+                                                            onChange={(value, status) => setValue(subDefinition.id, value, status)}
+                                                            onFocus={element => { feedbackAnchorRef.current = element; }}
+                                                        />
+                                                        {(subDefinition.additionalInputTypes ?? []).map(type => (
+                                                            <Box key={type} sx={{ mt: 1 }}>
+                                                                <Typography variant="caption" color="text.secondary">
+                                                                    {statInputLabel(type)}
+                                                                </Typography>
+                                                                <StatInputField
+                                                                    definition={subDefinition}
+                                                                    type={type}
+                                                                    value={additionalValues[subDefinition.id]?.[type] ?? null}
+                                                                    onChange={value => setAdditionalValue(subDefinition.id, type, value)}
+                                                                    onFocus={element => { feedbackAnchorRef.current = element; }}
+                                                                />
+                                                            </Box>
+                                                        ))}
+                                                    </Box>
+                                                ))}
+                                            </Stack>
+                                        </Box>
+                                    )}
+                                </Stack>
+                            </Box>
+                        );
+                    })}
                 </Stack>
             </Box>
             <Box sx={{ pt: 2, mt: 2, borderTop: 1, borderColor: 'divider' }}>

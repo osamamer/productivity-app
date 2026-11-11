@@ -237,6 +237,7 @@ export default function StatsScreen() {
 
   function renderDefinition(definition: StatDefinition) {
     const entry = entriesByDefinition.get(definition.id);
+    const subDefinitions = resource.data?.definitions.filter(item => item.parentDefinitionId === definition.id) ?? [];
     const isBoolean = definition.type === 'BOOLEAN';
     const notPlanned = entry?.status === 'NOT_PLANNED';
     const booleanPositive = entry?.value === 1;
@@ -262,7 +263,7 @@ export default function StatsScreen() {
       <SilentPressable
         key={definition.id}
         accessibilityRole="button"
-        accessibilityLabel={`${definition.name}, today's value ${todayValue ?? 'Not logged'}.`}
+        accessibilityLabel={`${definition.parentDefinitionId ? 'Additional input ' : ''}${definition.name}, today's value ${todayValue ?? 'Not logged'}.`}
         accessibilityHint="Tap to view history. Hold to edit this stat."
         style={({ pressed }) => [pressed && styles.pressed]}
         delayLongPress={450}
@@ -297,10 +298,22 @@ export default function StatsScreen() {
           </View>
           <View style={styles.statCopy}>
             <AppText variant="label" numberOfLines={1}>{definition.name}</AppText>
-            {definition.parentDefinitionId && (
-              <AppText variant="caption" color="muted" numberOfLines={1}>
-                Sub-stat of {resource.data?.definitions.find(parent => parent.id === definition.parentDefinitionId)?.name ?? 'another statistic'}
-              </AppText>
+            {subDefinitions.length > 0 && (
+              <View style={[styles.subStats, { borderLeftColor: colors.border }]}>
+                <AppText variant="caption" color="muted">Additional inputs</AppText>
+                {subDefinitions.map(subDefinition => {
+                  const subEntry = entriesByDefinition.get(subDefinition.id);
+                  const subValue = subEntry && subEntry.status !== 'NOT_PLANNED'
+                    ? todayStatValue(subDefinition, subEntry)
+                    : subEntry?.status === 'NOT_PLANNED' ? 'Not planned' : 'Not logged';
+                  return (
+                    <View key={subDefinition.id} style={styles.subStatLine}>
+                      <AppText variant="caption" color="muted" numberOfLines={1} style={styles.subStatName}>{subDefinition.name}</AppText>
+                      <AppText variant="caption" color="muted" numberOfLines={1}>{subValue}</AppText>
+                    </View>
+                  );
+                })}
+              </View>
             )}
           </View>
           {todayValue !== null && <AppText variant="label" color="muted" numberOfLines={1} style={styles.todayValue}>{todayValue}</AppText>}
@@ -397,10 +410,19 @@ export default function StatsScreen() {
       <StatEntrySheet
         key={`${selected?.id ?? 'no-stat'}-${selectedInitialDate ?? 'default'}`}
         definition={selected}
+        subStatDefinitions={resource.data?.definitions.filter(definition => definition.parentDefinitionId === selected?.id) ?? []}
         existing={selected && (!selectedInitialDate || entriesByDefinition.get(selected.id)?.date === selectedInitialDate) ? entriesByDefinition.get(selected.id) : undefined}
         initialDate={selectedInitialDate}
         onClose={closeStatEntry}
         onSaved={saveEntry}
+        onSubEntrySaved={(definitionId, entry, date) => {
+          if (date !== localDate()) return;
+          resource.setData(current => {
+            if (!current) return current;
+            const rest = current.entries.filter(item => item.statDefinitionId !== definitionId);
+            return { ...current, entries: entry ? [...rest, entry] : rest };
+          });
+        }}
         onReverted={(entry, date) => resource.setData(current => {
           if (!current || !selected) return current;
           if (date !== localDate()) return current;
@@ -456,6 +478,9 @@ const styles = StyleSheet.create({
   stat: { minHeight: 82, padding: 13, overflow: 'hidden', flexDirection: 'row', alignItems: 'center', gap: 11 },
   statMark: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
   statCopy: { flex: 1, minWidth: 0, gap: 3 },
+  subStats: { gap: 4, marginTop: 3, paddingLeft: 8, borderLeftWidth: 1 },
+  subStatLine: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  subStatName: { flex: 1, minWidth: 0 },
   todayValue: { flexShrink: 0, textAlign: 'right' },
   pressed: { opacity: 0.72 },
 });

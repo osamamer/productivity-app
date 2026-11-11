@@ -66,6 +66,7 @@ function StatViewTransition({ viewKey, children }: StatViewTransitionProps) {
 
 interface Props {
     definition: StatDefinition;
+    subStatDefinitions?: StatDefinition[];
     comparisonDefinitions: StatDefinition[];
     refreshKey: number;
     onEntryChanged?: (definitionId: string) => void;
@@ -75,6 +76,7 @@ interface Props {
 
 export const StatCard = React.memo(function StatCard({
     definition,
+    subStatDefinitions = [],
     comparisonDefinitions,
     refreshKey,
     onEntryChanged,
@@ -377,6 +379,7 @@ export const StatCard = React.memo(function StatCard({
                     ) : isBooleanCalendar ? (
                         <BooleanCalendarView
                             definition={definition}
+                            subStatDefinitions={subStatDefinitions}
                             dateRange={dateRange}
                             periodMode={periodMode}
                             periodOffset={periodOffset}
@@ -388,6 +391,7 @@ export const StatCard = React.memo(function StatCard({
                     ) : (
                         <StatLineChart
                             definition={definition}
+                            subStatDefinitions={subStatDefinitions}
                             comparisonDefinition={comparisonDefinition}
                             dateRange={dateRange}
                             periodMode={periodMode}
@@ -399,6 +403,54 @@ export const StatCard = React.memo(function StatCard({
                         />
                     )}
                 </StatViewTransition>
+                {subStatDefinitions.length > 0 && !focusTimeView && (
+                    <Box sx={{ mt: 2.5, pt: 2, borderTop: 1, borderColor: 'divider' }}>
+                        <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1.5 }}>
+                            Additional inputs
+                        </Typography>
+                        <Stack spacing={2}>
+                            {subStatDefinitions.map(subDefinition => (
+                                <Box
+                                    key={subDefinition.id}
+                                    sx={{
+                                        px: { xs: 0, sm: 1.5 },
+                                        py: 1.5,
+                                        borderLeft: { xs: 0, sm: 2 },
+                                        borderColor: 'divider',
+                                        minWidth: 0,
+                                    }}
+                                >
+                                    <Typography variant="body2" fontWeight={600} sx={{ mb: 1 }}>
+                                        {subDefinition.name}
+                                    </Typography>
+                                    {subDefinition.type === 'BOOLEAN' ? (
+                                        <BooleanCalendarView
+                                            definition={subDefinition}
+                                            dateRange={dateRange}
+                                            periodMode={periodMode}
+                                            periodOffset={periodOffset}
+                                            refreshKey={refreshKey}
+                                            onEntryChanged={onEntryChanged}
+                                            onError={onError}
+                                            onDateContextMenu={onDateContextMenu}
+                                        />
+                                    ) : (
+                                        <StatLineChart
+                                            definition={subDefinition}
+                                            dateRange={dateRange}
+                                            periodMode={periodMode}
+                                            periodOffset={periodOffset}
+                                            refreshKey={refreshKey}
+                                            onEntryChanged={onEntryChanged}
+                                            onError={onError}
+                                            onDateContextMenu={onDateContextMenu}
+                                        />
+                                    )}
+                                </Box>
+                            ))}
+                        </Stack>
+                    </Box>
+                )}
             </CardContent>
             <StatInsightsDialog
                 open={insightsOpen}

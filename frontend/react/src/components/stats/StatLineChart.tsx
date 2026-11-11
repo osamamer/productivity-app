@@ -21,6 +21,7 @@ import { AppTimeField } from '../input/AppPickerFields';
 import { AppNumberField } from '../input/AppNumberField';
 import { statNumericValueLabel } from './statVisualization';
 import { formatStatBucketRange, getStatPeriodWindow, StatPeriodMode, StatPeriodOffset } from './statPeriod';
+import { SubStatInputFields } from './SubStatInputFields';
 
 type ChartPoint = StatChartPoint;
 
@@ -37,6 +38,7 @@ type PendingEntrySave = {
 
 interface Props {
     definition: StatDefinition;
+    subStatDefinitions?: StatDefinition[];
     comparisonDefinition?: StatDefinition;
     dateRange: number;
     periodMode: StatPeriodMode;
@@ -256,6 +258,7 @@ function formatAxisValue(value: number, definition: StatDefinition): string {
 
 export const StatLineChart = React.memo(function StatLineChart({
     definition,
+    subStatDefinitions = [],
     comparisonDefinition,
     dateRange,
     periodMode,
@@ -878,27 +881,35 @@ export const StatLineChart = React.memo(function StatLineChart({
                         left: editorPosition.left,
                         top: editorPosition.top,
                         zIndex: 2,
-                        p: 0.5,
+                        p: 1,
                         backgroundColor: 'background.paper',
                         border: 1,
                         borderColor: 'divider',
                         borderRadius: 1,
                         boxShadow: 2,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'stretch',
+                        gap: 0.75,
+                        width: subStatDefinitions.length > 0 ? 340 : 'fit-content',
+                        maxWidth: 'min(340px, calc(100vw - 32px))',
                     }}
                 >
-                    {comparisonDefinition && (
+                    {(comparisonDefinition || subStatDefinitions.length > 0) && (
                         <Box sx={{ px: 0.5, pb: 0.5, minWidth: 150 }}>
                             <Typography variant="caption" color="text.secondary" display="block">
                                 {format(parseISO(hoveredPoint.date), 'MMM d, yyyy')}
                             </Typography>
-                            <Typography variant="caption" sx={{ color: comparisonColor }} display="block" noWrap>
-                                {comparisonDefinition.name}: {formatPointValue(
-                                    hoveredPoint.comparisonValue,
-                                    comparisonDefinition,
-                                    false,
-                                    hoveredPoint.comparisonStatus,
-                                )}
-                            </Typography>
+                            {comparisonDefinition && (
+                                <Typography variant="caption" sx={{ color: comparisonColor }} display="block" noWrap>
+                                    {comparisonDefinition.name}: {formatPointValue(
+                                        hoveredPoint.comparisonValue,
+                                        comparisonDefinition,
+                                        false,
+                                        hoveredPoint.comparisonStatus,
+                                    )}
+                                </Typography>
+                            )}
                         </Box>
                     )}
                     {definition.type === 'BOOLEAN' ? (
@@ -1011,6 +1022,13 @@ export const StatLineChart = React.memo(function StatLineChart({
                             sx={{ width: 102 }}
                         />
                     )}
+                    <SubStatInputFields
+                        definitions={subStatDefinitions}
+                        date={hoveredPoint.date}
+                        refreshKey={refreshKey}
+                        onEntryChanged={onEntryChanged}
+                        onError={onError}
+                    />
                 </Box>
             )}
 

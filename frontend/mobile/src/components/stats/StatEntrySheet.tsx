@@ -27,6 +27,7 @@ import { ModalSheet } from '../ui/ModalSheet';
 import { AppPopup } from '../ui/AppPopup';
 import { CalendarDatePicker } from '../ui/CalendarDatePicker';
 import { TimePicker } from '../tasks/TaskScheduleField';
+import { SubStatEntryControl } from './SubStatEntryControl';
 
 function dateForMinutes(value: number): Date {
   const date = new Date();
@@ -40,8 +41,19 @@ function defaultValue(definition: StatDefinition, rememberedValue: number | null
   return definition.minValue ?? 1;
 }
 
-export function StatEntrySheet({ definition, existing, initialDate, onClose, onSaved, onReverted }: {
+export function StatEntrySheet({
+  definition,
+  subStatDefinitions = [],
+  onSubEntrySaved,
+  existing,
+  initialDate,
+  onClose,
+  onSaved,
+  onReverted,
+}: {
   definition: StatDefinition | null;
+  subStatDefinitions?: StatDefinition[];
+  onSubEntrySaved?: (definitionId: string, entry: StatEntry | null, date: string) => void;
   existing?: StatEntry;
   initialDate?: string;
   onClose: () => void;
@@ -58,6 +70,7 @@ export function StatEntrySheet({ definition, existing, initialDate, onClose, onS
   const [durationValue, setDurationValue] = useState<number | null>(definition?.type === 'DURATION' ? existing?.value ?? null : null);
   const [timeValue, setTimeValue] = useState(() => dateForMinutes(definition?.type === 'TIME' && existing?.value != null ? existing.value : 12 * 60));
   const [entryDate, setEntryDate] = useState(firstEntryDate);
+  const [entriesForDate, setEntriesForDate] = useState<StatEntry[]>([]);
   const [entryLoading, setEntryLoading] = useState(Boolean(definition));
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [timePickerOpen, setTimePickerOpen] = useState(false);
@@ -79,6 +92,7 @@ export function StatEntrySheet({ definition, existing, initialDate, onClose, onS
     ]).then(([entries, rememberedValue]) => {
       if (!active || loadSequence.current !== sequence) return;
       const matchingEntry = entries.find(entry => entry.statDefinitionId === definition.id);
+      setEntriesForDate(entries);
       const nextValue = matchingEntry?.value ?? defaultValue(definition, rememberedValue);
       setEntryForDate(matchingEntry);
       setEntryStatus(matchingEntry?.status ?? 'RECORDED');
@@ -100,6 +114,7 @@ export function StatEntrySheet({ definition, existing, initialDate, onClose, onS
     setEntryDate(nextDate);
     setEntryLoading(true);
     setEntryForDate(undefined);
+    setEntriesForDate([]);
     setEntryStatus('RECORDED');
     setValue('');
     setRangeValue(definition?.minValue ?? 1);
@@ -113,7 +128,7 @@ export function StatEntrySheet({ definition, existing, initialDate, onClose, onS
     void saveStatInputPreference(user?.id, definition.id, definition.type, nextValue);
   }
 
-  async function save(nextValue?: number | null, nextStatus: StatEntryStatus = 'RECORDED') {
+  async function save(nextValue?: number | null, nextStatus: StatEntryStatus = entryStatus) {
     if (!definition || saving || entryLoading) return;
     const numeric = nextValue !== undefined ? nextValue : (definition.type === 'RANGE'
       ? rangeValue
@@ -159,7 +174,7 @@ export function StatEntrySheet({ definition, existing, initialDate, onClose, onS
       setEntryForDate(recorded);
       setEntryStatus(nextStatus);
       if (recorded) onSaved(recorded);
-      onClose();
+      if (subStatDefinitions.length === 0) onClose();
     } catch (cause) {
       rollbackOptimisticStatWrite(optimisticWrite);
       onReverted(entryForDate, entryDate);
@@ -167,6 +182,14 @@ export function StatEntrySheet({ definition, existing, initialDate, onClose, onS
     } finally {
       setSaving(false);
     }
+  }
+
+  function handleSubEntrySaved(definitionId: string, entry: StatEntry | null, date: string) {
+    setEntriesForDate(previous => [
+      ...previous.filter(item => item.statDefinitionId !== definitionId),
+      ...(entry ? [entry] : []),
+    ]);
+    onSubEntrySaved?.(definitionId, entry, date);
   }
 
   const min = definition?.minValue ?? 1;
@@ -202,19 +225,27 @@ export function StatEntrySheet({ definition, existing, initialDate, onClose, onS
       )}
       {entryLoading && <AppText color="muted">Loading this date…</AppText>}
       {definition?.type === 'BOOLEAN' ? (
-        <ChoiceChips
-          value={entryStatus === 'NOT_PLANNED' ? -2 : value === '' ? -1 : Number(value)}
-          onChange={next => {
-            if (entryLoading) return;
-            setValue(String(next));
-            void save(next === -2 ? null : next, next === -2 ? 'NOT_PLANNED' : 'RECORDED');
-          }}
-          options={[
-            { value: 1, label: 'Yes', color: booleanStatColor(definition, 1, colors) },
-            { value: -2, label: 'Not planned', color: colors.notPlanned },
-            { value: 0, label: 'No', color: booleanStatColor(definition, 0, colors) },
-          ]}
-        />
+        <>
+          <ChoiceChips
+            value={entryStatus === 'NOT_PLANNED' ? -2 : value === '' ? -1 : Number(value)}
+            onChange={next => {
+              if (entryLoading) return;
+              const nextStatus = next === -2 ? 'NOT_PLANNED' : 'RECORDED';
+              const nextValue = next === -2 ? 0 : next;
+              setValue(String(nextValue));
+              setEntryStatus(nextStatus);
+              if (subStatDefinitions.length === 0) void save(next === -2 ? null : next, nextStatus);
+            }}
+            options={[
+              { value: 1, label: 'Yes', color: booleanStatColor(definition, 1, colors) },
+              { value: -2, label: 'Not planned', color: colors.notPlanned },
+              { value: 0, label: 'No', color: booleanStatColor(definition, 0, colors) },
+            ]}
+          />
+          {subStatDefinitions.length > 0 && (
+            <AppButton label="Record" loading={saving} disabled={entryLoading} onPress={() => void save()} />
+          )}
+        </>
       ) : definition?.type === 'RANGE' ? (
         <>
           <AppText variant="heading">{rangeValue}</AppText>
@@ -252,6 +283,23 @@ export function StatEntrySheet({ definition, existing, initialDate, onClose, onS
           <AppInput autoFocus label="Value" value={value} onChangeText={setValue} keyboardType="decimal-pad" />
           <AppButton label="Record" loading={saving} disabled={entryLoading} onPress={() => void save()} />
         </>
+      )}
+      {subStatDefinitions.length > 0 && (
+        <View style={{ gap: 12, marginTop: 8, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.border }}>
+          <AppText variant="label">Additional inputs</AppText>
+          {entryLoading ? <AppText color="muted">Loading inputs…</AppText> : subStatDefinitions.map(subDefinition => {
+            const subEntry = entriesForDate.find(entry => entry.statDefinitionId === subDefinition.id);
+            return (
+              <SubStatEntryControl
+                key={`${subDefinition.id}-${entryDate}-${subEntry?.id ?? 'new'}-${subEntry?.value ?? ''}`}
+                definition={subDefinition}
+                entry={subEntry}
+                date={entryDate}
+                onSaved={handleSubEntrySaved}
+              />
+            );
+          })}
+        </View>
       )}
       <AppButton
         label="Clear"

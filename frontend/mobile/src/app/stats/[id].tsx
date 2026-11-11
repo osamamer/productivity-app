@@ -19,6 +19,7 @@ import type { StatDefinition, StatEntry } from '@/types/models';
 
 interface StatDetailData {
   definition: StatDefinition;
+  subStatDefinitions: StatDefinition[];
   todayEntry?: StatEntry;
 }
 
@@ -110,6 +111,7 @@ export default function StatDetailScreen() {
     if (!definition) throw new Error('Stat no longer exists.');
     return {
       definition,
+      subStatDefinitions: definitions.filter(item => item.parentDefinitionId === definition.id),
       todayEntry: todayEntries.find(entry => entry.statDefinitionId === definition.id),
     };
   });
@@ -278,10 +280,12 @@ export default function StatDetailScreen() {
       <StatEntrySheet
         key={`${definition.id}-${entryDate ?? 'closed'}`}
         definition={entryDate ? definition : null}
+        subStatDefinitions={resource.data?.subStatDefinitions ?? []}
         existing={entryDate ? sortedEntries.find(entry => entry.date === entryDate) : undefined}
         initialDate={entryDate}
         onClose={() => setEntryDate(undefined)}
         onSaved={handleEntrySaved}
+        onSubEntrySaved={() => setHistoryRefreshKey(key => key + 1)}
         onReverted={(entry, date) => {
           const revertedDate = date ?? entry?.date;
           if (revertedDate) {
