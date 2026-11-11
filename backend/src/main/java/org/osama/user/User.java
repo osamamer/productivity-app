@@ -64,6 +64,10 @@ public class User {
     @Column(name = "exclude_today_completed_tasks")
     private Boolean excludeTodayCompletedTasks;
 
+    @Builder.Default
+    @Column(name = "home_day_end_hour", nullable = false)
+    private Integer homeDayEndHour = 0;
+
     @Column(name = "show_closed_mental_threads")
     private Boolean showClosedMentalThreads;
 

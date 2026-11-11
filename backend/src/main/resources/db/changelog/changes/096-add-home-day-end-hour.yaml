@@ -1,0 +1,19 @@
+databaseChangeLog:
+  - changeSet:
+      id: 096-add-home-day-end-hour
+      author: codex
+      comment: Store the hour when a user's Home day ends
+      changes:
+        - addColumn:
+            tableName: app_user
+            columns:
+              - column:
+                  name: home_day_end_hour
+                  type: int
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+      rollback:
+        - dropColumn:
+            tableName: app_user
+            columnName: home_day_end_hour

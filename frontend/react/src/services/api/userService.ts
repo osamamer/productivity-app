@@ -25,6 +25,7 @@ export interface UserPreferences {
     checkupTimeZone?: string;
     showCompletedHomeTasks?: boolean | null;
     excludeTodayCompletedTasks?: boolean | null;
+    homeDayEndHour?: number | null;
     showClosedMentalThreads?: boolean | null;
     soundEffectsEnabled?: boolean | null;
     whiteNoiseEnabled?: boolean | null;

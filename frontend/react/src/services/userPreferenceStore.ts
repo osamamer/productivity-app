@@ -3,6 +3,7 @@ import type { UserPreferences } from './api/userService';
 export type RuntimeUserPreferences = {
     showCompletedHomeTasks: boolean;
     excludeTodayCompletedTasks: boolean;
+    homeDayEndHour: number;
     showClosedMentalThreads: boolean;
     soundEffectsEnabled: boolean;
     whiteNoiseEnabled: boolean;
@@ -24,6 +25,7 @@ export type RuntimeUserPreferences = {
 const DEFAULT_RUNTIME_PREFERENCES: RuntimeUserPreferences = {
     showCompletedHomeTasks: true,
     excludeTodayCompletedTasks: false,
+    homeDayEndHour: 0,
     showClosedMentalThreads: false,
     soundEffectsEnabled: true,
     whiteNoiseEnabled: true,
@@ -71,6 +73,7 @@ export function applyUserPreferences(scope: string, preferences: UserPreferences
         ...runtimePreferences,
         showCompletedHomeTasks: preferences.showCompletedHomeTasks ?? DEFAULT_RUNTIME_PREFERENCES.showCompletedHomeTasks,
         excludeTodayCompletedTasks: preferences.excludeTodayCompletedTasks ?? DEFAULT_RUNTIME_PREFERENCES.excludeTodayCompletedTasks,
+        homeDayEndHour: preferences.homeDayEndHour ?? DEFAULT_RUNTIME_PREFERENCES.homeDayEndHour,
         showClosedMentalThreads: preferences.showClosedMentalThreads ?? DEFAULT_RUNTIME_PREFERENCES.showClosedMentalThreads,
         soundEffectsEnabled: preferences.soundEffectsEnabled ?? DEFAULT_RUNTIME_PREFERENCES.soundEffectsEnabled,
         whiteNoiseEnabled: preferences.whiteNoiseEnabled ?? DEFAULT_RUNTIME_PREFERENCES.whiteNoiseEnabled,

@@ -32,7 +32,8 @@ public record UserPreferenceUpdates(
         String accentColor,
         Integer meditationDurationMinutes,
         Integer meditationIntervalBells,
-        String meditationSound
+        String meditationSound,
+        Integer homeDayEndHour
 ) {
     public boolean isEmpty() {
         return includeUnloggedNumericDaysAsZero == null
@@ -61,6 +62,7 @@ public record UserPreferenceUpdates(
                 && accentColor == null
                 && meditationDurationMinutes == null
                 && meditationIntervalBells == null
-                && meditationSound == null;
+                && meditationSound == null
+                && homeDayEndHour == null;
     }
 }

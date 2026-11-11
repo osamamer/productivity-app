@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
     Box,
@@ -65,6 +65,9 @@ import { PomodoroStatus } from '../types/PomodoroStatus';
 import { celebrateStatLogged } from '../services/statCelebration';
 import { playAudioFeedback } from '../services/audioFeedback';
 import { taskCompletionFeedbackKind } from '../services/utils/taskCompletionFeedback';
+import { dateKey, taskDateKey } from '../services/utils/taskDate';
+import { getHomeDisplayDate, getNextHomeDayBoundary } from '../services/utils/homeDay';
+import { getRuntimeUserPreference, subscribeToUserPreferences } from '../services/userPreferenceStore';
 import { BulkTaskDatePopover } from '../components/task/BulkTaskDatePopover';
 import { findKeyboardDeleteAnchor, useKeyboardDelete } from '../hooks/useKeyboardDelete';
 import { TaskReminderPicker } from '../components/task/TaskReminderPicker';
@@ -1077,19 +1080,19 @@ function formatTaskDateForFeedback(value: string): string {
     });
 }
 
-function isScheduledForToday(task: Task): boolean {
-    if (!task.scheduledPerformDateTime) return false;
-    const scheduledDate = new Date(task.scheduledPerformDateTime);
-    return !Number.isNaN(scheduledDate.getTime()) && isSameLocalDay(scheduledDate, new Date());
+function isScheduledForHomeDay(task: Task, homeDayKey: string): boolean {
+    return task.scheduledPerformDateTime !== null
+        && task.scheduledPerformDateTime !== undefined
+        && taskDateKey(task.scheduledPerformDateTime) === homeDayKey;
 }
 
-function moveTaskDateToToday(task: Task): string {
+function moveTaskDateToHomeDay(task: Task, homeDay: Date): string {
     const today = new Date();
     const scheduledDate = task.scheduledPerformDateTime
         ? new Date(task.scheduledPerformDateTime)
         : today;
     const nextDate = Number.isNaN(scheduledDate.getTime()) ? today : scheduledDate;
-    nextDate.setFullYear(today.getFullYear(), today.getMonth(), today.getDate());
+    nextDate.setFullYear(homeDay.getFullYear(), homeDay.getMonth(), homeDay.getDate());
     return formatLocalDateTime(nextDate);
 }
 
@@ -1144,6 +1147,17 @@ export function HomePage() {
     const restoredPomodoroTaskId = restoredPomodoro?.associatedTaskId ?? null;
     const location = useLocation();
     const navigate = useNavigate();
+    const homeDayEndHour = useSyncExternalStore(
+        subscribeToUserPreferences,
+        () => getRuntimeUserPreference('homeDayEndHour'),
+        () => 0,
+    );
+    const [homeClockTime, setHomeClockTime] = useState(() => new Date());
+    const homeDisplayDay = useMemo(
+        () => getHomeDisplayDate(homeClockTime, homeDayEndHour),
+        [homeClockTime, homeDayEndHour],
+    );
+    const homeDisplayDayKey = dateKey(homeDisplayDay);
     const [animateGreeting] = useState(() => !hasAnimatedHomeGreeting);
     const [activeExpansion, setActiveExpansion] = useState<ActiveExpansion>(() => (
         restoredPomodoroTaskId
@@ -1374,6 +1388,20 @@ export function HomePage() {
         removeTaskFromState,
         reorderTasksInState,
     } = useGlobalTasks({ homeMode: true, prioritizeToday: true });
+    const previousHomeDisplayDayKey = useRef(homeDisplayDayKey);
+    useEffect(() => {
+        const nextBoundary = getNextHomeDayBoundary(new Date(), homeDayEndHour);
+        const timeout = window.setTimeout(
+            () => setHomeClockTime(new Date()),
+            Math.max(0, nextBoundary.getTime() - Date.now()) + 25,
+        );
+        return () => window.clearTimeout(timeout);
+    }, [homeDayEndHour, homeDisplayDayKey]);
+    useEffect(() => {
+        if (previousHomeDisplayDayKey.current === homeDisplayDayKey) return;
+        previousHomeDisplayDayKey.current = homeDisplayDayKey;
+        void refreshTaskBuckets(true, 'home');
+    }, [homeDisplayDayKey, refreshTaskBuckets]);
     const allTasksRef = useRef(allTasks);
     allTasksRef.current = allTasks;
     const manualTaskOrderRevisionRef = useRef(0);
@@ -1421,15 +1449,15 @@ export function HomePage() {
             const latestTask = taskById.get(task.taskId);
             const taskToAdd = latestTask ?? task;
             if (taskToAdd.parentId || seenTaskIds.has(taskToAdd.taskId)) return;
-            if (latestTask && !isScheduledForToday(latestTask)
+            if (latestTask && !isScheduledForHomeDay(latestTask, homeDisplayDayKey)
                 && latestTask.taskId !== activePomodoroTaskIdForHome) return;
             seenTaskIds.add(task.taskId);
             mergedTasks.push(taskToAdd);
         };
 
-        todayTasks.forEach(addMainTask);
+        if (homeDisplayDayKey === dateKey(new Date())) todayTasks.forEach(addMainTask);
         allTasks.forEach(task => {
-            if (isScheduledForToday(task) || task.taskId === activePomodoroTaskIdForHome) {
+            if (isScheduledForHomeDay(task, homeDisplayDayKey) || task.taskId === activePomodoroTaskIdForHome) {
                 addMainTask(task);
             }
         });
@@ -1438,10 +1466,10 @@ export function HomePage() {
         }
 
         return mergedTasks;
-    }, [activePomodoroTaskIdForHome, allTasks, resolvedActivePomodoroTask, todayTasks]);
+    }, [activePomodoroTaskIdForHome, allTasks, homeDisplayDayKey, resolvedActivePomodoroTask, todayTasks]);
     const todayTasksForCompletion = useMemo(() => homeTodayTasks.filter(task => (
-        isScheduledForToday(task) && !pendingDeletedTaskIdSet.has(task.taskId)
-    )), [homeTodayTasks, pendingDeletedTaskIdSet]);
+        isScheduledForHomeDay(task, homeDisplayDayKey) && !pendingDeletedTaskIdSet.has(task.taskId)
+    )), [homeDisplayDayKey, homeTodayTasks, pendingDeletedTaskIdSet]);
     const allTodayTasksComplete = todayTasksForCompletion.length > 0
         && todayTasksForCompletion.every(task => task.completed);
 
@@ -1485,8 +1513,9 @@ export function HomePage() {
     );
     const olderTasks = useMemo(
         () => pastTasks.filter(task => !pendingDeletedTaskIdSet.has(task.taskId)
-            && !task.parentId && !task.completed),
-        [pastTasks, pendingDeletedTaskIdSet],
+            && !task.parentId && !task.completed
+            && !isScheduledForHomeDay(task, homeDisplayDayKey)),
+        [homeDisplayDayKey, pastTasks, pendingDeletedTaskIdSet],
     );
     const selectedTaskIdSet = useMemo(() => new Set(selectedTaskIds), [selectedTaskIds]);
     const selectedGroupIdSet = useMemo(() => new Set(selectedGroupIds), [selectedGroupIds]);
@@ -1939,13 +1968,13 @@ export function HomePage() {
             const pendingEdit = pendingHomeDateEditsRef.current.get(taskId);
             const originalDateTime = pendingEdit?.originalDateTime ?? originalTask.scheduledPerformDateTime;
             const latestDateTime = updates.scheduledPerformDateTime || null;
-            if (pendingEdit || isScheduledForToday(originalTask)) {
+            if (pendingEdit || isScheduledForHomeDay(originalTask, homeDisplayDayKey)) {
                 pendingHomeDateEditsRef.current.set(taskId, {
                     originalDateTime,
                     latestDateTime,
                     originalIndex: pendingEdit?.originalIndex ?? Math.max(
                         0,
-                        todayTasks.findIndex(task => task.taskId === taskId),
+                        homeTodayTasks.findIndex(task => task.taskId === taskId),
                     ),
                 });
                 setPendingHomeDateTaskIds(previous => previous.includes(taskId)
@@ -1962,7 +1991,7 @@ export function HomePage() {
             if (originalTask) updateTaskInState(taskId, originalTask);
             await refreshTaskBuckets(true);
         }
-    }, [allTasks, refreshTaskBuckets, todayTasks, updateTaskInState]);
+    }, [allTasks, homeDisplayDayKey, homeTodayTasks, refreshTaskBuckets, updateTaskInState]);
 
     const handleScheduledDateEditComplete = useCallback((taskId: string) => {
         const pendingEdit = pendingHomeDateEditsRef.current.get(taskId);
@@ -2324,7 +2353,7 @@ export function HomePage() {
             const updatedTasks = await Promise.all(tasksToUpdate.map(task => {
                 if (action === 'move-to-today') {
                     return taskService.updateTask(task.taskId, {
-                        scheduledPerformDateTime: moveTaskDateToToday(task),
+                        scheduledPerformDateTime: moveTaskDateToHomeDay(task, homeDisplayDay),
                     }, { notifyResource: false });
                 }
 
@@ -2351,9 +2380,11 @@ export function HomePage() {
                 taskId: updatedTask.taskId,
                 updates: updatedTask,
             })));
-            if (action === 'move-to-date' && scheduledDateTime && isSameLocalDay(new Date(scheduledDateTime), new Date())) {
+            if (action === 'move-to-date' && scheduledDateTime
+                && taskDateKey(scheduledDateTime) === homeDisplayDayKey) {
                 await appendTasksToTodayOrder(
-                    tasksToUpdate.filter(task => !isScheduledForToday(task)).map(task => task.taskId),
+                    tasksToUpdate.filter(task => !isScheduledForHomeDay(task, homeDisplayDayKey))
+                        .map(task => task.taskId),
                 );
             }
             if (action === 'complete' && tasksToCelebrate.length > 0) {
@@ -2851,7 +2882,7 @@ export function HomePage() {
         const orderWithoutMovedTasks = allTasks
             .map(task => task.taskId)
             .filter(taskId => !movedTaskIdSet.has(taskId));
-        const todayTaskIdSet = new Set(todayTasks.map(task => task.taskId));
+        const todayTaskIdSet = new Set(homeTodayTasks.map(task => task.taskId));
         let lastTodayIndex = -1;
         orderWithoutMovedTasks.forEach((taskId, index) => {
             if (todayTaskIdSet.has(taskId)) lastTodayIndex = index;
@@ -2863,7 +2894,7 @@ export function HomePage() {
             orderWithoutMovedTasks.splice(lastTodayIndex + 1, 0, ...movedTaskIds);
         }
         await persistTaskOrder(orderWithoutMovedTasks);
-    }, [allTasks, persistTaskOrder, todayTasks]);
+    }, [allTasks, homeTodayTasks, persistTaskOrder]);
 
     const getTaskOrderInToday = useCallback((taskIds: string[], placement: TodayDropPlacement) => {
         const movedTaskIdSet = new Set(taskIds);
@@ -2876,7 +2907,7 @@ export function HomePage() {
         const orderWithoutMovedTasks = currentTasks
             .map(task => task.taskId)
             .filter(taskId => !movedTaskIdSet.has(taskId));
-        const todayTaskIdSet = new Set(todayTasks.map(task => task.taskId));
+        const todayTaskIdSet = new Set(homeTodayTasks.map(task => task.taskId));
         const visibleTodayTaskIdSet = new Set(visibleTasks.map(task => task.taskId));
         let insertionIndex = orderWithoutMovedTasks.length;
 
@@ -2911,7 +2942,7 @@ export function HomePage() {
 
         orderWithoutMovedTasks.splice(insertionIndex, 0, ...movedTaskIds);
         return orderWithoutMovedTasks;
-    }, [todayTasks, visibleTasks]);
+    }, [homeTodayTasks, visibleTasks]);
 
     const moveTasksToToday = useCallback(async (
         taskIds: string[],
@@ -2923,7 +2954,7 @@ export function HomePage() {
 
         const updates = tasksToMove.map(task => ({
             task,
-            scheduledPerformDateTime: moveTaskDateToToday(task),
+            scheduledPerformDateTime: moveTaskDateToHomeDay(task, homeDisplayDay),
         }));
         const movedTaskIds = tasksToMove.map(task => task.taskId);
         const orderedTaskIds = placement
@@ -2963,7 +2994,8 @@ export function HomePage() {
             await refreshTaskBuckets(true);
             return false;
         }
-    }, [allTasks, getTaskOrderInToday, olderTasks, refreshTaskBuckets, saveTaskOrder, updateTasksInState]);
+    }, [allTasks, getTaskOrderInToday, homeDisplayDay, olderTasks, refreshTaskBuckets, saveTaskOrder,
+        updateTasksInState]);
 
     const moveGroupToToday = useCallback(async (group: TaskGroup, placement?: TodayDropPlacement) => {
         const groupTaskIdSet = new Set(group.taskIds);
@@ -2972,7 +3004,7 @@ export function HomePage() {
 
         const updates = tasksToMove.map(task => ({
             task,
-            scheduledPerformDateTime: moveTaskDateToToday(task),
+            scheduledPerformDateTime: moveTaskDateToHomeDay(task, homeDisplayDay),
         }));
         const movedTaskIds = tasksToMove.map(task => task.taskId);
         const orderedTaskIds = placement
@@ -3012,7 +3044,7 @@ export function HomePage() {
             console.error('Error moving task group to today:', err);
             await refreshTaskBuckets(true);
         }
-    }, [allTasks, getTaskOrderInToday, refreshTaskBuckets, saveTaskOrder, updateTasksInState]);
+    }, [allTasks, getTaskOrderInToday, homeDisplayDay, refreshTaskBuckets, saveTaskOrder, updateTasksInState]);
 
     const moveDraggedGroupToToday = useCallback((placement?: TodayDropPlacement) => {
         const draggedGroupId = getDraggedGroupId();
@@ -4579,7 +4611,11 @@ export function HomePage() {
                             '& .MuiInput-root': { fontSize: '1.1rem' },
                         }}
                     >
-                        <SmartTaskInput defaultToToday onSubmit={createTask} />
+                        <SmartTaskInput
+                            defaultToToday
+                            defaultDate={homeDisplayDayKey}
+                            onSubmit={createTask}
+                        />
                     </Box>
 
                     {showHomeSections && selectionActionsVisible && selectionActionsPosition && (
@@ -4875,7 +4911,7 @@ export function HomePage() {
                                         : 'none',
                                 }}
                             >
-                                <TodayEventsSection />
+                                <TodayEventsSection dayStart={homeDisplayDay} />
                             </Box>
                         </Collapse>
 

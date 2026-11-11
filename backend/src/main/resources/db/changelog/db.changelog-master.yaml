@@ -316,3 +316,5 @@ databaseChangeLog:
       file: db/changelog/changes/094-stat-units.yaml
   - include:
       file: db/changelog/changes/095-stat-sub-stat-parent.yaml
+  - include:
+      file: db/changelog/changes/096-add-home-day-end-hour.yaml

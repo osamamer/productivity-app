@@ -149,6 +149,7 @@ const todayTasksCache = new CachedResource<Task[]>({ ttlMs: TASK_CACHE_TTL_MS, m
 const taskPageInitialCache = new CachedResource<TaskPageInitialSnapshot>({ ttlMs: TASK_CACHE_TTL_MS, maxEntries: 4 });
 const taskPageBatchCache = new CachedResource<Task[]>({ ttlMs: TASK_CACHE_TTL_MS, maxEntries: 12 });
 const homeOlderTasksCache = new CachedResource<Task[]>({ ttlMs: TASK_CACHE_TTL_MS, maxEntries: 4 });
+const homeDayTasksCache = new CachedResource<Task[]>({ ttlMs: TASK_CACHE_TTL_MS, maxEntries: 8 });
 // A Home deletion waits briefly for undo, and other callers can have older
 // requests in flight. Keep per-user tombstones outside response caches so
 // every task response is filtered until the deletion is undone or the user
@@ -235,6 +236,10 @@ function homeOlderTasksCacheKey(): string {
     return `${getAuthCacheScope()}:home-older-tasks:${currentTaskDateKey()}`;
 }
 
+function homeDayTasksCacheKey(date: string): string {
+    return `${getAuthCacheScope()}:home-day-tasks:${date}`;
+}
+
 function invalidateTodayTasksCache(): void {
     todayTasksCache.invalidate(todayTasksCacheKey());
 }
@@ -253,6 +258,7 @@ function invalidateMainTasksCache(): void {
 function invalidateTaskViewCaches(): void {
     invalidateTodayTasksCache();
     homeOlderTasksCache.invalidate(homeOlderTasksCacheKey());
+    homeDayTasksCache.clear();
     invalidateTaskPageCache();
 }
 
@@ -307,6 +313,7 @@ function clearTaskDataCaches(): void {
     }
     todayTasksCache.clear();
     homeOlderTasksCache.clear();
+    homeDayTasksCache.clear();
     invalidateTaskPageCache();
     clearTaskSubtasksCache();
     clearTaskSeriesCache();
@@ -461,11 +468,28 @@ export const taskService = {
         return filterDeletedTasks(tasks);
     },
 
-    async getHomeTaskSnapshot(forceRefresh = false): Promise<Task[]> {
+    async getHomeTasksForDate(date: string, forceRefresh = false): Promise<Task[]> {
+        const key = homeDayTasksCacheKey(date);
+        if (forceRefresh) homeDayTasksCache.invalidate(key);
+
+        const tasks = await homeDayTasksCache.get(key, async () => {
+            const response = await apiFetch(`${TASK_URL}?date=${encodeURIComponent(date)}`, {
+                headers: getAuthHeaders(),
+            });
+            if (!response.ok) throw new Error('Failed to fetch Home tasks for the selected day');
+            return response.json() as Promise<Task[]>;
+        });
+        return filterDeletedTasks(tasks);
+    },
+
+    async getHomeTaskSnapshot(displayDate: string, forceRefresh = false): Promise<Task[]> {
         const olderKey = homeOlderTasksCacheKey();
         if (forceRefresh) homeOlderTasksCache.invalidate(olderKey);
-        const [today, older] = await Promise.all([
-            this.getTodayTasks(forceRefresh),
+        const dayTasksPromise = displayDate === currentTaskDateKey()
+            ? this.getTodayTasks(forceRefresh)
+            : this.getHomeTasksForDate(displayDate, forceRefresh);
+        const [dayTasks, older] = await Promise.all([
+            dayTasksPromise,
             homeOlderTasksCache.get(olderKey, async () => {
                 const response = await apiFetch(`${TASK_URL}?period=PAST&completed=false`, {
                     headers: getAuthHeaders(),
@@ -474,7 +498,11 @@ export const taskService = {
                 return response.json() as Promise<Task[]>;
             }),
         ]);
-        return filterDeletedTasks([...today, ...older]);
+        const dayTaskIds = new Set(dayTasks.map(task => task.taskId));
+        return filterDeletedTasks([
+            ...dayTasks,
+            ...older.filter(task => !dayTaskIds.has(task.taskId)),
+        ]);
     },
 
     async getTaskPageInitialSnapshot(

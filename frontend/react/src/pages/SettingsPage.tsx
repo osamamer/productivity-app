@@ -640,6 +640,8 @@ export function SettingsPage() {
     const [changePasswordOpen, setChangePasswordOpen] = useState(false);
     const [hideCompletedTasks, setHideCompletedTasks] = useState(() => !getShowCompletedHomeTasks());
     const [excludeTodayCompletedTasks, setExcludeTodayCompletedTasksState] = useState(getExcludeTodayCompletedHomeTasks);
+    const [homeDayEndHour, setHomeDayEndHour] = useState(0);
+    const [homeDayEndHourSaving, setHomeDayEndHourSaving] = useState(false);
     const [showClosedMentalThreads, setShowClosedMentalThreadsState] = useState(getShowClosedMentalThreads);
     const [soundEffectsEnabled, setSoundEffectsEnabledState] = useState(isAudioFeedbackEnabled);
     const [muteFocusNoiseDuringBreaks, setMuteFocusNoiseDuringBreaks] = useState(
@@ -701,6 +703,7 @@ export function SettingsPage() {
                     );
                     setHideCompletedTasks(!(preferences.showCompletedHomeTasks ?? true));
                     setExcludeTodayCompletedTasksState(preferences.excludeTodayCompletedTasks ?? false);
+                    setHomeDayEndHour(preferences.homeDayEndHour ?? 0);
                     setShowClosedMentalThreadsState(preferences.showClosedMentalThreads ?? false);
                     setSoundEffectsEnabledState(preferences.soundEffectsEnabled ?? true);
                     setMuteFocusNoiseDuringBreaks(preferences.muteFocusNoiseDuringBreaks ?? true);
@@ -851,6 +854,26 @@ export function SettingsPage() {
             setHideCompletedTasks(previousValue);
             setShowCompletedHomeTasks(!previousValue);
             setUserPreferenceError('Could not save this preference right now.');
+        }
+    }
+
+    async function handleHomeDayEndHourChange(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) {
+        const nextValue = Number(event.target.value);
+        if (!Number.isInteger(nextValue) || nextValue < 0 || nextValue > 5) return;
+
+        const previousValue = homeDayEndHour;
+        setHomeDayEndHour(nextValue);
+        setHomeDayEndHourSaving(true);
+        setUserPreferenceError(null);
+        try {
+            const preferences = await userService.updatePreferences({ homeDayEndHour: nextValue });
+            setHomeDayEndHour(preferences.homeDayEndHour ?? nextValue);
+        } catch (error) {
+            console.error('Failed to update Home day end preference:', error);
+            setHomeDayEndHour(previousValue);
+            setUserPreferenceError('Could not save this preference right now.');
+        } finally {
+            setHomeDayEndHourSaving(false);
         }
     }
 
@@ -1184,6 +1207,32 @@ export function SettingsPage() {
                                             disabled={userPreferencesLoading}
                                             inputProps={{ 'aria-label': 'Hide completed tasks' }}
                                         />
+                                    </Box>
+
+                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mt: 2 }}>
+                                        <Box sx={{ textAlign: 'left' }}>
+                                            <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                                                When does the day end?
+                                            </Typography>
+                                            <Typography variant="body2" color="text.secondary">
+                                                Home keeps the previous day active until this time.
+                                            </Typography>
+                                        </Box>
+                                        <TextField
+                                            select
+                                            size="small"
+                                            value={homeDayEndHour}
+                                            onChange={event => void handleHomeDayEndHourChange(event)}
+                                            disabled={userPreferencesLoading || homeDayEndHourSaving}
+                                            inputProps={{ 'aria-label': 'Home day ends at' }}
+                                            sx={{ width: 142, flexShrink: 0 }}
+                                        >
+                                            {Array.from({ length: 6 }, (_, hour) => (
+                                                <MenuItem key={hour} value={hour}>
+                                                    {hour === 0 ? '12 a.m.' : `${hour} a.m.`}
+                                                </MenuItem>
+                                            ))}
+                                        </TextField>
                                     </Box>
 
                                     {hideCompletedTasks && (

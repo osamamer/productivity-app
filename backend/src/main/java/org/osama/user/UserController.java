@@ -194,7 +194,8 @@ public class UserController {
             String accentColor,
             Integer meditationDurationMinutes,
             Integer meditationIntervalBells,
-            String meditationSound
+            String meditationSound,
+            Integer homeDayEndHour
     ) {
         UserPreferenceUpdates toUpdates() {
             return new UserPreferenceUpdates(includeUnloggedNumericDaysAsZero, autoStartPomodoroSessions,
@@ -205,7 +206,7 @@ public class UserController {
                     pomodoroShortBreakDuration, pomodoroLongBreakDuration, pomodoroNumFocuses,
                     pomodoroTimeAdjustmentMinutes,
                     themeMode, accentColor,
-                    meditationDurationMinutes, meditationIntervalBells, meditationSound);
+                    meditationDurationMinutes, meditationIntervalBells, meditationSound, homeDayEndHour);
         }
     }
 
@@ -237,7 +238,8 @@ public class UserController {
             String accentColor,
             Integer meditationDurationMinutes,
             Integer meditationIntervalBells,
-            String meditationSound
+            String meditationSound,
+            int homeDayEndHour
     ) {
         static UserPreferencesResponse from(User user) {
             return new UserPreferencesResponse(
@@ -267,7 +269,8 @@ public class UserController {
                     user.getAccentColor(),
                     user.getMeditationDurationMinutes(),
                     user.getMeditationIntervalBells(),
-                    user.getMeditationSound()
+                    user.getMeditationSound(),
+                    user.getHomeDayEndHour() == null ? 0 : user.getHomeDayEndHour()
             );
         }
     }

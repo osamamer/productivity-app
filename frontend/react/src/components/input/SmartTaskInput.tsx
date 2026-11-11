@@ -29,6 +29,7 @@ type SmartTaskInputProps = {
     onSubmit: (taskToCreate: TaskToCreate) => void;
     initialDate?: string;
     defaultToToday?: boolean;
+    defaultDate?: string;
     autoFocus?: boolean;
     parentId?: string;
     placeholder?: string;
@@ -80,6 +81,7 @@ export function SmartTaskInput({
     onSubmit,
     initialDate,
     defaultToToday = false,
+    defaultDate,
     autoFocus,
     parentId,
     placeholder,
@@ -114,9 +116,9 @@ export function SmartTaskInput({
     const [selectedTime, setSelectedTime] = useState<Date | null>(new Date());
     const inputRef = useRef<HTMLInputElement>(null);
 
-    const todayDateTime = () => {
-        return dateAtCurrentTime(new Date());
-    };
+    const todayDateTime = () => dateAtCurrentTime(
+        defaultDate ? new Date(`${defaultDate}T00:00:00`) : new Date(),
+    );
 
     useEffect(() => {
         if (autoFocus && inputRef.current) {

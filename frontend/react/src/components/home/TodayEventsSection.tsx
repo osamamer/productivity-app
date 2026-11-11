@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { addDays, format, startOfDay } from 'date-fns';
+import { addDays, format } from 'date-fns';
 import { keyframes } from '@mui/system';
 import { alpha } from '@mui/material/styles';
 import {
@@ -1233,8 +1233,7 @@ function TodayEventCard({
     );
 }
 
-export function TodayEventsSection() {
-    const [dayStart] = useState(() => startOfDay(new Date()));
+export function TodayEventsSection({ dayStart }: { dayStart: Date }) {
     const todayKey = format(dayStart, 'yyyy-MM-dd');
     const [animateInitialExpansion] = useState(() => !todayEventsSectionHasMounted);
     const [initialEvents] = useState(() => {

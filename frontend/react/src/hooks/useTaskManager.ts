@@ -4,6 +4,9 @@ import { TASK_PAGE_BATCH_SIZE, taskService } from '../services/api';
 import { subscribeToResourceInvalidation } from '../services/cache/resourceInvalidation';
 import { getShowCompletedHomeTasks } from '../services/utils/homePreferences';
 import { reconcileTaskSnapshot } from '../services/utils/taskSnapshot';
+import { dateKey } from '../services/utils/taskDate';
+import { getHomeDisplayDate } from '../services/utils/homeDay';
+import { getRuntimeUserPreference } from '../services/userPreferenceStore';
 
 export type TaskLoadMode = 'all' | 'home' | 'taskPage';
 
@@ -252,7 +255,10 @@ export function useTaskManager() {
                     )
                     : null;
                 const tasks = taskPageSnapshot?.tasks ?? (loadMode === 'home'
-                    ? await taskService.getHomeTaskSnapshot(force)
+                    ? await taskService.getHomeTaskSnapshot(
+                        dateKey(getHomeDisplayDate(new Date(), getRuntimeUserPreference('homeDayEndHour'))),
+                        force,
+                    )
                     : await taskService.getAllMainTasks(force));
 
                 if (!isCurrentRequest()) return;

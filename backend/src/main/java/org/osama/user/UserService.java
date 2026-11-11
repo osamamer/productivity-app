@@ -193,7 +193,7 @@ public class UserService {
                 includeUnloggedNumericDaysAsZero, autoStartPomodoroSessions,
                 checkupNotificationsEnabled, repeatCheckupNotificationsEnabled,
                 checkupIntervalMinutes, checkupStartTime, checkupTimesPerDay, null, pomodoroSoundId,
-                null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null));
+                null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null));
     }
 
     @Transactional
@@ -235,6 +235,7 @@ public class UserService {
         if (updates.checkupTimeZone() != null) user.setCheckupTimeZone(updates.checkupTimeZone());
         if (updates.showCompletedHomeTasks() != null) user.setShowCompletedHomeTasks(updates.showCompletedHomeTasks());
         if (updates.excludeTodayCompletedTasks() != null) user.setExcludeTodayCompletedTasks(updates.excludeTodayCompletedTasks());
+        if (updates.homeDayEndHour() != null) user.setHomeDayEndHour(updates.homeDayEndHour());
         if (updates.showClosedMentalThreads() != null) user.setShowClosedMentalThreads(updates.showClosedMentalThreads());
         if (updates.soundEffectsEnabled() != null) user.setSoundEffectsEnabled(updates.soundEffectsEnabled());
         if (updates.whiteNoiseEnabled() != null) user.setWhiteNoiseEnabled(updates.whiteNoiseEnabled());
@@ -264,6 +265,10 @@ public class UserService {
     }
 
     private void validateUserSettings(UserPreferenceUpdates updates) {
+        if (updates.homeDayEndHour() != null
+                && (updates.homeDayEndHour() < 0 || updates.homeDayEndHour() > 5)) {
+            throw new IllegalArgumentException("The Home day end hour must be between 0 and 5.");
+        }
         if (updates.pomodoroLongBreakCooldown() != null
                 && (updates.pomodoroLongBreakCooldown() < 1 || updates.pomodoroLongBreakCooldown() > 5)) {
             throw new IllegalArgumentException("Long break frequency must be between 1 and 5 sessions.");
