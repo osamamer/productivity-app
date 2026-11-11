@@ -34,7 +34,8 @@ import { AppTimeField } from '../input/AppPickerFields';
 import { AppNumberField } from '../input/AppNumberField';
 import { StatInputField } from './StatInputField';
 import { statInputLabel } from './statInputLabels';
-import { SubStatInputFields } from './SubStatInputFields';
+import { SubStatInputFields, SubStatInputFieldsHandle } from './SubStatInputFields';
+import { StatEntryHeader, StatInputSection } from './StatEntryInputLayout';
 
 const CIRCLE_SIZE = 24;
 const THRESHOLD_COLOR_TRANSITION = 0.75;
@@ -279,8 +280,11 @@ export const StatRecentDots = React.memo(function StatRecentDots({
     const [editAdditionalValues, setEditAdditionalValues] = useState<Partial<Record<StatType, number>>>({});
     const [editStatus, setEditStatus] = useState<StatEntryStatus>('RECORDED');
     const [saveError, setSaveError] = useState<string | null>(null);
+    const [subStatsReady, setSubStatsReady] = useState(subStatDefinitions.length === 0);
+    const [saving, setSaving] = useState(false);
     const popoverContentRef = useRef<HTMLDivElement | null>(null);
     const saveButtonRef = useRef<HTMLButtonElement | null>(null);
+    const subStatInputsRef = useRef<SubStatInputFieldsHandle | null>(null);
     const entryMutationVersionsRef = useRef(new Map<string, number>());
     const forceRefreshOnMountRef = useRef(true);
 
@@ -323,6 +327,7 @@ export const StatRecentDots = React.memo(function StatRecentDots({
                 : null
         ));
         setSaveError(null);
+        setSubStatsReady(subStatDefinitions.length === 0);
         setPopover({ anchorEl: e.currentTarget, date });
     };
 
@@ -334,7 +339,7 @@ export const StatRecentDots = React.memo(function StatRecentDots({
         setSaveError(null);
     };
 
-    const handleSave = () => {
+    const saveMainEntry = () => {
         if (!popover) return;
         const activePopover = popover;
         const previousValue = valueMap.get(activePopover.date);
@@ -442,6 +447,21 @@ export const StatRecentDots = React.memo(function StatRecentDots({
                 }
                 onError?.('Failed to save this statistic.');
             });
+    };
+
+    const handleSave = async () => {
+        if (!popover || saving) return;
+        if (!subStatsReady) {
+            setSaveError('Related stat inputs are still loading. Please try again in a moment.');
+            return;
+        }
+        setSaving(true);
+        try {
+            const subStatsSaved = await (subStatInputsRef.current?.save() ?? Promise.resolve(true));
+            if (subStatsSaved) saveMainEntry();
+        } finally {
+            setSaving(false);
+        }
     };
 
     const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -573,7 +593,7 @@ export const StatRecentDots = React.memo(function StatRecentDots({
                     paper: {
                         sx: {
                             p: 2,
-                            minWidth: subStatDefinitions.length > 0 ? 'min(300px, calc(100vw - 32px))' : 220,
+                            minWidth: 'min(300px, calc(100vw - 32px))',
                             maxWidth: 'min(380px, calc(100vw - 32px))',
                             maxHeight: 'min(70vh, 560px)',
                             overflowY: 'auto',
@@ -585,6 +605,7 @@ export const StatRecentDots = React.memo(function StatRecentDots({
                 {popover && (
                     <Box
                         ref={popoverContentRef}
+                        sx={{ width: '100%' }}
                         onClick={event => {
                             if (!(event.target instanceof Node) || !saveButtonRef.current?.contains(event.target)) {
                                 event.stopPropagation();
@@ -592,9 +613,11 @@ export const StatRecentDots = React.memo(function StatRecentDots({
                         }}
                         onKeyDown={handleKeyDown}
                     >
-                        <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1.5 }}>
-                            {definition.name} — {format(new Date(popover.date + 'T12:00:00'), 'EEEE, MMM d')}
-                        </Typography>
+                        <Stack spacing={1.5} alignItems="stretch" sx={{ width: '100%', textAlign: 'left' }}>
+                        <StatEntryHeader
+                            title={definition.name}
+                            date={format(new Date(popover.date + 'T12:00:00'), 'EEEE, MMM d, yyyy')}
+                        />
 
                         {definition.type === 'BOOLEAN' && (
                             <ToggleButtonGroup
@@ -643,7 +666,6 @@ export const StatRecentDots = React.memo(function StatRecentDots({
 
                         {definition.type === 'TIME' && (
                             <AppTimeField
-                                label={definition.name}
                                 size="small"
                                 value={minutesToTimeValue(editValue)}
                                 onChange={value => {
@@ -695,14 +717,12 @@ export const StatRecentDots = React.memo(function StatRecentDots({
                         )}
 
                         {(definition.additionalInputTypes ?? []).map(type => (
-                            <Box key={type} sx={{ mt: 1.5 }}>
-                                <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
-                                    {statInputLabel(type)}
-                                </Typography>
+                            <StatInputSection key={type} title={statInputLabel(type)}>
                                 <StatInputField
                                     definition={definition}
                                     type={type}
                                     value={editAdditionalValues[type] ?? null}
+                                    hideInputLabel
                                     onChange={value => setEditAdditionalValues(previous => {
                                         const next = { ...previous };
                                         if (value == null) delete next[type];
@@ -711,22 +731,26 @@ export const StatRecentDots = React.memo(function StatRecentDots({
                                     })}
                                     onFocus={() => undefined}
                                 />
-                            </Box>
+                            </StatInputSection>
                         ))}
 
                         {popover && (
                             <SubStatInputFields
+                                ref={subStatInputsRef}
                                 definitions={subStatDefinitions}
                                 date={popover.date}
                                 refreshKey={refreshKey}
                                 onEntryChanged={onEntryChanged}
                                 onError={onError}
+                                onReadyChange={setSubStatsReady}
+                                onEnter={() => { void handleSave(); }}
                             />
                         )}
 
                         {saveError && (
-                            <Alert severity="error" sx={{ mt: 1.5, py: 0 }}>{saveError}</Alert>
+                            <Alert severity="error" sx={{ py: 0 }}>{saveError}</Alert>
                         )}
+                        </Stack>
 
                         <Stack direction="row" justifyContent="flex-end" sx={{ mt: 2 }}>
                             <Button
@@ -743,9 +767,10 @@ export const StatRecentDots = React.memo(function StatRecentDots({
                                 ref={saveButtonRef}
                                 size="small"
                                 variant="contained"
-                                onClick={handleSave}
+                                onClick={() => { void handleSave(); }}
+                                disabled={saving || !subStatsReady}
                             >
-                                Save
+                                {saving ? <CircularProgress size={16} color="inherit" /> : 'Save'}
                             </Button>
                         </Stack>
                     </Box>

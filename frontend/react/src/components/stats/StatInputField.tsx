@@ -14,6 +14,7 @@ interface Props {
     value: number | null;
     status?: StatEntryStatus;
     primary?: boolean;
+    hideInputLabel?: boolean;
     onChange: (value: number | null, status?: StatEntryStatus) => void;
     onFocus: (element: HTMLElement) => void;
 }
@@ -24,6 +25,7 @@ export function StatInputField({
     value,
     status = 'RECORDED',
     primary = false,
+    hideInputLabel = false,
     onChange,
     onFocus,
 }: Props) {
@@ -108,7 +110,7 @@ export function StatInputField({
     if (type === 'TIME') {
         return (
             <AppTimeField
-                label={primary ? definition.name : 'Time'}
+                label={hideInputLabel ? undefined : primary ? definition.name : 'Time'}
                 size="small"
                 value={minutesToTimeValue(value)}
                 onChange={next => onChange(next ? timeValueToMinutes(next) : null)}

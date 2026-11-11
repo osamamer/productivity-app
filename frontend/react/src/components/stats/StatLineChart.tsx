@@ -21,9 +21,10 @@ import { AppTimeField } from '../input/AppPickerFields';
 import { AppNumberField } from '../input/AppNumberField';
 import { statNumericValueLabel } from './statVisualization';
 import { formatStatBucketRange, getStatPeriodWindow, StatPeriodMode, StatPeriodOffset } from './statPeriod';
-import { SubStatInputFields } from './SubStatInputFields';
+import { SubStatInputFields, SubStatInputFieldsHandle } from './SubStatInputFields';
 import { StatInputField } from './StatInputField';
 import { statInputLabel } from './statInputLabels';
+import { StatEntryHeader, StatInputSection } from './StatEntryInputLayout';
 
 type ChartPoint = StatChartPoint;
 
@@ -348,6 +349,7 @@ export const StatLineChart = React.memo(function StatLineChart({
     const [editStatus, setEditStatus] = useState<StatEntryStatus>('RECORDED');
     const [editAdditionalValues, setEditAdditionalValues] = useState<Partial<Record<StatType, number>>>({});
     const [saveError, setSaveError] = useState<string | null>(null);
+    const subStatInputsRef = useRef<SubStatInputFieldsHandle | null>(null);
     const hasEmbeddedInputs = subStatDefinitions.length > 0 || (recordDefinition.additionalInputTypes?.length ?? 0) > 0;
     const editorWidth = hasEmbeddedInputs ? 340 : 140;
     const editorHeight = 80
@@ -548,11 +550,6 @@ export const StatLineChart = React.memo(function StatLineChart({
         clearCloseTimer();
     };
 
-    const handleEditorLeave = () => {
-        editorHoveredRef.current = false;
-        scheduleEditorClose();
-    };
-
     const rollbackEntry = (
         date: string,
         mutationVersion: number,
@@ -708,6 +705,20 @@ export const StatLineChart = React.memo(function StatLineChart({
                 pendingSave.snapshot,
             );
         }
+    };
+
+    const handleEntryEditorKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+        if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
+        if ((event.target as HTMLElement).tagName === 'TEXTAREA') return;
+        flushEntrySave();
+        void subStatInputsRef.current?.save();
+    };
+
+    const handleEditorLeave = () => {
+        editorHoveredRef.current = false;
+        flushEntrySave();
+        void subStatInputsRef.current?.save();
+        scheduleEditorClose();
     };
 
     const handleChartMouseMove = (state: MouseHandlerDataParam) => {
@@ -964,6 +975,7 @@ export const StatLineChart = React.memo(function StatLineChart({
 
             {hoveredThreshold === null && hoveredPoint && hoveredPoint.date <= toStr && editorPosition && dataState.key === dataKey && !isBucketedView && (
                 <Box
+                    onKeyDown={handleEntryEditorKeyDown}
                     onMouseEnter={handleEditorEnter}
                     onMouseLeave={handleEditorLeave}
                     onMouseDown={event => event.stopPropagation()}
@@ -986,21 +998,23 @@ export const StatLineChart = React.memo(function StatLineChart({
                         maxWidth: 'min(340px, calc(100vw - 32px))',
                     }}
                 >
-                    {(comparisonDefinition || subStatDefinitions.length > 0 || (recordDefinition.additionalInputTypes?.length ?? 0) > 0) && (
-                        <Box sx={{ px: 0.5, pb: 0.5, minWidth: 150 }}>
-                            <Typography variant="caption" color="text.secondary" display="block">
-                                {format(parseISO(hoveredPoint.date), 'MMM d, yyyy')}
+                    <StatEntryHeader
+                        title={recordDefinition.name}
+                        date={format(parseISO(hoveredPoint.date), 'EEEE, MMM d, yyyy')}
+                    />
+                    {comparisonDefinition && (
+                        <Box sx={{ minWidth: 150 }}>
+                            <Typography variant="subtitle2" fontWeight={600} color="text.secondary" display="block">
+                                Comparison
                             </Typography>
-                            {comparisonDefinition && (
-                                <Typography variant="caption" sx={{ color: comparisonColor }} display="block" noWrap>
-                                    {comparisonDefinition.name}: {formatPointValue(
-                                        hoveredPoint.comparisonValue,
-                                        comparisonDefinition,
-                                        false,
-                                        hoveredPoint.comparisonStatus,
-                                    )}
-                                </Typography>
-                            )}
+                            <Typography variant="body2" sx={{ color: comparisonColor }} display="block" noWrap>
+                                {comparisonDefinition.name}: {formatPointValue(
+                                    hoveredPoint.comparisonValue,
+                                    comparisonDefinition,
+                                    false,
+                                    hoveredPoint.comparisonStatus,
+                                )}
+                            </Typography>
                         </Box>
                     )}
                     {recordDefinition.type === 'BOOLEAN' ? (
@@ -1039,7 +1053,6 @@ export const StatLineChart = React.memo(function StatLineChart({
                         </ToggleButtonGroup>
                     ) : recordDefinition.type === 'TIME' ? (
                         <AppTimeField
-                            label="Time"
                             value={editValue}
                             onChange={value => {
                                 setEditValue(value);
@@ -1114,14 +1127,12 @@ export const StatLineChart = React.memo(function StatLineChart({
                         />
                     )}
                     {(recordDefinition.additionalInputTypes ?? []).map(type => (
-                        <Box key={type} sx={{ mt: 0.25 }}>
-                            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.25 }}>
-                                {statInputLabel(type)}
-                            </Typography>
+                        <StatInputSection key={type} title={statInputLabel(type)}>
                             <StatInputField
                                 definition={recordDefinition}
                                 type={type}
                                 value={editAdditionalValues[type] ?? null}
+                                hideInputLabel
                                 onChange={value => {
                                     const next = { ...editAdditionalValues };
                                     if (value == null) delete next[type];
@@ -1132,14 +1143,20 @@ export const StatLineChart = React.memo(function StatLineChart({
                                 }}
                                 onFocus={() => undefined}
                             />
-                        </Box>
+                        </StatInputSection>
                     ))}
                     <SubStatInputFields
+                        ref={subStatInputsRef}
                         definitions={subStatDefinitions}
                         date={hoveredPoint.date}
                         refreshKey={refreshKey}
                         onEntryChanged={onEntryChanged}
                         onError={onError}
+                        autoSaveOnChange
+                        onEnter={() => {
+                            flushEntrySave();
+                            void subStatInputsRef.current?.save();
+                        }}
                     />
                 </Box>
             )}

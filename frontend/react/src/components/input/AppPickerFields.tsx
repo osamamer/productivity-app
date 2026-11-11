@@ -6,7 +6,7 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import type { SxProps, Theme } from '@mui/material/styles';
 
 type PickerFieldProps = {
-    label: string;
+    label?: string;
     helperText?: ReactNode;
     error?: boolean;
     disabled?: boolean;

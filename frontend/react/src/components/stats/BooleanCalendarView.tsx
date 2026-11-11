@@ -12,9 +12,10 @@ import { StatDefinition, StatEntry, StatEntryStatus, StatType } from '../../type
 import { statService } from '../../services/api/statService';
 import { getBooleanChoiceColor, getStatFeedbackColor, showStatFeedback } from '../../services/statFeedback';
 import { getStatPeriodWindow, StatPeriodMode, StatPeriodOffset } from './statPeriod';
-import { SubStatInputFields } from './SubStatInputFields';
+import { SubStatInputFields, SubStatInputFieldsHandle } from './SubStatInputFields';
 import { StatInputField } from './StatInputField';
 import { statInputLabel } from './statInputLabels';
+import { StatEntryHeader, StatInputSection } from './StatEntryInputLayout';
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -134,6 +135,9 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
     const [editStatus, setEditStatus] = useState<StatEntryStatus>('RECORDED');
     const [editAdditionalValues, setEditAdditionalValues] = useState<Partial<Record<StatType, number>>>({});
     const [saveError, setSaveError] = useState<string | null>(null);
+    const [subStatsReady, setSubStatsReady] = useState(subStatDefinitions.length === 0);
+    const [saving, setSaving] = useState(false);
+    const subStatInputsRef = useRef<SubStatInputFieldsHandle | null>(null);
     const entryMutationVersionsRef = useRef(new Map<string, number>());
     const forceRefreshOnMountRef = useRef(true);
     const dailyGridRef = useRef<HTMLDivElement | null>(null);
@@ -203,6 +207,7 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
         setEditStatus(statusMap.get(date) ?? 'RECORDED');
         setEditAdditionalValues(entryMap.get(date)?.additionalValues ?? {});
         setSaveError(null);
+        setSubStatsReady(subStatDefinitions.length === 0);
         setPopover({ anchorEl: event.currentTarget, date });
     };
 
@@ -319,6 +324,28 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
                 }
                 onError?.('Failed to save this statistic.');
             });
+    };
+
+    const saveAllEntries = async () => {
+        if (!popover || saving) return;
+        if (!subStatsReady) {
+            setSaveError('Related stat inputs are still loading. Please try again in a moment.');
+            return;
+        }
+        setSaving(true);
+        try {
+            const subStatsSaved = await (subStatInputsRef.current?.save() ?? Promise.resolve(true));
+            if (subStatsSaved) saveEntry();
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleEditorKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+        if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
+        if ((event.target as HTMLElement).tagName === 'TEXTAREA') return;
+        event.preventDefault();
+        void saveAllEntries();
     };
 
     const weeks: (Date | null)[][] = [];
@@ -628,15 +655,11 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
                 slotProps={{
                     paper: {
                         sx: {
-                            p: hasEmbeddedInputs ? 1.5 : 0,
-                            minWidth: hasEmbeddedInputs ? 'min(300px, calc(100vw - 32px))' : 0,
+                            p: 2,
+                            minWidth: 'min(300px, calc(100vw - 32px))',
                             maxWidth: 'min(360px, calc(100vw - 32px))',
                             bgcolor: 'background.paper',
                             boxShadow: 3,
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: hasEmbeddedInputs ? 'stretch' : 'center',
-                            justifyContent: hasEmbeddedInputs ? 'flex-start' : 'center',
                             borderRadius: 1,
                             overflow: 'auto',
                         },
@@ -644,13 +667,19 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
                 }}
             >
                 {popover && (
-                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
+                    <Box onKeyDown={handleEditorKeyDown} sx={{ width: '100%' }}>
+                        <Stack spacing={1.5} alignItems="stretch" sx={{ width: '100%', textAlign: 'left' }}>
+                        <StatEntryHeader
+                            title={recordDefinition.name}
+                            date={format(parseISO(popover.date), 'EEEE, MMM d, yyyy')}
+                        />
                         <StatInputField
                             definition={recordDefinition}
                             type={recordDefinition.type}
                             value={editValue}
                             status={editStatus}
                             primary
+                            hideInputLabel
                             onChange={(value, status) => {
                                 const nextStatus = status ?? 'RECORDED';
                                 setEditStatus(nextStatus);
@@ -660,14 +689,12 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
                             onFocus={() => undefined}
                         />
                         {additionalInputTypes.map(type => (
-                            <Box key={type} sx={{ mt: 1.5, width: '100%' }}>
-                                <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
-                                    {statInputLabel(type)}
-                                </Typography>
+                            <StatInputSection key={type} title={statInputLabel(type)}>
                                 <StatInputField
                                     definition={recordDefinition}
                                     type={type}
                                     value={editAdditionalValues[type] ?? null}
+                                    hideInputLabel
                                     onChange={value => setEditAdditionalValues(previous => {
                                         const next = { ...previous };
                                         if (value == null) delete next[type];
@@ -676,19 +703,23 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
                                     })}
                                     onFocus={() => undefined}
                                 />
-                            </Box>
+                            </StatInputSection>
                         ))}
-                        {saveError && <Alert severity="error" sx={{ mt: 1 }}>{saveError}</Alert>}
                         <SubStatInputFields
+                            ref={subStatInputsRef}
                             definitions={subStatDefinitions}
                             date={popover.date}
                             refreshKey={refreshKey}
                             onEntryChanged={onEntryChanged}
                             onError={onError}
+                            onReadyChange={setSubStatsReady}
+                            onEnter={() => { void saveAllEntries(); }}
                         />
+                        {saveError && <Alert severity="error" sx={{ py: 0 }}>{saveError}</Alert>}
+                        </Stack>
                         {hasEmbeddedInputs && (
-                            <Button size="small" variant="contained" onClick={() => saveEntry()} sx={{ mt: 1.5, alignSelf: 'flex-end' }}>
-                                Save
+                            <Button size="small" variant="contained" onClick={() => { void saveAllEntries(); }} disabled={saving || !subStatsReady} sx={{ mt: 2, display: 'block', ml: 'auto' }}>
+                                {saving ? <CircularProgress size={16} color="inherit" /> : 'Save'}
                             </Button>
                         )}
                     </Box>
