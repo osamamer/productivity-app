@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Box, Stack, Typography, Skeleton } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { differenceInCalendarDays, format, parseISO } from 'date-fns';
-import { StatDefinition, StatEntry, StatSummary } from '../../types/Stats';
+import { StatDefinition, StatEntry, StatSummary, StatType } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
 import { getStatPeriodWindow, StatPeriodMode, StatPeriodOffset } from './statPeriod';
 import { statNumericValueLabel } from './statVisualization';
@@ -45,6 +45,7 @@ function SummaryTile({ label, value }: TileProps) {
 
 interface Props {
     definition: StatDefinition;
+    additionalInputType?: StatType;
     dateRange: number;
     periodMode: StatPeriodMode;
     periodOffset: StatPeriodOffset;
@@ -163,9 +164,78 @@ function optimisticSummary(
     };
 }
 
-export const StatSummaryBar = React.memo(function StatSummaryBar({ definition, dateRange, periodMode, periodOffset, refreshKey }: Props) {
+function additionalInputEntries(entries: StatEntry[], type: StatType): StatEntry[] {
+    return entries.flatMap(entry => {
+        const value = entry.status === 'NOT_PLANNED' ? undefined : entry.additionalValues?.[type];
+        return value == null ? [] : [{ ...entry, value }];
+    });
+}
+
+function additionalInputSummary(
+    definition: StatDefinition,
+    entries: StatEntry[],
+    from: string,
+    to: string,
+): StatSummary {
+    const checkInStreak = computeStreak(entries, from, to, () => true);
+    const baseSummary: StatSummary = {
+        checkInStreak,
+        periodYesCount: null,
+        booleanStreak: null,
+        periodAverage: null,
+        periodTotal: null,
+        periodHighest: null,
+    };
+    if (definition.type === 'BOOLEAN') {
+        return {
+            ...baseSummary,
+            periodYesCount: entries.filter(entry => entry.value === 1).length,
+            booleanStreak: computeStreak(entries, from, to, entry => entry.value === 1),
+            longestBooleanStreak: computeLongestBooleanStreak(entries),
+            periodAverage: null,
+            periodTotal: null,
+            periodHighest: null,
+        };
+    }
+
+    const values = entries.map(entry => entry.value);
+    if (values.length === 0) {
+        return {
+            ...baseSummary,
+            periodAverage: null,
+            periodTotal: 0,
+        };
+    }
+    if (definition.type === 'TIME') {
+        const linearValues = values.map(value => timeValueToScale(definition, value));
+        const total = linearValues.reduce((sum, value) => sum + value, 0);
+        return {
+            ...baseSummary,
+            periodAverage: timeValueFromScale(definition, total / values.length),
+            periodTotal: total,
+            periodHighest: timeValueFromScale(definition, Math.max(...linearValues)),
+        };
+    }
+
+    const total = values.reduce((sum, value) => sum + value, 0);
+    return {
+        ...baseSummary,
+        periodAverage: total / values.length,
+        periodTotal: total,
+        periodHighest: Math.max(...values),
+    };
+}
+
+export const StatSummaryBar = React.memo(function StatSummaryBar({
+    definition,
+    additionalInputType,
+    dateRange,
+    periodMode,
+    periodOffset,
+    refreshKey,
+}: Props) {
     const period = getStatPeriodWindow(dateRange, periodMode, periodOffset);
-    const periodKey = `${definition.id}:${period.key}`;
+    const periodKey = `${definition.id}:${additionalInputType ?? 'main'}:${period.key}`;
     const [summaryState, setSummaryState] = useState<{ key: string; summary: StatSummary } | null>(() => {
         const summary = statService.getCachedSummary(definition.id, period.from, period.to);
         return summary ? { key: periodKey, summary } : null;
@@ -174,6 +244,8 @@ export const StatSummaryBar = React.memo(function StatSummaryBar({ definition, d
         const entries = statService.getCachedEntries(definition.id, period.from, period.to);
         return entries ? { key: periodKey, entries } : null;
     });
+    const forceSummaryRefreshOnMountRef = useRef(true);
+    const forceEntriesRefreshOnMountRef = useRef(true);
     const cachedSummary = statService.getCachedSummary(definition.id, period.from, period.to);
     const currentSummary = summaryState?.key === periodKey
         ? summaryState.summary
@@ -182,27 +254,35 @@ export const StatSummaryBar = React.memo(function StatSummaryBar({ definition, d
         ?? (entryState?.key === periodKey ? entryState.entries : null);
     // Keep the previous period visible while the next period is loading. This
     // prevents the summary row from collapsing into skeletons on every range change.
-    const summary = currentSummary ?? summaryState?.summary ?? null;
+    const summary = additionalInputType ? null : currentSummary ?? summaryState?.summary ?? null;
     const entries = currentEntries ?? entryState?.entries ?? null;
-    const isRefreshing = currentSummary === null && summaryState !== null;
-    const displaySummary = summary && entries
-        ? optimisticSummary(definition, entries, period.from, period.to, summary)
-        : summary;
+    const isRefreshing = !additionalInputType && currentSummary === null && summaryState !== null;
+    const displayEntries = entries === null
+        ? null
+        : additionalInputType ? additionalInputEntries(entries, additionalInputType) : entries;
+    const displaySummary = additionalInputType
+        ? displayEntries === null ? null : additionalInputSummary(definition, displayEntries, period.from, period.to)
+        : summary && entries ? optimisticSummary(definition, entries, period.from, period.to, summary) : summary;
 
     useEffect(() => {
+        if (additionalInputType) return undefined;
         let cancelled = false;
+        const forceRefresh = forceSummaryRefreshOnMountRef.current;
+        forceSummaryRefreshOnMountRef.current = false;
         const summaryKey = periodKey;
-        statService.getSummary(definition.id, period.from, period.to)
+        statService.getSummary(definition.id, period.from, period.to, forceRefresh)
             .then(nextSummary => {
                 if (!cancelled) setSummaryState({ key: summaryKey, summary: nextSummary });
             })
             .catch(e => console.error('Failed to fetch stat summary:', e))
         return () => { cancelled = true; };
-    }, [definition.id, period.from, period.key, period.to, periodKey, refreshKey]);
+    }, [additionalInputType, definition.id, period.from, period.key, period.to, periodKey, refreshKey]);
 
     useEffect(() => {
         let cancelled = false;
-        statService.getEntries(definition.id, period.from, period.to)
+        const forceRefresh = forceEntriesRefreshOnMountRef.current;
+        forceEntriesRefreshOnMountRef.current = false;
+        statService.getEntries(definition.id, period.from, period.to, forceRefresh)
             .then(nextEntries => {
                 if (!cancelled) setEntryState({ key: periodKey, entries: nextEntries });
             })
@@ -222,16 +302,17 @@ export const StatSummaryBar = React.memo(function StatSummaryBar({ definition, d
     }
 
     const tiles: TileProps[] = [];
-    const derivedLongestBooleanStreak = entries ? computeLongestBooleanStreak(entries) : null;
-    const derivedPeriodHighest = entries && entries.length > 0
+    const derivedLongestBooleanStreak = displayEntries ? computeLongestBooleanStreak(displayEntries) : null;
+    const derivedPeriodHighest = displayEntries && displayEntries.length > 0
         ? definition.type === 'TIME'
-            ? entries.reduce((latest, entry) => timeValueToScale(definition, entry.value) > timeValueToScale(definition, latest) ? entry.value : latest, entries[0].value)
-            : Math.max(...entries.map(entry => entry.value))
+            ? displayEntries.reduce((latest, entry) => timeValueToScale(definition, entry.value) > timeValueToScale(definition, latest) ? entry.value : latest, displayEntries[0].value)
+            : Math.max(...displayEntries.map(entry => entry.value))
         : null;
-    const derivedPeriodEarliest = entries && entries.length > 0
-        ? entries.reduce((earliest, entry) => timeValueToScale(definition, entry.value) < timeValueToScale(definition, earliest) ? entry.value : earliest, entries[0].value)
+    const derivedPeriodEarliest = displayEntries && displayEntries.length > 0
+        ? displayEntries.reduce((earliest, entry) => timeValueToScale(definition, entry.value) < timeValueToScale(definition, earliest) ? entry.value : earliest, displayEntries[0].value)
         : null;
     const periodHighest = displaySummary.periodHighest ?? derivedPeriodHighest;
+    const bestLabel = additionalInputType ? 'best in period' : 'personal best';
 
     if (definition.type === 'BOOLEAN') {
         tiles.push({
@@ -243,8 +324,10 @@ export const StatSummaryBar = React.memo(function StatSummaryBar({ definition, d
             value: `${displaySummary.periodYesCount ?? 0} ${displaySummary.periodYesCount === 1 ? 'time' : 'times'}`,
         });
         tiles.push({
-            label: 'personal best',
-            value: pluralDays(displaySummary.allTimeLongestBooleanStreak
+            label: additionalInputType ? 'longest streak in period' : 'personal best',
+            value: pluralDays(additionalInputType
+                ? displaySummary.longestBooleanStreak ?? derivedLongestBooleanStreak ?? 0
+                : displaySummary.allTimeLongestBooleanStreak
                 ?? displaySummary.longestBooleanStreak
                 ?? derivedLongestBooleanStreak
                 ?? 0),
@@ -256,7 +339,7 @@ export const StatSummaryBar = React.memo(function StatSummaryBar({ definition, d
             ? statNumericValueLabel(value, definition.unit)
             : formatAverage(value);
         tiles.push({
-            label: 'personal best',
+            label: bestLabel,
             value: displaySummary.personalBest != null
                 ? numericLabel(displaySummary.personalBest)
                 : periodHighest != null ? numericLabel(periodHighest) : '—',
@@ -273,10 +356,10 @@ export const StatSummaryBar = React.memo(function StatSummaryBar({ definition, d
 
     if (definition.type === 'TIME') {
         const timeAverage = displaySummary.periodAverage
-            ?? (entries ? averageTimeValues(definition, entries.map(entry => entry.value)) : null);
+            ?? (displayEntries ? averageTimeValues(definition, displayEntries.map(entry => entry.value)) : null);
         const timeLatest = displaySummary.periodHighest ?? derivedPeriodHighest;
         tiles.push({
-            label: 'personal best',
+            label: additionalInputType ? 'earliest in period' : 'personal best',
             value: displaySummary.personalBest != null
                 ? formatTimeValue(displaySummary.personalBest)
                 : derivedPeriodEarliest != null ? formatTimeValue(derivedPeriodEarliest) : '—',
@@ -293,7 +376,7 @@ export const StatSummaryBar = React.memo(function StatSummaryBar({ definition, d
 
     if (definition.type === 'DURATION') {
         tiles.push({
-            label: 'personal best',
+            label: bestLabel,
             value: displaySummary.personalBest != null
                 ? formatDurationValue(displaySummary.personalBest)
                 : periodHighest != null ? formatDurationValue(periodHighest) : '—',

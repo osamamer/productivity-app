@@ -3,6 +3,7 @@ import { StatEntryStatus, StatType } from '../../types/Stats';
 export interface StatChartPoint {
     date: string;
     value: number | undefined;
+    primaryValue?: number;
     comparisonValue: number | undefined;
     hoverTarget: number;
     bucketLabel?: string;

@@ -4,6 +4,7 @@ import { getAuthCacheScope, getAuthHeaders } from '../utils/authHeaders';
 import { CachedResource } from '../cache/ttlCache';
 import { statService } from './statService';
 import { invalidateResource } from '../cache/resourceInvalidation';
+import { taskService } from './taskService';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 const MEDITATION_URL = `${API_BASE_URL}/api/v1/meditation`;
@@ -96,6 +97,7 @@ export const meditationService = {
         const session = await response.json() as MeditationSession;
         activeSessionCache.set(activeSessionKey(), null);
         statService.clearDataCache();
+        taskService.clearCache();
         invalidateResource('tasks', 'task');
         return session;
     },

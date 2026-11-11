@@ -113,6 +113,7 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
     const activePomodoroRef = useRef(activePomodoro);
     const statusRevisionRef = useRef(0);
     const retiredPomodoroIdsRef = useRef(new Set<string>());
+    const completedPomodoroIdsRef = useRef(new Set<string>());
     const optimisticPomodoroStatusRef = useRef<PomodoroStatus | null>(null);
     const optimisticTimeAdjustmentRef = useRef(false);
     const refreshRequestRef = useRef<Promise<PomodoroStatus | null> | null>(null);
@@ -165,6 +166,9 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
             if (currentStatus) retiredPomodoroIds.add(currentStatus.pomodoroId);
         } else if (!nextStatus.active) {
             retiredPomodoroIds.add(nextStatus.pomodoroId);
+            if (!optimistic && nextStatus.phase === 'COMPLETED') {
+                completedPomodoroIdsRef.current.add(nextStatus.pomodoroId);
+            }
             if (currentStatus && nextStatus.pomodoroId !== currentStatus.pomodoroId) {
                 // A delayed completion event from an older session must not
                 // clear a newer active session from the shared app state.
@@ -173,6 +177,11 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
             if (nextStatus.phase === 'COMPLETED' && currentStatus?.active) {
                 playAudioFeedback('pomodoroCompleted');
             }
+        } else if (completedPomodoroIdsRef.current.has(nextStatus.pomodoroId)) {
+            // A committed completion event can arrive just before a status
+            // request that began during the same transaction. Do not let that
+            // stale active snapshot briefly restart the finished countdown.
+            return false;
         } else if (!authoritative && retiredPomodoroIds.has(nextStatus.pomodoroId)) {
             // A delayed active event can arrive after the session was ended.
             return false;
@@ -193,6 +202,11 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
             const oldestId = retiredPomodoroIds.values().next().value as string | undefined;
             if (oldestId === undefined) break;
             retiredPomodoroIds.delete(oldestId);
+        }
+        while (completedPomodoroIdsRef.current.size > 32) {
+            const oldestId = completedPomodoroIdsRef.current.values().next().value as string | undefined;
+            if (oldestId === undefined) break;
+            completedPomodoroIdsRef.current.delete(oldestId);
         }
 
         const nextActiveStatus = nextStatus?.active ? nextStatus : null;

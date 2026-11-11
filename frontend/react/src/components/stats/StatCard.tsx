@@ -8,7 +8,7 @@ import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { format, subDays } from 'date-fns';
-import { StatDefinition } from '../../types/Stats';
+import { StatDefinition, StatType } from '../../types/Stats';
 import { statService } from '../../services/api/statService';
 import { StatLineChart } from './StatLineChart';
 import { BooleanCalendarView } from './BooleanCalendarView';
@@ -17,6 +17,7 @@ import { StatInsightsDialog } from './StatInsightsDialog';
 import { FocusTimeSummaryBar } from './FocusTimeSummaryBar';
 import { TaskFocusTimeChart } from './TaskFocusTimeChart';
 import { getStatPeriodWindow, StatPeriodMode, StatPeriodOffset } from './statPeriod';
+import { statInputLabel } from './statInputLabels';
 
 const CHART_DATE_RANGES = [
     { label: '7d', value: 7 },
@@ -88,6 +89,7 @@ export const StatCard = React.memo(function StatCard({
     const [periodOffset, setPeriodOffset] = useState<StatPeriodOffset>(0);
     const [insightsOpen, setInsightsOpen] = useState(false);
     const [insightsAvailable, setInsightsAvailable] = useState(false);
+    const forceInsightsRefreshOnMountRef = useRef(true);
     const [comparisonId, setComparisonId] = useState('');
     const supportsFocusTime = Boolean(
         definition.recurringTaskSeriesId
@@ -98,15 +100,21 @@ export const StatCard = React.memo(function StatCard({
         parentId: string;
         metricId: string;
         focusTime: boolean;
-    }>({ parentId: definition.id, metricId: definition.id, focusTime: false });
+        additionalInputType: StatType | null;
+    }>({ parentId: definition.id, metricId: definition.id, focusTime: false, additionalInputType: null });
     const currentDisplaySelection = displaySelection.parentId === definition.id
         ? displaySelection
-        : { parentId: definition.id, metricId: definition.id, focusTime: false };
-    const displayDefinition = subStatDefinitions.find(item => item.id === currentDisplaySelection.metricId)
-        ?? definition;
+        : { parentId: definition.id, metricId: definition.id, focusTime: false, additionalInputType: null };
+    const selectedAdditionalInputType = currentDisplaySelection.additionalInputType;
+    const selectedSubStat = subStatDefinitions.find(item => item.id === currentDisplaySelection.metricId);
+    const displayDefinition = selectedAdditionalInputType
+        ? { ...definition, type: selectedAdditionalInputType, name: statInputLabel(selectedAdditionalInputType) }
+        : selectedSubStat ?? definition;
     const focusTimeView = supportsFocusTime && currentDisplaySelection.focusTime;
     const supportsComparison = !focusTimeView && displayDefinition.type !== 'TIME' && displayDefinition.type !== 'DURATION';
-    const hasDisplayOptions = supportsFocusTime || subStatDefinitions.length > 0;
+    const hasDisplayOptions = supportsFocusTime
+        || subStatDefinitions.length > 0
+        || (definition.additionalInputTypes?.length ?? 0) > 0;
     const availableComparisons = supportsComparison
         ? comparisonDefinitions.filter(item => item.id !== displayDefinition.id)
         : [];
@@ -119,13 +127,21 @@ export const StatCard = React.memo(function StatCard({
     }, [comparisonId, focusTimeView]);
 
     useEffect(() => {
+        if (selectedAdditionalInputType) {
+            setInsightsAvailable(false);
+            setInsightsOpen(false);
+            return undefined;
+        }
         let cancelled = false;
+        const forceRefresh = forceInsightsRefreshOnMountRef.current;
+        forceInsightsRefreshOnMountRef.current = false;
         const to = new Date();
         const from = subDays(to, 89);
         statService.getInsights(
             displayDefinition.id,
             format(from, 'yyyy-MM-dd'),
             format(to, 'yyyy-MM-dd'),
+            forceRefresh,
         )
             .then(insights => {
                 if (!cancelled) {
@@ -138,7 +154,7 @@ export const StatCard = React.memo(function StatCard({
             });
 
         return () => { cancelled = true; };
-    }, [comparisonDefinitions.length, comparisonIds, displayDefinition.id, refreshKey]);
+    }, [comparisonDefinitions.length, comparisonIds, displayDefinition.id, refreshKey, selectedAdditionalInputType]);
 
     useEffect(() => {
         const comparisonStillAvailable = comparisonDefinitions.some(
@@ -183,7 +199,7 @@ export const StatCard = React.memo(function StatCard({
     return (
         <Card variant="outlined" sx={{ containerType: 'inline-size' }}>
             <CardHeader
-                avatar={insightsAvailable ? (
+                avatar={insightsAvailable && !selectedAdditionalInputType ? (
                     <Tooltip title={`See insights about this statistic`}>
                         <IconButton
                             aria-label={`See insights about this statistic`}
@@ -211,6 +227,7 @@ export const StatCard = React.memo(function StatCard({
                 ) : (
                     <StatSummaryBar
                         definition={displayDefinition}
+                        additionalInputType={selectedAdditionalInputType ?? undefined}
                         dateRange={dateRange}
                         periodMode={periodMode}
                         periodOffset={periodOffset}
@@ -334,15 +351,29 @@ export const StatCard = React.memo(function StatCard({
                                     <InputLabel id={`stat-display-label-${definition.id}`}>Display</InputLabel>
                                     <Select
                                         labelId={`stat-display-label-${definition.id}`}
-                                        value={focusTimeView ? 'focusTime' : displayDefinition.id}
+                                        value={focusTimeView
+                                            ? 'focusTime'
+                                            : selectedAdditionalInputType
+                                                ? `additional:${selectedAdditionalInputType}`
+                                                : displayDefinition.id}
                                         label="Display"
                                         onChange={event => {
-                                            const nextValue = event.target.value;
+                                            const nextValue = String(event.target.value);
                                             if (nextValue === 'focusTime') {
                                                 setDisplaySelection({
                                                     parentId: definition.id,
                                                     metricId: definition.id,
                                                     focusTime: true,
+                                                    additionalInputType: null,
+                                                });
+                                                return;
+                                            }
+                                            if (nextValue.startsWith('additional:')) {
+                                                setDisplaySelection({
+                                                    parentId: definition.id,
+                                                    metricId: definition.id,
+                                                    focusTime: false,
+                                                    additionalInputType: nextValue.slice('additional:'.length) as StatType,
                                                 });
                                                 return;
                                             }
@@ -350,6 +381,7 @@ export const StatCard = React.memo(function StatCard({
                                                 parentId: definition.id,
                                                 metricId: nextValue,
                                                 focusTime: false,
+                                                additionalInputType: null,
                                             });
                                         }}
                                         inputProps={{ 'aria-label': `Display value for ${definition.name}` }}
@@ -357,6 +389,11 @@ export const StatCard = React.memo(function StatCard({
                                         <MenuItem value={definition.id}>Main value</MenuItem>
                                         {subStatDefinitions.map(item => (
                                             <MenuItem key={item.id} value={item.id}>{item.name}</MenuItem>
+                                        ))}
+                                        {(definition.additionalInputTypes ?? []).map(type => (
+                                            <MenuItem key={`additional:${type}`} value={`additional:${type}`}>
+                                                {statInputLabel(type)}
+                                            </MenuItem>
                                         ))}
                                         {supportsFocusTime && <MenuItem value="focusTime">Focus time</MenuItem>}
                                     </Select>
@@ -391,7 +428,7 @@ export const StatCard = React.memo(function StatCard({
                     )}
                 </Box>
                 <StatViewTransition
-                    viewKey={focusTimeView ? 'focus-time' : `${displayDefinition.id}:${isBooleanCalendar ? 'calendar' : 'chart'}`}
+                    viewKey={focusTimeView ? 'focus-time' : `${displayDefinition.id}:${selectedAdditionalInputType ?? 'main'}:${isBooleanCalendar ? 'calendar' : 'chart'}`}
                 >
                     {focusTimeView ? (
                         <TaskFocusTimeChart
@@ -404,6 +441,8 @@ export const StatCard = React.memo(function StatCard({
                     ) : isBooleanCalendar ? (
                         <BooleanCalendarView
                             definition={displayDefinition}
+                            entryDefinition={selectedAdditionalInputType ? definition : undefined}
+                            additionalInputType={selectedAdditionalInputType ?? undefined}
                             subStatDefinitions={displayDefinition.id === definition.id ? subStatDefinitions : []}
                             dateRange={dateRange}
                             periodMode={periodMode}
@@ -416,6 +455,8 @@ export const StatCard = React.memo(function StatCard({
                     ) : (
                         <StatLineChart
                             definition={displayDefinition}
+                            entryDefinition={selectedAdditionalInputType ? definition : undefined}
+                            additionalInputType={selectedAdditionalInputType ?? undefined}
                             subStatDefinitions={displayDefinition.id === definition.id ? subStatDefinitions : []}
                             comparisonDefinition={comparisonDefinition}
                             dateRange={dateRange}

@@ -420,11 +420,11 @@ export const statService = {
             : definitions;
     },
 
-    async getDefinitions(): Promise<StatDefinition[]> {
+    async getDefinitions(forceRefresh = false): Promise<StatDefinition[]> {
         refreshSecretStatsAccess();
         const key = definitionsCacheKey();
         const cachedDefinitions = definitionsCache.get(key);
-        if (cachedDefinitions) {
+        if (cachedDefinitions && !forceRefresh) {
             return this.hasSecretStatsAccess()
                 ? cachedDefinitions
                 : cachedDefinitions.filter(definition => !definition.secret);
@@ -730,11 +730,18 @@ export const statService = {
         return response.json();
     },
 
-    async getEntries(definitionId: string, from: string, to: string): Promise<StatEntry[]> {
+    async getEntries(
+        definitionId: string,
+        from: string,
+        to: string,
+        forceRefresh = false,
+    ): Promise<StatEntry[]> {
         refreshSecretStatsAccess();
         const key = entryCacheKey(definitionId, from, to);
         const cachedEntries = entryCache.get(key);
-        if (cachedEntries) return applyOptimisticOverrides(cachedEntries, from, to, definitionId);
+        if (cachedEntries && !forceRefresh) {
+            return applyOptimisticOverrides(cachedEntries, from, to, definitionId);
+        }
 
         const pendingRequest = entryRequests.get(key);
         if (pendingRequest) return pendingRequest;
@@ -776,11 +783,16 @@ export const statService = {
         return entries ? applyOptimisticOverrides(entries, from, to, definitionId) : undefined;
     },
 
-    async getFocusTime(definitionId: string, from: string, to: string): Promise<StatFocusTimeEntry[]> {
+    async getFocusTime(
+        definitionId: string,
+        from: string,
+        to: string,
+        forceRefresh = false,
+    ): Promise<StatFocusTimeEntry[]> {
         refreshSecretStatsAccess();
         const key = focusTimeCacheKey(definitionId, from, to);
         const cachedFocusTime = focusTimeCache.get(key);
-        if (cachedFocusTime) return cachedFocusTime;
+        if (cachedFocusTime && !forceRefresh) return cachedFocusTime;
 
         const pendingRequest = focusTimeRequests.get(key);
         if (pendingRequest) return pendingRequest;
@@ -833,11 +845,16 @@ export const statService = {
         return applyOptimisticOverrides(entries, date, date);
     },
 
-    async getSummary(definitionId: string, from: string, to: string): Promise<StatSummary> {
+    async getSummary(
+        definitionId: string,
+        from: string,
+        to: string,
+        forceRefresh = false,
+    ): Promise<StatSummary> {
         refreshSecretStatsAccess();
         const key = summaryCacheKey(definitionId, from, to);
         const cachedSummary = summaryCache.get(key);
-        if (cachedSummary) return cachedSummary;
+        if (cachedSummary && !forceRefresh) return cachedSummary;
 
         const pendingRequest = summaryRequests.get(key);
         if (pendingRequest) return pendingRequest;
@@ -892,11 +909,16 @@ export const statService = {
         clearDataCaches();
     },
 
-    async getInsights(definitionId: string, from: string, to: string): Promise<StatInsights> {
+    async getInsights(
+        definitionId: string,
+        from: string,
+        to: string,
+        forceRefresh = false,
+    ): Promise<StatInsights> {
         refreshSecretStatsAccess();
         const key = insightsCacheKey(definitionId, from, to);
         const cachedInsights = insightsCache.get(key);
-        if (cachedInsights) return cachedInsights;
+        if (cachedInsights && !forceRefresh) return cachedInsights;
 
         const pendingRequest = insightsRequests.get(key);
         if (pendingRequest) return pendingRequest;

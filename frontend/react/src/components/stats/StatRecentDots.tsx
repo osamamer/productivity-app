@@ -282,6 +282,7 @@ export const StatRecentDots = React.memo(function StatRecentDots({
     const popoverContentRef = useRef<HTMLDivElement | null>(null);
     const saveButtonRef = useRef<HTMLButtonElement | null>(null);
     const entryMutationVersionsRef = useRef(new Map<string, number>());
+    const forceRefreshOnMountRef = useRef(true);
 
     useEffect(() => {
         let cancelled = false;
@@ -293,7 +294,9 @@ export const StatRecentDots = React.memo(function StatRecentDots({
             setLoading(false);
         }
 
-        statService.getEntries(definition.id, from, to)
+        const forceRefresh = forceRefreshOnMountRef.current;
+        forceRefreshOnMountRef.current = false;
+        statService.getEntries(definition.id, from, to, forceRefresh)
             .then(entries => {
                 if (!cancelled) {
                     setValueMap(recentValueMap(entries, recentStart, to));

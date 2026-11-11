@@ -14,7 +14,7 @@ export interface Task {
   completed: boolean;
   creationDateTime: string;
   creationDate: string;
-  scheduledPerformDateTime: string;
+  scheduledPerformDateTime: string | null;
   timeZone?: string;
   reminderMinutesBefore?: number | null;
   completionDateTime: string;
@@ -56,7 +56,7 @@ export interface TaskSeries {
 export interface TaskInput {
   name: string;
   description: string;
-  scheduledPerformDateTime: string;
+  scheduledPerformDateTime: string | null;
   tag: string;
   importance: number;
   parentId?: string;

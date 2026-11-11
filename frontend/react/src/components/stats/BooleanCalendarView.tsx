@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import {
     Box, Typography, CircularProgress, Stack, Popover, Button,
-    ToggleButton, ToggleButtonGroup, Alert,
+    Alert,
 } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
@@ -20,6 +20,8 @@ const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 interface Props {
     definition: StatDefinition;
+    entryDefinition?: StatDefinition;
+    additionalInputType?: StatType;
     subStatDefinitions?: StatDefinition[];
     dateRange: number;
     periodMode: StatPeriodMode;
@@ -30,13 +32,18 @@ interface Props {
     onDateContextMenu?: (date: string, event: React.MouseEvent<Element>) => void;
 }
 
-function entryMaps(entries: StatEntry[]): {
+function entryMaps(entries: StatEntry[], additionalInputType?: StatType): {
     values: Map<string, number>;
     statuses: Map<string, StatEntryStatus>;
     entries: Map<string, StatEntry>;
 } {
     return {
-        values: new Map(entries.map(entry => [entry.date, entry.value])),
+        values: new Map(entries.flatMap(entry => {
+            const value = entry.status === 'NOT_PLANNED'
+                ? 0
+                : additionalInputType ? entry.additionalValues?.[additionalInputType] : entry.value;
+            return value == null ? [] : [[entry.date, value] as [string, number]];
+        })),
         statuses: new Map(entries.map(entry => [entry.date, entry.status ?? 'RECORDED'] as [string, StatEntryStatus])),
         entries: new Map(entries.map(entry => [entry.date, entry])),
     };
@@ -69,6 +76,8 @@ function monthLabelsForWeeks(weeks: (Date | null)[][], showYear: boolean): strin
 
 export const BooleanCalendarView = React.memo(function BooleanCalendarView({
     definition,
+    entryDefinition,
+    additionalInputType,
     subStatDefinitions = [],
     dateRange,
     periodMode,
@@ -78,6 +87,7 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
     onError,
     onDateContextMenu,
 }: Props) {
+    const recordDefinition = entryDefinition ?? definition;
     const theme = useTheme();
     const yesColor = theme.palette[getBooleanChoiceColor(definition, 1)].main;
     const noColor = theme.palette[getBooleanChoiceColor(definition, 0)].main;
@@ -86,9 +96,9 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
     const to = parseISO(period.to);
     const fromStr = period.from;
     const toStr = period.to;
-    const dataKey = `${definition.id}:${fromStr}:${toStr}`;
-    const cachedEntries = statService.getCachedEntries(definition.id, fromStr, toStr);
-    const cachedMaps = cachedEntries ? entryMaps(cachedEntries) : null;
+    const dataKey = `${recordDefinition.id}:${additionalInputType ?? 'main'}:${fromStr}:${toStr}`;
+    const cachedEntries = statService.getCachedEntries(recordDefinition.id, fromStr, toStr);
+    const cachedMaps = cachedEntries ? entryMaps(cachedEntries, additionalInputType) : null;
     const [valueState, setValueState] = useState<{
         key: string;
         values: Map<string, number>;
@@ -125,9 +135,10 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
     const [editAdditionalValues, setEditAdditionalValues] = useState<Partial<Record<StatType, number>>>({});
     const [saveError, setSaveError] = useState<string | null>(null);
     const entryMutationVersionsRef = useRef(new Map<string, number>());
+    const forceRefreshOnMountRef = useRef(true);
     const dailyGridRef = useRef<HTMLDivElement | null>(null);
     const [dailyGridWidth, setDailyGridWidth] = useState(0);
-    const additionalInputTypes = definition.additionalInputTypes ?? [];
+    const additionalInputTypes = recordDefinition.additionalInputTypes ?? [];
     const hasEmbeddedInputs = additionalInputTypes.length > 0 || subStatDefinitions.length > 0;
 
     const allDays = eachDayOfInterval({ start: from, end: to });
@@ -152,16 +163,18 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
 
     useEffect(() => {
         let cancelled = false;
-        if (!statService.getCachedEntries(definition.id, fromStr, toStr)
+        const forceRefresh = forceRefreshOnMountRef.current;
+        forceRefreshOnMountRef.current = false;
+        if (!statService.getCachedEntries(recordDefinition.id, fromStr, toStr)
             && !hasRenderedDataRef.current) {
             setLoadingKey(dataKey);
         }
-        statService.getEntries(definition.id, fromStr, toStr)
+        statService.getEntries(recordDefinition.id, fromStr, toStr, forceRefresh)
             .then(entries => {
                 if (!cancelled) {
                     setValueState({
                         key: dataKey,
-                        ...entryMaps(entries),
+                        ...entryMaps(entries, additionalInputType),
                     });
                     hasRenderedDataRef.current = true;
                 }
@@ -171,7 +184,7 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
                 if (!cancelled) setLoadingKey(current => current === dataKey ? null : current);
             });
         return () => { cancelled = true; };
-    }, [dataKey, definition.id, fromStr, refreshKey, toStr]);
+    }, [additionalInputType, dataKey, fromStr, recordDefinition.id, refreshKey, toStr]);
 
     useEffect(() => {
         if (!isDailyGrid || !dailyGridRef.current) return;
@@ -186,7 +199,7 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
 
     const openEditor = (event: React.MouseEvent<HTMLElement>, date: string) => {
         event.stopPropagation();
-        setEditValue(valueMap.get(date) ?? null);
+        setEditValue(entryMap.get(date)?.value ?? null);
         setEditStatus(statusMap.get(date) ?? 'RECORDED');
         setEditAdditionalValues(entryMap.get(date)?.additionalValues ?? {});
         setSaveError(null);
@@ -210,18 +223,18 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
         const nextAdditionalValues = nextStatus === 'NOT_PLANNED'
             ? {}
             : Object.fromEntries(
-                (definition.additionalInputTypes ?? [])
+                (recordDefinition.additionalInputTypes ?? [])
                     .filter(type => editAdditionalValues[type] != null)
                     .map(type => [type, editAdditionalValues[type]]),
             ) as Partial<Record<StatType, number>>;
         if (nextValue == null && nextStatus !== 'NOT_PLANNED' && Object.keys(nextAdditionalValues).length > 0) {
-            setSaveError(`Choose a value for ${definition.name} before saving its additional inputs.`);
+            setSaveError(`Choose a value for ${recordDefinition.name} before saving its additional inputs.`);
             return;
         }
-        const previousValue = valueMap.get(activePopover.date);
+        const previousValue = entryMap.get(activePopover.date)?.value;
         const previousStatus = statusMap.get(activePopover.date);
         const previousEntry = entryMap.get(activePopover.date);
-        const previousHadEntry = valueMap.has(activePopover.date);
+        const previousHadEntry = entryMap.has(activePopover.date);
         const shouldRemoveEntry = nextValue === null
             && nextStatus !== 'NOT_PLANNED'
             && Object.keys(nextAdditionalValues).length === 0;
@@ -240,19 +253,23 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
                 statuses.delete(activePopover.date);
                 entries.delete(activePopover.date);
             } else {
-                const value = nextStatus === 'NOT_PLANNED' ? 0 : nextValue ?? 0;
-                values.set(activePopover.date, value);
+                const primaryValue = nextStatus === 'NOT_PLANNED' ? 0 : nextValue ?? 0;
+                const displayValue = nextStatus === 'NOT_PLANNED'
+                    ? 0
+                    : additionalInputType ? nextAdditionalValues[additionalInputType] : primaryValue;
+                if (displayValue == null) values.delete(activePopover.date);
+                else values.set(activePopover.date, displayValue);
                 statuses.set(activePopover.date, nextStatus);
                 entries.set(activePopover.date, {
                     ...(previousEntry ?? {}),
-                    id: previousEntry?.id ?? `optimistic-${definition.id}-${activePopover.date}`,
-                    statDefinitionId: definition.id,
-                    statDefinition: definition,
+                    id: previousEntry?.id ?? `optimistic-${recordDefinition.id}-${activePopover.date}`,
+                    statDefinitionId: recordDefinition.id,
+                    statDefinition: recordDefinition,
                     date: activePopover.date,
-                    value,
+                    value: primaryValue,
                     status: nextStatus,
                     additionalValues: nextAdditionalValues,
-                    userId: previousEntry?.userId ?? definition.userId,
+                    userId: previousEntry?.userId ?? recordDefinition.userId,
                 });
             }
             return { ...previous, values, statuses, entries };
@@ -260,18 +277,18 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
         closeEditor();
         setSaveError(null);
         if (nextValue !== null && nextStatus !== 'NOT_PLANNED') {
-            showStatFeedback(definition, nextValue, feedbackAnchor, {
-                color: getStatFeedbackColor(definition, nextValue, theme),
+            showStatFeedback(recordDefinition, nextValue, feedbackAnchor, {
+                color: getStatFeedbackColor(recordDefinition, nextValue, theme),
             });
         }
         const savePromise = statService.recordEntry({
-                statDefinitionId: definition.id,
+                statDefinitionId: recordDefinition.id,
                 date: activePopover.date,
                 value: nextStatus === 'NOT_PLANNED' ? null : nextValue,
                 status: nextStatus,
                 additionalValues: nextAdditionalValues,
             })
-        onEntryChanged?.(definition.id);
+        onEntryChanged?.(recordDefinition.id);
         void savePromise.catch(error => {
                 console.error('Failed to save boolean stat entry:', error);
                 if (entryMutationVersionsRef.current.get(activePopover.date) === mutationVersion) {
@@ -281,7 +298,13 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
                         const statuses = new Map(previous.statuses);
                         const entries = new Map(previous.entries);
                         if (previousHadEntry) {
-                            values.set(activePopover.date, previousValue!);
+                            const displayValue = previousStatus === 'NOT_PLANNED'
+                                ? 0
+                                : additionalInputType
+                                    ? previousEntry?.additionalValues?.[additionalInputType]
+                                    : previousValue;
+                            if (displayValue == null) values.delete(activePopover.date);
+                            else values.set(activePopover.date, displayValue);
                             statuses.set(activePopover.date, previousStatus ?? 'RECORDED');
                             if (previousEntry) entries.set(activePopover.date, previousEntry);
                         } else {
@@ -291,7 +314,7 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
                         }
                         return { ...previous, values, statuses, entries };
                     });
-                    onEntryChanged?.(definition.id);
+                    onEntryChanged?.(recordDefinition.id);
                     setSaveError('Failed to save this value.');
                 }
                 onError?.('Failed to save this statistic.');
@@ -621,103 +644,28 @@ export const BooleanCalendarView = React.memo(function BooleanCalendarView({
                 }}
             >
                 {popover && (
-                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                        <ToggleButtonGroup
-                            value={editStatus === 'NOT_PLANNED'
-                                ? 'not-planned'
-                                : editValue === 1 ? 'yes' : editValue === 0 ? 'no' : null}
-                            exclusive
-                            onChange={(_, value) => {
-                                const nextStatus = value === 'not-planned' ? 'NOT_PLANNED' : 'RECORDED';
-                                const nextValue = value === null ? null : value === 'yes' ? 1 : 0;
+                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
+                        <StatInputField
+                            definition={recordDefinition}
+                            type={recordDefinition.type}
+                            value={editValue}
+                            status={editStatus}
+                            primary
+                            onChange={(value, status) => {
+                                const nextStatus = status ?? 'RECORDED';
                                 setEditStatus(nextStatus);
-                                setEditValue(nextValue);
-                                if (!hasEmbeddedInputs) void saveEntry(nextStatus, nextValue);
+                                setEditValue(value);
+                                if (!hasEmbeddedInputs) void saveEntry(nextStatus, value);
                             }}
-                            size="small"
-                            sx={{
-                                border: 0,
-                                borderRadius: 1,
-                                overflow: 'hidden',
-                                bgcolor: 'transparent',
-                                '& .MuiToggleButtonGroup-grouped': {
-                                    border: '0 !important',
-                                    borderRadius: 0,
-                                    margin: 0,
-                                },
-                                '& .MuiToggleButtonGroup-grouped:not(:first-of-type)': {
-                                    borderLeft: '0 !important',
-                                    marginLeft: 0,
-                                },
-                                '& .MuiToggleButton-root': {
-                                    flex: '1 1 36px',
-                                    minWidth: 36,
-                                    width: 36,
-                                    height: 32,
-                                    p: 0,
-                                    border: 0,
-                                    bgcolor: 'transparent',
-                                    color: 'text.secondary',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    '&:hover': {
-                                        bgcolor: alpha(theme.palette.action.active, 0.08),
-                                    },
-                                    '& .MuiSvgIcon-root': { fontSize: 18 },
-                                },
-                            }}
-                        >
-                            <ToggleButton
-                                value="no"
-                                aria-label="No"
-                                title="No"
-                                sx={{
-                                    '&.Mui-selected': {
-                                        bgcolor: alpha(noColor, theme.palette.mode === 'light' ? 0.16 : 0.28),
-                                        color: noColor,
-                                        '&:hover': { bgcolor: alpha(noColor, theme.palette.mode === 'light' ? 0.24 : 0.36) },
-                                    },
-                                }}
-                            >
-                                <HighlightOffIcon />
-                            </ToggleButton>
-                            <ToggleButton
-                                value="not-planned"
-                                aria-label="Unplanned"
-                                title="Unplanned"
-                                sx={{
-                                    '&.Mui-selected': {
-                                        bgcolor: alpha(notPlannedColor, theme.palette.mode === 'light' ? 0.16 : 0.28),
-                                        color: notPlannedColor,
-                                        '&:hover': { bgcolor: alpha(notPlannedColor, theme.palette.mode === 'light' ? 0.24 : 0.36) },
-                                    },
-                                }}
-                            >
-                                <RemoveCircleOutlineIcon />
-                            </ToggleButton>
-                            <ToggleButton
-                                value="yes"
-                                aria-label="Yes"
-                                title="Yes"
-                                sx={{
-                                    '&.Mui-selected': {
-                                        bgcolor: alpha(yesColor, theme.palette.mode === 'light' ? 0.16 : 0.28),
-                                        color: yesColor,
-                                        '&:hover': { bgcolor: alpha(yesColor, theme.palette.mode === 'light' ? 0.24 : 0.36) },
-                                    },
-                                }}
-                            >
-                                <CheckCircleOutlineIcon />
-                            </ToggleButton>
-                        </ToggleButtonGroup>
+                            onFocus={() => undefined}
+                        />
                         {additionalInputTypes.map(type => (
                             <Box key={type} sx={{ mt: 1.5, width: '100%' }}>
                                 <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
                                     {statInputLabel(type)}
                                 </Typography>
                                 <StatInputField
-                                    definition={definition}
+                                    definition={recordDefinition}
                                     type={type}
                                     value={editAdditionalValues[type] ?? null}
                                     onChange={value => setEditAdditionalValues(previous => {

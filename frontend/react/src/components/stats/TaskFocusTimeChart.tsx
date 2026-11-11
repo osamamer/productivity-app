@@ -79,6 +79,7 @@ export const TaskFocusTimeChart = React.memo(function TaskFocusTimeChart({
         points: buildPoints(from, displayTo, cachedEntries ?? [], aggregateWeekly),
     }));
     const hasRenderedDataRef = useRef(hasCachedData);
+    const forceRefreshOnMountRef = useRef(true);
     const [loadingKey, setLoadingKey] = useState<string | null>(hasCachedData ? null : dataKey);
     const cachedPoints = cachedEntries
         ? buildPoints(from, displayTo, cachedEntries, aggregateWeekly)
@@ -89,10 +90,12 @@ export const TaskFocusTimeChart = React.memo(function TaskFocusTimeChart({
 
     useEffect(() => {
         let cancelled = false;
+        const forceRefresh = forceRefreshOnMountRef.current;
+        forceRefreshOnMountRef.current = false;
         if (!statService.getCachedFocusTime(definition.id, fromStr, toStr) && !hasRenderedDataRef.current) {
             setLoadingKey(dataKey);
         }
-        statService.getFocusTime(definition.id, fromStr, toStr)
+        statService.getFocusTime(definition.id, fromStr, toStr, forceRefresh)
             .then(entries => {
                 if (!cancelled) {
                     setDataState({

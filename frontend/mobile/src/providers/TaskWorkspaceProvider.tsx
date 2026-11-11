@@ -371,7 +371,7 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
     if (tasksToMove.length === 0) return;
 
     const updates = tasksToMove.map(task => {
-      const date = new Date(task.scheduledPerformDateTime);
+      const date = new Date(task.scheduledPerformDateTime ?? now);
       if (Number.isNaN(date.getTime())) date.setTime(now.getTime());
       date.setFullYear(now.getFullYear(), now.getMonth(), now.getDate());
       const pad = (value: number) => String(value).padStart(2, '0');

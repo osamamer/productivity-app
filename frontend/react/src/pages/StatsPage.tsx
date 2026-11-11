@@ -323,8 +323,8 @@ export function StatsPage() {
         writeOpenStatGroupIds(groupPreferencesKey, openGroupIds);
     }, [groupPreferencesKey, loadedGroupPreferencesKey, openGroupIds]);
 
-    const loadDefinitions = useCallback((preserveExisting = false) => {
-        return statService.getDefinitions()
+    const loadDefinitions = useCallback((preserveExisting = false, forceRefresh = false) => {
+        return statService.getDefinitions(forceRefresh)
             .then(defs => {
                 const existingDefinitionsById = new Map(
                     definitionsRef.current.map(definition => [definition.id, definition]),
@@ -365,8 +365,8 @@ export function StatsPage() {
             });
     }, []);
 
-    const loadGroups = useCallback(() => {
-        return statGroupService.getGroups()
+    const loadGroups = useCallback((forceRefresh = false) => {
+        return statGroupService.getGroups(forceRefresh)
             .then(setGroups)
             .catch(e => {
                 console.error('Failed to load stat groups:', e);
@@ -379,8 +379,8 @@ export function StatsPage() {
         if (!statService.getCachedDefinitions()) setLoading(true);
         setError(null);
         setGroupError(null);
-        void loadGroups();
-        void loadDefinitions().finally(() => {
+        void loadGroups(true);
+        void loadDefinitions(false, true).finally(() => {
             if (active) setLoading(false);
         });
 

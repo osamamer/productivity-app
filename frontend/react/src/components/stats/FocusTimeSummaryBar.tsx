@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Box, Skeleton, Stack, Typography } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { StatFocusTimeEntry } from '../../types/Stats';
@@ -60,10 +60,13 @@ export const FocusTimeSummaryBar = React.memo(function FocusTimeSummaryBar({
     const currentEntries = state?.key === periodKey ? state.entries : cachedEntries ?? null;
     const entries = currentEntries ?? state?.entries ?? null;
     const isRefreshing = currentEntries === null && state !== null;
+    const forceRefreshOnMountRef = useRef(true);
 
     useEffect(() => {
         let cancelled = false;
-        statService.getFocusTime(definitionId, period.from, period.to)
+        const forceRefresh = forceRefreshOnMountRef.current;
+        forceRefreshOnMountRef.current = false;
+        statService.getFocusTime(definitionId, period.from, period.to, forceRefresh)
             .then(nextEntries => {
                 if (!cancelled) setState({ key: periodKey, entries: nextEntries });
             })

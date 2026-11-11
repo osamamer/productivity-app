@@ -326,12 +326,13 @@ export function MonthCalendar({
     return () => { active = false; };
   }, [hasVisibleStats, range.end, range.start, selectedStatDefinitions, statRefreshKey]);
 
-  const calendarTasks = useMemo(() => (calendarsLoading ? [] : filterByVisibleCalendar(tasks, calendars)).filter(task => {
-    if (!task.scheduledPerformDateTime) return false;
-    if (preferences.taskStatus === 'open' && task.completed) return false;
-    if (preferences.taskStatus === 'completed' && !task.completed) return false;
-    return preferences.priorityFilters.includes(priorityBucket(task.importance));
-  }), [calendars, calendarsLoading, preferences.priorityFilters, preferences.taskStatus, tasks]);
+  const calendarTasks = useMemo(() => (calendarsLoading ? [] : filterByVisibleCalendar(tasks, calendars)).filter(
+    (task): task is Task & { scheduledPerformDateTime: string } => {
+      if (!task.scheduledPerformDateTime) return false;
+      if (preferences.taskStatus === 'open' && task.completed) return false;
+      if (preferences.taskStatus === 'completed' && !task.completed) return false;
+      return preferences.priorityFilters.includes(priorityBucket(task.importance));
+    }), [calendars, calendarsLoading, preferences.priorityFilters, preferences.taskStatus, tasks]);
 
   useEffect(() => {
     if (!preferences.showTasks || tasksLoading) return undefined;
@@ -410,7 +411,8 @@ export function MonthCalendar({
           groupDates.add(groupDateKey);
           const visibleGroupTasks = group.taskIds
             .map(taskId => taskById.get(taskId))
-            .filter((candidate): candidate is Task => candidate !== undefined
+            .filter((candidate): candidate is Task & { scheduledPerformDateTime: string } => candidate !== undefined
+              && candidate.scheduledPerformDateTime !== null
               && visibleTaskIds.has(candidate.taskId)
               && localDate(new Date(candidate.scheduledPerformDateTime)) === date);
           const groupCalendarColor = calendarsById.get(visibleGroupTasks[0]?.calendarId ?? '')?.color;
@@ -467,7 +469,8 @@ export function MonthCalendar({
     const filteredTaskIds = new Set(calendarTasks.map(task => task.taskId));
     return selectedGroup.group.taskIds
       .map(taskId => tasks.find(task => task.taskId === taskId))
-      .filter((task): task is Task => task !== undefined
+      .filter((task): task is Task & { scheduledPerformDateTime: string } => task !== undefined
+        && task.scheduledPerformDateTime !== null
         && filteredTaskIds.has(task.taskId)
         && localDate(new Date(task.scheduledPerformDateTime)) === selectedGroup.date);
   }, [calendarTasks, selectedGroup, tasks]);

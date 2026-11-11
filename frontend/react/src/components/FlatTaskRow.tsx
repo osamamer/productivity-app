@@ -1844,7 +1844,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             <Box sx={{
                                 textAlign: waitingForPhase ? 'left' : 'center',
                                 minHeight: 34,
-                                ml: -1,
+                                ml: 1,
                                 display: 'flex',
                                 justifyContent: 'center',
                                 flexDirection: 'column',

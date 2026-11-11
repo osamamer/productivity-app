@@ -42,6 +42,8 @@ type PendingEntrySave = {
 
 interface Props {
     definition: StatDefinition;
+    entryDefinition?: StatDefinition;
+    additionalInputType?: StatType;
     subStatDefinitions?: StatDefinition[];
     comparisonDefinition?: StatDefinition;
     dateRange: number;
@@ -57,8 +59,9 @@ function valueForDate(
     entriesByDate: Map<string, number>,
     date: string,
     definition?: StatDefinition,
+    additionalInputType?: StatType,
 ): number | undefined {
-    return entriesByDate.get(date) ?? (definition?.type === 'BOOLEAN' ? 0 : undefined);
+    return entriesByDate.get(date) ?? (!additionalInputType && definition?.type === 'BOOLEAN' ? 0 : undefined);
 }
 
 function recordedEntries(entries: StatEntry[]): StatEntry[] {
@@ -76,8 +79,13 @@ function buildChartPoints(
     definition: StatDefinition,
     comparisonEntries: StatEntry[],
     comparisonDefinition?: StatDefinition,
+    additionalInputType?: StatType,
 ): ChartPoint[] {
-    const entryMap = new Map(recordedEntries(entries).map(entry => [entry.date, entry.value]));
+    const entryMap = new Map(entries.flatMap(entry => {
+        if (entry.status === 'NOT_PLANNED') return [[entry.date, 0] as [string, number]];
+        const value = additionalInputType ? entry.additionalValues?.[additionalInputType] : entry.value;
+        return value == null ? [] : [[entry.date, value] as [string, number]];
+    }));
     const fullEntryMap = new Map(entries.map(entry => [entry.date, entry]));
     const comparisonEntryMap = new Map(recordedEntries(comparisonEntries).map(entry => [entry.date, entry.value]));
     const entryStatuses = statusByDate(entries);
@@ -87,7 +95,8 @@ function buildChartPoints(
         const entry = fullEntryMap.get(date);
         return {
             date,
-            value: valueForDate(entryMap, date, definition),
+            value: valueForDate(entryMap, date, definition, additionalInputType),
+            primaryValue: entry?.value,
             comparisonValue: valueForDate(comparisonEntryMap, date, comparisonDefinition),
             hoverTarget: 0,
             status: entryStatuses.get(date),
@@ -110,9 +119,14 @@ function buildWeeklyChartPoints(
     definition: StatDefinition,
     comparisonEntries: StatEntry[],
     comparisonDefinition?: StatDefinition,
+    additionalInputType?: StatType,
 ): ChartPoint[] {
     const days = eachDayOfInterval({ start: from, end: to });
-    const entriesByDate = new Map(recordedEntries(entries).map(entry => [entry.date, entry.value]));
+    const entriesByDate = new Map(entries.flatMap(entry => {
+        if (entry.status === 'NOT_PLANNED') return [[entry.date, 0] as [string, number]];
+        const value = additionalInputType ? entry.additionalValues?.[additionalInputType] : entry.value;
+        return value == null ? [] : [[entry.date, value] as [string, number]];
+    }));
     const comparisonEntriesByDate = new Map(recordedEntries(comparisonEntries).map(entry => [entry.date, entry.value]));
     const entryStatuses = statusByDate(entries);
     const comparisonStatuses = statusByDate(comparisonEntries);
@@ -120,9 +134,12 @@ function buildWeeklyChartPoints(
 
     for (let index = 0; index < days.length; index += 7) {
         const week = days.slice(index, index + 7);
-        const values = week
-            .filter(day => entryStatuses.get(format(day, 'yyyy-MM-dd')) !== 'NOT_PLANNED')
-            .map(day => valueForDate(entriesByDate, format(day, 'yyyy-MM-dd'), definition) ?? 0);
+        const values = week.flatMap(day => {
+            const date = format(day, 'yyyy-MM-dd');
+            if (entryStatuses.get(date) === 'NOT_PLANNED') return [];
+            const value = valueForDate(entriesByDate, date, definition, additionalInputType);
+            return value === undefined ? [] : [value];
+        });
         const comparisonValues = week
             .filter(day => comparisonStatuses.get(format(day, 'yyyy-MM-dd')) !== 'NOT_PLANNED')
             .map(day => valueForDate(
@@ -265,6 +282,8 @@ function formatAxisValue(value: number, definition: StatDefinition): string {
 
 export const StatLineChart = React.memo(function StatLineChart({
     definition,
+    entryDefinition,
+    additionalInputType,
     subStatDefinitions = [],
     comparisonDefinition,
     dateRange,
@@ -275,6 +294,7 @@ export const StatLineChart = React.memo(function StatLineChart({
     onError,
     onDateContextMenu,
 }: Props) {
+    const recordDefinition = entryDefinition ?? definition;
     const theme = useTheme();
     const period = getStatPeriodWindow(dateRange, periodMode, periodOffset);
     const fromStr = period.from;
@@ -294,10 +314,11 @@ export const StatLineChart = React.memo(function StatLineChart({
             definition,
             comparisonEntries,
             comparisonDefinition,
+            additionalInputType,
         )
-        : buildChartPoints(from, displayTo, entries, definition, comparisonEntries, comparisonDefinition);
-    const dataKey = `${definition.id}:${comparisonId ?? 'none'}:${fromStr}:${toStr}:${displayToStr}`;
-    const cachedEntries = statService.getCachedEntries(definition.id, fromStr, toStr);
+        : buildChartPoints(from, displayTo, entries, definition, comparisonEntries, comparisonDefinition, additionalInputType);
+    const dataKey = `${definition.id}:${additionalInputType ?? 'main'}:${comparisonId ?? 'none'}:${fromStr}:${toStr}:${displayToStr}`;
+    const cachedEntries = statService.getCachedEntries(recordDefinition.id, fromStr, toStr);
     const cachedComparisonEntries = comparisonId
         ? statService.getCachedEntries(comparisonId, fromStr, toStr)
         : [];
@@ -307,6 +328,7 @@ export const StatLineChart = React.memo(function StatLineChart({
         points: createChartPoints(cachedEntries ?? [], cachedComparisonEntries ?? []),
     }));
     const hasRenderedDataRef = useRef(hasCachedData);
+    const forceRefreshOnMountRef = useRef(true);
     const [loadingKey, setLoadingKey] = useState<string | null>(hasCachedData ? null : dataKey);
     const cachedPoints = cachedEntries && cachedComparisonEntries
         ? createChartPoints(cachedEntries, cachedComparisonEntries)
@@ -326,10 +348,10 @@ export const StatLineChart = React.memo(function StatLineChart({
     const [editStatus, setEditStatus] = useState<StatEntryStatus>('RECORDED');
     const [editAdditionalValues, setEditAdditionalValues] = useState<Partial<Record<StatType, number>>>({});
     const [saveError, setSaveError] = useState<string | null>(null);
-    const hasEmbeddedInputs = subStatDefinitions.length > 0 || (definition.additionalInputTypes?.length ?? 0) > 0;
+    const hasEmbeddedInputs = subStatDefinitions.length > 0 || (recordDefinition.additionalInputTypes?.length ?? 0) > 0;
     const editorWidth = hasEmbeddedInputs ? 340 : 140;
     const editorHeight = 80
-        + (definition.additionalInputTypes?.length ?? 0) * 76
+        + (recordDefinition.additionalInputTypes?.length ?? 0) * 76
         + (subStatDefinitions.length > 0 ? 132 : 0);
     const chartRef = useRef<HTMLDivElement>(null);
     const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -352,10 +374,12 @@ export const StatLineChart = React.memo(function StatLineChart({
 
     useEffect(() => {
         let cancelled = false;
-        const primaryEntries = statService.getCachedEntries(definition.id, fromStr, toStr);
+        const primaryEntries = statService.getCachedEntries(recordDefinition.id, fromStr, toStr);
         const comparisonEntries = comparisonId
             ? statService.getCachedEntries(comparisonId, fromStr, toStr)
             : [];
+        const forceRefresh = forceRefreshOnMountRef.current;
+        forceRefreshOnMountRef.current = false;
         if ((!primaryEntries || !comparisonEntries) && !hasRenderedDataRef.current) {
             setLoadingKey(dataKey);
         }
@@ -367,8 +391,10 @@ export const StatLineChart = React.memo(function StatLineChart({
             setEditorPosition(null);
         }
         Promise.all([
-            statService.getEntries(definition.id, fromStr, toStr),
-            comparisonId ? statService.getEntries(comparisonId, fromStr, toStr) : Promise.resolve([]),
+            statService.getEntries(recordDefinition.id, fromStr, toStr, forceRefresh),
+            comparisonId
+                ? statService.getEntries(comparisonId, fromStr, toStr, forceRefresh)
+                : Promise.resolve([]),
         ])
             .then(([entries, nextComparisonEntries]) => {
                 if (!cancelled) {
@@ -382,6 +408,7 @@ export const StatLineChart = React.memo(function StatLineChart({
                                 definition,
                                 nextComparisonEntries,
                                 comparisonDefinition,
+                                additionalInputType,
                             )
                             : buildChartPoints(
                                 parseISO(fromStr),
@@ -390,6 +417,7 @@ export const StatLineChart = React.memo(function StatLineChart({
                                 definition,
                                 nextComparisonEntries,
                                 comparisonDefinition,
+                                additionalInputType,
                             ),
                     });
                     hasRenderedDataRef.current = true;
@@ -400,21 +428,22 @@ export const StatLineChart = React.memo(function StatLineChart({
                 if (!cancelled) setLoadingKey(current => current === dataKey ? null : current);
             });
         return () => { cancelled = true; };
-    }, [aggregateWeekly, comparisonDefinition, comparisonId, dataKey, definition, displayToStr, fromStr, refreshKey, toStr]);
+    }, [additionalInputType, aggregateWeekly, comparisonDefinition, comparisonId, dataKey, definition, displayToStr, fromStr, recordDefinition, refreshKey, toStr]);
 
     useEffect(() => {
-        setEditValue(hoveredPoint?.value === undefined
-            || (definition.type === 'BOOLEAN' && hoveredPoint.status === undefined)
+        const primaryValue = additionalInputType ? hoveredPoint?.primaryValue : hoveredPoint?.value;
+        setEditValue(primaryValue === undefined
+            || (recordDefinition.type === 'BOOLEAN' && hoveredPoint?.status === undefined)
             ? ''
-            : definition.type === 'TIME'
-                ? minutesToTimeValue(hoveredPoint.value)
-                : definition.type === 'DURATION'
-                    ? minutesToDurationValue(hoveredPoint.value)
-                : String(hoveredPoint.value));
+            : recordDefinition.type === 'TIME'
+                ? minutesToTimeValue(primaryValue)
+                : recordDefinition.type === 'DURATION'
+                    ? minutesToDurationValue(primaryValue)
+                : String(primaryValue));
         setEditStatus(hoveredPoint?.status ?? 'RECORDED');
         setEditAdditionalValues(hoveredPoint?.additionalValues ?? {});
         setSaveError(null);
-    }, [definition.type, hoveredPoint?.additionalValues, hoveredPoint?.date, hoveredPoint?.status, hoveredPoint?.value]);
+    }, [additionalInputType, hoveredPoint?.additionalValues, hoveredPoint?.date, hoveredPoint?.primaryValue, hoveredPoint?.status, hoveredPoint?.value, recordDefinition.type]);
 
     useEffect(() => () => {
         if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
@@ -436,7 +465,7 @@ export const StatLineChart = React.memo(function StatLineChart({
         ? (d: string) => format(parseISO(d), 'EEE')
         : (d: string) => format(parseISO(d), 'MMM d');
 
-    const gradientId = `gradient-${definition.id}`;
+    const gradientId = `gradient-${definition.id}-${additionalInputType ?? 'main'}`;
     const primaryColor = theme.palette.primary.main;
     const comparisonColor = theme.palette.secondary.main;
 
@@ -449,27 +478,32 @@ export const StatLineChart = React.memo(function StatLineChart({
         const nextValue = status === 'NOT_PLANNED' ? 0 : value ?? undefined;
         const currentPoint = data.find(point => point.date === date);
         const nextAdditionalValues = additionalValues ?? currentPoint?.additionalValues;
+        const displayValue = status === 'NOT_PLANNED'
+            ? 0
+            : additionalInputType
+            ? nextAdditionalValues?.[additionalInputType] ?? undefined
+            : nextValue;
         setDataState(previous => previous.key === dataKey
             ? { ...previous, points: previous.points.map(point => point.date === date
-                ? { ...point, value: nextValue, status, additionalValues: nextAdditionalValues }
+                ? { ...point, value: displayValue, primaryValue: nextValue, status, additionalValues: nextAdditionalValues }
                 : point) }
             : previous);
         setHoveredPoint(previous => previous?.date === date
-            ? { ...previous, value: nextValue, status, additionalValues: nextAdditionalValues }
+            ? { ...previous, value: displayValue, primaryValue: nextValue, status, additionalValues: nextAdditionalValues }
             : previous);
     };
 
     const parseEntryValue = (rawValue: string): { value: number | null; valid: boolean } => {
         if (rawValue.trim() === '') return { value: null, valid: true };
 
-        const value = definition.type === 'TIME'
+        const value = recordDefinition.type === 'TIME'
             ? timeValueToMinutes(rawValue)
-            : definition.type === 'DURATION'
+            : recordDefinition.type === 'DURATION'
                 ? durationValueToMinutes(rawValue)
                 : Number(rawValue);
         if (value === null || !Number.isFinite(value)) return { value: null, valid: false };
-        if (definition.type === 'RANGE'
-            && (value < definition.minValue! || value > definition.maxValue!)) {
+        if (recordDefinition.type === 'RANGE'
+            && (value < recordDefinition.minValue! || value > recordDefinition.maxValue!)) {
             return { value, valid: false };
         }
         return { value, valid: true };
@@ -531,7 +565,7 @@ export const StatLineChart = React.memo(function StatLineChart({
         if (entryMutationVersionsRef.current.get(date) !== mutationVersion) return false;
         applyLocalEntry(date, snapshot.value ?? null, snapshot.status ?? 'RECORDED', snapshot.additionalValues);
         entryMutationSnapshotsRef.current.delete(date);
-        onEntryChanged?.(definition.id);
+        onEntryChanged?.(recordDefinition.id);
         return true;
     };
 
@@ -553,18 +587,18 @@ export const StatLineChart = React.memo(function StatLineChart({
             parsed.valid = true;
         }
         if (!parsed.valid) {
-            setSaveError(definition.type === 'TIME'
+            setSaveError(recordDefinition.type === 'TIME'
                 ? 'Choose a valid time.'
-                : definition.type === 'DURATION'
+                : recordDefinition.type === 'DURATION'
                     ? 'Enter a duration as hours:minutes.'
-                    : definition.type === 'RANGE'
-                        ? `Use a value from ${definition.minValue} to ${definition.maxValue}.`
+                    : recordDefinition.type === 'RANGE'
+                        ? `Use a value from ${recordDefinition.minValue} to ${recordDefinition.maxValue}.`
                         : 'Enter a number first.');
             if (mutationVersion !== undefined && snapshot) rollbackEntry(date, mutationVersion, snapshot);
             return;
         }
         if (parsed.value === null && status !== 'NOT_PLANNED' && Object.keys(additionalValues).length > 0) {
-            setSaveError(`Choose a value for ${definition.name} before saving its additional inputs.`);
+            setSaveError(`Choose a value for ${recordDefinition.name} before saving its additional inputs.`);
             if (mutationVersion !== undefined && snapshot) rollbackEntry(date, mutationVersion, snapshot);
             return;
         }
@@ -576,18 +610,18 @@ export const StatLineChart = React.memo(function StatLineChart({
             ?? entryMutationSnapshotsRef.current.get(date)
             ?? { value: undefined, status: undefined, additionalValues: undefined };
         if (parsed.value !== null && status !== 'NOT_PLANNED') {
-            showStatFeedback(definition, parsed.value, chartRef.current, {
-                color: getStatFeedbackColor(definition, parsed.value, theme),
+            showStatFeedback(recordDefinition, parsed.value, chartRef.current, {
+                color: getStatFeedbackColor(recordDefinition, parsed.value, theme),
             });
         }
         const savePromise = statService.recordEntry({
-            statDefinitionId: definition.id,
+            statDefinitionId: recordDefinition.id,
             date,
             value: status === 'NOT_PLANNED' ? null : parsed.value,
             status,
             additionalValues,
         });
-        onEntryChanged?.(definition.id);
+        onEntryChanged?.(recordDefinition.id);
         try {
             await savePromise;
             if (entryMutationVersionsRef.current.get(date) === activeMutationVersion) {
@@ -612,7 +646,7 @@ export const StatLineChart = React.memo(function StatLineChart({
         const cleanedAdditionalValues = status === 'NOT_PLANNED'
             ? {}
             : Object.fromEntries(
-                (definition.additionalInputTypes ?? [])
+                (recordDefinition.additionalInputTypes ?? [])
                     .filter(type => additionalValues[type] != null)
                     .map(type => [type, additionalValues[type]]),
             ) as Partial<Record<StatType, number>>;
@@ -622,7 +656,7 @@ export const StatLineChart = React.memo(function StatLineChart({
             : parseEntryValue(value);
         const currentPoint = data.find(point => point.date === date);
         if (parsed.valid && parsed.value === null && status !== 'NOT_PLANNED' && Object.keys(cleanedAdditionalValues).length > 0) {
-            setSaveError(`Choose a value for ${definition.name} before saving its additional inputs.`);
+            setSaveError(`Choose a value for ${recordDefinition.name} before saving its additional inputs.`);
             return;
         }
         const mutationVersion = pending?.date === date
@@ -631,7 +665,7 @@ export const StatLineChart = React.memo(function StatLineChart({
         const snapshot = pending?.date === date
             ? pending.snapshot
             : {
-                value: currentPoint?.value,
+                value: additionalInputType ? currentPoint?.primaryValue : currentPoint?.value,
                 status: currentPoint?.status,
                 additionalValues: currentPoint?.additionalValues,
             };
@@ -948,11 +982,11 @@ export const StatLineChart = React.memo(function StatLineChart({
                         flexDirection: 'column',
                         alignItems: 'stretch',
                         gap: 0.75,
-                        width: subStatDefinitions.length > 0 || (definition.additionalInputTypes?.length ?? 0) > 0 ? 340 : 'fit-content',
+                        width: subStatDefinitions.length > 0 || (recordDefinition.additionalInputTypes?.length ?? 0) > 0 ? 340 : 'fit-content',
                         maxWidth: 'min(340px, calc(100vw - 32px))',
                     }}
                 >
-                    {(comparisonDefinition || subStatDefinitions.length > 0 || (definition.additionalInputTypes?.length ?? 0) > 0) && (
+                    {(comparisonDefinition || subStatDefinitions.length > 0 || (recordDefinition.additionalInputTypes?.length ?? 0) > 0) && (
                         <Box sx={{ px: 0.5, pb: 0.5, minWidth: 150 }}>
                             <Typography variant="caption" color="text.secondary" display="block">
                                 {format(parseISO(hoveredPoint.date), 'MMM d, yyyy')}
@@ -969,7 +1003,7 @@ export const StatLineChart = React.memo(function StatLineChart({
                             )}
                         </Box>
                     )}
-                    {definition.type === 'BOOLEAN' ? (
+                    {recordDefinition.type === 'BOOLEAN' ? (
                         <ToggleButtonGroup
                             value={editStatus === 'NOT_PLANNED'
                                 ? 'not-planned'
@@ -1003,7 +1037,7 @@ export const StatLineChart = React.memo(function StatLineChart({
                                             No
                                         </ToggleButton>
                         </ToggleButtonGroup>
-                    ) : definition.type === 'TIME' ? (
+                    ) : recordDefinition.type === 'TIME' ? (
                         <AppTimeField
                             label="Time"
                             value={editValue}
@@ -1014,13 +1048,13 @@ export const StatLineChart = React.memo(function StatLineChart({
                             }}
                             onBlur={flushEntrySave}
                             inputProps={{
-                                'aria-label': `${definition.name} value for ${format(parseISO(hoveredPoint.date), 'MMMM d, yyyy')}`,
+                                'aria-label': `${recordDefinition.name} value for ${format(parseISO(hoveredPoint.date), 'MMMM d, yyyy')}`,
                             }}
                             autoFocus
                             error={Boolean(saveError)}
                             sx={{ width: 140 }}
                         />
-                    ) : definition.type === 'DURATION' ? (
+                    ) : recordDefinition.type === 'DURATION' ? (
                         <TextField
                             size="small"
                             autoComplete="off"
@@ -1038,7 +1072,7 @@ export const StatLineChart = React.memo(function StatLineChart({
                             }}
                             inputProps={{
                                 min: 0,
-                                'aria-label': `${definition.name} value for ${format(parseISO(hoveredPoint.date), 'MMMM d, yyyy')}`,
+                                'aria-label': `${recordDefinition.name} value for ${format(parseISO(hoveredPoint.date), 'MMMM d, yyyy')}`,
                             }}
                             placeholder="H:MM"
                             autoFocus
@@ -1067,10 +1101,10 @@ export const StatLineChart = React.memo(function StatLineChart({
                             onKeyDown={event => {
                                 if (event.key === 'Enter') event.currentTarget.blur();
                             }}
-                            min={definition.type === 'RANGE' ? definition.minValue : undefined}
-                            max={definition.type === 'RANGE' ? definition.maxValue : undefined}
+                            min={recordDefinition.type === 'RANGE' ? recordDefinition.minValue : undefined}
+                            max={recordDefinition.type === 'RANGE' ? recordDefinition.maxValue : undefined}
                             inputProps={{
-                                'aria-label': `${definition.name} value for ${format(parseISO(hoveredPoint.date), 'MMMM d, yyyy')}`,
+                                'aria-label': `${recordDefinition.name} value for ${format(parseISO(hoveredPoint.date), 'MMMM d, yyyy')}`,
                             }}
                             placeholder="Value"
                             autoFocus
@@ -1079,13 +1113,13 @@ export const StatLineChart = React.memo(function StatLineChart({
                             sx={{ width: 102 }}
                         />
                     )}
-                    {(definition.additionalInputTypes ?? []).map(type => (
+                    {(recordDefinition.additionalInputTypes ?? []).map(type => (
                         <Box key={type} sx={{ mt: 0.25 }}>
                             <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.25 }}>
                                 {statInputLabel(type)}
                             </Typography>
                             <StatInputField
-                                definition={definition}
+                                definition={recordDefinition}
                                 type={type}
                                 value={editAdditionalValues[type] ?? null}
                                 onChange={value => {

@@ -16,7 +16,7 @@ import { CalendarDestinationField } from '@/components/calendar/CalendarControls
 import { dateFromScheduleValue, TaskDateTimePicker } from './TaskScheduleField';
 import { TaskReminderField } from './TaskReminderField';
 
-type Schedule = 'today' | 'tomorrow' | 'custom';
+type Schedule = 'none' | 'today' | 'tomorrow' | 'custom';
 
 function scheduledDate(choice: Exclude<Schedule, 'custom'>): string {
   const date = new Date();
@@ -41,14 +41,14 @@ export function TaskComposerSheet({ visible, onClose, onCreated, initialDate, ca
 }) {
   const [name, setName] = useState('');
   const [importance, setImportance] = useState<number>(TASK_PRIORITY_OPTIONS[0].value);
-  const [schedule, setSchedule] = useState<Schedule>(initialDate ? 'custom' : 'today');
+  const [schedule, setSchedule] = useState<Schedule>(initialDate ? 'custom' : 'none');
   const [customSchedule, setCustomSchedule] = useState(() => customDateTime(initialDate));
   const [customScheduleOpen, setCustomScheduleOpen] = useState(false);
   const [reminderMinutesBefore, setReminderMinutesBefore] = useState<number | null>(null);
   const [customScheduleDraft, setCustomScheduleDraft] = useState(() => dateFromScheduleValue(null));
   const [calendarId, setCalendarId] = useState(initialCalendarId ?? '');
   const nameInputRef = useRef<TextInput>(null);
-  const previousSchedule = useRef<Exclude<Schedule, 'custom'>>('today');
+  const previousSchedule = useRef<Exclude<Schedule, 'custom'>>('none');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -61,7 +61,7 @@ export function TaskComposerSheet({ visible, onClose, onCreated, initialDate, ca
   function reset() {
     setName('');
     setImportance(TASK_PRIORITY_OPTIONS[0].value);
-    setSchedule(initialDate ? 'custom' : 'today');
+    setSchedule(initialDate ? 'custom' : 'none');
     setCustomSchedule(customDateTime(initialDate));
     setCustomScheduleOpen(false);
     setCalendarId(initialCalendarId ?? '');
@@ -83,6 +83,7 @@ export function TaskComposerSheet({ visible, onClose, onCreated, initialDate, ca
       return;
     }
     setSchedule(choice);
+    if (choice === 'none') setReminderMinutesBefore(null);
   }
 
   function cancelCustomSchedule() {
@@ -107,7 +108,9 @@ export function TaskComposerSheet({ visible, onClose, onCreated, initialDate, ca
       const task = await api.tasks.create({
         name: name.trim(),
         description: '',
-        scheduledPerformDateTime: schedule === 'custom' ? customSchedule : scheduledDate(schedule),
+        scheduledPerformDateTime: schedule === 'none'
+          ? null
+          : schedule === 'custom' ? customSchedule : scheduledDate(schedule),
         tag: '',
         importance,
         reminderMinutesBefore,
@@ -132,6 +135,7 @@ export function TaskComposerSheet({ visible, onClose, onCreated, initialDate, ca
       <CalendarDestinationField calendars={calendarOptions} value={calendarId} onChange={setCalendarId} />
       <AppText variant="label">When</AppText>
       <ChoiceChips value={schedule} onChange={chooseSchedule} options={[
+        { value: 'none', label: 'No date' },
         { value: 'today', label: 'Today' },
         { value: 'tomorrow', label: 'Tomorrow' },
         { value: 'custom', label: 'Custom' },
@@ -143,11 +147,13 @@ export function TaskComposerSheet({ visible, onClose, onCreated, initialDate, ca
       )}
       <AppText variant="label">Priority</AppText>
       <ChoiceChips value={importance} onChange={setImportance} options={[...TASK_PRIORITY_OPTIONS]} fillSelected />
-      <TaskReminderField
-        value={reminderMinutesBefore}
-        scheduledDateTime={schedule === 'custom' ? customSchedule : scheduledDate(schedule)}
-        onChange={setReminderMinutesBefore}
-      />
+      {schedule !== 'none' && (
+        <TaskReminderField
+          value={reminderMinutesBefore}
+          scheduledDateTime={schedule === 'custom' ? customSchedule : scheduledDate(schedule)}
+          onChange={setReminderMinutesBefore}
+        />
+      )}
       <AppPopup
         visible={customScheduleOpen}
         title="Custom schedule"
