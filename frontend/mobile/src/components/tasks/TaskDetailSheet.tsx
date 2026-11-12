@@ -25,8 +25,8 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
   onClose: () => void;
   onUpdated: (task: Task) => void;
   onDeleted: (taskId: string) => void;
-  onDeletedOccurrence?: (taskId: string) => Promise<void>;
-  onDeletedFutureOccurrences?: (taskId: string) => Promise<void>;
+  onDeletedOccurrence: (taskId: string) => Promise<void>;
+  onDeletedFutureOccurrences: (taskId: string) => Promise<void>;
   onSubtaskCreated?: (task: Task) => void;
   availableCalendars?: Calendar[];
 }) {
@@ -303,9 +303,9 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
     setDeleting(true);
     try {
       if (deletingOccurrence) {
-        await onDeletedOccurrence!(task.taskId);
+        await onDeletedOccurrence(task.taskId);
       } else if (scope === 'future') {
-        await onDeletedFutureOccurrences!(task.taskId);
+        await onDeletedFutureOccurrences(task.taskId);
       } else {
         await api.tasks.remove(task.taskId);
         onDeleted(task.taskId);
@@ -319,7 +319,7 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
   }
 
   function requestDelete() {
-    if (task?.taskSeriesId && onDeletedOccurrence) {
+    if (task?.taskSeriesId) {
       setDeletePromptOpen(true);
       return;
     }
@@ -520,7 +520,7 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
               style={styles.deleteChoice}
               label="Future occurrences"
               variant="secondary"
-              disabled={deleting || !onDeletedFutureOccurrences}
+              disabled={deleting}
               onPress={() => void confirmDelete('future')} />
             <AppButton
               style={styles.deleteChoice}

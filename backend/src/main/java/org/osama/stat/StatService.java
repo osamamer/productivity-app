@@ -586,7 +586,7 @@ public class StatService {
                             && !task.isCompleted() && !task.isSkipped())
                     .map(Task::getTaskId)
                     .toList()
-                    .forEach(taskId -> taskService.deleteTask(taskId, userId));
+                    .forEach(taskId -> taskService.deleteTask(taskId, userId, false));
         }
 
         if (definition.getRecurringTaskSeriesId() == null) return;
@@ -599,7 +599,7 @@ public class StatService {
                         && !task.isCompleted() && !task.isSkipped())
                 .map(Task::getTaskId)
                 .toList()
-                .forEach(taskId -> taskService.deleteTaskOccurrence(taskId, userId));
+                .forEach(taskId -> taskService.deleteTaskOccurrence(taskId, userId, false));
     }
 
     private void deleteUpcomingStatWeeklyTasks(StatDefinition definition, LocalDateTime now, String userId) {
@@ -611,7 +611,7 @@ public class StatService {
                 .filter(task -> !task.isCompleted() && !task.isSkipped())
                 .map(Task::getTaskId)
                 .toList()
-                .forEach(taskId -> taskService.deleteTask(taskId, userId));
+                .forEach(taskId -> taskService.deleteTask(taskId, userId, false));
     }
 
     private void createWeeklyTasks(StatDefinition definition, String taskName, List<DayOfWeek> days,
@@ -773,7 +773,7 @@ public class StatService {
         String seriesId = definition.getRecurringTaskSeriesId();
         if (seriesId == null) return withFocusTaskNames(definition);
 
-        taskService.deleteRecurringSeriesCompletely(seriesId, userId);
+        taskService.deleteRecurringSeriesCompletely(seriesId, userId, false);
         definition.setRecurringTaskSeriesId(null);
         StatDefinition savedDefinition = definitionRepository.save(definition);
         log.info("Recurring task series deleted for boolean stat: userId={} statDefinitionId={} seriesId={}",

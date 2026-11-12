@@ -519,6 +519,14 @@ export default function TasksScreen() {
         onUpdated={replace}
         onSubtaskCreated={addTask}
         onDeleted={id => { removeWorkspaceTask(id); setSelected(null); }}
+        onDeletedOccurrence={async id => {
+          await api.tasks.removeOccurrence(id);
+          removeWorkspaceTask(id);
+        }}
+        onDeletedFutureOccurrences={async id => {
+          await api.tasks.removeFutureOccurrences(id);
+          await refresh();
+        }}
       />
     </Screen>
   );

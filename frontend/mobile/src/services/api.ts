@@ -239,13 +239,16 @@ export const api = {
     remove: async (id: string) => {
       await apiRequest<void>(`/api/v1/tasks/${id}`, { method: 'DELETE' });
       removeCachedTask(id);
+      invalidateResource('stats', 'task');
     },
     removeOccurrence: async (id: string) => {
       await apiRequest<void>(`/api/v1/tasks/${id}/occurrence`, { method: 'DELETE' });
       removeCachedTask(id);
+      invalidateResource('stats', 'task');
     },
     removeFutureOccurrences: async (id: string) => {
       await apiRequest<void>(`/api/v1/tasks/${id}/future-occurrences`, { method: 'DELETE' });
+      invalidateResource('stats', 'task');
     },
     reorder: (taskIds: string[]) => json<Task[]>('/api/v1/tasks/order', 'PUT', { taskIds }),
   },

@@ -2,6 +2,7 @@ package org.osama.stat;
 
 import lombok.extern.slf4j.Slf4j;
 import org.osama.task.Task;
+import org.osama.task.TaskDeletionReceipt;
 import org.osama.task.TaskRepository;
 import org.osama.task.TaskSkipReason;
 import org.osama.task.recurrence.TaskSeriesRepository;
@@ -17,6 +18,7 @@ import java.time.LocalDateTime;
 import java.time.DayOfWeek;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -130,6 +132,79 @@ public class StatTaskLinkService {
             entryRepository.save(entry);
             log.info("Linked task completion synchronized to stat: userId={} taskId={} statDefinitionId={} date={}",
                     userId, task.getTaskId(), definition.getId(), date);
+        });
+    }
+
+    @Transactional
+    public List<TaskDeletionReceipt.StatEntryState> synchronizeTaskDeletion(Collection<Task> tasks, String userId) {
+        if (tasks == null || tasks.isEmpty()) return List.of();
+
+        Map<String, TaskDeletionReceipt.StatEntryState> previousEntries = new LinkedHashMap<>();
+        Map<String, PendingStatEntryDeletion> entriesToSetNo = new LinkedHashMap<>();
+        for (Task task : tasks) {
+            LocalDate date = taskDate(task);
+            if (date == null) continue;
+            for (StatDefinition definition : linkedBooleanDefinitions(task, userId).values()) {
+                String key = definition.getId() + ":" + date;
+                if (previousEntries.containsKey(key)) continue;
+
+                Optional<StatEntry> existing = entryRepository
+                        .findByStatDefinitionIdAndUserIdAndDate(definition.getId(), userId, date);
+                TaskDeletionReceipt.StatEntryState state = existing
+                        .map(entry -> new TaskDeletionReceipt.StatEntryState(definition.getId(), date, true,
+                                entry.getValue(), entry.getStatus(), entry.getAdditionalValues()))
+                        .orElseGet(() -> new TaskDeletionReceipt.StatEntryState(
+                                definition.getId(), date, false, null, null, Map.of()));
+                previousEntries.put(key, state);
+                entriesToSetNo.put(key, new PendingStatEntryDeletion(definition, date, existing.orElse(null)));
+            }
+        }
+
+        User user = entriesToSetNo.values().stream().anyMatch(pending -> pending.entry() == null)
+                ? userRepository.findUserById(userId)
+                        .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId))
+                : null;
+        for (PendingStatEntryDeletion pending : entriesToSetNo.values()) {
+            StatEntry entry = pending.entry() != null ? pending.entry() : StatEntry.builder()
+                    .id(java.util.UUID.randomUUID().toString())
+                    .statDefinition(pending.definition())
+                    .date(pending.date())
+                    .user(user)
+                    .build();
+            entry.setValue(0.0);
+            entry.setStatus(StatEntryStatus.RECORDED);
+            entryRepository.save(entry);
+            log.info("Linked task deletion synchronized to stat: userId={} statDefinitionId={} date={}",
+                    userId, pending.definition().getId(), pending.date());
+        }
+        return List.copyOf(previousEntries.values());
+    }
+
+    @Transactional
+    public void restoreTaskDeletionEntries(List<TaskDeletionReceipt.StatEntryState> states, String userId) {
+        if (states == null || states.isEmpty()) return;
+        states.forEach(state -> {
+            StatDefinition definition = definitionRepository.findByIdAndUserId(state.statDefinitionId(), userId)
+                    .orElseThrow(() -> new IllegalArgumentException("Stat definition not found: " + state.statDefinitionId()));
+            Optional<StatEntry> existing = entryRepository
+                    .findByStatDefinitionIdAndUserIdAndDate(state.statDefinitionId(), userId, state.date());
+            if (!state.existed()) {
+                existing.ifPresent(entryRepository::delete);
+                return;
+            }
+
+            User user = userRepository.findUserById(userId)
+                    .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
+            StatEntry entry = existing.orElseGet(() -> StatEntry.builder()
+                    .id(java.util.UUID.randomUUID().toString())
+                    .statDefinition(definition)
+                    .date(state.date())
+                    .user(user)
+                    .build());
+            entry.setValue(state.value() == null ? 0.0 : state.value());
+            entry.setStatus(state.status() == null ? StatEntryStatus.RECORDED : state.status());
+            entry.setAdditionalValues(state.additionalValues());
+            entryRepository.save(entry);
         });
     }
 
@@ -406,6 +481,8 @@ public class StatTaskLinkService {
         task.setCompletionDateTime(completed ? LocalDateTime.now() : null);
         taskRepository.save(task);
     }
+
+    private record PendingStatEntryDeletion(StatDefinition definition, LocalDate date, StatEntry entry) {}
 
     private LocalDate taskDate(Task task) {
         if (task.getScheduledPerformDateTime() != null) {

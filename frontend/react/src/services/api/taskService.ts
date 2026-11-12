@@ -72,6 +72,14 @@ export type TaskDeletionReceipt = {
     taskGroupMembershipIds: string[];
     linkedStatDefinitionsBySeries: Record<string, string>;
     taskSeriesStatesToRestore: Record<string, { recurrenceEndDate: string | null; active: boolean }>;
+    statEntriesToRestore: Array<{
+        statDefinitionId: string;
+        date: string;
+        existed: boolean;
+        value: number | null;
+        status: string | null;
+        additionalValues: Record<string, number>;
+    }>;
 };
 
 export async function readTaskDeletionReceipt(response: Response): Promise<TaskDeletionReceipt | null> {
@@ -100,6 +108,7 @@ export async function readTaskDeletionReceipt(response: Response): Promise<TaskD
         return {
             ...receipt,
             taskSeriesStatesToRestore: receipt.taskSeriesStatesToRestore ?? {},
+            statEntriesToRestore: receipt.statEntriesToRestore ?? [],
         } as TaskDeletionReceipt;
     } catch (error) {
         console.error('Task deletion succeeded but its undo receipt could not be read:', error);
@@ -123,6 +132,7 @@ function emptyTaskDeletionReceipt(): TaskDeletionReceipt {
         taskGroupMembershipIds: [],
         linkedStatDefinitionsBySeries: {},
         taskSeriesStatesToRestore: {},
+        statEntriesToRestore: [],
     };
 }
 
@@ -141,6 +151,16 @@ export function mergeTaskDeletionReceipts(
         });
         Object.assign(merged.linkedStatDefinitionsBySeries, receipt.linkedStatDefinitionsBySeries);
         Object.assign(merged.taskSeriesStatesToRestore, receipt.taskSeriesStatesToRestore ?? {});
+        const seenStatEntries = new Set(merged.statEntriesToRestore.map(
+            entry => `${entry.statDefinitionId}:${entry.date}`,
+        ));
+        receipt.statEntriesToRestore?.forEach(entry => {
+            const key = `${entry.statDefinitionId}:${entry.date}`;
+            if (!seenStatEntries.has(key)) {
+                seenStatEntries.add(key);
+                merged.statEntriesToRestore.push(entry);
+            }
+        });
     });
     return merged;
 }
@@ -907,9 +927,7 @@ export const taskService = {
             if (receipt) markTasksDeleted(receipt.taskIds);
             invalidateTaskPomodoroStats(taskId);
             invalidateTaskListCaches();
-            if (receipt && Object.keys(receipt.linkedStatDefinitionsBySeries).length > 0) {
-                invalidateResource('stats', 'task');
-            }
+            invalidateResource('stats', 'task');
             if (notifyResource) invalidateResource('tasks');
         } catch (error) {
             console.error('Task was deleted but local task caches could not be refreshed:', error);
@@ -938,6 +956,7 @@ export const taskService = {
             if (receipt) markTasksDeleted(receipt.taskIds);
             invalidateTaskPomodoroStats(taskId);
             invalidateTaskListCaches();
+            invalidateResource('stats', 'task');
             if (notifyResource) invalidateResource('tasks');
         } catch (error) {
             console.error('Task occurrence was deleted but local task caches could not be refreshed:', error);
@@ -962,6 +981,7 @@ export const taskService = {
             }
             invalidateTaskListCaches();
             clearTaskSeriesCache();
+            invalidateResource('stats', 'task');
             if (notifyResource) invalidateResource('tasks');
         } catch (error) {
             console.error('Future task occurrences were deleted but local task caches could not be refreshed:', error);
@@ -1000,9 +1020,7 @@ export const taskService = {
         invalidateTaskListCaches();
         clearTaskSeriesCache();
         clearTaskDetailsCache();
-        if (Object.keys(receipt.linkedStatDefinitionsBySeries).length > 0) {
-            invalidateResource('stats', 'task');
-        }
+        invalidateResource('stats', 'task');
         if (notifyResource) invalidateResource('tasks');
     },
 

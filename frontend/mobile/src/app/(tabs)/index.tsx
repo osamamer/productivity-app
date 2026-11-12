@@ -1092,6 +1092,14 @@ export default function TodayScreen() {
         onUpdated={updateTask}
         onSubtaskCreated={addTask}
         onDeleted={removeTask}
+        onDeletedOccurrence={async id => {
+          await api.tasks.removeOccurrence(id);
+          removeTask(id);
+        }}
+        onDeletedFutureOccurrences={async id => {
+          await api.tasks.removeFutureOccurrences(id);
+          await refreshTasks();
+        }}
       />
     </Screen>
   );

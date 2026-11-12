@@ -8,6 +8,7 @@ import org.osama.stat.*;
 import org.osama.requests.NewTaskRequest;
 import org.osama.requests.UpdateTaskRequest;
 import org.osama.task.Task;
+import org.osama.task.TaskDeletionReceipt;
 import org.osama.task.TaskRepository;
 import org.osama.task.TaskSkipReason;
 import org.osama.task.TaskService;
@@ -1237,6 +1238,54 @@ public class StatServiceTest {
         assertNull(deleted.getRecurringTaskSeriesId());
         assertTrue(taskSeriesRepository.findById(seriesId).isEmpty());
         assertTrue(taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(seriesId).isEmpty());
+    }
+
+    @Test
+    void deletingStatLinkedTaskRecordsNoAndUndoRestoresPreviousEntry() {
+        StatDefinition definition = statService.createDefinition("Read", "description", StatType.BOOLEAN,
+                null, null, StatMorality.NEUTRAL, null, false, TaskRecurrenceFrequency.DAILY,
+                null, null, null, List.of(StatType.DURATION), TEST_USER_ID);
+        LocalDate date = LocalDate.now().minusDays(1);
+        Task task = statService.startFocusTask(definition.getId(), "Read", null, "UTC",
+                date.atTime(9, 0).toString(), null, TEST_USER_ID);
+        statService.recordEntry(definition.getId(), date, 1.0, StatEntryStatus.RECORDED,
+                Map.of(StatType.DURATION, 75.0), TEST_USER_ID);
+
+        TaskDeletionReceipt receipt = taskService.deleteTask(task.getTaskId(), TEST_USER_ID);
+
+        StatEntry deletedTaskEntry = entryRepository
+                .findByStatDefinitionIdAndUserIdAndDate(definition.getId(), TEST_USER_ID, date)
+                .orElseThrow();
+        assertEquals(0.0, deletedTaskEntry.getValue());
+        assertEquals(StatEntryStatus.RECORDED, deletedTaskEntry.getStatus());
+        assertEquals(Map.of(StatType.DURATION, 75.0), deletedTaskEntry.getAdditionalValues());
+
+        taskService.restoreTaskDeletion(receipt, TEST_USER_ID);
+
+        StatEntry restoredEntry = entryRepository
+                .findByStatDefinitionIdAndUserIdAndDate(definition.getId(), TEST_USER_ID, date)
+                .orElseThrow();
+        assertEquals(1.0, restoredEntry.getValue());
+        assertEquals(StatEntryStatus.RECORDED, restoredEntry.getStatus());
+        assertEquals(Map.of(StatType.DURATION, 75.0), restoredEntry.getAdditionalValues());
+    }
+
+    @Test
+    void deletingLinkedStatTaskCreatesNoEntryAndUndoRemovesItAgain() {
+        StatDefinition definition = createNamedStatDefinition("Meditate", StatType.BOOLEAN);
+        LocalDate date = LocalDate.now().minusDays(2);
+        Task task = statService.startFocusTask(definition.getId(), "Meditate", null, "UTC",
+                date.atTime(9, 0).toString(), null, TEST_USER_ID);
+
+        TaskDeletionReceipt receipt = taskService.deleteTask(task.getTaskId(), TEST_USER_ID);
+
+        assertEquals(0.0, entryRepository.findByStatDefinitionIdAndUserIdAndDate(
+                definition.getId(), TEST_USER_ID, date).orElseThrow().getValue());
+
+        taskService.restoreTaskDeletion(receipt, TEST_USER_ID);
+
+        assertTrue(entryRepository.findByStatDefinitionIdAndUserIdAndDate(
+                definition.getId(), TEST_USER_ID, date).isEmpty());
     }
 
     @Test
