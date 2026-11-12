@@ -593,7 +593,7 @@ export const StatRecentDots = React.memo(function StatRecentDots({
                     paper: {
                         sx: {
                             p: 2,
-                            minWidth: 'min(300px, calc(100vw - 32px))',
+                            minWidth: 'min(240px, calc(100vw - 32px))',
                             maxWidth: 'min(380px, calc(100vw - 32px))',
                             maxHeight: 'min(70vh, 560px)',
                             overflowY: 'auto',
@@ -752,14 +752,13 @@ export const StatRecentDots = React.memo(function StatRecentDots({
                         )}
                         </Stack>
 
-                        <Stack direction="row" justifyContent="flex-end" sx={{ mt: 2 }}>
+                        <Stack direction="row" spacing={1} justifyContent="flex-start" sx={{ mt: 2 }}>
                             <Button
                                 size="small"
                                 onClick={event => {
                                     event.stopPropagation();
                                     closePopover();
                                 }}
-                                sx={{ mr: 1 }}
                             >
                                 Cancel
                             </Button>
