@@ -51,6 +51,7 @@ public class StatController {
                 request.additionalInputTypes,
                 request.unit,
                 request.parentDefinitionId,
+                request.includeUnloggedDaysAsZero,
                 currentUserService.getCurrentUserId()
         );
     }
@@ -109,6 +110,7 @@ public class StatController {
                 request.unit,
                 request.parentDefinitionId,
                 request.isParentDefinitionIdProvided(),
+                request.includeUnloggedDaysAsZero,
                 userId
         );
     }
@@ -381,6 +383,7 @@ public class StatController {
         List<StatType> additionalInputTypes;
         String unit;
         String parentDefinitionId;
+        Boolean includeUnloggedDaysAsZero;
     }
 
     @Data
@@ -392,6 +395,7 @@ public class StatController {
         List<StatType> additionalInputTypes;
         String unit;
         String parentDefinitionId;
+        Boolean includeUnloggedDaysAsZero;
         private boolean parentDefinitionIdProvided;
 
         public void setParentDefinitionId(String parentDefinitionId) {

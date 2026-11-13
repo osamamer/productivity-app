@@ -715,7 +715,17 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
                                                     </IconButton>
                                                 </span>
                                             </Tooltip>
-                                            <Typography variant="h3" component="div" fontWeight="bold" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                                            <Typography
+                                                variant="h3"
+                                                component="div"
+                                                fontWeight="bold"
+                                                sx={{
+                                                    width: '6ch',
+                                                    flexShrink: 0,
+                                                    textAlign: 'center',
+                                                    fontVariantNumeric: 'tabular-nums',
+                                                }}
+                                            >
                                                 {formatTime(status.secondsUntilNextTransition)}
                                             </Typography>
                                             <Tooltip title={`Add ${timeAdjustmentLabel}`} placement="right">

@@ -789,25 +789,30 @@ public class StatServiceTest {
     }
 
     @Test
-    void numericSummaryCanIncludeUnloggedDaysAsZeroWhenPreferenceIsEnabled() {
+    void unloggedDaysAsZeroPreferenceIsScopedToEachNumericStat() {
         StatDefinition statDefinition = createStatDefinition(StatType.NUMBER, null, null);
+        StatDefinition otherStat = createNamedStatDefinition("Logged days only", StatType.NUMBER);
         LocalDate today = LocalDate.now();
         statService.recordEntry(statDefinition.getId(), today.minusDays(2), 2.0, TEST_USER_ID);
         statService.recordEntry(statDefinition.getId(), today, 4.0, TEST_USER_ID);
+        statService.recordEntry(otherStat.getId(), today.minusDays(2), 2.0, TEST_USER_ID);
+        statService.recordEntry(otherStat.getId(), today, 4.0, TEST_USER_ID);
 
         StatSummaryResponse loggedDaysOnly = statService.getSummary(
                 statDefinition.getId(), today.minusDays(2), today, TEST_USER_ID);
         assertEquals(3.0, loggedDaysOnly.periodAverage(), 0.0001);
 
-        User user = userRepository.findUserById(TEST_USER_ID).orElseThrow();
-        user.setIncludeUnloggedNumericDaysAsZero(true);
-        userRepository.save(user);
+        statDefinition.setIncludeUnloggedDaysAsZero(true);
+        definitionRepository.save(statDefinition);
 
         StatSummaryResponse includingUnloggedDays = statService.getSummary(
                 statDefinition.getId(), today.minusDays(2), today, TEST_USER_ID);
+        StatSummaryResponse otherStatLoggedDaysOnly = statService.getSummary(
+                otherStat.getId(), today.minusDays(2), today, TEST_USER_ID);
 
         assertEquals(2.0, includingUnloggedDays.periodAverage(), 0.0001);
         assertEquals(6.0, includingUnloggedDays.periodTotal(), 0.0001);
+        assertEquals(3.0, otherStatLoggedDaysOnly.periodAverage(), 0.0001);
     }
 
     @Test
@@ -818,9 +823,9 @@ public class StatServiceTest {
         statService.recordEntry(number.getId(), today.minusDays(2), 6.0, TEST_USER_ID);
         statService.recordEntry(duration.getId(), today.minusDays(2), 90.0, TEST_USER_ID);
 
-        User user = userRepository.findUserById(TEST_USER_ID).orElseThrow();
-        user.setIncludeUnloggedNumericDaysAsZero(true);
-        userRepository.save(user);
+        number.setIncludeUnloggedDaysAsZero(true);
+        duration.setIncludeUnloggedDaysAsZero(true);
+        definitionRepository.saveAll(List.of(number, duration));
 
         StatSummaryResponse numberSummary = statService.getSummary(
                 number.getId(), today.minusDays(6), today, TEST_USER_ID);
@@ -843,9 +848,8 @@ public class StatServiceTest {
         LocalDate today = LocalDate.now();
         statService.recordEntry(statDefinition.getId(), today.minusDays(5), 8.0, TEST_USER_ID);
 
-        User user = userRepository.findUserById(TEST_USER_ID).orElseThrow();
-        user.setIncludeUnloggedNumericDaysAsZero(true);
-        userRepository.save(user);
+        statDefinition.setIncludeUnloggedDaysAsZero(true);
+        definitionRepository.save(statDefinition);
 
         StatSummaryResponse beforeFirstLog = statService.getSummary(
                 statDefinition.getId(), today.minusDays(10), today.minusDays(6), TEST_USER_ID);
@@ -869,8 +873,8 @@ public class StatServiceTest {
         statService.recordEntry(sleep.getId(), today.minusDays(2), 480.0, TEST_USER_ID);
         statService.recordEntry(sleep.getId(), today, 360.0, TEST_USER_ID);
 
-        user.setIncludeUnloggedNumericDaysAsZero(true);
-        userRepository.save(user);
+        sleep.setIncludeUnloggedDaysAsZero(true);
+        definitionRepository.save(sleep);
 
         StatSummaryResponse summary = statService.getSummary(
                 sleep.getId(), today.minusDays(2), today, TEST_USER_ID);
@@ -886,9 +890,8 @@ public class StatServiceTest {
         statService.recordEntry(duration.getId(), today.minusDays(2), 60.0, TEST_USER_ID);
         statService.recordEntry(duration.getId(), today, 90.0, TEST_USER_ID);
 
-        User user = userRepository.findUserById(TEST_USER_ID).orElseThrow();
-        user.setIncludeUnloggedNumericDaysAsZero(true);
-        userRepository.save(user);
+        duration.setIncludeUnloggedDaysAsZero(true);
+        definitionRepository.save(duration);
 
         StatSummaryResponse summary = statService.getSummary(
                 duration.getId(), today.minusDays(2), today, TEST_USER_ID);

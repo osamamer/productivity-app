@@ -48,10 +48,6 @@ public class User {
     private Boolean active;
 
     @Builder.Default
-    @Column(name = "include_unlogged_numeric_days_as_zero", nullable = false)
-    private Boolean includeUnloggedNumericDaysAsZero = false;
-
-    @Builder.Default
     @Column(name = "auto_start_pomodoro_sessions", nullable = false)
     private Boolean autoStartPomodoroSessions = true;
 

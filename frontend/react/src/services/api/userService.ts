@@ -14,7 +14,6 @@ import { PendingPreferenceUpdates } from './pendingPreferenceUpdates';
 const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:8080'}/api/v1`;
 
 export interface UserPreferences {
-    includeUnloggedNumericDaysAsZero: boolean;
     autoStartPomodoroSessions: boolean;
     pomodoroSoundId: string | null;
     checkupNotificationsEnabled: boolean;

@@ -6,7 +6,6 @@ import java.time.LocalTime;
  * Nullable fields represent a PATCH: omitted fields keep their current value.
  */
 public record UserPreferenceUpdates(
-        Boolean includeUnloggedNumericDaysAsZero,
         Boolean autoStartPomodoroSessions,
         Boolean checkupNotificationsEnabled,
         Boolean repeatCheckupNotificationsEnabled,
@@ -35,9 +34,15 @@ public record UserPreferenceUpdates(
         String meditationSound,
         Integer homeDayEndHour
 ) {
+    public static UserPreferenceUpdates forPomodoroSound(String pomodoroSoundId) {
+        return new UserPreferenceUpdates(
+                null, null, null, null, null, null, null, pomodoroSoundId,
+                null, null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null);
+    }
+
     public boolean isEmpty() {
-        return includeUnloggedNumericDaysAsZero == null
-                && autoStartPomodoroSessions == null
+        return autoStartPomodoroSessions == null
                 && checkupNotificationsEnabled == null
                 && repeatCheckupNotificationsEnabled == null
                 && checkupIntervalMinutes == null

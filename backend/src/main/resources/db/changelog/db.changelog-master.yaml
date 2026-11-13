@@ -318,3 +318,5 @@ databaseChangeLog:
       file: db/changelog/changes/095-stat-sub-stat-parent.yaml
   - include:
       file: db/changelog/changes/096-add-home-day-end-hour.yaml
+  - include:
+      file: db/changelog/changes/097-per-stat-unlogged-days-zero.yaml

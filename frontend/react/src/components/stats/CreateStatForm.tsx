@@ -35,6 +35,7 @@ interface FormValues {
     maxValue: string;
     morality: StatMorality;
     goodThreshold: string;
+    includeUnloggedDaysAsZero: boolean;
     createRecurringTask: boolean;
     recurrenceFrequency: StatRecurrenceFrequency;
     recurrenceDaysOfWeek: StatRecurrenceDay[];
@@ -59,6 +60,11 @@ const nonDailySystemKeys = new Set([
     'energy', 'activation', 'stimulation_hunger', 'clarity', 'valence', 'emotional_load',
     'stimulation', 'hunger', 'arousal',
 ]);
+
+function supportsUnloggedDaysAsZero(type: StatType, systemKey?: string | null): boolean {
+    return (type === 'NUMBER' || type === 'RANGE' || type === 'DURATION')
+        && systemKey !== 'sleep_hours';
+}
 
 function createValidationSchema(existingDefinitions: StatDefinition[], currentDefinitionId?: string) {
     return Yup.object({
@@ -194,6 +200,7 @@ export function CreateStatForm({
                     : initialDefinition.type === 'DURATION'
                         ? minutesToDurationValue(initialDefinition.goodThreshold)
                         : String(initialDefinition.goodThreshold),
+            includeUnloggedDaysAsZero: initialDefinition?.includeUnloggedDaysAsZero ?? false,
             createRecurringTask: false,
             recurrenceFrequency: initialRecurringTaskDraft.recurrenceFrequency,
             recurrenceDaysOfWeek: initialRecurringTaskDraft.recurrenceDaysOfWeek,
@@ -222,6 +229,10 @@ export function CreateStatForm({
                         additionalInputTypes: values.additionalInputTypes.filter(type => type !== values.type),
                         unit: hasAmountInput ? values.unit.trim() : '',
                         parentDefinitionId: values.parentDefinitionId || null,
+                        includeUnloggedDaysAsZero: supportsUnloggedDaysAsZero(
+                            values.type,
+                            initialDefinition.systemKey,
+                        ) && values.includeUnloggedDaysAsZero,
                     };
                     if (onUpdatedOptimistically && onUpdateFailed) {
                         const operationId = `stat-update-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -233,6 +244,7 @@ export function CreateStatForm({
                             additionalInputTypes: request.additionalInputTypes,
                             unit: request.unit || null,
                             parentDefinitionId: request.parentDefinitionId ?? null,
+                            includeUnloggedDaysAsZero: request.includeUnloggedDaysAsZero,
                         };
                         onUpdatedOptimistically(optimisticDefinition, operationId, initialDefinition);
                         onCancel();
@@ -265,6 +277,8 @@ export function CreateStatForm({
                         timeOfDay: values.timeOfDay,
                         recurringTaskImportance: values.recurringTaskImportance,
                         parentDefinitionId: values.parentDefinitionId || null,
+                        includeUnloggedDaysAsZero: supportsUnloggedDaysAsZero(values.type)
+                            && values.includeUnloggedDaysAsZero,
                     };
 
                     if (request.createRecurringTask
@@ -290,6 +304,7 @@ export function CreateStatForm({
                             minValue: request.minValue,
                             maxValue: request.maxValue,
                             goodThreshold: request.goodThreshold,
+                            includeUnloggedDaysAsZero: request.includeUnloggedDaysAsZero,
                             recurringTaskSeriesId: optimisticRecurringTaskSeriesId,
                             focusTaskName: request.createRecurringTask ? request.name : null,
                             focusTaskNames: request.createRecurringTask ? [request.name] : [],
@@ -527,6 +542,24 @@ export function CreateStatForm({
                         </Typography>
                     )}
                 </Box>
+                <Collapse in={supportsUnloggedDaysAsZero(formik.values.type, initialDefinition?.systemKey)} unmountOnExit>
+                    <Box>
+                        <FormControlLabel
+                            control={(
+                                <Checkbox
+                                    name="includeUnloggedDaysAsZero"
+                                    size="small"
+                                    checked={formik.values.includeUnloggedDaysAsZero}
+                                    onChange={formik.handleChange}
+                                />
+                            )}
+                            label="Count unlogged days as zero"
+                        />
+                        <FormHelperText sx={{ ml: 4 }}>
+                            Include days without a value in this statistic’s average, starting with its first logged day.
+                        </FormHelperText>
+                    </Box>
+                </Collapse>
                 {(formik.values.type === 'NUMBER' || formik.values.additionalInputTypes.includes('NUMBER')) && (
                     <TextField
                         name="unit"

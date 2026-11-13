@@ -162,41 +162,6 @@ public class UserService {
     }
 
     @Transactional
-    public User updatePreferences(String userId, Boolean includeUnloggedNumericDaysAsZero) {
-        return updatePreferences(userId, includeUnloggedNumericDaysAsZero, null,
-                null, null, null, null, null, null);
-    }
-
-    @Transactional
-    public User updatePreferences(String userId, Boolean includeUnloggedNumericDaysAsZero,
-                                  Boolean autoStartPomodoroSessions) {
-        return updatePreferences(userId, includeUnloggedNumericDaysAsZero, autoStartPomodoroSessions,
-                null, null, null, null, null, null);
-    }
-
-    @Transactional
-    public User updatePreferences(String userId, Boolean includeUnloggedNumericDaysAsZero,
-                                  Boolean autoStartPomodoroSessions, Boolean checkupNotificationsEnabled,
-                                  Integer checkupIntervalMinutes, LocalTime checkupStartTime,
-                                  Integer checkupTimesPerDay) {
-        return updatePreferences(userId, includeUnloggedNumericDaysAsZero, autoStartPomodoroSessions,
-                checkupNotificationsEnabled, null, checkupIntervalMinutes, checkupStartTime, checkupTimesPerDay, null);
-    }
-
-    @Transactional
-    public User updatePreferences(String userId, Boolean includeUnloggedNumericDaysAsZero,
-                                  Boolean autoStartPomodoroSessions, Boolean checkupNotificationsEnabled,
-                                  Boolean repeatCheckupNotificationsEnabled, Integer checkupIntervalMinutes,
-                                  LocalTime checkupStartTime, Integer checkupTimesPerDay,
-                                  String pomodoroSoundId) {
-        return updatePreferences(userId, new UserPreferenceUpdates(
-                includeUnloggedNumericDaysAsZero, autoStartPomodoroSessions,
-                checkupNotificationsEnabled, repeatCheckupNotificationsEnabled,
-                checkupIntervalMinutes, checkupStartTime, checkupTimesPerDay, null, pomodoroSoundId,
-                null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null));
-    }
-
-    @Transactional
     public User updatePreferences(String userId, UserPreferenceUpdates updates) {
         if (updates == null || updates.isEmpty()) {
             throw new IllegalArgumentException("At least one user preference is required.");
@@ -221,7 +186,6 @@ public class UserService {
         if (updates.checkupTimeZone() != null) validateCheckupTimeZone(updates.checkupTimeZone());
         validateUserSettings(updates);
 
-        if (updates.includeUnloggedNumericDaysAsZero() != null) user.setIncludeUnloggedNumericDaysAsZero(updates.includeUnloggedNumericDaysAsZero());
         if (updates.autoStartPomodoroSessions() != null) user.setAutoStartPomodoroSessions(updates.autoStartPomodoroSessions());
         if (updates.pomodoroSoundId() != null) {
             validatePomodoroSoundSelection(updates.pomodoroSoundId(), userId);

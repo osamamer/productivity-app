@@ -167,7 +167,6 @@ public class UserController {
     ) {}
 
     public record UpdatePreferencesRequest(
-            Boolean includeUnloggedNumericDaysAsZero,
             Boolean autoStartPomodoroSessions,
             Boolean checkupNotificationsEnabled,
             Boolean repeatCheckupNotificationsEnabled,
@@ -198,7 +197,7 @@ public class UserController {
             Integer homeDayEndHour
     ) {
         UserPreferenceUpdates toUpdates() {
-            return new UserPreferenceUpdates(includeUnloggedNumericDaysAsZero, autoStartPomodoroSessions,
+            return new UserPreferenceUpdates(autoStartPomodoroSessions,
                     checkupNotificationsEnabled, repeatCheckupNotificationsEnabled, checkupIntervalMinutes,
                     checkupStartTime, checkupTimesPerDay, checkupTimeZone, pomodoroSoundId, showCompletedHomeTasks,
                     excludeTodayCompletedTasks, showClosedMentalThreads, soundEffectsEnabled, whiteNoiseEnabled,
@@ -211,7 +210,6 @@ public class UserController {
     }
 
     public record UserPreferencesResponse(
-            boolean includeUnloggedNumericDaysAsZero,
             boolean autoStartPomodoroSessions,
             String pomodoroSoundId,
             boolean checkupNotificationsEnabled,
@@ -243,7 +241,6 @@ public class UserController {
     ) {
         static UserPreferencesResponse from(User user) {
             return new UserPreferencesResponse(
-                    Boolean.TRUE.equals(user.getIncludeUnloggedNumericDaysAsZero()),
                     !Boolean.FALSE.equals(user.getAutoStartPomodoroSessions()),
                     user.getPomodoroSoundId(),
                     !Boolean.FALSE.equals(user.getCheckupNotificationsEnabled()),

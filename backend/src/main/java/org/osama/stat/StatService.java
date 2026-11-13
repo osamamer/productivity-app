@@ -185,6 +185,25 @@ public class StatService {
                                            String unit,
                                            String parentDefinitionId,
                                            String userId) {
+        return createDefinition(name, description, type, minValue, maxValue, morality, goodThreshold,
+                createRecurringTask, recurrenceFrequency, recurrenceDaysOfWeek, requestedTimeOfDay,
+                recurringTaskImportance, additionalInputTypes, unit, parentDefinitionId, false, userId);
+    }
+
+    @Transactional
+    public StatDefinition createDefinition(String name, String description, StatType type,
+                                           Double minValue, Double maxValue,
+                                           StatMorality morality, Double goodThreshold,
+                                           boolean createRecurringTask,
+                                           TaskRecurrenceFrequency recurrenceFrequency,
+                                           List<DayOfWeek> recurrenceDaysOfWeek,
+                                           String requestedTimeOfDay,
+                                           Integer recurringTaskImportance,
+                                           List<StatType> additionalInputTypes,
+                                           String unit,
+                                           String parentDefinitionId,
+                                           Boolean includeUnloggedDaysAsZero,
+                                           String userId) {
         User user = userRepository.findUserById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
 
@@ -196,7 +215,8 @@ public class StatService {
         validateUnit(type, normalizedAdditionalTypes, normalizedUnit);
         StatDefinition definition = saveDefinition(normalizedName, description, type, minValue, maxValue,
                 morality, goodThreshold, null, user, normalizedAdditionalTypes, normalizedUnit,
-                parentDefinition);
+                parentDefinition, Boolean.TRUE.equals(includeUnloggedDaysAsZero)
+                        && supportsUnloggedDaysAsZero(type, null));
         return createRecurringTask
                 ? createRecurringTask(definition.getId(), userId, null, recurrenceFrequency,
                 recurrenceDaysOfWeek, requestedTimeOfDay, recurringTaskImportance)
@@ -237,6 +257,20 @@ public class StatService {
                                            String requestedParentDefinitionId,
                                            boolean parentDefinitionIdProvided,
                                            String userId) {
+        return updateDefinition(definitionId, name, description, morality, goodThreshold,
+                requestedAdditionalInputTypes, unit, requestedParentDefinitionId,
+                parentDefinitionIdProvided, null, userId);
+    }
+
+    @Transactional
+    public StatDefinition updateDefinition(String definitionId, String name, String description,
+                                           StatMorality morality, Double goodThreshold,
+                                           List<StatType> requestedAdditionalInputTypes,
+                                           String unit,
+                                           String requestedParentDefinitionId,
+                                           boolean parentDefinitionIdProvided,
+                                           Boolean includeUnloggedDaysAsZero,
+                                           String userId) {
         StatDefinition definition = definitionRepository.findByIdAndUserId(definitionId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("No such stat."));
         if (definition.getSystemKey() != null
@@ -275,13 +309,18 @@ public class StatService {
         definition.setDescription(description);
         definition.setMorality(morality);
         definition.setGoodThreshold(goodThreshold);
+        if (includeUnloggedDaysAsZero != null) {
+            definition.setIncludeUnloggedDaysAsZero(Boolean.TRUE.equals(includeUnloggedDaysAsZero)
+                    && supportsUnloggedDaysAsZero(definition.getType(), definition.getSystemKey()));
+        }
         StatDefinition savedDefinition = definitionRepository.save(definition);
         if (linkedSeries != null) {
             taskSeriesService.renameSeries(linkedSeries.seriesId(), normalizedName, userId);
         }
-        log.info("Stat definition updated: userId={} statDefinitionId={} name={} morality={} goodThreshold={}",
+        log.info("Stat definition updated: userId={} statDefinitionId={} name={} morality={} goodThreshold={} includeUnloggedDaysAsZero={}",
                 userId, savedDefinition.getId(), savedDefinition.getName(),
-                savedDefinition.getMorality(), savedDefinition.getGoodThreshold());
+                savedDefinition.getMorality(), savedDefinition.getGoodThreshold(),
+                savedDefinition.isIncludeUnloggedDaysAsZero());
         return withFocusTaskNames(savedDefinition);
     }
 
@@ -946,6 +985,12 @@ public class StatService {
         return name == null ? null : name.trim();
     }
 
+    private static boolean supportsUnloggedDaysAsZero(StatType type, String systemKey) {
+        return type != null
+                && (type == StatType.NUMBER || type == StatType.RANGE || type == StatType.DURATION)
+                && !SystemStatCatalog.SLEEP_HOURS_SYSTEM_KEY.equals(systemKey);
+    }
+
     private String normalizeUnit(String unit) {
         if (unit == null) return null;
         String normalized = unit.trim();
@@ -1166,6 +1211,19 @@ public class StatService {
                                           List<StatType> additionalInputTypes,
                                           String unit,
                                           StatDefinition parentDefinition) {
+        return saveDefinition(name, description, type, minValue, maxValue, morality, goodThreshold,
+                systemKey, user, additionalInputTypes, unit, parentDefinition, false);
+    }
+
+    private StatDefinition saveDefinition(String name, String description, StatType type,
+                                          Double minValue, Double maxValue,
+                                          StatMorality morality, Double goodThreshold,
+                                          String systemKey,
+                                          User user,
+                                          List<StatType> additionalInputTypes,
+                                          String unit,
+                                          StatDefinition parentDefinition,
+                                          boolean includeUnloggedDaysAsZero) {
         StatDefinition definition = new StatDefinition();
         definition.setId(UUID.randomUUID().toString());
         definition.setName(name);
@@ -1177,6 +1235,7 @@ public class StatService {
         definition.setMinValue(minValue);
         definition.setMaxValue(maxValue);
         definition.setGoodThreshold(goodThreshold);
+        definition.setIncludeUnloggedDaysAsZero(includeUnloggedDaysAsZero);
         definition.setSystemKey(systemKey);
         definition.setParentDefinition(parentDefinition);
         definition.setDisplayOrder(nextDisplayOrder(user.getId()));
@@ -1209,8 +1268,6 @@ public class StatService {
     public StatBootstrapResponse getBootstrap(LocalDate from, LocalDate to, String userId,
                                               boolean includeSecret) {
         validatePeriod(from, to);
-        User user = userRepository.findUserById(userId)
-                .orElseThrow(() -> new ResourceNotFoundException("No such user."));
         List<StatDefinition> definitions = getDefinitions(userId, includeSecret);
         Set<String> definitionIds = definitions.stream()
                 .map(StatDefinition::getId)
@@ -1228,7 +1285,10 @@ public class StatService {
                 .filter(entry -> entry.getStatDefinition() != null
                         && definitionIds.contains(entry.getStatDefinition().getId()))
                 .collect(Collectors.groupingBy(entry -> entry.getStatDefinition().getId()));
-        Map<String, LocalDate> firstLoggedDates = Boolean.TRUE.equals(user.getIncludeUnloggedNumericDaysAsZero())
+        boolean includesUnloggedDays = definitions.stream()
+                .anyMatch(definition -> definition.isIncludeUnloggedDaysAsZero()
+                        && supportsUnloggedDaysAsZero(definition.getType(), definition.getSystemKey()));
+        Map<String, LocalDate> firstLoggedDates = includesUnloggedDays
                 ? entryRepository.findFirstLoggedDatesByUserId(userId).stream()
                         .collect(Collectors.toMap(row -> (String) row[0], row -> (LocalDate) row[1]))
                 : Map.of();
@@ -1237,7 +1297,7 @@ public class StatService {
             List<StatEntry> entries = entriesByDefinition.getOrDefault(definition.getId(), List.of());
             entriesByDefinition.putIfAbsent(definition.getId(), entries);
             List<StatEntry> allEntries = allEntriesByDefinition.getOrDefault(definition.getId(), List.of());
-            summaries.put(definition.getId(), summarize(definition, entries, allEntries, from, to, user,
+            summaries.put(definition.getId(), summarize(definition, entries, allEntries, from, to,
                     firstLoggedDates.get(definition.getId())));
         }
 
@@ -1531,23 +1591,22 @@ public class StatService {
     public StatSummaryResponse getSummary(String definitionId, LocalDate from, LocalDate to, String userId) {
         StatDefinition def = definitionRepository.findByIdAndUserId(definitionId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("No such stat."));
-        User user = userRepository.findUserById(userId)
-                .orElseThrow(() -> new ResourceNotFoundException("No such user."));
         validatePeriod(from, to);
 
         List<StatEntry> entries = entryRepository
                 .findAllByStatDefinitionIdAndUserIdAndDateBetween(definitionId, userId, from, to);
         List<StatEntry> allEntries = entryRepository.findAllByStatDefinitionIdAndUserId(definitionId, userId);
 
-        LocalDate firstLoggedDate = Boolean.TRUE.equals(user.getIncludeUnloggedNumericDaysAsZero())
+        LocalDate firstLoggedDate = def.isIncludeUnloggedDaysAsZero()
+                && supportsUnloggedDaysAsZero(def.getType(), def.getSystemKey())
                 ? entryRepository.findFirstLoggedDate(definitionId, userId)
                 : null;
-        return summarize(def, entries, allEntries, from, to, user, firstLoggedDate);
+        return summarize(def, entries, allEntries, from, to, firstLoggedDate);
     }
 
     private StatSummaryResponse summarize(StatDefinition def, List<StatEntry> entries,
                                           List<StatEntry> allEntries,
-                                          LocalDate from, LocalDate to, User user, LocalDate firstLoggedDate) {
+                                          LocalDate from, LocalDate to, LocalDate firstLoggedDate) {
 
         Map<LocalDate, Double> valueByDate = entries.stream()
                 .collect(Collectors.toMap(StatEntry::getDate, StatEntry::getValue));
@@ -1607,8 +1666,8 @@ public class StatService {
                     .map(StatEntry::getValue)
                     .max(Double::compareTo)
                     .orElse(null);
-            boolean countUnloggedDaysAsZero = !SystemStatCatalog.SLEEP_HOURS_SYSTEM_KEY.equals(def.getSystemKey())
-                    && Boolean.TRUE.equals(user.getIncludeUnloggedNumericDaysAsZero());
+            boolean countUnloggedDaysAsZero = def.isIncludeUnloggedDaysAsZero()
+                    && supportsUnloggedDaysAsZero(def.getType(), def.getSystemKey());
             if (countUnloggedDaysAsZero && firstLoggedDate != null && !firstLoggedDate.isAfter(to)) {
                 averageStartDate = firstLoggedDate.isAfter(from) ? firstLoggedDate : from;
                 long periodDays = ChronoUnit.DAYS.between(averageStartDate, to) + 1;

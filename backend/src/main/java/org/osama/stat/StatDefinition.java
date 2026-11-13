@@ -57,6 +57,9 @@ public class StatDefinition {
     @Column(name = "good_threshold")
     private Double goodThreshold;
 
+    @Column(name = "include_unlogged_days_as_zero", nullable = false)
+    private boolean includeUnloggedDaysAsZero;
+
     @Column(name = "system_key")
     private String systemKey;
 

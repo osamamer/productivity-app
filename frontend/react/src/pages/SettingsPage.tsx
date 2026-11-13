@@ -13,7 +13,6 @@ import LogoutIcon from '@mui/icons-material/Logout';
 import HomeOutlinedIcon from '@mui/icons-material/HomeOutlined';
 import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
-import QueryStatsOutlinedIcon from '@mui/icons-material/QueryStatsOutlined';
 import SecurityOutlinedIcon from '@mui/icons-material/SecurityOutlined';
 import TimerOutlinedIcon from '@mui/icons-material/TimerOutlined';
 import AccessTimeOutlinedIcon from '@mui/icons-material/AccessTimeOutlined';
@@ -41,7 +40,6 @@ import {
     setExcludeTodayCompletedTasks,
     setShowCompletedHomeTasks,
 } from '../services/utils/homePreferences.ts';
-import { statService } from '../services/api/statService.ts';
 import {
     createPomodoroFormDefaults,
     DEFAULT_LONG_BREAK_COOLDOWN,
@@ -96,7 +94,6 @@ const sectionHeadingSx = {
 
 const hideCompletedTasksDescription = 'Hide completed tasks on the Tasks page. Calendar uses its own status filter.';
 const excludeTodayCompletedTasksDescription = 'Also hide completed tasks scheduled for today from the Home page.';
-const numericStatsAverageDescription = 'Include days without a logged numeric value as 0 when calculating averages, starting from the first logged day.';
 const pomodoroAutoStartDescription = 'Start each break and focus session automatically, or wait for you to start the next phase.';
 const pomodoroSecondsModeDescription = 'Use 10-second focus and break durations instead of the normal 25/5/15-minute defaults.';
 const pomodoroLongBreakDescription = 'Take a long break after this many completed focus sessions in every Pomodoro.';
@@ -648,10 +645,7 @@ export function SettingsPage() {
         () => getRuntimeUserPreference('muteFocusNoiseDuringBreaks'),
     );
     const muteFocusNoisePreferenceRevision = useRef(0);
-    const [includeUnloggedNumericDaysAsZero, setIncludeUnloggedNumericDaysAsZero] = useState(false);
     const [userPreferencesLoading, setUserPreferencesLoading] = useState(true);
-    const [numericStatsPreferenceSaving, setNumericStatsPreferenceSaving] = useState(false);
-    const [numericStatsPreferenceError, setNumericStatsPreferenceError] = useState<string | null>(null);
     const [pomodoroSecondsMode, setPomodoroSecondsMode] = useState(false);
     const [pomodoroConfig, setPomodoroConfig] = useState<PomodoroConfig>(NORMAL_POMODORO_CONFIG);
     const [longBreakCooldown, setLongBreakCooldown] = useState(() => (
@@ -693,7 +687,6 @@ export function SettingsPage() {
         userService.getPreferences()
             .then(preferences => {
                 if (!cancelled) {
-                    setIncludeUnloggedNumericDaysAsZero(preferences.includeUnloggedNumericDaysAsZero);
                     setAutoStartPomodoroSessions(preferences.autoStartPomodoroSessions !== false);
                     const completedUpload = getPomodoroSoundUploadSnapshot();
                     setSelectedPomodoroSoundId(
@@ -940,25 +933,6 @@ export function SettingsPage() {
             setMuteFocusNoiseDuringBreaks(previousValue);
             updateRuntimeUserPreferences({ muteFocusNoiseDuringBreaks: previousValue });
             setUserPreferenceError('Could not save this preference right now.');
-        }
-    }
-
-    async function handleNumericStatsPreferenceChange(event: ChangeEvent<HTMLInputElement>) {
-        const nextValue = event.target.checked;
-        const previousValue = includeUnloggedNumericDaysAsZero;
-        setIncludeUnloggedNumericDaysAsZero(nextValue);
-        setNumericStatsPreferenceSaving(true);
-        setNumericStatsPreferenceError(null);
-
-        try {
-            await userService.updatePreferences({ includeUnloggedNumericDaysAsZero: nextValue });
-            statService.clearSummaryCache();
-        } catch (error) {
-            console.error('Failed to update statistics preferences:', error);
-            setIncludeUnloggedNumericDaysAsZero(previousValue);
-            setNumericStatsPreferenceError('Could not save this preference right now.');
-        } finally {
-            setNumericStatsPreferenceSaving(false);
         }
     }
 
@@ -1310,37 +1284,6 @@ export function SettingsPage() {
 
                                 <BrowserNotificationsSection />
                                 <CheckupSettingsSection />
-
-                                <Box sx={sectionCardSx}>
-                                    <Box sx={sectionHeadingSx}>
-                                        <QueryStatsOutlinedIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
-                                        <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                                            Statistics
-                                        </Typography>
-                                    </Box>
-
-                                    {numericStatsPreferenceError && (
-                                        <Alert severity="warning" sx={{ mb: 2 }}>
-                                            {numericStatsPreferenceError}
-                                        </Alert>
-                                    )}
-                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
-                                        <Box sx={{ textAlign: 'left' }}>
-                                            <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                                                Count unlogged days as zero
-                                            </Typography>
-                                            <Typography variant="body2" color="text.secondary">
-                                                {numericStatsAverageDescription}
-                                            </Typography>
-                                        </Box>
-                                        <Switch
-                                            checked={includeUnloggedNumericDaysAsZero}
-                                            onChange={handleNumericStatsPreferenceChange}
-                                            disabled={userPreferencesLoading || numericStatsPreferenceSaving}
-                                            inputProps={{ 'aria-label': 'Count unlogged days as zero in numeric stat averages' }}
-                                        />
-                                    </Box>
-                                </Box>
 
                                 <Box sx={sectionCardSx}>
                                     <Box sx={sectionHeadingSx}>

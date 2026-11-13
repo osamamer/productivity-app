@@ -1,0 +1,50 @@
+databaseChangeLog:
+  - changeSet:
+      id: 097-per-stat-unlogged-days-zero
+      author: osama
+      comment: Move unlogged-day average behavior from users to individual stats
+      changes:
+        - addColumn:
+            tableName: stat_definition
+            columns:
+              - column:
+                  name: include_unlogged_days_as_zero
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+        - sql:
+            sql: >-
+              UPDATE stat_definition
+              SET include_unlogged_days_as_zero = TRUE
+              WHERE type IN ('NUMBER', 'RANGE', 'DURATION')
+                AND (system_key IS NULL OR system_key <> 'sleep_hours')
+                AND user_id IN (
+                  SELECT id FROM app_user
+                  WHERE include_unlogged_numeric_days_as_zero = TRUE
+                )
+        - dropColumn:
+            tableName: app_user
+            columnName: include_unlogged_numeric_days_as_zero
+      rollback:
+        - addColumn:
+            tableName: app_user
+            columns:
+              - column:
+                  name: include_unlogged_numeric_days_as_zero
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+        - sql:
+            sql: >-
+              UPDATE app_user
+              SET include_unlogged_numeric_days_as_zero = TRUE
+              WHERE EXISTS (
+                SELECT 1 FROM stat_definition
+                WHERE stat_definition.user_id = app_user.id
+                  AND stat_definition.include_unlogged_days_as_zero = TRUE
+              )
+        - dropColumn:
+            tableName: stat_definition
+            columnName: include_unlogged_days_as_zero

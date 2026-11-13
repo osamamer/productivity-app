@@ -1844,7 +1844,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             <Box sx={{
                                 textAlign: waitingForPhase ? 'left' : 'center',
                                 minHeight: 34,
-                                ml: 1,
+                                ml: waitingForPhase ? 1 : 0,
                                 display: 'flex',
                                 justifyContent: 'center',
                                 flexDirection: 'column',
@@ -1915,7 +1915,17 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                                 </IconButton>
                                             </span>
                                         </Tooltip>
-                                        <Typography variant="h4" sx={{ fontWeight: 700, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+                                        <Typography
+                                            variant="h4"
+                                            sx={{
+                                                width: '6ch',
+                                                flexShrink: 0,
+                                                textAlign: 'center',
+                                                fontWeight: 700,
+                                                lineHeight: 1,
+                                                fontVariantNumeric: 'tabular-nums',
+                                            }}
+                                        >
                                             {formatSeconds(pomodoroStatus!.secondsUntilNextTransition)}
                                         </Typography>
                                         <Tooltip title={`Add ${timeAdjustmentLabel}`} placement="top">

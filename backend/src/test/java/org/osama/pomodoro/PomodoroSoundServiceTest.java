@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.osama.user.User;
 import org.osama.user.UserRepository;
 import org.osama.user.UserService;
+import org.osama.user.UserPreferenceUpdates;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.mock.web.MockMultipartFile;
@@ -55,7 +56,7 @@ class PomodoroSoundServiceTest {
         assertEquals(0, soundService.getSounds(otherUser.getId()).size());
         assertArrayEquals(bytes, soundService.getAudio(response.id(), user.getId()).resource().getInputStream().readAllBytes());
 
-        userService.updatePreferences(user.getId(), null, null, null, null, null, null, null, response.id());
+        userService.updatePreferences(user.getId(), UserPreferenceUpdates.forPomodoroSound(response.id()));
         assertEquals(response.id(), userRepository.findById(user.getId()).orElseThrow().getPomodoroSoundId());
     }
 
@@ -74,7 +75,7 @@ class PomodoroSoundServiceTest {
     void deletingSelectedSoundFallsBackToBuiltInBrownNoise() {
         PomodoroSoundService.PomodoroSoundResponse response = soundService.upload(
                 user.getId(), new MockMultipartFile("file", "rain.mp3", "audio/mpeg", new byte[]{1}));
-        userService.updatePreferences(user.getId(), null, null, null, null, null, null, null, response.id());
+        userService.updatePreferences(user.getId(), UserPreferenceUpdates.forPomodoroSound(response.id()));
 
         soundService.delete(response.id(), user.getId());
 

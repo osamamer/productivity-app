@@ -37,6 +37,7 @@ export interface StatDefinition {
     minValue?: number;
     maxValue?: number;
     goodThreshold?: number | null;
+    includeUnloggedDaysAsZero?: boolean;
     systemKey?: string;
     secret?: boolean;
     showOnStatsPage?: boolean;
@@ -79,6 +80,7 @@ export interface CreateDefinitionRequest {
     timeOfDay?: string;
     recurringTaskImportance?: number;
     parentDefinitionId?: string | null;
+    includeUnloggedDaysAsZero?: boolean;
 }
 
 export interface UpdateDefinitionRequest {
@@ -88,6 +90,7 @@ export interface UpdateDefinitionRequest {
     additionalInputTypes?: StatType[];
     unit?: string;
     parentDefinitionId?: string | null;
+    includeUnloggedDaysAsZero?: boolean;
 }
 
 export interface RecordEntryRequest {
