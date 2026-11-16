@@ -20,7 +20,8 @@ import SelfImprovementRoundedIcon from '@mui/icons-material/SelfImprovementRound
 import NightlightIcon from '@mui/icons-material/Nightlight';
 import LightModeIcon from '@mui/icons-material/LightMode';
 import LogoutIcon from '@mui/icons-material/Logout';
-import { isLocalDesktopMode } from '../services/desktop';
+import HourglassTopRoundedIcon from '@mui/icons-material/HourglassTopRounded';
+import { desktopTimeouts, isLocalDesktopMode } from '../services/desktop';
 import MenuRoundedIcon from '@mui/icons-material/MenuRounded';
 import KeyboardDoubleArrowRightRoundedIcon from '@mui/icons-material/KeyboardDoubleArrowRightRounded';
 import KeyboardDoubleArrowLeftRoundedIcon from '@mui/icons-material/KeyboardDoubleArrowLeftRounded';
@@ -615,6 +616,15 @@ export function SideNav() {
                                 expanded={open}
                                 onNavigate={navigateFromDrawer}
                             />
+                            {desktopTimeouts && (
+                                <SideMenuButton
+                                    Icon={HourglassTopRoundedIcon}
+                                    text="Boundaries"
+                                    targetPage="/boundaries"
+                                    expanded={open}
+                                    onNavigate={navigateFromDrawer}
+                                />
+                            )}
                         </List>
                     </Box>
 

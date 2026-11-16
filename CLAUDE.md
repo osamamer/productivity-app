@@ -58,6 +58,12 @@ cd desktop && npm run dist                           # AppImage + .deb in deskto
 cd desktop && npm test
 ```
 
+**Boundaries (app timeouts).** The desktop shell also enforces App-Timeout-style limits on this computer, in both modes: a focused countdown before chosen launchers open, optional auto-close of the app, and Firefox site timers (via the `desktop/firefox-extension` "Claritard URL Gate" and a native messaging host). Logic lives in `desktop/src/timeouts/` (`core/` is plain Node shared with the native host); the web app's `/boundaries` page (`frontend/react/src/pages/BoundariesPage.tsx`) appears only when `desktopTimeouts` is present. Launchers, timers and the native host reach the app through `--timeout-*=value` switches (joined with `=` because Chromium reorders switches); see the Boundaries section of [desktop/README.md](desktop/README.md).
+
+### Android Boundaries
+
+The mobile app's `/boundaries` screens (`frontend/mobile/src/app/boundaries/`) port the Guard Bear app blocker: per-app blocks, daily time, opens per day, time per open and schedules, enforced by an AccessibilityService with optional Shizuku force-stop. Native code is the local Expo module `frontend/mobile/modules/claritard-boundaries/` (see its README); `src/lib/boundaryRules.ts` must stay in sync with its `AppRule.kt`.
+
 ### Database
 
 - **Production**: PostgreSQL on port 5432 (via Docker)

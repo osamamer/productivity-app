@@ -13,6 +13,7 @@ import {
     setLocalThemeMode,
     type ThemeMode,
 } from '../services/localAppearancePreferences';
+import { desktopTimeouts } from '../services/desktop';
 
 interface ThemeContextType {
     darkMode: boolean;
@@ -366,6 +367,19 @@ export const AppThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => 
         });
         return responsiveFontSizes(t);
     }, [accentColor, darkMode]);
+
+    useEffect(() => {
+        // Countdown windows and the Firefox gate page are drawn by the desktop shell; share the theme.
+        void desktopTimeouts?.setAppearance({
+            mode: theme.palette.mode,
+            background: theme.palette.background.default,
+            paper: theme.palette.background.paper,
+            text: theme.palette.text.primary,
+            textSecondary: theme.palette.text.secondary,
+            primary: theme.palette.primary.main,
+            onPrimary: theme.palette.primary.contrastText,
+        }).catch(error => console.error('Could not share the theme with the desktop app:', error));
+    }, [theme]);
 
     const contextValue = useMemo(() => ({
         darkMode,

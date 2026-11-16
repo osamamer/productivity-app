@@ -51,3 +51,34 @@ override with `DESKTOP_JDK_HOME`). The cloud address is `CLOUD_ORIGIN` in `src/m
   it, local mode shows an error.
 - Calendar subscriptions the user adds still download their `.ics` feeds from the address the
   user entered; that is the only outbound traffic local mode can make, and only on request.
+
+## Boundaries (app and Firefox time limits)
+
+The web app's **Boundaries** page configures limits that this desktop app enforces on this
+computer, in local and cloud mode alike. It replaces the separate App Timeout tool.
+
+- **App pauses.** Choosing an app rewrites its launcher in `~/.local/share/applications` (a backup of
+  the original is kept in `~/.local/share/Claritard/timeouts/originals`; turning the pause off
+  restores it exactly). Opening the app then shows a countdown that only runs while its window is
+  focused. Afterwards the app opens by itself, or after you click Open.
+- **Auto-close.** Optionally the app is closed a set time after it opens: a small "closes in" window
+  shows the time left, notifications warn at one minute and ten seconds, then the app gets SIGTERM
+  and, five seconds later, SIGKILL (Flatpaks: `flatpak kill`). Sessions are saved to disk and a
+  systemd user timer is armed as a backstop, so the limit holds even if Claritard quits.
+- **Firefox site timers.** The **Claritard URL Gate** extension (`firefox-extension/`) sends timed
+  sites to a countdown page. Opening one starts a Firefox session; every timed site opened in it
+  shares that deadline, which survives closing Firefox. At the end Claritard closes Firefox.
+  Setup: Boundaries → **Connect** (installs the native messaging host), then load the extension
+  from **Open extension folder** in `about:debugging`, or build `dist/claritard-url-gate.xpi` with
+  `npm run build:extension`. A permanent install needs the add-on signed on addons.mozilla.org
+  (unlisted); Firefox Developer Edition can also install it unsigned with
+  `xpinstall.signatures.required=false`.
+
+Launchers and timers start Claritard with `--timeout-*` switches (see `src/timeouts/cli.js`). If
+Claritard is not running, it starts without a window just for the countdown or timer, then quits.
+Countdown windows and the gate page use the colors of the web app's current theme.
+
+Limitations, as with App Timeout: apps that are already running, started from a terminal, or
+opened by another app through D-Bus skip the pause; launchers that run a shell script cannot be
+tracked; Wayland compositors decide where the "closes in" window appears; and moving the AppImage
+breaks the rewritten launchers until Claritard next starts (it re-points them then).

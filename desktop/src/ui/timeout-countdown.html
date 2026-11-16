@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'">
+    <title>A moment first</title>
+    <link rel="stylesheet" href="timeout.css">
+    <script src="timeoutTheme.js"></script>
+</head>
+<body>
+<main class="countdown">
+    <button class="close" id="close" type="button" aria-label="Cancel" title="Cancel">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg>
+    </button>
+    <p class="eyebrow" id="eyebrow"></p>
+    <h1 class="message" id="message"></h1>
+    <div class="ring" aria-hidden="true">
+        <svg viewBox="0 0 120 120">
+            <circle class="track" cx="60" cy="60" r="52"/>
+            <circle class="progress" id="progress" cx="60" cy="60" r="52"/>
+        </svg>
+        <span class="number" id="number"></span>
+    </div>
+    <p class="caption" id="caption" role="status" aria-live="polite"></p>
+    <div class="actions">
+        <button class="quiet" id="cancel" type="button">Cancel</button>
+        <button class="primary" id="open" type="button" disabled></button>
+    </div>
+</main>
+<script src="timeout-countdown.js"></script>
+</body>
+</html>

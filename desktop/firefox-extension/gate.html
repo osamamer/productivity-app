@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>A moment first · Claritard</title>
+<link rel="stylesheet" href="gate.css">
+</head>
+<body>
+<main class="card">
+  <p class="eyebrow">A moment before</p>
+  <p class="url" id="url"></p>
+  <h1 class="message" id="message">Take a breath.</h1>
+  <div class="ring" aria-hidden="true">
+    <svg viewBox="0 0 120 120">
+      <circle class="track" cx="60" cy="60" r="52"/>
+      <circle class="progress" id="progress" cx="60" cy="60" r="52"/>
+    </svg>
+    <span class="number" id="time"></span>
+  </div>
+  <p class="hint" id="hint" role="status" aria-live="polite">Keep this tab active until the countdown ends.</p>
+  <p class="error" id="error" role="alert"></p>
+  <button id="open" type="button" disabled>Open page</button>
+  <p class="footnote">Firefox closes when this site's time is up. Set by Claritard.</p>
+</main>
+<script src="gate.js"></script>
+</body>
+</html>

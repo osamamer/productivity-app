@@ -14,7 +14,8 @@
     "start": "electron .",
     "test": "node --test test/*.test.js",
     "dist": "npm run build:resources && electron-builder --linux",
-    "dist:only": "electron-builder --linux"
+    "dist:only": "electron-builder --linux",
+    "build:extension": "mkdir -p dist && rm -f dist/claritard-url-gate.xpi && cd firefox-extension && zip -q -r -X ../dist/claritard-url-gate.xpi ."
   },
   "devDependencies": {
     "electron": "45.3.3",
@@ -43,6 +44,10 @@
       {
         "from": "resources/jre",
         "to": "jre"
+      },
+      {
+        "from": "firefox-extension",
+        "to": "firefox-extension"
       }
     ],
     "linux": {

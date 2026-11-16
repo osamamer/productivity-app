@@ -66,6 +66,7 @@ function Navigation() {
           <Stack.Screen name="stats" />
           <Stack.Screen name="stats/[id]" options={{ orientation: 'landscape', headerShown: false }} />
           <Stack.Screen name="settings" />
+          <Stack.Screen name="boundaries" />
         </Stack.Protected>
       </Stack>
     </NavigationThemeProvider>

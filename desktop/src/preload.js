@@ -13,7 +13,28 @@ if (bridge) {
             ipcRenderer.on('desktop:notification-click', listener);
             return () => ipcRenderer.removeListener('desktop:notification-click', listener);
         },
+        timeouts: timeoutsBridge(),
     });
+}
+
+/** App and Firefox URL timeouts. Each call resolves to its value or rejects with the shell's message. */
+function timeoutsBridge() {
+    const call = name => async (...args) => {
+        const result = await ipcRenderer.invoke(`timeouts:${name}`, ...args);
+        if (result?.error) throw new Error(result.error);
+        return result?.value;
+    };
+    return {
+        getState: call('getState'),
+        lockReason: call('lockReason'),
+        saveApp: call('saveApp'),
+        removeApp: call('removeApp'),
+        saveUrl: call('saveUrl'),
+        removeUrl: call('removeUrl'),
+        installBrowserHost: call('installBrowserHost'),
+        openExtensionFolder: call('openExtensionFolder'),
+        setAppearance: call('setAppearance'),
+    };
 }
 
 // The custom header follows the page's background so it blends with the app's light or dark

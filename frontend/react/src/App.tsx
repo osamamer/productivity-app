@@ -34,6 +34,7 @@ const MentalThreadsPage = lazy(() => import('./pages/MentalThreadsPage').then(mo
 const MentalStatePage = lazy(() => import('./pages/MentalStatePage').then(module => ({ default: module.MentalStatePage })));
 const MentalPage = lazy(() => import('./pages/MentalPage').then(module => ({ default: module.MentalPage })));
 const DayPage = lazy(() => import('./pages/DayPage').then(module => ({ default: module.DayPage })));
+const BoundariesPage = lazy(() => import('./pages/BoundariesPage').then(module => ({ default: module.BoundariesPage })));
 
 function DelayedRouteFallback() {
     const [showProgress, setShowProgress] = useState(false);
@@ -115,6 +116,7 @@ const routes = [
                     { path: "/stats", element: <RouteSuspense><StatsPage/></RouteSuspense> },
                     { path: "/day/:date", element: <RouteSuspense><DayPage/></RouteSuspense> },
                     { path: "/notes", element: <RouteSuspense><NotesPage/></RouteSuspense> },
+                    { path: "/boundaries", element: <RouteSuspense><BoundariesPage/></RouteSuspense> },
                     { path: "/mental", element: <RouteSuspense><MentalPage/></RouteSuspense> },
                     {
                         path: "/mental-threads",

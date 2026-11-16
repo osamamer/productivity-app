@@ -12,6 +12,9 @@ const { createTray } = require('./tray');
 const { LocalBackend } = require('./localBackend');
 const { createAuthSecret, signLocalToken } = require('./localToken');
 const { installLocalNetworkGuard } = require('./networkGuard');
+const { parseTimeoutCommand, selfCommand } = require('./timeouts/cli');
+const { TimeoutService } = require('./timeouts/service');
+const { registerTimeoutIpc } = require('./timeouts/ipc');
 
 // Must match the port baked into the local web build by scripts/build-resources.sh.
 const LOCAL_PORT = 47830;
@@ -34,6 +37,11 @@ let tray = null;
 let quitting = false;
 let backendStopped = false;
 let trayHintShown = false;
+/** App and Firefox time limits; created once the app is ready. */
+let timeouts = null;
+// False while Claritard runs only to show a timeout countdown (started by a delayed launcher or a
+// timer); it then quits once no countdown or timed session needs it.
+let uiStarted = false;
 
 const notifications = new DesktopNotifications({
     icon: iconPath,
@@ -71,12 +79,20 @@ Menu.setApplicationMenu(null);
 if (!app.requestSingleInstanceLock()) {
     app.quit();
 } else {
-    app.on('second-instance', () => {
+    app.on('second-instance', (_event, argv) => {
+        const timeoutCommand = parseTimeoutCommand(argv);
+        if (timeoutCommand) {
+            void timeouts?.handleCommand(timeoutCommand);
+            return;
+        }
         if (appWindow) {
             showMainWindow();
             return;
         }
-        if (!chooserWindow) return;
+        if (!chooserWindow) {
+            startUi();
+            return;
+        }
         if (chooserWindow.isMinimized()) chooserWindow.restore();
         chooserWindow.focus();
     });
@@ -84,6 +100,28 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 function startApp() {
+    timeouts = new TimeoutService({
+        command: selfCommand({ isPackaged: app.isPackaged, appPath: app.getAppPath() }),
+        extensionDir: app.isPackaged ? path.join(process.resourcesPath, 'firefox-extension') : path.join(__dirname, '..', 'firefox-extension'),
+        notify: notification => notifications.show(notification),
+        onIdleChange: quitIfOnlyTimeoutsAreIdle,
+    });
+    registerTimeoutIpc({ timeouts, isMainAppPage });
+    timeouts.start();
+    const timeoutCommand = parseTimeoutCommand(process.argv);
+    if (timeoutCommand) {
+        void timeouts.handleCommand(timeoutCommand);
+        return;
+    }
+    startUi();
+}
+
+function quitIfOnlyTimeoutsAreIdle() {
+    if (!uiStarted && !timeouts.busy) app.quit();
+}
+
+function startUi() {
+    uiStarted = true;
     const config = readConfig(userDataDir);
     if (!config.mode) {
         openChooser();
@@ -336,7 +374,11 @@ ipcMain.handle('chooser:choose', (_event, choice) => {
     return { ok: true };
 });
 
-app.on('window-all-closed', () => app.quit());
+app.on('window-all-closed', () => {
+    // A countdown window closing must not end timed sessions that are still running.
+    if (timeouts?.busy) return;
+    app.quit();
+});
 
 app.on('before-quit', event => {
     quitting = true;
