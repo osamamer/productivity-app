@@ -1,9 +1,19 @@
-import { Box } from '@mui/material';
+import { isBackupFallbackNeeded, subscribeBackupAvailability } from '../services/backup/backupAvailability';
+import { Box, Button } from '@mui/material';
 import WifiOffRoundedIcon from '@mui/icons-material/WifiOffRounded';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
+
+import { openBackup, readBackup } from '../services/backup/localBackup';
 
 export function OfflineStatusBar() {
     const [offline, setOffline] = useState(() => !navigator.onLine);
+
+    const serverUnavailable = useSyncExternalStore(subscribeBackupAvailability, isBackupFallbackNeeded);
+    const [available, setAvailable] = useState(false);
+    useEffect(() => {
+        if (offline || serverUnavailable) void readBackup().then(snapshot => setAvailable(Boolean(snapshot)))
+            .catch(error => console.error('Could not check local backup:', error));
+    }, [offline, serverUnavailable]);
 
     useEffect(() => {
         const handleOffline = () => setOffline(true);
@@ -17,7 +27,7 @@ export function OfflineStatusBar() {
         };
     }, []);
 
-    if (!offline) return null;
+    if (!offline && !(serverUnavailable && available)) return null;
 
     return (
         <Box
@@ -41,7 +51,10 @@ export function OfflineStatusBar() {
             }}
         >
             <WifiOffRoundedIcon aria-hidden="true" sx={{ fontSize: 19 }} />
-            <span>No internet connection</span>
+            <span>{offline ? 'No internet connection' : 'Your data could not be refreshed'}</span>
+            {available && <Button color="inherit" onClick={() => {
+                void openBackup().catch(error => console.error('Could not open local backup:', error));
+            }}>View local backup</Button>}
         </Box>
     );
 }

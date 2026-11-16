@@ -1,3 +1,4 @@
+import { reportServerAvailability } from '../backup/backupAvailability';
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import keycloak, {
     isDefinitiveRefreshFailure,
@@ -59,7 +60,7 @@ apiClient.interceptors.request.use(async (config) => {
 });
 
 apiClient.interceptors.response.use(
-    (response) => response,
+    (response) => { reportServerAvailability(true); return response; },
     async (error: unknown) => {
         const config = axios.isAxiosError(error)
             ? error.config as RetryableRequestConfig | undefined
@@ -88,6 +89,9 @@ apiClient.interceptors.response.use(
             }
         }
 
+        if (config?.method?.toUpperCase() === 'GET' && !config.signal?.aborted && isTransientFailure(error)) {
+            reportServerAvailability(false);
+        }
         console.error('API Error:', error);
         return Promise.reject(error);
     }

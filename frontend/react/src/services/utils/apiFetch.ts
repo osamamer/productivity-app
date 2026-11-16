@@ -1,3 +1,5 @@
+import { reportServerAvailability } from '../backup/backupAvailability';
+
 export const API_READ_RETRY_WINDOW_MS = 3_000;
 export const API_READ_RETRY_DELAYS_MS = [250, 500, 750, 1_000] as const;
 
@@ -58,15 +60,19 @@ export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {})
         for (;;) {
             try {
                 const response = await fetch(input, { ...init, signal: controller.signal });
-                if (!isRetryableStatus(response.status)) return response;
+                if (!isRetryableStatus(response.status)) {
+                    if (response.ok) reportServerAvailability(true);
+                    return response;
+                }
 
                 const remainingMs = deadline - Date.now();
-                if (remainingMs <= 0) return response;
+                if (remainingMs <= 0) { reportServerAvailability(false); return response; }
 
                 const delayMs = retryDelay(attempt++);
                 if (delayMs >= remainingMs) {
                     await waitForRetry(remainingMs, controller.signal);
                     if (callerSignal?.aborted) throw new DOMException('The request was aborted.', 'AbortError');
+                    reportServerAvailability(false);
                     return response;
                 }
                 await discardResponse(response);
@@ -78,12 +84,13 @@ export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {})
                 if (callerSignal?.aborted) throw error;
 
                 const remainingMs = deadline - Date.now();
-                if (remainingMs <= 0) throw error;
+                if (remainingMs <= 0) { reportServerAvailability(false); throw error; }
 
                 const delayMs = retryDelay(attempt++);
                 if (delayMs >= remainingMs) {
                     await waitForRetry(remainingMs, controller.signal);
                     if (callerSignal?.aborted) throw error;
+                    reportServerAvailability(false);
                     throw error;
                 }
                 if (!await waitForRetry(delayMs, controller.signal)) {

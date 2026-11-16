@@ -1,3 +1,4 @@
+import { openBackup, readBackup } from './services/backup/localBackup';
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import './index.css'
@@ -126,7 +127,15 @@ function renderAuthUnavailable() {
     retry.addEventListener('click', () => window.location.reload());
     panel.append(heading, detail, retry);
     root.append(panel);
-    window.setTimeout(() => window.location.reload(), AUTH_RETRY_MS);
+    void readBackup().then(snapshot => {
+        if (!snapshot) return;
+        const backup = document.createElement('button');
+        backup.textContent = 'View local backup';
+        backup.style.cssText = retry.style.cssText;
+        backup.onclick = () => { void openBackup().catch(error => console.error('Could not open local backup:', error)); };
+        panel.append(backup);
+    }).catch(error => console.error('Could not check local backup:', error));
+    window.setTimeout(() => { if (!document.getElementById('root')?.inert) window.location.reload(); }, AUTH_RETRY_MS);
 }
 
 /**
@@ -162,7 +171,7 @@ async function bootstrap() {
         await renderApp();
     } catch (error) {
         console.error('App rendering failed', error);
-        document.getElementById('root')!.textContent = 'The app could not be started. Please refresh and try again.';
+        renderAuthUnavailable();
     }
 }
 

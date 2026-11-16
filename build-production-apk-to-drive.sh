@@ -24,6 +24,7 @@ Usage:
 Configuration:
   CLARITARD_APK_OUTPUT_DIR  output directory, default: Documents/productivity-app-apks
   CLARITARD_APK_NAME        output filename, default: timestamped production name
+  CLARITARD_KDECONNECT_DEVICE  paired device name; auto-selects the only paired device
 
 Examples:
   ./build-production-apk-to-drive.sh
@@ -84,3 +85,22 @@ echo "Storing $apk_path in $output_path..."
 cp -- "$apk_path" "$output_path"
 
 echo "Stored production APK: $output_path"
+
+command -v kdeconnect-cli >/dev/null 2>&1 || {
+  echo "kdeconnect-cli is required to send the APK to the phone." >&2
+  exit 1
+}
+
+device="${CLARITARD_KDECONNECT_DEVICE:-}"
+if [[ -z "$device" ]]; then
+  mapfile -t devices < <(kdeconnect-cli --list-devices --name-only 2>/dev/null)
+  if (( ${#devices[@]} != 1 )); then
+    echo "Set CLARITARD_KDECONNECT_DEVICE to the paired phone name or ID; found ${#devices[@]} paired devices." >&2
+    exit 1
+  fi
+  device="${devices[0]}"
+fi
+
+echo "Sending APK to KDE Connect device: $device"
+kdeconnect-cli --name "$device" --share "$output_path"
+echo "Sent production APK to $device"

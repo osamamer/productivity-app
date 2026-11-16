@@ -18,6 +18,8 @@ import { clearAppBootstrap } from '../services/bootstrap/appBootstrap';
 import { sideNavSnapshotCache } from '../services/cache/sideNavSnapshotCache';
 import { notesWorkspaceCache } from '../services/cache/notesWorkspaceCache';
 
+import { startDailyBackups } from '../services/backup/localBackup';
+
 interface UserInfo {
     id: string;
     email: string;
@@ -56,6 +58,10 @@ export function UserProvider({ children }: { children: ReactNode }) {
                 createdAt: '',
             });
         }
+    }, []);
+
+    useEffect(() => {
+        if (keycloak.authenticated) return startDailyBackups();
     }, []);
 
     const logout = useCallback(async () => {

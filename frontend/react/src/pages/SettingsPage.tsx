@@ -77,6 +77,7 @@ import {
 import { selectWhiteNoiseSound, setWhiteNoiseSource } from '../services/whiteNoise.ts';
 import { notificationService, type WebPushSubscriptionPayload } from '../services/api/notificationService';
 import { isDesktopApp, isLocalDesktopMode } from '../services/desktop';
+import LocalBackupSection from '../components/settings/LocalBackupSection';
 import DesktopStorageSection from '../components/settings/DesktopStorageSection';
 
 const sectionCardSx = {
@@ -1587,6 +1588,7 @@ export function SettingsPage() {
                                 </Box>
 
                                 <DesktopStorageSection />
+                                <LocalBackupSection />
 
                                 {/* Local desktop mode has one implicit user, so there is no password or session to manage. */}
                                 {!isLocalDesktopMode && (
