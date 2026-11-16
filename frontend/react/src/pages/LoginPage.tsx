@@ -19,6 +19,8 @@ import eyeCareImage from '../assets/images/eye-care.png';
 import keycloak, {
     authenticateWithPassword,
     registerAccount,
+    SIGN_IN_REJECTED,
+    SIGN_IN_UNAVAILABLE,
     type RegistrationDetails,
 } from '../services/keycloak';
 
@@ -29,6 +31,16 @@ const EMPTY_REGISTRATION: RegistrationDetails = {
     username: '',
     password: '',
 };
+
+function signInErrorMessage(error: unknown): string {
+    const code = error instanceof Error ? error.message : '';
+    if (code === SIGN_IN_REJECTED) return 'That username or password is incorrect.';
+    if (code === SIGN_IN_UNAVAILABLE || !code) {
+        return 'Claritard can’t reach its sign-in service right now, so your password wasn’t checked. Please try again in a few minutes.';
+    }
+    // Registration failures carry a message written for the user.
+    return code;
+}
 
 const FEATURES = [
     { icon: CheckCircleOutlineRoundedIcon, label: 'Shape the day without overplanning it' },
@@ -69,11 +81,7 @@ export function LoginPage() {
             }
             window.location.replace('/');
         } catch (requestError) {
-            setError(
-                isRegistering && requestError instanceof Error
-                    ? requestError.message
-                    : 'That username or password is incorrect.'
-            );
+            setError(signInErrorMessage(requestError));
             setLoading(false);
         }
     };

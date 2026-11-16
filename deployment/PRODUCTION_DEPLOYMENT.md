@@ -274,15 +274,20 @@ PRODUCTIVITY_BACKUP_DIR=/opt/productivity-backups \
   /opt/productivity-app/deployment/backup-production.sh
 ```
 
-Schedule it daily with cron, for example:
-
-```sh
-crontab -e
-```
+Schedule it daily. Production uses `/etc/cron.d/claritard-backup`:
 
 ```cron
-17 3 * * * PRODUCTIVITY_BACKUP_DIR=/opt/productivity-backups /opt/productivity-app/deployment/backup-production.sh >> /opt/productivity-backups/backup.log 2>&1
+17 3 * * * root PRODUCTIVITY_BACKUP_DIR=/opt/productivity-backups /opt/productivity-app/deployment/backup-production.sh >> /opt/productivity-backups/backup.log 2>&1
 ```
+
+The script keeps the newest 14 timestamped backups of each kind
+(`PRODUCTIVITY_BACKUP_KEEP` overrides this) and never deletes dumps it did not name.
+Retention counts backups rather than days, so a stopped job never ages out the last good copy.
+
+`deploy-production.sh` removes Docker images that no container uses before pulling a release,
+and refuses to deploy with less than 3 GB free (`PRODUCTIVITY_MIN_FREE_DISK_GB`). Old image
+tags otherwise accumulate until the disk fills, and PostgreSQL cannot finish crash recovery
+on a full disk.
 
 Copy all database dumps and `pomodoro-sounds-*.tar.gz` archives to a separate machine or object-storage bucket and periodically test a
 restore. The VPS provider's snapshot/backup feature is useful as a second layer, but

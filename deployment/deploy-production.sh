@@ -278,6 +278,32 @@ wait_for_edge() {
   return 1
 }
 
+# Every deploy pulls new image tags and nothing else removes the old ones. On 2026-11-16
+# that filled the disk mid-deploy and PostgreSQL could not complete crash recovery.
+# Images used by any container (running or stopped) are kept, so the current release
+# stays available for rollback. Volumes are never touched.
+remove_unused_images() {
+  echo "Removing Docker images and build cache no container uses..."
+  docker image prune --all --force >/dev/null || echo "Could not prune unused images." >&2
+  docker builder prune --all --force >/dev/null || echo "Could not prune the build cache." >&2
+}
+
+require_free_disk() {
+  local minimum_kb=$((${PRODUCTIVITY_MIN_FREE_DISK_GB:-3} * 1024 * 1024))
+  local docker_root available_kb
+  docker_root=$(docker info --format '{{.DockerRootDir}}')
+  available_kb=$(df --output=avail -k "${docker_root}" | tail -n 1 | tr -d '[:space:]')
+
+  if (( available_kb < minimum_kb )); then
+    echo "Refusing to deploy: only $((available_kb / 1024)) MB free under ${docker_root}." >&2
+    echo "PostgreSQL cannot recover from a crash without free space; free disk space first." >&2
+    return 1
+  fi
+}
+
+remove_unused_images
+require_free_disk
+
 rollout() {
   local tag=$1
   export IMAGE_TAG="${tag}"
