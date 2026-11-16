@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'">
+    <title>Choose where Claritard stores your data</title>
+    <link rel="stylesheet" href="shared.css">
+    <link rel="stylesheet" href="chooser.css">
+</head>
+<body>
+<main>
+    <h1>Where should your data live?</h1>
+    <p>You can change this later from the <strong>⋮</strong> menu at the top of the window. Local and cloud data are kept separately.</p>
+
+    <form id="chooser">
+        <label class="option">
+            <input type="radio" name="mode" value="local" checked>
+            <span class="option-body">
+                <span class="option-title">On this computer <span class="badge">Offline</span></span>
+                <span class="option-text">A private database on this machine. No account, and the app never contacts the cloud.</span>
+                <span class="option-text small" id="local-path"></span>
+            </span>
+        </label>
+
+        <label class="option">
+            <input type="radio" name="mode" value="cloud">
+            <span class="option-body">
+                <span class="option-title">In the cloud</span>
+                <span class="option-text">Sign in to your account on claritard.com and use the same data on the web and on your phone.</span>
+            </span>
+        </label>
+
+        <p class="error" id="error" role="alert"></p>
+        <div class="actions">
+            <span class="current" id="current"></span>
+            <button type="submit" id="continue">Continue</button>
+        </div>
+    </form>
+</main>
+<script src="chooser.js"></script>
+</body>
+</html>

@@ -11,6 +11,7 @@ import keycloak, {
     AUTH_SESSION_STORAGE_KEY,
 } from './services/keycloak';
 import { prepareAudioFeedback } from './services/audioFeedback';
+import { isLocalDesktopMode } from './services/desktop';
 
 // Unlock Web Audio during a user gesture so a later API response can play its cue.
 window.addEventListener('pointerdown', prepareAudioFeedback, { capture: true });
@@ -31,10 +32,12 @@ keycloak.onTokenExpired = () => {
     });
 };
 
-const initialization = keycloak.init({
-    checkLoginIframe: false,
-    ...authSession,
-});
+const initialization = isLocalDesktopMode
+    ? Promise.resolve(true)
+    : keycloak.init({
+        checkLoginIframe: false,
+        ...authSession,
+    });
 
 function startTokenRefresh() {
     // Refresh the token before it expires (refresh if < 60s remaining, check every minute)
@@ -51,7 +54,7 @@ function startTokenRefresh() {
 }
 
 async function renderApp() {
-    startTokenRefresh();
+    if (!isLocalDesktopMode) startTokenRefresh();
     if ('serviceWorker' in navigator) {
         void navigator.serviceWorker.register('/service-worker.js')
             .catch(error => console.error('Could not register the notification worker:', error));

@@ -1,3 +1,5 @@
+import { desktopBridge } from './desktop';
+
 export type SystemNotificationOptions = NotificationOptions & {
     tag?: string;
 };
@@ -9,8 +11,28 @@ function supportsSystemNotifications(): boolean {
 }
 
 export async function requestSystemNotificationPermission(): Promise<void> {
+    if (desktopBridge) return;
     if (supportsSystemNotifications() && Notification.permission === 'default') {
         await Notification.requestPermission();
+    }
+}
+
+function targetUrlOf(options?: SystemNotificationOptions): string | undefined {
+    const data = options?.data as { targetUrl?: unknown } | undefined;
+    return typeof data?.targetUrl === 'string' ? data.targetUrl : undefined;
+}
+
+async function showDesktopNotification(title: string, options?: SystemNotificationOptions): Promise<boolean> {
+    try {
+        return await desktopBridge!.showNotification({
+            title,
+            body: options?.body,
+            tag: options?.tag,
+            targetUrl: targetUrlOf(options),
+        });
+    } catch (error) {
+        console.error('Failed to show desktop notification:', error);
+        return false;
     }
 }
 
@@ -18,6 +40,7 @@ export async function showSystemNotification(
     title: string,
     options?: SystemNotificationOptions,
 ): Promise<boolean> {
+    if (desktopBridge) return showDesktopNotification(title, options);
     if (!supportsSystemNotifications() || Notification.permission !== 'granted') {
         return false;
     }

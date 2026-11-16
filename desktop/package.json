@@ -1,0 +1,61 @@
+{
+  "name": "claritard-desktop",
+  "productName": "Claritard",
+  "version": "1.2.0",
+  "description": "Linux desktop app for Claritard with a private local database or the cloud.",
+  "author": "Osama",
+  "homepage": "https://github.com/osamamer/productivity-app",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "src/main.js",
+  "desktopName": "claritard.desktop",
+  "scripts": {
+    "build:resources": "./scripts/build-resources.sh",
+    "start": "electron .",
+    "test": "node --test test/*.test.js",
+    "dist": "npm run build:resources && electron-builder --linux",
+    "dist:only": "electron-builder --linux"
+  },
+  "devDependencies": {
+    "electron": "45.3.3",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "app.claritard.desktop",
+    "productName": "Claritard",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/backend.jar",
+        "to": "backend.jar"
+      },
+      {
+        "from": "resources/frontend",
+        "to": "frontend"
+      },
+      {
+        "from": "resources/jre",
+        "to": "jre"
+      }
+    ],
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Office",
+      "icon": "assets/icon.png",
+      "executableName": "claritard",
+      "maintainer": "Osama",
+      "synopsis": "Tasks, focus sessions, meditation and daily planning",
+      "syncDesktopName": true
+    }
+  }
+}

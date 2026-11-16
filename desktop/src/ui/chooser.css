@@ -1,0 +1,15 @@
+form { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
+.option { display: flex; gap: 14px; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); cursor: pointer; }
+.option:hover { background: var(--surface-hover); }
+.option:has(input[type=radio]:checked) { border-color: var(--accent); }
+.option input[type=radio] { accent-color: var(--accent); margin-top: 4px; }
+.option-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+.option-title { font-weight: 600; }
+.option-text { color: var(--muted); font-size: 14px; }
+.option-text.small { font-size: 12px; overflow-wrap: anywhere; }
+.badge { font-size: 11px; font-weight: 600; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 1px 8px; margin-left: 6px; vertical-align: middle; }
+.error { color: var(--danger); min-height: 1.5em; margin: 0; }
+.actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.current { color: var(--muted); font-size: 13px; }
+button { padding: 10px 22px; border: 0; border-radius: 8px; background: var(--accent); color: #140f1f; font: inherit; font-weight: 600; cursor: pointer; }
+button:disabled { opacity: 0.6; cursor: default; }

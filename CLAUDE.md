@@ -49,6 +49,15 @@ Feature packages follow a consistent pattern — each has an entity, repository,
 
 WebSocket (STOMP) is configured in `WebSocketConfig.java`. The frontend connects via `/ws` (proxied by Vite).
 
+### Linux desktop app
+
+`desktop/` is an Electron shell (see [desktop/README.md](desktop/README.md)). Users choose **local mode** — the bundled backend runs with the `desktop` profile (`backend/src/main/java/org/osama/desktop/`): embedded PostgreSQL via zonky, per-launch HS256 token instead of Keycloak, static web app served from the backend on `127.0.0.1:47830`, remote push disabled, and the window blocks all non-loopback requests — or **cloud mode**, which loads the hosted web app. The window is frameless with an app-drawn header and ⋮ menu; closing it hides to a tray icon so reminders keep arriving. Frontend code reads `services/desktop.ts` (`isLocalDesktopMode`, `isDesktopApp`, `desktopBridge`) to hide password, logout and web-push UI where they cannot work, and `showSystemNotification` routes through the bridge because Electron's `getNotifications()` never settles.
+```bash
+cd desktop && npm run build:resources && npm start   # run from source
+cd desktop && npm run dist                           # AppImage + .deb in desktop/dist
+cd desktop && npm test
+```
+
 ### Database
 
 - **Production**: PostgreSQL on port 5432 (via Docker)
@@ -92,6 +101,7 @@ All user-scoped entities (Task, DayEntity, MeditationSession, TaskSession, Pomod
 | Backend    | 8080 | Spring Boot; also WebSocket    |
 | PostgreSQL | 5432 | Docker                         |
 | Keycloak   | 7070 | Docker, `start-dev` mode       |
+| Desktop local backend | 47830 | Loopback only, `desktop` profile |
 
 Docker services are defined in `deployment/docker-compose.yml`. Environment variables (DB credentials, Keycloak admin) live in `deployment/.env`.
 

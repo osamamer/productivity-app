@@ -1,4 +1,5 @@
-import Keycloak from 'keycloak-js';
+import Keycloak, { type KeycloakTokenParsed } from 'keycloak-js';
+import { isLocalDesktopMode, localDesktopToken } from './desktop';
 
 // The app-owned password form needs to restore its refresh session after a browser restart.
 // The values remain readable by JavaScript; moving the refresh token to an HttpOnly cookie
@@ -36,6 +37,20 @@ const keycloak = new Keycloak({
     realm,
     clientId,
 });
+
+function decodeTokenPayload(token: string): KeycloakTokenParsed {
+    const payload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(atob(payload)) as KeycloakTokenParsed;
+}
+
+// Local desktop mode has no identity server: the shell hands over a ready token and
+// keycloak.init() is never called, so every existing token reader keeps working unchanged.
+if (localDesktopToken) {
+    keycloak.token = localDesktopToken;
+    keycloak.tokenParsed = decodeTokenPayload(localDesktopToken);
+    keycloak.subject = keycloak.tokenParsed.sub;
+    keycloak.authenticated = true;
+}
 
 function readStorageValue(storage: Storage, key: string): string | null {
     try {
@@ -192,6 +207,10 @@ export function refreshAuthToken(minValidity = 30): Promise<boolean> {
 }
 
 export function redirectToSignIn(): void {
+    if (isLocalDesktopMode) {
+        console.error('The local desktop backend rejected its session token');
+        return;
+    }
     clearAuthSession();
     keycloak.clearToken();
     if (window.location.pathname !== '/sign-in') {
@@ -253,6 +272,7 @@ export async function registerAccount(details: RegistrationDetails): Promise<voi
 }
 
 export async function endCurrentSession(): Promise<void> {
+    if (isLocalDesktopMode) return;
     const refreshToken = keycloak.refreshToken;
     if (refreshToken) {
         await fetch(`${keycloakUrl}/realms/${encodeURIComponent(realm)}/protocol/openid-connect/logout`, {

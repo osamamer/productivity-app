@@ -20,6 +20,7 @@ import SelfImprovementRoundedIcon from '@mui/icons-material/SelfImprovementRound
 import NightlightIcon from '@mui/icons-material/Nightlight';
 import LightModeIcon from '@mui/icons-material/LightMode';
 import LogoutIcon from '@mui/icons-material/Logout';
+import { isLocalDesktopMode } from '../services/desktop';
 import MenuRoundedIcon from '@mui/icons-material/MenuRounded';
 import KeyboardDoubleArrowRightRoundedIcon from '@mui/icons-material/KeyboardDoubleArrowRightRounded';
 import KeyboardDoubleArrowLeftRoundedIcon from '@mui/icons-material/KeyboardDoubleArrowLeftRounded';
@@ -634,7 +635,7 @@ export function SideNav() {
                                 navigateFromDrawer('/settings');
                             }}
                         />
-                        {user && (
+                        {user && !isLocalDesktopMode && (
                             <SideNavAction
                                 Icon={LogoutIcon}
                                 text="Log out"

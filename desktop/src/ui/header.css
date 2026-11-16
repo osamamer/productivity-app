@@ -1,0 +1,78 @@
+:root {
+    --bg: #100e14;
+    --fg: #ece8f4;
+    --muted: rgba(236, 232, 244, 0.62);
+    --hover: rgba(255, 255, 255, 0.08);
+    --border: rgba(255, 255, 255, 0.07);
+    --accent: #9b7cf0;
+    --local: #6fcf97;
+    --cloud: #7cb8f0;
+}
+* { box-sizing: border-box; }
+html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--fg);
+    font: 13px/1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    user-select: none;
+    transition: background-color 160ms ease, color 160ms ease;
+}
+.bar {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 6px 0 14px;
+    border-bottom: 1px solid var(--border);
+    -webkit-app-region: drag;
+}
+.brand { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.logo { width: 18px; height: 18px; border-radius: 5px; }
+.name { font-weight: 600; letter-spacing: 0.01em; }
+.mode {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 9px;
+    border-radius: 999px;
+    background: var(--hover);
+    color: var(--muted);
+    font-size: 11.5px;
+    font-weight: 500;
+    white-space: nowrap;
+}
+.mode:empty { display: none; }
+.dot { width: 6px; height: 6px; border-radius: 50%; background: var(--cloud); }
+.mode.local .dot { background: var(--local); }
+.controls { display: flex; align-items: center; gap: 2px; -webkit-app-region: no-drag; }
+.divider { width: 1px; height: 16px; background: var(--border); margin: 0 6px; }
+.icon-button {
+    width: 34px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+}
+.icon-button:hover { background: var(--hover); color: var(--fg); }
+.icon-button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.icon-button svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; }
+#menu svg { fill: currentColor; stroke: none; }
+.icon-button.close:hover { background: #e5484d; color: #fff; }
+.when-maximized { display: none; }
+body.maximized .when-normal { display: none; }
+body.maximized .when-maximized { display: block; }
+body.light {
+    --fg: #1f1b27;
+    --muted: rgba(31, 27, 39, 0.6);
+    --hover: rgba(0, 0, 0, 0.06);
+    --border: rgba(0, 0, 0, 0.08);
+    --local: #219653;
+    --cloud: #2f80ed;
+}

@@ -1,0 +1,26 @@
+:root {
+    color-scheme: dark;
+    --bg: #100e14;
+    --surface: #1b1822;
+    --surface-hover: #241f2e;
+    --border: #2f2a3a;
+    --text: #ece8f4;
+    --muted: #a39cb2;
+    --accent: #9b7cf0;
+    --danger: #f08a8a;
+}
+* { box-sizing: border-box; }
+html, body {
+    margin: 0;
+    min-height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+main { max-width: 560px; margin: 0 auto; padding: 32px 24px; }
+h1 { font-size: 22px; font-weight: 600; margin: 0 0 6px; }
+p { color: var(--muted); margin: 0 0 16px; }
+.centered { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 24px; }
+.spinner { width: 34px; height: 34px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.9s linear infinite; margin-bottom: 20px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+code { background: var(--surface); padding: 2px 6px; border-radius: 6px; font-size: 13px; overflow-wrap: anywhere; }

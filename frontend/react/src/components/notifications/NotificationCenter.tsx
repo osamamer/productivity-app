@@ -6,6 +6,7 @@ import { createAuthenticatedStompClient } from '../../services/authenticatedStom
 import { notificationService } from '../../services/api/notificationService';
 import { playPomodoroTransitionSound } from '../../services/pomodoroTransitionSound';
 import { showSystemNotification } from '../../services/systemNotifications';
+import { desktopBridge } from '../../services/desktop';
 import { ApplicationNotification } from '../../types/ApplicationNotification';
 
 const WS_URL = import.meta.env.VITE_WS_URL
@@ -61,6 +62,9 @@ export function NotificationCenter() {
     const queuedFallbacks = useRef(new Set<string>());
     const openedPushAcknowledgement = useRef<string | null>(null);
     const [fallbackQueue, setFallbackQueue] = useState<ApplicationNotification[]>([]);
+
+    // In the desktop app a clicked notification opens its page here instead of via the service worker.
+    useEffect(() => desktopBridge?.onNotificationClick(targetUrl => navigate(targetUrl)), [navigate]);
 
     const deliver = useCallback(async (notification: ApplicationNotification) => {
         if (inFlight.current.has(notification.notificationId)) return;

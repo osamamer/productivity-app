@@ -76,6 +76,8 @@ import {
 } from '../services/pomodoroSoundUpload.ts';
 import { selectWhiteNoiseSound, setWhiteNoiseSource } from '../services/whiteNoise.ts';
 import { notificationService, type WebPushSubscriptionPayload } from '../services/api/notificationService';
+import { isDesktopApp, isLocalDesktopMode } from '../services/desktop';
+import DesktopStorageSection from '../components/settings/DesktopStorageSection';
 
 const sectionCardSx = {
     backgroundColor: 'background.paper',
@@ -1282,7 +1284,8 @@ export function SettingsPage() {
                                     </Box>
                                 </Box>
 
-                                <BrowserNotificationsSection />
+                                {/* Electron has no browser push service, so remote push cannot reach the desktop app. */}
+                                {!isDesktopApp && <BrowserNotificationsSection />}
                                 <CheckupSettingsSection />
 
                                 <Box sx={sectionCardSx}>
@@ -1583,110 +1586,117 @@ export function SettingsPage() {
                                     </Stack>
                                 </Box>
 
-                                <Box sx={{ mt: 3, pt: 3, borderTop: theme => `1px solid ${theme.palette.divider}` }}>
-                                    <Box sx={sectionHeadingSx}>
-                                        <SecurityOutlinedIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
-                                        <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-                                            Account actions
-                                        </Typography>
-                                    </Box>
+                                <DesktopStorageSection />
 
-                                    <Button
-                                        fullWidth
-                                        variant="outlined"
-                                        color="inherit"
-                                        startIcon={<SecurityOutlinedIcon />}
-                                        aria-expanded={changePasswordOpen}
-                                        onClick={() => {
-                                            if (changePasswordOpen) closePasswordChange();
-                                            else {
-                                                setPasswordSuccess(null);
-                                                setChangePasswordOpen(true);
-                                            }
-                                        }}
-                                        sx={{ justifyContent: 'flex-start', borderRadius: 2, py: 1.1, textTransform: 'none' }}
-                                    >
-                                        {changePasswordOpen ? 'Cancel password change' : 'Change password'}
-                                    </Button>
-
-                                    {changePasswordOpen && (
-                                        <Box component="form" onSubmit={handlePasswordSubmit} sx={{ mt: 2.5 }}>
-                                            <Typography variant="body2" color="text.secondary" sx={{ mb: 2, textAlign: 'left' }}>
-                                                Confirm your current password before choosing a new one.
+                                {/* Local desktop mode has one implicit user, so there is no password or session to manage. */}
+                                {!isLocalDesktopMode && (
+                                    <>
+                                    <Box sx={{ mt: 3, pt: 3, borderTop: theme => `1px solid ${theme.palette.divider}` }}>
+                                        <Box sx={sectionHeadingSx}>
+                                            <SecurityOutlinedIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
+                                            <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                                                Account actions
                                             </Typography>
-
-                                            <Stack spacing={1.5}>
-                                                {passwordError && <Alert severity="error">{passwordError}</Alert>}
-                                                {passwordSuccess && <Alert severity="success">{passwordSuccess}</Alert>}
-                                                <TextField
-                                                    label="Current password"
-                                                    type="password"
-                                                    value={currentPassword}
-                                                    onChange={(event) => setCurrentPassword(event.target.value)}
-                                                    fullWidth
-                                                    autoComplete="current-password"
-                                                />
-                                                <TextField
-                                                    label="New password"
-                                                    type="password"
-                                                    value={newPassword}
-                                                    onChange={(event) => setNewPassword(event.target.value)}
-                                                    fullWidth
-                                                    autoComplete="new-password"
-                                                />
-                                                <TextField
-                                                    label="Confirm new password"
-                                                    type="password"
-                                                    value={confirmPassword}
-                                                    onChange={(event) => setConfirmPassword(event.target.value)}
-                                                    error={confirmPassword !== '' && !passwordsMatch}
-                                                    helperText={confirmPassword !== '' && !passwordsMatch ? 'Passwords must match.' : ' '}
-                                                    fullWidth
-                                                    autoComplete="new-password"
-                                                />
-                                                <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>
-                                                    <Button
-                                                        type="submit"
-                                                        variant="contained"
-                                                        disabled={!canSubmitPasswordChange || passwordSaving}
-                                                        sx={{ borderRadius: 2, py: 1.1, px: 2.5, textTransform: 'none' }}
-                                                        startIcon={passwordSaving ? <CircularProgress size={18} color="inherit" /> : undefined}
-                                                    >
-                                                        {passwordSaving ? 'Updating...' : 'Update password'}
-                                                    </Button>
-                                                </Box>
-                                            </Stack>
                                         </Box>
-                                    )}
-                                </Box>
 
-                                <Box sx={{ mt: 3, pt: 3, borderTop: theme => `1px solid ${theme.palette.divider}` }}>
-                                    <Box sx={sectionHeadingSx}>
-                                        <SecurityOutlinedIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
-                                        <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-                                            Session
-                                        </Typography>
+                                        <Button
+                                            fullWidth
+                                            variant="outlined"
+                                            color="inherit"
+                                            startIcon={<SecurityOutlinedIcon />}
+                                            aria-expanded={changePasswordOpen}
+                                            onClick={() => {
+                                                if (changePasswordOpen) closePasswordChange();
+                                                else {
+                                                    setPasswordSuccess(null);
+                                                    setChangePasswordOpen(true);
+                                                }
+                                            }}
+                                            sx={{ justifyContent: 'flex-start', borderRadius: 2, py: 1.1, textTransform: 'none' }}
+                                        >
+                                            {changePasswordOpen ? 'Cancel password change' : 'Change password'}
+                                        </Button>
+
+                                        {changePasswordOpen && (
+                                            <Box component="form" onSubmit={handlePasswordSubmit} sx={{ mt: 2.5 }}>
+                                                <Typography variant="body2" color="text.secondary" sx={{ mb: 2, textAlign: 'left' }}>
+                                                    Confirm your current password before choosing a new one.
+                                                </Typography>
+
+                                                <Stack spacing={1.5}>
+                                                    {passwordError && <Alert severity="error">{passwordError}</Alert>}
+                                                    {passwordSuccess && <Alert severity="success">{passwordSuccess}</Alert>}
+                                                    <TextField
+                                                        label="Current password"
+                                                        type="password"
+                                                        value={currentPassword}
+                                                        onChange={(event) => setCurrentPassword(event.target.value)}
+                                                        fullWidth
+                                                        autoComplete="current-password"
+                                                    />
+                                                    <TextField
+                                                        label="New password"
+                                                        type="password"
+                                                        value={newPassword}
+                                                        onChange={(event) => setNewPassword(event.target.value)}
+                                                        fullWidth
+                                                        autoComplete="new-password"
+                                                    />
+                                                    <TextField
+                                                        label="Confirm new password"
+                                                        type="password"
+                                                        value={confirmPassword}
+                                                        onChange={(event) => setConfirmPassword(event.target.value)}
+                                                        error={confirmPassword !== '' && !passwordsMatch}
+                                                        helperText={confirmPassword !== '' && !passwordsMatch ? 'Passwords must match.' : ' '}
+                                                        fullWidth
+                                                        autoComplete="new-password"
+                                                    />
+                                                    <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>
+                                                        <Button
+                                                            type="submit"
+                                                            variant="contained"
+                                                            disabled={!canSubmitPasswordChange || passwordSaving}
+                                                            sx={{ borderRadius: 2, py: 1.1, px: 2.5, textTransform: 'none' }}
+                                                            startIcon={passwordSaving ? <CircularProgress size={18} color="inherit" /> : undefined}
+                                                        >
+                                                            {passwordSaving ? 'Updating...' : 'Update password'}
+                                                        </Button>
+                                                    </Box>
+                                                </Stack>
+                                            </Box>
+                                        )}
                                     </Box>
 
-                                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2, textAlign: 'left' }}>
-                                        You are currently signed in. Logging out will end your session on this device.
-                                    </Typography>
+                                    <Box sx={{ mt: 3, pt: 3, borderTop: theme => `1px solid ${theme.palette.divider}` }}>
+                                        <Box sx={sectionHeadingSx}>
+                                            <SecurityOutlinedIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
+                                            <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                                                Session
+                                            </Typography>
+                                        </Box>
 
-                                    <Button
-                                        fullWidth
-                                        variant="outlined"
-                                        color="inherit"
-                                        startIcon={<LogoutIcon />}
-                                        onClick={event => {
-                                            const bounds = event.currentTarget.getBoundingClientRect();
-                                            setLogoutAnchorPosition({ top: bounds.bottom, left: bounds.left });
-                                            setLogoutDialogOpen(true);
-                                        }}
-                                        sx={{ justifyContent: 'flex-start', borderRadius: 2, py: 1.1, textTransform: 'none' }}
-                                    >
-                                        Log out
-                                    </Button>
-                                </Box>
+                                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2, textAlign: 'left' }}>
+                                            You are currently signed in. Logging out will end your session on this device.
+                                        </Typography>
+
+                                        <Button
+                                            fullWidth
+                                            variant="outlined"
+                                            color="inherit"
+                                            startIcon={<LogoutIcon />}
+                                            onClick={event => {
+                                                const bounds = event.currentTarget.getBoundingClientRect();
+                                                setLogoutAnchorPosition({ top: bounds.bottom, left: bounds.left });
+                                                setLogoutDialogOpen(true);
+                                            }}
+                                            sx={{ justifyContent: 'flex-start', borderRadius: 2, py: 1.1, textTransform: 'none' }}
+                                        >
+                                            Log out
+                                        </Button>
+                                    </Box>
+                                    </>
+                                )}
                             </Box>
                         )}
 

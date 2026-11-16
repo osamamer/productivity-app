@@ -73,6 +73,15 @@ Reminder delivery is database-first. `ScheduledJobExecutor` locks and runs each 
 
 The mobile client uses Expo remote push for application notifications, including calendar, task, check-up, and meditation notifications; Pomodoro transitions stay local to the browser app. It syncs the device time zone for check-up schedules on startup and foreground, suppresses a check-up when a check-in was recorded within the one-hour mental-state current window before its scheduled time, and expires check-up pushes after thirty minutes. It must not schedule local copies or re-present the durable inbox; startup cleanup only removes schedules left by older mobile builds. The backend records the first dispatch attempt so an unacknowledged remote push is not sent repeatedly.
 
+### Linux desktop app
+
+`desktop/` is an Electron shell (see [desktop/README.md](desktop/README.md)). Users choose **local mode** — the bundled backend runs with the `desktop` profile (`backend/src/main/java/org/osama/desktop/`): embedded PostgreSQL via zonky, per-launch HS256 token instead of Keycloak, static web app served from the backend on `127.0.0.1:47830`, remote push disabled, and the window blocks all non-loopback requests — or **cloud mode**, which loads the hosted web app. The window is frameless with an app-drawn header and ⋮ menu; closing it hides to a tray icon so reminders keep arriving. Frontend code reads `services/desktop.ts` (`isLocalDesktopMode`, `isDesktopApp`, `desktopBridge`) to hide password, logout and web-push UI where they cannot work, and `showSystemNotification` routes through the bridge because Electron's `getNotifications()` never settles.
+```bash
+cd desktop && npm run build:resources && npm start   # run from source
+cd desktop && npm run dist                           # AppImage + .deb in desktop/dist
+cd desktop && npm test
+```
+
 ### Database
 
 - **Production**: PostgreSQL on port 5432 (via Docker)
