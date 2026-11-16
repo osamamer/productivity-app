@@ -4,6 +4,7 @@ import { createServer } from 'vite';
 
 let viteServer;
 let compareHomeTasks;
+let compareHomeTaskListItems;
 
 before(async () => {
   viteServer = await createServer({
@@ -13,7 +14,7 @@ before(async () => {
     server: { middlewareMode: true, ws: false, watch: null },
     logLevel: 'silent',
   });
-  ({ compareHomeTasks } = await viteServer.ssrLoadModule('/src/services/utils/homeTaskOrdering.ts'));
+  ({ compareHomeTasks, compareHomeTaskListItems } = await viteServer.ssrLoadModule('/src/services/utils/homeTaskOrdering.ts'));
 });
 
 after(async () => {
@@ -46,4 +47,17 @@ test('keeps incomplete tasks before completed tasks without reordering either gr
     'done-first',
     'done-second',
   ]);
+});
+
+test('moves a group below active Home rows when its last task is completed', () => {
+  const group = { kind: 'group', tasks: [{ completed: true }, { completed: false }] };
+  const rows = [
+    { id: 'group', item: group, anchorIndex: 0, index: 0 },
+    { id: 'active', item: { kind: 'task', task: { completed: false } }, anchorIndex: 1, index: 1 },
+    { id: 'done', item: { kind: 'task', task: { completed: true } }, anchorIndex: 2, index: 2 },
+  ];
+
+  assert.deepEqual(rows.toSorted(compareHomeTaskListItems).map(row => row.id), ['group', 'active', 'done']);
+  group.tasks[1].completed = true;
+  assert.deepEqual(rows.toSorted(compareHomeTaskListItems).map(row => row.id), ['active', 'group', 'done']);
 });

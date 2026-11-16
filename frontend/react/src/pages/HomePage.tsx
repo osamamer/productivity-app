@@ -52,7 +52,7 @@ import { GroupTaskInputRow } from '../components/task/GroupTaskInputRow';
 import { StatGroupTaskComposer } from '../components/task/StatGroupTaskComposer';
 import { GroupTaskCount } from '../components/task/GroupTaskCount';
 import { shouldRenderTaskGroup } from '../components/task-page/taskPageSectionUtils';
-import { compareHomeTasks } from '../services/utils/homeTaskOrdering';
+import { compareHomeTaskListItems, compareHomeTasks } from '../services/utils/homeTaskOrdering';
 import { TaskParentPopover } from '../components/task/TaskParentPopover';
 import { FlatTaskRow } from '../components/FlatTaskRow';
 import { TaskToCreate } from '../types/TaskToCreate';
@@ -415,7 +415,7 @@ function buildTaskListItems(
                     );
             return { item, index, anchorIndex: anchorIndex ?? index };
         })
-        .sort((first, second) => first.anchorIndex - second.anchorIndex || first.index - second.index)
+        .sort(compareHomeTaskListItems)
         .map(({ item }) => item);
 }
 
