@@ -1,11 +1,26 @@
 import Keycloak, { type KeycloakTokenParsed } from 'keycloak-js';
 import { isLocalDesktopMode, localDesktopToken } from './desktop';
+import { isInvalidGrantResponse, isRejectedRefreshError } from './auth/authFailures';
 
 // The app-owned password form needs to restore its refresh session after a browser restart.
 // The values remain readable by JavaScript; moving the refresh token to an HttpOnly cookie
 // would require a backend-for-frontend session design.
 export const AUTH_SESSION_STORAGE_KEY = 'claritard_auth_session';
 const REFRESH_RETRY_DELAYS_MS = [250, 1_000];
+
+export const SIGN_IN_REJECTED = 'SIGN_IN_REJECTED';
+export const SIGN_IN_UNAVAILABLE = 'SIGN_IN_UNAVAILABLE';
+
+/** Keycloak checked the saved refresh token and rejected it; the user must sign in again. */
+export class SessionRejectedError extends Error {
+    readonly response: unknown;
+
+    constructor(refreshError: unknown) {
+        super('The saved session was rejected by the identity server');
+        this.name = 'SessionRejectedError';
+        this.response = (refreshError as { response?: unknown } | null)?.response;
+    }
+}
 
 interface AuthSession {
     token: string;
@@ -146,19 +161,37 @@ export function clearAuthSession(): void {
     removeStorageValue(sessionStorage, AUTH_SESSION_STORAGE_KEY);
 }
 
-function responseStatus(error: unknown): number | undefined {
-    if (typeof error !== 'object' || error === null || !('response' in error)) return undefined;
-
-    const response = (error as { response?: unknown }).response;
-    if (typeof response !== 'object' || response === null || !('status' in response)) return undefined;
-
-    const status = (response as { status?: unknown }).status;
-    return typeof status === 'number' ? status : undefined;
+export function isDefinitiveRefreshFailure(error: unknown): boolean {
+    return error instanceof SessionRejectedError || !keycloak.token || !keycloak.refreshToken;
 }
 
-export function isDefinitiveRefreshFailure(error: unknown): boolean {
-    const status = responseStatus(error);
-    return status === 400 || status === 401 || !keycloak.token || !keycloak.refreshToken;
+/**
+ * Puts a saved session back into keycloak-js. keycloak-js discards its tokens on any HTTP 400
+ * from the token endpoint, including server-side errors during an outage, which would
+ * otherwise turn a temporary outage into a sign-out.
+ */
+export function restoreAuthSession(session: Partial<AuthSession>): boolean {
+    if (!session.token || !session.refreshToken) return false;
+    keycloak.token = session.token;
+    keycloak.tokenParsed = decodeTokenPayload(session.token);
+    keycloak.refreshToken = session.refreshToken;
+    keycloak.refreshTokenParsed = decodeTokenPayload(session.refreshToken);
+    if (session.idToken) {
+        keycloak.idToken = session.idToken;
+        keycloak.idTokenParsed = decodeTokenPayload(session.idToken);
+    }
+    keycloak.subject = keycloak.tokenParsed.sub;
+    keycloak.authenticated = true;
+    return true;
+}
+
+export function isAccessTokenUsable(nowMs = Date.now()): boolean {
+    const expiresAt = keycloak.tokenParsed?.exp;
+    return typeof expiresAt === 'number' && expiresAt * 1000 > nowMs;
+}
+
+function currentSession(): Partial<AuthSession> {
+    return { token: keycloak.token, refreshToken: keycloak.refreshToken, idToken: keycloak.idToken };
 }
 
 const wait = (milliseconds: number) => new Promise<void>(resolve => {
@@ -169,11 +202,14 @@ async function refreshWithRetry(minValidity: number): Promise<boolean> {
     let lastError: unknown;
 
     for (let attempt = 0; attempt <= REFRESH_RETRY_DELAYS_MS.length; attempt += 1) {
+        const sessionBeforeRefresh = currentSession();
         try {
             const refreshed = await keycloak.updateToken(minValidity);
             persistAuthSession();
             return refreshed;
         } catch (error) {
+            if (await isRejectedRefreshError(error)) throw new SessionRejectedError(error);
+            if (!keycloak.refreshToken) restoreAuthSession(sessionBeforeRefresh);
             lastError = error;
             if (isDefinitiveRefreshFailure(error) || attempt === REFRESH_RETRY_DELAYS_MS.length) {
                 throw error;
@@ -221,25 +257,33 @@ export function redirectToSignIn(): void {
 export async function authenticateWithPassword(username: string, password: string): Promise<void> {
     // Direct access grants keep the browser on /sign-in, but they intentionally do not support
     // redirect-based identity features such as social providers or most MFA flows.
-    const response = await fetch(`${keycloakUrl}/realms/${encodeURIComponent(realm)}/protocol/openid-connect/token`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-            grant_type: 'password',
-            client_id: clientId,
-            scope: 'openid profile email offline_access',
-            username,
-            password,
-        }),
-    });
+    let response: Response;
+    try {
+        response = await fetch(`${keycloakUrl}/realms/${encodeURIComponent(realm)}/protocol/openid-connect/token`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+                grant_type: 'password',
+                client_id: clientId,
+                scope: 'openid profile email offline_access',
+                username,
+                password,
+            }),
+        });
+    } catch (error) {
+        console.error('The sign-in service could not be reached', error);
+        throw new Error(SIGN_IN_UNAVAILABLE);
+    }
 
     if (!response.ok) {
-        throw new Error('SIGN_IN_FAILED');
+        if (await isInvalidGrantResponse(response)) throw new Error(SIGN_IN_REJECTED);
+        console.error(`The sign-in service failed with HTTP ${response.status}`);
+        throw new Error(SIGN_IN_UNAVAILABLE);
     }
 
     const tokens = await response.json() as PasswordGrantResponse;
     if (!tokens.access_token || !tokens.refresh_token) {
-        throw new Error('SIGN_IN_FAILED');
+        throw new Error(SIGN_IN_UNAVAILABLE);
     }
 
     const session = JSON.stringify({

@@ -3,13 +3,16 @@ import ReactDOM from 'react-dom/client'
 import './index.css'
 import keycloak, {
     clearAuthSession,
+    isAccessTokenUsable,
     isDefinitiveRefreshFailure,
     persistAuthSession,
     readAuthSession,
     redirectToSignIn,
     refreshAuthToken,
+    restoreAuthSession,
     AUTH_SESSION_STORAGE_KEY,
 } from './services/keycloak';
+import { isRejectedRefreshError } from './services/auth/authFailures';
 import { prepareAudioFeedback } from './services/audioFeedback';
 import { isLocalDesktopMode } from './services/desktop';
 
@@ -21,7 +24,9 @@ const authSession = readAuthSession();
 
 keycloak.onAuthSuccess = persistAuthSession;
 keycloak.onAuthRefreshSuccess = persistAuthSession;
-keycloak.onAuthLogout = clearAuthSession;
+// No onAuthLogout handler: keycloak-js fires it whenever the token endpoint answers 400, which
+// also happens while the identity server is broken. The saved session is cleared explicitly
+// instead, when Keycloak rejects it (redirectToSignIn) or the user signs out.
 keycloak.onTokenExpired = () => {
     void refreshAuthToken(60).catch((error) => {
         if (isDefinitiveRefreshFailure(error)) {
@@ -102,19 +107,52 @@ window.addEventListener('storage', (event) => {
     redirectToSignIn();
 });
 
+const AUTH_RETRY_MS = 30_000;
+
+function renderAuthUnavailable() {
+    const root = document.getElementById('root')!;
+    root.replaceChildren();
+    const panel = document.createElement('div');
+    panel.style.cssText = 'max-width:28rem;margin:20vh auto;padding:0 1.5rem;font-family:Roboto,system-ui,sans-serif;text-align:center;line-height:1.5';
+    const heading = document.createElement('h1');
+    heading.style.cssText = 'font-size:1.4rem;margin-bottom:0.5rem';
+    heading.textContent = 'Claritard can’t reach its server';
+    const detail = document.createElement('p');
+    detail.textContent = 'You are still signed in. The app will reconnect automatically when the server is back.';
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.textContent = 'Try again now';
+    retry.style.cssText = 'margin-top:1rem;padding:0.5rem 1.25rem;font:inherit;cursor:pointer';
+    retry.addEventListener('click', () => window.location.reload());
+    panel.append(heading, detail, retry);
+    root.append(panel);
+    window.setTimeout(() => window.location.reload(), AUTH_RETRY_MS);
+}
+
+/**
+ * Returns false when the app cannot start yet. An outage keeps the saved session: only an
+ * explicit rejection of the refresh token by Keycloak sends the user to sign in again.
+ */
+async function recoverFromInitializationFailure(error: unknown): Promise<boolean> {
+    console.error('App initialisation failed', error);
+    if (await isRejectedRefreshError(error)) {
+        clearAuthSession();
+        return true;
+    }
+    if (!restoreAuthSession(authSession)) return true;
+    if (isAccessTokenUsable()) {
+        console.warn('Keeping the saved web session during a temporary auth failure', error);
+        return true;
+    }
+    renderAuthUnavailable();
+    return false;
+}
+
 async function bootstrap() {
     try {
         await initialization;
     } catch (error) {
-        console.error('App initialisation failed', error);
-
-        // Keep the in-memory session during a temporary Keycloak outage. The saved refresh
-        // session will be retried by the timer once the auth service is reachable again.
-        if (keycloak.authenticated && keycloak.token && keycloak.refreshToken) {
-            console.warn('Keeping the existing web session after a temporary auth failure', error);
-        } else {
-            clearAuthSession();
-        }
+        if (!await recoverFromInitializationFailure(error)) return;
     }
 
     try {
