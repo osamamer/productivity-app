@@ -573,7 +573,7 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
             const finished = await meditationService.endSession(
                 session.id,
                 moodAfter,
-                recordedDuration === 'intended',
+                recordedDuration === 'intended' && elapsed >= session.intendedLength,
             );
             setCompletedSession(finished);
             setSession(null);
@@ -680,7 +680,7 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
                         onSoundChange={handleSoundChange}
                         onToggleSound={toggleSound}
                         onFinish={() => {
-                            setRecordedDuration('elapsed');
+                            setRecordedDuration(sessionComplete ? 'intended' : 'elapsed');
                             setFinishDialogOpen(true);
                         }}
                     />
@@ -709,7 +709,7 @@ export function MeditationTimer({ onSessionCompleted }: MeditationTimerProps) {
                     <Typography color="text.secondary" sx={{ mb: 3 }}>
                         Save a quick check-in with this meditation session.
                     </Typography>
-                    {session && session.intendedLength > 0 && (
+                    {session && session.intendedLength > 0 && elapsed >= session.intendedLength && (
                         <Box sx={{ mb: 2.5 }}>
                             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>
                                 Duration to record

@@ -752,7 +752,7 @@ export const StatRecentDots = React.memo(function StatRecentDots({
                         )}
                         </Stack>
 
-                        <Stack direction="row" spacing={1} justifyContent="flex-start" sx={{ mt: 2 }}>
+                        <Stack direction="row" spacing={1} justifyContent="space-between" sx={{ mt: 2 }}>
                             <Button
                                 size="small"
                                 onClick={event => {

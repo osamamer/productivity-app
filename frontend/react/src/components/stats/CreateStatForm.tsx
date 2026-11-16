@@ -777,17 +777,15 @@ export function CreateStatForm({
                     alignItems="center"
                     sx={hasRecurringTask ? { borderTop: 1, borderColor: 'divider', pt: 1.5 } : undefined}
                 >
+                    <Button onClick={onCancel} color="inherit" size="small">Cancel</Button>
                     {isEditing && !initialDefinition?.systemKey && (
                         <Button type="button" onClick={event => onDelete?.(event.currentTarget)} color="error" size="small">
                             Delete statistic
                         </Button>
                     )}
-                    <Stack direction="row" spacing={1} sx={{ ml: 'auto' }}>
-                        <Button onClick={onCancel} color="inherit" size="small">Cancel</Button>
-                        <Button type="submit" variant="contained" size="small" disabled={formik.isSubmitting}>
-                            {isEditing ? 'Save changes' : 'Create'}
-                        </Button>
-                    </Stack>
+                    <Button type="submit" variant="contained" size="small" disabled={formik.isSubmitting}>
+                        {isEditing ? 'Save changes' : 'Create'}
+                    </Button>
                 </Stack>
             </Stack>
             <CompactPopover

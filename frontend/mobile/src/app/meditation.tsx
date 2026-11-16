@@ -608,7 +608,8 @@ export default function MeditationScreen() {
     mutationInFlightRef.current = true;
     setError(null);
     try {
-      const finished = await api.meditation.end(session.id, moodAfter, recordedDuration === 'intended');
+      const finished = await api.meditation.end(session.id, moodAfter,
+        recordedDuration === 'intended' && elapsed >= session.intendedLength);
       setSessionData(undefined);
       setClientRunningAnchor(null);
       setCompletedSession(finished);
@@ -779,7 +780,7 @@ export default function MeditationScreen() {
             </View>
             <View style={styles.actions}>
               {!sessionComplete && <AppButton style={styles.action} variant="secondary" label={session.running ? 'Pause' : 'Resume'} icon={session.running ? 'pause' : 'play'} loading={saving} onPress={() => void togglePause()} />}
-              <AppButton style={styles.action} variant={sessionComplete ? 'primary' : 'ghost'} label={sessionComplete ? 'Finish session' : 'End early'} icon={sessionComplete ? 'checkmark-circle-outline' : 'stop-circle-outline'} loading={saving} onPress={() => { setRecordedDuration('elapsed'); setFinishSheetOpen(true); }} />
+              <AppButton style={styles.action} variant={sessionComplete ? 'primary' : 'ghost'} label={sessionComplete ? 'Finish session' : 'End early'} icon={sessionComplete ? 'checkmark-circle-outline' : 'stop-circle-outline'} loading={saving} onPress={() => { setRecordedDuration(sessionComplete ? 'intended' : 'elapsed'); setFinishSheetOpen(true); }} />
             </View>
           </Card>
         </Animated.View>
@@ -816,7 +817,7 @@ export default function MeditationScreen() {
           </View>
         )}>
         <AppText color="muted">Save a quick check-in with this meditation session.</AppText>
-        {session && session.intendedLength > 0 && (
+        {session && session.intendedLength > 0 && elapsed >= session.intendedLength && (
           <View style={styles.durationChoiceSection}>
             <AppText variant="label">Duration to record</AppText>
             <View style={styles.durationChoiceRow}>
