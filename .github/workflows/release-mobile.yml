@@ -49,6 +49,12 @@ jobs:
 
       - run: npm ci
 
+      # The default Gradle heap runs out of Metaspace in release lint on the hosted runner.
+      - name: Give Gradle more memory
+        run: |
+          mkdir -p ~/.gradle
+          echo "org.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=2g -Dfile.encoding=UTF-8" >> ~/.gradle/gradle.properties
+
       # Signed with the debug keystore expo prebuild generates, the same key the
       # locally built APKs on your devices use, so these install as updates.
       - name: Build production APK
