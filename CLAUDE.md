@@ -32,6 +32,10 @@ cd frontend/react && npm run build    # Production build
 cd frontend/react && npm run lint     # ESLint (max-warnings 0)
 ```
 
+### Default build after changes
+
+After making any change to the repository, build the Linux `.deb` by default with `cd desktop && npm run dist` and report the path `desktop/dist/claritard-desktop_<version>_amd64.deb` in the final message. Skip this only when the user says not to build, or when the build cannot run here (say so and why).
+
 ## Architecture
 
 ### Backend (Spring Boot 3.1.3, Java 21, Maven)
