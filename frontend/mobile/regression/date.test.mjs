@@ -3,12 +3,14 @@ import test from 'node:test';
 import {
   calendarDateParts,
   clock,
+  displayDayDate,
   eventDateInTimeZone,
   formatCalendarTime,
   greeting,
   localDate,
   localDateTime,
   localDateTimeToInstant,
+  nextDisplayDayBoundary,
   secondsFromDuration,
 } from '../src/lib/date.ts';
 
@@ -17,6 +19,14 @@ test('formats device-local dates and local date-times consistently', () => {
 
   assert.equal(localDate(date), '2026-10-07');
   assert.equal(localDateTime(date), '2026-10-07T09:05:00');
+});
+
+test('keeps the prior local date active until the saved day-end hour', () => {
+  const early = new Date(2026, 10, 17, 2, 30);
+  assert.equal(localDate(displayDayDate(early, 4)), '2026-11-16');
+  assert.equal(localDate(displayDayDate(early, 0)), '2026-11-17');
+  assert.equal(nextDisplayDayBoundary(early, 4).getTime(), new Date(2026, 10, 17, 4).getTime());
+  assert.equal(localDate(displayDayDate(new Date(2026, 10, 17, 4), 4)), '2026-11-17');
 });
 
 test('keeps event dates in the requested time zone across midnight', () => {

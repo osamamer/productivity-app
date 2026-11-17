@@ -1,6 +1,7 @@
 import { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 
-import { localDate } from '@/lib/date';
+import { displayDayDate, localDate, nextDisplayDayBoundary, taskDateBucket } from '@/lib/date';
 import { reportError } from '@/lib/errors';
 import { animateLayout } from '@/lib/motion';
 import { subscribeToResourceInvalidation } from '@/lib/resourceInvalidation';
@@ -10,6 +11,7 @@ import { useAuth } from './AuthProvider';
 import { usePreferences } from './PreferencesProvider';
 
 type TaskWorkspaceValue = {
+  displayDayKey: string;
   allTasks: Task[];
   todayTasks: Task[];
   futureTasks: Task[];
@@ -39,16 +41,6 @@ type TaskWorkspaceValue = {
 
 const TaskWorkspaceContext = createContext<TaskWorkspaceValue | null>(null);
 
-function dateBucket(task: Task): 'today' | 'future' | 'past' | null {
-  if (!task.scheduledPerformDateTime) return null;
-  const scheduled = new Date(task.scheduledPerformDateTime);
-  if (Number.isNaN(scheduled.getTime())) return null;
-  const scheduledDate = localDate(scheduled);
-  const today = localDate();
-  if (scheduledDate === today) return 'today';
-  return scheduledDate > today ? 'future' : 'past';
-}
-
 function replaceTask(tasks: Task[], updated: Task): Task[] {
   return tasks.map(task => task.taskId === updated.taskId ? updated : task);
 }
@@ -72,13 +64,13 @@ function usableGroups(taskGroups: TaskGroup[], tasks?: Task[]): TaskGroup[] {
 
 type TaskDateUpdate = { task: Task; scheduledPerformDateTime: string };
 
-function orderWithTasksAtEndOfToday(tasks: Task[], movedTaskIds: string[]): string[] {
+function orderWithTasksAtEndOfToday(tasks: Task[], movedTaskIds: string[], displayDayKey: string): string[] {
   const movedTaskIdSet = new Set(movedTaskIds);
   const moved = tasks.map(task => task.taskId).filter(taskId => movedTaskIdSet.has(taskId));
   const remaining = tasks.map(task => task.taskId).filter(taskId => !movedTaskIdSet.has(taskId));
   let lastTodayIndex = -1;
   tasks.forEach(task => {
-    if (!movedTaskIdSet.has(task.taskId) && dateBucket(task) === 'today') {
+    if (!movedTaskIdSet.has(task.taskId) && taskDateBucket(task.scheduledPerformDateTime, displayDayKey) === 'today') {
       lastTodayIndex = remaining.indexOf(task.taskId);
     }
   });
@@ -89,7 +81,9 @@ function orderWithTasksAtEndOfToday(tasks: Task[], movedTaskIds: string[]): stri
 
 export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
   const { isAuthenticated } = useAuth();
-  const { showCompletedTasks } = usePreferences();
+  const { showCompletedTasks, homeDayEndHour, homeDayEndHourReady } = usePreferences();
+  const [clock, setClock] = useState(() => new Date());
+  const displayDayKey = localDate(displayDayDate(clock, homeDayEndHour));
   const [allTasks, setAllTasks] = useState<Task[]>([]);
   const allTasksRef = useRef<Task[]>([]);
   const [groups, setGroups] = useState<TaskGroup[]>([]);
@@ -101,6 +95,7 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
   const loadedAtRef = useRef(0);
   const requestRef = useRef<Promise<void> | null>(null);
   const loadedCompletedFilterRef = useRef<boolean | null>(null);
+  const loadedDisplayDayKeyRef = useRef<string | null>(null);
   const loadRef = useRef<(force?: boolean, includeGroups?: boolean) => Promise<void>>(async () => undefined);
   const taskPageQueryVersionRef = useRef(0);
   const futureOffsetRef = useRef(0);
@@ -114,12 +109,26 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
     allTasksRef.current = allTasks;
   }, [allTasks]);
 
+  useEffect(() => {
+    const now = new Date();
+    const nextBoundary = nextDisplayDayBoundary(now, homeDayEndHour);
+    const timeout = setTimeout(() => setClock(new Date()), Math.max(0, nextBoundary.getTime() - now.getTime()) + 25);
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'active') setClock(new Date());
+    });
+    return () => {
+      clearTimeout(timeout);
+      subscription.remove();
+    };
+  }, [displayDayKey, homeDayEndHour]);
+
   const load = useCallback(async (force = false, includeGroups = true): Promise<void> => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || !homeDayEndHourReady) return;
     if (requestRef.current) {
       await requestRef.current;
-      // A preference change during a request needs one fresh page with the new completion filter.
-      if (force && loadedCompletedFilterRef.current !== showCompletedTasks) {
+      // A preference change during a request needs one fresh page for the new filter or day.
+      if (force && (loadedCompletedFilterRef.current !== showCompletedTasks
+        || loadedDisplayDayKeyRef.current !== displayDayKey)) {
         await loadRef.current(true, includeGroups);
       }
       return;
@@ -132,8 +141,9 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
       setLoading(true);
       setError(null);
       try {
-        const [today, future, past, futureProbe, pastProbe, undated, taskGroups] = await Promise.all([
-          api.tasks.today(),
+        const [today, calendarToday, future, past, futureProbe, pastProbe, undated, taskGroups] = await Promise.all([
+          api.tasks.forDate(displayDayKey),
+          displayDayKey === localDate() ? Promise.resolve([] as Task[]) : api.tasks.today(),
           api.tasks.future(TASK_PAGE_BATCH_SIZE, 0, completedFilter),
           api.tasks.past(TASK_PAGE_BATCH_SIZE, 0, completedFilter),
           api.tasks.future(1, TASK_PAGE_BATCH_SIZE, completedFilter),
@@ -143,7 +153,7 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
         ]);
         if (queryVersion !== taskPageQueryVersionRef.current) return;
         const tasks = appendUniqueTasks(
-          appendUniqueTasks(appendUniqueTasks(today, future), past),
+          appendUniqueTasks(appendUniqueTasks(appendUniqueTasks(today, calendarToday), future), past),
           undated,
         );
         animateLayout();
@@ -155,6 +165,7 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
         setHasMorePastTasks(past.length === TASK_PAGE_BATCH_SIZE && pastProbe.length > 0);
         loadedAtRef.current = Date.now();
         loadedCompletedFilterRef.current = showCompletedTasks;
+        loadedDisplayDayKeyRef.current = displayDayKey;
         setReady(true);
       } catch (cause) {
         if (queryVersion !== taskPageQueryVersionRef.current) return;
@@ -172,7 +183,7 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
     });
     requestRef.current = trackedRequest;
     await trackedRequest;
-  }, [isAuthenticated, showCompletedTasks]);
+  }, [displayDayKey, homeDayEndHourReady, isAuthenticated, showCompletedTasks]);
 
   useEffect(() => {
     loadRef.current = load;
@@ -184,6 +195,7 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
         taskPageQueryVersionRef.current += 1;
         loadedAtRef.current = 0;
         loadedCompletedFilterRef.current = null;
+        loadedDisplayDayKeyRef.current = null;
         setAllTasks([]);
         setGroups([]);
         futureOffsetRef.current = 0;
@@ -352,7 +364,7 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
       setAllTasks(previous => previous.map(task => savedById.get(task.taskId) ?? task));
 
       if (taskIdsToAppend.length > 0) {
-        const orderedIds = orderWithTasksAtEndOfToday(allTasks, taskIdsToAppend);
+        const orderedIds = orderWithTasksAtEndOfToday(allTasks, taskIdsToAppend, displayDayKey);
         const reordered = await api.tasks.reorder(orderedIds);
         const reorderedById = new Map(reordered.map(task => [task.taskId, task]));
         setAllTasks(previous => previous.map(task => reorderedById.get(task.taskId) ?? task));
@@ -362,18 +374,19 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
       await load(true);
       throw cause;
     }
-  }, [allTasks, load]);
+  }, [allTasks, displayDayKey, load]);
 
   const moveTasksToToday = useCallback(async (taskIds: string[]) => {
     const now = new Date();
     const ids = new Set(taskIds);
-    const tasksToMove = allTasks.filter(task => ids.has(task.taskId) && dateBucket(task) === 'past');
+    const tasksToMove = allTasks.filter(task => ids.has(task.taskId) && taskDateBucket(task.scheduledPerformDateTime, displayDayKey) === 'past');
     if (tasksToMove.length === 0) return;
 
     const updates = tasksToMove.map(task => {
       const date = new Date(task.scheduledPerformDateTime ?? now);
       if (Number.isNaN(date.getTime())) date.setTime(now.getTime());
-      date.setFullYear(now.getFullYear(), now.getMonth(), now.getDate());
+      const displayDate = displayDayDate(now, homeDayEndHour);
+      date.setFullYear(displayDate.getFullYear(), displayDate.getMonth(), displayDate.getDate());
       const pad = (value: number) => String(value).padStart(2, '0');
       return {
         task,
@@ -381,7 +394,7 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
       };
     });
     await persistDateUpdates(updates, tasksToMove.map(task => task.taskId));
-  }, [allTasks, persistDateUpdates]);
+  }, [allTasks, displayDayKey, homeDayEndHour, persistDateUpdates]);
 
   const moveTasksToDate = useCallback(async (taskIds: string[], scheduledPerformDateTime: string) => {
     const ids = new Set(taskIds);
@@ -390,14 +403,14 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
 
     const target = new Date(scheduledPerformDateTime);
     if (Number.isNaN(target.getTime())) throw new Error('Invalid task date');
-    const taskIdsToAppend = localDate(target) === localDate()
-      ? tasksToMove.filter(task => dateBucket(task) !== 'today').map(task => task.taskId)
+    const taskIdsToAppend = localDate(target) === displayDayKey
+      ? tasksToMove.filter(task => taskDateBucket(task.scheduledPerformDateTime, displayDayKey) !== 'today').map(task => task.taskId)
       : [];
     await persistDateUpdates(
       tasksToMove.map(task => ({ task, scheduledPerformDateTime })),
       taskIdsToAppend,
     );
-  }, [allTasks, persistDateUpdates]);
+  }, [allTasks, displayDayKey, persistDateUpdates]);
 
   const createGroup = useCallback(async (name: string, taskIds: string[]) => {
     const created = await api.taskGroups.create(name, taskIds);
@@ -433,12 +446,13 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
 
   const value = useMemo(() => {
     const buckets = allTasks.reduce((result, task) => {
-      const bucket = dateBucket(task);
+      const bucket = taskDateBucket(task.scheduledPerformDateTime, displayDayKey);
       if (bucket) result[bucket].push(task);
       return result;
     }, { today: [] as Task[], future: [] as Task[], past: [] as Task[] });
-    const undatedTasks = allTasks.filter(task => dateBucket(task) === null);
+    const undatedTasks = allTasks.filter(task => taskDateBucket(task.scheduledPerformDateTime, displayDayKey) === null);
     return {
+      displayDayKey,
       allTasks,
       todayTasks: buckets.today,
       futureTasks: buckets.future,
@@ -465,7 +479,7 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
       replaceGroupTasks,
       deleteGroup,
     };
-  }, [addTask, allTasks, createGroup, deleteGroup, error, groups, hasMoreFutureTasks, hasMorePastTasks, load, loadMoreFutureTasks, loadMorePastTasks, loading, moveTask, moveTasksToDate, moveTasksToToday, ready, removeTask, renameGroup, reorderTasks, replaceGroupTasks, updateTask]);
+  }, [addTask, allTasks, createGroup, deleteGroup, displayDayKey, error, groups, hasMoreFutureTasks, hasMorePastTasks, load, loadMoreFutureTasks, loadMorePastTasks, loading, moveTask, moveTasksToDate, moveTasksToToday, ready, removeTask, renameGroup, reorderTasks, replaceGroupTasks, updateTask]);
 
   return <TaskWorkspaceContext.Provider value={value}>{children}</TaskWorkspaceContext.Provider>;
 }

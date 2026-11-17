@@ -145,6 +145,7 @@ export const api = {
   },
   tasks: {
     all: () => apiRequest<Task[]>('/api/v1/tasks/main'),
+    forDate: (date: string) => apiRequest<Task[]>(`/api/v1/tasks?date=${encodeURIComponent(date)}`),
     scheduled: () => apiRequest<Task[]>('/api/v1/tasks?scheduled=true'),
     today: () => apiRequest<Task[]>('/api/v1/tasks/today'),
     focusToday: (date: string) => apiRequest<TodayFocusSummary>(`/api/v1/tasks/focus-today?date=${encodeURIComponent(date)}`),

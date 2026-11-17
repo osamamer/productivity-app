@@ -67,6 +67,9 @@ export default function SettingsScreen() {
     showTodayEvents,
     setShowTodayEvents,
     homeDisplayPreferencesReady,
+    homeDayEndHour,
+    homeDayEndHourReady,
+    setHomeDayEndHour,
     soundEffectsEnabled,
     setSoundEffectsEnabled,
   } = usePreferences();
@@ -210,6 +213,25 @@ export default function SettingsScreen() {
 
       <Card style={styles.section}>
         <View style={styles.sectionHeading}><Ionicons name="home-outline" size={20} color={colors.textMuted} /><AppText variant="heading">Home screen</AppText></View>
+        <AppText variant="label">When does the day end?</AppText>
+        {homeDayEndHourReady && (
+          <ChoiceChips
+            value={homeDayEndHour}
+            onChange={value => void setHomeDayEndHour(value).catch(cause => {
+              void showError('Could not save setting', reportError('Could not save day end time', cause));
+            })}
+            options={[
+              { value: 0, label: 'Midnight' },
+              { value: 1, label: '1 AM' },
+              { value: 2, label: '2 AM' },
+              { value: 3, label: '3 AM' },
+              { value: 4, label: '4 AM' },
+              { value: 5, label: '5 AM' },
+            ]}
+          />
+        )}
+        <AppText variant="caption" color="muted">Home and Tasks keep the previous date active until this hour.</AppText>
+        <View style={[styles.divider, { backgroundColor: colors.border }]} />
         <SettingRow label="Show mental state" detail="Display your current mental state on Today." value={showTodaySnapshot} disabled={!homeDisplayPreferencesReady} onChange={setShowTodaySnapshot} />
         <View style={[styles.divider, { backgroundColor: colors.border }]} />
         <SettingRow label="Show today’s events" detail="Display the scheduled events card on Today." value={showTodayEvents} disabled={!homeDisplayPreferencesReady} onChange={setShowTodayEvents} />

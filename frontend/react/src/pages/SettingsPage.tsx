@@ -1192,7 +1192,7 @@ export function SettingsPage() {
                                                 When does the day end?
                                             </Typography>
                                             <Typography variant="body2" color="text.secondary">
-                                                Home keeps the previous day active until this time.
+                                                Home and Tasks keep the previous day active until this time.
                                             </Typography>
                                         </Box>
                                         <TextField

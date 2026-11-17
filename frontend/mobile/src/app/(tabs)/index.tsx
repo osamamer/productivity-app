@@ -19,7 +19,7 @@ import { Card } from '@/components/ui/Card';
 import { ErrorView, LoadingView } from '@/components/ui/StateView';
 import { Screen } from '@/components/ui/Screen';
 import { SilentPressable } from '@/components/ui/SilentPressable';
-import { formatCalendarTime, localDate, startOfToday } from '@/lib/date';
+import { formatCalendarTime, localDate } from '@/lib/date';
 import { datesCoveredByOccurrence, expandCalendarEvent, type CalendarEventOccurrence } from '@/lib/calendarRecurrence';
 import { playAudioFeedback } from '@/lib/audioFeedback';
 import { reportError } from '@/lib/errors';
@@ -292,7 +292,7 @@ function reorderTaskIdsForCompletion(
 
 function reorderTaskIdsForCompletionChanges(
   taskIds: string[],
-  changes: Array<{ taskId: string; completed: boolean }>,
+  changes: { taskId: string; completed: boolean }[],
   tasks: Task[],
   groups: TaskGroup[],
   homeTaskIds: Set<string>,
@@ -320,6 +320,7 @@ export default function TodayScreen() {
   const snapshotLoadedRef = useRef(false);
   const {
     allTasks,
+    displayDayKey,
     todayTasks,
     groups,
     addTask,
@@ -789,7 +790,7 @@ export default function TodayScreen() {
     );
   })();
   const todayEvents = useMemo<TodayEventItem[]>(() => {
-    const start = startOfToday();
+    const start = new Date(`${displayDayKey}T00:00:00`);
     const end = new Date(start);
     end.setDate(end.getDate() + 1);
     const today = localDate(start);
@@ -802,7 +803,7 @@ export default function TodayScreen() {
         return (first.occurrence.start || '').localeCompare(second.occurrence.start || '')
           || first.event.title.localeCompare(second.event.title);
       });
-  }, [eventsResource.data]);
+  }, [displayDayKey, eventsResource.data]);
   const calendarsById = useMemo(
     () => new Map((calendarsResource.data ?? []).map(calendar => [calendar.id, calendar])),
     [calendarsResource.data],

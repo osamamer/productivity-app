@@ -29,6 +29,33 @@ export function startOfToday(): Date {
   return date;
 }
 
+function dayEndHour(value: number): number {
+  return Number.isInteger(value) ? Math.min(5, Math.max(0, value)) : 0;
+}
+
+export function displayDayDate(now: Date, endHour: number): Date {
+  const date = new Date(now);
+  date.setHours(0, 0, 0, 0);
+  if (now.getHours() < dayEndHour(endHour)) date.setDate(date.getDate() - 1);
+  return date;
+}
+
+export function nextDisplayDayBoundary(now: Date, endHour: number): Date {
+  const boundary = new Date(now);
+  boundary.setHours(dayEndHour(endHour), 0, 0, 0);
+  if (boundary <= now) boundary.setDate(boundary.getDate() + 1);
+  return boundary;
+}
+
+export function taskDateBucket(scheduledPerformDateTime: string | null, displayDayKey: string): 'today' | 'future' | 'past' | null {
+  if (!scheduledPerformDateTime) return null;
+  const scheduled = new Date(scheduledPerformDateTime);
+  if (Number.isNaN(scheduled.getTime())) return null;
+  const scheduledDate = localDate(scheduled);
+  if (scheduledDate === displayDayKey) return 'today';
+  return scheduledDate > displayDayKey ? 'future' : 'past';
+}
+
 export function formatLongDate(date = new Date()): string {
   return new Intl.DateTimeFormat(undefined, {
     weekday: 'long',

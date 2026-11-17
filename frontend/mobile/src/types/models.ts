@@ -324,6 +324,7 @@ export type NotificationType =
   | 'MEDITATION_COMPLETED';
 
 export interface UserPreferences {
+  homeDayEndHour: number;
   includeUnloggedNumericDaysAsZero: boolean;
   checkupNotificationsEnabled: boolean;
   repeatCheckupNotificationsEnabled: boolean;

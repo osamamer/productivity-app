@@ -1,7 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 
 import { setAudioFeedbackEnabled } from '@/lib/audioFeedback';
+import { api } from '@/services/api';
 import { useAuth } from './AuthProvider';
 
 type PreferencesValue = {
@@ -14,6 +16,9 @@ type PreferencesValue = {
   showTodayEvents: boolean;
   setShowTodayEvents: (value: boolean) => void;
   homeDisplayPreferencesReady: boolean;
+  homeDayEndHour: number;
+  homeDayEndHourReady: boolean;
+  setHomeDayEndHour: (value: number) => Promise<void>;
   soundEffectsEnabled: boolean;
   setSoundEffectsEnabled: (value: boolean) => void;
 };
@@ -50,6 +55,55 @@ export function PreferencesProvider({ children }: PropsWithChildren) {
   const [showTodayEvents, setShowTodayEventsState] = useState(true);
   const [loadedHomeDisplayPreferencesKey, setLoadedHomeDisplayPreferencesKey] = useState<string | null>(null);
   const [soundEffectsEnabled, setSoundEffectsEnabledState] = useState(true);
+  const [homeDayEndHour, setHomeDayEndHourState] = useState(0);
+  const [loadedHomeDayEndHourUserId, setLoadedHomeDayEndHourUserId] = useState<string | null>(null);
+  const homeDayEndHourRequestIdRef = useRef(0);
+  const confirmedHomeDayEndHourRef = useRef(0);
+  const homeDayEndHourSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const activeUserIdRef = useRef(user?.id);
+
+  useEffect(() => {
+    activeUserIdRef.current = user?.id;
+  }, [user?.id]);
+
+  useEffect(() => {
+    const userId = user?.id;
+    let active = true;
+    if (!userId) {
+      homeDayEndHourRequestIdRef.current += 1;
+      const resetTimer = setTimeout(() => {
+        setHomeDayEndHourState(0);
+        confirmedHomeDayEndHourRef.current = 0;
+        setLoadedHomeDayEndHourUserId(null);
+      }, 0);
+      return () => clearTimeout(resetTimer);
+    }
+    const refresh = async () => {
+      const requestId = ++homeDayEndHourRequestIdRef.current;
+      try {
+        await homeDayEndHourSaveQueueRef.current;
+        const preferences = await api.preferences.get();
+        if (active && homeDayEndHourRequestIdRef.current === requestId) {
+          const value = preferences.homeDayEndHour ?? 0;
+          confirmedHomeDayEndHourRef.current = value;
+          setHomeDayEndHourState(value);
+          setLoadedHomeDayEndHourUserId(userId);
+        }
+      } catch (cause) {
+        console.error('Could not load mobile day end preference:', cause);
+        if (active && homeDayEndHourRequestIdRef.current === requestId) setLoadedHomeDayEndHourUserId(userId);
+      }
+    };
+    void refresh();
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'active') void refresh();
+    });
+    return () => {
+      active = false;
+      homeDayEndHourRequestIdRef.current += 1;
+      subscription.remove();
+    };
+  }, [user?.id]);
 
   useEffect(() => {
     let active = true;
@@ -124,6 +178,30 @@ export function PreferencesProvider({ children }: PropsWithChildren) {
     });
   }, [todayEventsKey]);
 
+  const setHomeDayEndHour = useCallback(async (value: number) => {
+    const userId = user?.id;
+    const requestId = ++homeDayEndHourRequestIdRef.current;
+    setHomeDayEndHourState(value);
+    const save = homeDayEndHourSaveQueueRef.current
+      .then(() => {
+        if (activeUserIdRef.current !== userId) throw new Error('Account changed before the setting was saved');
+        return api.preferences.update({ homeDayEndHour: value });
+      });
+    homeDayEndHourSaveQueueRef.current = save.then(() => undefined, () => undefined);
+    try {
+      const updated = await save;
+      if (activeUserIdRef.current === userId) confirmedHomeDayEndHourRef.current = updated.homeDayEndHour ?? value;
+      if (activeUserIdRef.current === userId && homeDayEndHourRequestIdRef.current === requestId) {
+        setHomeDayEndHourState(confirmedHomeDayEndHourRef.current);
+      }
+    } catch (cause) {
+      if (activeUserIdRef.current === userId && homeDayEndHourRequestIdRef.current === requestId) {
+        setHomeDayEndHourState(confirmedHomeDayEndHourRef.current);
+      }
+      throw cause;
+    }
+  }, [user?.id]);
+
   const setSoundEffectsEnabled = useCallback((value: boolean) => {
     setSoundEffectsEnabledState(value);
     setAudioFeedbackEnabled(value);
@@ -141,10 +219,14 @@ export function PreferencesProvider({ children }: PropsWithChildren) {
     setShowTodaySnapshot,
     showTodayEvents,
     setShowTodayEvents,
-    homeDisplayPreferencesReady: loadedHomeDisplayPreferencesKey === todaySnapshotKey,
+    homeDisplayPreferencesReady: loadedHomeDisplayPreferencesKey === todaySnapshotKey
+      && Boolean(user?.id) && loadedHomeDayEndHourUserId === user?.id,
+    homeDayEndHour,
+    homeDayEndHourReady: Boolean(user?.id) && loadedHomeDayEndHourUserId === user?.id,
+    setHomeDayEndHour,
     soundEffectsEnabled,
     setSoundEffectsEnabled,
-  }), [loadedHomeDisplayPreferencesKey, setShowClosedMentalThreads, setShowCompletedTasks, setSoundEffectsEnabled, setShowTodayEvents, setShowTodaySnapshot, showClosedMentalThreads, showCompletedTasks, showTodayEvents, showTodaySnapshot, soundEffectsEnabled, todaySnapshotKey]);
+  }), [homeDayEndHour, loadedHomeDayEndHourUserId, loadedHomeDisplayPreferencesKey, setHomeDayEndHour, setShowClosedMentalThreads, setShowCompletedTasks, setSoundEffectsEnabled, setShowTodayEvents, setShowTodaySnapshot, showClosedMentalThreads, showCompletedTasks, showTodayEvents, showTodaySnapshot, soundEffectsEnabled, todaySnapshotKey, user?.id]);
   return <PreferencesContext.Provider value={value}>{children}</PreferencesContext.Provider>;
 }
 

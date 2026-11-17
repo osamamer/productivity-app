@@ -7,6 +7,9 @@ import { TaskPomodoroStats, TodayFocusSummary } from '../../types/TaskPomodoroSt
 import { invalidateTaskPomodoroStats, setCachedTaskPomodoroStats } from '../cache/taskPomodoroStatsCache';
 import { CachedResource } from '../cache/ttlCache';
 import { getAuthCacheScope } from '../utils/authHeaders';
+import { getHomeDisplayDate } from '../utils/homeDay';
+import { getRuntimeUserPreference } from '../userPreferenceStore';
+import { dateKey } from '../utils/taskDate';
 import { clearTaskSubtasksCache, invalidateTaskSubtasks, loadTaskSubtasks } from '../cache/taskSubtasksCache';
 import { TaskSeries } from '../../types/TaskSeries';
 import { TaskRecurrenceDraft } from '../../types/TaskRecurrence';
@@ -380,7 +383,7 @@ function taskPageBatchCacheKey(
     completed?: boolean,
 ): string {
     const completionFilter = completed === undefined ? 'all' : String(completed);
-    return `${getAuthCacheScope()}:task-page:${period}:${completionFilter}:${limit}:${offset}`;
+    return `${getAuthCacheScope()}:task-page:${currentTaskDateKey()}:${period}:${completionFilter}:${limit}:${offset}`;
 }
 
 async function fetchTaskPeriod(
@@ -531,7 +534,10 @@ export const taskService = {
         forceRefresh = false,
     ): Promise<TaskPageInitialSnapshot> {
         const completionFilter = completed === undefined ? 'all' : String(completed);
-        const cacheKey = `${getAuthCacheScope()}:task-page-initial:${completionFilter}:${batchSize}`;
+        const now = new Date();
+        const calendarDate = dateKey(now);
+        const displayDate = dateKey(getHomeDisplayDate(now, getRuntimeUserPreference('homeDayEndHour')));
+        const cacheKey = `${getAuthCacheScope()}:task-page-initial:${calendarDate}:${displayDate}:${completionFilter}:${batchSize}`;
         if (forceRefresh) {
             taskPageInitialCache.invalidate(cacheKey);
             invalidateTodayTasksCache();
@@ -539,19 +545,23 @@ export const taskService = {
         }
 
         const snapshot = await taskPageInitialCache.get(cacheKey, async () => {
-            const [today, future, past, undated] = await Promise.all([
-                fetchTaskPageTasks(new URLSearchParams({ period: 'TODAY' }), 'Failed to fetch today tasks'),
+            const [today, calendarToday, future, past, undated] = await Promise.all([
+                fetchTaskPageTasks(new URLSearchParams({ date: displayDate }), 'Failed to fetch display-day tasks'),
+                displayDate === calendarDate
+                    ? Promise.resolve([] as Task[])
+                    : fetchTaskPageTasks(new URLSearchParams({ date: calendarDate }), 'Failed to fetch calendar-day tasks'),
                 fetchTaskPeriod('FUTURE', batchSize + 1, 0, completed),
                 fetchTaskPeriod('PAST', batchSize + 1, 0, completed),
                 fetchUndatedTasks(completed),
             ]);
             return {
-                tasks: [
+                tasks: [...new Map([
                     ...today,
+                    ...calendarToday,
                     ...future.slice(0, batchSize),
                     ...past.slice(0, batchSize),
                     ...undated,
-                ],
+                ].map(task => [task.taskId, task] as const)).values()],
                 hasMoreFutureTasks: future.length > batchSize,
                 hasMorePastTasks: past.length > batchSize,
             };

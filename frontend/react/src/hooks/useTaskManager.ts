@@ -1,12 +1,13 @@
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { Task } from '../types/Task';
 import { TASK_PAGE_BATCH_SIZE, taskService } from '../services/api';
 import { subscribeToResourceInvalidation } from '../services/cache/resourceInvalidation';
 import { getShowCompletedHomeTasks } from '../services/utils/homePreferences';
 import { reconcileTaskSnapshot } from '../services/utils/taskSnapshot';
 import { dateKey } from '../services/utils/taskDate';
-import { getHomeDisplayDate } from '../services/utils/homeDay';
-import { getRuntimeUserPreference } from '../services/userPreferenceStore';
+import { splitTasksByDate } from '../services/utils/taskDateBuckets';
+import { getHomeDisplayDate, getNextHomeDayBoundary } from '../services/utils/homeDay';
+import { getRuntimeUserPreference, subscribeToUserPreferences } from '../services/userPreferenceStore';
 
 export type TaskLoadMode = 'all' | 'home' | 'taskPage';
 
@@ -20,53 +21,8 @@ type TaskState = {
     bucketDateKey: string;
 };
 
-function localDateKey(date = new Date()): string {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-}
-
-function startOfToday(): Date {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return today;
-}
-
-function splitTasksByDate(tasks: Task[]) {
-    const today = startOfToday();
-
-    return tasks.reduce(
-        (acc, task) => {
-            if (!task.scheduledPerformDateTime) {
-                acc.undated.push(task);
-                return acc;
-            }
-
-            const taskDate = new Date(task.scheduledPerformDateTime);
-
-            if (Number.isNaN(taskDate.getTime())) {
-                acc.undated.push(task);
-                return acc;
-            }
-
-            if (taskDate.toDateString() === today.toDateString()) {
-                acc.today.push(task);
-            } else if (taskDate > today) {
-                acc.future.push(task);
-            } else {
-                acc.past.push(task);
-            }
-
-            return acc;
-        },
-        {
-            today: [] as Task[],
-            future: [] as Task[],
-            past: [] as Task[],
-            undated: [] as Task[],
-        }
-    );
+function currentBucketDateKey(): string {
+    return dateKey(getHomeDisplayDate(new Date(), getRuntimeUserPreference('homeDayEndHour')));
 }
 
 function reuseTaskList(previous: Task[], next: Task[]): Task[] {
@@ -87,7 +43,8 @@ function uniqueTasksById(tasks: Task[]): Task[] {
 
 function withTaskBuckets(previous: TaskState, allTasks: Task[]): TaskState {
     const uniqueTasks = uniqueTasksById(allTasks);
-    const grouped = splitTasksByDate(uniqueTasks);
+    const bucketDateKey = currentBucketDateKey();
+    const grouped = splitTasksByDate(uniqueTasks, bucketDateKey);
 
     return {
         ...previous,
@@ -96,12 +53,12 @@ function withTaskBuckets(previous: TaskState, allTasks: Task[]): TaskState {
         futureTasks: reuseTaskList(previous.futureTasks, grouped.future),
         pastTasks: reuseTaskList(previous.pastTasks, grouped.past),
         undatedTasks: reuseTaskList(previous.undatedTasks, grouped.undated),
-        bucketDateKey: localDateKey(),
+        bucketDateKey,
     };
 }
 
 function withStableTaskBuckets(previous: TaskState, allTasks: Task[]): TaskState {
-    if (previous.bucketDateKey !== localDateKey()) return withTaskBuckets(previous, allTasks);
+    if (previous.bucketDateKey !== currentBucketDateKey()) return withTaskBuckets(previous, allTasks);
 
     const reorderBucket = (bucket: Task[]) => {
         const taskIds = new Set(bucket.map(task => task.taskId));
@@ -158,7 +115,7 @@ function createInitialTaskState(): TaskState {
         pastTasks: [],
         undatedTasks: [],
         highlightedTask: null,
-        bucketDateKey: localDateKey(),
+        bucketDateKey: currentBucketDateKey(),
     } satisfies TaskState;
     const next = withTaskBuckets(state, cachedTasks);
 
@@ -169,6 +126,12 @@ function createInitialTaskState(): TaskState {
 }
 
 export function useTaskManager() {
+    const homeDayEndHour = useSyncExternalStore(
+        subscribeToUserPreferences,
+        () => getRuntimeUserPreference('homeDayEndHour'),
+        () => 0,
+    );
+    const previousHomeDayEndHourRef = useRef(homeDayEndHour);
     const [taskState, setTaskState] = useState<TaskState>(createInitialTaskState);
     const [loading, setLoading] = useState(() => taskService.getCachedMainTasks() === undefined);
     const [tasksLoaded, setTasksLoaded] = useState(() => taskService.getCachedMainTasks() !== undefined);
@@ -238,7 +201,7 @@ export function useTaskManager() {
                     ? false
                     : undefined;
                 const loadedTaskBuckets = loadMode === 'taskPage' && preservePageState
-                    ? splitTasksByDate(taskStateRef.current.allTasks)
+                    ? splitTasksByDate(taskStateRef.current.allTasks, currentBucketDateKey())
                     : null;
                 const taskPageBatchSize = loadedTaskBuckets
                     ? Math.max(
@@ -276,7 +239,8 @@ export function useTaskManager() {
                 if (snapshotChanged) {
                     setTaskState(prev => {
                         const next = withTaskBuckets(prev, reconciledTasks);
-                        if (loadMode === 'all' && todayTasksLoadedRef.current && prev.todayTasks.length > 0) {
+                        if (loadMode === 'all' && todayTasksLoadedRef.current && prev.todayTasks.length > 0
+                            && prev.bucketDateKey === currentBucketDateKey()) {
                             next.todayTasks = prev.todayTasks;
                         }
                         return {
@@ -320,8 +284,13 @@ export function useTaskManager() {
     const fetchTodayTasks = useCallback(async () => {
         const requestDataGeneration = taskDataGenerationRef.current;
         try {
-            const tasks = splitTasksByDate(uniqueTasksById(await taskService.getTodayTasks())).today;
-            if (taskDataGenerationRef.current !== requestDataGeneration) return;
+            const displayDate = currentBucketDateKey();
+            const dayTasks = await (displayDate === dateKey(new Date())
+                ? taskService.getTodayTasks()
+                : taskService.getHomeTasksForDate(displayDate));
+            const tasks = splitTasksByDate(uniqueTasksById(dayTasks), displayDate).today;
+            if (taskDataGenerationRef.current !== requestDataGeneration
+                || displayDate !== currentBucketDateKey()) return;
             todayTasksLoadedRef.current = true;
             setTaskState(prev => {
                 // Home can render today's tasks while older tasks are still loading.
@@ -331,7 +300,7 @@ export function useTaskManager() {
                 // A Today request can race a schedule update; trust the canonical snapshot for known task IDs.
                 const allTasksById = new Map(prev.allTasks.map(task => [task.taskId, task] as const));
                 const todayTasksById = new Map(
-                    splitTasksByDate(prev.allTasks).today.map(task => [task.taskId, task] as const),
+                    splitTasksByDate(prev.allTasks, displayDate).today.map(task => [task.taskId, task] as const),
                 );
                 const reconciledTodayTasks = new Map<string, Task>();
                 tasks.forEach(task => {
@@ -405,13 +374,13 @@ export function useTaskManager() {
 
         const scheduleNextRefresh = () => {
             const now = new Date();
-            const nextMidnight = new Date(now);
-            nextMidnight.setHours(24, 0, 0, 0);
-            const delay = nextMidnight.getTime() - now.getTime();
+            const nextBoundary = getNextHomeDayBoundary(now, homeDayEndHour);
+            const delay = nextBoundary.getTime() - now.getTime();
 
             timeoutId = setTimeout(async () => {
                 try {
-                await refreshTaskBuckets(true, allTasksLoadModeRef.current);
+                    invalidatePendingTaskLoads();
+                    await refreshTaskBuckets(true, allTasksLoadModeRef.current);
                 } finally {
                     scheduleNextRefresh();
                 }
@@ -425,7 +394,14 @@ export function useTaskManager() {
                 clearTimeout(timeoutId);
             }
         };
-    }, [refreshTaskBuckets]);
+    }, [homeDayEndHour, invalidatePendingTaskLoads, refreshTaskBuckets]);
+
+    useEffect(() => {
+        if (previousHomeDayEndHourRef.current === homeDayEndHour) return;
+        previousHomeDayEndHourRef.current = homeDayEndHour;
+        invalidatePendingTaskLoads();
+        void refreshTaskBuckets(true, allTasksLoadModeRef.current);
+    }, [homeDayEndHour, invalidatePendingTaskLoads, refreshTaskBuckets]);
 
     useEffect(() => {
         let refreshing = false;
