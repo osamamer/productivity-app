@@ -1,6 +1,7 @@
 const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
+const { profileArgument } = require('./profileArgument');
 
 const FLATPAK = '/usr/bin/flatpak';
 const KILL_GRACE_MS = 5000;
@@ -44,6 +45,10 @@ function readProcess(pid) {
 /**
  * The current user's processes running `target`: `{ flatpak }` matches a Flatpak app's
  * instances, `{ executable, script? }` matches a native binary or an interpreter running a script.
+ * A native process only matches when its `--profile` argument equals `target.profile` (none
+ * matches none), so closing an app's default profile never ends one of its light profiles.
+ *
+ * Limitation: Flatpak instances are matched by app ID alone, ignoring profiles.
  */
 function runningProcesses(target) {
     if (target.flatpak) return flatpakInstances(target.flatpak);
@@ -62,7 +67,9 @@ function runningProcesses(target) {
         let same = info.executable === target.executable;
         // Executable scripts appear as an argument to their interpreter.
         if (!same && isFile(target.executable)) same = info.argv.slice(0, 2).includes(target.executable);
-        if (same && (!target.script || info.argv.slice(1, 3).includes(target.script))) found.push({ pid, stamp });
+        if (!same || (target.script && !info.argv.slice(1, 3).includes(target.script))) continue;
+        if (profileArgument(info.argv.slice(1)) !== (target.profile ?? null)) continue;
+        found.push({ pid, stamp });
     }
     return found;
 }

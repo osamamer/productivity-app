@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { MAIN_GROUP, parseDesktopEntry, getString, splitExec } = require('./desktopEntry');
+const { profileArgument } = require('./profileArgument');
 
 const SHELLS = new Set(['sh', 'bash', 'dash', 'flatpak', 'env']);
 const INTERPRETERS = ['python', 'ruby', 'perl', 'node'];
@@ -30,7 +31,8 @@ function resolvePath(file) {
 
 /**
  * What a launcher actually runs, so its processes can be found later: `{ flatpak: id }` for
- * Flatpak apps, `{ executable, script? }` otherwise. Shell wrappers are refused because the
+ * Flatpak apps, `{ executable, script?, profile? }` otherwise. `profile` comes from a
+ * `--profile` argument, so one binary's profiles are separate apps. Shell wrappers are refused because the
  * process they start cannot be identified reliably.
  */
 function appTarget(desktopText) {
@@ -54,6 +56,8 @@ function appTarget(desktopText) {
         if (words.length < 2 || !isFile(words[1])) throw new Error('This interpreter launcher cannot be tracked safely.');
         target.script = resolvePath(words[1]);
     }
+    const profile = profileArgument(words.slice(1));
+    if (profile) target.profile = profile;
     return target;
 }
 

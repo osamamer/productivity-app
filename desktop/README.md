@@ -74,6 +74,11 @@ computer, in local and cloud mode alike. It replaces the separate App Timeout to
   (unlisted); Firefox Developer Edition can also install it unsigned with
   `xpinstall.signatures.required=false`.
 
+**Profiles are separate apps.** A launcher whose command passes `--profile <name>` (for example a
+Nuclear light profile, `nuclear-music-player --profile calm`) is listed, paused and auto-closed on
+its own: its processes are told apart from the default profile's by that argument, so closing one
+never ends the other. Flatpak launchers are matched by app ID only and do not get this.
+
 Launchers and timers start Claritard with `--timeout-*` switches (see `src/timeouts/cli.js`). If
 Claritard is not running, it starts without a window just for the countdown or timer, then quits.
 Countdown windows and the gate page use the colors of the web app's current theme.
