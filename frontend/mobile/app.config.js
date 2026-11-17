@@ -30,6 +30,10 @@ module.exports = ({ config }) => {
     android: {
       ...config.android,
       ...(firebaseConfig ? { googleServicesFile: firebaseConfig } : {}),
+      // Release CI sets this so each published APK installs over the previous one.
+      ...(process.env.ANDROID_VERSION_CODE
+        ? { versionCode: Number(process.env.ANDROID_VERSION_CODE) }
+        : {}),
     },
     extra: {
       ...config.extra,

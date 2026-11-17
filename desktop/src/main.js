@@ -15,6 +15,7 @@ const { installLocalNetworkGuard } = require('./networkGuard');
 const { parseTimeoutCommand, selfCommand } = require('./timeouts/cli');
 const { TimeoutService } = require('./timeouts/service');
 const { registerTimeoutIpc } = require('./timeouts/ipc');
+const { startAutoUpdates } = require('./autoUpdate');
 
 // Must match the port baked into the local web build by scripts/build-resources.sh.
 const LOCAL_PORT = 47830;
@@ -113,6 +114,7 @@ function startApp() {
         void timeouts.handleCommand(timeoutCommand);
         return;
     }
+    startAutoUpdates({ app, dialog, enabled: readConfig(userDataDir).autoUpdate !== false });
     startUi();
 }
 

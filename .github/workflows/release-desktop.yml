@@ -1,0 +1,65 @@
+name: Release desktop
+
+# Publishes the Linux AppImage and .deb plus latest-linux.yml as the latest GitHub
+# release; installed copies pick it up through electron-updater (desktop/src/autoUpdate.js).
+on:
+  push:
+    branches: [master]
+    paths:
+      - desktop/**
+      - backend/**
+      - frontend/react/**
+      - frontend/shared/**
+      - VERSION
+      - .github/workflows/release-desktop.yml
+  workflow_dispatch:
+
+concurrency:
+  group: release-desktop
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # electron-updater needs a strictly increasing semver: <major>.<minor> from VERSION, commit count as patch.
+      - name: Compute version
+        run: |
+          MAJOR_MINOR=$(cut -d. -f1,2 VERSION)
+          echo "DESKTOP_VERSION=${MAJOR_MINOR}.$(git rev-list --count HEAD)" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+
+      - name: Install dependencies
+        run: |
+          npm ci --prefix frontend/react
+          npm ci --prefix desktop
+
+      - name: Build bundled resources
+        working-directory: desktop
+        env:
+          DESKTOP_JDK_HOME: ${{ env.JAVA_HOME }}
+        run: npm run build:resources
+
+      - name: Build and publish
+        working-directory: desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npm version --no-git-tag-version --allow-same-version "$DESKTOP_VERSION"
+          npx electron-builder --linux --publish always

@@ -61,6 +61,17 @@
       "maintainer": "Osama",
       "synopsis": "Tasks, focus sessions, meditation and daily planning",
       "syncDesktopName": true
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "osamamer",
+        "repo": "productivity-app",
+        "releaseType": "release"
+      }
+    ]
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.11"
   }
 }

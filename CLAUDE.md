@@ -134,6 +134,10 @@ Docker services are defined in `deployment/docker-compose.yml`. Environment vari
 - **Backend**: `mvn clean verify` with Java 21 (Temurin), using H2 test profile
 - **Frontend**: `npm install` + `npm run build -- --mode=production` with Node 18
 
+Releases go out automatically on push to `master`, filtered by path:
+- `release-desktop.yml` publishes the AppImage, `.deb` and `latest-linux.yml` as the latest GitHub release (version `<major>.<minor>` from `VERSION`, commit count as patch). Installed desktop apps update through `electron-updater` (`desktop/src/autoUpdate.js`; `"autoUpdate": false` in the desktop config turns it off).
+- `release-mobile.yml` publishes the production APK as a **prerelease** titled `Claritard Mobile …`, so it stays out of `/releases/latest` and the desktop updater ignores it. Devices install it through Obtainium. `ANDROID_VERSION_CODE` (commit count) is read in `app.config.js`; the expo `version` stays fixed because `runtimeVersion` follows it.
+
 ## Coding Style
 
 **No redundant comments.** Comments explain *why*, not *what*. If a comment adds nothing beyond reading the code, delete it. In tests, section-labelling comments are acceptable — tests serve as documentation.
