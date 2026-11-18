@@ -12,7 +12,7 @@ function neighbour(date: string, days: number): string {
  * fetched ahead so stepping between days does not wait.
  */
 export function useDayOverview(date: string | null) {
-    const { data, error } = useRevalidatingResource(
+    const { data, error, mutate } = useRevalidatingResource(
         dayOverviewResource,
         date ? dayOverviewKey(date) : null,
         () => loadDayOverview(date as string),
@@ -26,5 +26,5 @@ export function useDayOverview(date: string | null) {
         prefetchDayOverview(neighbour(date, 1));
     }, [date, loaded]);
 
-    return { overview: data, error: error ? 'Could not load this day.' : null };
+    return { overview: data, error: error ? 'Could not load this day.' : null, mutate };
 }

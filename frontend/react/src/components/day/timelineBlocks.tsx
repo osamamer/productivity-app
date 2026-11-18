@@ -24,5 +24,5 @@ export function ScreenTooltip({ block }: { block: ScreenBlock }) {
 }
 
 export function PlannedTooltip({ block }: { block: PlannedBlock }) {
-    return <TooltipBody title={block.title} lines={[block.kind === 'focus' ? 'Focus session' : 'Calendar event', formatTimeRange(block.start, block.end)]} />;
+    return <TooltipBody title={block.title} lines={[block.activityName ?? (block.kind === 'focus' ? 'Focus session' : 'Calendar event'), formatTimeRange(block.start, block.end)]} />;
 }

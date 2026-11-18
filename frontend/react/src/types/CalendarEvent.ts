@@ -35,6 +35,8 @@ export type CalendarEvent = {
     createdAt: string;
     updatedAt: string;
     sourceId?: string | null;
+    // Set when the event is a chunk of planned time for an activity.
+    activityId?: string | null;
 };
 
 export type CalendarEventFutureDeletionResponse = {
@@ -44,6 +46,8 @@ export type CalendarEventFutureDeletionResponse = {
 
 export type CalendarEventInput = {
     calendarId?: string;
+    // Omit to leave an existing event's activity alone; null removes it.
+    activityId?: string | null;
     title: string;
     description: string;
     allDay: boolean;

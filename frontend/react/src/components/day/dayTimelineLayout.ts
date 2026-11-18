@@ -15,6 +15,9 @@ export interface PlannedInput extends TimeInterval {
     id: string;
     kind: 'event' | 'focus';
     title: string;
+    // Set for a chunk: its activity's name and colour.
+    activityName?: string;
+    color?: string;
 }
 
 export interface AppTime {
@@ -229,4 +232,18 @@ export function hourTicks(windowStart: number, windowEnd: number): number[] {
         if (hour.getTime() >= windowStart) ticks.push(hour.getTime());
     }
     return ticks;
+}
+
+/**
+ * The slot a click lands in: `fraction` (0 at the window start, 1 at its end) rounded down to
+ * `stepMinutes`, as a chunk of `lengthMinutes` that is kept inside the window.
+ */
+export function slotAt(windowStart: number, windowEnd: number, fraction: number, stepMinutes = 30, lengthMinutes = 60): TimeInterval {
+    const step = stepMinutes * 60_000;
+    const length = Math.min(lengthMinutes * 60_000, windowEnd - windowStart);
+    const at = windowStart + Math.min(Math.max(fraction, 0), 1) * (windowEnd - windowStart);
+    // Rounded against local midnight, so half hours line up with the clock in every time zone.
+    const midnight = new Date(at).setHours(0, 0, 0, 0);
+    const start = Math.min(midnight + Math.floor((at - midnight) / step) * step, windowEnd - length);
+    return { start: Math.max(start, windowStart), end: Math.max(start, windowStart) + length };
 }

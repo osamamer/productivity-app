@@ -81,6 +81,7 @@ import LocalBackupSection from '../components/settings/LocalBackupSection';
 import AppVersionInfo from '../components/settings/AppVersionInfo';
 import DesktopStorageSection from '../components/settings/DesktopStorageSection';
 import ScreenTimeSection from '../components/settings/ScreenTimeSection';
+import { ActivitiesSection } from '../components/settings/ActivitiesSection';
 
 const sectionCardSx = {
     backgroundColor: 'background.paper',
@@ -1290,6 +1291,7 @@ export function SettingsPage() {
                                 {/* Electron has no browser push service, so remote push cannot reach the desktop app. */}
                                 {!isDesktopApp && <BrowserNotificationsSection />}
                                 <CheckupSettingsSection />
+                                <ActivitiesSection cardSx={sectionCardSx} headingSx={sectionHeadingSx} />
 
                                 <Box sx={sectionCardSx}>
                                     <Box sx={sectionHeadingSx}>

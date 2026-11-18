@@ -1,8 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { Box, Stack, Tooltip, Typography } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { format } from 'date-fns';
-import { hourTicks, PlannedBlock, ScreenBlock } from '../../day/dayTimelineLayout';
+import { hourTicks, PlannedBlock, ScreenBlock, slotAt, type TimeInterval } from '../../day/dayTimelineLayout';
 import { formatScreenDuration, formatTimeRange } from '../../day/screenTimeText';
 import { PlannedTooltip, ScreenTooltip } from '../../day/timelineBlocks';
 import { plannedBlockStyle, screenBlockStyle } from '../../day/timelineStyles';
@@ -21,6 +21,8 @@ interface DayColumnsProps {
     planned: PlannedBlock[];
     // Null hides the screen column: a plain browser, or a day that has not happened yet.
     screen: ScreenBlock[] | null;
+    // Clicking empty space in the planned column offers to plan a chunk there.
+    onCreateAt?: (slot: TimeInterval, anchor: { top: number; left: number }) => void;
 }
 
 function ColumnHeader({ children }: { children: string }) {
@@ -35,13 +37,19 @@ function ColumnHeader({ children }: { children: string }) {
  * One day top to bottom: what was planned beside what was on screen, an hour every 72px. Place it
  * inside an element marked `data-day-scroller`, which is scrolled to bring "now" into view.
  */
-export function DayColumns({ windowStart, windowEnd, now, planned, screen }: DayColumnsProps) {
+export function DayColumns({ windowStart, windowEnd, now, planned, screen, onCreateAt }: DayColumnsProps) {
     const theme = useTheme();
     const nowRef = useRef<HTMLDivElement | null>(null);
     const span = windowEnd - windowStart;
     const height = (span / 3_600_000) * HOUR_HEIGHT;
     const px = (pct: number) => (pct / 100) * height;
     const ticks = hourTicks(windowStart, windowEnd);
+    const [hoverSlot, setHoverSlot] = useState<TimeInterval | null>(null);
+    const slotFromEvent = (event: MouseEvent<HTMLElement>) => {
+        if ((event.target as HTMLElement).closest('[data-planned-block]')) return null;
+        const rect = event.currentTarget.getBoundingClientRect();
+        return slotAt(windowStart, windowEnd, (event.clientY - rect.top) / rect.height);
+    };
     const nowPct = now > windowStart && now < windowEnd ? ((now - windowStart) / span) * 100 : null;
 
     useEffect(() => {
@@ -72,16 +80,45 @@ export function DayColumns({ windowStart, windowEnd, now, planned, screen }: Day
                     ))}
                 </Box>
 
-                <Box sx={{ position: 'relative', flex: 1, mx: 0.5 }}>
+                <Box
+                    sx={{ position: 'relative', flex: 1, mx: 0.5, cursor: onCreateAt ? 'pointer' : undefined }}
+                    onMouseMove={onCreateAt ? event => {
+                        const slot = slotFromEvent(event);
+                        setHoverSlot(current => (current?.start === slot?.start ? current : slot));
+                    } : undefined}
+                    onMouseLeave={onCreateAt ? () => setHoverSlot(null) : undefined}
+                    onClick={onCreateAt ? event => {
+                        const slot = slotFromEvent(event);
+                        if (slot) onCreateAt(slot, { top: event.clientY, left: event.clientX });
+                    } : undefined}
+                >
                     {hourLines}
-                    {planned.length === 0 && (
-                        <Typography variant="body2" color="text.disabled" sx={{ position: 'absolute', top: 8, left: 8 }}>Nothing planned on the clock</Typography>
+                    {hoverSlot && (
+                        <Box sx={{
+                            position: 'absolute',
+                            top: `${((hoverSlot.start - windowStart) / span) * 100}%`,
+                            height: `${((hoverSlot.end - hoverSlot.start) / span) * 100}%`,
+                            left: 2,
+                            right: 2,
+                            border: 1,
+                            borderStyle: 'dashed',
+                            borderColor: 'primary.main',
+                            borderRadius: 1.5,
+                            px: 1,
+                            pt: 0.25,
+                            pointerEvents: 'none',
+                        }}>
+                            <Typography variant="caption" color="primary" fontWeight={650}>+ Plan {formatTimeRange(hoverSlot.start, hoverSlot.end)}</Typography>
+                        </Box>
+                    )}
+                    {planned.length === 0 && !hoverSlot && (
+                        <Typography variant="body2" color="text.disabled" sx={{ position: 'absolute', top: 8, left: 8 }}>{onCreateAt ? 'Nothing planned yet. Click a time to plan a chunk.' : 'Nothing planned on the clock'}</Typography>
                     )}
                     {planned.map(block => {
                         const blockPx = px(block.widthPct);
                         return (
                             <Tooltip key={block.id} arrow placement="right" title={<PlannedTooltip block={block} />}>
-                                <Box sx={{
+                                <Box data-planned-block sx={{
                                     position: 'absolute',
                                     top: `${block.leftPct}%`,
                                     height: `max(4px, ${block.widthPct}%)`,
@@ -97,7 +134,7 @@ export function DayColumns({ windowStart, windowEnd, now, planned, screen }: Day
                                     {blockPx >= TITLE_MIN_PX && <Typography variant="body2" fontWeight={650} noWrap>{block.title}</Typography>}
                                     {blockPx >= DETAIL_MIN_PX && (
                                         <Typography variant="caption" color="text.secondary" noWrap component="div">
-                                            {block.kind === 'focus' ? 'Focus · ' : ''}{formatTimeRange(block.start, block.end)}
+                                            {block.activityName ? `${block.activityName} · ` : block.kind === 'focus' ? 'Focus · ' : ''}{formatTimeRange(block.start, block.end)}
                                         </Typography>
                                     )}
                                 </Box>

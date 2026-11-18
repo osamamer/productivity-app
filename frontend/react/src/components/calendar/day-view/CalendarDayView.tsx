@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Alert, Box, Button, ButtonGroup, Card, Divider, IconButton, Skeleton, Stack, Tooltip, Typography } from '@mui/material';
 import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded';
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
@@ -13,6 +13,10 @@ import { ScreenTimeSetup } from '../../day/ScreenTimeSetup';
 import { ScreenTimeSummary } from '../../day/ScreenTimeSummary';
 import { useScreenTime } from '../../day/useScreenTime';
 import { DayColumns } from './DayColumns';
+import { QuickChunkPopover, type ChunkDraft } from './QuickChunkPopover';
+import { useActivities } from '../../../hooks/useActivities';
+import { ActivitySuggestions } from '../../activity/ActivitySuggestions';
+import { CalendarEvent, CalendarEventInput } from '../../../types/CalendarEvent';
 
 export type CalendarGridView = 'dayGridWeek' | 'dayGridMonth';
 
@@ -20,6 +24,7 @@ interface CalendarDayViewProps {
     date: string;
     onChangeDate: (date: string) => void;
     onShowGrid: (view: CalendarGridView) => void;
+    onCreateEvent: (input: CalendarEventInput) => Promise<CalendarEvent>;
 }
 
 function shiftDate(date: string, days: number) {
@@ -27,8 +32,14 @@ function shiftDate(date: string, days: number) {
 }
 
 /** The calendar's day view: a tall timeline of the plan beside screen time, with totals alongside. */
-export function CalendarDayView({ date, onChangeDate, onShowGrid }: CalendarDayViewProps) {
-    const { overview, error } = useDayOverview(date);
+export function CalendarDayView({ date, onChangeDate, onShowGrid, onCreateEvent }: CalendarDayViewProps) {
+    const { overview, error, mutate } = useDayOverview(date);
+    const activities = useActivities();
+    const [draft, setDraft] = useState<ChunkDraft | null>(null);
+    const createChunk = async (input: CalendarEventInput) => {
+        const created = await onCreateEvent(input);
+        mutate(current => ({ ...current, events: [...current.events, created] }));
+    };
     const start = overview ? parseISO(overview.dayStart).getTime() : 0;
     const end = overview ? parseISO(overview.dayEnd).getTime() : 0;
     const screenWindow = useMemo(() => (overview ? { start, end } : undefined), [overview, start, end]);
@@ -41,14 +52,14 @@ export function CalendarDayView({ date, onChangeDate, onShowGrid }: CalendarDayV
         // `range` changes every refresh, which is when "now" should move too.
         const now = Date.now();
         const apps = range?.apps ?? {};
-        const planned = buildPlannedLane(plannedItems(overview, new Date(start), new Date(end), now), start, end);
+        const planned = buildPlannedLane(plannedItems(overview, new Date(start), new Date(end), now, activities ?? []), start, end);
         return {
             now,
             planned,
             plannedMs: planned.reduce((total, block) => total + block.end - block.start, 0),
             screen: buildScreenLane({ segments: range?.segments ?? [], tracked: range?.tracked ?? [], nameOf: appId => apps[appId]?.name ?? appId }, start, end, now),
         };
-    }, [overview, range, start, end]);
+    }, [overview, range, start, end, activities]);
 
     const day = parseISO(`${date}T12:00:00`);
 
@@ -80,6 +91,7 @@ export function CalendarDayView({ date, onChangeDate, onShowGrid }: CalendarDayV
                             now={layout.now}
                             planned={layout.planned}
                             screen={screenOn && dayStarted ? layout.screen.blocks : null}
+                            onCreateAt={(slot, anchor) => setDraft({ ...slot, anchor })}
                         />
                     )}
                 </Card>
@@ -110,6 +122,12 @@ export function CalendarDayView({ date, onChangeDate, onShowGrid }: CalendarDayV
                         </Tooltip>
                     </Card>
 
+                    {activities?.length === 0 && (
+                        <Card variant="outlined" sx={{ p: 2 }}>
+                            <ActivitySuggestions />
+                        </Card>
+                    )}
+
                     {available && dayStarted && (
                         <Card variant="outlined" sx={{ p: 2 }}>
                             <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1.5 }}>Where the day went</Typography>
@@ -131,6 +149,7 @@ export function CalendarDayView({ date, onChangeDate, onShowGrid }: CalendarDayV
                     )}
                 </Stack>
             </Box>
+            <QuickChunkPopover draft={draft} activities={activities ?? []} onClose={() => setDraft(null)} onCreate={createChunk} />
         </Stack>
     );
 }

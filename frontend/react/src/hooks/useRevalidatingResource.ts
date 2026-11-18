@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { RevalidatingResource } from '../services/cache/revalidatingResource';
 import { subscribeToAppRefresh } from '../services/utils/appRefresh';
 import { keepUnchanged } from '../services/utils/keepUnchanged';
@@ -76,6 +76,16 @@ export function useRevalidatingResource<T>(
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [resource, key, freshMs, refreshEveryMs]);
 
+    /** Applies a local change (e.g. a just-created item) to the shown and kept value. */
+    const mutate = useCallback((update: (data: T) => T) => {
+        setState(current => {
+            if (current.key === null || current.data === null || current.previous) return current;
+            const data = update(current.data);
+            resource.set(current.key, data);
+            return { ...current, data };
+        });
+    }, [resource]);
+
     const current = state.key === key ? state : { data: null, previous: false };
-    return { data: current.data, previous: current.previous, error };
+    return { data: current.data, previous: current.previous, error, mutate };
 }

@@ -16,6 +16,8 @@ import { AppNumberField } from '../input/AppNumberField';
 import { useKeyboardDelete } from '../../hooks/useKeyboardDelete';
 import { TaskReminderPicker } from '../task/TaskReminderPicker';
 import { CalendarChipSelect, CalendarSelect } from './CalendarSelect';
+import { ActivityPicker } from '../activity/ActivityPicker';
+import { useActivities } from '../../hooks/useActivities';
 
 type Props = {
     initialDate: string;
@@ -131,6 +133,19 @@ export function CalendarEventForm({
     const theme = useTheme();
     const [rememberedTimes] = useState(() => event ? {} : readEventTimePreferences());
     const [title, setTitle] = useState(event?.title ?? initialTitle);
+    const activities = useActivities() ?? [];
+    const [activityId, setActivityId] = useState<string | null>(event?.activityId ?? null);
+    const chooseActivity = (nextId: string | null) => {
+        const previousName = activities.find(activity => activity.id === activityId)?.name;
+        const nextName = activities.find(activity => activity.id === nextId)?.name;
+        // An untitled chunk, or one still named after its old activity, takes the new name.
+        if (nextName && (!title.trim() || title === previousName)) {
+            setTitle(nextName);
+            onTitleChange?.(nextName);
+        }
+        markAutoSaveDirty();
+        setActivityId(nextId);
+    };
     const [calendarId, setCalendarId] = useState(event?.calendarId
         ?? (visibleCalendars.length === 1 ? visibleCalendars[0].id : ''));
     const selectedCalendar = calendars.find(calendar => calendar.id === calendarId)
@@ -223,6 +238,7 @@ export function CalendarEventForm({
         return {
             title: (hideTitleField && event ? event.title : title).trim(),
             calendarId,
+            activityId,
             description: description.trim(),
             allDay,
             startDate: allDay ? startDate : null,
@@ -423,6 +439,8 @@ export function CalendarEventForm({
                     onChange={value => { markAutoSaveDirty(); setCalendarId(value); }}
                 />
             )}
+
+            {!event?.sourceId && <ActivityPicker activities={activities} value={activityId} onChange={chooseActivity} />}
 
             {event && recurrenceFrequency !== 'NONE' && occurrenceDate && (
                 <Typography variant="caption" color="text.secondary">

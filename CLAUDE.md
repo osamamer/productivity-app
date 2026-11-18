@@ -45,6 +45,7 @@ Package root: `org.osama`
 Feature packages follow a consistent pattern — each has an entity, repository, service, and controller:
 - `task/` — Task CRUD with filtering via JPA Specifications (`TaskSpecifications.java`)
 - `project/` — User-owned containers for organizing tasks; deleting a project leaves its tasks intact and unassigned
+- `activity/` — User-defined activities (focus, leisure, …) with a named colour. A calendar event with an `activityId` is a **chunk** of planned time; deleting an activity keeps its chunks and clears the label. `CalendarEventRequest.activityId` is presence-tracked, so clients that omit it leave the event's activity alone. Day templates do not carry activities yet. Frontend: `services/cache/activityStore.ts` + `useActivities`, picker in `CalendarEventForm`, click-to-plan in the calendar Day view (`QuickChunkPopover`), management in Settings → Activities
 - `day/` — Daily rating/plan/summary (`DayEntity`, one per user per date)
 - `pomodoro/` — Pomodoro timer settings and state
 - `session/task/` and `session/meditation/` — Session tracking with start/pause/unpause/end lifecycle, published as Spring events via `ApplicationEventPublisher`

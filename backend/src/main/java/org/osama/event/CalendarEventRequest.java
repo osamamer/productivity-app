@@ -20,6 +20,9 @@ public class CalendarEventRequest {
     private RecurrenceUnit recurrenceUnit;
     private Integer reminderMinutesBefore;
     private boolean reminderMinutesBeforePresent;
+    private String activityId;
+    // Older clients do not send activityId; an update from them must not clear it.
+    private boolean activityIdPresent;
 
     public String getTitle() { return title; }
     public void setTitle(String title) { this.title = title; }
@@ -57,4 +60,10 @@ public class CalendarEventRequest {
         this.reminderMinutesBeforePresent = true;
     }
     public boolean isReminderMinutesBeforePresent() { return reminderMinutesBeforePresent; }
+    public String getActivityId() { return activityId; }
+    public void setActivityId(String activityId) {
+        this.activityId = activityId;
+        this.activityIdPresent = true;
+    }
+    public boolean isActivityIdPresent() { return activityIdPresent; }
 }

@@ -32,6 +32,10 @@ public class CalendarEvent {
     @Column(name = "calendar_id", nullable = false)
     private String calendarId;
 
+    // The activity this chunk of time is for (focus, leisure, ...); null for ordinary events.
+    @Column(name = "activity_id")
+    private String activityId;
+
     @Column(name = "source_id")
     private String sourceId;
 

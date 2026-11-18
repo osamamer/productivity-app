@@ -22,7 +22,7 @@ public class BackupService {
     // Explicit coverage prevents new infrastructure entities (tokens, jobs, credentials) from
     // silently entering device backups. Add new user content here with its ownership predicate.
     private static final List<String> OWNED = List.of(
-            "Task", "Project", "DayEntity", "DayTemplate", "UserCalendar", "CalendarEvent",
+            "Task", "Project", "Activity", "DayEntity", "DayTemplate", "UserCalendar", "CalendarEvent",
             "TaskSeries", "MentalThread", "MentalCapacityCheckIn", "MentalStateCheckIn",
             "MeditationSession", "Pomodoro", "Note", "NoteCategory", "TaskGroup", "StatGroup", "Reminder");
     private static final Set<String> EXCLUDED_FIELDS = Set.of(

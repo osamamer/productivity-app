@@ -6,6 +6,7 @@ import { buildPlannedLane, buildScreenLane } from './dayTimelineLayout';
 import { plannedItems } from './plannedItems';
 import { formatScreenDuration } from './screenTimeText';
 import { useScreenTime } from './useScreenTime';
+import { useActivities } from '../../hooks/useActivities';
 import { DayTimeline } from './DayTimeline';
 import { ScreenTimeSummary } from './ScreenTimeSummary';
 import { ScreenTimeSetup } from './ScreenTimeSetup';
@@ -21,6 +22,7 @@ export function ScreenTimeCard({ overview, windowStart, windowEnd }: ScreenTimeC
     const start = windowStart.getTime();
     const end = windowEnd.getTime();
     const { available, status, range, error, saveSettings } = useScreenTime({ start, end });
+    const activities = useActivities();
 
     const layout = useMemo(() => {
         // `range` changes every refresh, which is when "now" should move too.
@@ -28,10 +30,10 @@ export function ScreenTimeCard({ overview, windowStart, windowEnd }: ScreenTimeC
         const apps = range?.apps ?? {};
         return {
             now,
-            planned: buildPlannedLane(plannedItems(overview, new Date(start), new Date(end), now), start, end),
+            planned: buildPlannedLane(plannedItems(overview, new Date(start), new Date(end), now, activities ?? []), start, end),
             screen: buildScreenLane({ segments: range?.segments ?? [], tracked: range?.tracked ?? [], nameOf: appId => apps[appId]?.name ?? appId }, start, end, now),
         };
-    }, [overview, range, start, end]);
+    }, [overview, range, start, end, activities]);
 
     if (!available) return null;
     const enabled = status?.settings.enabled ?? false;

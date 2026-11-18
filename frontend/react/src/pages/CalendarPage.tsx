@@ -302,6 +302,7 @@ export function CalendarPage() {
         const created = await eventService.createEvent(input);
         setEvents(current => [...current, created]);
         playAudioFeedback('eventCreated');
+        return created;
     };
 
     const handleUpdateEvent = async (eventId: string, input: CalendarEventInput) => {
@@ -569,7 +570,7 @@ export function CalendarPage() {
             }}>
                 {calendarSettingsError && <Alert severity="error" sx={{ mb: 1 }}>{calendarSettingsError}</Alert>}
                 {dayViewDate ? (
-                    <CalendarDayView date={dayViewDate} onChangeDate={date => setSearchParams({ day: date }, { replace: true })} onShowGrid={showGrid} />
+                    <CalendarDayView date={dayViewDate} onChangeDate={date => setSearchParams({ day: date }, { replace: true })} onShowGrid={showGrid} onCreateEvent={handleCreateEvent} />
                 ) : (
                 <MonthCalendar
                     tasks={allTasks}
@@ -594,7 +595,7 @@ export function CalendarPage() {
                     onDeleteTaskOccurrence={handleDeleteTaskOccurrence}
                     onDeleteTaskFutureOccurrences={handleDeleteTaskFutureOccurrences}
                     onUpdateTask={handleUpdateTask}
-                    onCreateEvent={handleCreateEvent}
+                    onCreateEvent={async input => { await handleCreateEvent(input); }}
                     onUpdateEvent={handleUpdateEvent}
                     onUpdateImportedEventReminder={handleUpdateImportedEventReminder}
                     onMoveEventOccurrence={handleMoveEventOccurrence}

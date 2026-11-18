@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { appColor, buildPlannedLane, buildScreenLane, hourTicks } from '../src/components/day/dayTimelineLayout.ts';
+import { appColor, buildPlannedLane, buildScreenLane, hourTicks, slotAt } from '../src/components/day/dayTimelineLayout.ts';
 
 const MIN = 60_000;
 const at = minutes => Date.UTC(2026, 10, 18, 8) + minutes * MIN;
@@ -97,4 +97,14 @@ test('a chain of overlaps counts as one group, even when its ends do not touch',
   const item = (id, from, to) => ({ id, kind: 'event', title: id, start: at(from), end: at(to) });
   const lane = buildPlannedLane([item('a', 0, 60), item('b', 30, 120), item('c', 90, 150)], at(0), at(600));
   assert.deepEqual(lane.map(block => [block.id, block.row, block.columns]), [['a', 0, 2], ['b', 1, 2], ['c', 0, 2]]);
+});
+
+test('a click becomes an hour-long slot starting on the half hour before it', () => {
+  const slot = slotAt(at(0), at(600), 95 / 600);
+  assert.deepEqual([slot.start, slot.end], [at(90), at(150)]);
+});
+
+test('a slot clicked near the end of the day is pulled back inside the window', () => {
+  const slot = slotAt(at(0), at(600), 0.99);
+  assert.deepEqual([slot.start, slot.end], [at(540), at(600)]);
 });
