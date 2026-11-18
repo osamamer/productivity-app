@@ -100,11 +100,11 @@ export function PlanVsTimedReport({ period }: { period: ReportPeriod }) {
             ) : report.rows.length === 0 ? (
                 <Card variant="outlined" sx={{ p: 2 }}>
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-                        Nothing planned or timed in this period yet. Plan chunks in the calendar's day view, and time what you do from the Now page.
+                        Nothing planned or timed in this period yet. Plan chunks in the calendar's day view, and time what you do from Home's Leisure view.
                     </Typography>
                     <Stack direction="row" spacing={1}>
                         <Button component={RouterLink} to={`/calendar?day=${format(now, 'yyyy-MM-dd')}`} variant="outlined" size="small">Day view</Button>
-                        <Button component={RouterLink} to="/now" variant="outlined" size="small">Now</Button>
+                        <Button component={RouterLink} to="/?mode=leisure" variant="outlined" size="small">Leisure</Button>
                     </Stack>
                 </Card>
             ) : (

@@ -1,4 +1,4 @@
-// Pure rules for the Now page: which planned chunk is happening, what comes next, and how much
+// Pure rules for the leisure home: which planned chunk is happening, what comes next, and how much
 // time each activity got today. Times are epoch milliseconds.
 import { type ActivitySession, sessionElapsedMs } from '../../types/ActivitySession.ts';
 

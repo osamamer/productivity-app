@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import React, { ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
     Box,
@@ -47,6 +47,10 @@ import { TaskGroup } from '../types/TaskGroup';
 import { PageWrapper } from '../components/PageWrapper';
 import { useGlobalTasks } from '../hooks/useGlobalTasks';
 import { useUser } from '../hooks/useUser';
+import { LeisureHome } from '../components/leisure/LeisureHome';
+import { homeGreeting } from './home/homeGreeting';
+import { HomeModeSwitch } from './home/HomeModeSwitch';
+import { useHomeMode } from './home/homeMode';
 import { SmartTaskInput } from '../components/input/SmartTaskInput';
 import { GroupTaskInputRow } from '../components/task/GroupTaskInputRow';
 import { StatGroupTaskComposer } from '../components/task/StatGroupTaskComposer';
@@ -1137,7 +1141,7 @@ function createOptimisticTask(taskToCreate: TaskToCreate): Task {
     };
 }
 
-export function HomePage() {
+function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
     const { user } = useUser();
     const {
         activePomodoro,
@@ -4497,7 +4501,6 @@ export function HomePage() {
     }
 
     const hour = new Date().getHours();
-    const greeting = hour < 5 ? 'Good wee hours' : hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
     const firstName = user?.firstName || user?.username || '';
     const overdueCount = pastTasks.filter(task => !task.completed).length;
     const showTasksBelowFocus = !focusedPomodoroTask
@@ -4572,6 +4575,7 @@ export function HomePage() {
                 onClick={clearSelection}
                 onDragOverCapture={keepDragTargetInView}
             >
+                {modeSwitch}
                 <Box sx={{ maxWidth: 500, width: '100%', mx: 'auto', pt: 10, pb: 8, px: 2 }}>
                     <Typography
                         variant="h4"
@@ -4585,7 +4589,7 @@ export function HomePage() {
                                 : 'none',
                         }}
                     >
-                        {greeting}{firstName ? `, ${firstName}` : ''}.
+                        {homeGreeting(hour, firstName)}
                     </Typography>
 
                     <Box
@@ -5357,6 +5361,13 @@ export function HomePage() {
             </Box>
         </PageWrapper>
     );
+}
+
+/** Home: labor (tasks and pomodoros) by default, or leisure (today's plan and an activity timer). */
+export function HomePage() {
+    const [mode, setMode] = useHomeMode();
+    const modeSwitch = <HomeModeSwitch mode={mode} onChange={setMode} />;
+    return mode === 'leisure' ? <LeisureHome modeSwitch={modeSwitch} /> : <LaborHome modeSwitch={modeSwitch} />;
 }
 
 export default HomePage;

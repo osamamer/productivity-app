@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { todayChunks } from '../src/components/now/todayChunks.ts';
+import { todayChunks } from '../src/components/leisure/todayChunks.ts';
 
 const event = (id, startTime, endTime, extra = {}) => ({
   id, title: id, startTime, endTime, allDay: false, status: 'CONFIRMED', recurrenceFrequency: 'NONE',

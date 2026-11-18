@@ -4,7 +4,7 @@ import { getAuthCacheScope } from '../utils/authHeaders';
 import { keepUnchanged } from '../utils/keepUnchanged';
 import { dayOverviewResource } from './dayOverviewCache';
 
-// The one running activity timer, shared by the Now page, the side nav and the countdown alert.
+// The one running activity timer, shared by Home's Leisure view, the side nav and the countdown alert.
 
 interface State {
     scope: string;

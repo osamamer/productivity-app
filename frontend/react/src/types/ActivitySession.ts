@@ -1,4 +1,4 @@
-/** Time actually spent on an activity, timed from the Now page (not a pomodoro). */
+/** Time actually spent on an activity, timed from Home's Leisure view (not a pomodoro). */
 export interface ActivitySession {
     id: string;
     activityId: string | null;

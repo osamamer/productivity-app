@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { formatClock, nowPlan, timeByActivity } from '../src/components/now/nowPlan.ts';
+import { formatClock, nowPlan, timeByActivity } from '../src/components/leisure/nowPlan.ts';
 
 const H = 3_600_000;
 const day = Date.UTC(2026, 10, 18);

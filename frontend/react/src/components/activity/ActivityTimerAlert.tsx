@@ -23,7 +23,7 @@ export function ActivityTimerAlert() {
             void showSystemNotification(`${current.title}: time's up`, {
                 body: 'The time you set aside is over.',
                 tag: `activity-timer-${current.id}`,
-                data: { targetUrl: '/now' },
+                data: { targetUrl: '/?mode=leisure' },
             });
         }, Math.max(0, delay));
         return () => window.clearTimeout(timer);

@@ -21,7 +21,6 @@ import NightlightIcon from '@mui/icons-material/Nightlight';
 import LightModeIcon from '@mui/icons-material/LightMode';
 import LogoutIcon from '@mui/icons-material/Logout';
 import SpaRoundedIcon from '@mui/icons-material/SpaRounded';
-import TimerOutlinedIcon from '@mui/icons-material/TimerOutlined';
 import { useActivityTimer } from '../hooks/useActivityTimer';
 import { isLocalDesktopMode } from '../services/desktop';
 import { hasWellbeing, WELLBEING_TABS } from './wellbeing/wellbeingTabs';
@@ -541,7 +540,7 @@ export function SideNav() {
                                 text="Home"
                                 targetPage="/"
                                 expanded={open}
-                                activeIndicator={pomodoroIndicator}
+                                activeIndicator={pomodoroIndicator ?? activityTimerIndicator}
                                 onNavigate={navigateFromDrawer}
                             />
                             <DrawerExpandable open={open}>
@@ -559,14 +558,6 @@ export function SideNav() {
                                     <TodaySnapshotCard snapshot={todaySnapshot} onNavigate={navigateFromDrawer} />
                                 </Box>
                             </DrawerExpandable>
-                            <SideMenuButton
-                                Icon={TimerOutlinedIcon}
-                                text="Now"
-                                targetPage="/now"
-                                expanded={open}
-                                activeIndicator={activityTimerIndicator}
-                                onNavigate={navigateFromDrawer}
-                            />
                             <SideMenuButton
                                 Icon={AssignmentIcon}
                                 text="Tasks"
