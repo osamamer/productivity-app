@@ -75,6 +75,11 @@ export class TtlCache<T> {
         this.entries.delete(key);
     }
 
+    /** Every key held, expired or not, without changing recency. */
+    keys(): string[] {
+        return [...this.entries.keys()];
+    }
+
     deleteMatching(predicate: (key: string) => boolean): void {
         for (const key of this.entries.keys()) {
             if (predicate(key)) this.entries.delete(key);

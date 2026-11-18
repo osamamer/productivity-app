@@ -104,6 +104,7 @@ All user-scoped entities (Task, DayEntity, MeditationSession, TaskSession, Pomod
 - **Forms**: Formik + Yup
 - **Calendar**: FullCalendar
 - **Routing**: React Router v6 (`App.tsx`)
+- **Data freshness**: views show cached data at once and refetch in the background; never swap content for a spinner when a copy exists. One heartbeat (`services/utils/appRefresh.ts`, `useAppRefresh`) fires every minute while the window is visible and online, and on focus or reconnect; subscribe to it instead of adding your own timers or focus listeners. Merge refetched data with `keepUnchanged` (`services/utils/keepUnchanged.ts`) so an unchanged answer re-renders nothing and only changed records update. For new read views, `useRevalidatingResource` with a `RevalidatingResource` does all of this (see `useDayOverview`). `PageTransition` keys on the first path segment, so tabs and days within a page (`/wellbeing/*`, `/day/:date`) keep the page mounted; keep sub-views of one page under one path segment.
 
 ### Services / Ports
 

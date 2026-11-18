@@ -8,6 +8,7 @@ import { dateKey } from '../services/utils/taskDate';
 import { splitTasksByDate } from '../services/utils/taskDateBuckets';
 import { getHomeDisplayDate, getNextHomeDayBoundary } from '../services/utils/homeDay';
 import { getRuntimeUserPreference, subscribeToUserPreferences } from '../services/userPreferenceStore';
+import { subscribeToAppRefresh } from '../services/utils/appRefresh';
 
 export type TaskLoadMode = 'all' | 'home' | 'taskPage';
 
@@ -417,18 +418,8 @@ export function useTaskManager() {
                 refreshing = false;
             }
         };
-        const intervalId = window.setInterval(() => void syncTasks(), 60_000);
-        const syncWhenVisible = () => {
-            if (document.visibilityState === 'visible') void syncTasks();
-        };
-        const syncWhenOnline = () => void syncTasks();
-        document.addEventListener('visibilitychange', syncWhenVisible);
-        window.addEventListener('online', syncWhenOnline);
-        return () => {
-            window.clearInterval(intervalId);
-            document.removeEventListener('visibilitychange', syncWhenVisible);
-            window.removeEventListener('online', syncWhenOnline);
-        };
+        // The shared heartbeat already skips hidden or offline windows.
+        return subscribeToAppRefresh(() => void syncTasks());
     }, [refreshTaskBuckets]);
 
     const addTaskToState = useCallback((task: Task) => {

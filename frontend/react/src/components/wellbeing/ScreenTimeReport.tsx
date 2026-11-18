@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Alert, Box, Card, Skeleton, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
 import { desktopUsage, type UsageDailyTotals } from '../../services/desktop';
+import { useRevalidatingResource } from '../../hooks/useRevalidatingResource';
+import { screenTotalsResource, TOTALS_FRESH_MS } from '../../services/cache/screenTimeCache';
 import { formatScreenDuration } from '../day/screenTimeText';
 import { ScreenTimeSetup } from '../day/ScreenTimeSetup';
 import { ScreenTimeSummary } from '../day/ScreenTimeSummary';
@@ -19,27 +21,23 @@ function StatTile({ value, label }: { value: string; label: string }) {
     );
 }
 
+const noTotals = (): Promise<UsageDailyTotals> => Promise.reject(new Error('This desktop app cannot report screen time yet.'));
+
 function useDailyTotals(period: ReportPeriod, enabled: boolean) {
-    const [totals, setTotals] = useState<UsageDailyTotals | null>(null);
-    const [error, setError] = useState<string | null>(null);
-    const window = useMemo(() => reportWindow(period, new Date()), [period]);
-
-    useEffect(() => {
-        const getDailyTotals = desktopUsage?.getDailyTotals;
-        if (!enabled || !getDailyTotals) return undefined;
-        let cancelled = false;
-        setTotals(null);
-        setError(null);
-        getDailyTotals(window.from.getTime(), window.to.getTime())
-            .then(next => { if (!cancelled) setTotals(next); })
-            .catch((loadError: Error) => {
-                console.error('Could not read the screen-time report:', loadError);
-                if (!cancelled) setError(loadError.message);
-            });
-        return () => { cancelled = true; };
-    }, [enabled, window]);
-
-    return { window, totals, error };
+    // Recomputed per render on purpose: the key only changes when the date does.
+    const window = reportWindow(period, new Date());
+    const from = window.from.getTime();
+    const to = window.to.getTime();
+    const getDailyTotals = desktopUsage?.getDailyTotals;
+    const { data, previous, error } = useRevalidatingResource(
+        screenTotalsResource,
+        enabled && getDailyTotals ? `${from}:${to}` : null,
+        getDailyTotals ? () => getDailyTotals(from, to) : noTotals,
+        { freshMs: TOTALS_FRESH_MS, keepPrevious: true },
+    );
+    // Stable per key so the report below is not rebuilt every render.
+    const stableWindow = useMemo(() => ({ from: new Date(from), to: new Date(to) }), [from, to]);
+    return { window: stableWindow, totals: data, previous, error };
 }
 
 /** Screen time over the last week to year: totals, a bar per day/week/month and the apps it went to. */
@@ -47,9 +45,11 @@ export function ScreenTimeReport() {
     const [period, setPeriod] = useState<ReportPeriod>('week');
     const { status, error: statusError, saveSettings } = useScreenTime();
     const enabled = Boolean(status?.settings.enabled);
-    const { window, totals, error } = useDailyTotals(period, enabled);
+    const { window, totals, previous, error } = useDailyTotals(period, enabled);
 
     const report = useMemo(() => {
+        // While another period loads, its predecessor's days stay visible but faded, bucketed
+        // for the new period so the bars do not jump twice.
         if (!totals) return null;
         const nameOf = (appId: string) => totals.apps[appId]?.name ?? appId;
         return {
@@ -91,7 +91,7 @@ export function ScreenTimeReport() {
             {!report ? (
                 <Skeleton variant="rounded" height={320} />
             ) : (
-                <>
+                <Stack spacing={2} sx={{ opacity: previous ? 0.55 : 1, transition: 'opacity 160ms ease' }} aria-busy={previous}>
                     <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
                         <StatTile value={formatScreenDuration(report.summary.totalMs)} label="On screen in total" />
                         <StatTile value={report.summary.daysWithScreenTime ? formatScreenDuration(report.summary.averageMs) : '–'} label="A day, on days with screen time" />
@@ -107,7 +107,7 @@ export function ScreenTimeReport() {
                         <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1.5 }}>Where the time went</Typography>
                         <Box><ScreenTimeSummary appTimes={report.appTimes} apps={totals?.apps ?? {}} /></Box>
                     </Card>
-                </>
+                </Stack>
             )}
         </Stack>
     );

@@ -24,6 +24,8 @@ import { CalendarDayView, type CalendarGridView } from '../components/calendar/d
 import { Calendar, CalendarColor, CalendarUpdate } from '../types/Calendar';
 import { CalendarManager } from '../components/calendar/CalendarManager';
 import { calendarSourceService, CalendarSource } from '../services/api/calendarSourceService';
+import { subscribeToAppRefresh } from '../services/utils/appRefresh';
+import { keepUnchanged } from '../services/utils/keepUnchanged';
 
 const RECURRING_TASK_LOOKBACK_DAYS = 365;
 const RECURRING_TASK_HORIZON_DAYS = 90;
@@ -222,32 +224,22 @@ export function CalendarPage() {
 
     useEffect(() => {
         let active = true;
-        let lastRefresh = Date.now();
         const refreshVisibleData = async () => {
-            if (!active || Date.now() - lastRefresh < 60_000) return;
-            lastRefresh = Date.now();
             try {
                 const [nextEvents, nextSources] = await Promise.all([
                     eventService.getEvents(true), calendarSourceService.list(),
                 ]);
                 if (!active) return;
-                setEvents(current => current.length === nextEvents.length
-                    && current.every((event, index) => event.id === nextEvents[index].id
-                        && event.updatedAt === nextEvents[index].updatedAt) ? current : nextEvents);
-                setCalendarSources(nextSources);
+                setEvents(current => keepUnchanged(current, nextEvents));
+                setCalendarSources(current => keepUnchanged(current, nextSources));
             } catch (error) {
                 console.error('Failed to refresh calendar data:', error);
             }
         };
-        const onVisible = () => { if (document.visibilityState === 'visible') void refreshVisibleData(); };
-        window.addEventListener('focus', refreshVisibleData);
-        document.addEventListener('visibilitychange', onVisible);
-        const timer = window.setInterval(() => void refreshVisibleData(), 300_000);
+        const unsubscribe = subscribeToAppRefresh(() => void refreshVisibleData());
         return () => {
             active = false;
-            window.clearInterval(timer);
-            window.removeEventListener('focus', refreshVisibleData);
-            document.removeEventListener('visibilitychange', onVisible);
+            unsubscribe();
         };
     }, []);
 

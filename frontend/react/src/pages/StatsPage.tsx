@@ -50,6 +50,8 @@ import {
     statGroupPreferencesStorageKey,
     writeOpenStatGroupIds,
 } from '../services/utils/statGroupPreferences';
+import { useAppRefresh } from '../hooks/useAppRefresh';
+import { keepUnchanged } from '../services/utils/keepUnchanged';
 
 const DEDICATED_SYSTEM_KEYS = new Set([
     'meditated',
@@ -345,8 +347,9 @@ export function StatsPage() {
                     ) ?? (preserveExisting ? existingDefinitionsById.get(definition.id) : undefined) ?? definition),
                     ...optimisticDefinitions.filter(definition => !serverDefinitionIds.has(definition.id)),
                 ];
-                definitionsRef.current = mergedDefinitions;
-                setDefinitions(mergedDefinitions);
+                const keptDefinitions = keepUnchanged(definitionsRef.current, mergedDefinitions);
+                definitionsRef.current = keptDefinitions;
+                setDefinitions(keptDefinitions);
                 setSelectedId(prev => {
                     const visibleDefs = statListDefinitions(mergedDefinitions).filter(definition =>
                         !pendingStatCreationsRef.current.has(definition.id));
@@ -367,7 +370,7 @@ export function StatsPage() {
 
     const loadGroups = useCallback((forceRefresh = false) => {
         return statGroupService.getGroups(forceRefresh)
-            .then(setGroups)
+            .then(next => setGroups(current => keepUnchanged(current, next)))
             .catch(e => {
                 console.error('Failed to load stat groups:', e);
                 setGroupError('Could not load statistic groups.');
@@ -386,6 +389,11 @@ export function StatsPage() {
 
         return () => { active = false; };
     }, [loadDefinitions, loadGroups]);
+
+    useAppRefresh(() => {
+        void loadGroups(true);
+        void loadDefinitions(true, true);
+    });
 
     useEffect(() => subscribeToResourceInvalidation('stats', origin => {
         if (origin !== 'secret-access') setResourceRefreshKey(previous => previous + 1);

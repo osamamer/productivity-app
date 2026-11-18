@@ -12,6 +12,8 @@ import { BackToMentalButton } from '../components/BackToMentalButton';
 import { mentalStateService } from '../services/api/mentalStateService';
 import { sideNavSnapshotCache } from '../services/cache/sideNavSnapshotCache';
 import { MentalStateCheckIn } from '../types/MentalState';
+import { useAppRefresh } from '../hooks/useAppRefresh';
+import { keepUnchanged } from '../services/utils/keepUnchanged';
 
 const CURRENT_STATE_WINDOW_MS = 60 * 60 * 1000;
 
@@ -56,6 +58,16 @@ export function MentalStatePage() {
             });
         return () => { cancelled = true; };
     }, []);
+
+    useAppRefresh(() => {
+        const loadVersion = historyMutationVersion.current;
+        mentalStateService.getHistory(40, true)
+            .then(checkIns => {
+                if (historyMutationVersion.current !== loadVersion) return;
+                setHistory(current => keepUnchanged(current, checkIns));
+            })
+            .catch(requestError => console.error('Failed to refresh mental state history:', requestError));
+    });
 
     const handleSaved = (checkIn: MentalStateCheckIn) => {
         historyMutationVersion.current += 1;

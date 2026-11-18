@@ -23,7 +23,8 @@ function updateCachedHistory(update: (history: MentalStateCheckIn[], limit: numb
 }
 
 export const mentalStateService = {
-    async getHistory(limit = 30): Promise<MentalStateCheckIn[]> {
+    async getHistory(limit = 30, force = false): Promise<MentalStateCheckIn[]> {
+        if (force) historyCache.invalidate(historyKey(limit));
         return historyCache.get(historyKey(limit), async () => {
             const response = await apiFetch(`${MENTAL_STATE_URL}?limit=${limit}`, {
                 headers: getAuthHeaders(),

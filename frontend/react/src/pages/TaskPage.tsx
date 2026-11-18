@@ -50,6 +50,7 @@ import {
     type TaskSectionExpansionState,
     type TaskSectionName,
 } from '../services/utils/taskPagePreferences';
+import { subscribeToAppRefresh } from '../services/utils/appRefresh';
 
 type DeleteRequest =
     | { kind: 'single' | 'bulk'; tasks: Task[]; anchorEl: HTMLElement }
@@ -288,18 +289,8 @@ export function TaskPage() {
                 refreshing = false;
             }
         };
-        const intervalId = window.setInterval(() => void syncGroups(), 60_000);
-        const syncWhenVisible = () => {
-            if (document.visibilityState === 'visible') void syncGroups();
-        };
-        const syncWhenOnline = () => void syncGroups();
-        document.addEventListener('visibilitychange', syncWhenVisible);
-        window.addEventListener('online', syncWhenOnline);
-        return () => {
-            window.clearInterval(intervalId);
-            document.removeEventListener('visibilitychange', syncWhenVisible);
-            window.removeEventListener('online', syncWhenOnline);
-        };
+        // The shared heartbeat already skips hidden or offline windows.
+        return subscribeToAppRefresh(() => void syncGroups());
     }, [refreshTaskGroups]);
 
     useEffect(() => {

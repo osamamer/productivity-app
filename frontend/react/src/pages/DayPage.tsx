@@ -17,7 +17,7 @@ import { addDays, format, isValid, parseISO, subDays } from 'date-fns';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { PageWrapper } from '../components/PageWrapper';
 import { ScreenTimeCard } from '../components/day/ScreenTimeCard';
-import { dayService } from '../services/api';
+import { useDayOverview } from '../hooks/useDayOverview';
 import { formatTimeValue } from '../services/utils/statValues';
 import { expandCalendarEvent } from '../components/calendar/recurrence';
 import { DayOverview, DayStat, DayTask } from '../types/DayOverview';
@@ -314,33 +314,12 @@ export function DayPage() {
     const date = routeDate && DAY_DATE_PATTERN.test(routeDate) && isValid(parseISO(`${routeDate}T12:00:00`))
         ? routeDate
         : format(new Date(), 'yyyy-MM-dd');
-    const [overview, setOverview] = useState<DayOverview | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+    const { overview, error } = useDayOverview(routeDate === date ? date : null);
+    const loading = !overview && !error;
     const [detailTab, setDetailTab] = useState<DetailTab>('stats');
 
     useEffect(() => {
-        if (routeDate !== date) {
-            navigate(`/day/${date}`, { replace: true });
-            return;
-        }
-
-        const controller = new AbortController();
-        setLoading(true);
-        setError(null);
-        dayService.getOverview(date, controller.signal)
-            .then(setOverview)
-            .catch(requestError => {
-                if (requestError?.name !== 'AbortError') {
-                    console.error('Failed to load day overview:', requestError);
-                    setError('Could not load this day.');
-                }
-            })
-            .finally(() => {
-                if (!controller.signal.aborted) setLoading(false);
-            });
-
-        return () => controller.abort();
+        if (routeDate !== date) navigate(`/day/${date}`, { replace: true });
     }, [date, navigate, routeDate]);
 
     const viewMode = dayViewMode(date);
@@ -411,7 +390,9 @@ export function DayPage() {
                     </Stack>
                 </Stack>
 
-                {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+                {error && (overview
+                    ? <Alert severity="warning" sx={{ mb: 2 }}>Could not refresh this day; showing what was loaded before.</Alert>
+                    : <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>)}
                 {loading && !overview && <DayLoadingState />}
                 {overview && (
                     <Stack spacing={2}>

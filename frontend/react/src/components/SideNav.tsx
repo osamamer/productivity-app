@@ -23,6 +23,8 @@ import LogoutIcon from '@mui/icons-material/Logout';
 import SpaRoundedIcon from '@mui/icons-material/SpaRounded';
 import { isLocalDesktopMode } from '../services/desktop';
 import { hasWellbeing, WELLBEING_TABS } from './wellbeing/wellbeingTabs';
+import { subscribeToAppRefresh } from '../services/utils/appRefresh';
+import { keepUnchanged } from '../services/utils/keepUnchanged';
 import MenuRoundedIcon from '@mui/icons-material/MenuRounded';
 import KeyboardDoubleArrowRightRoundedIcon from '@mui/icons-material/KeyboardDoubleArrowRightRounded';
 import KeyboardDoubleArrowLeftRoundedIcon from '@mui/icons-material/KeyboardDoubleArrowLeftRounded';
@@ -370,17 +372,19 @@ export function SideNav() {
         };
 
         void loadTodaySnapshot();
-        const refreshInterval = window.setInterval(() => {
-            void loadTodaySnapshot();
-        }, 30_000);
+        // `get` would answer from its day-long cache, so the heartbeat forces a refetch.
+        const unsubscribe = subscribeToAppRefresh(() => {
+            void sideNavSnapshotCache.refresh()
+                .catch(error => console.error('Failed to refresh the drawer summary:', error));
+        });
 
         return () => {
             cancelled = true;
-            window.clearInterval(refreshInterval);
+            unsubscribe();
         };
     }, []);
 
-    useEffect(() => sideNavSnapshotCache.subscribe(setTodaySnapshot), []);
+    useEffect(() => sideNavSnapshotCache.subscribe(next => setTodaySnapshot(current => (current ? keepUnchanged(current, next) : next))), []);
 
     useEffect(() => {
         const wasOpen = previousOpenRef.current;

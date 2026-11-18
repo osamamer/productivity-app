@@ -73,6 +73,7 @@ import { findKeyboardDeleteAnchor, useKeyboardDelete } from '../hooks/useKeyboar
 import { TaskReminderPicker } from '../components/task/TaskReminderPicker';
 import { usePomodoro } from '../hooks/usePomodoro';
 import { TodayEventsSection } from '../components/home/TodayEventsSection';
+import { subscribeToAppRefresh } from '../services/utils/appRefresh';
 
 type ActiveExpansion = { taskId: string; panel: 'pomodoro' | 'details' } | null;
 type FocusVisibility = 'all' | 'fading' | 'sliding' | 'hidden' | 'revealing' | 'returning';
@@ -1869,18 +1870,8 @@ export function HomePage() {
                 refreshing = false;
             }
         };
-        const intervalId = window.setInterval(() => void syncGroups(), 60_000);
-        const syncWhenVisible = () => {
-            if (document.visibilityState === 'visible') void syncGroups();
-        };
-        const syncWhenOnline = () => void syncGroups();
-        document.addEventListener('visibilitychange', syncWhenVisible);
-        window.addEventListener('online', syncWhenOnline);
-        return () => {
-            window.clearInterval(intervalId);
-            document.removeEventListener('visibilitychange', syncWhenVisible);
-            window.removeEventListener('online', syncWhenOnline);
-        };
+        // The shared heartbeat already skips hidden or offline windows.
+        return subscribeToAppRefresh(() => void syncGroups());
     }, [refreshGroups]);
 
     useEffect(() => {

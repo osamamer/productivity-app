@@ -2,6 +2,7 @@ import { Box } from '@mui/material';
 import { keyframes } from '@mui/system';
 import { Outlet, useLocation } from 'react-router-dom';
 import { useUser } from '../hooks/useUser';
+import { pageTransitionKey } from './pageTransitionKey';
 
 const pageEnter = keyframes`
     from {
@@ -14,14 +15,14 @@ const pageEnter = keyframes`
     }
 `;
 
-/** Replays the page entrance for a new route and once auth loading resolves. */
+/** Replays the page entrance for a new page (not a new tab or day) and once auth loading resolves. */
 export function PageTransition() {
     const location = useLocation();
     const { loading } = useUser();
 
     return (
         <Box
-            key={`${location.pathname}-${loading ? 'loading' : 'ready'}`}
+            key={`${pageTransitionKey(location.pathname)}-${loading ? 'loading' : 'ready'}`}
             sx={{
                 minHeight: '100%',
                 display: 'flex',

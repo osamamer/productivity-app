@@ -1,60 +1,61 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { desktopUsage, UsageRange, UsageSettings, UsageStatus } from '../../services/desktop';
+import { useRevalidatingResource } from '../../hooks/useRevalidatingResource';
+import {
+    isSettledWindow,
+    LIVE_REFRESH_MS,
+    SCREEN_STATUS_KEY,
+    screenRangeKey,
+    screenRangeResource,
+    screenStatusResource,
+    STATUS_FRESH_MS,
+} from '../../services/cache/screenTimeCache';
 
-const REFRESH_MS = 60_000;
+const noStatus = (): Promise<UsageStatus> => Promise.reject(new Error('Screen time is only in the desktop app.'));
+const noRange = (): Promise<UsageRange> => Promise.reject(new Error('Screen time is only in the desktop app.'));
 
 /**
- * Screen-time status and, given a time window, its data, refreshed every minute while the
- * window includes now. Does nothing outside the desktop app.
+ * Screen-time status and, given a time window, its data. Kept copies show at once; a window
+ * that includes now is refreshed every minute. Does nothing outside the desktop app.
  */
 export function useScreenTime(window?: { start: number; end: number }) {
-    const windowStart = window?.start;
-    const windowEnd = window?.end;
-    const [status, setStatus] = useState<UsageStatus | null>(null);
-    const [range, setRange] = useState<UsageRange | null>(null);
-    const [error, setError] = useState<string | null>(null);
-    const enabled = status?.settings.enabled ?? false;
-
-    useEffect(() => {
-        if (!desktopUsage) return;
-        desktopUsage.getStatus()
-            .then(setStatus)
-            .catch((statusError: Error) => {
-                console.error('Could not read screen-time status:', statusError);
-                setError(statusError.message);
-            });
-    }, []);
-
-    useEffect(() => {
-        if (!desktopUsage || !enabled || windowStart === undefined || windowEnd === undefined) return undefined;
-        let cancelled = false;
-        const load = () => desktopUsage?.getRange(windowStart, windowEnd)
-            .then(next => {
-                if (!cancelled) setRange(next);
-            })
-            .catch((rangeError: Error) => {
-                console.error('Could not read screen time:', rangeError);
-                if (!cancelled) setError(rangeError.message);
-            });
-        void load();
-        const live = Date.now() < windowEnd;
-        const timer = live ? setInterval(load, REFRESH_MS) : undefined;
-        return () => {
-            cancelled = true;
-            clearInterval(timer);
-        };
-    }, [enabled, windowStart, windowEnd]);
+    const status = useRevalidatingResource(
+        screenStatusResource,
+        desktopUsage ? SCREEN_STATUS_KEY : null,
+        desktopUsage ? () => desktopUsage!.getStatus() : noStatus,
+        { freshMs: STATUS_FRESH_MS },
+    );
+    // A save answers with the new status; it wins over the kept one until this view closes.
+    const [savedStatus, setSavedStatus] = useState<UsageStatus | null>(null);
+    const currentStatus = savedStatus ?? status.data;
+    const enabled = currentStatus?.settings.enabled ?? false;
+    const settled = window ? isSettledWindow(window.end) : true;
+    const range = useRevalidatingResource(
+        screenRangeResource,
+        desktopUsage && enabled && window ? screenRangeKey(window.start, window.end) : null,
+        desktopUsage && window ? () => desktopUsage!.getRange(window.start, window.end) : noRange,
+        { freshMs: settled ? Infinity : 0, refreshEveryMs: settled ? undefined : LIVE_REFRESH_MS },
+    );
+    const [saveError, setSaveError] = useState<string | null>(null);
 
     const saveSettings = useCallback(async (settings: UsageSettings) => {
         if (!desktopUsage) return;
-        setError(null);
+        setSaveError(null);
         try {
-            setStatus(await desktopUsage.saveSettings(settings));
-        } catch (saveError) {
-            console.error('Could not save screen-time settings:', saveError);
-            setError(saveError instanceof Error ? saveError.message : String(saveError));
+            const next = await desktopUsage.saveSettings(settings);
+            screenStatusResource.set(SCREEN_STATUS_KEY, next);
+            setSavedStatus(next);
+        } catch (error) {
+            console.error('Could not save screen-time settings:', error);
+            setSaveError(error instanceof Error ? error.message : String(error));
         }
     }, []);
 
-    return { available: Boolean(desktopUsage), status, range, error, saveSettings };
+    return {
+        available: Boolean(desktopUsage),
+        status: currentStatus,
+        range: range.data,
+        error: saveError ?? range.error ?? status.error,
+        saveSettings,
+    };
 }

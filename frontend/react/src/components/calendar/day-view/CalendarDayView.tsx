@@ -1,12 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { Alert, Box, Button, ButtonGroup, Card, Divider, IconButton, Skeleton, Stack, Tooltip, Typography } from '@mui/material';
 import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded';
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
 import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded';
 import { addDays, format, isToday, parseISO } from 'date-fns';
 import { Link as RouterLink } from 'react-router-dom';
-import { dayService } from '../../../services/api';
-import { DayOverview } from '../../../types/DayOverview';
+import { useDayOverview } from '../../../hooks/useDayOverview';
 import { buildPlannedLane, buildScreenLane } from '../../day/dayTimelineLayout';
 import { plannedItems } from '../../day/plannedItems';
 import { formatScreenDuration } from '../../day/screenTimeText';
@@ -21,27 +20,6 @@ interface CalendarDayViewProps {
     date: string;
     onChangeDate: (date: string) => void;
     onShowGrid: (view: CalendarGridView) => void;
-}
-
-function useDayOverview(date: string) {
-    const [overview, setOverview] = useState<DayOverview | null>(null);
-    const [error, setError] = useState<string | null>(null);
-
-    useEffect(() => {
-        const controller = new AbortController();
-        setOverview(null);
-        setError(null);
-        dayService.getOverview(date, controller.signal)
-            .then(setOverview)
-            .catch(requestError => {
-                if (requestError?.name === 'AbortError') return;
-                console.error('Failed to load day for the calendar day view:', requestError);
-                setError('Could not load this day.');
-            });
-        return () => controller.abort();
-    }, [date]);
-
-    return { overview, error };
 }
 
 function shiftDate(date: string, days: number) {
@@ -89,7 +67,7 @@ export function CalendarDayView({ date, onChangeDate, onShowGrid }: CalendarDayV
                 </ButtonGroup>
             </Stack>
 
-            {error && <Alert severity="error">{error}</Alert>}
+            {error && <Alert severity={overview ? 'warning' : 'error'}>{overview ? 'Could not refresh this day; showing what was loaded before.' : error}</Alert>}
 
             <Box sx={{ flex: 1, minHeight: 0, display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1fr) 320px' }, gridTemplateRows: { xs: 'minmax(420px, 1fr) auto', lg: 'minmax(0, 1fr)' } }}>
                 <Card variant="outlined" data-day-scroller sx={{ minHeight: 0, overflowY: 'auto', px: { xs: 0.5, sm: 1 } }}>
