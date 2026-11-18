@@ -374,7 +374,7 @@ ipcMain.handle('chooser:get-state', () => ({
 
 ipcMain.handle('chooser:choose', (_event, choice) => {
     const mode = choice?.mode === 'cloud' ? 'cloud' : 'local';
-    writeConfig(userDataDir, { mode });
+    writeConfig(userDataDir, { ...readConfig(userDataDir), mode });
 
     if (appWindow) {
         // A full restart is the simplest way to stop the local backend and drop the

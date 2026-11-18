@@ -30,3 +30,22 @@ test('a corrupt configuration file asks for a mode again', () => {
     fs.writeFileSync(path.join(dir, 'config.json'), '{not json');
     assert.equal(readConfig(dir).mode, null);
 });
+
+test('autoUpdate false is read back so updates can be turned off', () => {
+    const dir = temporaryDir();
+    writeConfig(dir, { mode: 'local', autoUpdate: false });
+    assert.deepEqual(readConfig(dir), { mode: 'local', autoUpdate: false });
+});
+
+test('a non-boolean autoUpdate is ignored', () => {
+    const dir = temporaryDir();
+    writeConfig(dir, { mode: 'local', autoUpdate: 'no' });
+    assert.deepEqual(readConfig(dir), { mode: 'local' });
+});
+
+test('changing the mode the way the chooser does keeps autoUpdate', () => {
+    const dir = temporaryDir();
+    writeConfig(dir, { mode: 'local', autoUpdate: false });
+    writeConfig(dir, { ...readConfig(dir), mode: 'cloud' });
+    assert.deepEqual(readConfig(dir), { mode: 'cloud', autoUpdate: false });
+});

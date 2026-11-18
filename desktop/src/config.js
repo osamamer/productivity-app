@@ -7,7 +7,10 @@ function configPath(userDataDir) {
     return path.join(userDataDir, 'config.json');
 }
 
-/** Returns the saved choice, or `{ mode: null }` when the user has not chosen yet. */
+/**
+ * Returns the saved settings: `mode` is null when the user has not chosen yet, and
+ * `autoUpdate` is present only when the file holds a boolean for it.
+ */
 function readConfig(userDataDir) {
     let raw;
     try {
@@ -18,7 +21,9 @@ function readConfig(userDataDir) {
     }
     try {
         const parsed = JSON.parse(raw);
-        return { mode: MODES.has(parsed.mode) ? parsed.mode : null };
+        const config = { mode: MODES.has(parsed.mode) ? parsed.mode : null };
+        if (typeof parsed.autoUpdate === 'boolean') config.autoUpdate = parsed.autoUpdate;
+        return config;
     } catch (error) {
         console.error('The desktop configuration is not valid JSON; asking for a mode again:', error);
         return { mode: null };
