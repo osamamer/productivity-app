@@ -1,5 +1,5 @@
 import { addDays, addMonths, differenceInCalendarDays, differenceInCalendarMonths, format, startOfDay } from 'date-fns';
-import { CalendarEvent, CalendarEventStatus, RecurrenceFrequency, RecurrenceUnit } from '../../types/CalendarEvent';
+import type { CalendarEvent, CalendarEventStatus, RecurrenceFrequency, RecurrenceUnit } from '../../types/CalendarEvent.ts';
 
 export type CalendarEventOccurrence = {
     id: string;

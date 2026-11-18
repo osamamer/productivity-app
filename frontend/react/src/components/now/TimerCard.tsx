@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, Box, Button, Card, LinearProgress, Stack, Typography } from '@mui/material';
+import { Alert, Box, Button, Card, Stack, Typography } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
 import PauseRoundedIcon from '@mui/icons-material/PauseRounded';
 import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded';
@@ -10,6 +10,7 @@ import { activityTimerStore } from '../../services/cache/activityTimerStore';
 import { Activity } from '../../types/Activity';
 import { ActivitySession, sessionElapsedMs } from '../../types/ActivitySession';
 import { activityHex } from '../activity/activityColors';
+import { TIMER_DIGITS_SX } from '../timer/timerDigits';
 import { formatClock } from './nowPlan';
 
 /** The running timer, large: elapsed time (or time left in a countdown), pause and stop. */
@@ -37,8 +38,13 @@ export function TimerCard({ session, activity }: { session: ActivitySession; act
         }
     };
 
+    const progress = total !== null ? Math.min(100, Math.max(0, (elapsed / total) * 100)) : null;
+
     return (
-        <Card variant="outlined" sx={{ p: { xs: 2.5, sm: 4 }, borderColor: color, bgcolor: alpha(color, 0.06), textAlign: 'center' }}>
+        <Card variant="outlined" sx={{
+            position: 'relative', p: { xs: 2.5, sm: 4 }, borderColor: color, bgcolor: alpha(color, 0.06), textAlign: 'center',
+            ...(progress !== null && { borderBottomColor: 'transparent' }),
+        }}>
             <Stack spacing={2} alignItems="center">
                 <Stack direction="row" spacing={1} alignItems="center">
                     <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: color }} />
@@ -47,7 +53,9 @@ export function TimerCard({ session, activity }: { session: ActivitySession; act
                 <Typography
                     component="div"
                     aria-live="off"
-                    sx={{ fontSize: { xs: '3.5rem', sm: '5rem' }, fontWeight: 300, lineHeight: 1, fontVariantNumeric: 'tabular-nums', opacity: session.paused ? 0.5 : 1 }}
+                    variant="h3"
+                    fontWeight="bold"
+                    sx={{ ...TIMER_DIGITS_SX, opacity: session.paused ? 0.5 : 1 }}
                 >
                     {formatClock(remaining !== null ? Math.max(0, remaining) : elapsed)}
                 </Typography>
@@ -58,14 +66,6 @@ export function TimerCard({ session, activity }: { session: ActivitySession; act
                             ? remaining > 0 ? `left, until ${format(target!, 'h:mm a')}` : `Time's up · ${formatClock(elapsed)} so far`
                             : `since ${format(Date.parse(session.startedAt), 'h:mm a')}`}
                 </Typography>
-                {total !== null && (
-                    <LinearProgress
-                        variant="determinate"
-                        value={Math.min(100, (elapsed / total) * 100)}
-                        aria-label="Countdown progress"
-                        sx={{ width: '100%', maxWidth: 360, height: 6, borderRadius: 3, bgcolor: alpha(color, 0.18), '& .MuiLinearProgress-bar': { bgcolor: color } }}
-                    />
-                )}
                 <Stack direction="row" spacing={1.5}>
                     {session.paused ? (
                         <Button variant="contained" size="large" startIcon={<PlayArrowRoundedIcon />} disabled={busy}
@@ -85,6 +85,19 @@ export function TimerCard({ session, activity }: { session: ActivitySession; act
                 </Stack>
                 {error && <Alert severity="error">{error}</Alert>}
             </Stack>
+            {progress !== null && (
+                // The countdown fills the card's bottom edge instead of a separate bar.
+                <Box
+                    role="progressbar"
+                    aria-label="Countdown progress"
+                    aria-valuenow={Math.round(progress)}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    sx={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 4, bgcolor: alpha(color, 0.18) }}
+                >
+                    <Box sx={{ height: '100%', width: `${progress}%`, bgcolor: color, transition: 'width 1s linear' }} />
+                </Box>
+            )}
         </Card>
     );
 }
