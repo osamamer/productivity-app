@@ -184,6 +184,7 @@ configure_mobile_sign_in() {
       "${compose[@]}" exec -T keycloak /opt/keycloak/bin/kcadm.sh update "clients/${client_id}" \
         -r "${realm}" \
         -s directAccessGrantsEnabled=true >/dev/null
+      allow_desktop_web_origin "${realm}" "${client_id}"
       offline_scope_id=$(
         "${compose[@]}" exec -T keycloak /opt/keycloak/bin/kcadm.sh get client-scopes \
           -r "${realm}" \
@@ -207,6 +208,33 @@ configure_mobile_sign_in() {
 
   echo "The mobile sign-in client ${client_name} was not found; configure it before using mobile sign-in." >&2
   return 0
+}
+
+# The Linux desktop app's cloud mode serves the web app from claritard://app and signs in with
+# a cross-origin token request, so Keycloak must send CORS headers for that origin. Existing web
+# origins are kept.
+allow_desktop_web_origin() {
+  local realm=$1 client_id=$2
+  local desktop_origin="claritard://app"
+  local current origins
+
+  current=$("${compose[@]}" exec -T keycloak /opt/keycloak/bin/kcadm.sh get "clients/${client_id}" \
+    -r "${realm}" --fields webOrigins 2>/dev/null | tr -d '\r') || {
+    echo "Could not read the Keycloak web origins; the desktop app may not be able to sign in." >&2
+    return 0
+  }
+  if grep -Fq "\"${desktop_origin}\"" <<<"${current}"; then
+    return 0
+  fi
+
+  origins=$(grep -o '"[^"]*"' <<<"${current}" | grep -v '^"webOrigins"$' | paste -sd, -)
+  origins="[${origins:+${origins},}\"${desktop_origin}\"]"
+  if "${compose[@]}" exec -T keycloak /opt/keycloak/bin/kcadm.sh update "clients/${client_id}" \
+    -r "${realm}" -s "webOrigins=${origins}" >/dev/null; then
+    echo "Allowed the desktop app origin ${desktop_origin} in Keycloak."
+  else
+    echo "Could not allow ${desktop_origin} in Keycloak; the desktop app may not be able to sign in." >&2
+  fi
 }
 
 verify_keycloak_issuer() {
