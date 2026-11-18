@@ -16,6 +16,9 @@ const { parseTimeoutCommand, selfCommand } = require('./timeouts/cli');
 const { TimeoutService } = require('./timeouts/service');
 const { registerTimeoutIpc } = require('./timeouts/ipc');
 const { startAutoUpdates } = require('./autoUpdate');
+const { UsageService } = require('./usage/service');
+const { registerUsageIpc } = require('./usage/ipc');
+const { HIDDEN_SWITCH } = require('./usage/core/autostart');
 
 // Must match the port baked into the local web build by scripts/build-resources.sh.
 const LOCAL_PORT = 47830;
@@ -43,6 +46,11 @@ let timeouts = null;
 // False while Claritard runs only to show a timeout countdown (started by a delayed launcher or a
 // timer); it then quits once no countdown or timed session needs it.
 let uiStarted = false;
+/** Desktop screen time; tracks only while the UI has been started and the user opted in. */
+let usage = null;
+let usageStopped = false;
+// Started at login: stay in the tray until the user opens the window.
+const startHidden = process.argv.includes(HIDDEN_SWITCH);
 
 const notifications = new DesktopNotifications({
     icon: iconPath,
@@ -101,8 +109,11 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 function startApp() {
+    const command = selfCommand({ isPackaged: app.isPackaged, appPath: app.getAppPath() });
+    usage = new UsageService({ command });
+    registerUsageIpc({ usage, isMainAppPage });
     timeouts = new TimeoutService({
-        command: selfCommand({ isPackaged: app.isPackaged, appPath: app.getAppPath() }),
+        command,
         extensionDir: app.isPackaged ? path.join(process.resourcesPath, 'firefox-extension') : path.join(__dirname, '..', 'firefox-extension'),
         notify: notification => notifications.show(notification),
         onIdleChange: quitIfOnlyTimeoutsAreIdle,
@@ -123,6 +134,7 @@ function quitIfOnlyTimeoutsAreIdle() {
 }
 
 function startUi() {
+    if (!uiStarted) void usage.start();
     uiStarted = true;
     const config = readConfig(userDataDir);
     if (!config.mode) {
@@ -138,7 +150,7 @@ async function launch(config) {
 }
 
 function openMainWindow(mode, contentPreferences) {
-    appWindow = createAppWindow({ mode, contentPreferences });
+    appWindow = createAppWindow({ mode, contentPreferences, show: !startHidden });
     const { window, header, content } = appWindow;
     const commands = createCommands({
         window,
@@ -384,6 +396,15 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', event => {
     quitting = true;
+    if (usage && !usageStopped) {
+        // Writes the open screen-time segment and unloads the KWin script before quitting.
+        event.preventDefault();
+        usageStopped = true;
+        void usage.stopTracking()
+            .catch(error => console.error(`Could not stop screen time cleanly: ${error.message}`, error))
+            .finally(() => app.quit());
+        return;
+    }
     if (!backend || backendStopped) return;
     event.preventDefault();
     backendStopped = true;

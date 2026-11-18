@@ -16,6 +16,7 @@ import TimelineRoundedIcon from '@mui/icons-material/TimelineRounded';
 import { addDays, format, isValid, parseISO, subDays } from 'date-fns';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { PageWrapper } from '../components/PageWrapper';
+import { ScreenTimeCard } from '../components/day/ScreenTimeCard';
 import { dayService } from '../services/api';
 import { formatTimeValue } from '../services/utils/statValues';
 import { expandCalendarEvent } from '../components/calendar/recurrence';
@@ -452,6 +453,8 @@ export function DayPage() {
                                 <SummaryCard icon={<InsightsOutlinedIcon />} value={String(overview.stats.length)} label="stats recorded" />
                             </Box>
                         )}
+
+                        {viewMode !== 'future' && <ScreenTimeCard overview={overview} windowStart={windowStart} windowEnd={windowEnd} />}
 
                         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: hasDetailPanel ? 'minmax(0, 1.4fr) minmax(280px, 0.8fr)' : '1fr' }, gap: 2 }}>
                             <Card variant="outlined" sx={{ p: { xs: 1.5, sm: 2 } }}>

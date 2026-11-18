@@ -87,3 +87,33 @@ Limitations, as with App Timeout: apps that are already running, started from a 
 opened by another app through D-Bus skip the pause; launchers that run a shell script cannot be
 tracked; Wayland compositors decide where the "closes in" window appears; and moving the AppImage
 breaks the rewritten launchers until Claritard next starts (it re-points them then).
+
+## Screen time
+
+The Day page's **Plan and screen** card shows planned calendar events and focus sessions above
+which app was in focus, minute by minute. It is opt-in, works in local and cloud mode alike, and
+the data never leaves this computer. Code lives in `src/usage/` (`core/` is plain Node and unit
+tested).
+
+- **Focus.** Wayland hides other apps' windows, so `src/usage/kwin/claritard-usage.js` runs inside
+  KWin (copied to `~/.local/share/Claritard/usage/` and loaded over D-Bus as `claritard-usage`) and
+  calls back into the `app.claritard.Usage` D-Bus service this app owns (`dbus-next`) with the
+  desktop file name, caption and fullscreen state of the focused window. Quitting unloads it;
+  starting replaces any copy a crash left behind.
+- **Idle.** `powerMonitor.getSystemIdleTime()` is always 0 on KDE Wayland and KDE does not implement
+  `GetSessionIdleTime`, so `src/usage/waylandIdle.js` speaks the `ext_idle_notifier_v1` protocol
+  directly over the Wayland socket. It uses the input-only notification because media players hold
+  idle inhibitors. After 3 minutes without input the open segment ends, backdated to the last input,
+  unless the focused window is fullscreen (watching a video). The lock screen (ScreenSaver
+  `ActiveChanged`) and suspend also end it.
+- **Storage.** One JSON-lines file per local date in `~/.local/share/Claritard/usage/days/`, holding
+  app segments and the spans when tracking was running (the page uses those to tell "away" from
+  "not tracked"). Segments are cut every 60 s, so a crash loses at most a minute. Settings are in
+  `~/.config/Claritard/usage.json`; "Start at login" writes `~/.config/autostart/claritard.desktop`,
+  which starts the app with `--hidden` (window stays in the tray).
+- **Packaging.** `dbus-next` has an optional native dependency (`usocket`) that it only needs for
+  passing file descriptors; it falls back to a plain socket without it. `npmRebuild` is off and the
+  module is excluded from the package so electron-builder never tries to compile it.
+
+Limitations: KDE Plasma 6 only for now (other desktops show the reason on the card); time is only
+recorded while Claritard runs; window titles are whatever the app puts in its title bar.

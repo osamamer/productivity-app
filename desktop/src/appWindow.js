@@ -15,7 +15,7 @@ const isolatedPreferences = {
  * in separate views so the header works the same for the bundled local app and for the
  * hosted cloud site, without touching either page.
  */
-function createAppWindow({ mode, contentPreferences = {} }) {
+function createAppWindow({ mode, contentPreferences = {}, show = true }) {
     const window = new BaseWindow({
         width: 1320,
         height: 860,
@@ -25,6 +25,7 @@ function createAppWindow({ mode, contentPreferences = {} }) {
         backgroundColor: '#100e14',
         title: 'Claritard',
         icon: ICON,
+        show,
     });
     const header = new WebContentsView({
         webPreferences: { ...isolatedPreferences, preload: path.join(__dirname, 'headerPreload.js'), spellcheck: false },

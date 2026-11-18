@@ -79,6 +79,7 @@ import { notificationService, type WebPushSubscriptionPayload } from '../service
 import { isDesktopApp, isLocalDesktopMode } from '../services/desktop';
 import LocalBackupSection from '../components/settings/LocalBackupSection';
 import DesktopStorageSection from '../components/settings/DesktopStorageSection';
+import ScreenTimeSection from '../components/settings/ScreenTimeSection';
 
 const sectionCardSx = {
     backgroundColor: 'background.paper',
@@ -1588,6 +1589,7 @@ export function SettingsPage() {
                                 </Box>
 
                                 <DesktopStorageSection />
+                                <ScreenTimeSection />
                                 <LocalBackupSection />
 
                                 {/* Local desktop mode has one implicit user, so there is no password or session to manage. */}

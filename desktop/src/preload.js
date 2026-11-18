@@ -14,16 +14,32 @@ if (bridge) {
             return () => ipcRenderer.removeListener('desktop:notification-click', listener);
         },
         timeouts: timeoutsBridge(),
+        usage: usageBridge(),
     });
 }
 
-/** App and Firefox URL timeouts. Each call resolves to its value or rejects with the shell's message. */
-function timeoutsBridge() {
-    const call = name => async (...args) => {
-        const result = await ipcRenderer.invoke(`timeouts:${name}`, ...args);
+/** Calls a main-process handler; resolves to its value or rejects with the shell's message. */
+function caller(prefix) {
+    return name => async (...args) => {
+        const result = await ipcRenderer.invoke(`${prefix}:${name}`, ...args);
         if (result?.error) throw new Error(result.error);
         return result?.value;
     };
+}
+
+/** Desktop screen time, kept on this computer. */
+function usageBridge() {
+    const call = caller('usage');
+    return {
+        getStatus: call('getStatus'),
+        getRange: call('getRange'),
+        saveSettings: call('saveSettings'),
+    };
+}
+
+/** App and Firefox URL timeouts. */
+function timeoutsBridge() {
+    const call = caller('timeouts');
     return {
         getState: call('getState'),
         lockReason: call('lockReason'),

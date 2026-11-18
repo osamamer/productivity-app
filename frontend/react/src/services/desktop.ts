@@ -73,6 +73,56 @@ export interface DesktopTimeouts {
     setAppearance: (appearance: TimeoutAppearance) => Promise<void>;
 }
 
+export interface UsageSegment {
+    // Epoch ms; active use of one app.
+    start: number;
+    end: number;
+    appId: string;
+    title: string | null;
+}
+
+export interface UsageInterval {
+    start: number;
+    end: number;
+}
+
+export interface UsageApp {
+    id: string;
+    name: string;
+    // A data URL, or null when the launcher has no usable icon.
+    icon: string | null;
+}
+
+export interface UsageRange {
+    segments: UsageSegment[];
+    apps: Record<string, UsageApp>;
+    // When the tracker was running. Inside it with no segment = idle, locked or away;
+    // outside it = not tracked.
+    tracked: UsageInterval[];
+}
+
+export interface UsageSettings {
+    enabled: boolean;
+    recordTitles: boolean;
+    startAtLogin: boolean;
+}
+
+export interface UsageStatus {
+    settings: UsageSettings;
+    supported: boolean;
+    // Why tracking cannot run on this desktop, when it cannot.
+    reason: string | null;
+    tracking: boolean;
+}
+
+// Desktop screen time, recorded and kept on this computer only. Calls reject with a message
+// that can be shown to the user.
+export interface DesktopUsage {
+    getStatus: () => Promise<UsageStatus>;
+    getRange: (fromMs: number, toMs: number) => Promise<UsageRange>;
+    saveSettings: (settings: UsageSettings) => Promise<UsageStatus>;
+}
+
 export interface DesktopBridge {
     mode: DesktopStorageMode;
     // A token for the single local user, signed with a secret the shell regenerates every launch.
@@ -86,6 +136,8 @@ export interface DesktopBridge {
     onNotificationClick: (callback: (targetUrl: string) => void) => () => void;
     // Absent in desktop builds that predate app timeouts.
     timeouts?: DesktopTimeouts;
+    // Absent in desktop builds that predate screen time.
+    usage?: DesktopUsage;
 }
 
 // Guarded so modules importing this still load in Node-based regression tests.
@@ -100,3 +152,5 @@ export const localDesktopToken: string | null =
 export const isLocalDesktopMode = localDesktopToken !== null;
 
 export const desktopTimeouts: DesktopTimeouts | undefined = desktopBridge?.timeouts;
+
+export const desktopUsage: DesktopUsage | undefined = desktopBridge?.usage;

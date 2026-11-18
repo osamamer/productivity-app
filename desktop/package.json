@@ -30,8 +30,10 @@
     "files": [
       "src/**/*",
       "assets/**/*",
-      "package.json"
+      "package.json",
+      "!**/node_modules/usocket/**"
     ],
+    "npmRebuild": false,
     "extraResources": [
       {
         "from": "resources/backend.jar",
@@ -72,6 +74,7 @@
     ]
   },
   "dependencies": {
+    "dbus-next": "0.10.2",
     "electron-updater": "^6.8.11"
   }
 }
