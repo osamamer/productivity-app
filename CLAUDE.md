@@ -141,6 +141,7 @@ Docker services are defined in `deployment/docker-compose.yml`. Environment vari
 - **Frontend**: `npm install` + `npm run build -- --mode=production` with Node 18
 
 Releases go out automatically on push to `master`, filtered by path:
+- Each production deploy also starts a Netdata server dashboard at `https://claritard.com/monitor/` (basic auth, read-only `netdata` PostgreSQL role); see the Server dashboard section of [deployment/PRODUCTION_DEPLOYMENT.md](deployment/PRODUCTION_DEPLOYMENT.md).
 - `release-desktop.yml` publishes the AppImage, `.deb` and `latest-linux.yml` as the latest GitHub release (version `<major>.<minor>` from `VERSION`, commit count as patch). Installed desktop apps update through `electron-updater` (`desktop/src/autoUpdate.js`; `"autoUpdate": false` in the desktop config turns it off).
 - `release-mobile.yml` publishes the production APK as a **prerelease** titled `Claritard Mobile …`, so it stays out of `/releases/latest` and the desktop updater ignores it. Devices install it through Obtainium. `ANDROID_VERSION_CODE` (commit count) is read in `app.config.js`; the expo `version` stays fixed because `runtimeVersion` follows it.
 

@@ -11,6 +11,14 @@
         Strict-Transport-Security "max-age=31536000; includeSubDomains"
     }
 
+    redir /monitor /monitor/ 308
+    handle_path /monitor/* {
+        basic_auth {
+            {$MONITOR_USER} {$MONITOR_PASSWORD_HASH}
+        }
+        reverse_proxy monitor:19999
+    }
+
     @auth path /auth /auth/*
     handle @auth {
         reverse_proxy keycloak:8080

@@ -109,6 +109,8 @@ services:
       APP_DOMAIN: ${APP_DOMAIN:?APP_DOMAIN is required}
       AUTH_DOMAIN: ${AUTH_DOMAIN:?AUTH_DOMAIN is required}
       ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL is required}
+      MONITOR_USER: ${MONITOR_USER:?MONITOR_USER is required}
+      MONITOR_PASSWORD_HASH: ${MONITOR_PASSWORD_HASH:?MONITOR_PASSWORD_HASH is required}
     depends_on:
       backend:
         condition: service_healthy
@@ -123,11 +125,105 @@ services:
     networks:
       - productivity-network
 
+  # Netdata: host, container, PostgreSQL, endpoint and certificate metrics, served by the
+  # edge at https://${APP_DOMAIN}/monitor/ behind basic auth. Its own network namespace is the
+  # app network, so interface charts show container traffic, not the host's public NIC.
+  # The Docker socket is only used to name containers; read-only does not limit the API, so
+  # this container must never be published directly.
+  monitor:
+    image: netdata/netdata:v2.12.3
+    restart: unless-stopped
+    hostname: claritard-production
+    pid: host
+    cap_add:
+      - SYS_PTRACE
+      - SYS_ADMIN
+    security_opt:
+      - apparmor:unconfined
+    mem_limit: 512m
+    environment:
+      DO_NOT_TRACK: "1"
+      PGID: ${DOCKER_GID:-999}
+    volumes:
+      - netdata_lib:/var/lib/netdata
+      - netdata_cache:/var/cache/netdata
+      - /:/host/root:ro,rslave
+      - /etc/passwd:/host/etc/passwd:ro
+      - /etc/group:/host/etc/group:ro
+      - /etc/localtime:/etc/localtime:ro
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /etc/os-release:/host/etc/os-release:ro
+      - /var/log:/host/var/log:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    configs:
+      - source: netdata_conf
+        target: /etc/netdata/netdata.conf
+      - source: netdata_postgres
+        target: /etc/netdata/go.d/postgres.conf
+      - source: netdata_httpcheck
+        target: /etc/netdata/go.d/httpcheck.conf
+      - source: netdata_x509check
+        target: /etc/netdata/go.d/x509check.conf
+      - source: netdata_docker_discovery
+        target: /etc/netdata/go.d/sd/docker.conf
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - productivity-network
+
+configs:
+  netdata_conf:
+    content: |
+      [db]
+          mode = dbengine
+          dbengine tier 0 retention size = 384MiB
+          dbengine tier 1 retention size = 128MiB
+          dbengine tier 2 retention size = 64MiB
+      [web]
+          bind to = *:19999
+  netdata_postgres:
+    content: |
+      jobs:
+        - name: production
+          dsn: postgres://netdata:${MONITORING_DB_PASSWORD:?MONITORING_DB_PASSWORD is required}@postgres:5432/postgres
+          collect_databases_matching: "*"
+  netdata_httpcheck:
+    content: |
+      jobs:
+        - name: public_app
+          url: https://${APP_DOMAIN}/
+          status_accepted: [200]
+        - name: public_api_health
+          url: https://${APP_DOMAIN}/actuator/health
+          response_match: '"status":"UP"'
+        - name: public_sign_in
+          url: https://${APP_DOMAIN}/auth/realms/${KEYCLOAK_REALM:-productivity-app}/.well-known/openid-configuration
+        - name: backend_internal
+          url: http://backend:8080/actuator/health
+          response_match: '"status":"UP"'
+        - name: keycloak_internal
+          url: http://keycloak:9000/health/ready
+  # Discovery would add a second PostgreSQL job with guessed credentials that always fails.
+  netdata_docker_discovery:
+    content: |
+      disabled: yes
+  netdata_x509check:
+    content: |
+      jobs:
+        - name: app_certificate
+          source: https://${APP_DOMAIN}:443
+        - name: auth_certificate
+          source: https://${AUTH_DOMAIN}:443
+
 volumes:
   postgres_data:
   pomodoro_sounds:
   caddy_data:
   caddy_config:
+  netdata_lib:
+  netdata_cache:
 
 networks:
   productivity-network:

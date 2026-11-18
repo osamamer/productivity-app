@@ -25,6 +25,11 @@ set +a
 
 : "${POSTGRES_USER:?POSTGRES_USER must be set in ${env_file}}"
 : "${KEYCLOAK_DB:?KEYCLOAK_DB must be set in ${env_file}}"
+: "${MONITORING_DB_PASSWORD:?MONITORING_DB_PASSWORD must be set in ${env_file}}"
+
+# Lets the dashboard's netdata user read the Docker socket to name containers.
+DOCKER_GID=$(stat -c %g /var/run/docker.sock)
+export DOCKER_GID
 
 compose=(docker compose --env-file "${env_file}" -f "${compose_file}" -p productivity-app)
 
@@ -329,6 +334,34 @@ require_free_disk() {
   fi
 }
 
+# pg_monitor can read statistics and sizes but no table contents.
+ensure_monitoring_role() {
+  "${compose[@]}" exec -T postgres psql \
+    --username "${POSTGRES_USER}" \
+    --dbname "${POSTGRES_DB}" \
+    --set=ON_ERROR_STOP=1 \
+    --set=password="${MONITORING_DB_PASSWORD}" >/dev/null <<'SQL'
+set client_min_messages = warning;
+select format('create role netdata login password %L', :'password')
+where not exists (select from pg_roles where rolname = 'netdata') \gexec
+select format('alter role netdata login password %L', :'password') \gexec
+grant pg_monitor to netdata;
+SQL
+}
+
+# The dashboard is not part of the app's health: a failure here is reported but never
+# fails the deploy or triggers a rollback.
+start_monitor() {
+  echo "Starting the server dashboard..."
+  if ensure_monitoring_role \
+    && "${compose[@]}" pull monitor \
+    && "${compose[@]}" up -d --no-build monitor; then
+    echo "Server dashboard is running at https://${APP_DOMAIN}/monitor/."
+  else
+    echo "The server dashboard could not start; the application is unaffected." >&2
+  fi
+}
+
 remove_unused_images
 require_free_disk
 
@@ -364,6 +397,7 @@ rollout() {
 if rollout "${image_tag}"; then
   printf '%s\n' "${image_tag}" > "${state_file}"
   echo "Production deployment is healthy at ${image_tag}."
+  start_monitor
   exit 0
 fi
 

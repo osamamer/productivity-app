@@ -261,6 +261,35 @@ Then test in the browser:
 4. Confirm browser notifications and the WebSocket-driven timer updates.
 5. Restart the backend and confirm data remains present.
 
+## Server dashboard
+
+Each deploy also starts Netdata (the `monitor` service) after the app is healthy. It is
+served at `https://APP_DOMAIN/monitor/` behind basic auth; choose **Skip and use the
+dashboard anonymously** on the sign-in screen, since nothing is sent to Netdata Cloud.
+
+It shows CPU, memory, disk space and I/O, load, per-container usage, PostgreSQL
+(connections, database sizes, locks, cache hits, WAL, vacuum, transaction wraparound),
+public and internal endpoint checks (`httpcheck`) and certificate expiry (`x509check`),
+with Netdata's built-in alerts. Interface traffic covers the app containers, not the
+host's public network card. History is capped at roughly 600 MB of disk.
+
+Set these in `.env` before the first deploy that includes it:
+
+```sh
+docker run --rm caddy:2-alpine caddy hash-password --plaintext 'your-dashboard-password'
+openssl rand -hex 24
+```
+
+```dotenv
+MONITOR_USER=admin
+MONITOR_PASSWORD_HASH='$2a$14$...'
+MONITORING_DB_PASSWORD=<hex value>
+```
+
+The deploy creates the `netdata` PostgreSQL role with `pg_monitor`, which can read
+statistics but not table contents. A dashboard failure is reported in the deploy log and
+never rolls the app back.
+
 ## 8. Backups
 
 The Docker volumes are persistence, not backups. The repository includes
