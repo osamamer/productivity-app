@@ -16,6 +16,7 @@ const { parseTimeoutCommand, selfCommand } = require('./timeouts/cli');
 const { TimeoutService } = require('./timeouts/service');
 const { registerTimeoutIpc } = require('./timeouts/ipc');
 const { startAutoUpdates } = require('./autoUpdate');
+const { deferLaunchUntilInstalled } = require('./debInstall');
 const { UsageService } = require('./usage/service');
 const { registerUsageIpc } = require('./usage/ipc');
 const { HIDDEN_SWITCH } = require('./usage/core/autostart');
@@ -89,7 +90,9 @@ function hideToTray() {
 // The custom header replaces the menu bar; its ⋮ menu holds every command.
 Menu.setApplicationMenu(null);
 
-if (!app.requestSingleInstanceLock()) {
+if (app.isPackaged && deferLaunchUntilInstalled({ argv: process.argv })) {
+    app.exit(0);
+} else if (!app.requestSingleInstanceLock()) {
     app.quit();
 } else {
     app.on('second-instance', (_event, argv) => {
