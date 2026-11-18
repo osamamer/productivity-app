@@ -1,27 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { formatClock, nowPlan, timeByActivity } from '../src/components/leisure/nowPlan.ts';
+import { formatClock, timeByActivity } from '../src/components/leisure/leisureTime.ts';
 
 const H = 3_600_000;
 const day = Date.UTC(2026, 10, 18);
-const chunk = (id, from, to, activityId = 'focus') => ({ id, eventId: id, title: id, activityId, start: day + from * H, end: day + to * H });
-
-test('the chunk under way is current; later ones are upcoming and earlier ones past', () => {
-  const plan = nowPlan([chunk('lunch', 12, 13), chunk('deep', 9, 11), chunk('gym', 17, 18)], day + 12.5 * H);
-  assert.equal(plan.current.id, 'lunch');
-  assert.deepEqual(plan.upcoming.map(c => c.id), ['gym']);
-  assert.deepEqual(plan.past.map(c => c.id), ['deep']);
-});
-
-test('between chunks nothing is current', () => {
-  assert.equal(nowPlan([chunk('deep', 9, 11)], day + 11 * H).current, null);
-});
-
-test('when chunks overlap, the one that started last is current', () => {
-  const plan = nowPlan([chunk('workday', 9, 17), chunk('call', 10, 11)], day + 10.5 * H);
-  assert.equal(plan.current.id, 'call');
-});
-
 const session = (activityId, from, to, extra = {}) => ({
   id: `${activityId}-${from}`, activityId, eventId: null, title: '', pausedMillis: 0, pausedAt: null,
   targetEndAt: null, elapsedSeconds: 0, active: to === null, paused: false,

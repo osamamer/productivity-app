@@ -1,119 +1,130 @@
 import { ReactNode, useMemo, useState } from 'react';
-import { Box, Link, Skeleton, Typography } from '@mui/material';
+import { Alert, Box, Skeleton, TextField, Typography } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { format } from 'date-fns';
-import { Link as RouterLink } from 'react-router-dom';
 import { PageWrapper } from '../PageWrapper';
 import { ActivitySuggestions } from '../activity/ActivitySuggestions';
-import { activityHex } from '../activity/activityColors';
+import { ACTIVITY_COLOR_ORDER, activityHex } from '../activity/activityColors';
 import { useActivities } from '../../hooks/useActivities';
 import { useActivityTimer, useNow } from '../../hooks/useActivityTimer';
 import { useDayOverview } from '../../hooks/useDayOverview';
 import { useUser } from '../../hooks/useUser';
+import { activityStore } from '../../services/cache/activityStore';
 import { activityTimerStore } from '../../services/cache/activityTimerStore';
-import { Activity } from '../../types/Activity';
-import { ActivitySession, StartActivitySessionInput } from '../../types/ActivitySession';
+import { Activity, ActivityInput } from '../../types/Activity';
+import { ActivitySession } from '../../types/ActivitySession';
 import { homeGreeting } from '../../pages/home/homeGreeting';
-import { LeisureRow } from './LeisureRow';
-import { LeisureStartInput } from './LeisureStartInput';
+import { ActivityDetailsPanel } from './ActivityDetailsPanel';
+import { LeisurePanel, LeisureRow } from './LeisureRow';
 import { LeisureStartPanel } from './LeisureStartPanel';
 import { LeisureTimerPanel } from './LeisureTimerPanel';
 import { TimedTodayList } from './TimedTodayList';
-import { nowPlan, PlannedChunk } from './nowPlan';
 import { timerClock } from './timerClock';
-import { todayChunks } from './todayChunks';
 
 const MINUTE = 60_000;
 
-function chunkDefaultMinutes(chunk: PlannedChunk, now: number): number {
-    if (chunk.end <= now) return 0;
-    return Math.ceil((chunk.end - Math.max(now, chunk.start)) / MINUTE);
+type OpenPanel = { activityId: string; panel: LeisurePanel } | null;
+
+/** The leisure counterpart of the Home task input: adds an activity. */
+function AddActivityInput({ count, onError }: { count: number; onError: (message: string | null) => void }) {
+    const [name, setName] = useState('');
+    const add = async () => {
+        if (!name.trim()) return;
+        onError(null);
+        try {
+            await activityStore.create({ name: name.trim(), color: ACTIVITY_COLOR_ORDER[count % ACTIVITY_COLOR_ORDER.length], displayOrder: count });
+            setName('');
+        } catch (error) {
+            console.error('Could not add the activity:', error);
+            onError('Could not add the activity.');
+        }
+    };
+    return (
+        <Box component="form" onSubmit={event => { event.preventDefault(); void add(); }}>
+            <TextField
+                variant="standard"
+                fullWidth
+                placeholder="Add an activity..."
+                value={name}
+                autoComplete="off"
+                onChange={event => setName(event.target.value)}
+                inputProps={{ 'aria-label': 'Add an activity', maxLength: 60 }}
+            />
+        </Box>
+    );
 }
 
-function chunkSubtitle(chunk: PlannedChunk, activity: Activity | undefined, current: boolean): string {
-    const range = `${format(chunk.start, 'h:mm a')} – ${format(chunk.end, 'h:mm a')}`;
-    return `${current ? 'Now · ' : ''}${range}${activity ? ` · ${activity.name}` : ''}`;
-}
-
-/** The leisure side of Home: today's planned chunks as rows and a timer drawn like the pomodoro. */
+/** The leisure side of Home: your activities as rows, each with a timer drawn like the Home pomodoro. */
 export function LeisureHome({ modeSwitch }: { modeSwitch: ReactNode }) {
     const theme = useTheme();
     const { user } = useUser();
     const { current: session, loaded } = useActivityTimer();
     const now = useNow(true, session && !session.paused ? 1000 : 30_000);
-    const today = format(now, 'yyyy-MM-dd');
-    const { overview } = useDayOverview(today);
+    const { overview } = useDayOverview(format(now, 'yyyy-MM-dd'));
     const activities = useActivities();
-    const [expandedId, setExpandedId] = useState<string | null>(null);
+    const [openPanel, setOpenPanel] = useState<OpenPanel>(null);
+    const [error, setError] = useState<string | null>(null);
 
-    const plan = useMemo(() => nowPlan(overview ? todayChunks(overview) : [], now), [overview, now]);
     const sessions = useMemo(() => {
         const listed = overview?.activitySessions ?? [];
         // The running timer may be newer than the overview.
         return session && !listed.some(item => item.id === session.id) ? [...listed, session] : listed;
     }, [overview, session]);
-    const byId = useMemo(() => new Map((activities ?? []).map(activity => [activity.id, activity])), [activities]);
-    const colorOf = (activityId: string | null) => {
-        const activity = activityId ? byId.get(activityId) : undefined;
-        return activity ? activityHex(activity.color, theme.palette.text.secondary) : null;
+
+    const togglePanel = (activityId: string, panel: LeisurePanel) => setOpenPanel(previous =>
+        previous?.activityId === activityId && previous.panel === panel ? null : { activityId, panel });
+
+    const report = (failure: string) => (cause: unknown) => {
+        console.error(failure, cause);
+        setError(failure);
+    };
+    const update = (activity: Activity, input: ActivityInput) =>
+        activityStore.update(activity.id, input).catch(report('Could not save the activity.'));
+
+    const start = (activity: Activity) => async (minutes: number) => {
+        await activityTimerStore.start({
+            activityId: activity.id,
+            title: activity.name,
+            targetEndAt: minutes > 0 ? new Date(Date.now() + minutes * MINUTE).toISOString() : null,
+        });
+        setOpenPanel(null);
     };
 
-    const start = async (input: StartActivitySessionInput) => {
-        await activityTimerStore.start(input);
-        setExpandedId(null);
-    };
-    const startChunk = (chunk: PlannedChunk) => async (minutes: number) => {
-        const untilChunkEnd = minutes === chunkDefaultMinutes(chunk, Date.now()) && chunk.end > Date.now();
-        const targetEndAt = minutes <= 0 ? null
-            : new Date(untilChunkEnd ? chunk.end : Date.now() + minutes * MINUTE).toISOString();
-        await start({ activityId: chunk.activityId, eventId: chunk.eventId, title: chunk.title, targetEndAt });
-    };
+    const timerPanel = (running: ActivitySession, label: string) =>
+        <LeisureTimerPanel session={running} clock={timerClock(running, now)} label={label} />;
 
-    const renderRunning = (running: ActivitySession) => {
-        const clock = timerClock(running, now);
-        const activity = running.activityId ? byId.get(running.activityId) : undefined;
+    const renderActivity = (activity: Activity) => {
+        const running = session?.activityId === activity.id ? session : null;
+        const panel = openPanel?.activityId === activity.id ? openPanel.panel : null;
+        const clock = running ? timerClock(running, now) : null;
         return (
             <LeisureRow
-                title={running.title}
-                subtitle={`Since ${format(Date.parse(running.startedAt), 'h:mm a')}${running.targetEndAt ? ` · until ${format(Date.parse(running.targetEndAt), 'h:mm a')}` : ''}`}
-                color={colorOf(running.activityId)}
-                active
-                paused={running.paused}
-                progress={clock.progress}
-                expanded
-                onToggle={() => undefined}
+                key={activity.id}
+                title={activity.name}
+                color={activityHex(activity.color, theme.palette.text.secondary)}
+                active={Boolean(running)}
+                paused={running?.paused}
+                progress={clock?.progress ?? null}
+                panel={panel}
+                onTogglePanel={next => togglePanel(activity.id, next)}
+                timerDisabled={Boolean(session) && !running}
+                onRename={name => void update(activity, { name })}
+                onDelete={() => void activityStore.remove(activity.id).catch(report('Could not delete the activity.'))}
             >
-                <LeisureTimerPanel session={running} clock={clock} label={activity?.name ?? 'Timing'} />
+                {panel === 'details' && (
+                    <Box sx={{ mb: running ? 2 : 0 }}>
+                        <ActivityDetailsPanel color={activity.color} onChange={color => void update(activity, { color })} />
+                    </Box>
+                )}
+                {running
+                    ? timerPanel(running, activity.name)
+                    : panel === 'timer' && <LeisureStartPanel defaultMinutes={0} onStart={start(activity)} />}
             </LeisureRow>
         );
     };
 
-    const renderChunk = (chunk: PlannedChunk, state: 'now' | 'later' | 'past') => {
-        const activity = chunk.activityId ? byId.get(chunk.activityId) : undefined;
-        const expanded = expandedId === chunk.id;
-        return (
-            <LeisureRow
-                key={chunk.id}
-                title={chunk.title}
-                subtitle={chunkSubtitle(chunk, activity, state === 'now')}
-                color={colorOf(chunk.activityId)}
-                current={state === 'now'}
-                dimmed={state === 'past'}
-                expanded={expanded}
-                timerDisabled={Boolean(session)}
-                onToggle={() => setExpandedId(expanded ? null : chunk.id)}
-            >
-                <LeisureStartPanel defaultMinutes={chunkDefaultMinutes(chunk, now)} onStart={startChunk(chunk)} />
-            </LeisureRow>
-        );
-    };
-
-    // Like a focused pomodoro task, the running timer sits on top and its chunk leaves the list below.
-    const runningChunkId = session?.eventId
-        ? [plan.current, ...plan.upcoming, ...plan.past].find(chunk => chunk?.eventId === session.eventId)?.id
-        : undefined;
-    const showChunk = (chunk: PlannedChunk) => chunk.id !== runningChunkId;
-    const planEmpty = !plan.current && plan.upcoming.length === 0 && plan.past.length === 0;
+    // A timer that belongs to no listed activity still shows, as its own row on top.
+    const orphan = session && !activities?.some(activity => activity.id === session.activityId) ? session : null;
     const firstName = user?.firstName || user?.username || '';
 
     return (
@@ -121,7 +132,7 @@ export function LeisureHome({ modeSwitch }: { modeSwitch: ReactNode }) {
             <Box sx={{ position: 'relative', flex: 1 }}>
                 {modeSwitch}
                 <Box sx={{ maxWidth: 500, width: '100%', mx: 'auto', pt: 10, pb: 8, px: 2 }}>
-                    <Typography variant="h4" color="text.secondary" sx={{ mb: 4, fontWeight: 400, textAlign: 'left' }}>
+                    <Typography variant="h4" color="text.secondary" sx={{ mb: 4, fontWeight: 400 }}>
                         {homeGreeting(new Date(now).getHours(), firstName)}
                     </Typography>
 
@@ -139,27 +150,33 @@ export function LeisureHome({ modeSwitch }: { modeSwitch: ReactNode }) {
                             '& .MuiInput-root': { fontSize: '1.1rem' },
                         }}
                     >
-                        <LeisureStartInput activities={activities ?? []} disabled={Boolean(session)} onStart={start} />
+                        <AddActivityInput count={activities?.length ?? 0} onError={setError} />
                     </Box>
 
-                    {!loaded || !overview || activities === null ? (
+                    {error && <Alert severity="error" onClose={() => setError(null)} sx={{ mb: 2 }}>{error}</Alert>}
+
+                    {!loaded || activities === null ? (
                         <Box>
                             {[0, 1, 2].map(index => <Skeleton key={index} variant="rounded" height={48} sx={{ mb: 0.75, borderRadius: 1.5 }} />)}
                         </Box>
                     ) : (
                         <>
-                            {session && renderRunning(session)}
-                            {plan.current && showChunk(plan.current) && renderChunk(plan.current, 'now')}
-                            {plan.upcoming.filter(showChunk).map(chunk => renderChunk(chunk, 'later'))}
-                            {plan.past.filter(showChunk).map(chunk => renderChunk(chunk, 'past'))}
-                            {planEmpty && (
-                                <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'left', px: 1, mt: session ? 2 : 0 }}>
-                                    Nothing planned on the clock today.{' '}
-                                    <Link component={RouterLink} to={`/calendar?day=${today}`}>Plan chunks in the day view</Link>.
-                                </Typography>
+                            {orphan && (
+                                <LeisureRow
+                                    title={orphan.title}
+                                    color={null}
+                                    active
+                                    paused={orphan.paused}
+                                    progress={timerClock(orphan, now).progress}
+                                    panel={null}
+                                    onTogglePanel={() => undefined}
+                                >
+                                    {timerPanel(orphan, 'Timing')}
+                                </LeisureRow>
                             )}
+                            {activities.map(renderActivity)}
                             {activities.length === 0 && (
-                                <Box sx={{ mt: 3, p: 2, border: 1, borderColor: 'divider', borderRadius: 2, textAlign: 'left' }}>
+                                <Box sx={{ mt: 1, p: 2, border: 1, borderColor: 'divider', borderRadius: 2 }}>
                                     <ActivitySuggestions />
                                 </Box>
                             )}

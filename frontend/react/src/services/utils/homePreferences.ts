@@ -39,3 +39,23 @@ export function setHomeTodayEventsExpanded(value: boolean): void {
         console.warn('Unable to save Home event expansion to local storage.', error);
     }
 }
+
+const HOME_TIMED_TODAY_EXPANDED_STORAGE_KEY = 'homeTimedTodayExpanded';
+
+/** Whether the leisure home's "Timed today" section is open; closed until opened. */
+export function getHomeTimedTodayExpanded(): boolean {
+    try {
+        return window.localStorage.getItem(HOME_TIMED_TODAY_EXPANDED_STORAGE_KEY) === 'true';
+    } catch (error) {
+        console.warn('Unable to read Timed today expansion from local storage.', error);
+        return false;
+    }
+}
+
+export function setHomeTimedTodayExpanded(value: boolean): void {
+    try {
+        window.localStorage.setItem(HOME_TIMED_TODAY_EXPANDED_STORAGE_KEY, String(value));
+    } catch (error) {
+        console.warn('Unable to save Timed today expansion to local storage.', error);
+    }
+}

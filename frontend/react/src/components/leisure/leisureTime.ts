@@ -1,34 +1,6 @@
-// Pure rules for the leisure home: which planned chunk is happening, what comes next, and how much
-// time each activity got today. Times are epoch milliseconds.
+// Pure rules for the leisure home: how much time each activity got, and how a running clock reads.
+// Times are epoch milliseconds.
 import { type ActivitySession, sessionElapsedMs } from '../../types/ActivitySession.ts';
-
-export interface PlannedChunk {
-    id: string;
-    eventId: string;
-    title: string;
-    activityId: string | null;
-    start: number;
-    end: number;
-}
-
-export interface NowPlan {
-    // The chunk under way; when chunks overlap, the one that started last.
-    current: PlannedChunk | null;
-    // Chunks still to start today, soonest first.
-    upcoming: PlannedChunk[];
-    // Chunks already over today, most recent first.
-    past: PlannedChunk[];
-}
-
-export function nowPlan(chunks: PlannedChunk[], now: number): NowPlan {
-    const sorted = [...chunks].sort((a, b) => a.start - b.start);
-    const underway = sorted.filter(chunk => chunk.start <= now && now < chunk.end);
-    return {
-        current: underway.at(-1) ?? null,
-        upcoming: sorted.filter(chunk => chunk.start > now),
-        past: sorted.filter(chunk => chunk.end <= now).reverse(),
-    };
-}
 
 export interface ActivityTime {
     // Null groups timers that were not started for an activity.

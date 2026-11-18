@@ -8,7 +8,7 @@ import { activityTimerStore } from '../../services/cache/activityTimerStore';
 import { ActivitySession } from '../../types/ActivitySession';
 import { TIMER_DIGITS_SX } from '../timer/timerDigits';
 import { WhiteNoiseControl } from '../timer/WhiteNoiseControl';
-import { formatClock } from './nowPlan';
+import { formatClock } from './leisureTime';
 import { TimerClock } from './timerClock';
 
 /** The running timer laid out like the Home pomodoro panel, without focus sessions. */
