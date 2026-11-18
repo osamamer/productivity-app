@@ -43,18 +43,38 @@ function applyRules(state) {
 }
 
 // The host pushes fresh rules whenever Claritard saves its settings. If it is missing or exits,
-// retry so connecting it later in Claritard needs no extension reload.
+// retry so connecting it later in Claritard needs no extension reload. A host from before
+// Claritard 1.2.315 answers "watch" with an error; then ask it once per retry instead.
 const RECONNECT_MS = 5000;
+const OLD_HOST_RETRY_MS = 60000;
 let markReady;
 const ready = new Promise(resolve => { markReady = resolve; });
 
+async function loadRulesOnce() {
+  try {
+    applyRules(await native({type: "rules"}));
+  } catch (error) {
+    console.error("Claritard native host:", error);
+  }
+  markReady();
+}
+
 function connect() {
   const port = browser.runtime.connectNative(HOST);
+  let closed = false;
   port.onMessage.addListener(state => {
+    if (state.type !== "rules") {
+      closed = true;
+      port.disconnect();
+      loadRulesOnce();
+      setTimeout(connect, OLD_HOST_RETRY_MS);
+      return;
+    }
     applyRules(state);
     markReady();
   });
   port.onDisconnect.addListener(() => {
+    if (closed) return;
     if (port.error) console.error("Claritard native host:", port.error.message);
     markReady();
     setTimeout(connect, RECONNECT_MS);
