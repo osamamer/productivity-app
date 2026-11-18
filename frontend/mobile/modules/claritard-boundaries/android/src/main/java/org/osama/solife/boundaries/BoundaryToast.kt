@@ -26,9 +26,22 @@ object BoundaryAppearance {
     private const val PREFS = "boundaries_appearance"
     private const val KEY = "appearance"
 
-    data class Colors(val surface: Int, val text: Int, val accent: Int)
+    data class Colors(val surface: Int, val text: Int, val accent: Int, val background: Int, val onAccent: Int) {
+        val muted: Int get() = (text and 0x00FFFFFF) or 0xB3000000.toInt()
+        val track: Int get() = (text and 0x00FFFFFF) or 0x17000000
+        val border: Int get() = (text and 0x00FFFFFF) or 0x24000000
+    }
 
-    private val fallback = Colors(Color.parseColor("#30343A"), Color.WHITE, Color.parseColor("#A395F2"))
+    private val fallback = Colors(
+        surface = Color.parseColor("#30343A"),
+        text = Color.WHITE,
+        accent = Color.parseColor("#A395F2"),
+        background = Color.parseColor("#1E2124"),
+        onAccent = Color.parseColor("#111827"),
+    )
+
+    private fun color(o: JSONObject, key: String, otherwise: Int): Int =
+        o.optString(key).takeIf { it.isNotEmpty() }?.let(Color::parseColor) ?: otherwise
 
     fun save(context: Context, json: String) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY, json).apply()
@@ -42,6 +55,9 @@ object BoundaryAppearance {
                 surface = Color.parseColor(o.optString("surface")),
                 text = Color.parseColor(o.optString("text")),
                 accent = Color.parseColor(o.optString("accent")),
+                // Absent in what versions before the delay overlay stored.
+                background = color(o, "background", fallback.background),
+                onAccent = color(o, "onAccent", fallback.onAccent),
             )
         } catch (e: Exception) {
             Log.w("BoundaryAppearance", "Stored appearance is unreadable; using the default", e)

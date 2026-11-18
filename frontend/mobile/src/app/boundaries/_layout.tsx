@@ -9,8 +9,10 @@ export default function BoundariesLayout() {
   const { colors } = useAppTheme();
 
   useEffect(() => {
-    // Messages from the background service are drawn natively; give them the current theme.
-    void Boundaries?.setAppearance(JSON.stringify({ surface: colors.surfaceRaised, text: colors.text, accent: colors.accent }))
+    // Messages and the delay overlay from the background service are drawn natively; give them the current theme.
+    void Boundaries?.setAppearance(JSON.stringify({
+      surface: colors.surfaceRaised, text: colors.text, accent: colors.accent, background: colors.background, onAccent: colors.onAccent,
+    }))
       .catch(cause => console.error('Could not share the theme with Boundaries:', cause));
   }, [colors]);
 

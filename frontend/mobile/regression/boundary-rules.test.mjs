@@ -59,3 +59,17 @@ test('rules read as a short sentence in the app list', () => {
   assert.equal(summarizeRule(rule({ dailyLimitMin: 30, maxOpens: 3 })), '30 min/day, 3 opens/day');
   assert.equal(summarizeRule(rule({})), 'No restriction');
 });
+
+test('a pause before opening counts as a limit and shows in the summary', () => {
+  assert.equal(summarizeRule(rule({ delaySeconds: 30 })), '30 s pause');
+  assert.equal(summarizeRule(rule({ maxOpens: 3, delaySeconds: 120 })), '3 opens/day, 2 min pause');
+});
+
+test('a shorter pause, or letting it open by itself, needs the master password', () => {
+  assert.equal(isLooser(rule({ delaySeconds: 30 }), rule({ delaySeconds: 60 })), false);
+  assert.equal(isLooser(rule({ delaySeconds: 30 }), rule({ delaySeconds: 10 })), true);
+  assert.equal(isLooser(rule({ delaySeconds: 30 }), rule({})), true);
+  assert.equal(isLooser(rule({ delaySeconds: 30, delayAutoOpen: true }), rule({ delaySeconds: 30, delayAutoOpen: false })), false);
+  assert.equal(isLooser(rule({ delaySeconds: 30, delayAutoOpen: false }), rule({ delaySeconds: 30, delayAutoOpen: true })), true);
+  assert.equal(isLooser(rule({ delaySeconds: 30 }), rule({ delaySeconds: 30, delayMessage: 'Why now?' })), false);
+});

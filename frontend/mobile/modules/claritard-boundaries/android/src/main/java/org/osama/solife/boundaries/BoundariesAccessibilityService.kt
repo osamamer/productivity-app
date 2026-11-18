@@ -49,15 +49,20 @@ class BoundariesAccessibilityService : AccessibilityService() {
         }
         ShizukuBridge.ensureBound()
         lastTickAt = System.currentTimeMillis()
+        screenUsable = isScreenUsable()
+        if (!screenUsable) UsageTracker.relockAll(applicationContext, lastTickAt)
         handler.removeCallbacks(ticker)
         handler.postDelayed(ticker, TICK_MS)
     }
 
     private val handler = Handler(Looper.getMainLooper())
     private val boundaryToast by lazy { BoundaryToast(this) }
+    private val delayOverlay by lazy { BoundaryDelayOverlay(this, ::finishDelay, ::cancelDelay) }
     private var currentFg: String? = null
     private var lastTickAt = 0L
+    private var screenUsable = true
     private val recentKicks = HashMap<String, Long>()
+    private val recentCancels = HashMap<String, Long>()
 
     private val ticker = object : Runnable {
         override fun run() {
@@ -74,6 +79,7 @@ class BoundariesAccessibilityService : AccessibilityService() {
         val eventPkg = event.packageName?.toString()
         if (!BoundariesPrefs.isEnforcementActive(applicationContext)) {
             currentFg = null
+            delayOverlay.hide()
             return
         }
 
@@ -107,14 +113,16 @@ class BoundariesAccessibilityService : AccessibilityService() {
         val ctx = applicationContext
         if (!BoundariesPrefs.isEnforcementActive(ctx)) {
             currentFg = null
+            delayOverlay.hide()
             return
         }
+        val usable = isScreenUsable()
+        if (screenUsable && !usable) UsageTracker.relockAll(ctx, now)
+        screenUsable = usable
         val rules = BoundariesPrefs.getRules(ctx)
         if (rules.isEmpty()) return
 
-        val pm = ctx.getSystemService(Context.POWER_SERVICE) as PowerManager
-        val km = ctx.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
-        val fg = if (pm.isInteractive && !km.isKeyguardLocked) resolveForeground() else null
+        val fg = if (usable) resolveForeground() else null
         if (fg != currentFg) {
             onForegroundChanged(fg, now)
             return
@@ -124,13 +132,27 @@ class BoundariesAccessibilityService : AccessibilityService() {
         handleVerdict(pkg, UsageTracker.onTick(ctx, rule, now, delta, labelFor(pkg)))
     }
 
+    private fun isScreenUsable(): Boolean {
+        val pm = applicationContext.getSystemService(Context.POWER_SERVICE) as PowerManager
+        val km = applicationContext.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+        return pm.isInteractive && !km.isKeyguardLocked
+    }
+
     private fun onForegroundChanged(newFg: String?, now: Long) {
         val ctx = applicationContext
-        currentFg?.let { UsageTracker.onLeave(ctx, it, now) }
+        if (currentFg != null) UsageTracker.onLeave(ctx, now)
         currentFg = newFg
+        // Leaving a delayed app (or the screen turning off) resets its countdown.
+        if (delayOverlay.pkg != null && delayOverlay.pkg != newFg) delayOverlay.hide()
         val pkg = newFg ?: return
         if (pkg == ctx.packageName) return
         val rule = BoundariesPrefs.getRules(ctx)[pkg] ?: return
+
+        val cancelledAt = recentCancels[pkg]
+        if (cancelledAt != null && now - cancelledAt < KICK_DEBOUNCE_MS) {
+            performGlobalAction(GLOBAL_ACTION_HOME)
+            return
+        }
 
         // A just-kicked app often fires a stray window event or two on its way out; re-kick it
         // quietly instead of counting that as a new open.
@@ -147,7 +169,31 @@ class BoundariesAccessibilityService : AccessibilityService() {
             is UsageTracker.Verdict.Allow -> {}
             is UsageTracker.Verdict.NewOpen -> toast(verdict.message)
             is UsageTracker.Verdict.Block -> kick(pkg, verdict.message)
+            is UsageTracker.Verdict.Delay -> startDelay(pkg)
         }
+    }
+
+    private fun startDelay(pkg: String) {
+        if (delayOverlay.pkg == pkg) return
+        val rule = BoundariesPrefs.getRules(applicationContext)[pkg] ?: return
+        val shown = delayOverlay.show(pkg, labelFor(pkg), rule.delaySeconds, rule.delayMessage, rule.delayAutoOpen)
+        // Without the overlay there is no way to make the user wait, so don't let the app in free.
+        if (!shown) kick(pkg, "${labelFor(pkg)}: couldn't show the countdown")
+    }
+
+    /** The countdown is over and the user chose to open (or it opens by itself). */
+    private fun finishDelay(pkg: String) {
+        delayOverlay.hide()
+        val rule = BoundariesPrefs.getRules(applicationContext)[pkg] ?: return
+        if (currentFg != pkg) return
+        handleVerdict(pkg, UsageTracker.unlock(applicationContext, rule, System.currentTimeMillis(), labelFor(pkg)))
+    }
+
+    private fun cancelDelay(pkg: String) {
+        delayOverlay.hide()
+        recentCancels[pkg] = System.currentTimeMillis()
+        if (currentFg == pkg) currentFg = null
+        performGlobalAction(GLOBAL_ACTION_HOME)
     }
 
     /**
@@ -192,6 +238,7 @@ class BoundariesAccessibilityService : AccessibilityService() {
         val alreadyKicked = recentKicks[packageName]?.let { now - it < KICK_DEBOUNCE_MS } ?: false
         recentKicks[packageName] = now
         if (currentFg == packageName) currentFg = null
+        if (delayOverlay.pkg == packageName) delayOverlay.hide()
         UsageTracker.endSession(applicationContext, packageName, now)
         if (message != null && !alreadyKicked) toast(message)
 
@@ -206,6 +253,7 @@ class BoundariesAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         handler.removeCallbacks(ticker)
+        delayOverlay.hide()
         super.onDestroy()
     }
 

@@ -43,7 +43,11 @@ data class TimeWindow(val days: Set<Int>, val startMin: Int, val endMin: Int) {
  *  - [blockMode]: "off", "always", or "scheduled" (blocked completely during [blockWindows]).
  *  - Limits (0 = no limit): [dailyLimitMin] minutes of use per day, [maxOpens] opens per day,
  *    [sessionMin] minutes each open lasts before the app gets force-quit.
- *  - [limitWindows]: when the limits apply. Empty = all the time.
+ *  - [delaySeconds]: a countdown shown over the app before it unlocks (0 = none). It only runs
+ *    while the app stays in front with the screen on, and starts again from the top otherwise.
+ *    With [delayAutoOpen] the app unlocks when it ends; without, the user taps Open. [delayMessage]
+ *    is shown above the countdown (blank = a default).
+ *  - [limitWindows]: when the limits and the delay apply. Empty = all the time.
  */
 data class AppRule(
     val pkg: String,
@@ -52,9 +56,12 @@ data class AppRule(
     val dailyLimitMin: Int = 0,
     val maxOpens: Int = 0,
     val sessionMin: Int = 0,
+    val delaySeconds: Int = 0,
+    val delayAutoOpen: Boolean = true,
+    val delayMessage: String = "",
     val limitWindows: List<TimeWindow> = emptyList(),
 ) {
-    val hasLimits: Boolean get() = dailyLimitMin > 0 || maxOpens > 0 || sessionMin > 0
+    val hasLimits: Boolean get() = dailyLimitMin > 0 || maxOpens > 0 || sessionMin > 0 || delaySeconds > 0
 
     fun isBlockedAt(cal: Calendar): Boolean = when (blockMode) {
         BLOCK_ALWAYS -> true
@@ -75,12 +82,17 @@ data class AppRule(
         .put("dailyLimitMin", dailyLimitMin)
         .put("maxOpens", maxOpens)
         .put("sessionMin", sessionMin)
+        .put("delaySeconds", delaySeconds)
+        .put("delayAutoOpen", delayAutoOpen)
+        .put("delayMessage", delayMessage)
         .put("limitWindows", JSONArray(limitWindows.map { it.toJson() }))
 
     companion object {
         const val BLOCK_OFF = "off"
         const val BLOCK_ALWAYS = "always"
         const val BLOCK_SCHEDULED = "scheduled"
+        const val MAX_DELAY_SECONDS = 3600
+        const val MAX_DELAY_MESSAGE = 300
 
         private fun dow(cal: Calendar) = cal.get(Calendar.DAY_OF_WEEK) - 1
         private fun mod(cal: Calendar) = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
@@ -103,6 +115,9 @@ data class AppRule(
                 dailyLimitMin = o.optInt("dailyLimitMin", 0).coerceAtLeast(0),
                 maxOpens = o.optInt("maxOpens", 0).coerceAtLeast(0),
                 sessionMin = o.optInt("sessionMin", 0).coerceAtLeast(0),
+                delaySeconds = o.optInt("delaySeconds", 0).coerceIn(0, MAX_DELAY_SECONDS),
+                delayAutoOpen = o.optBoolean("delayAutoOpen", true),
+                delayMessage = o.optString("delayMessage", "").take(MAX_DELAY_MESSAGE),
                 limitWindows = windows(o.optJSONArray("limitWindows")),
             )
         }

@@ -2,6 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, StyleSheet, View } from 'react-native';
 
+import { DelayEditor, type DelayDraft } from '@/components/boundaries/DelayEditor';
 import { PasswordPrompt } from '@/components/boundaries/PasswordPrompt';
 import { WindowEditor, type WindowDraft } from '@/components/boundaries/WindowEditor';
 import { AppButton } from '@/components/ui/AppButton';
@@ -13,7 +14,7 @@ import { Screen } from '@/components/ui/Screen';
 import { installedApp } from '@/lib/boundaryAppsCache';
 import {
   type AppRule, type AppUsage, type BlockMode, type TimeWindow,
-  emptyRule, formatTime, isLooser, isNoop, parseTime, summarizeUsage,
+  MAX_DELAY_SECONDS, emptyRule, formatTime, isLooser, isNoop, parseTime, summarizeUsage,
 } from '@/lib/boundaryRules';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { Boundaries } from '@/services/boundaries';
@@ -68,6 +69,7 @@ export default function BoundaryRuleEditor() {
   const [daily, setDaily] = useState('');
   const [opens, setOpens] = useState('');
   const [perOpen, setPerOpen] = useState('');
+  const [delay, setDelay] = useState<DelayDraft>({ seconds: '', autoOpen: true, message: '' });
   const [limitScope, setLimitScope] = useState<'always' | 'scheduled'>('always');
   const [limitWindows, setLimitWindows] = useState<WindowDraft[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -89,6 +91,7 @@ export default function BoundaryRuleEditor() {
       setDaily(numberText(rule.dailyLimitMin));
       setOpens(numberText(rule.maxOpens));
       setPerOpen(numberText(rule.sessionMin));
+      setDelay({ seconds: numberText(rule.delaySeconds), autoOpen: rule.delayAutoOpen, message: rule.delayMessage });
       setLimitScope(rule.limitWindows.length ? 'scheduled' : 'always');
       setLimitWindows(rule.limitWindows.map(toDraft));
       setLoading(false);
@@ -104,7 +107,9 @@ export default function BoundaryRuleEditor() {
     const limits = parseWindows(limitScope === 'scheduled' ? limitWindows : [], 'Limit schedule');
     if (typeof limits === 'string') return limits;
     if (blockMode === 'scheduled' && !blocks.length) return 'Add at least one time window for the block schedule.';
-    if (limitScope === 'scheduled' && !limits.length && blockMode !== 'always' && (daily || opens || perOpen)) {
+    const delaySeconds = Number(delay.seconds) || 0;
+    if (delaySeconds > MAX_DELAY_SECONDS) return `Pause before opening: at most ${MAX_DELAY_SECONDS} seconds.`;
+    if (limitScope === 'scheduled' && !limits.length && blockMode !== 'always' && (daily || opens || perOpen || delaySeconds)) {
       return 'Add at least one time window for when limits apply, or choose "All the time".';
     }
     return {
@@ -114,6 +119,9 @@ export default function BoundaryRuleEditor() {
       dailyLimitMin: Number(daily) || 0,
       maxOpens: Number(opens) || 0,
       sessionMin: Number(perOpen) || 0,
+      delaySeconds,
+      delayAutoOpen: delay.autoOpen,
+      delayMessage: delay.message.trim(),
       limitWindows: limits,
     };
   };
@@ -191,12 +199,21 @@ export default function BoundaryRuleEditor() {
                 <LimitRow label="Opens per day" hint="Further opens are blocked once used up." value={opens} unit="opens" onChange={setOpens} />
                 <LimitRow label="Time per open" hint="Each open lasts this long, then the app is closed." value={perOpen} unit="min" onChange={setPerOpen} />
                 <AppText variant="caption" color="muted">
-                  Leaving the app and coming back within a minute continues the same open. Counts reset at midnight.
+                  An open unlocks the app. Leave and come back as often as you like: it stays unlocked until the screen
+                  locks or the time for that open runs out. Counts reset at midnight.
                 </AppText>
               </Card>
 
               <Card style={styles.section}>
-                <AppText variant="heading">When limits apply</AppText>
+                <AppText variant="heading">Pause before opening</AppText>
+                <AppText variant="caption" color="muted">
+                  A countdown covers {appName} before each unlock. Leaving it starts the countdown again.
+                </AppText>
+                <DelayEditor appName={appName} draft={delay} onChange={setDelay} />
+              </Card>
+
+              <Card style={styles.section}>
+                <AppText variant="heading">When limits and the pause apply</AppText>
                 <ChoiceChips<'always' | 'scheduled'>
                   value={limitScope}
                   onChange={setLimitScope}

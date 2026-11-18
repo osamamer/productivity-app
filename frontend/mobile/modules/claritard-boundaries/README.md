@@ -7,9 +7,13 @@ Autolinked as a local Expo module; there is no iOS or web implementation (`Bound
   checks the app's rule and sends the user home when the app is blocked, out of time or out of
   opens. It also ticks once a second to count time. Its messages ("open 2 of 3", "1 minute left")
   are drawn by `BoundaryToast` as accessibility overlays in the colors the app last reported.
-- `UsageTracker` counts today's minutes and opens. Leaving and returning within 60 seconds
-  continues the same open; time only counts while the screen is on and unlocked; counts reset at
-  local midnight.
+- `UsageTracker` counts today's minutes and opens. An open is an unlock: once unlocked, the app
+  can be left and reopened freely until the screen locks or turns off, the open's time runs out,
+  or it is kicked out. Time only counts while the screen is on and unlocked; counts reset at local
+  midnight.
+- `BoundaryDelayOverlay` is the "pause before opening": a full-screen countdown (styled like the
+  desktop countdown window) drawn over a locked app before it unlocks. Leaving the app or turning
+  the screen off resets it; when it ends the app unlocks by itself or after tapping Open.
 - `BoundariesPrefs` keeps rules and the two password hashes (PBKDF2) in EncryptedSharedPreferences.
   Adding or tightening a rule is free; loosening or removing one needs the master password (checked
   by the UI with `isLooser` in `src/lib/boundaryRules.ts`). The unlock password opens the screens

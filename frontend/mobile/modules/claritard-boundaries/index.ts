@@ -49,7 +49,7 @@ export interface BoundariesNativeModule {
   requestShizukuPermission(): Promise<void>;
 
   startEnforcementService(): Promise<void>;
-  /** JSON {surface, text, accent} (#RRGGBB) for the messages the background service draws. */
+  /** JSON {surface, text, accent, background, onAccent} (#RRGGBB) for what the background service draws. */
   setAppearance(json: string): Promise<void>;
   openAppSettings(): Promise<void>;
 }

@@ -72,7 +72,7 @@ cd desktop && npm test
 
 ### Android Boundaries
 
-The mobile app's `/boundaries` screens (`frontend/mobile/src/app/boundaries/`) port the Guard Bear app blocker: per-app blocks, daily time, opens per day, time per open and schedules, enforced by an AccessibilityService with optional Shizuku force-stop. Native code is the local Expo module `frontend/mobile/modules/claritard-boundaries/` (see its README); `src/lib/boundaryRules.ts` must stay in sync with its `AppRule.kt`.
+The mobile app's `/boundaries` screens (`frontend/mobile/src/app/boundaries/`) port the Guard Bear app blocker: per-app blocks, daily time, opens per day (an open is an unlock that lasts until the screen locks), time per open, a desktop-style countdown before unlocking and schedules, enforced by an AccessibilityService with optional Shizuku force-stop. Native code is the local Expo module `frontend/mobile/modules/claritard-boundaries/` (see its README); `src/lib/boundaryRules.ts` must stay in sync with its `AppRule.kt`.
 
 ### Database
 

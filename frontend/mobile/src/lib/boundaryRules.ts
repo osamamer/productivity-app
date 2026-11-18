@@ -20,7 +20,13 @@ export interface AppRule {
   maxOpens: number;
   /** minutes each open lasts before the app is force-quit; 0 = no per-open cap */
   sessionMin: number;
-  /** when the limits apply; empty = always */
+  /** seconds of countdown before a locked app unlocks; 0 = none */
+  delaySeconds: number;
+  /** unlock when the countdown ends; false = the user taps Open */
+  delayAutoOpen: boolean;
+  /** shown above the countdown; blank = "Take a breath." */
+  delayMessage: string;
+  /** when the limits and the delay apply; empty = always */
   limitWindows: TimeWindow[];
 }
 
@@ -30,6 +36,9 @@ export interface AppUsage {
   sessionUsedMs: number;
   sessionActive: boolean;
 }
+
+export const MAX_DELAY_SECONDS = 3600;
+export const DEFAULT_DELAY_MESSAGE = 'Take a breath.';
 
 export const DAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 export const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
@@ -42,12 +51,15 @@ export function emptyRule(pkg: string): AppRule {
     dailyLimitMin: 0,
     maxOpens: 0,
     sessionMin: 0,
+    delaySeconds: 0,
+    delayAutoOpen: true,
+    delayMessage: '',
     limitWindows: [],
   };
 }
 
 export function hasLimits(r: AppRule): boolean {
-  return r.dailyLimitMin > 0 || r.maxOpens > 0 || r.sessionMin > 0;
+  return r.dailyLimitMin > 0 || r.maxOpens > 0 || r.sessionMin > 0 || r.delaySeconds > 0;
 }
 
 /** A rule that does nothing (no block, no limits). */
@@ -87,7 +99,9 @@ export function isLooser(prev: AppRule | undefined, next: AppRule | null): boole
     hasLimits(prev) &&
     (lim(next.dailyLimitMin) > lim(prev.dailyLimitMin) ||
       lim(next.maxOpens) > lim(prev.maxOpens) ||
-      lim(next.sessionMin) > lim(prev.sessionMin));
+      lim(next.sessionMin) > lim(prev.sessionMin) ||
+      next.delaySeconds < prev.delaySeconds ||
+      (prev.delaySeconds > 0 && next.delayAutoOpen && !prev.delayAutoOpen));
   for (let day = 0; day < 7; day++) {
     for (let minute = 0; minute < 1440; minute++) {
       const nextBlocked = blockedAt(next, day, minute);
@@ -130,6 +144,11 @@ export function formatWindow(w: TimeWindow): string {
   return `${formatDays(w.days)} ${time}`;
 }
 
+export function formatDelay(seconds: number): string {
+  if (seconds < 60 || seconds % 60 !== 0) return `${seconds} s`;
+  return `${seconds / 60} min`;
+}
+
 export function summarizeRule(r: AppRule): string {
   const parts: string[] = [];
   if (r.blockMode === 'always') parts.push('Blocked');
@@ -141,6 +160,7 @@ export function summarizeRule(r: AppRule): string {
     if (r.dailyLimitMin > 0) l.push(`${r.dailyLimitMin} min/day`);
     if (r.maxOpens > 0) l.push(`${r.maxOpens} opens/day`);
     if (r.sessionMin > 0) l.push(`${r.sessionMin} min/open`);
+    if (r.delaySeconds > 0) l.push(`${formatDelay(r.delaySeconds)} pause`);
     let s = l.join(', ');
     if (r.limitWindows.length > 0) s += ` (${r.limitWindows.map(formatWindow).join(', ')})`;
     parts.push(s);

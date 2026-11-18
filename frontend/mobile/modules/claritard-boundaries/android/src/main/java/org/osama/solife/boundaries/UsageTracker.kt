@@ -14,15 +14,16 @@ import java.util.Locale
  * every few seconds, so a process restart loses at most a few seconds of counted time.
  * Resets at local midnight.
  *
- * What counts as an "open": the app coming to the foreground when it has no live session. A
- * session stays live while the app is in the foreground, and for [SESSION_GRACE_MS] after
- * leaving it - so a quick trip to another app (sharing a link, answering a notification) and
- * back doesn't burn an extra open. A session ends when its time runs out (the app is force-
- * quit) or when the user has been away longer than the grace period.
+ * What counts as an "open": unlocking the app - coming to the foreground while it is locked
+ * (after the rule's delay, if it has one). Once unlocked, leaving and coming back as often as you
+ * like costs nothing more. The app locks again when the phone's screen locks or turns off
+ * ([relockAll]), when the open's time runs out, or when it is kicked out ([endSession]).
+ *
+ * Limitation: a relock is only noticed while the accessibility service runs, so an app left
+ * unlocked when the process died stays unlocked until the next screen lock.
  */
 object UsageTracker {
 
-    const val SESSION_GRACE_MS = 60_000L
     private const val PREFS = "boundaries_usage"
     private const val KEY_STATE = "state"
     private const val SAVE_INTERVAL_MS = 10_000L
@@ -32,7 +33,6 @@ object UsageTracker {
         var opens: Int = 0,
         var sessionUsedMs: Long = 0,
         var sessionActive: Boolean = false,
-        var lastFgAt: Long = 0,
         var warned: Boolean = false,
     )
 
@@ -41,6 +41,8 @@ object UsageTracker {
         data class Block(val message: String) : Verdict()
         /** Allowed, and this entry just started a new counted open; [message] is shown as a toast. */
         data class NewOpen(val message: String) : Verdict()
+        /** Locked, with a delay to wait out before [unlock] may be called. */
+        object Delay : Verdict()
     }
 
     private var day: String = ""
@@ -68,7 +70,6 @@ object UsageTracker {
                             opens = u.optInt("opens"),
                             sessionUsedMs = u.optLong("sessionUsedMs"),
                             sessionActive = u.optBoolean("sessionActive"),
-                            lastFgAt = u.optLong("lastFgAt"),
                             warned = u.optBoolean("warned"),
                         )
                     }
@@ -97,7 +98,6 @@ object UsageTracker {
                 .put("opens", u.opens)
                 .put("sessionUsedMs", u.sessionUsedMs)
                 .put("sessionActive", u.sessionActive)
-                .put("lastFgAt", u.lastFgAt)
                 .put("warned", u.warned))
         }
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
@@ -107,6 +107,15 @@ object UsageTracker {
         lastSavedAt = now
     }
 
+    private fun isUnlocked(u: AppUsage, rule: AppRule): Boolean =
+        u.sessionActive && (rule.sessionMin == 0 || u.sessionUsedMs < rule.sessionMin * 60_000L)
+
+    private fun dailyUsedUp(u: AppUsage, rule: AppRule): Boolean =
+        rule.dailyLimitMin > 0 && u.usedMs >= rule.dailyLimitMin * 60_000L
+
+    private fun opensUsedUp(u: AppUsage, rule: AppRule): Boolean =
+        rule.maxOpens > 0 && u.opens >= rule.maxOpens
+
     private fun mins(ms: Long): String {
         val m = (ms + 59_999) / 60_000
         return if (m == 1L) "1 min" else "$m min"
@@ -114,7 +123,7 @@ object UsageTracker {
 
     /**
      * Read-only: if [rule]'s app can't be used at all right now (blocked by schedule, daily time
-     * used up, or out of opens with no live session), the reason; otherwise null.
+     * used up, or locked and out of opens), the reason; otherwise null.
      */
     @Synchronized
     fun peekBlock(context: Context, rule: AppRule, now: Long, label: String): String? {
@@ -123,22 +132,16 @@ object UsageTracker {
         if (rule.isBlockedAt(cal)) return "$label is blocked right now"
         if (!rule.limitsInForceAt(cal)) return null
         val u = apps[rule.pkg] ?: return null
-        if (rule.dailyLimitMin > 0 && u.usedMs >= rule.dailyLimitMin * 60_000L) {
-            return "$label: daily limit of ${rule.dailyLimitMin} min reached"
-        }
-        val sessionMs = rule.sessionMin * 60_000L
-        val sessionLive = u.sessionActive && now - u.lastFgAt <= SESSION_GRACE_MS &&
-            (sessionMs == 0L || u.sessionUsedMs < sessionMs)
-        if (!sessionLive && rule.maxOpens > 0 && u.opens >= rule.maxOpens) {
-            return "$label: all ${rule.maxOpens} opens used today"
-        }
+        if (dailyUsedUp(u, rule)) return "$label: daily limit of ${rule.dailyLimitMin} min reached"
+        if (!isUnlocked(u, rule) && opensUsedUp(u, rule)) return "$label: all ${rule.maxOpens} opens used today"
         return null
     }
 
     /**
-     * Called when [rule]'s app comes to the foreground (or is found in the foreground with no live
-     * session, e.g. because its limit window just started). Decides whether it may stay, and if
-     * it's starting a new open, counts it.
+     * Called when [rule]'s app comes to the foreground (or is found in the foreground while
+     * locked, e.g. because its limit window just started). Decides whether it may stay: an
+     * unlocked app stays for free, a locked one is unlocked now (counting an open) or, when the
+     * rule has a delay, gets [Verdict.Delay] and is unlocked later through [unlock].
      */
     @Synchronized
     fun onEnter(context: Context, rule: AppRule, now: Long, label: String): Verdict {
@@ -148,27 +151,35 @@ object UsageTracker {
         if (!rule.limitsInForceAt(cal)) return Verdict.Allow
 
         val u = usage(rule.pkg)
-        if (rule.dailyLimitMin > 0 && u.usedMs >= rule.dailyLimitMin * 60_000L) {
-            return Verdict.Block("$label: daily limit of ${rule.dailyLimitMin} min reached")
-        }
+        if (dailyUsedUp(u, rule)) return Verdict.Block("$label: daily limit of ${rule.dailyLimitMin} min reached")
+        if (isUnlocked(u, rule)) return Verdict.Allow
+        if (opensUsedUp(u, rule)) return Verdict.Block("$label: all ${rule.maxOpens} opens used today")
+        if (rule.delaySeconds > 0) return Verdict.Delay
+        return unlockNow(context, rule, u, now, label)
+    }
+
+    /**
+     * The delay for [rule]'s app is over: unlock it and count the open. Checks the limits again,
+     * since they may have changed while the countdown ran.
+     */
+    @Synchronized
+    fun unlock(context: Context, rule: AppRule, now: Long, label: String): Verdict {
+        ensureLoaded(context, now)
+        val cal = Calendar.getInstance().apply { timeInMillis = now }
+        if (rule.isBlockedAt(cal)) return Verdict.Block("$label is blocked right now")
+        if (!rule.limitsInForceAt(cal)) return Verdict.Allow
+        val u = usage(rule.pkg)
+        if (dailyUsedUp(u, rule)) return Verdict.Block("$label: daily limit of ${rule.dailyLimitMin} min reached")
+        if (isUnlocked(u, rule)) return Verdict.Allow
+        if (opensUsedUp(u, rule)) return Verdict.Block("$label: all ${rule.maxOpens} opens used today")
+        return unlockNow(context, rule, u, now, label)
+    }
+
+    private fun unlockNow(context: Context, rule: AppRule, u: AppUsage, now: Long, label: String): Verdict {
         val sessionMs = rule.sessionMin * 60_000L
-        val sessionLive = u.sessionActive &&
-            now - u.lastFgAt <= SESSION_GRACE_MS &&
-            (sessionMs == 0L || u.sessionUsedMs < sessionMs)
-        if (sessionLive) {
-            u.lastFgAt = now
-            return Verdict.Allow
-        }
-        if (rule.maxOpens > 0 && u.opens >= rule.maxOpens) {
-            u.sessionActive = false
-            dirty = true
-            save(context, now, force = true)
-            return Verdict.Block("$label: all ${rule.maxOpens} opens used today")
-        }
         u.opens += 1
         u.sessionActive = true
         u.sessionUsedMs = 0
-        u.lastFgAt = now
         u.warned = false
         dirty = true
         save(context, now, force = true)
@@ -198,14 +209,13 @@ object UsageTracker {
         if (!rule.limitsInForceAt(cal)) return Verdict.Allow
 
         val u = usage(rule.pkg)
-        if (!u.sessionActive || now - u.lastFgAt > SESSION_GRACE_MS + 5_000) {
-            // Limits just came into force while the app was already open (or tracking lapsed):
-            // treat it like opening the app now.
+        if (!u.sessionActive) {
+            // Limits just came into force while the app was already open: treat it like opening
+            // the app now.
             return onEnter(context, rule, now, label)
         }
         u.usedMs += deltaMs
         u.sessionUsedMs += deltaMs
-        u.lastFgAt = now
         dirty = true
 
         val dailyLeft = if (rule.dailyLimitMin > 0) rule.dailyLimitMin * 60_000L - u.usedMs else Long.MAX_VALUE
@@ -229,13 +239,22 @@ object UsageTracker {
         return Verdict.Allow
     }
 
-    /** The app left the foreground (session stays live for the grace period). */
+    /** The app left the foreground; it stays unlocked. */
     @Synchronized
-    fun onLeave(context: Context, pkg: String, now: Long) {
+    fun onLeave(context: Context, now: Long) {
         ensureLoaded(context, now)
-        apps[pkg]?.let {
-            if (it.sessionActive) it.lastFgAt = now
-            dirty = true
+        save(context, now, force = true)
+    }
+
+    /** The screen locked or turned off: every unlocked app locks again. */
+    @Synchronized
+    fun relockAll(context: Context, now: Long) {
+        ensureLoaded(context, now)
+        for (u in apps.values) {
+            if (u.sessionActive) {
+                u.sessionActive = false
+                dirty = true
+            }
         }
         save(context, now, force = true)
     }
@@ -258,7 +277,7 @@ object UsageTracker {
         ensureLoaded(context, now)
         val o = JSONObject()
         for ((pkg, u) in apps) {
-            val live = u.sessionActive && now - u.lastFgAt <= SESSION_GRACE_MS
+            val live = u.sessionActive
             o.put(pkg, JSONObject()
                 .put("usedMs", u.usedMs)
                 .put("opens", u.opens)
