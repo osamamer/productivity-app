@@ -13,7 +13,10 @@ Autolinked as a local Expo module; there is no iOS or web implementation (`Bound
   midnight.
 - `BoundaryDelayOverlay` is the "pause before opening": a full-screen countdown (styled like the
   desktop countdown window) drawn over a locked app before it unlocks. Leaving the app or turning
-  the screen off resets it; when it ends the app unlocks by itself or after tapping Open.
+  the screen off resets it, but a return within three seconds resumes it, because foreground
+  detection flickers during app transitions. It keeps the screen on while counting (and for a
+  minute after) so a screen timeout can't lock the phone and restart a long wait. When it ends
+  the app unlocks by itself or after tapping Open.
 - `BoundariesPrefs` keeps rules and the two password hashes (PBKDF2) in EncryptedSharedPreferences.
   Adding or tightening a rule is free; loosening or removing one needs the master password (checked
   by the UI with `isLooser` in `src/lib/boundaryRules.ts`). The unlock password opens the screens
