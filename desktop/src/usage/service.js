@@ -5,7 +5,7 @@ const { INITIAL_STATE, reduce } = require('./core/tracker');
 const { readUsageSettings, writeUsageSettings } = require('./core/settings');
 const { isAutostartEnabled, setAutostart } = require('./core/autostart');
 const { describeApp } = require('./core/apps');
-const { mergeIntervals } = require('./core/segments');
+const { mergeIntervals, dropBriefVisits } = require('./core/segments');
 const { installedLaunchers } = require('../timeouts/core/installedApps');
 const { iconDataUrl } = require('../timeouts/core/icons');
 const { KWinFocusWatcher } = require('./kwinWatcher');
@@ -15,6 +15,7 @@ const CHECKPOINT_MS = 60_000;
 const IDLE_AFTER_MS = 3 * 60_000;
 const MAX_RANGE_MS = 8 * 24 * 3600_000;
 const APP_CACHE_MS = 10 * 60_000;
+const BRIEF_VISIT_MS = 5000;
 
 /**
  * Desktop screen time: which app has focus, minus idle and locked time, written to day files
@@ -188,9 +189,11 @@ class UsageService {
         if (this.trackedSince !== null && this.trackedSince < to && now > from) {
             tracked.push({ start: Math.max(this.trackedSince, from), end: Math.min(now, to) });
         }
+        // Filtered when read, not when recorded, so the threshold can change without losing data.
+        const visits = dropBriefVisits(segments.filter(segment => segment.end > segment.start), BRIEF_VISIT_MS);
         return {
-            segments: segments.filter(segment => segment.end > segment.start),
-            apps: this.describeApps(new Set(segments.map(segment => segment.appId))),
+            segments: visits,
+            apps: this.describeApps(new Set(visits.map(segment => segment.appId))),
             tracked: mergeIntervals(tracked),
         };
     }

@@ -28,6 +28,31 @@ function mergeSegments(segments, gapMs = MERGE_GAP_MS) {
     return mergeIntervals(segments, sameActivity, gapMs);
 }
 
+/**
+ * Drops brief visits: runs of one app (its segments back to back, whatever the titles) shorter
+ * than `minMs`. Focus passes through windows for a moment when a switcher cycles, a window
+ * closes or an app starts, and those moments are not time spent in the app.
+ *
+ * Limitation: a run cut by the edge of the asked range is judged by its visible part, so a
+ * longer visit that only just reaches into the range can be left out.
+ */
+function dropBriefVisits(segments, minMs, gapMs = MERGE_GAP_MS) {
+    const sorted = [...segments].sort((a, b) => a.start - b.start);
+    const kept = [];
+    let run = [];
+    const flush = () => {
+        if (run.length && run[run.length - 1].end - run[0].start >= minMs) kept.push(...run);
+        run = [];
+    };
+    for (const segment of sorted) {
+        const last = run[run.length - 1];
+        if (last && (last.appId !== segment.appId || segment.start - last.end > gapMs)) flush();
+        run.push(segment);
+    }
+    flush();
+    return kept;
+}
+
 /** Cuts everything to [from, to) and drops what falls outside. */
 function clipToRange(items, from, to) {
     return items
@@ -66,4 +91,4 @@ function dayKeysBetween(from, to) {
     return keys;
 }
 
-module.exports = { mergeSegments, mergeIntervals, clipToRange, splitAtLocalMidnight, dayKey, dayKeysBetween };
+module.exports = { mergeSegments, mergeIntervals, dropBriefVisits, clipToRange, splitAtLocalMidnight, dayKey, dayKeysBetween };

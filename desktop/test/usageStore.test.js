@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { UsageStore } = require('../src/usage/core/store');
-const { mergeSegments, splitAtLocalMidnight, dayKey } = require('../src/usage/core/segments');
+const { mergeSegments, dropBriefVisits, splitAtLocalMidnight, dayKey } = require('../src/usage/core/segments');
 const { autostartEntry, setAutostart, isAutostartEnabled } = require('../src/usage/core/autostart');
 const { readUsageSettings, writeUsageSettings } = require('../src/usage/core/settings');
 
@@ -24,6 +24,25 @@ test('checkpoint pieces of one activity are merged back into one segment', () =>
         { start: 0, end: 120_000, appId: 'firefox', title: 'A' },
         { start: 120_500, end: 130_000, appId: 'firefox', title: 'B' },
     ]);
+});
+
+test('focus passing through windows for a few seconds is not counted as using them', () => {
+    const kept = dropBriefVisits([
+        { start: 0, end: 2_900, appId: 'firefox', title: null },
+        { start: 2_900, end: 3_400, appId: 'claude', title: null },
+        { start: 3_400, end: 5_700, appId: 'kitty', title: null },
+        { start: 5_700, end: 60_000, appId: 'claritard', title: null },
+    ], 5_000);
+    assert.deepEqual(kept.map(segment => segment.appId), ['claritard']);
+});
+
+test('a visit is judged as a whole, so short title changes within one app still count', () => {
+    const visit = [
+        { start: 0, end: 1_000, appId: 'chrome', title: 'Loading' },
+        { start: 1_000, end: 2_000, appId: 'chrome', title: 'Sign in' },
+        { start: 2_000, end: 6_000, appId: 'chrome', title: 'Home' },
+    ];
+    assert.deepEqual(dropBriefVisits(visit, 5_000), visit);
 });
 
 test('a segment across midnight is split so each day file holds its own part', () => {

@@ -106,6 +106,9 @@ tested).
   idle inhibitors. After 3 minutes without input the open segment ends, backdated to the last input,
   unless the focused window is fullscreen (watching a video). The lock screen (ScreenSaver
   `ActiveChanged`) and suspend also end it.
+- **Brief visits.** Focus passes through windows for a moment when a switcher cycles, a window
+  closes or an app starts. Visits to one app shorter than 5 s are recorded but left out when the
+  page reads screen time (`dropBriefVisits` in `src/usage/core/segments.js`).
 - **Storage.** One JSON-lines file per local date in `~/.local/share/Claritard/usage/days/`, holding
   app segments and the spans when tracking was running (the page uses those to tell "away" from
   "not tracked"). Segments are cut every 60 s, so a crash loses at most a minute. Settings are in
