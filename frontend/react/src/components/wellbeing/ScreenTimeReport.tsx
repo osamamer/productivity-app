@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Alert, Box, Card, Skeleton, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
+import { useMemo } from 'react';
+import { Alert, Box, Card, Skeleton, Stack, Typography } from '@mui/material';
 import { desktopUsage, type UsageDailyTotals } from '../../services/desktop';
 import { useRevalidatingResource } from '../../hooks/useRevalidatingResource';
 import { screenTotalsResource, TOTALS_FRESH_MS } from '../../services/cache/screenTimeCache';
@@ -8,18 +8,10 @@ import { ScreenTimeSetup } from '../day/ScreenTimeSetup';
 import { ScreenTimeSummary } from '../day/ScreenTimeSummary';
 import { useScreenTime } from '../day/useScreenTime';
 import { ReportBars } from './ReportBars';
-import { bucketDays, bucketUnit, REPORT_PERIODS, reportAppTimes, reportSummary, reportWindow, type ReportPeriod } from './screenTimeReport';
+import { StatTile } from './StatTile';
+import { bucketDays, bucketUnit, reportAppTimes, reportSummary, reportWindow, type ReportPeriod } from './screenTimeReport';
 
 const BARS_TITLE = { day: 'Screen time per day', week: 'Screen time per week', month: 'Screen time per month' } as const;
-
-function StatTile({ value, label }: { value: string; label: string }) {
-    return (
-        <Card variant="outlined" sx={{ flex: 1, p: 2, textAlign: 'left' }}>
-            <Typography variant="h5" fontWeight={700}>{value}</Typography>
-            <Typography variant="body2" color="text.secondary">{label}</Typography>
-        </Card>
-    );
-}
 
 const noTotals = (): Promise<UsageDailyTotals> => Promise.reject(new Error('This desktop app cannot report screen time yet.'));
 
@@ -41,8 +33,7 @@ function useDailyTotals(period: ReportPeriod, enabled: boolean) {
 }
 
 /** Screen time over the last week to year: totals, a bar per day/week/month and the apps it went to. */
-export function ScreenTimeReport() {
-    const [period, setPeriod] = useState<ReportPeriod>('week');
+export function ScreenTimeReport({ period }: { period: ReportPeriod }) {
     const { status, error: statusError, saveSettings } = useScreenTime();
     const enabled = Boolean(status?.settings.enabled);
     const { window, totals, previous, error } = useDailyTotals(period, enabled);
@@ -71,21 +62,9 @@ export function ScreenTimeReport() {
         );
     }
 
-    const description = REPORT_PERIODS.find(option => option.value === period)?.description;
-
     return (
         <Stack spacing={2} sx={{ textAlign: 'left' }}>
-            <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} spacing={1}>
-                <Typography color="text.secondary">Screen time, {description}</Typography>
-                <ToggleButtonGroup size="small" exclusive value={period} onChange={(_, next: ReportPeriod | null) => next && setPeriod(next)} aria-label="Report period">
-                    {REPORT_PERIODS.map(option => (
-                        <ToggleButton key={option.value} value={option.value} aria-label={option.description} sx={{ px: 1.75, fontWeight: 700 }}>
-                            {option.label}
-                        </ToggleButton>
-                    ))}
-                </ToggleButtonGroup>
-            </Stack>
-
+            <Typography variant="h6" fontWeight={700}>Screen time</Typography>
             {(error || statusError) && <Alert severity="warning">{error ?? statusError}</Alert>}
 
             {!report ? (

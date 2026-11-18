@@ -8,10 +8,11 @@ export interface WellbeingTab {
     label: string;
 }
 
-// Screen time and boundaries are both recorded and enforced by the Linux desktop app, so a
-// plain browser has no tabs and the page sends it home.
+// Screen time and boundaries need the Linux desktop app; the report's planned-and-timed part
+// works anywhere, so a plain browser gets just the Report tab.
 export const WELLBEING_TABS: WellbeingTab[] = [
-    ...(desktopUsage ? [{ id: 'today', path: '/wellbeing/today', label: 'Today' }, { id: 'report', path: '/wellbeing/report', label: 'Report' }] as WellbeingTab[] : []),
+    ...(desktopUsage ? [{ id: 'today', path: '/wellbeing/today', label: 'Today' }] as WellbeingTab[] : []),
+    { id: 'report', path: '/wellbeing/report', label: 'Report' },
     ...(desktopTimeouts ? [{ id: 'boundaries', path: '/wellbeing/boundaries', label: 'Boundaries' }] as WellbeingTab[] : []),
 ];
 

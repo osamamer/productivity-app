@@ -2,14 +2,14 @@ import type { ComponentType } from 'react';
 import { Box, Tab, Tabs, Typography } from '@mui/material';
 import { Link as RouterLink, Navigate, useLocation } from 'react-router-dom';
 import { PageWrapper } from '../components/PageWrapper';
-import { ScreenTimeReport } from '../components/wellbeing/ScreenTimeReport';
+import { WellbeingReport } from '../components/wellbeing/WellbeingReport';
 import { WellbeingToday } from '../components/wellbeing/WellbeingToday';
 import { hasWellbeing, WELLBEING_TABS, type WellbeingTabId } from '../components/wellbeing/wellbeingTabs';
 import { BoundariesPage } from './BoundariesPage';
 
 const TAB_BODIES: Record<WellbeingTabId, ComponentType> = {
     today: WellbeingToday,
-    report: ScreenTimeReport,
+    report: WellbeingReport,
     boundaries: BoundariesPage,
 };
 

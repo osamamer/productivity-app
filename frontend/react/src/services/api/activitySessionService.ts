@@ -29,6 +29,12 @@ export const activitySessionService = {
         return readJson(response, 'Could not load the timer.');
     },
 
+    /** Timers that overlap [from, to). */
+    async getBetween(from: Date, to: Date): Promise<ActivitySession[]> {
+        const params = new URLSearchParams({ from: from.toISOString(), to: to.toISOString() });
+        return readJson(await apiFetch(`${SESSIONS_URL}?${params.toString()}`, { headers: getAuthHeaders() }), 'Could not load timers.');
+    },
+
     start(input: StartActivitySessionInput): Promise<ActivitySession> {
         return post('', 'Could not start the timer.', input);
     },

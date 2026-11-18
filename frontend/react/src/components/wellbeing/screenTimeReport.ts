@@ -66,16 +66,22 @@ function nextBucket(date: Date, unit: BucketUnit): Date {
     return addDays(date, 1);
 }
 
-/**
- * Every bucket the window touches, oldest first, including empty ones so gaps show. The first
- * and last week or month may be partial; their bars only count the days inside the window.
- */
-export function bucketDays(days: DailyTotalInput[], period: ReportPeriod, window: ReportWindow): ReportBucket[] {
+/** Every bucket the window touches, oldest first, all empty. */
+export function reportBuckets(period: ReportPeriod, window: ReportWindow): ReportBucket[] {
     const unit = bucketUnit(period);
     const buckets: ReportBucket[] = [];
     for (let start = bucketStart(window.from, unit); start < window.to; start = nextBucket(start, unit)) {
         buckets.push({ start, end: nextBucket(start, unit), totalMs: 0, unit });
     }
+    return buckets;
+}
+
+/**
+ * Every bucket the window touches, oldest first, including empty ones so gaps show. The first
+ * and last week or month may be partial; their bars only count the days inside the window.
+ */
+export function bucketDays(days: DailyTotalInput[], period: ReportPeriod, window: ReportWindow): ReportBucket[] {
+    const buckets = reportBuckets(period, window);
     for (const day of days) {
         const date = new Date(`${day.date}T12:00:00`);
         if (date < window.from || date >= window.to) continue;
