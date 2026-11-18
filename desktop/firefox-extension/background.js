@@ -31,18 +31,38 @@ async function native(request) {
   return answer;
 }
 
-async function loadRules() {
-  try {
-    const state = await native({type: "rules"});
-    rules = state.rules;
-    appearance = state.appearance;
-    for (const rule of state.unlocked || []) allowed.set(rule, state.deadline * 1000);
-  } catch (error) {
-    console.error("Claritard native host:", error);
+function applyRules(state) {
+  if (state.error) {
+    console.error("Claritard native host:", state.error);
+    return;
   }
+  rules = state.rules;
+  appearance = state.appearance;
+  allowed.clear();
+  for (const rule of state.unlocked || []) allowed.set(rule, state.deadline * 1000);
 }
 
-const ready = loadRules();
+// The host pushes fresh rules whenever Claritard saves its settings. If it is missing or exits,
+// retry so connecting it later in Claritard needs no extension reload.
+const RECONNECT_MS = 5000;
+let markReady;
+const ready = new Promise(resolve => { markReady = resolve; });
+
+function connect() {
+  const port = browser.runtime.connectNative(HOST);
+  port.onMessage.addListener(state => {
+    applyRules(state);
+    markReady();
+  });
+  port.onDisconnect.addListener(() => {
+    if (port.error) console.error("Claritard native host:", port.error.message);
+    markReady();
+    setTimeout(connect, RECONNECT_MS);
+  });
+  port.postMessage({type: "watch"});
+}
+
+connect();
 
 async function intercept(details) {
   await ready;
@@ -59,11 +79,11 @@ browser.runtime.onMessage.addListener(async request => {
   if (request.type === "rule") {
     const rule = matchingRule(request.url);
     return rule ? {...rule, appearance, unlocked: (allowed.get(rule.url) || 0) > Date.now()} :
-      {error: "This timer was removed in Claritard. Reload the extension.", appearance};
+      {error: "This timer was removed in Claritard.", appearance};
   }
   if (request.type === "grant") {
     const rule = matchingRule(request.url);
-    if (!rule) return {error: "This timer was removed in Claritard. Reload the extension."};
+    if (!rule) return {error: "This timer was removed in Claritard."};
     try {
       const answer = await native({type: "grant", url: rule.url});
       allowed.set(rule.url, answer.deadline * 1000);

@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Claritard URL Gate",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Adds a pause before timed sites in Firefox and closes Firefox when their time is up. Works with the Claritard desktop app.",
   "browser_specific_settings": {"gecko": {
     "id": "url-gate@claritard.app",

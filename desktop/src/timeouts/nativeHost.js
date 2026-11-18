@@ -1,4 +1,6 @@
-// Firefox native messaging host for URL timers: one request and one reply per connection.
+// Firefox native messaging host for URL timers. A one-off request (sendNativeMessage) gets one
+// reply. A "watch" request (connectNative) gets the rules now and again whenever the config file
+// changes, until Firefox closes the port, so setting changes reach the extension without a reload.
 // Runs under Electron in plain Node mode (ELECTRON_RUN_AS_NODE), started by Firefox, so it must
 // not require Electron. Installed by copying this file and ./core into the timeouts state folder.
 const fs = require('node:fs');
@@ -7,6 +9,7 @@ const { loadConfig } = require('./core/config');
 const { normalizeUrl } = require('./core/urls');
 const { grantBrowserRule, browserRulesResponse } = require('./core/browserSession');
 const { scheduleCommand, runDetached } = require('./core/systemd');
+const { watchFile } = require('./core/fileWatch');
 
 const MAX_MESSAGE_BYTES = 65536;
 
@@ -70,10 +73,37 @@ async function handle(request) {
     throw new Error('Unknown browser request.');
 }
 
+function currentRules() {
+    const paths = timeoutPaths();
+    return browserRulesResponse(loadConfig(paths.configFile), paths);
+}
+
+function sendRules() {
+    try {
+        reply({ type: 'rules', ...currentRules() });
+    } catch (error) {
+        reply({ type: 'rules', error: error instanceof Error ? error.message : String(error) });
+    }
+}
+
+/** Stays alive until Firefox disconnects, which ends stdin. */
+function watchRules() {
+    const stop = watchFile(timeoutPaths().configFile, sendRules);
+    process.stdin.on('end', () => {
+        stop();
+        process.exit(0);
+    });
+    sendRules();
+}
+
 async function main() {
     try {
         const request = await readMessage();
         if (request === null) return;
+        if (request.type === 'watch') {
+            watchRules();
+            return;
+        }
         reply(await handle(request));
     } catch (error) {
         reply({ error: error instanceof Error ? error.message : String(error) });

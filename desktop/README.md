@@ -88,7 +88,10 @@ computer, in local and cloud mode alike. It replaces the separate App Timeout to
   from **Open extension folder** in `about:debugging`, or build `dist/claritard-url-gate.xpi` with
   `npm run build:extension`. A permanent install needs the add-on signed on addons.mozilla.org
   (unlisted); Firefox Developer Edition can also install it unsigned with
-  `xpinstall.signatures.required=false`.
+  `xpinstall.signatures.required=false`. Firefox Beta and Release reject an unsigned `.xpi` as
+  "corrupt". Install it once: the extension keeps a native port open (`{type: "watch"}`)
+  and the host pushes new rules whenever `timeouts.json` changes, so changing timers in Claritard
+  needs no reload or reinstall.
 
 **Profiles are separate apps.** A launcher whose command passes `--profile <name>` (for example a
 Nuclear light profile, `nuclear-music-player --profile calm`) is listed, paused and auto-closed on
