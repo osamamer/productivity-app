@@ -31,7 +31,15 @@ function createAppWindow({ mode, contentPreferences = {}, show = true }) {
         webPreferences: { ...isolatedPreferences, preload: path.join(__dirname, 'headerPreload.js'), spellcheck: false },
     });
     const content = new WebContentsView({
-        webPreferences: { ...isolatedPreferences, preload: path.join(__dirname, 'preload.js'), ...contentPreferences },
+        webPreferences: {
+            ...isolatedPreferences,
+            preload: path.join(__dirname, 'preload.js'),
+            // The window usually sits hidden in the tray while a Pomodoro runs. With throttling,
+            // Chromium slows the page's timers to once a minute, so status refreshes, notification
+            // sync and token refresh fall behind and transitions arrive late or not at all.
+            backgroundThrottling: false,
+            ...contentPreferences,
+        },
     });
     header.setBackgroundColor('#100e14');
     content.setBackgroundColor('#100e14');

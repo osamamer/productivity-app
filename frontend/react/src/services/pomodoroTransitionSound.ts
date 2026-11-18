@@ -1,4 +1,5 @@
 import type { ApplicationNotification } from '../types/ApplicationNotification';
+import { isDesktopApp } from './desktop';
 
 type PomodoroTransitionType = Extract<
     ApplicationNotification['type'],
@@ -36,9 +37,25 @@ export function playPomodoroTransitionSound(type: ApplicationNotification['type'
     if (!isPomodoroTransition(type)) return;
 
     try {
-        const context = audioContext;
-        if (!context || context.state !== 'running') return;
+        // Browsers only allow sound once the page has had a click (see primePomodoroTransitionSound).
+        // The desktop app allows it without one, which matters because its window often starts
+        // hidden at login and never gets clicked before a Pomodoro started elsewhere changes phase.
+        const context = isDesktopApp ? getAudioContext() : audioContext;
+        if (!context) return;
+        if (context.state === 'running') {
+            playNotes(context, type);
+        } else if (isDesktopApp) {
+            void context.resume()
+                .then(() => playNotes(context, type))
+                .catch(error => console.error('Could not play Pomodoro transition sound:', error));
+        }
+    } catch (error) {
+        console.error('Could not play Pomodoro transition sound:', error);
+    }
+}
 
+function playNotes(context: AudioContext, type: PomodoroTransitionType): void {
+    try {
         const notes = type === 'POMODORO_COMPLETED'
             ? [523.25, 659.25, 783.99]
             : type === 'POMODORO_FOCUS_ENDED'
