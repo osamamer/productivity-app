@@ -1,40 +1,17 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const dbus = require('dbus-next');
+const { claimFocusService } = require('./focusBus');
+const { LockScreenWatcher, KDE_SCREEN_SAVER } = require('./lockScreen');
 
-const SERVICE = 'app.claritard.Usage';
-const OBJECT_PATH = '/app/claritard/Usage';
 const SCRIPT_NAME = 'claritard-usage';
 const SCRIPT_SOURCE = path.join(__dirname, 'kwin', 'claritard-usage.js');
-
-class UsageInterface extends dbus.interface.Interface {
-    constructor(handlers) {
-        super(SERVICE);
-        this.handlers = handlers;
-    }
-
-    Focus(appId, title, fullscreen) {
-        this.handlers.onFocus({ appId, title, fullscreen });
-    }
-
-    Title(appId, title, fullscreen) {
-        this.handlers.onTitle({ appId, title, fullscreen });
-    }
-}
-
-UsageInterface.configureMembers({
-    methods: {
-        Focus: { inSignature: 'ssb', outSignature: '' },
-        Title: { inSignature: 'ssb', outSignature: '' },
-    },
-});
 
 /**
  * Follows the focused window on KDE Plasma 6 through a small KWin script that calls back into
  * a D-Bus service this process owns, and follows the lock screen through the ScreenSaver
  * interface.
  *
- * Limitation: KDE only. Other desktops make `start` reject with a message for the user.
  * The script is copied out of the app bundle because KWin cannot read inside the asar archive.
  */
 class KWinFocusWatcher {
@@ -43,7 +20,7 @@ class KWinFocusWatcher {
         this.handlers = { onFocus, onTitle };
         this.onLockChange = onLockChange;
         this.bus = null;
-        this.screenSaver = null;
+        this.lockScreen = null;
     }
 
     async callScripting(member, signature, body) {
@@ -60,15 +37,8 @@ class KWinFocusWatcher {
     }
 
     async start() {
-        if (!/kde/i.test(process.env.XDG_CURRENT_DESKTOP || '')) {
-            throw new Error('Screen time currently works on KDE Plasma only.');
-        }
         this.bus = dbus.sessionBus();
-        const owned = await this.bus.requestName(SERVICE, dbus.NameFlag.DO_NOT_QUEUE);
-        if (owned !== dbus.RequestNameReply.PRIMARY_OWNER && owned !== dbus.RequestNameReply.ALREADY_OWNER) {
-            throw new Error('Another program is already tracking screen time for Claritard.');
-        }
-        this.bus.export(OBJECT_PATH, new UsageInterface(this.handlers));
+        await claimFocusService(this.bus, this.handlers);
 
         fs.mkdirSync(path.dirname(this.scriptFile), { recursive: true });
         fs.copyFileSync(SCRIPT_SOURCE, this.scriptFile);
@@ -77,26 +47,12 @@ class KWinFocusWatcher {
         const id = await this.callScripting('loadScript', 'ss', [this.scriptFile, SCRIPT_NAME]);
         if (id < 0) throw new Error('KWin refused to load the screen-time script.');
         await this.callScripting('start', '', []);
-        await this.watchLockScreen();
-    }
-
-    async watchLockScreen() {
-        try {
-            const object = await this.bus.getProxyObject('org.freedesktop.ScreenSaver', '/ScreenSaver');
-            this.screenSaver = object.getInterface('org.freedesktop.ScreenSaver');
-            this.screenSaver.on('ActiveChanged', active => this.onLockChange(Boolean(active)));
-        } catch (error) {
-            console.error(`Screen time cannot see the lock screen: ${error.message}`, error);
-        }
+        this.lockScreen = new LockScreenWatcher({ bus: this.bus, address: KDE_SCREEN_SAVER, onChange: this.onLockChange });
+        await this.lockScreen.start();
     }
 
     async isLocked() {
-        try {
-            return Boolean(await this.screenSaver?.GetActive());
-        } catch (error) {
-            console.error(`Could not ask whether the screen is locked: ${error.message}`, error);
-            return false;
-        }
+        return this.lockScreen ? this.lockScreen.isLocked() : false;
     }
 
     async stop() {
@@ -106,7 +62,7 @@ class KWinFocusWatcher {
         } catch (error) {
             console.error(`Could not unload the screen-time KWin script: ${error.message}`, error);
         }
-        this.screenSaver?.removeAllListeners();
+        this.lockScreen?.stop();
         this.bus.disconnect();
         this.bus = null;
     }

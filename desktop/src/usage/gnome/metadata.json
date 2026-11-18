@@ -1,0 +1,6 @@
+{
+  "uuid": "claritard-usage@claritard.app",
+  "name": "Claritard screen time",
+  "description": "Tells the Claritard desktop app which window has focus, for its opt-in screen time. Does nothing while Claritard is not running. Claritard installs it and turns it on and off.",
+  "shell-version": ["45", "46", "47", "48", "49", "50"]
+}

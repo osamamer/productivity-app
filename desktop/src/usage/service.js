@@ -8,8 +8,8 @@ const { describeApp } = require('./core/apps');
 const { mergeIntervals, dropBriefVisits } = require('./core/segments');
 const { installedLaunchers } = require('../timeouts/core/installedApps');
 const { iconDataUrl } = require('../timeouts/core/icons');
-const { KWinFocusWatcher } = require('./kwinWatcher');
-const { WaylandIdleMonitor } = require('./waylandIdle');
+const { UNSUPPORTED_DESKTOP } = require('./core/desktop');
+const { createFocusWatcher, startIdleMonitor } = require('./desktopBackends');
 
 const CHECKPOINT_MS = 60_000;
 const IDLE_AFTER_MS = 3 * 60_000;
@@ -65,12 +65,16 @@ class UsageService {
         if (this.tracking) return;
         // Taken first, so the first focus report falls inside the tracked span.
         const startedAt = Date.now();
-        this.watcher = new KWinFocusWatcher({
-            scriptFile: this.paths.kwinScriptFile,
+        this.watcher = createFocusWatcher({
+            paths: this.paths,
             onFocus: focus => this.dispatch({ type: 'focus', ...focus }),
             onTitle: focus => this.dispatch({ type: 'title', ...focus }),
             onLockChange: locked => this.dispatch({ type: locked ? 'locked' : 'unlocked' }),
         });
+        if (!this.watcher) {
+            this.unsupportedReason = UNSUPPORTED_DESKTOP;
+            return;
+        }
         try {
             await this.watcher.start();
         } catch (error) {
@@ -82,13 +86,12 @@ class UsageService {
         }
         this.unsupportedReason = null;
         this.recordTitles = this.settings().recordTitles;
-        this.idle = new WaylandIdleMonitor({
-            timeoutMs: IDLE_AFTER_MS,
-            onIdle: idleSince => this.dispatch({ type: 'idle', idleSince }),
-            onActive: () => this.dispatch({ type: 'active' }),
-        });
         try {
-            await this.idle.start();
+            this.idle = await startIdleMonitor({
+                timeoutMs: IDLE_AFTER_MS,
+                onIdle: idleSince => this.dispatch({ type: 'idle', idleSince }),
+                onActive: () => this.dispatch({ type: 'active' }),
+            });
         } catch (error) {
             console.error(`Screen time cannot see idle time; only the lock screen will pause it: ${error.message}`, error);
             this.idle = null;

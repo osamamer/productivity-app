@@ -21,7 +21,8 @@ const NOTIFICATION_RESUMED_EVENT = 1;
  * `ext_idle_notifier_v1` protocol. Electron's `powerMonitor.getSystemIdleTime()` always reports
  * 0 on KDE Wayland, and KDE does not implement the ScreenSaver `GetSessionIdleTime` call.
  *
- * Limitation: needs a compositor with ext-idle-notify v2 (KWin 6, recent wlroots and Mutter).
+ * Limitation: needs a compositor with ext-idle-notify v2 (KWin 6, recent wlroots; not Mutter,
+ * which `MutterIdleMonitor` covers).
  * `start` rejects when it is missing, and screen time then only stops at the lock screen.
  */
 class WaylandIdleMonitor {

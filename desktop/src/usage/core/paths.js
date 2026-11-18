@@ -11,6 +11,7 @@ function usagePaths(env = process.env) {
         dataDir,
         daysDir: path.join(dataDir, 'days'),
         kwinScriptFile: path.join(dataDir, 'claritard-usage-kwin.js'),
+        gnomeExtensionsDir: path.join(dataHome, 'gnome-shell', 'extensions'),
         settingsFile: path.join(configHome, 'Claritard', 'usage.json'),
         autostartFile: path.join(configHome, 'autostart', 'claritard.desktop'),
     };
