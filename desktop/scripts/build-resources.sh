@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Builds everything the desktop app bundles into desktop/resources:
 #   backend.jar  - the Spring Boot backend (local mode runs it with the "desktop" profile)
-#   frontend/    - the web app built to talk to the loopback backend
+#   frontend/       - the web app built to talk to the loopback backend
+#   cloud-frontend/ - the web app built to talk to the cloud, served as claritard://app
 #   jre/         - a trimmed Java 21 runtime so users do not need Java installed
 set -euo pipefail
 
@@ -10,6 +11,8 @@ ROOT_DIR="$(cd "$DESKTOP_DIR/.." && pwd)"
 RESOURCES_DIR="$DESKTOP_DIR/resources"
 # Must match LOCAL_PORT in src/main.js.
 LOCAL_PORT=47830
+# Must match CLOUD_ORIGIN in src/main.js.
+CLOUD_ORIGIN="${DESKTOP_CLOUD_ORIGIN:-https://claritard.com}"
 JDK_HOME="${DESKTOP_JDK_HOME:-/usr/lib/jvm/java-21-openjdk-amd64}"
 
 if [[ ! -d "$JDK_HOME/jmods" ]]; then
@@ -31,6 +34,15 @@ echo "==> Building local web app"
     VITE_API_URL="http://127.0.0.1:$LOCAL_PORT" \
     VITE_WS_URL="ws://127.0.0.1:$LOCAL_PORT/ws" \
         npx vite build --mode production --outDir "$RESOURCES_DIR/frontend" --emptyOutDir
+)
+
+echo "==> Building cloud web app"
+(
+    cd "$ROOT_DIR/frontend/react"
+    VITE_API_URL="$CLOUD_ORIGIN" \
+    VITE_WS_URL="wss://${CLOUD_ORIGIN#https://}/ws" \
+    VITE_KEYCLOAK_URL="$CLOUD_ORIGIN/auth" \
+        npx vite build --mode production --outDir "$RESOURCES_DIR/cloud-frontend" --emptyOutDir
 )
 
 echo "==> Linking Java runtime"

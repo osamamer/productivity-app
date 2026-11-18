@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, dialog, ipcMain, session, shell } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, net, protocol, session, shell } = require('electron');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -19,6 +19,7 @@ const { startAutoUpdates } = require('./autoUpdate');
 const { UsageService } = require('./usage/service');
 const { registerUsageIpc } = require('./usage/ipc');
 const { HIDDEN_SWITCH } = require('./usage/core/autostart');
+const { BUNDLED_ORIGIN, registerBundledScheme, serveBundledWebApp, hasBundledWebApp } = require('./bundledWebApp');
 
 // Must match the port baked into the local web build by scripts/build-resources.sh.
 const LOCAL_PORT = 47830;
@@ -29,6 +30,9 @@ const userDataDir = app.getPath('userData');
 const localDataDir = path.join(userDataDir, 'local-data');
 const logDir = path.join(userDataDir, 'logs');
 const iconPath = path.join(__dirname, '..', 'assets', 'icon.png');
+const cloudFrontendDir = path.join(resourcesDir, 'cloud-frontend');
+
+registerBundledScheme(protocol);
 
 /** What the running window is connected to; `null` until a mode is launched. */
 let runtime = null;
@@ -172,7 +176,7 @@ function openMainWindow(mode, contentPreferences) {
         return { action: 'deny' };
     });
     content.webContents.on('will-navigate', (event, url) => {
-        if (!runtime || new URL(url).origin === runtime.origin) return;
+        if (!runtime || isSameOrigin(url, runtime.origin)) return;
         event.preventDefault();
         openExternally(url);
     });
@@ -259,9 +263,15 @@ function showStartupError(message, logFile) {
 }
 
 function launchCloud() {
-    runtime = { mode: 'cloud', origin: CLOUD_ORIGIN, cloudUrl: CLOUD_ORIGIN };
+    // Builds without the bundled web app (running from source before build:resources) fall back
+    // to the website.
+    const bundled = hasBundledWebApp(cloudFrontendDir);
+    if (bundled) serveBundledWebApp(session.defaultSession, net, cloudFrontendDir);
+    else console.warn(`No bundled web app in ${cloudFrontendDir}; loading ${CLOUD_ORIGIN} instead`);
+    const origin = bundled ? BUNDLED_ORIGIN : CLOUD_ORIGIN;
+    runtime = { mode: 'cloud', origin, cloudUrl: CLOUD_ORIGIN };
     const content = openMainWindow('cloud');
-    void content.loadURL(`${CLOUD_ORIGIN}/`);
+    void content.loadURL(`${origin}/`);
 }
 
 function openChooser() {
@@ -294,8 +304,15 @@ function openChooser() {
 
 function isMainAppPage(sender) {
     if (!runtime || !appWindow || sender !== appWindow.content.webContents) return false;
+    return isSameOrigin(sender.getURL(), runtime.origin);
+}
+
+// URL.origin is "null" for custom schemes such as claritard://, so compare scheme and host.
+function isSameOrigin(url, origin) {
     try {
-        return new URL(sender.getURL()).origin === runtime.origin;
+        const a = new URL(url);
+        const b = new URL(origin);
+        return a.protocol === b.protocol && a.host === b.host;
     } catch {
         return false;
     }

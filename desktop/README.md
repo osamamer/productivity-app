@@ -7,8 +7,11 @@ An Electron shell around the web app. On first launch the user picks where data 
   `~/.config/Claritard/local-data`, serves the bundled web app on `http://127.0.0.1:47830`, and
   needs no account. The window blocks every request that is not to that address, and remote
   push notifications are disabled, so nothing reaches the cloud.
-- **In the cloud (cloud mode)** — the window loads https://claritard.com and signs in through
-  Keycloak as usual. No local backend is started.
+- **In the cloud (cloud mode)** — the window runs the web app bundled with this desktop app
+  (`resources/cloud-frontend`, served as `claritard://app` by `src/bundledWebApp.js`). Only API
+  calls, sign-in and the live WebSocket go to https://claritard.com, so the app opens instantly
+  and its interface matches this release rather than whatever the website currently serves. No
+  local backend is started.
 
 The window is frameless with the app's own header (`src/appWindow.js`, `src/ui/header.*`): the
 header and the web app are separate views, the header follows the page's light or dark
@@ -19,6 +22,19 @@ Ctrl+Q. Reminders appear as native desktop notifications (`src/desktopNotificati
 because Electron cannot list service-worker notifications.
 The storage choice can be changed from **⋮ → Change Storage Mode…** or **Settings → Account**.
 Local and cloud data are separate; switching copies nothing.
+
+## How cloud mode reaches the server
+
+The bundled page's origin is `claritard://app`, so its requests to claritard.com are cross-origin.
+Production allows that origin in the backend's CORS and WebSocket checks
+(`APP_CORS_ALLOWED_ORIGINS`, `APP_WEBSOCKET_ALLOWED_ORIGIN_PATTERNS` in
+`deployment/docker-compose.production.yml`) and in the Keycloak client's web origins, which
+`deployment/deploy-production.sh` adds on every deploy. Sign-in uses the app's own page and a
+direct token request, so no Keycloak redirect URI is needed. The page cannot read the website's
+storage, so the first launch after this change asks the user to sign in again.
+
+Running from source without `npm run build:resources` has no bundle; cloud mode then loads the
+website instead.
 
 ## How local auth works
 
@@ -33,7 +49,7 @@ account password; the operating-system account protects local data.
 
 ```bash
 npm install                 # once
-npm run build:resources     # backend JAR, local web build, trimmed Java 21 runtime
+npm run build:resources     # backend JAR, local and cloud web builds, trimmed Java 21 runtime
 npm start                   # run from source (uses ./resources)
 npm test                    # shell unit tests
 npm run dist                # build:resources + AppImage and .deb into ./dist
@@ -95,17 +111,29 @@ which app was in focus, minute by minute. It is opt-in, works in local and cloud
 the data never leaves this computer. Code lives in `src/usage/` (`core/` is plain Node and unit
 tested).
 
-- **Focus.** Wayland hides other apps' windows, so `src/usage/kwin/claritard-usage.js` runs inside
-  KWin (copied to `~/.local/share/Claritard/usage/` and loaded over D-Bus as `claritard-usage`) and
-  calls back into the `app.claritard.Usage` D-Bus service this app owns (`dbus-next`) with the
-  desktop file name, caption and fullscreen state of the focused window. Quitting unloads it;
-  starting replaces any copy a crash left behind.
-- **Idle.** `powerMonitor.getSystemIdleTime()` is always 0 on KDE Wayland and KDE does not implement
-  `GetSessionIdleTime`, so `src/usage/waylandIdle.js` speaks the `ext_idle_notifier_v1` protocol
-  directly over the Wayland socket. It uses the input-only notification because media players hold
-  idle inhibitors. After 3 minutes without input the open segment ends, backdated to the last input,
+- **Focus.** Wayland hides other apps' windows, so only the compositor can tell which one has
+  focus. Both desktops call back into the `app.claritard.Usage` D-Bus service this app owns
+  (`dbus-next`, `src/usage/focusBus.js`) with the app id, caption and fullscreen state of the
+  focused window.
+  - **KDE Plasma 6:** `src/usage/kwin/claritard-usage.js` runs inside KWin (copied to
+    `~/.local/share/Claritard/usage/` and loaded over D-Bus as `claritard-usage`). Quitting unloads
+    it; starting replaces any copy a crash left behind.
+  - **GNOME 45+:** `src/usage/gnome/` is a GNOME Shell extension, installed to
+    `~/.local/share/gnome-shell/extensions/claritard-usage@claritard.app/` and turned on through
+    `org.gnome.Shell` when tracking starts, off when it stops. It only calls while the app owns its
+    D-Bus name. GNOME looks for new extensions only at login, so the first time screen time is
+    turned on the card asks for one log out and back in. A changed extension also needs a new
+    login before the shell runs it.
+- **Idle.** `powerMonitor.getSystemIdleTime()` is always 0 on Wayland desktops here, so idle comes
+  from the compositor. On KDE, `src/usage/waylandIdle.js` speaks the `ext_idle_notifier_v1`
+  protocol directly over the Wayland socket, using the input-only notification because media
+  players hold idle inhibitors. Mutter has no such protocol and its IdleMonitor watches never fire
+  while an inhibitor is held, so on GNOME `src/usage/mutterIdle.js` reads `GetIdletime` (which
+  ignores inhibitors) when the timeout could first be reached and uses a user-active watch for
+  resumed input. After 3 minutes without input the open segment ends, backdated to the last input,
   unless the focused window is fullscreen (watching a video). The lock screen (ScreenSaver
-  `ActiveChanged`) and suspend also end it.
+  `ActiveChanged`: `org.freedesktop.ScreenSaver` on KDE, `org.gnome.ScreenSaver` on GNOME) and
+  suspend also end it.
 - **Brief visits.** Focus passes through windows for a moment when a switcher cycles, a window
   closes or an app starts. Visits to one app shorter than 5 s are recorded but left out when the
   page reads screen time (`dropBriefVisits` in `src/usage/core/segments.js`).
@@ -118,5 +146,5 @@ tested).
   passing file descriptors; it falls back to a plain socket without it. `npmRebuild` is off and the
   module is excluded from the package so electron-builder never tries to compile it.
 
-Limitations: KDE Plasma 6 only for now (other desktops show the reason on the card); time is only
+Limitations: KDE Plasma 6 and GNOME 45+ only (other desktops show the reason on the card); time is only
 recorded while Claritard runs; window titles are whatever the app puts in its title bar.
