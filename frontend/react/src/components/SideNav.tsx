@@ -20,8 +20,9 @@ import SelfImprovementRoundedIcon from '@mui/icons-material/SelfImprovementRound
 import NightlightIcon from '@mui/icons-material/Nightlight';
 import LightModeIcon from '@mui/icons-material/LightMode';
 import LogoutIcon from '@mui/icons-material/Logout';
-import HourglassTopRoundedIcon from '@mui/icons-material/HourglassTopRounded';
-import { desktopTimeouts, isLocalDesktopMode } from '../services/desktop';
+import SpaRoundedIcon from '@mui/icons-material/SpaRounded';
+import { isLocalDesktopMode } from '../services/desktop';
+import { hasWellbeing, WELLBEING_TABS } from './wellbeing/wellbeingTabs';
 import MenuRoundedIcon from '@mui/icons-material/MenuRounded';
 import KeyboardDoubleArrowRightRoundedIcon from '@mui/icons-material/KeyboardDoubleArrowRightRounded';
 import KeyboardDoubleArrowLeftRoundedIcon from '@mui/icons-material/KeyboardDoubleArrowLeftRounded';
@@ -616,11 +617,12 @@ export function SideNav() {
                                 expanded={open}
                                 onNavigate={navigateFromDrawer}
                             />
-                            {desktopTimeouts && (
+                            {hasWellbeing && (
                                 <SideMenuButton
-                                    Icon={HourglassTopRoundedIcon}
-                                    text="Boundaries"
-                                    targetPage="/boundaries"
+                                    Icon={SpaRoundedIcon}
+                                    text="Digital wellbeing"
+                                    targetPage="/wellbeing"
+                                    activePaths={['/wellbeing', ...WELLBEING_TABS.map(tab => tab.path)]}
                                     expanded={open}
                                     onNavigate={navigateFromDrawer}
                                 />

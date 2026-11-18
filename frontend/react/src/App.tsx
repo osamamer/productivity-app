@@ -35,6 +35,9 @@ const MentalStatePage = lazy(() => import('./pages/MentalStatePage').then(module
 const MentalPage = lazy(() => import('./pages/MentalPage').then(module => ({ default: module.MentalPage })));
 const DayPage = lazy(() => import('./pages/DayPage').then(module => ({ default: module.DayPage })));
 const BoundariesPage = lazy(() => import('./pages/BoundariesPage').then(module => ({ default: module.BoundariesPage })));
+const WellbeingPage = lazy(() => import('./pages/WellbeingPage').then(module => ({ default: module.WellbeingPage })));
+const WellbeingToday = lazy(() => import('./components/wellbeing/WellbeingToday').then(module => ({ default: module.WellbeingToday })));
+const ScreenTimeReport = lazy(() => import('./components/wellbeing/ScreenTimeReport').then(module => ({ default: module.ScreenTimeReport })));
 
 function DelayedRouteFallback() {
     const [showProgress, setShowProgress] = useState(false);
@@ -116,7 +119,16 @@ const routes = [
                     { path: "/stats", element: <RouteSuspense><StatsPage/></RouteSuspense> },
                     { path: "/day/:date", element: <RouteSuspense><DayPage/></RouteSuspense> },
                     { path: "/notes", element: <RouteSuspense><NotesPage/></RouteSuspense> },
-                    { path: "/boundaries", element: <RouteSuspense><BoundariesPage/></RouteSuspense> },
+                    {
+                        path: "/wellbeing",
+                        element: <RouteSuspense><WellbeingPage/></RouteSuspense>,
+                        children: [
+                            { path: "today", element: <RouteSuspense><WellbeingToday/></RouteSuspense> },
+                            { path: "report", element: <RouteSuspense><ScreenTimeReport/></RouteSuspense> },
+                            { path: "boundaries", element: <RouteSuspense><BoundariesPage/></RouteSuspense> },
+                        ],
+                    },
+                    { path: "/boundaries", element: <Navigate to="/wellbeing/boundaries" replace /> },
                     { path: "/mental", element: <RouteSuspense><MentalPage/></RouteSuspense> },
                     {
                         path: "/mental-threads",

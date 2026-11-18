@@ -2,7 +2,8 @@ import { Box, Stack, Tooltip, Typography } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
 import { format } from 'date-fns';
 import { hourTicks, PlannedBlock, ScreenBlock } from './dayTimelineLayout';
-import { formatScreenDuration, formatTimeRange } from './screenTimeText';
+import { PlannedTooltip, ScreenTooltip } from './timelineBlocks';
+import { hatch, plannedBlockStyle, screenBlockStyle } from './timelineStyles';
 
 const LABEL_WIDTH = 72;
 const PLANNED_ROW_HEIGHT = 22;
@@ -17,25 +18,6 @@ interface DayTimelineProps {
     now: number;
     planned: PlannedBlock[];
     screen: ScreenBlock[];
-}
-
-function TooltipBody({ title, lines }: { title: string; lines: string[] }) {
-    return (
-        <Box sx={{ py: 0.25 }}>
-            <Typography variant="body2" fontWeight={700}>{title}</Typography>
-            {lines.map(line => <Typography key={line} variant="caption" component="div">{line}</Typography>)}
-        </Box>
-    );
-}
-
-function screenTooltip(block: ScreenBlock) {
-    const when = `${formatTimeRange(block.start, block.end)} · ${formatScreenDuration(block.end - block.start)}`;
-    if (block.kind === 'app') return <TooltipBody title={block.name} lines={[when, ...block.titles]} />;
-    if (block.kind === 'switching') {
-        return <TooltipBody title="Switching between apps" lines={[when, ...block.apps.slice(0, 4).map(app => `${app.name} · ${formatScreenDuration(app.ms)}`)]} />;
-    }
-    if (block.kind === 'away') return <TooltipBody title="Away from the screen" lines={[when, 'Idle, locked or asleep']} />;
-    return <TooltipBody title="Not tracked" lines={[when, 'Claritard was closed or screen time was off']} />;
 }
 
 function LaneLabel({ children }: { children: string }) {
@@ -54,14 +36,6 @@ export function DayTimeline({ windowStart, windowEnd, now, planned, screen }: Da
     const tickEvery = Math.max(1, Math.ceil(ticks.length / 12));
     const plannedRows = Math.max(1, ...planned.map(block => block.row + 1));
     const nowPct = now > windowStart && now < windowEnd ? ((now - windowStart) / span) * 100 : null;
-    const hatch = (color: string) => `repeating-linear-gradient(135deg, ${color} 0 4px, transparent 4px 8px)`;
-
-    const screenStyle = (block: ScreenBlock) => {
-        if (block.kind === 'app') return { bgcolor: block.color };
-        if (block.kind === 'switching') return { background: `repeating-linear-gradient(90deg, ${block.apps.map((app, index) => `${app.color} ${index * 6}px ${(index + 1) * 6}px`).join(', ')})`, opacity: 0.75 };
-        if (block.kind === 'away') return { bgcolor: alpha(theme.palette.text.primary, 0.06) };
-        return { background: hatch(alpha(theme.palette.text.primary, 0.08)) };
-    };
 
     const overlays = (
         <>
@@ -97,7 +71,7 @@ export function DayTimeline({ windowStart, windowEnd, now, planned, screen }: Da
                             <Typography variant="caption" color="text.disabled" sx={{ position: 'absolute', top: 3, left: 8 }}>Nothing planned on the clock</Typography>
                         )}
                         {planned.map(block => (
-                            <Tooltip key={block.id} arrow title={<TooltipBody title={block.title} lines={[block.kind === 'focus' ? 'Focus session' : 'Calendar event', formatTimeRange(block.start, block.end)]} />}>
+                            <Tooltip key={block.id} arrow title={<PlannedTooltip block={block} />}>
                                 <Box sx={{
                                     position: 'absolute',
                                     top: block.row * PLANNED_ROW_HEIGHT + 2,
@@ -108,9 +82,7 @@ export function DayTimeline({ windowStart, windowEnd, now, planned, screen }: Da
                                     px: 0.5,
                                     overflow: 'hidden',
                                     zIndex: 1,
-                                    border: 1,
-                                    borderColor: block.kind === 'focus' ? 'secondary.main' : 'primary.main',
-                                    bgcolor: alpha(block.kind === 'focus' ? theme.palette.secondary.main : theme.palette.primary.main, 0.18),
+                                    ...plannedBlockStyle(block, theme),
                                 }}>
                                     <Typography variant="caption" noWrap component="div" sx={{ lineHeight: `${PLANNED_ROW_HEIGHT - 6}px` }}>{block.title}</Typography>
                                 </Box>
@@ -124,7 +96,7 @@ export function DayTimeline({ windowStart, windowEnd, now, planned, screen }: Da
                     <Box sx={{ position: 'relative', flex: 1, height: SCREEN_HEIGHT }}>
                         {overlays}
                         {screen.map(block => (
-                            <Tooltip key={`${block.kind}-${block.start}`} arrow title={screenTooltip(block)}>
+                            <Tooltip key={`${block.kind}-${block.start}`} arrow title={<ScreenTooltip block={block} />}>
                                 <Box sx={{
                                     position: 'absolute',
                                     top: 0,
@@ -133,7 +105,7 @@ export function DayTimeline({ windowStart, windowEnd, now, planned, screen }: Da
                                     width: `max(1px, ${block.widthPct}%)`,
                                     borderRadius: block.kind === 'app' || block.kind === 'switching' ? 0.75 : 0,
                                     zIndex: 1,
-                                    ...screenStyle(block),
+                                    ...screenBlockStyle(block, theme),
                                 }} />
                             </Tooltip>
                         ))}

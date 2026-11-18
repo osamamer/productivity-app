@@ -5,7 +5,7 @@ const { INITIAL_STATE, reduce } = require('./core/tracker');
 const { readUsageSettings, writeUsageSettings } = require('./core/settings');
 const { isAutostartEnabled, setAutostart } = require('./core/autostart');
 const { describeApp } = require('./core/apps');
-const { mergeIntervals, dropBriefVisits } = require('./core/segments');
+const { mergeIntervals, dropBriefVisits, dailyAppTotals } = require('./core/segments');
 const { installedLaunchers } = require('../timeouts/core/installedApps');
 const { iconDataUrl } = require('../timeouts/core/icons');
 const { UNSUPPORTED_DESKTOP } = require('./core/desktop');
@@ -17,6 +17,8 @@ const { isPlayingFor } = require('./core/audio');
 const CHECKPOINT_MS = 60_000;
 const IDLE_AFTER_MS = 3 * 60_000;
 const MAX_RANGE_MS = 8 * 24 * 3600_000;
+// A year and a few days, so a "last year" report always fits whatever the calendar does.
+const MAX_TOTALS_RANGE_MS = 370 * 24 * 3600_000;
 const APP_CACHE_MS = 10 * 60_000;
 const BRIEF_VISIT_MS = 5000;
 
@@ -226,9 +228,26 @@ class UsageService {
 
     /** Segments and tracked spans in [from, to), including what is happening right now. */
     getRange(from, to) {
-        if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from || to - from > MAX_RANGE_MS) {
-            throw new Error('That time range cannot be shown.');
-        }
+        assertRange(from, to, MAX_RANGE_MS);
+        const { visits, tracked } = this.readVisits(from, to);
+        return {
+            segments: visits,
+            apps: this.describeApps(new Set(visits.map(segment => segment.appId))),
+            tracked,
+        };
+    }
+
+    /** App time per local date in [from, to), for reports over weeks to a year. */
+    getDailyTotals(from, to) {
+        assertRange(from, to, MAX_TOTALS_RANGE_MS);
+        const { visits } = this.readVisits(from, to);
+        return {
+            days: dailyAppTotals(visits),
+            apps: this.describeApps(new Set(visits.map(segment => segment.appId))),
+        };
+    }
+
+    readVisits(from, to) {
         const now = Date.now();
         const { segments, tracked } = this.store.readRange(from, to);
         const current = this.state.current;
@@ -240,11 +259,7 @@ class UsageService {
         }
         // Filtered when read, not when recorded, so the threshold can change without losing data.
         const visits = dropBriefVisits(segments.filter(segment => segment.end > segment.start), BRIEF_VISIT_MS);
-        return {
-            segments: visits,
-            apps: this.describeApps(new Set(visits.map(segment => segment.appId))),
-            tracked: mergeIntervals(tracked),
-        };
+        return { visits, tracked: mergeIntervals(tracked) };
     }
 
     describeApps(appIds) {
@@ -257,6 +272,12 @@ class UsageService {
             return this.iconCache.get(name);
         };
         return Object.fromEntries([...appIds].map(id => [id, describeApp(id, this.launchers, iconFor)]));
+    }
+}
+
+function assertRange(from, to, maxMs) {
+    if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from || to - from > maxMs) {
+        throw new Error('That time range cannot be shown.');
     }
 }
 

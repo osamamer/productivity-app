@@ -110,7 +110,9 @@ breaks the rewritten launchers until Claritard next starts (it re-points them th
 ## Screen time
 
 The Day page's **Plan and screen** card shows planned calendar events and focus sessions above
-which app was in focus, minute by minute. It is opt-in, works in local and cloud mode alike, and
+which app was in focus, minute by minute; the calendar's Day view shows the same as tall columns,
+and the web app's Digital wellbeing page adds a report over the last week to year, read through
+`getDailyTotals` (app time per local date, up to 370 days). It is opt-in, works in local and cloud mode alike, and
 the data never leaves this computer. Code lives in `src/usage/` (`core/` is plain Node and unit
 tested).
 

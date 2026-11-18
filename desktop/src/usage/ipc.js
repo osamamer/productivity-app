@@ -8,6 +8,7 @@ function registerUsageIpc({ usage, isMainAppPage }) {
     const handlers = {
         getStatus: () => usage.getStatus(),
         getRange: (from, to) => usage.getRange(Number(from), Number(to)),
+        getDailyTotals: (from, to) => usage.getDailyTotals(Number(from), Number(to)),
         saveSettings: settings => usage.saveSettings(settings),
     };
     for (const [name, handler] of Object.entries(handlers)) {

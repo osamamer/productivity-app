@@ -106,6 +106,10 @@ type MonthCalenderProps = {
     isLoading?: boolean,
     onRefreshTasks?: () => Promise<void>,
     onOpenDay?: (date: string) => void,
+    // Adds a Day button to the toolbar; the timeline itself lives outside FullCalendar.
+    onOpenDayView?: (date: string) => void,
+    initialView?: 'dayGridWeek' | 'dayGridMonth',
+    initialDate?: string,
 }
 
 type TaskStatusFilter = 'all' | 'open' | 'completed';
@@ -474,7 +478,7 @@ export function MonthCalendar({
     onMoveEventOccurrence,
     onCancelEventOccurrence, onRestoreEventOccurrence, onUpdateEventOccurrenceStatus, onDeleteEventOccurrence, onDeleteEventFutureOccurrences,
     dayTemplates, onCreateDayTemplate, onUpdateDayTemplate, onDeleteDayTemplate, onApplyDayTemplate, onUndoDayTemplate,
-    statDefinitions, loading = false, isLoading = false, onRefreshTasks, onOpenDay,
+    statDefinitions, loading = false, isLoading = false, onRefreshTasks, onOpenDay, onOpenDayView, initialView = 'dayGridMonth', initialDate,
 }: MonthCalenderProps) {
     const theme = useTheme();
     const calendarEventFillStyles = useMemo(() => {
@@ -1714,6 +1718,20 @@ export function MonthCalendar({
             : { start: arg.start, end: arg.end });
     }, []);
 
+    const dayViewButton = useMemo(() => onOpenDayView ? {
+        dayTimeline: {
+            text: 'Day',
+            hint: 'Day view',
+            click: () => {
+                const today = new Date();
+                const shownDate = today >= calendarRange.start && today < calendarRange.end
+                    ? today
+                    : calendarRef.current?.getApi().view.currentStart ?? today;
+                onOpenDayView(format(shownDate, 'yyyy-MM-dd'));
+            },
+        },
+    } : undefined, [calendarRange, onOpenDayView]);
+
     const handleMoreLinkDidMount = useCallback((arg: MoreLinkMountArg) => {
         const interceptMoreLinkClick = (mouseEvent: MouseEvent) => {
             mouseEvent.preventDefault();
@@ -2850,7 +2868,9 @@ export function MonthCalendar({
                         <FullCalendar
                             ref={calendarRef}
                             plugins={[dayGridPlugin, interactionPlugin]}
-                            initialView="dayGridMonth"
+                            initialView={initialView}
+                            initialDate={initialDate}
+                            customButtons={dayViewButton}
                             height="100%"
                             fixedMirrorParent={document.body}
                             events={calendarEvents}
@@ -2873,7 +2893,7 @@ export function MonthCalendar({
                             headerToolbar={{
                                 left: 'prev,next today',
                                 center: 'title',
-                                right: 'dayGridWeek,dayGridMonth'
+                                right: dayViewButton ? 'dayTimeline,dayGridWeek,dayGridMonth' : 'dayGridWeek,dayGridMonth'
                             }}
                             buttonText={{
                                 today: 'Today',

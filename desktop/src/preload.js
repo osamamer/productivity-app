@@ -33,6 +33,7 @@ function usageBridge() {
     return {
         getStatus: call('getStatus'),
         getRange: call('getRange'),
+        getDailyTotals: call('getDailyTotals'),
         saveSettings: call('saveSettings'),
     };
 }

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, Box, LinearProgress, Snackbar, Typography } from '@mui/material';
 import { Navigate } from 'react-router-dom';
-import { PageWrapper } from '../components/PageWrapper';
 import { AppPausesSection } from '../components/boundaries/AppPausesSection';
 import { SiteTimersSection } from '../components/boundaries/SiteTimersSection';
 import { desktopTimeouts, type TimeoutState } from '../services/desktop';
@@ -10,7 +9,7 @@ const REFRESH_MS = 5000;
 
 type Notice = { severity: 'success' | 'error'; message: string };
 
-/** App pauses and Firefox site timers. Only the Linux desktop app can enforce them. */
+/** App pauses and Firefox site timers, a tab of Digital wellbeing. Only the Linux desktop app can enforce them. */
 export function BoundariesPage() {
     const [state, setState] = useState<TimeoutState | null>(null);
     const [loadError, setLoadError] = useState<string | null>(null);
@@ -40,30 +39,23 @@ export function BoundariesPage() {
     }, [refresh]);
     const onError = useCallback((message: string) => setNotice({ severity: 'error', message }), []);
 
-    if (!desktopTimeouts) return <Navigate to="/" replace />;
+    if (!desktopTimeouts) return <Navigate to="/wellbeing" replace />;
 
     return (
-        <PageWrapper>
-            <Box sx={{ width: '100%', maxWidth: 1180, mx: 'auto', py: { xs: 3, md: 6 }, textAlign: 'left' }}>
-                <Box sx={{ maxWidth: 640, mb: { xs: 3, md: 4 } }}>
-                    <Typography variant="h4" fontWeight={750} sx={{ letterSpacing: '-0.03em' }}>
-                        Boundaries
-                    </Typography>
-                    <Typography color="text.secondary" sx={{ mt: 1, fontSize: { sm: '1.05rem' } }}>
-                        A moment to choose before the apps and sites that pull you in, and a gentle end once you're there.
-                    </Typography>
+        <>
+            <Typography color="text.secondary" sx={{ mb: { xs: 2, md: 3 }, maxWidth: 640, textAlign: 'left' }}>
+                A moment to choose before the apps and sites that pull you in, and a gentle end once you're there.
+            </Typography>
+
+            {loadError && <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>{loadError}</Alert>}
+            {!state && !loadError && <LinearProgress aria-label="Loading boundaries" sx={{ borderRadius: 1 }} />}
+
+            {state && (
+                <Box sx={{ display: 'grid', gap: 3 }}>
+                    <AppPausesSection apps={state.apps} timeouts={desktopTimeouts} onChanged={onChanged} onError={onError} />
+                    <SiteTimersSection urls={state.urls} browser={state.browser} timeouts={desktopTimeouts} onChanged={onChanged} onError={onError} />
                 </Box>
-
-                {loadError && <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>{loadError}</Alert>}
-                {!state && !loadError && <LinearProgress aria-label="Loading boundaries" sx={{ borderRadius: 1 }} />}
-
-                {state && (
-                    <Box sx={{ display: 'grid', gap: 3 }}>
-                        <AppPausesSection apps={state.apps} timeouts={desktopTimeouts} onChanged={onChanged} onError={onError} />
-                        <SiteTimersSection urls={state.urls} browser={state.browser} timeouts={desktopTimeouts} onChanged={onChanged} onError={onError} />
-                    </Box>
-                )}
-            </Box>
+            )}
 
             <Snackbar
                 open={notice !== null}
@@ -77,7 +69,7 @@ export function BoundariesPage() {
                     </Alert>
                 ) : undefined}
             </Snackbar>
-        </PageWrapper>
+        </>
     );
 }
 

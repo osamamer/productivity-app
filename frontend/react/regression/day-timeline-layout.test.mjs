@@ -86,3 +86,15 @@ test('hour ticks fall on whole hours inside the window', () => {
   const end = new Date(2026, 10, 18, 10, 0).getTime();
   assert.deepEqual(hourTicks(start, end).map(tick => new Date(tick).getHours()), [8, 9, 10]);
 });
+
+test('only blocks that overlap share the width; a block on its own gets all of it', () => {
+  const item = (id, from, to) => ({ id, kind: 'event', title: id, start: at(from), end: at(to) });
+  const lane = buildPlannedLane([item('deep', 0, 180), item('focus', 30, 90), item('lunch', 210, 255)], at(0), at(600));
+  assert.deepEqual(lane.map(block => [block.id, block.row, block.columns]), [['deep', 0, 2], ['focus', 1, 2], ['lunch', 0, 1]]);
+});
+
+test('a chain of overlaps counts as one group, even when its ends do not touch', () => {
+  const item = (id, from, to) => ({ id, kind: 'event', title: id, start: at(from), end: at(to) });
+  const lane = buildPlannedLane([item('a', 0, 60), item('b', 30, 120), item('c', 90, 150)], at(0), at(600));
+  assert.deepEqual(lane.map(block => [block.id, block.row, block.columns]), [['a', 0, 2], ['b', 1, 2], ['c', 0, 2]]);
+});

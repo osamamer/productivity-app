@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { UsageStore } = require('../src/usage/core/store');
-const { mergeSegments, dropBriefVisits, splitAtLocalMidnight, dayKey } = require('../src/usage/core/segments');
+const { mergeSegments, dropBriefVisits, splitAtLocalMidnight, dayKey, dailyAppTotals } = require('../src/usage/core/segments');
 const { autostartEntry, setAutostart, isAutostartEnabled } = require('../src/usage/core/autostart');
 const { readUsageSettings, writeUsageSettings } = require('../src/usage/core/settings');
 
@@ -100,4 +100,21 @@ test('start at login is the presence of the autostart file', () => {
     assert.equal(isAutostartEnabled(file), true);
     setAutostart(file, false, ['/usr/bin/claritard']);
     assert.equal(isAutostartEnabled(file), false);
+});
+
+test('daily totals add up app time per local date, oldest first, skipping empty days', () => {
+    const days = dailyAppTotals([
+        { start: local(18, 9), end: local(18, 10), appId: 'firefox', title: null },
+        { start: local(16, 9), end: local(16, 9, 30), appId: 'kitty', title: null },
+        { start: local(18, 11), end: local(18, 11, 15), appId: 'firefox', title: 'Docs' },
+    ]);
+    assert.deepEqual(days, [
+        { date: '2026-11-16', apps: { kitty: 30 * 60_000 }, totalMs: 30 * 60_000 },
+        { date: '2026-11-18', apps: { firefox: 75 * 60_000 }, totalMs: 75 * 60_000 },
+    ]);
+});
+
+test('daily totals split time spent across midnight between the two days', () => {
+    const days = dailyAppTotals([{ start: local(17, 23, 30), end: local(18, 0, 45), appId: 'mpv', title: null }]);
+    assert.deepEqual(days.map(day => [day.date, day.totalMs]), [['2026-11-17', 30 * 60_000], ['2026-11-18', 45 * 60_000]]);
 });

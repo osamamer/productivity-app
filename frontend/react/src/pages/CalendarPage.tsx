@@ -19,7 +19,8 @@ import {
 import {DayTemplate, DayTemplateApplication, DayTemplateRequest} from "../types/DayTemplate.ts";
 import { playAudioFeedback } from '../services/audioFeedback';
 import { taskCompletionFeedbackKind } from '../services/utils/taskCompletionFeedback';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { CalendarDayView, type CalendarGridView } from '../components/calendar/day-view/CalendarDayView';
 import { Calendar, CalendarColor, CalendarUpdate } from '../types/Calendar';
 import { CalendarManager } from '../components/calendar/CalendarManager';
 import { calendarSourceService, CalendarSource } from '../services/api/calendarSourceService';
@@ -127,8 +128,20 @@ function createOptimisticTasks(task: TaskToCreate, defaultCalendarId: string): T
     }));
 }
 
+const DAY_PARAM_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
 export function CalendarPage() {
     const navigate = useNavigate();
+    // The day view lives in the URL so the back button and links from other pages can open it.
+    const [searchParams, setSearchParams] = useSearchParams();
+    const dayParam = searchParams.get('day');
+    const dayViewDate = dayParam && DAY_PARAM_PATTERN.test(dayParam) && !Number.isNaN(new Date(`${dayParam}T12:00:00`).getTime()) ? dayParam : null;
+    const [gridReturn, setGridReturn] = useState<{ view: CalendarGridView; date?: string }>({ view: 'dayGridMonth' });
+    const openDayView = (date: string) => setSearchParams({ day: date });
+    const showGrid = (view: CalendarGridView) => {
+        setGridReturn({ view, date: dayViewDate ?? undefined });
+        setSearchParams({});
+    };
     const {
         allTasks,
         loading: tasksLoading,
@@ -563,6 +576,9 @@ export function CalendarPage() {
                 width: '100%',
             }}>
                 {calendarSettingsError && <Alert severity="error" sx={{ mb: 1 }}>{calendarSettingsError}</Alert>}
+                {dayViewDate ? (
+                    <CalendarDayView date={dayViewDate} onChangeDate={date => setSearchParams({ day: date }, { replace: true })} onShowGrid={showGrid} />
+                ) : (
                 <MonthCalendar
                     tasks={allTasks}
                     groups={groups}
@@ -607,7 +623,11 @@ export function CalendarPage() {
                     isLoading={tasksLoading || !eventsReady || !calendarsReady || !calendarDetailsReady}
                     onRefreshTasks={() => fetchAllTasks(true)}
                     onOpenDay={date => navigate(`/day/${date}`, { state: { returnTo: '/calendar' } })}
+                    onOpenDayView={openDayView}
+                    initialView={gridReturn.view}
+                    initialDate={gridReturn.date}
                 />
+                )}
             </Box>
         </PageWrapper>
     );

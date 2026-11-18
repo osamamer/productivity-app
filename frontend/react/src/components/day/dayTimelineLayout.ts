@@ -39,7 +39,9 @@ export type ScreenBlock = Placed & TimeInterval & (
     | { kind: 'untracked' }
 );
 
-export type PlannedBlock = Placed & PlannedInput & { row: number };
+// `columns` is how many rows its group of overlapping blocks needs, so a block that overlaps
+// nothing can use the full width in the vertical day view.
+export type PlannedBlock = Placed & PlannedInput & { row: number; columns: number };
 
 // Bursts of app hopping read better as one block than as a barcode.
 const SHORT_MS = 60_000;
@@ -192,13 +194,30 @@ export function buildScreenLane(
 
 /** Planned blocks in the window; overlapping ones go on separate rows. */
 export function buildPlannedLane(items: PlannedInput[], windowStart: number, windowEnd: number): PlannedBlock[] {
-    const rowEnds: number[] = [];
-    return clip(items, windowStart, windowEnd).map(item => {
+    const blocks: PlannedBlock[] = [];
+    let group: PlannedBlock[] = [];
+    let rowEnds: number[] = [];
+    let groupEnd = -Infinity;
+    const closeGroup = () => {
+        for (const block of group) block.columns = rowEnds.length;
+        group = [];
+        rowEnds = [];
+    };
+    for (const item of clip(items, windowStart, windowEnd)) {
+        if (item.start >= groupEnd) {
+            closeGroup();
+            groupEnd = item.end;
+        }
+        groupEnd = Math.max(groupEnd, item.end);
         let row = rowEnds.findIndex(end => end <= item.start);
         if (row === -1) row = rowEnds.length;
         rowEnds[row] = item.end;
-        return { ...item, row, ...place(item.start, item.end, windowStart, windowEnd) };
-    });
+        const block = { ...item, row, columns: 1, ...place(item.start, item.end, windowStart, windowEnd) };
+        group.push(block);
+        blocks.push(block);
+    }
+    closeGroup();
+    return blocks;
 }
 
 /** Whole hours inside the window, for axis ticks. */

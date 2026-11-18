@@ -115,11 +115,25 @@ export interface UsageStatus {
     tracking: boolean;
 }
 
+export interface UsageDailyTotal {
+    // Local date, `YYYY-MM-DD`. Dates with no app time are absent.
+    date: string;
+    totalMs: number;
+    apps: Record<string, number>;
+}
+
+export interface UsageDailyTotals {
+    days: UsageDailyTotal[];
+    apps: Record<string, UsageApp>;
+}
+
 // Desktop screen time, recorded and kept on this computer only. Calls reject with a message
 // that can be shown to the user.
 export interface DesktopUsage {
     getStatus: () => Promise<UsageStatus>;
     getRange: (fromMs: number, toMs: number) => Promise<UsageRange>;
+    // Absent in desktop builds that predate the screen-time report. Covers up to about a year.
+    getDailyTotals?: (fromMs: number, toMs: number) => Promise<UsageDailyTotals>;
     saveSettings: (settings: UsageSettings) => Promise<UsageStatus>;
 }
 

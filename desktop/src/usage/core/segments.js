@@ -91,4 +91,21 @@ function dayKeysBetween(from, to) {
     return keys;
 }
 
-module.exports = { mergeSegments, mergeIntervals, dropBriefVisits, clipToRange, splitAtLocalMidnight, dayKey, dayKeysBetween };
+/**
+ * Per local date, milliseconds in each app, oldest date first. Segments that cross midnight
+ * count toward both days. Dates with no app time are left out.
+ */
+function dailyAppTotals(segments) {
+    const days = new Map();
+    for (const piece of segments.flatMap(splitAtLocalMidnight)) {
+        const key = dayKey(piece.start);
+        const apps = days.get(key) ?? {};
+        apps[piece.appId] = (apps[piece.appId] ?? 0) + piece.end - piece.start;
+        days.set(key, apps);
+    }
+    return [...days.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([date, apps]) => ({ date, apps, totalMs: Object.values(apps).reduce((total, ms) => total + ms, 0) }));
+}
+
+module.exports = { mergeSegments, mergeIntervals, dropBriefVisits, clipToRange, splitAtLocalMidnight, dayKey, dayKeysBetween, dailyAppTotals };
