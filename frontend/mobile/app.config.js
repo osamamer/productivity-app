@@ -38,6 +38,7 @@ module.exports = ({ config }) => {
     extra: {
       ...config.extra,
       remotePushConfigured: Boolean(firebaseConfig),
+      buildNumber: process.env.ANDROID_VERSION_CODE ?? null,
     },
   };
 };

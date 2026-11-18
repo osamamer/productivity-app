@@ -78,6 +78,7 @@ import { selectWhiteNoiseSound, setWhiteNoiseSource } from '../services/whiteNoi
 import { notificationService, type WebPushSubscriptionPayload } from '../services/api/notificationService';
 import { isDesktopApp, isLocalDesktopMode } from '../services/desktop';
 import LocalBackupSection from '../components/settings/LocalBackupSection';
+import AppVersionInfo from '../components/settings/AppVersionInfo';
 import DesktopStorageSection from '../components/settings/DesktopStorageSection';
 import ScreenTimeSection from '../components/settings/ScreenTimeSection';
 
@@ -1784,6 +1785,7 @@ export function SettingsPage() {
                         )}
 
                     </Stack>
+                    <Box sx={{ mt: 4 }}><AppVersionInfo /></Box>
                 </Box>
             </Box>
             <CompactPopover
