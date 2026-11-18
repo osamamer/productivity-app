@@ -437,19 +437,23 @@ export function SideNav() {
         && activePomodoro.sessionRunning
         && (!activePomodoro.phase || activePomodoro.phase === 'FOCUS'),
     );
+    const pomodoroLabel = !activePomodoro
+        ? ''
+        : pomodoroIsFocusRunning
+            ? 'Focused'
+            : activePomodoro.phase === 'BREAK' || activePomodoro.phase === 'WAITING_FOR_BREAK'
+                ? 'On break'
+                : 'Paused';
     const pomodoroIndicator = activePomodoro
         ? {
             color: pomodoroIsFocusRunning ? 'primary.main' : pomodoroGreen,
-            label: pomodoroIsFocusRunning
-                ? 'Focused'
-                : activePomodoro.phase === 'BREAK' || activePomodoro.phase === 'WAITING_FOR_BREAK'
-                    ? 'On break'
-                    : 'Paused',
+            label: pomodoroLabel,
+            description: `Pomodoro ${pomodoroLabel.toLowerCase()}`,
         }
         : undefined;
 
     const activityTimerIndicator = activityTimer.current
-        ? { color: activityTimer.current.paused ? theme.palette.text.secondary : theme.palette.primary.main, label: activityTimer.current.paused ? 'Timer paused' : `Timing ${activityTimer.current.title}` }
+        ? { color: activityTimer.current.paused ? theme.palette.text.secondary : theme.palette.primary.main, description: activityTimer.current.title }
         : undefined;
 
     return (

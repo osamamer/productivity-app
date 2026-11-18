@@ -14,7 +14,10 @@ type Props = {
     expanded?: boolean;
     activeIndicator?: {
         color: string;
-        label: string;
+        // Shown beside the name when the menu is expanded; omit to show only the dot.
+        label?: string;
+        // The tooltip and accessible name, after the item's name.
+        description: string;
     };
     onNavigate?: (targetPage: string) => void;
 };
@@ -31,7 +34,7 @@ export function SideMenuButton({
     const navigate = useNavigate();
     const location = useLocation();
     const isActive = activePaths.includes(location.pathname);
-    const accessibleLabel = activeIndicator ? `${text} · Pomodoro ${activeIndicator.label.toLowerCase()}` : text;
+    const accessibleLabel = activeIndicator ? `${text} · ${activeIndicator.description}` : text;
 
     return (
         <ListItemButton
@@ -118,8 +121,8 @@ export function SideMenuButton({
                 >
                     {text}
                 </Typography>
-                {activeIndicator && (
-                    <Typography variant="caption" sx={{ color: activeIndicator.color, mr: 1.5, fontWeight: 600 }}>
+                {activeIndicator?.label && (
+                    <Typography variant="caption" noWrap sx={{ minWidth: 0, color: activeIndicator.color, mr: 1.5, fontWeight: 600 }}>
                         {activeIndicator.label}
                     </Typography>
                 )}
