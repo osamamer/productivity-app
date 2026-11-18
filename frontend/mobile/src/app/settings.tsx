@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import Constants from 'expo-constants';
 import { useState } from 'react';
 import { StyleSheet, Switch, View } from 'react-native';
 
@@ -329,8 +330,15 @@ export default function SettingsScreen() {
           </SilentPressable>
         </View>
       </Card>
+      <AppText color="muted" style={styles.version}>Claritard Mobile {appVersion()}</AppText>
     </Screen>
   );
+}
+
+function appVersion(): string {
+  const version = Constants.expoConfig?.version ?? 'unknown';
+  const buildNumber = Constants.expoConfig?.extra?.buildNumber;
+  return buildNumber ? `${version}-${buildNumber}` : version;
 }
 
 function SettingRow({ label, detail, value, disabled, onChange }: { label: string; detail: string; value: boolean; disabled?: boolean; onChange: (value: boolean) => void }) {
@@ -356,7 +364,7 @@ function SettingRow({ label, detail, value, disabled, onChange }: { label: strin
 }
 
 const styles = StyleSheet.create({
-  section: { gap: 16 }, sectionHeading: { flexDirection: 'row', alignItems: 'center', gap: 9 }, accents: { flexDirection: 'row', justifyContent: 'space-between', gap: 6 },
+  section: { gap: 16 }, version: { textAlign: 'center', marginTop: 8 }, sectionHeading: { flexDirection: 'row', alignItems: 'center', gap: 9 }, accents: { flexDirection: 'row', justifyContent: 'space-between', gap: 6 },
   swatchWrap: { alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 16, padding: 8 }, swatch: { width: 34, height: 34, borderRadius: 17 },
   setting: { flexDirection: 'row', alignItems: 'center', gap: 14 }, timeField: { minHeight: 54, flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14 }, accountActions: { gap: 12, borderTopWidth: 1, paddingTop: 16 }, accountOption: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, borderWidth: 1, borderRadius: 14, padding: 13 }, optionCopy: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 11 }, passwordForm: { gap: 12 }, grow: { flex: 1, gap: 3 }, divider: { height: 1 }, popupActions: { flexDirection: 'row', gap: 10 }, popupAction: { flex: 1 },
   profileSummary: { flexDirection: 'row', alignItems: 'center', gap: 13, borderWidth: 1, borderRadius: 16, padding: 14 }, avatar: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center' },

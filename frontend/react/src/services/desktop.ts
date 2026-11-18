@@ -128,6 +128,8 @@ export interface DesktopBridge {
     // A token for the single local user, signed with a secret the shell regenerates every launch.
     localToken?: string;
     cloudUrl?: string;
+    // Absent in desktop builds that predate showing the version in settings.
+    version?: string;
     openModeChooser: () => void;
     // Electron cannot list service-worker notifications, so the shell shows them natively.
     // Resolves false when the desktop has no notification service.

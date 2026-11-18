@@ -330,9 +330,10 @@ ipcMain.on('desktop:get-bridge', event => {
         event.returnValue = null;
         return;
     }
+    const version = app.getVersion();
     event.returnValue = runtime.mode === 'local'
-        ? { mode: 'local', localToken: runtime.localToken }
-        : { mode: 'cloud', cloudUrl: runtime.cloudUrl };
+        ? { mode: 'local', localToken: runtime.localToken, version }
+        : { mode: 'cloud', cloudUrl: runtime.cloudUrl, version };
 });
 
 ipcMain.on('desktop:open-mode-chooser', () => openChooser());
