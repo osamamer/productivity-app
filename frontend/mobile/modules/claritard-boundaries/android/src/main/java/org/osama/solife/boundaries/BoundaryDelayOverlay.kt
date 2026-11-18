@@ -9,6 +9,7 @@ import android.graphics.PixelFormat
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -343,15 +344,29 @@ class BoundaryDelayOverlay(
 
     private fun weighted(weight: Float) = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, weight)
 
+    /**
+     * Fills the whole display, status and navigation bar areas included, so the background runs
+     * edge to edge like an app's. Accessibility overlays sit above the system bars, so the bars'
+     * icons are covered while the countdown shows; [applyInsets] keeps the content clear of them.
+     */
     private fun layoutParams() = WindowManager.LayoutParams(
         WindowManager.LayoutParams.MATCH_PARENT,
         WindowManager.LayoutParams.MATCH_PARENT,
         WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
         WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
             KEEP_ON,
         PixelFormat.TRANSLUCENT,
-    )
+    ).apply {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            // Without this the window is shrunk to the area between the system bars.
+            fitInsetsTypes = 0
+            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+    }
 
     /** Sizes that depend on the screen: the ring takes most of the width on a phone. */
     private class Layout(val sidePx: Int, val ringPx: Int, val ringStrokePx: Float) {

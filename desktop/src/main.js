@@ -145,7 +145,12 @@ function quitIfOnlyTimeoutsAreIdle() {
 function startUi() {
     if (!uiStarted) {
         void usage.start();
-        updates = startAutoUpdates({ app, dialog, enabled: readConfig(userDataDir).autoUpdate !== false });
+        updates = startAutoUpdates({
+            app,
+            dialog,
+            enabled: readConfig(userDataDir).autoUpdate !== false,
+            onDownload: showUpdateDownload,
+        });
     }
     uiStarted = true;
     const config = readConfig(userDataDir);
@@ -156,6 +161,19 @@ function startUi() {
     void launch(config);
 }
 
+let updateDownload = null;
+
+function showUpdateDownload(download) {
+    updateDownload = download;
+    sendUpdateDownload();
+}
+
+function sendUpdateDownload() {
+    if (!appWindow || appWindow.header.webContents.isDestroyed()) return;
+    appWindow.header.webContents.send('header:update-download', updateDownload);
+    appWindow.window.setProgressBar(updateDownload ? updateDownload.fraction : -1);
+}
+
 async function launch(config) {
     if (config.mode === 'local') await launchLocal();
     else launchCloud();
@@ -164,6 +182,7 @@ async function launch(config) {
 function openMainWindow(mode, contentPreferences) {
     appWindow = createAppWindow({ mode, contentPreferences, show: !startHidden });
     const { window, header, content } = appWindow;
+    header.webContents.on('did-finish-load', sendUpdateDownload);
     const commands = createCommands({
         window,
         content,
@@ -368,6 +387,10 @@ ipcMain.on('header:toggle-maximize', event => {
 
 ipcMain.on('header:close', event => {
     if (isHeader(event.sender)) appWindow.window.close();
+});
+
+ipcMain.on('header:change-mode', event => {
+    if (isHeader(event.sender)) openChooser();
 });
 
 ipcMain.on('header:toggle-menu', (event, anchor) => {

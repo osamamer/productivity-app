@@ -8,6 +8,8 @@ if (mode === 'local' || mode === 'cloud') {
     modeBadge.title = mode === 'local'
         ? 'Your data stays on this computer. The app does not contact the cloud.'
         : 'Your data is stored on claritard.com.';
+    modeBadge.title += ' Click to change where it is stored.';
+    modeBadge.addEventListener('click', () => header.changeMode());
 } else {
     modeBadge.remove();
 }
@@ -24,6 +26,15 @@ header.onWindowState(({ maximized }) => {
     document.body.classList.toggle('maximized', maximized);
     document.getElementById('maximize').setAttribute('aria-label', maximized ? 'Restore' : 'Maximize');
     document.getElementById('maximize').title = maximized ? 'Restore' : 'Maximize';
+});
+
+const update = document.getElementById('update');
+header.onUpdateDownload(download => {
+    update.hidden = !download;
+    if (!download) return;
+    document.getElementById('update-label').textContent = download.label;
+    document.getElementById('update-fill').style.width = `${download.fraction * 100}%`;
+    update.title = download.detail;
 });
 
 header.onTheme(({ background }) => applyPageTheme(background));
