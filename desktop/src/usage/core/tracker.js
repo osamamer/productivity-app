@@ -7,19 +7,24 @@
  *   { type: 'idle', idleSince }                  no input since `idleSince`
  *   { type: 'active' }                           input again
  *   { type: 'locked' } / { type: 'unlocked' }
+ *   { type: 'displayOff' } / { type: 'displayOn' }  no monitor is on or connected / one is again
+ *   { type: 'audio', audible }                   whether the focused app is playing sound
  *   { type: 'checkpoint' }                       cut the open segment so a crash loses little
  *   { type: 'stop' }                             tracking ends (quit, disabled, suspend)
  *
  * `reduce` returns the next state and the segment that was closed, if any. Idle backdates the end
  * of the open segment to the last input, because those minutes were not spent on the app.
- * A fullscreen window keeps counting while idle: watching a video needs no input.
+ * A fullscreen window that is playing sound keeps counting while idle: watching a video needs no
+ * input, but a paused one is not being watched. `audible` starts unknown (null), which counts as
+ * playing, so a desktop where audio cannot be seen keeps the plain fullscreen rule. With every
+ * display off or unplugged nothing counts, fullscreen or not, because nobody can be watching.
  */
-const INITIAL_STATE = Object.freeze({ focus: null, idle: false, locked: false, current: null });
+const INITIAL_STATE = Object.freeze({ focus: null, idle: false, locked: false, displayOff: false, audible: null, current: null });
 
 function activityOf(state, recordTitles) {
-    const { focus, idle, locked } = state;
-    if (!focus || !focus.appId || locked) return null;
-    if (idle && !focus.fullscreen) return null;
+    const { focus, idle, locked, displayOff, audible } = state;
+    if (!focus || !focus.appId || locked || displayOff) return null;
+    if (idle && !(focus.fullscreen && audible !== false)) return null;
     return { appId: focus.appId, title: recordTitles && focus.title ? focus.title : null };
 }
 
@@ -48,6 +53,12 @@ function applyEvent(state, event) {
             return { ...state, locked: true };
         case 'unlocked':
             return { ...state, locked: false, idle: false };
+        case 'displayOff':
+            return { ...state, displayOff: true };
+        case 'displayOn':
+            return { ...state, displayOff: false };
+        case 'audio':
+            return { ...state, audible: typeof event.audible === 'boolean' ? event.audible : null };
         default:
             return state;
     }

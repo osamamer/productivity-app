@@ -9,12 +9,23 @@ class UsageInterface extends dbus.interface.Interface {
         this.handlers = handlers;
     }
 
+    // Focus and Title stay for a GNOME extension from an older release: GNOME Shell keeps
+    // running the old code until the next login. Without a pid, sound is unknown.
     Focus(appId, title, fullscreen) {
-        this.handlers.onFocus({ appId, title, fullscreen });
+        this.handlers.onFocus({ appId, title, fullscreen, pid: 0 });
     }
 
     Title(appId, title, fullscreen) {
-        this.handlers.onTitle({ appId, title, fullscreen });
+        this.handlers.onTitle({ appId, title, fullscreen, pid: 0 });
+    }
+
+    // The pid is a string because KWin's callDBus would send a JS number as a double.
+    FocusWithPid(appId, title, fullscreen, pid) {
+        this.handlers.onFocus({ appId, title, fullscreen, pid: Number(pid) || 0 });
+    }
+
+    TitleWithPid(appId, title, fullscreen, pid) {
+        this.handlers.onTitle({ appId, title, fullscreen, pid: Number(pid) || 0 });
     }
 }
 
@@ -22,6 +33,8 @@ UsageInterface.configureMembers({
     methods: {
         Focus: { inSignature: 'ssb', outSignature: '' },
         Title: { inSignature: 'ssb', outSignature: '' },
+        FocusWithPid: { inSignature: 'ssbs', outSignature: '' },
+        TitleWithPid: { inSignature: 'ssbs', outSignature: '' },
     },
 });
 

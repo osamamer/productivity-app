@@ -113,8 +113,9 @@ tested).
 
 - **Focus.** Wayland hides other apps' windows, so only the compositor can tell which one has
   focus. Both desktops call back into the `app.claritard.Usage` D-Bus service this app owns
-  (`dbus-next`, `src/usage/focusBus.js`) with the app id, caption and fullscreen state of the
-  focused window.
+  (`dbus-next`, `src/usage/focusBus.js`) with the app id, caption, fullscreen state and process id
+  of the focused window (`FocusWithPid`/`TitleWithPid`; the pid-less `Focus`/`Title` stay for a
+  GNOME extension from an older release that the shell runs until the next login).
   - **KDE Plasma 6:** `src/usage/kwin/claritard-usage.js` runs inside KWin (copied to
     `~/.local/share/Claritard/usage/` and loaded over D-Bus as `claritard-usage`). Quitting unloads
     it; starting replaces any copy a crash left behind.
@@ -131,9 +132,20 @@ tested).
   while an inhibitor is held, so on GNOME `src/usage/mutterIdle.js` reads `GetIdletime` (which
   ignores inhibitors) when the timeout could first be reached and uses a user-active watch for
   resumed input. After 3 minutes without input the open segment ends, backdated to the last input,
-  unless the focused window is fullscreen (watching a video). The lock screen (ScreenSaver
+  unless the focused window is fullscreen and playing sound (watching a video). The lock screen (ScreenSaver
   `ActiveChanged`: `org.freedesktop.ScreenSaver` on KDE, `org.gnome.ScreenSaver` on GNOME) and
   suspend also end it.
+- **Sound.** `src/usage/audioWatcher.js` follows `pactl subscribe` and reads which streams are not
+  corked; a stream counts for the focused window when its pid is the window's or a descendant
+  (browsers play from a child process). A paused video corks its stream, so it stops counting.
+  Inhibit-aware idle is no use here: some app nearly always holds an inhibitor, and the compositor
+  does not say whose. Without `pactl`, or without a pid, fullscreen counts as playing.
+- **Screens off (KDE).** `src/usage/waylandDisplays.js` binds KWin's `org_kde_kwin_dpms_manager`
+  for every `wl_output`. While no real output is connected and powered on (all DPMS off, or every
+  monitor unplugged so only KWin's `Placeholder-1` output is left) nothing counts, fullscreen
+  included; the time shows as "away". A monitor turned off with its own button is only seen if it
+  drops off the cable (DisplayPort usually does, some HDMI monitors do not). Shared Wayland
+  plumbing is in `src/usage/waylandConnection.js`.
 - **Brief visits.** Focus passes through windows for a moment when a switcher cycles, a window
   closes or an app starts. Visits to one app shorter than 5 s are recorded but left out when the
   page reads screen time (`dropBriefVisits` in `src/usage/core/segments.js`).

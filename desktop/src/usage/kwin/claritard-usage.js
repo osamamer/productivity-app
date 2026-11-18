@@ -9,7 +9,9 @@ function send(method, window) {
     const appId = window ? String(window.desktopFileName || window.resourceClass || '') : '';
     const title = window ? String(window.caption || '') : '';
     const fullscreen = window ? Boolean(window.fullScreen) : false;
-    callDBus(SERVICE, PATH, INTERFACE, method, appId, title, fullscreen);
+    // A string, because callDBus would send a JS number as a double.
+    const pid = window ? String(window.pid || 0) : '0';
+    callDBus(SERVICE, PATH, INTERFACE, `${method}WithPid`, appId, title, fullscreen, pid);
 }
 
 function titleChanged() {

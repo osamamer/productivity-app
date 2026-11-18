@@ -89,6 +89,73 @@ test('locking the screen ends the segment and unlocking resumes it', () => {
     assert.deepEqual(state.current, { appId: 'firefox', title: null, start: 9000 });
 });
 
+test('a fullscreen window stops counting while idle once its sound stops, e.g. a paused video', () => {
+    const { closed, state } = run([
+        [0, focus('Plex', 'Plex', true)],
+        [1000, { type: 'audio', audible: true }],
+        [600_000, { type: 'idle', idleSince: 420_000 }],
+        [1_200_000, { type: 'audio', audible: false }],
+    ]);
+    assert.deepEqual(closed, [{ appId: 'Plex', title: 'Plex', start: 0, end: 1_200_000 }]);
+    assert.equal(state.current, null);
+});
+
+test('a silent fullscreen window going idle ends at the last input, like any window', () => {
+    const { closed } = run([
+        [0, focus('Plex', 'Plex', true)],
+        [1000, { type: 'audio', audible: false }],
+        [600_000, { type: 'idle', idleSince: 420_000 }],
+    ]);
+    assert.deepEqual(closed, [{ appId: 'Plex', title: 'Plex', start: 0, end: 420_000 }]);
+});
+
+test('pressing play again while idle resumes counting the fullscreen window', () => {
+    const { state } = run([
+        [0, focus('Plex', 'Plex', true)],
+        [1000, { type: 'audio', audible: false }],
+        [600_000, { type: 'idle', idleSince: 420_000 }],
+        [700_000, { type: 'audio', audible: true }],
+    ]);
+    assert.deepEqual(state.current, { appId: 'Plex', title: 'Plex', start: 700_000 });
+});
+
+test('sound only matters while idle: an active, silent window still counts', () => {
+    const { state } = run([
+        [0, focus('org.kde.kate', 'notes')],
+        [1000, { type: 'audio', audible: false }],
+    ]);
+    assert.deepEqual(state.current, { appId: 'org.kde.kate', title: 'notes', start: 0 });
+});
+
+test('turning every display off ends the segment, even for a fullscreen video', () => {
+    const { closed, state } = run([
+        [0, focus('mpv', '', true)],
+        [5000, { type: 'displayOff' }],
+        [60_000, { type: 'idle', idleSince: 50_000 }],
+    ]);
+    assert.deepEqual(closed, [{ appId: 'mpv', title: null, start: 0, end: 5000 }]);
+    assert.equal(state.current, null);
+});
+
+test('a display coming back resumes the focused app from that moment', () => {
+    const { state } = run([
+        [0, focus('firefox')],
+        [5000, { type: 'displayOff' }],
+        [9000, { type: 'displayOn' }],
+    ]);
+    assert.deepEqual(state.current, { appId: 'firefox', title: null, start: 9000 });
+});
+
+test('a display coming back does not end idle: the screen waking is not input', () => {
+    const { state } = run([
+        [0, focus('firefox')],
+        [600_000, { type: 'idle', idleSince: 420_000 }],
+        [700_000, { type: 'displayOff' }],
+        [800_000, { type: 'displayOn' }],
+    ]);
+    assert.equal(state.current, null);
+});
+
 test('no focused window (e.g. every window minimised) records nothing', () => {
     const { closed, state } = run([
         [0, focus('firefox')],

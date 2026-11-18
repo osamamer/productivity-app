@@ -10,6 +10,9 @@ const { installedLaunchers } = require('../timeouts/core/installedApps');
 const { iconDataUrl } = require('../timeouts/core/icons');
 const { UNSUPPORTED_DESKTOP } = require('./core/desktop');
 const { createFocusWatcher, startIdleMonitor } = require('./desktopBackends');
+const { WaylandDisplayMonitor } = require('./waylandDisplays');
+const { AudioWatcher } = require('./audioWatcher');
+const { isPlayingFor } = require('./core/audio');
 
 const CHECKPOINT_MS = 60_000;
 const IDLE_AFTER_MS = 3 * 60_000;
@@ -18,7 +21,7 @@ const APP_CACHE_MS = 10 * 60_000;
 const BRIEF_VISIT_MS = 5000;
 
 /**
- * Desktop screen time: which app has focus, minus idle and locked time, written to day files
+ * Desktop screen time: which app has focus, minus idle, locked and screens-off time, written to day files
  * on this computer only. Works the same in local and cloud mode.
  *
  * Not thread-safe in any meaningful sense, but Electron's main process is single-threaded;
@@ -35,6 +38,10 @@ class UsageService {
         this.unsupportedReason = null;
         this.watcher = null;
         this.idle = null;
+        this.displays = null;
+        this.audio = null;
+        this.focusPid = 0;
+        this.playing = null;
         this.checkpointTimer = null;
         this.launchers = null;
         this.launchersLoadedAt = 0;
@@ -67,8 +74,8 @@ class UsageService {
         const startedAt = Date.now();
         this.watcher = createFocusWatcher({
             paths: this.paths,
-            onFocus: focus => this.dispatch({ type: 'focus', ...focus }),
-            onTitle: focus => this.dispatch({ type: 'title', ...focus }),
+            onFocus: focus => this.focusChanged({ type: 'focus', ...focus }),
+            onTitle: focus => this.focusChanged({ type: 'title', ...focus }),
             onLockChange: locked => this.dispatch({ type: locked ? 'locked' : 'unlocked' }),
         });
         if (!this.watcher) {
@@ -96,11 +103,44 @@ class UsageService {
             console.error(`Screen time cannot see idle time; only the lock screen will pause it: ${error.message}`, error);
             this.idle = null;
         }
+        this.displays = new WaylandDisplayMonitor({
+            onChange: on => this.dispatch({ type: on ? 'displayOn' : 'displayOff' }),
+        });
+        try {
+            await this.displays.start();
+        } catch (error) {
+            console.error(`Screen time cannot see whether screens are on: ${error.message}`, error);
+            this.displays = null;
+        }
+        this.audio = new AudioWatcher({
+            onChange: pids => {
+                this.playing = pids;
+                this.dispatchAudio();
+            },
+        });
+        try {
+            await this.audio.start();
+        } catch (error) {
+            console.error(`Screen time cannot see which apps play sound; fullscreen windows count while idle: ${error.message}`, error);
+            this.audio = null;
+        }
         this.tracking = true;
         this.trackedSince = startedAt;
         this.checkpointTimer = setInterval(() => this.checkpoint(), CHECKPOINT_MS);
         powerMonitor.on('suspend', this.onSuspend);
         powerMonitor.on('resume', this.onResume);
+    }
+
+    focusChanged(event) {
+        this.focusPid = event.pid || 0;
+        this.dispatch(event);
+        this.dispatchAudio();
+    }
+
+    dispatchAudio() {
+        const known = this.playing !== null && this.focusPid > 0;
+        const audible = known ? isPlayingFor(this.focusPid, this.playing) : null;
+        if (audible !== this.state.audible) this.dispatch({ type: 'audio', audible });
     }
 
     dispatch(event) {
@@ -155,6 +195,12 @@ class UsageService {
         powerMonitor.off('resume', this.onResume);
         this.idle?.stop();
         this.idle = null;
+        this.displays?.stop();
+        this.displays = null;
+        this.audio?.stop();
+        this.audio = null;
+        this.playing = null;
+        this.focusPid = 0;
         await this.watcher?.stop();
         this.watcher = null;
     }

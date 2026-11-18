@@ -70,10 +70,10 @@ export default class ClaritardUsageExtension extends Extension {
         if (!this._listening) return;
         const window = this._window;
         const args = window
-            ? [appIdOf(window, this._tracker), window.get_title() ?? '', window.is_fullscreen()]
-            : ['', '', false];
+            ? [appIdOf(window, this._tracker), window.get_title() ?? '', window.is_fullscreen(), String(window.get_pid() || 0)]
+            : ['', '', false, '0'];
         Gio.DBus.session.call(
-            SERVICE, PATH, INTERFACE, method, new GLib.Variant('(ssb)', args),
+            SERVICE, PATH, INTERFACE, `${method}WithPid`, new GLib.Variant('(ssbs)', args),
             null, Gio.DBusCallFlags.NO_AUTO_START, -1, null,
             (connection, result) => {
                 try {

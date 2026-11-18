@@ -9,7 +9,7 @@ const SCRIPT_SOURCE = path.join(__dirname, 'kwin', 'claritard-usage.js');
 
 /**
  * Follows the focused window on KDE Plasma 6 through a small KWin script that calls back into
- * a D-Bus service this process owns, and follows the lock screen through the ScreenSaver
+ * a D-Bus service this process owns (app id, caption, fullscreen and process id), and follows the lock screen through the ScreenSaver
  * interface.
  *
  * The script is copied out of the app bundle because KWin cannot read inside the asar archive.
