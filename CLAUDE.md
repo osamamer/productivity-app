@@ -36,6 +36,10 @@ cd frontend/react && npm run lint     # ESLint (max-warnings 0)
 
 After making any change to the repository, build the Linux `.deb` by default with `cd desktop && npm run dist` and report the path `desktop/dist/claritard-desktop_<version>_amd64.deb` in the final message. Skip this only when the user says not to build, or when the build cannot run here (say so and why).
 
+### Commit and push after testing
+
+Once a change has been tested (the relevant tests, lint and build pass), commit it and push to the remote without waiting to be asked. Commit only the files you changed (`git commit <paths>`), leaving other people's staged or unstaged work out. Do not commit or push untested or failing changes; say what failed instead.
+
 ## Architecture
 
 ### Backend (Spring Boot 3.1.3, Java 21, Maven)
