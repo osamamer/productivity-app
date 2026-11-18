@@ -29,6 +29,7 @@ import {
     meditationSoundscape,
 } from './meditationSounds.ts';
 import { MeditationNavigationGuard } from './MeditationNavigationGuard.tsx';
+import { TIMER_DIGITS_SX } from './timerDigits';
 import { getRuntimeUserPreferences, subscribeToUserPreferences, updateRuntimeUserPreferences } from '../../services/userPreferenceStore';
 
 const MIN_MEDITATION_MINUTES = 1;
@@ -1002,7 +1003,7 @@ function ActiveMeditation({
                     />
                     <Box sx={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
                         <SelfImprovementIcon sx={{ fontSize: 34, color: 'primary.main', mb: 1 }} />
-                        <Typography variant="h2" sx={{ fontWeight: 300, fontVariantNumeric: 'tabular-nums' }}>
+                        <Typography variant="h2" sx={{ ...TIMER_DIGITS_SX, fontWeight: 300 }}>
                             {remaining === null ? formatTime(elapsed) : formatTime(remaining)}
                         </Typography>
                         <Typography variant="body2" color="text.secondary">

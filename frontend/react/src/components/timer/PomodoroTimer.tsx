@@ -25,6 +25,7 @@ import FreeBreakfastIcon from '@mui/icons-material/FreeBreakfast';
 import SkipNextIcon from '@mui/icons-material/SkipNext';
 import AddIcon from '@mui/icons-material/Add';
 import RemoveIcon from '@mui/icons-material/Remove';
+import { TIMER_DIGITS_SX } from './timerDigits';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { PomodoroAdjustmentConflictError, taskService } from '../../services/api/index.ts';
 import { requestSystemNotificationPermission } from '../../services/systemNotifications';
@@ -719,12 +720,7 @@ export function PomodoroTimer({ task, onActiveChange }: Props) {
                                                 variant="h3"
                                                 component="div"
                                                 fontWeight="bold"
-                                                sx={{
-                                                    width: '6ch',
-                                                    flexShrink: 0,
-                                                    textAlign: 'center',
-                                                    fontVariantNumeric: 'tabular-nums',
-                                                }}
+                                                sx={{ ...TIMER_DIGITS_SX, flexShrink: 0 }}
                                             >
                                                 {formatTime(status.secondsUntilNextTransition)}
                                             </Typography>

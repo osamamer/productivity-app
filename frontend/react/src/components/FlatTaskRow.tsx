@@ -30,6 +30,7 @@ import StopIcon from '@mui/icons-material/Stop';
 import SkipNextIcon from '@mui/icons-material/SkipNext';
 import AddIcon from '@mui/icons-material/Add';
 import RemoveIcon from '@mui/icons-material/Remove';
+import { TIMER_DIGITS_SX } from './timer/timerDigits';
 import FreeBreakfastIcon from '@mui/icons-material/FreeBreakfast';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
@@ -1844,7 +1845,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             <Box sx={{
                                 textAlign: waitingForPhase ? 'left' : 'center',
                                 minHeight: 34,
-                                ml: waitingForPhase ? 1 : 0,
+                                ml: waitingForPhase ? 1 : 1.5,
                                 display: 'flex',
                                 justifyContent: 'center',
                                 flexDirection: 'column',
@@ -1876,7 +1877,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                             display: 'flex',
                                             alignItems: 'center',
                                             justifyContent: 'center',
-                                            gap: 0.25,
+                                            gap: 0.5,
                                             '& .pomodoro-time-adjustment': {
                                                 opacity: 0,
                                                 transition: 'opacity 120ms ease',
@@ -1918,12 +1919,10 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                         <Typography
                                             variant="h4"
                                             sx={{
-                                                width: '6ch',
+                                                ...TIMER_DIGITS_SX,
                                                 flexShrink: 0,
-                                                textAlign: 'center',
                                                 fontWeight: 700,
                                                 lineHeight: 1,
-                                                fontVariantNumeric: 'tabular-nums',
                                             }}
                                         >
                                             {formatSeconds(pomodoroStatus!.secondsUntilNextTransition)}
