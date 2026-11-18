@@ -34,7 +34,9 @@ cd frontend/react && npm run lint     # ESLint (max-warnings 0)
 
 ### Commit and push after changes
 
-After making any change to the repository, test it (the relevant tests, lint and build pass), then commit it and push to the remote without waiting to be asked. Do not build the desktop `.deb` unless the user asks for it. Commit only the files you changed (`git commit <paths>`), leaving other people's staged or unstaged work out. Do not commit or push untested or failing changes; say what failed instead.
+After making any change to the repository, test it (the relevant tests, lint and build pass), then commit it and push to the remote without waiting to be asked. Commit only the files you changed (`git commit <paths>`), leaving other people's staged or unstaged work out. Do not commit or push untested or failing changes; say what failed instead.
+
+Then install it locally: when the commit is on `master` and touches what the desktop app ships (`desktop/`, `backend/`, `frontend/react/`, `frontend/shared/`, `VERSION`), push and start `desktop/scripts/install-local.sh` together, the script in the background (it takes several minutes). It builds the `.deb` with the version CI will give that commit and installs it, so the installed app matches the coming release. Never run it on a commit that may still be amended or rebased (for example before a rejected push is resolved); rebase and push first, then run it on the new commit. Several agents may run it at once: it queues, builds the newest master commit and skips anything already installed. See "Installing a commit locally" in [desktop/README.md](desktop/README.md).
 
 ## Architecture
 
@@ -139,7 +141,7 @@ Docker services are defined in `deployment/docker-compose.yml`. Environment vari
 - **Backend**: `mvn clean verify` with Java 21 (Temurin), using H2 test profile
 - **Frontend**: `npm install` + `npm run build -- --mode=production` with Node 18
 
-Releases go out automatically on push to `master`, filtered by path:
+Releases go out automatically on push to `master`, filtered by path. A newer push cancels older runs that are still building (per-job groups in `build.yml`, so a deploy already under way is never cancelled; it queues instead):
 - Each production deploy also starts a Netdata server dashboard at `https://claritard.com/monitor/` (basic auth, read-only `netdata` PostgreSQL role); see the Server dashboard section of [deployment/PRODUCTION_DEPLOYMENT.md](deployment/PRODUCTION_DEPLOYMENT.md).
 - `release-desktop.yml` publishes the AppImage, `.deb` (repacked by `desktop/scripts/debDifferential.js`, with its `.blockmap`) and `latest-linux.yml` as the latest GitHub release (version `<major>.<minor>` from `VERSION`, commit count as patch). Installed desktop apps update through `electron-updater` (`desktop/src/autoUpdate.js`; `"autoUpdate": false` in the desktop config turns it off), downloading only changed blocks; see "Updates download only what changed" in [desktop/README.md](desktop/README.md).
 - `release-mobile.yml` publishes the production APK as a **prerelease** titled `Claritard Mobile …`, so it stays out of `/releases/latest` and the desktop updater ignores it. Devices install it through Obtainium. `ANDROID_VERSION_CODE` (commit count) sets `versionCode` in `app.config.js` and the Android `versionName` (`1.2.0-<count>`, via `plugins/withBuildNumberVersionName.js`) so Obtainium sees each build as new; the expo `version` stays fixed because `runtimeVersion` follows it.

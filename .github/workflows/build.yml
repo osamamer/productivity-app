@@ -7,15 +7,17 @@ on:
   pull_request:
   workflow_dispatch:
 
-concurrency:
-  group: production-deployment
-  cancel-in-progress: false
-
+# A newer push cancels this run's verification, image and mobile jobs (each in its own per-ref
+# group), but never a deploy already under way: deploy_production has its own group that queues.
+# A run-wide group would cancel the deploy too, since cancelling a run cancels all its jobs.
 permissions:
   contents: read
 
 jobs:
   verify_backend:
+    concurrency:
+      group: ${{ github.workflow }}-verify_backend-${{ github.ref }}
+      cancel-in-progress: true
     name: Verify Backend
     runs-on: ubuntu-latest
     steps:
@@ -32,6 +34,9 @@ jobs:
         run: ./mvnw -B -ntp clean verify
 
   verify_frontend:
+    concurrency:
+      group: ${{ github.workflow }}-verify_frontend-${{ github.ref }}
+      cancel-in-progress: true
     name: Verify Frontend
     runs-on: ubuntu-latest
     defaults:
@@ -53,6 +58,9 @@ jobs:
         run: npm run build -- --mode=production
 
   verify_mobile:
+    concurrency:
+      group: ${{ github.workflow }}-verify_mobile-${{ github.ref }}
+      cancel-in-progress: true
     name: Verify Mobile
     runs-on: ubuntu-latest
     defaults:
@@ -76,6 +84,9 @@ jobs:
         run: npm run export:android
 
   build_images:
+    concurrency:
+      group: ${{ github.workflow }}-build_images-${{ github.ref }}
+      cancel-in-progress: true
     name: Build and publish production images
     if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     needs: [verify_backend, verify_frontend, verify_mobile]
@@ -145,6 +156,9 @@ jobs:
           cache-to: type=gha,mode=max,scope=edge
 
   build_mobile:
+    concurrency:
+      group: ${{ github.workflow }}-build_mobile-${{ github.ref }}
+      cancel-in-progress: true
     name: Build Android mobile app
     if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     needs: deploy_production
@@ -202,6 +216,9 @@ jobs:
           exit "$eas_status"
 
   publish_mobile_update:
+    concurrency:
+      group: ${{ github.workflow }}-publish_mobile_update-${{ github.ref }}
+      cancel-in-progress: true
     name: Publish Android OTA update
     if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && needs.build_mobile.outputs.skipped != 'true'
     needs: [deploy_production, build_mobile]
@@ -263,6 +280,9 @@ jobs:
         run: eas update --channel preview --message "GitHub ${GITHUB_SHA}" --non-interactive
 
   deploy_production:
+    concurrency:
+      group: production-deployment
+      cancel-in-progress: false
     name: Deploy production
     if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     needs: build_images

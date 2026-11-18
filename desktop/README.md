@@ -58,6 +58,26 @@ npm run dist                # build:resources + AppImage and .deb into ./dist
 `build:resources` needs a full JDK 21 with `jmods` (default `/usr/lib/jvm/java-21-openjdk-amd64`,
 override with `DESKTOP_JDK_HOME`). The cloud address is `CLOUD_ORIGIN` in `src/main.js`.
 
+## Installing a commit locally
+
+`scripts/install-local.sh [commit]` builds the .deb for a master commit (default `HEAD`) and
+installs it on this computer, so a change is in the app minutes after it is committed instead of
+after the GitHub release. It gives the package the version CI will give that commit
+(`<major.minor>.<commit count>`), so when that release appears the updater sees nothing new.
+That only holds for a commit that reaches GitHub unchanged, so run it alongside the push, never
+on a commit that may still be amended or rebased.
+
+- Builds run in a worktree under `~/.cache/claritard-local-build`, so uncommitted work in any
+  checkout stays out, and `npm ci` runs only when a lockfile changed.
+- Runs from several agents at once queue on a lock; each builds the newest master commit that
+  contains its own, and one no newer than the installed version is skipped.
+- A running Claritard is quit first (waiting for any update it starts installing on quit) and
+  started again with the same arguments. The install asks for the password through polkit.
+- The installed .deb is kept as the base for the next differential update.
+
+GitHub Actions cancels a release still building when a newer commit is pushed, so only the
+latest of several quick pushes is released.
+
 ## Updates download only what changed
 
 Installed copies update from GitHub releases (`src/autoUpdate.js`), and both packages download

@@ -12,9 +12,11 @@ on:
       - .github/workflows/release-mobile.yml
   workflow_dispatch:
 
+# A newer push cancels a release still building; only the latest commit is released. gh creates
+# the release as a draft until every asset is uploaded, so a cancel never leaves a partial one.
 concurrency:
   group: release-mobile
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   release:
