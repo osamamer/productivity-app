@@ -17,6 +17,8 @@ export function screenBlockStyle(block: ScreenBlock, theme: Theme, direction: 'h
 }
 
 export function plannedBlockStyle(block: PlannedBlock, theme: Theme) {
+    // Time actually spent is drawn solid; plans are drawn as tinted outlines.
+    if (block.kind === 'timer') return { border: 1, borderColor: block.color ?? theme.palette.secondary.main, bgcolor: alpha(block.color ?? theme.palette.secondary.main, 0.75), color: '#fff' };
     if (block.color) return { border: 1, borderColor: block.color, bgcolor: alpha(block.color, 0.22) };
     const color = block.kind === 'focus' ? theme.palette.secondary.main : theme.palette.primary.main;
     return { border: 1, borderColor: block.kind === 'focus' ? 'secondary.main' : 'primary.main', bgcolor: alpha(color, 0.18) };

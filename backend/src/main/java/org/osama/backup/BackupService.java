@@ -24,7 +24,7 @@ public class BackupService {
     private static final List<String> OWNED = List.of(
             "Task", "Project", "Activity", "DayEntity", "DayTemplate", "UserCalendar", "CalendarEvent",
             "TaskSeries", "MentalThread", "MentalCapacityCheckIn", "MentalStateCheckIn",
-            "MeditationSession", "Pomodoro", "Note", "NoteCategory", "TaskGroup", "StatGroup", "Reminder");
+            "MeditationSession", "ActivitySession", "Pomodoro", "Note", "NoteCategory", "TaskGroup", "StatGroup", "Reminder");
     private static final Set<String> EXCLUDED_FIELDS = Set.of(
             "softDeleted", "user", "userId", "keycloakId", "audioData", "storagePath",
             "sourceUrl", "sourcePayload", "lastError");

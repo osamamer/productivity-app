@@ -4,6 +4,7 @@ import MonitorHeartOutlinedIcon from '@mui/icons-material/MonitorHeartOutlined';
 import { DayOverview } from '../../types/DayOverview';
 import { buildPlannedLane, buildScreenLane } from './dayTimelineLayout';
 import { plannedItems } from './plannedItems';
+import { didItems } from './didItems';
 import { formatScreenDuration } from './screenTimeText';
 import { useScreenTime } from './useScreenTime';
 import { useActivities } from '../../hooks/useActivities';
@@ -31,6 +32,7 @@ export function ScreenTimeCard({ overview, windowStart, windowEnd }: ScreenTimeC
         return {
             now,
             planned: buildPlannedLane(plannedItems(overview, new Date(start), new Date(end), now, activities ?? []), start, end),
+            did: buildPlannedLane(didItems(overview.activitySessions ?? [], activities ?? [], now), start, end),
             screen: buildScreenLane({ segments: range?.segments ?? [], tracked: range?.tracked ?? [], nameOf: appId => apps[appId]?.name ?? appId }, start, end, now),
         };
     }, [overview, range, start, end, activities]);
@@ -60,7 +62,7 @@ export function ScreenTimeCard({ overview, windowStart, windowEnd }: ScreenTimeC
                 <Alert severity="info">{status.reason ?? 'Screen time cannot run on this desktop.'}</Alert>
             ) : (
                 <Stack spacing={2}>
-                    <DayTimeline windowStart={start} windowEnd={end} now={layout.now} planned={layout.planned} screen={layout.screen.blocks} />
+                    <DayTimeline windowStart={start} windowEnd={end} now={layout.now} planned={layout.planned} did={layout.did} screen={layout.screen.blocks} />
                     <Divider />
                     <Box sx={{ textAlign: 'left' }}>
                         <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>Where the day went</Typography>

@@ -34,6 +34,7 @@ const MentalThreadsPage = lazy(() => import('./pages/MentalThreadsPage').then(mo
 const MentalStatePage = lazy(() => import('./pages/MentalStatePage').then(module => ({ default: module.MentalStatePage })));
 const MentalPage = lazy(() => import('./pages/MentalPage').then(module => ({ default: module.MentalPage })));
 const DayPage = lazy(() => import('./pages/DayPage').then(module => ({ default: module.DayPage })));
+const NowPage = lazy(() => import('./pages/NowPage').then(module => ({ default: module.NowPage })));
 const WellbeingPage = lazy(() => import('./pages/WellbeingPage').then(module => ({ default: module.WellbeingPage })));
 
 function DelayedRouteFallback() {
@@ -102,6 +103,7 @@ const routes = [
                 children: [
                     { path: "/", element: <RouteSuspense><HomePage/></RouteSuspense> },
                     { path: "/calendar", element: <RouteSuspense><CalendarPage/></RouteSuspense> },
+                    { path: "/now", element: <RouteSuspense><NowPage/></RouteSuspense> },
                     {
                         path: "/meditation",
                         element: (

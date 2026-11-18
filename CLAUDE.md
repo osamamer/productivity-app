@@ -49,6 +49,7 @@ Feature packages follow a consistent pattern — each has an entity, repository,
 - `day/` — Daily rating/plan/summary (`DayEntity`, one per user per date)
 - `pomodoro/` — Pomodoro timer settings and state
 - `session/task/` and `session/meditation/` — Session tracking with start/pause/unpause/end lifecycle, published as Spring events via `ApplicationEventPublisher`
+- `session/activity/` — Activity timers (`/api/v1/activity-sessions`): a plain timer for any activity or none, optionally a countdown (`targetEndAt`, e.g. to the end of a chunk; pausing pushes it back). Stores instants, unlike `TaskSession`; at most one runs per user and starting another ends it. Pauses are kept as a total, not spans. Day overviews include them as `activitySessions`. Frontend: the **Now** page (`/now`, `pages/NowPage.tsx`, `components/now/`) shows the chunk under way, starts and runs the timer, and lists today's plan beside what was timed; `activityTimerStore` + `useActivityTimer` share the running timer with the side nav, and `ActivityTimerAlert` (in `AppShell`) notifies when a countdown ends while the app is open. Day timelines draw timers in a **Did** lane between Planned and Screen
 - `scheduling/` — Automated job scheduling for pomodoro cycles (`TimedExecutorService`, `ScheduledJob`)
 - `user/` — User management backed by Keycloak (see Auth below)
 

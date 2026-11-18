@@ -17,6 +17,8 @@ interface DayTimelineProps {
     windowEnd: number;
     now: number;
     planned: PlannedBlock[];
+    // Time actually spent on activity timers; the row is hidden when empty.
+    did?: PlannedBlock[];
     screen: ScreenBlock[];
 }
 
@@ -29,12 +31,13 @@ function LaneLabel({ children }: { children: string }) {
 }
 
 /** Planned events and focus sessions above what was actually on screen, on one time axis. */
-export function DayTimeline({ windowStart, windowEnd, now, planned, screen }: DayTimelineProps) {
+export function DayTimeline({ windowStart, windowEnd, now, planned, did = [], screen }: DayTimelineProps) {
     const theme = useTheme();
     const span = windowEnd - windowStart;
     const ticks = hourTicks(windowStart, windowEnd);
     const tickEvery = Math.max(1, Math.ceil(ticks.length / 12));
     const plannedRows = Math.max(1, ...planned.map(block => block.row + 1));
+    const didRows = Math.max(1, ...did.map(block => block.row + 1));
     const nowPct = now > windowStart && now < windowEnd ? ((now - windowStart) / span) * 100 : null;
 
     const overlays = (
@@ -90,6 +93,33 @@ export function DayTimeline({ windowStart, windowEnd, now, planned, screen }: Da
                         ))}
                     </Box>
                 </Stack>
+
+                {did.length > 0 && (
+                    <Stack direction="row">
+                        <LaneLabel>Did</LaneLabel>
+                        <Box sx={{ position: 'relative', flex: 1, height: didRows * PLANNED_ROW_HEIGHT + 4 }}>
+                            {overlays}
+                            {did.map(block => (
+                                <Tooltip key={block.id} arrow title={<PlannedTooltip block={block} />}>
+                                    <Box sx={{
+                                        position: 'absolute',
+                                        top: block.row * PLANNED_ROW_HEIGHT + 2,
+                                        height: PLANNED_ROW_HEIGHT - 4,
+                                        left: `${block.leftPct}%`,
+                                        width: `max(3px, ${block.widthPct}%)`,
+                                        borderRadius: 1,
+                                        px: 0.5,
+                                        overflow: 'hidden',
+                                        zIndex: 1,
+                                        ...plannedBlockStyle(block, theme),
+                                    }}>
+                                        <Typography variant="caption" noWrap component="div" sx={{ lineHeight: `${PLANNED_ROW_HEIGHT - 6}px` }}>{block.title}</Typography>
+                                    </Box>
+                                </Tooltip>
+                            ))}
+                        </Box>
+                    </Stack>
+                )}
 
                 <Stack direction="row">
                     <LaneLabel>Screen</LaneLabel>

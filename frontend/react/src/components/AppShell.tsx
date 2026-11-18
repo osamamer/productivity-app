@@ -9,6 +9,7 @@ import { PageTransition } from './PageTransition';
 import { SideNav } from './SideNav';
 import { usePomodoro } from '../hooks/usePomodoro';
 import { isFocusNavigationLocked } from '../services/utils/focusNavigation';
+import { ActivityTimerAlert } from './activity/ActivityTimerAlert';
 
 const rejectNavigationShake = keyframes`
     0%, 100% { transform: translateX(0); }
@@ -77,6 +78,7 @@ export function AppShell() {
                     }}
                 >
                     <SideNav />
+                    <ActivityTimerAlert />
                 </Box>
                 {focusNavigationLocked && !focusNavigationRevealed && (
                     <IconButton

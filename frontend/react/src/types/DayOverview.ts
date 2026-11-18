@@ -1,4 +1,5 @@
 import { CalendarEvent } from './CalendarEvent';
+import { ActivitySession } from './ActivitySession';
 import { MentalStateGoal } from './MentalState';
 import { StatEntryStatus, StatType } from './Stats';
 
@@ -18,6 +19,8 @@ export interface DayOverview {
     mentalStateCheckIns: DayMentalStateCheckIn[];
     notes: DayNote[];
     events: CalendarEvent[];
+    // Absent from servers older than activity timers.
+    activitySessions?: ActivitySession[];
 }
 
 export interface DayTask {

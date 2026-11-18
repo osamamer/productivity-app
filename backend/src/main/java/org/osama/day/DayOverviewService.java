@@ -1,5 +1,7 @@
 package org.osama.day;
 
+import org.osama.session.activity.ActivitySessionResponse;
+import org.osama.session.activity.ActivitySessionService;
 import org.osama.event.CalendarEventResponse;
 import org.osama.event.CalendarEventService;
 import org.osama.mentalstate.MentalStateCheckInResponse;
@@ -38,6 +40,7 @@ public class DayOverviewService {
     private final MentalStateService mentalStateService;
     private final NoteRepository noteRepository;
     private final CalendarEventService calendarEventService;
+    private final ActivitySessionService activitySessionService;
 
     public DayOverviewService(DayRepository dayRepository,
                               TaskRepository taskRepository,
@@ -46,7 +49,8 @@ public class DayOverviewService {
                               MeditationSessionRepository meditationSessionRepository,
                               MentalStateService mentalStateService,
                               NoteRepository noteRepository,
-                              CalendarEventService calendarEventService) {
+                              CalendarEventService calendarEventService,
+                              ActivitySessionService activitySessionService) {
         this.dayRepository = dayRepository;
         this.taskRepository = taskRepository;
         this.taskSessionRepository = taskSessionRepository;
@@ -55,6 +59,7 @@ public class DayOverviewService {
         this.mentalStateService = mentalStateService;
         this.noteRepository = noteRepository;
         this.calendarEventService = calendarEventService;
+        this.activitySessionService = activitySessionService;
     }
 
     @Transactional(readOnly = true)
@@ -106,6 +111,7 @@ public class DayOverviewService {
                 .map(NoteResponse::from)
                 .toList();
         List<CalendarEventResponse> events = calendarEventService.getEvents(userId);
+        List<ActivitySessionResponse> activitySessions = activitySessionService.getBetween(userId, windowStart, windowEnd);
 
         DayEntity savedDay = dayRepository.findDayEntityByLocalDateAndUserId(date, userId).orElse(null);
         DayOverviewResponse.DayInfo dayInfo = savedDay == null
@@ -123,7 +129,8 @@ public class DayOverviewService {
                 meditationSessions,
                 mentalStateCheckIns,
                 notes,
-                events
+                events,
+                activitySessions
         );
     }
 

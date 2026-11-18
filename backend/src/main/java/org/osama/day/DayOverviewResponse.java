@@ -1,5 +1,6 @@
 package org.osama.day;
 
+import org.osama.session.activity.ActivitySessionResponse;
 import org.osama.event.CalendarEventResponse;
 import org.osama.mentalstate.MentalStateCheckInResponse;
 import org.osama.note.NoteResponse;
@@ -21,7 +22,8 @@ public record DayOverviewResponse(
         List<MeditationSummary> meditationSessions,
         List<MentalStateCheckInResponse> mentalStateCheckIns,
         List<NoteResponse> notes,
-        List<CalendarEventResponse> events
+        List<CalendarEventResponse> events,
+        List<ActivitySessionResponse> activitySessions
 ) {
     public record DayInfo(
             Double rating,

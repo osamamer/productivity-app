@@ -1,0 +1,59 @@
+// Pure rules for the Now page: which planned chunk is happening, what comes next, and how much
+// time each activity got today. Times are epoch milliseconds.
+import { type ActivitySession, sessionElapsedMs } from '../../types/ActivitySession.ts';
+
+export interface PlannedChunk {
+    id: string;
+    eventId: string;
+    title: string;
+    activityId: string | null;
+    start: number;
+    end: number;
+}
+
+export interface NowPlan {
+    // The chunk under way; when chunks overlap, the one that started last.
+    current: PlannedChunk | null;
+    // Chunks still to start today, soonest first.
+    upcoming: PlannedChunk[];
+    // Chunks already over today, most recent first.
+    past: PlannedChunk[];
+}
+
+export function nowPlan(chunks: PlannedChunk[], now: number): NowPlan {
+    const sorted = [...chunks].sort((a, b) => a.start - b.start);
+    const underway = sorted.filter(chunk => chunk.start <= now && now < chunk.end);
+    return {
+        current: underway.at(-1) ?? null,
+        upcoming: sorted.filter(chunk => chunk.start > now),
+        past: sorted.filter(chunk => chunk.end <= now).reverse(),
+    };
+}
+
+export interface ActivityTime {
+    // Null groups timers that were not started for an activity.
+    activityId: string | null;
+    ms: number;
+}
+
+/** Timed milliseconds per activity, longest first; a running timer counts up to now. */
+export function timeByActivity(sessions: ActivitySession[], now: number): ActivityTime[] {
+    const totals = new Map<string | null, number>();
+    for (const session of sessions) {
+        totals.set(session.activityId, (totals.get(session.activityId) ?? 0) + sessionElapsedMs(session, now));
+    }
+    return [...totals.entries()]
+        .map(([activityId, ms]) => ({ activityId, ms }))
+        .filter(total => total.ms > 0)
+        .sort((a, b) => b.ms - a.ms);
+}
+
+/** "12:05" or "1:02:05": a running clock reads better with seconds. */
+export function formatClock(ms: number): string {
+    const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    const pad = (value: number) => String(value).padStart(2, '0');
+    return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${minutes}:${pad(seconds)}`;
+}

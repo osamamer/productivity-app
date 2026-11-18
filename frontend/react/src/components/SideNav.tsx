@@ -21,6 +21,8 @@ import NightlightIcon from '@mui/icons-material/Nightlight';
 import LightModeIcon from '@mui/icons-material/LightMode';
 import LogoutIcon from '@mui/icons-material/Logout';
 import SpaRoundedIcon from '@mui/icons-material/SpaRounded';
+import TimerOutlinedIcon from '@mui/icons-material/TimerOutlined';
+import { useActivityTimer } from '../hooks/useActivityTimer';
 import { isLocalDesktopMode } from '../services/desktop';
 import { hasWellbeing, WELLBEING_TABS } from './wellbeing/wellbeingTabs';
 import { subscribeToAppRefresh } from '../services/utils/appRefresh';
@@ -344,6 +346,7 @@ export function SideNav() {
     const location = useLocation();
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+    const activityTimer = useActivityTimer();
     const [open, setOpen] = useState(readInitialOpen);
     const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
     const [logoutAnchorPosition, setLogoutAnchorPosition] = useState<{ top: number; left: number } | null>(null);
@@ -443,6 +446,10 @@ export function SideNav() {
                     ? 'On break'
                     : 'Paused',
         }
+        : undefined;
+
+    const activityTimerIndicator = activityTimer.current
+        ? { color: activityTimer.current.paused ? theme.palette.text.secondary : theme.palette.primary.main, label: activityTimer.current.paused ? 'Timer paused' : `Timing ${activityTimer.current.title}` }
         : undefined;
 
     return (
@@ -548,6 +555,14 @@ export function SideNav() {
                                     <TodaySnapshotCard snapshot={todaySnapshot} onNavigate={navigateFromDrawer} />
                                 </Box>
                             </DrawerExpandable>
+                            <SideMenuButton
+                                Icon={TimerOutlinedIcon}
+                                text="Now"
+                                targetPage="/now"
+                                expanded={open}
+                                activeIndicator={activityTimerIndicator}
+                                onNavigate={navigateFromDrawer}
+                            />
                             <SideMenuButton
                                 Icon={AssignmentIcon}
                                 text="Tasks"

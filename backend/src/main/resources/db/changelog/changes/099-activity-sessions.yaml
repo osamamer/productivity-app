@@ -1,0 +1,27 @@
+databaseChangeLog:
+  - changeSet:
+      id: 099-activity-sessions
+      author: claude
+      changes:
+        - createTable:
+            tableName: activity_session
+            columns:
+              - column: { name: activity_session_id, type: varchar(255), constraints: { primaryKey: true, nullable: false } }
+              - column: { name: user_id, type: varchar(255), constraints: { nullable: false } }
+              - column: { name: activity_id, type: varchar(255) }
+              - column: { name: event_id, type: varchar(255) }
+              - column: { name: title, type: varchar(200), constraints: { nullable: false } }
+              - column: { name: started_at, type: timestamp with time zone, constraints: { nullable: false } }
+              - column: { name: ended_at, type: timestamp with time zone }
+              - column: { name: paused_at, type: timestamp with time zone }
+              - column: { name: paused_millis, type: bigint, defaultValueNumeric: 0, constraints: { nullable: false } }
+              - column: { name: target_end_at, type: timestamp with time zone }
+              - column: { name: soft_deleted, type: boolean, defaultValueBoolean: false, constraints: { nullable: false } }
+        - addForeignKeyConstraint: { baseTableName: activity_session, baseColumnNames: user_id, referencedTableName: app_user, referencedColumnNames: id, constraintName: fk_app_activity_session_user }
+        - createIndex:
+            tableName: activity_session
+            indexName: idx_app_activity_session_user_started
+            ifNotExists: true
+            columns:
+              - column: { name: user_id }
+              - column: { name: started_at }

@@ -8,6 +8,8 @@ import { Link as RouterLink } from 'react-router-dom';
 import { useDayOverview } from '../../../hooks/useDayOverview';
 import { buildPlannedLane, buildScreenLane } from '../../day/dayTimelineLayout';
 import { plannedItems } from '../../day/plannedItems';
+import { didItems } from '../../day/didItems';
+import { useActivityTimer } from '../../../hooks/useActivityTimer';
 import { formatScreenDuration } from '../../day/screenTimeText';
 import { ScreenTimeSetup } from '../../day/ScreenTimeSetup';
 import { ScreenTimeSummary } from '../../day/ScreenTimeSummary';
@@ -35,6 +37,8 @@ function shiftDate(date: string, days: number) {
 export function CalendarDayView({ date, onChangeDate, onShowGrid, onCreateEvent }: CalendarDayViewProps) {
     const { overview, error, mutate } = useDayOverview(date);
     const activities = useActivities();
+    // A timer started elsewhere shows up in the Did lane before the overview refetches.
+    const { current: runningTimer } = useActivityTimer();
     const [draft, setDraft] = useState<ChunkDraft | null>(null);
     const createChunk = async (input: CalendarEventInput) => {
         const created = await onCreateEvent(input);
@@ -53,13 +57,16 @@ export function CalendarDayView({ date, onChangeDate, onShowGrid, onCreateEvent 
         const now = Date.now();
         const apps = range?.apps ?? {};
         const planned = buildPlannedLane(plannedItems(overview, new Date(start), new Date(end), now, activities ?? []), start, end);
+        const sessions = overview.activitySessions ?? [];
+        const timed = runningTimer && !sessions.some(session => session.id === runningTimer.id) ? [...sessions, runningTimer] : sessions;
         return {
             now,
             planned,
+            did: buildPlannedLane(didItems(timed, activities ?? [], now), start, end),
             plannedMs: planned.reduce((total, block) => total + block.end - block.start, 0),
             screen: buildScreenLane({ segments: range?.segments ?? [], tracked: range?.tracked ?? [], nameOf: appId => apps[appId]?.name ?? appId }, start, end, now),
         };
-    }, [overview, range, start, end, activities]);
+    }, [overview, range, start, end, activities, runningTimer]);
 
     const day = parseISO(`${date}T12:00:00`);
 
@@ -90,6 +97,7 @@ export function CalendarDayView({ date, onChangeDate, onShowGrid, onCreateEvent 
                             windowEnd={end}
                             now={layout.now}
                             planned={layout.planned}
+                            did={layout.did}
                             screen={screenOn && dayStarted ? layout.screen.blocks : null}
                             onCreateAt={(slot, anchor) => setDraft({ ...slot, anchor })}
                         />

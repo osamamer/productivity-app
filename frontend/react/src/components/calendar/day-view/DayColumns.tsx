@@ -19,6 +19,8 @@ interface DayColumnsProps {
     windowEnd: number;
     now: number;
     planned: PlannedBlock[];
+    // Time actually spent on activity timers; empty or absent hides the column.
+    did?: PlannedBlock[];
     // Null hides the screen column: a plain browser, or a day that has not happened yet.
     screen: ScreenBlock[] | null;
     // Clicking empty space in the planned column offers to plan a chunk there.
@@ -37,7 +39,7 @@ function ColumnHeader({ children }: { children: string }) {
  * One day top to bottom: what was planned beside what was on screen, an hour every 72px. Place it
  * inside an element marked `data-day-scroller`, which is scrolled to bring "now" into view.
  */
-export function DayColumns({ windowStart, windowEnd, now, planned, screen, onCreateAt }: DayColumnsProps) {
+export function DayColumns({ windowStart, windowEnd, now, planned, did = [], screen, onCreateAt }: DayColumnsProps) {
     const theme = useTheme();
     const nowRef = useRef<HTMLDivElement | null>(null);
     const span = windowEnd - windowStart;
@@ -68,6 +70,7 @@ export function DayColumns({ windowStart, windowEnd, now, planned, screen, onCre
         <Box sx={{ position: 'relative' }}>
             <Stack direction="row" sx={{ pl: `${GUTTER_WIDTH}px`, position: 'sticky', top: 0, zIndex: 3, bgcolor: 'background.paper', borderBottom: 1, borderColor: 'divider' }}>
                 <ColumnHeader>Planned</ColumnHeader>
+                {did.length > 0 && <ColumnHeader>Did</ColumnHeader>}
                 {screen && <ColumnHeader>Screen</ColumnHeader>}
             </Stack>
 
@@ -142,6 +145,37 @@ export function DayColumns({ windowStart, windowEnd, now, planned, screen, onCre
                         );
                     })}
                 </Box>
+
+                {did.length > 0 && (
+                    <Box sx={{ position: 'relative', flex: 1, mx: 0.5 }}>
+                        {hourLines}
+                        {did.map(block => {
+                            const blockPx = px(block.widthPct);
+                            return (
+                                <Tooltip key={block.id} arrow placement="right" title={<PlannedTooltip block={block} />}>
+                                    <Box sx={{
+                                        position: 'absolute',
+                                        top: `${block.leftPct}%`,
+                                        height: `max(4px, ${block.widthPct}%)`,
+                                        left: `calc(${(block.row / block.columns) * 100}% + 2px)`,
+                                        width: `calc(${100 / block.columns}% - 4px)`,
+                                        borderRadius: 1.5,
+                                        px: 1,
+                                        overflow: 'hidden',
+                                        zIndex: 1,
+                                        ...plannedBlockStyle(block, theme),
+                                    }}>
+                                        {blockPx >= TITLE_MIN_PX && (
+                                            <Typography variant="caption" fontWeight={700} noWrap component="div" sx={{ pt: 0.25 }}>
+                                                {block.title}{blockPx >= DETAIL_MIN_PX ? ` · ${formatScreenDuration(block.end - block.start)}` : ''}
+                                            </Typography>
+                                        )}
+                                    </Box>
+                                </Tooltip>
+                            );
+                        })}
+                    </Box>
+                )}
 
                 {screen && (
                     <Box sx={{ position: 'relative', flex: 1, mx: 0.5 }}>
