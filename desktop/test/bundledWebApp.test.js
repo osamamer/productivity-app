@@ -49,3 +49,12 @@ test('recognizes pages of the bundled app', () => {
     assert.equal(isBundledAppUrl('claritard://app/day'), true);
     assert.equal(isBundledAppUrl('https://claritard.com/day'), false);
 });
+
+test('files the cloud bundle leaves out, like the audio, come from the shared local bundle', () => {
+    const shared = path.resolve('/opt/Claritard/resources/frontend');
+    const sharedFiles = new Set([...files, path.join(shared, 'audio', 'rain.mp3'), path.join(shared, 'secret.txt')]);
+    const resolveShared = url => bundledFilePath(url, root, file => sharedFiles.has(file), shared);
+    assert.equal(resolveShared('claritard://app/audio/rain.mp3'), path.join(shared, 'audio', 'rain.mp3'));
+    assert.equal(resolveShared('claritard://app/assets/index-abc.js'), path.join(root, 'assets', 'index-abc.js'));
+    assert.equal(resolveShared('claritard://app/audio/missing.mp3'), null);
+});

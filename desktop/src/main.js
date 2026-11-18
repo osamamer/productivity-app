@@ -294,7 +294,7 @@ function launchCloud() {
     // Builds without the bundled web app (running from source before build:resources) fall back
     // to the website.
     const bundled = hasBundledWebApp(cloudFrontendDir);
-    if (bundled) serveBundledWebApp(session.defaultSession, net, cloudFrontendDir);
+    if (bundled) serveBundledWebApp(session.defaultSession, net, cloudFrontendDir, path.join(resourcesDir, 'frontend'));
     else console.warn(`No bundled web app in ${cloudFrontendDir}; loading ${CLOUD_ORIGIN} instead`);
     const origin = bundled ? BUNDLED_ORIGIN : CLOUD_ORIGIN;
     runtime = { mode: 'cloud', origin, cloudUrl: CLOUD_ORIGIN };

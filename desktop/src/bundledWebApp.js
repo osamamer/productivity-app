@@ -23,8 +23,10 @@ function registerBundledScheme(protocol) {
 /**
  * The file to serve for a request, or null for a 404. Paths with no matching file and no
  * extension are app routes, so they get index.html like the website's `try_files`.
+ * A file missing from rootDir is looked up in sharedDir, where the build keeps files the two
+ * bundled web apps would otherwise both ship (the audio).
  */
-function bundledFilePath(requestUrl, rootDir, exists = fs.existsSync) {
+function bundledFilePath(requestUrl, rootDir, exists = fs.existsSync, sharedDir = null) {
     let url;
     try {
         url = new URL(requestUrl);
@@ -44,6 +46,10 @@ function bundledFilePath(requestUrl, rootDir, exists = fs.existsSync) {
     if (candidate !== root && !candidate.startsWith(root + path.sep)) return null;
 
     if (candidate !== root && exists(candidate) && !isDirectory(candidate)) return candidate;
+    if (sharedDir) {
+        const shared = path.resolve(sharedDir, `.${relative}`);
+        if (shared.startsWith(path.resolve(sharedDir) + path.sep) && exists(shared) && !isDirectory(shared)) return shared;
+    }
     if (path.extname(relative)) return null;
     return path.join(root, 'index.html');
 }
@@ -66,11 +72,11 @@ function isBundledAppUrl(requestUrl) {
     }
 }
 
-function serveBundledWebApp(electronSession, net, rootDir) {
+function serveBundledWebApp(electronSession, net, rootDir, sharedDir) {
     // The window can be reopened after it was closed, which launches cloud mode again.
     if (electronSession.protocol.isProtocolHandled(SCHEME)) return;
     electronSession.protocol.handle(SCHEME, request => {
-        const file = bundledFilePath(request.url, rootDir);
+        const file = bundledFilePath(request.url, rootDir, fs.existsSync, sharedDir);
         if (!file) return new Response('Not found', { status: 404 });
         return net.fetch(pathToFileURL(file).toString());
     });

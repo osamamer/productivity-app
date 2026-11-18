@@ -2,6 +2,7 @@ const { spawn: spawnProcess } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { INSTALLED_DEB, INSTALLED_BLOCKMAP } = require('./debUpdater');
 
 /*
  * electron-updater installs a .deb with spawnSync from inside the quitting app: the window
@@ -13,13 +14,19 @@ const path = require('node:path');
  * While that shell runs, its PID sits in a marker file. A Claritard opened in the meantime would
  * have its files replaced under it by dpkg and abort ("GPU process isn't usable"), so it reads the
  * marker, defers its own launch until the install is done, and exits (see deferLaunchUntilInstalled).
+ *
+ * After a successful install the .deb (in <cache>/pending/) and its blockmap move to the cache
+ * directory, where the next update copies unchanged blocks from them (see debUpdater.js).
  */
 const SCRIPT_NAME = 'claritard-update';
 
 const INSTALL_SCRIPT = [
     'pid="$1"; deb="$2"; relaunch="$3"; marker="$4"',
     'while kill -0 "$pid" 2>/dev/null; do sleep 0.5; done',
-    'pkexec --disable-internal-agent dpkg -i "$deb"',
+    'if pkexec --disable-internal-agent dpkg -i "$deb"; then',
+    '  pending="$(dirname "$deb")"; cache="$(dirname "$pending")"',
+    `  mv -f "$deb" "$cache/${INSTALLED_DEB}" && { cp -f "$pending/current.blockmap" "$cache/${INSTALLED_BLOCKMAP}" 2>/dev/null || rm -f "$cache/${INSTALLED_BLOCKMAP}"; }`,
+    'fi',
     'rm -f "$marker"',
     // Relaunch even when the password prompt was cancelled, so the app never just vanishes.
     'if [ -n "$relaunch" ]; then exec "$relaunch"; fi',

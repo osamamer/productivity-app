@@ -56,10 +56,25 @@ jobs:
           DESKTOP_JDK_HOME: ${{ env.JAVA_HOME }}
         run: npm run build:resources
 
-      - name: Build and publish
+      - name: Build packages
+        working-directory: desktop
+        run: |
+          npm version --no-git-tag-version --allow-same-version "$DESKTOP_VERSION"
+          npx electron-builder --linux --publish never
+
+      # Repacks the .deb so updates can download only changed blocks, and writes its .blockmap
+      # (the AppImage carries its blockmap inside). See desktop/src/debUpdater.js.
+      - name: Prepare the .deb for differential updates
+        working-directory: desktop
+        run: node scripts/debDifferential.js "dist/claritard-desktop_${DESKTOP_VERSION}_amd64.deb" dist/latest-linux.yml
+
+      - name: Publish release
         working-directory: desktop
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          npm version --no-git-tag-version --allow-same-version "$DESKTOP_VERSION"
-          npx electron-builder --linux --publish always
+          gh release create "v$DESKTOP_VERSION" --target "$GITHUB_SHA" --title "$DESKTOP_VERSION" --notes "" --latest \
+            "dist/Claritard-${DESKTOP_VERSION}.AppImage" \
+            "dist/claritard-desktop_${DESKTOP_VERSION}_amd64.deb" \
+            "dist/claritard-desktop_${DESKTOP_VERSION}_amd64.deb.blockmap" \
+            dist/latest-linux.yml

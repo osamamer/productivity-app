@@ -141,7 +141,7 @@ Docker services are defined in `deployment/docker-compose.yml`. Environment vari
 
 Releases go out automatically on push to `master`, filtered by path:
 - Each production deploy also starts a Netdata server dashboard at `https://claritard.com/monitor/` (basic auth, read-only `netdata` PostgreSQL role); see the Server dashboard section of [deployment/PRODUCTION_DEPLOYMENT.md](deployment/PRODUCTION_DEPLOYMENT.md).
-- `release-desktop.yml` publishes the AppImage, `.deb` and `latest-linux.yml` as the latest GitHub release (version `<major>.<minor>` from `VERSION`, commit count as patch). Installed desktop apps update through `electron-updater` (`desktop/src/autoUpdate.js`; `"autoUpdate": false` in the desktop config turns it off).
+- `release-desktop.yml` publishes the AppImage, `.deb` (repacked by `desktop/scripts/debDifferential.js`, with its `.blockmap`) and `latest-linux.yml` as the latest GitHub release (version `<major>.<minor>` from `VERSION`, commit count as patch). Installed desktop apps update through `electron-updater` (`desktop/src/autoUpdate.js`; `"autoUpdate": false` in the desktop config turns it off), downloading only changed blocks; see "Updates download only what changed" in [desktop/README.md](desktop/README.md).
 - `release-mobile.yml` publishes the production APK as a **prerelease** titled `Claritard Mobile …`, so it stays out of `/releases/latest` and the desktop updater ignores it. Devices install it through Obtainium. `ANDROID_VERSION_CODE` (commit count) sets `versionCode` in `app.config.js` and the Android `versionName` (`1.2.0-<count>`, via `plugins/withBuildNumberVersionName.js`) so Obtainium sees each build as new; the expo `version` stays fixed because `runtimeVersion` follows it.
 
 ## Coding Style

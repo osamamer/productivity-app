@@ -24,10 +24,10 @@ function waitFor(file, timeoutMs = 5000) {
 
 // Puts a fake pkexec on PATH that records its arguments instead of installing anything, and keeps
 // the install marker inside the test's own folder.
-function fakePkexec(dir, { seconds = 0 } = {}) {
+function fakePkexec(dir, { seconds = 0, exitCode = 0 } = {}) {
     const bin = path.join(dir, 'bin');
     fs.mkdirSync(bin);
-    fs.writeFileSync(path.join(bin, 'pkexec'), `#!/bin/sh\nsleep ${seconds}\necho "$@" > "${dir}/pkexec-args"\n`, { mode: 0o755 });
+    fs.writeFileSync(path.join(bin, 'pkexec'), `#!/bin/sh\nsleep ${seconds}\necho "$@" > "${dir}/pkexec-args"\nexit ${exitCode}\n`, { mode: 0o755 });
     return { ...process.env, PATH: `${bin}:${process.env.PATH}`, XDG_RUNTIME_DIR: dir };
 }
 
@@ -138,4 +138,39 @@ test('a launch during an install is repeated with the same arguments once the in
     assert.equal(fs.existsSync(app.marker), false, 'must not start while the install runs');
     assert.equal((await waitFor(app.marker)).trim(), '--hidden');
     assert.ok(fs.existsSync(path.join(dir, 'pkexec-args')), 'starts only after dpkg ran');
+});
+
+function pendingDeb(dir) {
+    const pending = path.join(dir, 'cache', 'pending');
+    fs.mkdirSync(pending, { recursive: true });
+    const deb = path.join(pending, 'claritard-desktop_1.2.9_amd64.deb');
+    fs.writeFileSync(deb, 'new deb');
+    fs.writeFileSync(path.join(pending, 'current.blockmap'), 'its blockmap');
+    return deb;
+}
+
+test('after a successful install the .deb and its blockmap are kept for the next differential update', async () => {
+    const dir = tempDir();
+    const env = fakePkexec(dir);
+    const deb = pendingDeb(dir);
+
+    scheduleDebInstall({ appPid: 999999999, debPath: deb, relaunchPath: '', env });
+
+    await waitForGone(installMarkerPath(env));
+    const cache = path.join(dir, 'cache');
+    assert.equal(fs.readFileSync(path.join(cache, 'installer.deb'), 'utf8'), 'new deb');
+    assert.equal(fs.readFileSync(path.join(cache, 'installer.deb.blockmap'), 'utf8'), 'its blockmap');
+});
+
+test('a cancelled install keeps the previous .deb as the base for differential updates', async () => {
+    const dir = tempDir();
+    const env = fakePkexec(dir, { exitCode: 126 });
+    const deb = pendingDeb(dir);
+    fs.writeFileSync(path.join(dir, 'cache', 'installer.deb'), 'installed deb');
+
+    scheduleDebInstall({ appPid: 999999999, debPath: deb, relaunchPath: '', env });
+
+    await waitForGone(installMarkerPath(env));
+    assert.equal(fs.readFileSync(path.join(dir, 'cache', 'installer.deb'), 'utf8'), 'installed deb');
+    assert.ok(fs.existsSync(deb));
 });

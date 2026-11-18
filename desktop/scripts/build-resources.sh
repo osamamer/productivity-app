@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 # Builds everything the desktop app bundles into desktop/resources:
-#   backend.jar  - the Spring Boot backend (local mode runs it with the "desktop" profile)
+#   backend/     - the Spring Boot backend, unpacked (local mode runs it with the "desktop" profile)
 #   frontend/       - the web app built to talk to the loopback backend
-#   cloud-frontend/ - the web app built to talk to the cloud, served as claritard://app
+#   cloud-frontend/ - the web app built to talk to the cloud, served as claritard://app; its
+#                     audio/ is left out and served from frontend/audio (see bundledWebApp.js)
+#
+# The backend is unpacked rather than shipped as one fat JAR so that an update leaves unchanged
+# library JARs byte-identical: the AppImage's differential update compresses each file on its
+# own, and inside one JAR a changed class shifts every library after it.
 #   jre/         - a trimmed Java 21 runtime so users do not need Java installed
 set -euo pipefail
 
@@ -25,7 +30,9 @@ mkdir -p "$RESOURCES_DIR"
 echo "==> Building backend"
 (cd "$ROOT_DIR/backend" && JAVA_HOME="$JDK_HOME" ./mvnw -B -q clean package -DskipTests)
 backend_jar="$(find "$ROOT_DIR/backend/target" -maxdepth 1 -name 'productivity-app-*.jar' ! -name '*.original' | head -n 1)"
-cp "$backend_jar" "$RESOURCES_DIR/backend.jar"
+rm -rf "$RESOURCES_DIR/backend" "$RESOURCES_DIR/backend.jar"
+mkdir -p "$RESOURCES_DIR/backend"
+(cd "$RESOURCES_DIR/backend" && unzip -q "$backend_jar")
 
 echo "==> Building local web app"
 (
@@ -44,6 +51,8 @@ echo "==> Building cloud web app"
     VITE_KEYCLOAK_URL="$CLOUD_ORIGIN/auth" \
         npx vite build --mode production --outDir "$RESOURCES_DIR/cloud-frontend" --emptyOutDir
 )
+# The same 28 MB of sounds as the local build; served from there instead of shipped twice.
+rm -rf "$RESOURCES_DIR/cloud-frontend/audio"
 
 echo "==> Linking Java runtime"
 rm -rf "$RESOURCES_DIR/jre"

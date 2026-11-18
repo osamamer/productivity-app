@@ -6,6 +6,8 @@ const HEALTH_TIMEOUT_MS = 180_000;
 const HEALTH_POLL_MS = 500;
 const SHUTDOWN_GRACE_MS = 20_000;
 const ORPHAN_SHUTDOWN_MS = 15_000;
+// Starts Spring Boot from the unpacked backend directory (see scripts/build-resources.sh).
+const BACKEND_LAUNCHER = 'org.springframework.boot.loader.JarLauncher';
 
 function resolveJava(resourcesDir) {
     const bundled = path.join(resourcesDir, 'jre', 'bin', 'java');
@@ -91,7 +93,8 @@ class LocalBackend {
         this.child = spawn(java, [
             '-Xms64m',
             '-XX:+UseSerialGC',
-            '-jar', path.join(this.resourcesDir, 'backend.jar'),
+            '-cp', path.join(this.resourcesDir, 'backend'),
+            BACKEND_LAUNCHER,
             '--spring.profiles.active=desktop',
         ], {
             cwd: this.dataDir,

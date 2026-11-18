@@ -34,10 +34,13 @@
       "!**/node_modules/usocket/**"
     ],
     "npmRebuild": false,
+    "electronLanguages": [
+      "en-US"
+    ],
     "extraResources": [
       {
-        "from": "resources/backend.jar",
-        "to": "backend.jar"
+        "from": "resources/backend",
+        "to": "backend"
       },
       {
         "from": "resources/frontend",

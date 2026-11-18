@@ -1,4 +1,5 @@
 const { isDebInstall, scheduleDebInstall } = require('./debInstall');
+const { createDebUpdater } = require('./debUpdater');
 
 // Releases go out on every push to master and a failed download is only retried on the next
 // check (electron-updater does not resume it), so check often; a check is one small YAML fetch.
@@ -7,7 +8,8 @@ const PROGRESS_SEND_MS = 500;
 
 /**
  * Keeps installed copies current from this repo's GitHub releases (published by
- * .github/workflows/release-desktop.yml). Works for both the AppImage and the .deb.
+ * .github/workflows/release-desktop.yml). Works for both the AppImage and the .deb, and both
+ * download only what changed since the installed version (the .deb through debUpdater.js).
  * Only the updater's own request leaves the machine; it runs in the main process on
  * electron-updater's private session, so the local-mode window guard is unaffected.
  * Set "autoUpdate": false in the desktop config file to turn it off.
@@ -23,15 +25,15 @@ function startAutoUpdates({ app, dialog, enabled = true, onDownload = () => {} }
     const unavailable = reason => ({ checkNow: () => dialog.showMessageBox({ type: 'info', title: 'Updates', message: reason }) });
     if (!app.isPackaged) return unavailable('Updates are only available in the installed app.');
     if (!enabled) return unavailable('Automatic updates are turned off ("autoUpdate": false in the desktop config file).');
+    const deb = isDebInstall(process.resourcesPath);
     let autoUpdater;
     try {
-        ({ autoUpdater } = require('electron-updater'));
+        autoUpdater = deb ? createDebUpdater() : require('electron-updater').autoUpdater;
     } catch (error) {
         console.warn(`Auto-update unavailable: ${error.message}`);
         return unavailable(`Updates are unavailable: ${error.message}`);
     }
 
-    const deb = isDebInstall(process.resourcesPath);
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = !deb;
 

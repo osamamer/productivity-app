@@ -49,7 +49,7 @@ account password; the operating-system account protects local data.
 
 ```bash
 npm install                 # once
-npm run build:resources     # backend JAR, local and cloud web builds, trimmed Java 21 runtime
+npm run build:resources     # unpacked backend, local and cloud web builds, trimmed Java 21 runtime
 npm start                   # run from source (uses ./resources)
 npm test                    # shell unit tests
 npm run dist                # build:resources + AppImage and .deb into ./dist
@@ -57,6 +57,26 @@ npm run dist                # build:resources + AppImage and .deb into ./dist
 
 `build:resources` needs a full JDK 21 with `jmods` (default `/usr/lib/jvm/java-21-openjdk-amd64`,
 override with `DESKTOP_JDK_HOME`). The cloud address is `CLOUD_ORIGIN` in `src/main.js`.
+
+## Updates download only what changed
+
+Installed copies update from GitHub releases (`src/autoUpdate.js`), and both packages download
+only the parts of the new version that differ from the installed one:
+
+- A **blockmap** lists the checksum and size of every block of a package. Block edges are picked
+  from the content (a rolling hash), not at fixed offsets, so inserting bytes changes only the
+  blocks around the insert. The updater compares the new blockmap with the installed version's,
+  copies matching blocks from the package it already has, and fetches the rest with HTTP range
+  requests. The result must match the release's sha512, or it downloads in full.
+- **AppImage**: electron-builder embeds the blockmap; the running AppImage is the old package.
+- **.deb**: electron-updater has no support, so `src/debUpdater.js` adds it. The release's .deb is
+  repacked by `scripts/debDifferential.js` (sorted entries, fixed file dates, `zstd --rsyncable`)
+  so unchanged files give unchanged bytes, and gets a `.blockmap`. After an install, the .deb
+  stays in `~/.cache/claritard-desktop-updater/installer.deb` as the base for the next update
+  (about 250 MB on disk). The first update after a fresh install downloads in full.
+- What keeps diffs small: the backend ships unpacked (`resources/backend`) because inside one JAR
+  a changed class shifts every library after it, and the cloud web build reuses the local build's
+  audio instead of carrying a second copy.
 
 ## Limitations
 
