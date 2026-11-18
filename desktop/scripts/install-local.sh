@@ -139,7 +139,8 @@ relaunch_app() {
     [[ -s "$relaunch_file" ]] || return 0
     local argv=()
     mapfile -d '' -t argv < "$relaunch_file"
-    setsid -f "${argv[@]}" >/dev/null 2>&1 < /dev/null
+    # 9>&-: the app must not inherit the build lock, or it holds it for as long as it runs.
+    setsid -f "${argv[@]}" >/dev/null 2>&1 < /dev/null 9>&-
     log "Started Claritard again"
 }
 
