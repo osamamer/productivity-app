@@ -51,6 +51,7 @@ let timeouts = null;
 // False while Claritard runs only to show a timeout countdown (started by a delayed launcher or a
 // timer); it then quits once no countdown or timed session needs it.
 let uiStarted = false;
+let updates = null;
 /** Desktop screen time; tracks only while the UI has been started and the user opted in. */
 let usage = null;
 let usageStopped = false;
@@ -132,7 +133,6 @@ function startApp() {
         void timeouts.handleCommand(timeoutCommand);
         return;
     }
-    startAutoUpdates({ app, dialog, enabled: readConfig(userDataDir).autoUpdate !== false });
     startUi();
 }
 
@@ -140,8 +140,13 @@ function quitIfOnlyTimeoutsAreIdle() {
     if (!uiStarted && !timeouts.busy) app.quit();
 }
 
+// The first instance may have been started by a launcher or the Firefox host (a timeout
+// command), so updates start with the UI, which a later second-instance launch also reaches.
 function startUi() {
-    if (!uiStarted) void usage.start();
+    if (!uiStarted) {
+        void usage.start();
+        updates = startAutoUpdates({ app, dialog, enabled: readConfig(userDataDir).autoUpdate !== false });
+    }
     uiStarted = true;
     const config = readConfig(userDataDir);
     if (!config.mode) {
@@ -167,6 +172,7 @@ function openMainWindow(mode, contentPreferences) {
             openLocalDataFolder: () => void openFolder(localDataDir),
             openLogsFolder: () => void openFolder(logDir),
             aboutStorage: () => void showStorageInfo(mode),
+            checkForUpdates: () => void updates?.checkNow(),
             quit: () => app.quit(),
         },
     });

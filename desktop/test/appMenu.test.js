@@ -16,7 +16,7 @@ test('every menu entry runs a command', () => {
     const commands = createCommands({
         window: {},
         content: { webContents: {} },
-        actions: { changeStorageMode: noop, openLocalDataFolder: noop, openLogsFolder: noop, aboutStorage: noop, quit: noop },
+        actions: { changeStorageMode: noop, openLocalDataFolder: noop, openLogsFolder: noop, aboutStorage: noop, checkForUpdates: noop, quit: noop },
     });
     for (const id of ids('local')) assert.equal(typeof commands[id], 'function', id);
 });

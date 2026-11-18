@@ -18,6 +18,7 @@ function menuItems(mode) {
             ]
             : []),
         { id: 'aboutStorage', label: 'About storage' },
+        { id: 'checkForUpdates', label: 'Check for updates…' },
         { separator: true },
         { id: 'reload', label: 'Reload', shortcut: 'Ctrl+R' },
         { id: 'zoomIn', label: 'Zoom in', shortcut: 'Ctrl+=' },

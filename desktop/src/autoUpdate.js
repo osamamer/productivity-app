@@ -1,6 +1,8 @@
 const { isDebInstall, scheduleDebInstall } = require('./debInstall');
 
-const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+// Releases go out on every push to master and a failed download is only retried on the next
+// check (electron-updater does not resume it), so check often; a check is one small YAML fetch.
+const CHECK_INTERVAL_MS = 60 * 60 * 1000;
 
 /**
  * Keeps installed copies current from this repo's GitHub releases (published by
@@ -13,13 +15,15 @@ const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
  * not by electron-updater's own in-process install.
  */
 function startAutoUpdates({ app, dialog, enabled = true }) {
-    if (!app.isPackaged || !enabled) return;
+    const unavailable = reason => ({ checkNow: () => dialog.showMessageBox({ type: 'info', title: 'Updates', message: reason }) });
+    if (!app.isPackaged) return unavailable('Updates are only available in the installed app.');
+    if (!enabled) return unavailable('Automatic updates are turned off ("autoUpdate": false in the desktop config file).');
     let autoUpdater;
     try {
         ({ autoUpdater } = require('electron-updater'));
     } catch (error) {
         console.warn(`Auto-update unavailable: ${error.message}`);
-        return;
+        return unavailable(`Updates are unavailable: ${error.message}`);
     }
 
     const deb = isDebInstall(process.resourcesPath);
@@ -40,12 +44,9 @@ function startAutoUpdates({ app, dialog, enabled = true }) {
         });
     }
 
-    let prompted = false;
-    autoUpdater.on('update-downloaded', async info => {
-        if (deb) pendingDeb = info.downloadedFile;
-        // The app usually lives in the tray and rarely quits, so ask instead of waiting for a quit.
-        if (prompted) return;
-        prompted = true;
+    let promptedVersion = null;
+    let downloaded = null;
+    const promptRestart = async info => {
         const { response } = await dialog.showMessageBox({
             type: 'info',
             title: 'Claritard update ready',
@@ -62,12 +63,48 @@ function startAutoUpdates({ app, dialog, enabled = true }) {
         } else {
             autoUpdater.quitAndInstall();
         }
+    };
+    autoUpdater.on('update-downloaded', info => {
+        downloaded = info;
+        if (deb) pendingDeb = info.downloadedFile;
+        // The app usually lives in the tray and rarely quits, so ask instead of waiting for a quit.
+        // Ask again for each newer build, since "Later" on an older one should not hide it.
+        if (promptedVersion === info.version) return;
+        promptedVersion = info.version;
+        void promptRestart(info);
     });
     autoUpdater.on('error', error => console.warn(`Auto-update failed: ${error.message}`, error));
 
     const check = () => autoUpdater.checkForUpdates().catch(error => console.warn(`Update check failed: ${error.message}`, error));
     check();
     setInterval(check, CHECK_INTERVAL_MS).unref();
+
+    const checkNow = async () => {
+        let outcome;
+        try {
+            const result = await autoUpdater.checkForUpdates();
+            if (result?.isUpdateAvailable && downloaded?.version === result.updateInfo.version) return promptRestart(downloaded);
+            outcome = describeCheck({ result, currentVersion: app.getVersion() });
+        } catch (error) {
+            console.warn(`Update check failed: ${error.message}`, error);
+            outcome = describeCheck({ error, currentVersion: app.getVersion() });
+        }
+        await dialog.showMessageBox({ type: outcome.type, title: 'Updates', message: outcome.message, detail: outcome.detail });
+    };
+    return { checkNow };
 }
 
-module.exports = { startAutoUpdates };
+/** What to tell someone who asked for an update check, from electron-updater's result. */
+function describeCheck({ result, error, currentVersion }) {
+    if (error) return { type: 'warning', message: 'Could not check for updates.', detail: error.message };
+    if (!result?.isUpdateAvailable) {
+        return { type: 'info', message: 'Claritard is up to date.', detail: `You have version ${currentVersion}.` };
+    }
+    return {
+        type: 'info',
+        message: `Claritard ${result.updateInfo.version} is available.`,
+        detail: 'It is downloading in the background; you will be asked to restart when it is ready.',
+    };
+}
+
+module.exports = { startAutoUpdates, describeCheck };
