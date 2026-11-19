@@ -42,7 +42,8 @@ data class TimeWindow(val days: Set<Int>, val startMin: Int, val endMin: Int) {
  * Per-app restriction. All of it is optional and combinable:
  *  - [blockMode]: "off", "always", or "scheduled" (blocked completely during [blockWindows]).
  *  - Limits (0 = no limit): [dailyLimitMin] minutes of use per day, [maxOpens] opens per day,
- *    [sessionMin] minutes each open lasts before the app gets force-quit.
+ *    [sessionMin] minutes each open lasts (on the clock, from the unlock) before the app gets
+ *    force-quit; reopening the app within it, even after a screen lock, is part of the same open.
  *  - [delaySeconds]: a countdown shown over the app before it unlocks (0 = none). It only runs
  *    while the app stays in front with the screen on, and starts again from the top otherwise.
  *    With [delayAutoOpen] the app unlocks when it ends; without, the user taps Open. [delayMessage]

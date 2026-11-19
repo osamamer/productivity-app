@@ -119,6 +119,10 @@ class TimeoutService {
     launch({ appId, action, uris }) {
         const entry = this.launchers.load().apps[appId];
         if (!entry) throw new Error('This application no longer has a configured delay. Open its launcher again.');
+        if (this.appSessions.hasTimeLeft(entry)) {
+            launchOriginal(entry.backup, { uris, action });
+            return;
+        }
         this.openCountdown(`launch:${appId}`, {
             name: entry.name,
             seconds: entry.delaySeconds,

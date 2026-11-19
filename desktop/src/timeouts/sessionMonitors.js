@@ -1,7 +1,9 @@
 const fs = require('node:fs');
 const { appTarget } = require('./core/appTarget');
 const { runningProcesses, sameSession, endSession } = require('./core/processes');
-const { targetIdentity, saveAppSession, removeAppSession, listAppSessions, expireAppSession } = require('./core/appSessions');
+const {
+    targetIdentity, saveAppSession, removeAppSession, listAppSessions, liveAppSession, expireAppSession,
+} = require('./core/appSessions');
 const { readSession, expireBrowser } = require('./core/browserSession');
 const { scheduleCommand, cancelUnit } = require('./core/systemd');
 
@@ -41,7 +43,8 @@ class Warnings {
 
 /**
  * Ends timed app sessions when their time is up. One session per program: a second launcher
- * alias for a program that is already being timed does not restart its clock.
+ * alias for a program that is already being timed does not restart its clock, and neither does
+ * closing the app and opening it again before the deadline.
  */
 class AppSessionMonitor {
     constructor({ paths, command, popups, notify, appearance, onChange }) {
@@ -56,6 +59,18 @@ class AppSessionMonitor {
 
     get busy() {
         return this.active.size > 0;
+    }
+
+    /**
+     * True when `entry`'s app still has time left from an earlier open, so it may open again
+     * without a countdown. Makes sure that session is being watched.
+     */
+    hasTimeLeft(entry) {
+        if (!entry.closeAfterSeconds) return false;
+        const target = appTarget(fs.readFileSync(entry.backup, 'utf8'));
+        if (!liveAppSession(this.paths, targetIdentity(target))) return false;
+        void this.resume();
+        return true;
     }
 
     /** Waits for the launched app to appear, then times it. */
@@ -116,23 +131,34 @@ class AppSessionMonitor {
         }
     }
 
+    /**
+     * Follows `session` until its deadline. While the app is closed the session stays saved and
+     * the "closes in" window is hidden; if the app runs again before the deadline its new
+     * processes take over the session, and they are the ones closed when time is up.
+     */
     async watch(session) {
         const warnings = new Warnings({ name: session.name, totalSeconds: session.totalSeconds, notify: this.notify });
-        this.popups.show(session.id, {
-            name: session.name,
-            deadline: session.deadline,
-            totalSeconds: session.totalSeconds,
-            appearance: this.appearance(),
-        });
+        let shown = false;
         try {
             for (;;) {
                 const remaining = Math.max(0, (session.deadline - Date.now()) / 1000);
-                if (!sameSession(session.target, session.processes, runningProcesses(session.target))) {
+                const running = runningProcesses(session.target);
+                if (sameSession(session.target, session.processes, running)) {
+                    if (!shown) this.showPopup(session);
+                    shown = true;
+                    warnings.check(remaining);
+                    if (remaining <= 0) break;
+                } else if (remaining <= 0) {
                     cancelUnit(`claritard-app-expire-${session.id}`);
                     return;
+                } else if (running.length) {
+                    session.processes = running;
+                    saveAppSession(this.paths, session);
+                    continue;
+                } else if (shown) {
+                    this.popups.close(session.id);
+                    shown = false;
                 }
-                warnings.check(remaining);
-                if (remaining <= 0) break;
                 await sleep(Math.min(CHECK_MS, remaining * 1000));
             }
             this.popups.close(session.id);
@@ -141,6 +167,15 @@ class AppSessionMonitor {
             this.popups.close(session.id);
             removeAppSession(this.paths, session.id);
         }
+    }
+
+    showPopup(session) {
+        this.popups.show(session.id, {
+            name: session.name,
+            deadline: session.deadline,
+            totalSeconds: session.totalSeconds,
+            appearance: this.appearance(),
+        });
     }
 }
 

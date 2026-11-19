@@ -119,7 +119,9 @@ computer, in local and cloud mode alike. It replaces the separate App Timeout to
   focused. Afterwards the app opens by itself, or after you click Open.
 - **Auto-close.** Optionally the app is closed a set time after it opens: a small "closes in" window
   shows the time left, notifications warn at one minute and ten seconds, then the app gets SIGTERM
-  and, five seconds later, SIGKILL (Flatpaks: `flatpak kill`). Sessions are saved to disk and a
+  and, five seconds later, SIGKILL (Flatpaks: `flatpak kill`). Closing the app does not end its
+  time: reopening it before the deadline skips the countdown and continues the same session (the
+  "closes in" window comes back). Sessions are saved to disk and a
   systemd user timer is armed as a backstop, so the limit holds even if Claritard quits.
 - **Firefox site timers.** The **Claritard URL Gate** extension (`firefox-extension/`) sends timed
   sites to a countdown page. Opening one starts a Firefox session; every timed site opened in it

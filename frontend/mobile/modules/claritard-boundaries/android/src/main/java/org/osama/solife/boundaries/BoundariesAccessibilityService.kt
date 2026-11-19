@@ -50,7 +50,7 @@ class BoundariesAccessibilityService : AccessibilityService() {
         ShizukuBridge.ensureBound()
         lastTickAt = System.currentTimeMillis()
         screenUsable = isScreenUsable()
-        if (!screenUsable) UsageTracker.relockAll(applicationContext, lastTickAt)
+        if (!screenUsable) UsageTracker.relockAll(applicationContext, lastTickAt, BoundariesPrefs.getRules(applicationContext))
         handler.removeCallbacks(ticker)
         handler.postDelayed(ticker, TICK_MS)
     }
@@ -118,7 +118,7 @@ class BoundariesAccessibilityService : AccessibilityService() {
             return
         }
         val usable = isScreenUsable()
-        if (screenUsable && !usable) UsageTracker.relockAll(ctx, now)
+        if (screenUsable && !usable) UsageTracker.relockAll(ctx, now, BoundariesPrefs.getRules(ctx))
         screenUsable = usable
         val rules = BoundariesPrefs.getRules(ctx)
         if (rules.isEmpty()) return

@@ -18,7 +18,7 @@ export interface AppRule {
   dailyLimitMin: number;
   /** 0 = unlimited */
   maxOpens: number;
-  /** minutes each open lasts before the app is force-quit; 0 = no per-open cap */
+  /** minutes each open lasts on the clock from the unlock, through screen locks, before the app is force-quit; 0 = no per-open cap */
   sessionMin: number;
   /** seconds of countdown before a locked app unlocks; 0 = none */
   delaySeconds: number;

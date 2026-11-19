@@ -48,6 +48,15 @@ function removeAppSession(paths, id) {
     fs.rmSync(sessionFile(paths, id), { force: true });
 }
 
+/**
+ * The saved session for the program with `identity` whose time has not run out yet, or null.
+ * A session outlives its app's window: reopening the app before the deadline continues it.
+ */
+function liveAppSession(paths, identity, now = Date.now()) {
+    return listAppSessions(paths).find(session =>
+        (session.identity ?? targetIdentity(session.target)) === identity && session.deadline > now) ?? null;
+}
+
 /** Ends session `id` if its time is up and its processes still run; used by the backstop timer. */
 async function expireAppSession(paths, id) {
     const session = readAppSession(paths, id);
@@ -59,4 +68,6 @@ async function expireAppSession(paths, id) {
     return true;
 }
 
-module.exports = { targetIdentity, saveAppSession, readAppSession, listAppSessions, removeAppSession, expireAppSession };
+module.exports = {
+    targetIdentity, saveAppSession, readAppSession, listAppSessions, removeAppSession, liveAppSession, expireAppSession,
+};

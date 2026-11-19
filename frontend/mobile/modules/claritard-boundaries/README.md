@@ -8,9 +8,11 @@ Autolinked as a local Expo module; there is no iOS or web implementation (`Bound
   opens. It also ticks once a second to count time. Its messages ("open 2 of 3", "1 minute left")
   are drawn by `BoundaryToast` as accessibility overlays in the colors the app last reported.
 - `UsageTracker` counts today's minutes and opens. An open is an unlock: once unlocked, the app
-  can be left and reopened freely until the screen locks or turns off, the open's time runs out,
-  or it is kicked out. Time only counts while the screen is on and unlocked; counts reset at local
-  midnight.
+  can be left and reopened freely without counting another open or showing the countdown. With a
+  time per open, the open lasts that long on the clock from the unlock, through screen locks (so
+  music can play with the screen off); without one, it ends when the screen locks or turns off.
+  Being kicked out also ends it. Daily time only counts while the app is in front with the screen
+  on and unlocked; counts reset at local midnight.
 - `BoundaryDelayOverlay` is the "pause before opening": a full-screen countdown (styled like the
   desktop countdown window) drawn over a locked app before it unlocks. Leaving the app or turning
   the screen off resets it, but a return within three seconds resumes it, because foreground
