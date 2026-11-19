@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Box, Stack, Typography, Skeleton } from '@mui/material';
+import { Box, ButtonBase, Checkbox, FormControlLabel, Stack, Typography, Skeleton } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { differenceInCalendarDays, format, parseISO } from 'date-fns';
 import { StatDefinition, StatEntry, StatSummary, StatType } from '../../types/Stats';
@@ -7,22 +7,38 @@ import { statService } from '../../services/api/statService';
 import { getStatPeriodWindow, StatPeriodMode, StatPeriodOffset } from './statPeriod';
 import { statNumericValueLabel } from './statVisualization';
 import {
-    averageTimeValues,
     formatDurationValue,
     formatTimeValue,
     timeValueFromScale,
     timeValueToScale,
 } from '../../services/utils/statValues';
+import { useUser } from '../../hooks/useUser';
+import {
+    readStatViewPreferences,
+    statViewPreferencesStorageKey,
+    StatViewPreferences,
+    writeStatViewPreferences,
+} from '../../services/utils/statViewPreferences';
+import { statPeriodAverage, statPeriodBest, supportsUnloggedDaysAsZero, unloggedDayCount } from './statSummaryValues';
 
 interface TileProps {
     label: string;
     value: string;
+    onClick?: () => void;
+    hint?: string;
 }
 
-function SummaryTile({ label, value }: TileProps) {
+function SummaryTile({ label, value, onClick, hint }: TileProps) {
     const theme = useTheme();
     return (
-        <Box sx={{
+        <Box
+            component={onClick ? ButtonBase : 'div'}
+            onClick={onClick}
+            title={hint}
+            sx={{
+            display: 'block',
+            font: 'inherit',
+            color: 'inherit',
             flex: 1,
             textAlign: 'center',
             py: 1.25,
@@ -32,6 +48,7 @@ function SummaryTile({ label, value }: TileProps) {
             bgcolor: theme.palette.mode === 'dark'
                 ? 'rgba(255,255,255,0.03)'
                 : 'rgba(0,0,0,0.02)',
+            ...(onClick && { '&:hover': { bgcolor: 'action.hover' } }),
         }}>
             <Typography variant="h6" fontWeight={700} lineHeight={1.1}>
                 {value}
@@ -133,7 +150,6 @@ function optimisticSummary(
         return {
             ...serverSummary,
             checkInStreak: computeStreak(entries, from, to, () => true),
-            periodAverage: serverSummary.averageStartDate ? 0 : null,
             periodTotal: 0,
             periodHighest: null,
         };
@@ -145,20 +161,15 @@ function optimisticSummary(
         return {
             ...serverSummary,
             checkInStreak: computeStreak(entries, from, to, () => true),
-            periodAverage: timeValueFromScale(definition, total / values.length),
             periodTotal: total,
             periodHighest: timeValueFromScale(definition, Math.max(...linearValues)),
         };
     }
 
     const total = values.reduce((sum, value) => sum + value, 0);
-    const eligibleDays = serverSummary.averageStartDate
-        ? differenceInCalendarDays(parseISO(to), parseISO(serverSummary.averageStartDate)) + 1
-        : values.length;
     return {
         ...serverSummary,
         checkInStreak: computeStreak(entries, from, to, () => true),
-        periodAverage: total / eligibleDays,
         periodTotal: total,
         periodHighest: Math.max(...values),
     };
@@ -235,6 +246,20 @@ export const StatSummaryBar = React.memo(function StatSummaryBar({
     refreshKey,
 }: Props) {
     const period = getStatPeriodWindow(dateRange, periodMode, periodOffset);
+    const { user } = useUser();
+    const viewPreferencesKey = statViewPreferencesStorageKey(user?.id, definition.id);
+    const [viewPreferencesState, setViewPreferencesState] = useState(() => ({
+        key: viewPreferencesKey,
+        preferences: readStatViewPreferences(viewPreferencesKey),
+    }));
+    const viewPreferences = viewPreferencesState.key === viewPreferencesKey
+        ? viewPreferencesState.preferences
+        : readStatViewPreferences(viewPreferencesKey);
+    const updateViewPreferences = (update: Partial<StatViewPreferences>) => {
+        const preferences = { ...viewPreferences, ...update };
+        writeStatViewPreferences(viewPreferencesKey, preferences);
+        setViewPreferencesState({ key: viewPreferencesKey, preferences });
+    };
     const periodKey = `${definition.id}:${additionalInputType ?? 'main'}:${period.key}`;
     const [summaryState, setSummaryState] = useState<{ key: string; summary: StatSummary } | null>(() => {
         const summary = statService.getCachedSummary(definition.id, period.from, period.to);
@@ -302,6 +327,23 @@ export const StatSummaryBar = React.memo(function StatSummaryBar({
     }
 
     const tiles: TileProps[] = [];
+    const values = displayEntries?.map(entry => entry.value) ?? null;
+    const canCountUnloggedDays = !additionalInputType && supportsUnloggedDaysAsZero(definition.type, definition.systemKey);
+    const countUnloggedDays = canCountUnloggedDays
+        && (viewPreferences.countUnloggedDays ?? definition.includeUnloggedDaysAsZero ?? false);
+    const zeroDays = countUnloggedDays && values
+        ? unloggedDayCount(values.length, summary?.averageStartDate, period.to)
+        : 0;
+    const averageKind = viewPreferences.averageKind;
+    const periodAverage = values
+        ? statPeriodAverage(definition, values, averageKind, zeroDays)
+        : averageKind === 'mean' ? displaySummary.periodAverage : null;
+    const averageTile = (format: (value: number) => string): TileProps => ({
+        label: averageKind === 'median' ? 'Median' : 'Average',
+        value: periodAverage !== null ? format(periodAverage) : '—',
+        onClick: () => updateViewPreferences({ averageKind: averageKind === 'median' ? 'mean' : 'median' }),
+        hint: averageKind === 'median' ? 'Show the mean instead' : 'Show the median, which outliers move less',
+    });
     const derivedLongestBooleanStreak = displayEntries ? computeLongestBooleanStreak(displayEntries) : null;
     const derivedPeriodHighest = displayEntries && displayEntries.length > 0
         ? definition.type === 'TIME'
@@ -311,8 +353,11 @@ export const StatSummaryBar = React.memo(function StatSummaryBar({
     const derivedPeriodEarliest = displayEntries && displayEntries.length > 0
         ? displayEntries.reduce((earliest, entry) => timeValueToScale(definition, entry.value) < timeValueToScale(definition, earliest) ? entry.value : earliest, displayEntries[0].value)
         : null;
-    const periodHighest = displaySummary.periodHighest ?? derivedPeriodHighest;
-    const bestLabel = additionalInputType ? 'best in period' : 'personal best';
+    // Additional inputs have no direction of their own, so their best is simply the highest (or earliest).
+    const periodBest = additionalInputType
+        ? definition.type === 'TIME' ? derivedPeriodEarliest : displaySummary.periodHighest ?? derivedPeriodHighest
+        : values ? statPeriodBest(definition, values) : null;
+    const bestLabel = additionalInputType && definition.type === 'TIME' ? 'earliest in period' : 'best in period';
 
     if (definition.type === 'BOOLEAN') {
         tiles.push({
@@ -324,13 +369,8 @@ export const StatSummaryBar = React.memo(function StatSummaryBar({
             value: `${displaySummary.periodYesCount ?? 0} ${displaySummary.periodYesCount === 1 ? 'time' : 'times'}`,
         });
         tiles.push({
-            label: additionalInputType ? 'longest streak in period' : 'personal best',
-            value: pluralDays(additionalInputType
-                ? displaySummary.longestBooleanStreak ?? derivedLongestBooleanStreak ?? 0
-                : displaySummary.allTimeLongestBooleanStreak
-                ?? displaySummary.longestBooleanStreak
-                ?? derivedLongestBooleanStreak
-                ?? 0),
+            label: 'longest streak in period',
+            value: pluralDays(displaySummary.longestBooleanStreak ?? derivedLongestBooleanStreak ?? 0),
         });
     }
 
@@ -340,14 +380,9 @@ export const StatSummaryBar = React.memo(function StatSummaryBar({
             : formatAverage(value);
         tiles.push({
             label: bestLabel,
-            value: displaySummary.personalBest != null
-                ? numericLabel(displaySummary.personalBest)
-                : periodHighest != null ? numericLabel(periodHighest) : '—',
+            value: periodBest != null ? numericLabel(periodBest) : '—',
         });
-        tiles.push({
-            label: 'Average',
-            value: displaySummary.periodAverage !== null ? numericLabel(displaySummary.periodAverage) : '—',
-        });
+        tiles.push(averageTile(numericLabel));
         tiles.push({
             label: 'Total',
             value: displaySummary.periodTotal !== null ? numericLabel(displaySummary.periodTotal) : '—',
@@ -355,19 +390,12 @@ export const StatSummaryBar = React.memo(function StatSummaryBar({
     }
 
     if (definition.type === 'TIME') {
-        const timeAverage = displaySummary.periodAverage
-            ?? (displayEntries ? averageTimeValues(definition, displayEntries.map(entry => entry.value)) : null);
         const timeLatest = displaySummary.periodHighest ?? derivedPeriodHighest;
         tiles.push({
-            label: additionalInputType ? 'earliest in period' : 'personal best',
-            value: displaySummary.personalBest != null
-                ? formatTimeValue(displaySummary.personalBest)
-                : derivedPeriodEarliest != null ? formatTimeValue(derivedPeriodEarliest) : '—',
+            label: bestLabel,
+            value: periodBest != null ? formatTimeValue(periodBest) : '—',
         });
-        tiles.push({
-            label: 'Average',
-            value: timeAverage !== null ? formatTimeValue(timeAverage) : '—',
-        });
+        tiles.push(averageTile(formatTimeValue));
         tiles.push({
             label: 'latest',
             value: timeLatest != null ? formatTimeValue(timeLatest) : '—',
@@ -377,14 +405,9 @@ export const StatSummaryBar = React.memo(function StatSummaryBar({
     if (definition.type === 'DURATION') {
         tiles.push({
             label: bestLabel,
-            value: displaySummary.personalBest != null
-                ? formatDurationValue(displaySummary.personalBest)
-                : periodHighest != null ? formatDurationValue(periodHighest) : '—',
+            value: periodBest != null ? formatDurationValue(periodBest) : '—',
         });
-        tiles.push({
-            label: 'Average',
-            value: displaySummary.periodAverage !== null ? formatDurationValue(displaySummary.periodAverage) : '—',
-        });
+        tiles.push(averageTile(formatDurationValue));
         tiles.push({
             label: 'Total',
             value: displaySummary.periodTotal !== null ? formatDurationValue(displaySummary.periodTotal) : '—',
@@ -392,10 +415,26 @@ export const StatSummaryBar = React.memo(function StatSummaryBar({
     }
 
     return (
-        <Stack direction="row" spacing={1.5} sx={{ mb: 2, opacity: isRefreshing ? 0.72 : 1, transition: 'opacity 160ms ease' }}>
-            {tiles.map(t => (
-                <SummaryTile key={t.label} label={t.label} value={t.value} />
-            ))}
-        </Stack>
+        <Box sx={{ mb: 2, opacity: isRefreshing ? 0.72 : 1, transition: 'opacity 160ms ease' }}>
+            <Stack direction="row" spacing={1.5}>
+                {tiles.map(tile => (
+                    <SummaryTile key={tile.label} {...tile} />
+                ))}
+            </Stack>
+            {canCountUnloggedDays && (
+                <FormControlLabel
+                    control={(
+                        <Checkbox
+                            size="small"
+                            checked={countUnloggedDays}
+                            onChange={event => updateViewPreferences({ countUnloggedDays: event.target.checked })}
+                        />
+                    )}
+                    label={<Typography variant="caption" color="text.secondary">Count unlogged days as zero</Typography>}
+                    title="Days without a value since the first log count as zero in the average"
+                    sx={{ mt: 0.5, ml: -0.5 }}
+                />
+            )}
+        </Box>
     );
 });

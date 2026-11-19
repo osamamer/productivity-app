@@ -10,6 +10,7 @@ import { TaskBulkDateSheet } from '@/components/tasks/TaskBulkDateSheet';
 import { TaskGroupComposerSheet } from '@/components/tasks/TaskGroupComposerSheet';
 import { TaskSelectionActionsPopup } from '@/components/tasks/TaskSelectionActionsPopup';
 import { TaskRow, type TaskDragLayout } from '@/components/tasks/TaskRow';
+import { TaskSection } from '@/components/tasks/TaskSection';
 import { DraggableTaskGroup } from '@/components/tasks/DraggableTaskGroup';
 import { GroupChevron } from '@/components/tasks/GroupChevron';
 import { MentalStateBadge } from '@/components/mind/MentalStateBadge';
@@ -23,13 +24,14 @@ import { formatCalendarTime, localDate } from '@/lib/date';
 import { datesCoveredByOccurrence, expandCalendarEvent, type CalendarEventOccurrence } from '@/lib/calendarRecurrence';
 import { playAudioFeedback } from '@/lib/audioFeedback';
 import { reportError } from '@/lib/errors';
+import { compareMostRecentFirst } from '@/lib/taskSchedulingOrder';
 import { animateLayout } from '@/lib/motion';
 import { useAsyncData } from '@/hooks/useAsyncData';
 import { useAppPopup } from '@/providers/PopupProvider';
 import { usePreferences } from '@/providers/PreferencesProvider';
 import { useTaskWorkspace } from '@/providers/TaskWorkspaceProvider';
 import { useAppTheme } from '@/providers/ThemeProvider';
-import { api } from '@/services/api';
+import { api, TASK_PAGE_BATCH_SIZE } from '@/services/api';
 import { MENTAL_STATE_GOAL_LABELS, type Calendar, type CalendarEvent, type Day, type MentalStateGoal, type Task, type TaskGroup } from '@/types/models';
 
 interface TodayData { day: Day }
@@ -322,6 +324,9 @@ export default function TodayScreen() {
     allTasks,
     displayDayKey,
     todayTasks,
+    pastTasks,
+    hasMorePastTasks,
+    loadMorePastTasks,
     groups,
     addTask,
     updateTask: updateTaskInWorkspace,
@@ -339,6 +344,8 @@ export default function TodayScreen() {
     homeDisplayPreferencesReady,
   } = usePreferences();
   const [composerOpen, setComposerOpen] = useState(false);
+  const [leftoversExpanded, setLeftoversExpanded] = useState(false);
+  const [loadingMoreLeftovers, setLoadingMoreLeftovers] = useState(false);
   const [selected, setSelected] = useState<Task | null>(null);
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
@@ -761,6 +768,20 @@ export default function TodayScreen() {
     todayTasks.filter(task => !task.parentId && (showCompletedTasks || !task.completed)),
     groups,
   );
+  const leftoverTasks = useMemo(() => pastTasks
+    .filter(task => !task.parentId && (showCompletedTasks || !task.completed))
+    .sort(compareMostRecentFirst), [pastTasks, showCompletedTasks]);
+  const loadMoreLeftovers = async () => {
+    if (loadingMoreLeftovers) return;
+    setLoadingMoreLeftovers(true);
+    try {
+      await loadMorePastTasks();
+    } catch (cause) {
+      void showError('Could not load older tasks', reportError('Could not load older tasks', cause));
+    } finally {
+      setLoadingMoreLeftovers(false);
+    }
+  };
   const groupableTodayTasks = todayTasks.filter(
     task => !task.parentId && !task.mentalThreadId && (showCompletedTasks || !task.completed),
   );
@@ -1055,18 +1076,50 @@ export default function TodayScreen() {
               </Card>
             )}
           </View>
+          {leftoverTasks.length > 0 && (
+            <TaskSection
+              title="Leftovers"
+              count={leftoverTasks.length}
+              completedCount={leftoverTasks.filter(task => task.completed).length}
+              expanded={leftoversExpanded}
+              onToggle={() => setLeftoversExpanded(expanded => !expanded)}
+              emptyMessage="No older tasks"
+              showMore={hasMorePastTasks ? {
+                label: `Show next ${TASK_PAGE_BATCH_SIZE} older tasks`,
+                loading: loadingMoreLeftovers,
+                onPress: () => void loadMoreLeftovers(),
+              } : undefined}
+            >
+              <View style={styles.list}>
+                {leftoverTasks.map(task => (
+                  <TaskRow
+                    key={task.taskId}
+                    task={task}
+                    prefetchDetails
+                    onToggle={() => void toggle(task)}
+                    onPress={() => selectedTaskIds.length || selectedGroupIds.length ? toggleSelection(task.taskId) : setSelected(task)}
+                    onLongPress={() => startSelection(task.taskId)}
+                    onSelectionToggle={selectedTaskIds.length || selectedGroupIds.length ? () => toggleSelection(task.taskId) : undefined}
+                    selected={selectedTaskIdSet.has(task.taskId)}
+                  />
+                ))}
+              </View>
+            </TaskSection>
+          )}
         </>
       )}
       <TaskComposerSheet
         visible={composerOpen}
         onClose={() => setComposerOpen(false)}
         onCreated={addTask}
+        defaultSchedule="today"
       />
       <TaskComposerSheet
         key={`group-task-${groupTaskComposer?.groupId ?? 'closed'}`}
         visible={Boolean(groupTaskComposer)}
         onClose={() => setGroupTaskComposer(null)}
         onCreated={task => addTaskToGroup(task)}
+        defaultSchedule="today"
       />
       <TaskGroupComposerSheet
         key={`${editingGroup?.groupId ?? 'new'}-${groupComposerOpen ? 'open' : 'closed'}`}

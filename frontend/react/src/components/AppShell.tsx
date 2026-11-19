@@ -113,6 +113,8 @@ export function AppShell() {
                     minWidth: 0,
                     minHeight: 0,
                     overflowY: 'auto',
+                    // Snackbars slide in from beyond the right edge; that must not flash a sideways scrollbar.
+                    overflowX: 'hidden',
                     scrollbarGutter: 'stable',
                 }}>
                     <PageTransition />

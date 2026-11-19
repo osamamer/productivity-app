@@ -1286,8 +1286,7 @@ public class StatService {
                         && definitionIds.contains(entry.getStatDefinition().getId()))
                 .collect(Collectors.groupingBy(entry -> entry.getStatDefinition().getId()));
         boolean includesUnloggedDays = definitions.stream()
-                .anyMatch(definition -> definition.isIncludeUnloggedDaysAsZero()
-                        && supportsUnloggedDaysAsZero(definition.getType(), definition.getSystemKey()));
+                .anyMatch(definition -> supportsUnloggedDaysAsZero(definition.getType(), definition.getSystemKey()));
         Map<String, LocalDate> firstLoggedDates = includesUnloggedDays
                 ? entryRepository.findFirstLoggedDatesByUserId(userId).stream()
                         .collect(Collectors.toMap(row -> (String) row[0], row -> (LocalDate) row[1]))
@@ -1597,8 +1596,7 @@ public class StatService {
                 .findAllByStatDefinitionIdAndUserIdAndDateBetween(definitionId, userId, from, to);
         List<StatEntry> allEntries = entryRepository.findAllByStatDefinitionIdAndUserId(definitionId, userId);
 
-        LocalDate firstLoggedDate = def.isIncludeUnloggedDaysAsZero()
-                && supportsUnloggedDaysAsZero(def.getType(), def.getSystemKey())
+        LocalDate firstLoggedDate = supportsUnloggedDaysAsZero(def.getType(), def.getSystemKey())
                 ? entryRepository.findFirstLoggedDate(definitionId, userId)
                 : null;
         return summarize(def, entries, allEntries, from, to, firstLoggedDate);
@@ -1666,10 +1664,12 @@ public class StatService {
                     .map(StatEntry::getValue)
                     .max(Double::compareTo)
                     .orElse(null);
-            boolean countUnloggedDaysAsZero = def.isIncludeUnloggedDaysAsZero()
-                    && supportsUnloggedDaysAsZero(def.getType(), def.getSystemKey());
-            if (countUnloggedDaysAsZero && firstLoggedDate != null && !firstLoggedDate.isAfter(to)) {
+            // Sent whenever unlogged days could count, so the Stats page can choose per viewer.
+            if (supportsUnloggedDaysAsZero(def.getType(), def.getSystemKey())
+                    && firstLoggedDate != null && !firstLoggedDate.isAfter(to)) {
                 averageStartDate = firstLoggedDate.isAfter(from) ? firstLoggedDate : from;
+            }
+            if (def.isIncludeUnloggedDaysAsZero() && averageStartDate != null) {
                 long periodDays = ChronoUnit.DAYS.between(averageStartDate, to) + 1;
                 periodAverage = periodTotal / periodDays;
             } else if (!entries.isEmpty()) {

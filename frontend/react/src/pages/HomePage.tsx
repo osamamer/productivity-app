@@ -50,6 +50,7 @@ import { useUser } from '../hooks/useUser';
 import { LeisureHome } from '../components/leisure/LeisureHome';
 import { homeGreeting } from './home/homeGreeting';
 import { HomeModeSwitch } from './home/HomeModeSwitch';
+import { useNavigationVisibility } from '../components/appShellNavigation';
 import { useHomeMode } from './home/homeMode';
 import { SmartTaskInput } from '../components/input/SmartTaskInput';
 import { GroupTaskInputRow } from '../components/task/GroupTaskInputRow';
@@ -5366,7 +5367,9 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
 /** Home: labor (tasks and pomodoros) by default, or leisure (today's plan and an activity timer). */
 export function HomePage() {
     const [mode, setMode] = useHomeMode();
-    const modeSwitch = <HomeModeSwitch mode={mode} onChange={setMode} />;
+    // Changing mode is navigation, which a running focus session blocks, so the switch steps aside.
+    const focusLocked = useNavigationVisibility()?.focusLocked ?? false;
+    const modeSwitch = focusLocked ? null : <HomeModeSwitch mode={mode} onChange={setMode} />;
     return mode === 'leisure' ? <LeisureHome modeSwitch={modeSwitch} /> : <LaborHome modeSwitch={modeSwitch} />;
 }
 

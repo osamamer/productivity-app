@@ -32,25 +32,27 @@ function customDateTime(initialDate?: string): string {
   return Number.isNaN(date.getTime()) ? '' : localDateTime(date);
 }
 
-export function TaskComposerSheet({ visible, onClose, onCreated, initialDate, calendarOptions = [], initialCalendarId }: {
+export function TaskComposerSheet({ visible, onClose, onCreated, initialDate, defaultSchedule = 'none', calendarOptions = [], initialCalendarId }: {
   visible: boolean;
   onClose: () => void;
   onCreated: (task: Task) => void | Promise<void>;
   initialDate?: string;
+  // Used when there is no initialDate; Home adds tasks for today.
+  defaultSchedule?: Exclude<Schedule, 'custom'>;
   calendarOptions?: Calendar[];
   initialCalendarId?: string;
 }) {
   const { homeDayEndHour } = usePreferences();
   const [name, setName] = useState('');
   const [importance, setImportance] = useState<number>(TASK_PRIORITY_OPTIONS[0].value);
-  const [schedule, setSchedule] = useState<Schedule>(initialDate ? 'custom' : 'none');
+  const [schedule, setSchedule] = useState<Schedule>(initialDate ? 'custom' : defaultSchedule);
   const [customSchedule, setCustomSchedule] = useState(() => customDateTime(initialDate));
   const [customScheduleOpen, setCustomScheduleOpen] = useState(false);
   const [reminderMinutesBefore, setReminderMinutesBefore] = useState<number | null>(null);
   const [customScheduleDraft, setCustomScheduleDraft] = useState(() => dateFromScheduleValue(null));
   const [calendarId, setCalendarId] = useState(initialCalendarId ?? '');
   const nameInputRef = useRef<TextInput>(null);
-  const previousSchedule = useRef<Exclude<Schedule, 'custom'>>('none');
+  const previousSchedule = useRef<Exclude<Schedule, 'custom'>>(defaultSchedule);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -63,7 +65,7 @@ export function TaskComposerSheet({ visible, onClose, onCreated, initialDate, ca
   function reset() {
     setName('');
     setImportance(TASK_PRIORITY_OPTIONS[0].value);
-    setSchedule(initialDate ? 'custom' : 'none');
+    setSchedule(initialDate ? 'custom' : defaultSchedule);
     setCustomSchedule(customDateTime(initialDate));
     setCustomScheduleOpen(false);
     setCalendarId(initialCalendarId ?? '');

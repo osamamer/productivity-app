@@ -17,6 +17,7 @@ import { Screen } from '@/components/ui/Screen';
 import { SilentPressable } from '@/components/ui/SilentPressable';
 import { EmptyView, ErrorView, LoadingView } from '@/components/ui/StateView';
 import { reportError } from '@/lib/errors';
+import { compareMostRecentFirst, compareNearestFirst } from '@/lib/taskSchedulingOrder';
 import { playAudioFeedback } from '@/lib/audioFeedback';
 import { animateLayout } from '@/lib/motion';
 import { useAppPopup } from '@/providers/PopupProvider';
@@ -68,20 +69,6 @@ function buildTaskListItems(tasks: Task[], groups: TaskGroup[]): TaskListItem[] 
     }
     return items;
   }, []);
-}
-
-function scheduledTime(task: Task): number {
-  const time = task.scheduledPerformDateTime ? Date.parse(task.scheduledPerformDateTime) : Number.POSITIVE_INFINITY;
-  return Number.isNaN(time) ? Number.POSITIVE_INFINITY : time;
-}
-
-function compareNearestFirst(first: Task, second: Task): number {
-  const difference = scheduledTime(first) - scheduledTime(second);
-  return difference !== 0 ? difference : first.taskId.localeCompare(second.taskId);
-}
-
-function compareMostRecentFirst(first: Task, second: Task): number {
-  return compareNearestFirst(second, first);
 }
 
 export default function TasksScreen() {
