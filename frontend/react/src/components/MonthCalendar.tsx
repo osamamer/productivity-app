@@ -65,6 +65,8 @@ import { DayCalendarEntry } from "../types/DayEntity";
 import { taskDateKey } from "../services/utils/taskDate";
 import { CALENDAR_COLORS, Calendar, calendarColorHex } from '../types/Calendar';
 import { CalendarChipSelect } from './calendar/CalendarSelect';
+import { useActivities } from '../hooks/useActivities';
+import { activityHex } from './activity/activityColors';
 import { isCalendarDailyTaskVisible, isCalendarStatTaskVisible } from '../services/utils/calendarStatTaskVisibility';
 import { includeDirectStatChildren } from '../services/utils/statDefinitionHierarchy';
 import { statNumericValueLabel } from './stats/statVisualization';
@@ -127,6 +129,7 @@ type CalendarDisplaySettings = {
     showStatTasks: boolean;
     showDailyRecurringTasks: boolean;
     showStats: boolean;
+    showChunks: boolean;
     taskStatus: TaskStatusFilter;
     priorityFilters: number[];
     selectedStatIds: string[] | null;
@@ -139,6 +142,7 @@ const DEFAULT_CALENDAR_DISPLAY_SETTINGS: CalendarDisplaySettings = {
     showStatTasks: true,
     showDailyRecurringTasks: true,
     showStats: true,
+    showChunks: true,
     taskStatus: 'open',
     priorityFilters: [3, 6, 9],
     selectedStatIds: null,
@@ -175,6 +179,9 @@ function normalizeCalendarDisplaySettings(value: unknown): CalendarDisplaySettin
         showStats: typeof parsed.showStats === 'boolean'
             ? parsed.showStats
             : DEFAULT_CALENDAR_DISPLAY_SETTINGS.showStats,
+        showChunks: typeof parsed.showChunks === 'boolean'
+            ? parsed.showChunks
+            : DEFAULT_CALENDAR_DISPLAY_SETTINGS.showChunks,
         taskStatus: parsed.taskStatus === 'open' || parsed.taskStatus === 'completed'
             ? parsed.taskStatus
             : DEFAULT_CALENDAR_DISPLAY_SETTINGS.taskStatus,
@@ -481,6 +488,7 @@ export function MonthCalendar({
     statDefinitions, loading = false, isLoading = false, onRefreshTasks, onOpenDay, onOpenDayView, initialView = 'dayGridMonth', initialDate,
 }: MonthCalenderProps) {
     const theme = useTheme();
+    const activities = useActivities();
     const calendarEventFillStyles = useMemo(() => {
         const fills = CALENDAR_COLORS.map(option => ({
             className: `calendar-event-fill-${option.value}`,
@@ -710,6 +718,7 @@ export function MonthCalendar({
         showStatTasks,
         showDailyRecurringTasks,
         showStats,
+        showChunks,
         taskStatus,
         priorityFilters,
         selectedStatIds,
@@ -952,10 +961,17 @@ export function MonthCalendar({
             singletonOriginTaskIds.add(groupTasks[0].taskId);
             return false;
         });
-        const eventEntries = events.filter(event => visibleCalendarIds.has(event.calendarId)).flatMap(event => {
+        const visibleEvents = events.filter(event => visibleCalendarIds.has(event.calendarId)
+            && (showChunks || !event.activityId));
+        const eventEntries = visibleEvents.flatMap(event => {
             const calendar = calendars.find(candidate => candidate.id === event.calendarId);
             const calendarColor = calendarColorHex(calendar?.color, theme.palette.primary.main);
             const calendarFillClass = `calendar-event-fill-${calendar?.color ?? 'accent'}`;
+            // Chunks of planned time read as a tinted block in their activity's colour, not a solid event.
+            const chunkActivity = event.activityId
+                ? activities?.find(activity => activity.id === event.activityId)
+                : undefined;
+            const chunkColor = event.activityId ? activityHex(chunkActivity?.color, calendarColor) : null;
             return expandCalendarEvent(event, calendarRange.start, calendarRange.end).map(occurrence => ({
             id: occurrence.id,
             title: event.title,
@@ -964,18 +980,22 @@ export function MonthCalendar({
             allDay: occurrence.allDay,
             backgroundColor: occurrence.status === 'CANCELLED'
                 ? alpha(theme.palette.text.disabled, 0.2)
-                : occurrence.status === 'TENTATIVE'
-                    ? `${calendarColor}70`
-                    : calendarColor,
-            borderColor: occurrence.status === 'CANCELLED' ? theme.palette.error.main : calendarColor,
+                : chunkColor
+                    ? alpha(chunkColor, theme.palette.mode === 'dark' ? 0.24 : 0.14)
+                    : occurrence.status === 'TENTATIVE'
+                        ? `${calendarColor}70`
+                        : calendarColor,
+            borderColor: occurrence.status === 'CANCELLED' ? theme.palette.error.main : chunkColor ?? calendarColor,
             textColor: occurrence.status === 'CANCELLED'
                 ? theme.palette.text.secondary
-                : theme.palette.primary.contrastText,
+                : chunkColor
+                    ? theme.palette.text.primary
+                    : theme.palette.primary.contrastText,
             editable: !event.sourceId,
             startEditable: !event.sourceId,
             durationEditable: false,
             classNames: [
-                calendarFillClass,
+                chunkColor ? 'calendar-chunk-event' : calendarFillClass,
                 occurrence.status === 'CANCELLED'
                     ? 'calendar-cancelled-event'
                     : occurrence.status === 'TENTATIVE'
@@ -990,7 +1010,10 @@ export function MonthCalendar({
                 calendarEventOccurrenceDate: occurrence.occurrenceDate,
                 calendarEventOccurrenceStatus: occurrence.status,
                 status: occurrence.status,
-                fullDescription: event.sourceId
+                chunkColor,
+                fullDescription: chunkActivity
+                    ? `${event.title} · ${chunkActivity.name} chunk`
+                    : event.sourceId
                     ? `${event.title} · ${occurrence.status.toLowerCase()}`
                     : `${event.description || event.title} · ${occurrence.status.toLowerCase()}`,
             },
@@ -1088,7 +1111,7 @@ export function MonthCalendar({
             : [];
 
         return [...eventEntries, ...groupEvents, ...taskEvents, ...statEvents];
-    }, [availableStatDefinitions, calendarRange.end, calendarRange.start, calendarDisplayTasks, calendars, events, hasVisibleStats, selectedStatIdsForDisplay, showTasks, statEntries, taskGroupByTaskId, theme.palette, visibleCalendarIds]);
+    }, [activities, availableStatDefinitions, calendarRange.end, calendarRange.start, calendarDisplayTasks, calendars, events, hasVisibleStats, selectedStatIdsForDisplay, showChunks, showTasks, statEntries, taskGroupByTaskId, theme.palette, visibleCalendarIds]);
 
     React.useLayoutEffect(() => {
         if (loading || initiallyCenteredTodayRef.current) return;
@@ -2119,7 +2142,11 @@ export function MonthCalendar({
                     alignItems: 'center',
                     backgroundColor: eventApi.backgroundColor || 'transparent',
                     border: `1px ${isCancelled ? 'dotted' : isTentative ? 'dashed' : 'solid'} ${isTask ? theme.palette.divider : eventApi.borderColor || theme.palette.divider}`,
-                    borderLeft: isTask ? `3px solid ${taskColor}` : undefined,
+                    borderLeft: isTask
+                        ? `3px solid ${taskColor}`
+                        : typeof eventApi.extendedProps.chunkColor === 'string'
+                            ? `3px solid ${eventApi.extendedProps.chunkColor}`
+                            : undefined,
                     borderRadius: isTask ? '0 6px 6px 0' : 1.5,
                     color: eventTextColor,
                     cursor: isDraggable ? 'grab' : 'pointer',
@@ -2376,6 +2403,10 @@ export function MonthCalendar({
                             <FormControlLabel
                                 control={<Switch checked={showStats} onChange={event => updateDisplayPreferences({ showStats: event.target.checked })} />}
                                 label="Show statistics"
+                            />
+                            <FormControlLabel
+                                control={<Switch checked={showChunks} onChange={event => updateDisplayPreferences({ showChunks: event.target.checked })} />}
+                                label="Show planned chunks"
                             />
                         </FormGroup>
 
@@ -2721,6 +2752,9 @@ export function MonthCalendar({
                         },
                         '& .fc .calendar-tentative-event': {
                             borderStyle: 'dashed !important',
+                        },
+                        '& .fc .calendar-chunk-event': {
+                            borderLeftWidth: '3px !important',
                         },
                         '& .fc .calendar-cancelled-event': {
                             borderColor: `${theme.palette.error.main} !important`,

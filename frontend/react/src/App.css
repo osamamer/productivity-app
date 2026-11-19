@@ -16,6 +16,12 @@ html, body, #root {
 body {
   display: flex;
 }
+/* Above the minimum width nothing needs sideways scrolling, and off-screen snackbars must not cause it. */
+@media (min-width: 450px) {
+  html {
+    overflow-x: hidden;
+  }
+}
 .logo {
   /*height: 6em;*/
   /*padding: 1.5em;*/

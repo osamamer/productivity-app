@@ -174,13 +174,9 @@ function formatFocusTime(seconds: number): string {
 }
 
 function formatWorkedDate(date: string): string {
-    const [year, month, day] = date.split('-').map(Number);
+    const [year, month, day] = date.split('-');
     if (!year || !month || !day) return date;
-    return new Intl.DateTimeFormat(undefined, {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-    }).format(new Date(year, month - 1, day));
+    return `${day}-${month}-${year}`;
 }
 
 const FocusStat = React.memo(function FocusStat({ label, value }: { label: string; value: string | number }) {
@@ -1282,6 +1278,7 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
                                         )}
                                         <AppDateField
                                             label="Repeat until (optional)"
+                                            format="dd-MM-yyyy"
                                             value={recurrenceDraft.recurrenceEndDate ?? ''}
                                             onChange={recurrenceEndDate => handleRecurrenceChange({
                                                 ...recurrenceDraft,

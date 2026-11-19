@@ -111,7 +111,7 @@ export interface StatSummary {
     periodTotal: number | null;       // NUMBER / RANGE / TIME / DURATION
     periodHighest?: number | null;     // NUMBER / RANGE / TIME / DURATION
     personalBest?: number | null;        // all-time best following the stat's configured direction
-    averageStartDate?: string | null;   // first day eligible for unlogged zeroes
+    averageStartDate?: string | null;   // first day unlogged days could count as zero from
 }
 
 export interface StatBootstrapResponse {

@@ -107,6 +107,7 @@ export function TaskSchedulePicker({
                 disabled={disabled}
                 closeOnSelect={false}
                 ampm={false}
+                format="dd-MM-yyyy HH:mm"
                 slots={pickerActionSlots}
                 slotProps={{
                     ...pickerActionSlotProps,

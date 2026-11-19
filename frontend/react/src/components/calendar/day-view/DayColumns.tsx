@@ -23,7 +23,7 @@ interface DayColumnsProps {
     did?: PlannedBlock[];
     // Null hides the screen column: a plain browser, or a day that has not happened yet.
     screen: ScreenBlock[] | null;
-    // Clicking empty space in the planned column offers to plan a chunk there.
+    // Clicking empty space in the planned column offers to plan a chunk there, from the current hour on.
     onCreateAt?: (slot: TimeInterval, anchor: { top: number; left: number }) => void;
 }
 
@@ -50,7 +50,9 @@ export function DayColumns({ windowStart, windowEnd, now, planned, did = [], scr
     const slotFromEvent = (event: MouseEvent<HTMLElement>) => {
         if ((event.target as HTMLElement).closest('[data-planned-block]')) return null;
         const rect = event.currentTarget.getBoundingClientRect();
-        return slotAt(windowStart, windowEnd, (event.clientY - rect.top) / rect.height);
+        const slot = slotAt(windowStart, windowEnd, (event.clientY - rect.top) / rect.height);
+        // Hours that are over can't be planned any more.
+        return slot.end <= Date.now() ? null : slot;
     };
     const nowPct = now > windowStart && now < windowEnd ? ((now - windowStart) / span) * 100 : null;
 
@@ -84,7 +86,7 @@ export function DayColumns({ windowStart, windowEnd, now, planned, did = [], scr
                 </Box>
 
                 <Box
-                    sx={{ position: 'relative', flex: 1, mx: 0.5, cursor: onCreateAt ? 'pointer' : undefined }}
+                    sx={{ position: 'relative', flex: 1, mx: 0.5, cursor: onCreateAt && hoverSlot ? 'pointer' : undefined }}
                     onMouseMove={onCreateAt ? event => {
                         const slot = slotFromEvent(event);
                         setHoverSlot(current => (current?.start === slot?.start ? current : slot));

@@ -863,6 +863,20 @@ public class StatServiceTest {
     }
 
     @Test
+    void summarySendsTheFirstEligibleDayEvenWhenTheStatAveragesOnlyLoggedDays() {
+        StatDefinition statDefinition = createStatDefinition(StatType.NUMBER, null, null);
+        LocalDate today = LocalDate.now();
+        statService.recordEntry(statDefinition.getId(), today.minusDays(5), 8.0, TEST_USER_ID);
+        statService.recordEntry(statDefinition.getId(), today, 4.0, TEST_USER_ID);
+
+        StatSummaryResponse summary = statService.getSummary(
+                statDefinition.getId(), today.minusDays(9), today, TEST_USER_ID);
+
+        assertEquals(6.0, summary.periodAverage(), 0.0001);
+        assertEquals(today.minusDays(5), summary.averageStartDate());
+    }
+
+    @Test
     void sleepDurationSummaryNeverCountsUnloggedDaysAsZero() {
         User user = userRepository.findUserById(TEST_USER_ID).orElseThrow();
         provisioningService.createMissingSystemStatsFor(user);

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Box, LinearProgress, Snackbar, Typography } from '@mui/material';
+import { Alert, Box, Snackbar, Typography } from '@mui/material';
 import { Navigate } from 'react-router-dom';
 import { AppPausesSection } from '../components/boundaries/AppPausesSection';
 import { SiteTimersSection } from '../components/boundaries/SiteTimersSection';
@@ -48,7 +48,6 @@ export function BoundariesPage() {
             </Typography>
 
             {loadError && <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>{loadError}</Alert>}
-            {!state && !loadError && <LinearProgress aria-label="Loading boundaries" sx={{ borderRadius: 1 }} />}
 
             {state && (
                 <Box sx={{ display: 'grid', gap: 3 }}>

@@ -25,6 +25,7 @@ export type AppDateFieldProps = PickerFieldProps & {
     value: string;
     onChange: (value: string) => void;
     minDate?: string;
+    format?: string;
 };
 
 export type AppTimeFieldProps = PickerFieldProps & {
@@ -108,7 +109,7 @@ function pickerTextFieldProps({
     };
 }
 
-export function AppDateField({ label, value, onChange, minDate, ...props }: AppDateFieldProps) {
+export function AppDateField({ label, value, onChange, minDate, format = 'MMM d, yyyy', ...props }: AppDateFieldProps) {
     return (
         <LocalizationProvider dateAdapter={AdapterDateFns}>
             <DatePicker
@@ -116,7 +117,7 @@ export function AppDateField({ label, value, onChange, minDate, ...props }: AppD
                 value={parseDateOnly(value)}
                 onChange={date => onChange(formatDateOnly(date))}
                 minDate={minDate ? parseDateOnly(minDate) ?? undefined : undefined}
-                format="MMM d, yyyy"
+                format={format}
                 slotProps={{
                     field: { clearable: true },
                     textField: pickerTextFieldProps(props),

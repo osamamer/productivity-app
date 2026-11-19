@@ -30,9 +30,12 @@ function status(overrides = {}) {
   };
 }
 
-test('locks navigation throughout a focus phase, including when it is paused', () => {
+test('locks navigation while a focus phase is running', () => {
   assert.equal(isFocusNavigationLocked(status()), true);
-  assert.equal(isFocusNavigationLocked(status({ sessionRunning: false })), true);
+});
+
+test('allows navigation while the focus phase is paused', () => {
+  assert.equal(isFocusNavigationLocked(status({ sessionRunning: false })), false);
 });
 
 test('allows navigation during breaks and when no focus session is active', () => {
@@ -43,7 +46,7 @@ test('allows navigation during breaks and when no focus session is active', () =
   assert.equal(isFocusNavigationLocked(null), false);
 });
 
-test('supports older active focus status without a phase field, including paused sessions', () => {
+test('supports older active focus status without a phase field', () => {
   assert.equal(isFocusNavigationLocked(status({ phase: undefined })), true);
-    assert.equal(isFocusNavigationLocked(status({ phase: undefined, sessionRunning: false })), true);
+  assert.equal(isFocusNavigationLocked(status({ phase: undefined, sessionRunning: false })), false);
 });

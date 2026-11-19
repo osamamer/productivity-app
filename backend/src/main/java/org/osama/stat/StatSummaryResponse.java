@@ -16,5 +16,5 @@ public record StatSummaryResponse(
         Double periodTotal,         // sum of values in the selected period (NUMBER / RANGE / TIME / DURATION)
         Double periodHighest,       // highest single-day value in the selected period (NUMBER / RANGE / TIME / DURATION)
         Double personalBest,        // all-time best value following the stat's configured direction
-        LocalDate averageStartDate  // first eligible day when unlogged days count as zero
+        LocalDate averageStartDate  // first day unlogged days could count as zero from, when the stat supports it
 ) {}
