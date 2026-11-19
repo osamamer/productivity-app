@@ -83,12 +83,15 @@ function grantBrowserRule(paths, url, rule) {
     });
 }
 
-/** Closes Firefox if session `id` is still the current one and its time is up. */
+/**
+ * Closes Firefox, in every profile, if session `id` is still the current one and its time is up.
+ * Timed sites can be opened from any profile, so a `--profile` launch must not escape.
+ */
 async function expireBrowser(paths, id) {
     const session = readSession(paths);
     if (!session || session.id !== id || session.deadline > nowSeconds()) return false;
-    const victims = runningProcesses(session.target);
-    await endSession(session.target, victims);
+    const target = { ...session.target, anyProfile: true };
+    await endSession(target, runningProcesses(target));
     withFileLock(paths.browserLockFile, () => {
         if (readSession(paths)?.id === id) fs.rmSync(paths.browserSessionFile, { force: true });
     });

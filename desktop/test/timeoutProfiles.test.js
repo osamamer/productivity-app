@@ -6,7 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { appTarget } = require('../src/timeouts/core/appTarget');
 const { profileArgument } = require('../src/timeouts/core/profileArgument');
-const { runningProcesses } = require('../src/timeouts/core/processes');
+const { processStamp, runningProcesses } = require('../src/timeouts/core/processes');
 
 const launcher = exec => `[Desktop Entry]\nType=Application\nName=Nuclear\nExec=${exec}\n`;
 
@@ -40,4 +40,27 @@ test('processes of one profile are never counted as another profile or the defau
     assert.deepEqual(pids({ executable: node, script, profile: 'calm' }), [calm.pid]);
     assert.deepEqual(pids({ executable: node, script }), [full.pid]);
     assert.deepEqual(pids({ executable: node, script, profile: 'focus' }), []);
+});
+
+test('an ended Firefox timer closes Firefox started with any --profile', async t => {
+    const { expireBrowser } = require('../src/timeouts/core/browserSession');
+    const { timeoutPaths } = require('../src/timeouts/core/paths');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claritard-firefox-'));
+    const script = path.join(dir, 'firefox.js');
+    fs.writeFileSync(script, 'setInterval(() => {}, 1000);\n');
+    const firefox = spawn(process.execPath, [script, '--profile', path.join(dir, 'timed-profile')], { stdio: 'ignore' });
+    t.after(() => {
+        firefox.kill('SIGKILL');
+        fs.rmSync(dir, { recursive: true, force: true });
+    });
+    await new Promise(resolve => setTimeout(resolve, 200));
+
+    const paths = timeoutPaths({ HOME: dir, XDG_DATA_HOME: path.join(dir, 'data') });
+    fs.mkdirSync(path.dirname(paths.browserSessionFile), { recursive: true });
+    const target = { executable: fs.realpathSync(process.execPath), script };
+    fs.writeFileSync(paths.browserSessionFile, JSON.stringify({ id: 'ended', deadline: 1, rules: [], target }));
+
+    assert.equal(await expireBrowser(paths, 'ended'), true);
+    assert.equal(processStamp(firefox.pid), null, 'Firefox is still running');
+    assert.equal(fs.existsSync(paths.browserSessionFile), false);
 });

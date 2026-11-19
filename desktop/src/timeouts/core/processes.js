@@ -47,6 +47,7 @@ function readProcess(pid) {
  * instances, `{ executable, script? }` matches a native binary or an interpreter running a script.
  * A native process only matches when its `--profile` argument equals `target.profile` (none
  * matches none), so closing an app's default profile never ends one of its light profiles.
+ * `anyProfile: true` turns that off, for Firefox timers that must close every profile.
  *
  * Limitation: Flatpak instances are matched by app ID alone, ignoring profiles.
  */
@@ -68,7 +69,7 @@ function runningProcesses(target) {
         // Executable scripts appear as an argument to their interpreter.
         if (!same && isFile(target.executable)) same = info.argv.slice(0, 2).includes(target.executable);
         if (!same || (target.script && !info.argv.slice(1, 3).includes(target.script))) continue;
-        if (profileArgument(info.argv.slice(1)) !== (target.profile ?? null)) continue;
+        if (!target.anyProfile && profileArgument(info.argv.slice(1)) !== (target.profile ?? null)) continue;
         found.push({ pid, stamp });
     }
     return found;
