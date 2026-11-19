@@ -66,7 +66,11 @@ if [[ ! -d "$mobile_dir/node_modules" ]]; then
   exit 1
 fi
 
-echo "Building the production APK..."
+# Match CI's versionCode (commit count) so the APK installs over Obtainium builds;
+# Android rejects a lower versionCode as "App not installed".
+export ANDROID_VERSION_CODE="${ANDROID_VERSION_CODE:-$(git -C "$repo_root" rev-list --count HEAD)}"
+
+echo "Building the production APK (versionCode $ANDROID_VERSION_CODE)..."
 npm --prefix "$mobile_dir" run build:android:production
 
 if [[ ! -s "$apk_path" ]]; then
