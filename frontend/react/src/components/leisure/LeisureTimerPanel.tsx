@@ -8,7 +8,6 @@ import { format } from 'date-fns';
 import { activityTimerStore } from '../../services/cache/activityTimerStore';
 import { ActivitySession, sessionElapsedMs } from '../../types/ActivitySession';
 import { TIMER_DIGITS_SX } from '../timer/timerDigits';
-import { WhiteNoiseControl } from '../timer/WhiteNoiseControl';
 import { formatScreenDuration } from '../day/screenTimeText';
 import { formatClock } from './leisureTime';
 import { TimerClock } from './timerClock';
@@ -70,7 +69,6 @@ export function LeisureTimerPanel({ session, clock, onStopped }: {
                 </Box>
 
                 <Box sx={{ display: 'flex', gap: 0.5, ml: 'auto' }}>
-                    <WhiteNoiseControl size="small" />
                     <Tooltip title={playPauseLabel}>
                         <span>
                             <IconButton

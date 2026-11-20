@@ -171,7 +171,7 @@ export function LeisureHome({ modeSwitch }: { modeSwitch: ReactNode }) {
                             '& .MuiInput-underline:before': { borderBottom: 'none' },
                             '& .MuiInput-underline:after': { borderBottom: 'none' },
                             '& .MuiInput-underline:hover:not(.Mui-disabled):before': { borderBottom: 'none' },
-                            '& .MuiInput-root': { fontSize: '1.1rem' },
+                            '& .MuiInput-root': { fontSize: '0.95rem' },
                         }}
                     >
                         <AddActivityInput count={activities?.length ?? 0} onError={setError} />

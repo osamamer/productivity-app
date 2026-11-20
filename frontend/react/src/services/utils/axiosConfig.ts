@@ -1,4 +1,4 @@
-import { reportServerAvailability } from '../backup/backupAvailability';
+import { reportServerAvailability, setServerProbe } from '../backup/backupAvailability';
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import keycloak, {
     isDefinitiveRefreshFailure,
@@ -58,6 +58,8 @@ apiClient.interceptors.request.use(async (config) => {
     }
     return config;
 });
+
+setServerProbe(() => apiClient.get('/actuator/health'));
 
 apiClient.interceptors.response.use(
     (response) => { reportServerAvailability(true); return response; },

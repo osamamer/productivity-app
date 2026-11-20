@@ -52,6 +52,7 @@ import { homeGreeting } from './home/homeGreeting';
 import { HomeModeSwitch } from './home/HomeModeSwitch';
 import { TotalFocusToggle } from '../components/focus/TotalFocusToggle';
 import { TotalFocusStage } from '../components/focus/TotalFocusStage';
+import { rememberFocusOrigin } from '../components/focus/focusOrigin';
 import { useNavigationVisibility } from '../components/appShellNavigation';
 import { useHomeMode } from './home/homeMode';
 import { SmartTaskInput } from '../components/input/SmartTaskInput';
@@ -334,6 +335,7 @@ const buttonFadeIn = keyframes`
 `;
 
 const TASKS_FADE_DURATION_MS = 220;
+const TOTAL_FOCUS_TRANSITION_MS = 260;
 const FOCUS_TASK_SLIDE_DURATION_MS = 520;
 const SELECTION_ACTIONS_EDGE_PADDING = 12;
 const SELECTION_ACTIONS_GAP = 4;
@@ -2699,6 +2701,12 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
         }
 
         if (options?.animate === true && !pomodoroTaskMinimized) {
+            // The slide back starts from where the row is now, not from where it was when focus began.
+            const currentRowTop = focusedPomodoroRowRef.current?.getBoundingClientRect().top;
+            const homeSlot = focusTaskSourceTopRef.current;
+            if (currentRowTop !== undefined && homeSlot !== null) {
+                setFocusTaskOffset(homeSlot - (currentRowTop + window.scrollY));
+            }
             setFocusVisibility('returning');
             focusTransitionTimerRef.current = window.setTimeout(() => {
                 const currentTop = focusedPomodoroRowRef.current?.getBoundingClientRect().top;
@@ -4571,10 +4579,26 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
     ) : null;
     const dragInProgress = draggedTaskIds.length > 0 || draggedGroupId !== null;
     const totalFocus = useNavigationVisibility()?.totalFocus ?? false;
+    const [totalFocusLeaving, setTotalFocusLeaving] = useState(false);
+    const wasTotalFocus = useRef(totalFocus);
+    useEffect(() => {
+        if (wasTotalFocus.current && !totalFocus) setTotalFocusLeaving(true);
+        wasTotalFocus.current = totalFocus;
+    }, [totalFocus]);
+    useEffect(() => {
+        if (!totalFocusLeaving) return undefined;
+        const timer = window.setTimeout(() => setTotalFocusLeaving(false), TOTAL_FOCUS_TRANSITION_MS);
+        return () => window.clearTimeout(timer);
+    }, [totalFocusLeaving]);
+    const stageShown = totalFocus || totalFocusLeaving;
+    // Remember where the pomodoro sits in the list, so total focus can start from there.
+    useLayoutEffect(() => {
+        if (!stageShown) rememberFocusOrigin(focusedPomodoroRowRef.current?.getBoundingClientRect() ?? null);
+    });
 
-    if (totalFocus) {
+    if (stageShown) {
         return (
-            <TotalFocusStage header={modeSwitch}>
+            <TotalFocusStage header={modeSwitch} leaving={!totalFocus}>
                 {activePomodoroTask && renderTaskRow(activePomodoroTask)}
             </TotalFocusStage>
         );
