@@ -36,6 +36,10 @@ public class CalendarEvent {
     @Column(name = "activity_id")
     private String activityId;
 
+    // The task this chunk of time is planned for; null unless it is a focus block.
+    @Column(name = "task_id")
+    private String taskId;
+
     @Column(name = "source_id")
     private String sourceId;
 

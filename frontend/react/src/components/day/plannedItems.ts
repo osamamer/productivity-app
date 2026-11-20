@@ -7,7 +7,7 @@ import { PlannedInput } from './dayTimelineLayout';
 
 /**
  * What the day was meant to hold: timed calendar events, coloured by activity when they are
- * chunks. Focus sessions are what actually happened, so they sit in the "Did" lane instead
+ * chunks, and focus blocks planned for a task. Focus sessions are what actually happened, so they sit in the "Did" lane instead
  * (see didItems), which lets a planned chunk be compared with the time it really took. All-day
  * and cancelled events have no place on a time axis.
  */
@@ -19,7 +19,8 @@ export function plannedItems(overview: DayOverview, windowStart: Date, windowEnd
             .filter(occurrence => !occurrence.allDay && occurrence.status !== 'CANCELLED')
             .map((occurrence): PlannedInput => ({
                 id: `event-${occurrence.id}`,
-                kind: 'event',
+                // A block planned for a task is focus time; its title is the task.
+                kind: event.taskId ? 'focus' : 'event',
                 title: event.title,
                 start: parseISO(occurrence.start).getTime(),
                 end: parseISO(occurrence.end).getTime(),

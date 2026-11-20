@@ -71,7 +71,7 @@ class CalendarEventIcsExporterTest {
                 startDate, endDate, startTime, endTime, timeZone, CalendarEventStatus.CONFIRMED,
                 frequency, recurrenceEndDate, interval, unit, cancelledKeys, overrides, null,
                 Instant.parse("2026-10-01T00:00:00Z"), Instant.parse("2026-10-01T00:00:00Z"),
-                "calendar-1", null, null);
+                "calendar-1", null, null, null);
     }
 
     private ImportedCalendarEvent eventOn(List<ImportedCalendarEvent> events, LocalDate date) {

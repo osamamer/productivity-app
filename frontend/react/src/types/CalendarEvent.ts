@@ -37,6 +37,8 @@ export type CalendarEvent = {
     sourceId?: string | null;
     // Set when the event is a chunk of planned time for an activity.
     activityId?: string | null;
+    // Set when the event is a focus block planned for a task.
+    taskId?: string | null;
 };
 
 export type CalendarEventFutureDeletionResponse = {
@@ -48,6 +50,8 @@ export type CalendarEventInput = {
     calendarId?: string;
     // Omit to leave an existing event's activity alone; null removes it.
     activityId?: string | null;
+    // Omit to leave an existing event's task alone; null removes it.
+    taskId?: string | null;
     title: string;
     description: string;
     allDay: boolean;

@@ -26,6 +26,7 @@ public record CalendarEventResponse(
         Instant updatedAt,
         String calendarId,
         String sourceId,
-        String activityId
+        String activityId,
+        String taskId
 ) {
 }

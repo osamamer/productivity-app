@@ -1,6 +1,8 @@
 package org.osama.event;
 
 import org.osama.activity.ActivityService;
+import org.osama.task.Task;
+import org.osama.task.TaskRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.osama.calendar.CalendarService;
 import org.osama.exceptions.ResourceNotFoundException;
@@ -35,6 +37,7 @@ public class CalendarEventService {
     private final CalendarService calendarService;
     private final CalendarEventIcsExporter icsExporter;
     private final ActivityService activityService;
+    private final TaskRepository taskRepository;
 
     public CalendarEventService(CalendarEventRepository eventRepository,
                                 CalendarEventCancellationRepository cancellationRepository,
@@ -43,7 +46,8 @@ public class CalendarEventService {
                                 UserRepository userRepository,
                                 CalendarService calendarService,
                                 CalendarEventIcsExporter icsExporter,
-                                ActivityService activityService) {
+                                ActivityService activityService,
+                                TaskRepository taskRepository) {
         this.eventRepository = eventRepository;
         this.cancellationRepository = cancellationRepository;
         this.reminderRepository = reminderRepository;
@@ -52,6 +56,7 @@ public class CalendarEventService {
         this.calendarService = calendarService;
         this.icsExporter = icsExporter;
         this.activityService = activityService;
+        this.taskRepository = taskRepository;
     }
 
     @Transactional(readOnly = true)
@@ -91,6 +96,7 @@ public class CalendarEventService {
         event.setUser(user);
         event.setCalendarId(calendarService.resolveCalendarId(request.getCalendarId(), userId));
         event.setActivityId(activityService.resolveActivityId(request.getActivityId(), userId));
+        event.setTaskId(resolveTaskId(request.getTaskId(), userId));
         applyRequest(event, request);
         CalendarEvent saved = eventRepository.save(event);
         Integer reminderMinutes = reminderMinutesForEvent(request, saved);
@@ -110,6 +116,9 @@ public class CalendarEventService {
         }
         if (request.isActivityIdPresent()) {
             event.setActivityId(activityService.resolveActivityId(request.getActivityId(), userId));
+        }
+        if (request.isTaskIdPresent()) {
+            event.setTaskId(resolveTaskId(request.getTaskId(), userId));
         }
         applyRequest(event, request);
         CalendarEvent saved = eventRepository.save(event);
@@ -483,6 +492,13 @@ public class CalendarEventService {
         return toResponse(event, reminderMinutes, occurrenceOverrides);
     }
 
+    private String resolveTaskId(String taskId, String userId) {
+        if (taskId == null || taskId.isBlank()) return null;
+        return taskRepository.findTaskByTaskIdAndUserId(taskId, userId)
+                .map(Task::getTaskId)
+                .orElseThrow(() -> new ResourceNotFoundException("Task not found: " + taskId));
+    }
+
     private CalendarEventResponse toResponse(CalendarEvent event, Integer reminderMinutes,
                                              List<CalendarEventCancellation> occurrenceOverrides) {
         if (event.getSourceId() != null) {
@@ -490,7 +506,7 @@ public class CalendarEventService {
                     event.isAllDay(), event.getStartDate(), event.getEndDate(), event.getStartTime(),
                     event.getEndTime(), event.getTimeZone(), event.getStatus(), event.getRecurrenceFrequency(),
                     null, null, null, List.of(), List.of(), reminderMinutes,
-                    event.getCreatedAt(), event.getUpdatedAt(), event.getCalendarId(), event.getSourceId(), event.getActivityId());
+                    event.getCreatedAt(), event.getUpdatedAt(), event.getCalendarId(), event.getSourceId(), event.getActivityId(), event.getTaskId());
         }
         return new CalendarEventResponse(event.getId(), event.getTitle(), event.getDescription(),
                 event.isAllDay(), event.getStartDate(), event.getEndDate(), event.getStartTime(),
@@ -508,6 +524,6 @@ public class CalendarEventService {
                                 override.getOverrideStartTime(), override.getOverrideEndTime()))
                         .toList(),
                 reminderMinutes,
-                event.getCreatedAt(), event.getUpdatedAt(), event.getCalendarId(), event.getSourceId(), event.getActivityId());
+                event.getCreatedAt(), event.getUpdatedAt(), event.getCalendarId(), event.getSourceId(), event.getActivityId(), event.getTaskId());
     }
 }

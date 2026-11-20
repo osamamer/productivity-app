@@ -23,6 +23,8 @@ public class CalendarEventRequest {
     private String activityId;
     // Older clients do not send activityId; an update from them must not clear it.
     private boolean activityIdPresent;
+    private String taskId;
+    private boolean taskIdPresent;
 
     public String getTitle() { return title; }
     public void setTitle(String title) { this.title = title; }
@@ -66,4 +68,10 @@ public class CalendarEventRequest {
         this.activityIdPresent = true;
     }
     public boolean isActivityIdPresent() { return activityIdPresent; }
+    public String getTaskId() { return taskId; }
+    public void setTaskId(String taskId) {
+        this.taskId = taskId;
+        this.taskIdPresent = true;
+    }
+    public boolean isTaskIdPresent() { return taskIdPresent; }
 }

@@ -324,3 +324,5 @@ databaseChangeLog:
       file: db/changelog/changes/098-activities.yaml
   - include:
       file: db/changelog/changes/099-activity-sessions.yaml
+  - include:
+      file: db/changelog/changes/100-calendar-event-task.yaml

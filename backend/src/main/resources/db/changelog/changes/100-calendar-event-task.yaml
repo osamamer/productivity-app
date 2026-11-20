@@ -1,0 +1,15 @@
+databaseChangeLog:
+  - changeSet:
+      id: 100-calendar-event-task
+      author: claude
+      changes:
+        - addColumn:
+            tableName: calendar_event
+            columns:
+              - column: { name: task_id, type: varchar(255) }
+        - createIndex:
+            tableName: calendar_event
+            indexName: idx_app_calendar_event_task
+            ifNotExists: true
+            columns:
+              - column: { name: task_id }
