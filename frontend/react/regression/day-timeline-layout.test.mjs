@@ -56,6 +56,12 @@ test('many visits of a few minutes each, back to back, read as one switching blo
   assert.equal(lane.blocks[0].apps.reduce((total, app) => total + app.ms, 0), 18 * MIN);
 });
 
+test('short visits separated by idle gaps still read as one switching block', () => {
+  const segments = [segment('code', 0, 3), segment('firefox', 8, 11), segment('discord', 20, 23)];
+  const lane = buildScreenLane({ segments, tracked: [{ start: at(0), end: at(23) }], nameOf }, at(0), at(23), at(23));
+  assert.deepEqual(lane.blocks.map(block => block.kind), ['switching']);
+});
+
 test('a single short visit between long ones stays an app block', () => {
   const lane = buildScreenLane({
     segments: [segment('code', 0, 30), { appId: 'discord', start: at(30), end: at(30) + 20_000, title: null }, segment('code', 31, 60)],

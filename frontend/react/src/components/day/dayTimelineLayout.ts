@@ -48,7 +48,7 @@ export type ScreenBlock = Placed & TimeInterval & (
 export type PlannedBlock = Placed & PlannedInput & { row: number; columns: number };
 
 // Bursts of app hopping read better as one block than as a barcode. Anything under ten minutes is
-// about 3px wide on a day strip, so runs that short are grouped whenever they follow each other.
+// about 3px wide on a day strip, so runs that short are grouped into one switching block.
 const SHORT_MS = 10 * 60_000;
 const JOIN_GAP_MS = 5_000;
 const MAX_TITLES = 3;
@@ -127,7 +127,8 @@ function activityBlocks(runs: AppRun[], nameOf: (appId: string) => string): Unpl
     };
     for (const run of runs) {
         const short = run.end - run.start < SHORT_MS;
-        const continuesBurst = burst.length > 0 && run.start - burst[burst.length - 1].end <= JOIN_GAP_MS;
+        // Any short run after a short run joins the burst, even across a gap: the gap is part of the switching.
+        const continuesBurst = burst.length > 0;
         if (short && (burst.length === 0 || continuesBurst)) {
             burst.push(run);
             continue;
