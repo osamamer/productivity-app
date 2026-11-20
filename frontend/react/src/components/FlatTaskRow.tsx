@@ -1640,13 +1640,22 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                 bottom: 0,
                                 left: 0,
                                 width: 'auto',
+                                // The field sits exactly over the name: same font metrics, and text starts at the top
+                                // instead of being centred in the input's box, which moved it on entry.
                                 '& .MuiInputBase-root': {
                                     height: '100%',
                                     padding: 0,
+                                    alignItems: 'flex-start',
+                                    font: 'inherit',
+                                    fontSize: '1.05rem',
+                                    lineHeight: 1.5,
+                                    letterSpacing: 'inherit',
                                 },
                                 '& .MuiInputBase-input': {
                                     color: task.completed ? 'text.disabled' : 'text.primary',
                                     textDecoration: task.completed ? 'line-through' : 'none',
+                                    font: 'inherit',
+                                    letterSpacing: 'inherit',
                                     fontSize: '1.05rem',
                                     lineHeight: 1.5,
                                     whiteSpace: 'pre-wrap',
