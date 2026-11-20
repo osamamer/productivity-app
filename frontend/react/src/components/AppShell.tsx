@@ -24,6 +24,8 @@ export function AppShell() {
     const [blockedNoticeOpen, setBlockedNoticeOpen] = useState(false);
     const [shakeSideNav, setShakeSideNav] = useState(false);
     const [totalFocusRequested, setTotalFocusRequested] = useState(false);
+    // Once a focus starts, the navigation stays tucked away until the person opens it, through pauses too.
+    const [navigationHeldByFocus, setNavigationHeldByFocus] = useState(false);
     const { activePomodoro } = usePomodoro();
     const focusNavigationLocked = isFocusNavigationLocked(activePomodoro);
     const totalFocusAvailable = Boolean(activePomodoro?.active);
@@ -39,16 +41,24 @@ export function AppShell() {
             || currentLocation.hash !== nextLocation.hash)
     ));
     const focusBlockerState = focusBlocker.state;
-    const navigationIsVisible = !totalFocus && (focusNavigationLocked
+    const navigationTuckedAway = navigationHeldByFocus && !focusNavigationRevealed;
+    const navigationIsVisible = !totalFocus && (navigationHeldByFocus
         ? focusNavigationRevealed
         : navigationVisible);
     const setPageNavigationVisible = useCallback((visible: boolean) => {
         if (!focusNavigationLockedRef.current) setNavigationVisible(visible);
     }, []);
 
+    const pomodoroActive = totalFocusAvailable;
     useEffect(() => {
-        setFocusNavigationRevealed(false);
-    }, [focusNavigationLocked]);
+        if (focusNavigationLocked) {
+            setNavigationHeldByFocus(true);
+            setFocusNavigationRevealed(false);
+        } else if (!pomodoroActive) {
+            setNavigationHeldByFocus(false);
+            setFocusNavigationRevealed(false);
+        }
+    }, [focusNavigationLocked, pomodoroActive]);
 
     useEffect(() => {
         if (focusBlockerState !== 'blocked') return;
@@ -87,7 +97,7 @@ export function AppShell() {
                     <SideNav />
                     <ActivityTimerAlert />
                 </Box>
-                {focusNavigationLocked && !focusNavigationRevealed && !totalFocus && (
+                {navigationTuckedAway && !totalFocus && (
                     <IconButton
                         aria-label="Show navigation"
                         title="Show navigation"

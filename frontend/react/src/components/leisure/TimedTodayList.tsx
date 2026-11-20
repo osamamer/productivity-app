@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Box, ButtonBase, Collapse, Stack, Typography } from '@mui/material';
+import { Box, ButtonBase, Stack, Typography } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
 import HistoryToggleOffRoundedIcon from '@mui/icons-material/HistoryToggleOffRounded';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
@@ -9,6 +9,7 @@ import { Activity } from '../../types/Activity';
 import { ActivitySession, sessionElapsedMs } from '../../types/ActivitySession';
 import { activityHex } from '../activity/activityColors';
 import { formatScreenDuration } from '../day/screenTimeText';
+import { ExpandCollapse } from '../ExpandCollapse';
 import { timeByActivity } from './leisureTime';
 
 /** What was timed today, a collapsible section styled like Home's "Today's events". */
@@ -56,13 +57,7 @@ export function TimedTodayList({ sessions, activities, now }: { sessions: Activi
                 </Box>
             </ButtonBase>
 
-            <Collapse
-                id="home-timed-today-list"
-                in={expanded && !empty}
-                timeout={{ enter: 420, exit: 440 }}
-                easing={{ enter: 'cubic-bezier(0.4, 0, 0.2, 1)', exit: 'cubic-bezier(0.4, 0, 0.2, 1)' }}
-                mountOnEnter
-            >
+            <ExpandCollapse id="home-timed-today-list" open={expanded && !empty}>
                 <Box
                     sx={{
                         ml: 5.75, mr: 2, pt: 0.75, position: 'relative', textAlign: 'left',
@@ -100,7 +95,7 @@ export function TimedTodayList({ sessions, activities, now }: { sessions: Activi
                         ))}
                     </Stack>
                 </Box>
-            </Collapse>
+            </ExpandCollapse>
         </Box>
     );
 }

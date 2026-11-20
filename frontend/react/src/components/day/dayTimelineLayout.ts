@@ -47,8 +47,9 @@ export type ScreenBlock = Placed & TimeInterval & (
 // nothing can use the full width in the vertical day view.
 export type PlannedBlock = Placed & PlannedInput & { row: number; columns: number };
 
-// Bursts of app hopping read better as one block than as a barcode.
-const SHORT_MS = 60_000;
+// Bursts of app hopping read better as one block than as a barcode. Anything under ten minutes is
+// about 3px wide on a day strip, so runs that short are grouped whenever they follow each other.
+const SHORT_MS = 10 * 60_000;
 const JOIN_GAP_MS = 5_000;
 const MAX_TITLES = 3;
 

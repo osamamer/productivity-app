@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Alert, Button, Popover, Stack, TextField, Typography } from '@mui/material';
 import { format } from 'date-fns';
 import { ActivityPicker } from '../../activity/ActivityPicker';
+import { activityStore } from '../../../services/cache/activityStore';
 import { Activity } from '../../../types/Activity';
 import { CalendarEventInput } from '../../../types/CalendarEvent';
 
@@ -16,6 +17,15 @@ interface QuickChunkPopoverProps {
     activities: Activity[];
     onClose: () => void;
     onCreate: (input: CalendarEventInput) => Promise<void>;
+}
+
+// Stands in for Focus until the first Focus chunk is planned, when the activity is created.
+const FOCUS_TO_CREATE = 'focus-to-create';
+
+/** Focus is always offered: planning it is how a focus block gets compared with the focus done. */
+function withFocus(activities: Activity[]): Activity[] {
+    if (activities.some(activity => activity.name.trim().toLowerCase() === 'focus')) return activities;
+    return [...activities, { id: FOCUS_TO_CREATE, name: 'Focus', color: 'violet', displayOrder: Number.MAX_SAFE_INTEGER }];
 }
 
 function withTime(base: number, time: string): number {
@@ -42,6 +52,7 @@ export function QuickChunkPopover({ draft, activities, onClose, onCreate }: Quic
 }
 
 function ChunkForm({ draft, activities, onClose, onCreate }: Omit<QuickChunkPopoverProps, 'draft'> & { draft: ChunkDraft }) {
+    const choices = withFocus(activities);
     const [activityId, setActivityId] = useState<string | null>(activities[0]?.id ?? null);
     const [title, setTitle] = useState(activities[0]?.name ?? '');
     const [start, setStart] = useState(format(draft.start, 'HH:mm'));
@@ -50,8 +61,8 @@ function ChunkForm({ draft, activities, onClose, onCreate }: Omit<QuickChunkPopo
     const [error, setError] = useState<string | null>(null);
 
     const chooseActivity = (nextId: string | null) => {
-        const previousName = activities.find(activity => activity.id === activityId)?.name;
-        const nextName = activities.find(activity => activity.id === nextId)?.name;
+        const previousName = choices.find(activity => activity.id === activityId)?.name;
+        const nextName = choices.find(activity => activity.id === nextId)?.name;
         if (nextName && (!title.trim() || title === previousName)) setTitle(nextName);
         setActivityId(nextId);
     };
@@ -64,9 +75,12 @@ function ChunkForm({ draft, activities, onClose, onCreate }: Omit<QuickChunkPopo
         setSaving(true);
         setError(null);
         try {
+            const chosenId = activityId === FOCUS_TO_CREATE
+                ? (await activityStore.create({ name: 'Focus', color: 'violet', displayOrder: activities.length })).id
+                : activityId;
             await onCreate({
                 title: title.trim(),
-                activityId,
+                activityId: chosenId,
                 description: '',
                 allDay: false,
                 startDate: null,
@@ -92,7 +106,7 @@ function ChunkForm({ draft, activities, onClose, onCreate }: Omit<QuickChunkPopo
     return (
         <Stack spacing={1.5} component="form" onSubmit={event => { event.preventDefault(); void save(); }}>
             <Typography variant="subtitle1" fontWeight={700}>Plan a chunk</Typography>
-            <ActivityPicker activities={activities} value={activityId} onChange={chooseActivity} />
+            <ActivityPicker activities={choices} value={activityId} onChange={chooseActivity} />
             <TextField label="Name" size="small" value={title} onChange={event => setTitle(event.target.value)} autoComplete="off" autoFocus={activities.length === 0} />
             <Stack direction="row" spacing={1}>
                 <TextField label="From" type="time" size="small" value={start} onChange={event => setStart(event.target.value)} sx={{ flex: 1 }} slotProps={{ inputLabel: { shrink: true } }} />

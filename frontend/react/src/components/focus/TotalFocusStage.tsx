@@ -40,7 +40,7 @@ export function TotalFocusStage({ header, children }: { header: ReactNode; child
         >
             {header}
             <Box sx={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', pointerEvents: 'none', px: 2 }}>
-                <Box data-focus-card sx={{ pointerEvents: 'auto', cursor: 'default', zoom: 1.25, width: 'min(560px, 100%)' }}>
+                <Box data-focus-card sx={{ pointerEvents: 'auto', cursor: 'default', zoom: 1.15, width: 'min(420px, 100%)' }}>
                     {children}
                 </Box>
             </Box>

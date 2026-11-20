@@ -48,6 +48,14 @@ test('a burst of short visits to several apps becomes one "switching" block', ()
   assert.deepEqual(lane.blocks[0].apps.map(app => [app.appId, app.ms]), [['firefox', 40_000], ['discord', 30_000]]);
 });
 
+test('many visits of a few minutes each, back to back, read as one switching block', () => {
+  const apps = ['code', 'firefox', 'discord', 'code', 'firefox', 'discord'];
+  const segments = apps.map((appId, index) => segment(appId, index * 3, index * 3 + 3));
+  const lane = buildScreenLane({ segments, tracked: [{ start: at(0), end: at(18) }], nameOf }, at(0), at(18), at(18));
+  assert.deepEqual(lane.blocks.map(block => block.kind), ['switching']);
+  assert.equal(lane.blocks[0].apps.reduce((total, app) => total + app.ms, 0), 18 * MIN);
+});
+
 test('a single short visit between long ones stays an app block', () => {
   const lane = buildScreenLane({
     segments: [segment('code', 0, 30), { appId: 'discord', start: at(30), end: at(30) + 20_000, title: null }, segment('code', 31, 60)],

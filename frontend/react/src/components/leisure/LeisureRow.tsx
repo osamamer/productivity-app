@@ -1,15 +1,10 @@
-import { ReactNode, useState } from 'react';
-import { Box, Collapse, IconButton, InputBase, Tooltip, Typography } from '@mui/material';
+import { ReactNode, useRef, useState } from 'react';
+import { Box, IconButton, InputBase, Tooltip, Typography } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
-import { keyframes } from '@mui/system';
+import { ExpandCollapse } from '../ExpandCollapse';
 import TimerIcon from '@mui/icons-material/Timer';
 import TuneIcon from '@mui/icons-material/Tune';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-
-const panelReveal = keyframes`
-    from { opacity: 0; }
-    to { opacity: 1; }
-`;
 
 export type LeisurePanel = 'timer' | 'details';
 
@@ -69,6 +64,9 @@ export function LeisureRow({
     const theme = useTheme();
     const activeAccent = theme.palette.primary.main;
     const open = active || panel !== null;
+    // Closing animates the last panel shown, so it does not vanish before the row shrinks.
+    const lastPanel = useRef<ReactNode>(null);
+    if (open) lastPanel.current = children;
 
     return (
         <Box
@@ -126,17 +124,11 @@ export function LeisureRow({
                     )}
                 </Box>
             </Box>
-            <Collapse
-                in={open}
-                timeout={{ enter: 320, exit: 220 }}
-                easing={{ enter: 'cubic-bezier(0.22, 1, 0.36, 1)', exit: 'cubic-bezier(0.4, 0, 0.2, 1)' }}
-                mountOnEnter
-                unmountOnExit
-            >
-                <Box sx={{ px: 2, pb: 2, pt: 0.5, animation: `${panelReveal} 220ms ease-out` }}>
-                    {children}
+            <ExpandCollapse open={open}>
+                <Box sx={{ px: 2, pb: 2, pt: 0.5 }}>
+                    {open ? children : lastPanel.current}
                 </Box>
-            </Collapse>
+            </ExpandCollapse>
         </Box>
     );
 }
